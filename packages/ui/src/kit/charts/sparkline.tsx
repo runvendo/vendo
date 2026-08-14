@@ -1,22 +1,28 @@
 /** Sparkline — a compact inline trend, recharts Area internals (W2 §The Kit). */
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { useFieldValue } from "../row.js";
 import { seriesColor } from "../tokens.js";
 import { font, t } from "../tokens.js";
 import { sanitizeNumbers } from "./sanitize.js";
 
 export interface SparklineProps {
   /** A list of numbers, or rows with a `valueKey`. */
-  data: Array<number | Record<string, unknown>>;
+  data?: Array<number | Record<string, unknown>>;
   /** Field to read when `data` holds objects. */
   valueKey?: string;
   height?: number;
   /** Placeholder shown when there is nothing renderable. */
   emptyState?: string;
+  /** Inside a cell slot: the row field holding this trend's points. */
+  field?: string;
 }
 
-export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—" }: SparklineProps) {
+export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", field }: SparklineProps) {
+  const input = useFieldValue(field, data);
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
-  const raw = (Array.isArray(data) ? data : []).map((d) => (typeof d === "number" ? d : (d[valueKey] as number)));
+  const raw = (Array.isArray(input) ? input : []).map((d) =>
+    typeof d === "number" ? d : (d as Record<string, unknown> | null)?.[valueKey] as number,
+  );
   const clean = sanitizeNumbers(raw);
   if (clean.length < 2) {
     return (

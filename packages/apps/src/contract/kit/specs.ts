@@ -458,7 +458,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     name: "Callout",
     takesChildren: true,
     group: "feedback",
-    summary: "A toned info/accent/success/warning/danger notice highlighting real information. For 'no tool' honesty use Disclaimer.",
+    summary: "A toned notice highlighting real information. For 'no tool' honesty use Disclaimer.",
     props: {
       title: copy(z.string(), "notice heading"),
     },

@@ -16,10 +16,26 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
     expect(kitPrompt({ omitPreamble: true })).not.toContain("# The Kit");
   });
 
+  // Money's `amount` used to be the required one here. It is optional now: a
+  // value component in a cell slot takes its value from `field`, so demanding
+  // `amount` would make the slot unwritable. DataTable's `rows` is the example
+  // instead — a table with no rows is nothing at all.
   it("renders a prop as `name` [class] (required) — doc, and omits the marker when optional", () => {
-    const prompt = kitPrompt({ only: ["Money"] });
-    expect(prompt).toContain("- `amount` [data] (required) — the amount in dollars (major units)");
-    expect(prompt).toContain("- `currency` [config] — ISO 4217 code, default USD");
+    const prompt = kitPrompt({ only: ["DataTable"] });
+    expect(prompt).toContain("- `rows` [data] (required) — rows from a tool call");
+    expect(prompt).toContain("- `sortBy` [config] — initial sort");
+  });
+
+  // The two adjectives are on every component's props so validation and the
+  // screen typings admit them everywhere — and they are taught ONCE, in the
+  // preamble, because 31 restatements would cost a fifth of the catalog.
+  it("teaches tone and density in the preamble and never in a component's prop list", () => {
+    expect(kitPrompt()).toContain("Two adjectives, on every component");
+    for (const name of ["DataTable", "Stat", "Card", "Divider"]) {
+      const scoped = kitPrompt({ only: [name], omitPreamble: true });
+      expect(scoped).not.toContain("- `tone`");
+      expect(scoped).not.toContain("- `density`");
+    }
   });
 
   it("labels the example block for its count", () => {

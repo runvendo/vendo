@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { RowContext } from "../../src/kit/row.js";
 import { sanitizeSeries, sanitizeNumbers } from "../../src/kit/charts/sanitize.js";
 import { BarChart } from "../../src/kit/charts/bar.js";
 import { LineChart } from "../../src/kit/charts/line.js";
@@ -99,5 +100,52 @@ describe("Progress", () => {
   it("renders a placeholder for a non-finite value", () => {
     const { container } = render(<Progress value={Number.NaN} />);
     expect(container.textContent).not.toContain("NaN");
+  });
+});
+
+describe("DonutChart legend", () => {
+  const spend = [
+    { label: "rent", value: 1200 },
+    { label: "food_and_drink", value: 340 },
+  ];
+
+  it("names and values every slice by default", () => {
+    // An unlabelled ring says nothing in a screenshot: a tooltip is not a label.
+    render(<DonutChart data={spend} categoryKey="label" valueKey="value" format="money" />);
+    expect(screen.getByText("Rent")).toBeTruthy();
+    expect(screen.getByText("$1,200.00")).toBeTruthy();
+    expect(screen.getByText("Food and drink")).toBeTruthy();
+    expect(screen.getByText("$340.00")).toBeTruthy();
+  });
+
+  it("legend={false} leaves the bare ring", () => {
+    const { container } = render(
+      <DonutChart data={spend} categoryKey="label" valueKey="value" format="money" legend={false} />,
+    );
+    expect(container.querySelector('[data-kit="DonutLegend"]')).toBeNull();
+    expect(container.textContent).not.toContain("Rent");
+  });
+});
+
+describe("charts in a cell slot", () => {
+  it("Sparkline plots the row's series instead of its own prop", () => {
+    const { container } = render(
+      <RowContext.Provider value={{ history: [1, 5, 3] }}>
+        <Sparkline data={[]} field="history" emptyState="nothing" />
+      </RowContext.Provider>,
+    );
+    expect(container.querySelector('div[data-kit="Sparkline"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("nothing");
+  });
+
+  it("Progress reads the row's value, and its own outside a row", () => {
+    render(
+      <RowContext.Provider value={{ used: 0.25 }}>
+        <Progress value={0.9} field="used" showValue />
+      </RowContext.Provider>,
+    );
+    expect(screen.getByText("25%")).toBeTruthy();
+    render(<Progress value={0.9} field="used" showValue />);
+    expect(screen.getByText("90%")).toBeTruthy();
   });
 });

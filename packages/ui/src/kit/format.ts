@@ -103,9 +103,9 @@ export function currencyMinorUnits(currency: string): number {
  * Formatters never convert units. Callers pass major units, so a host field in
  * minor units (cents) is divided by 100 where it is READ, never here. The ISO
  * minor unit still decides how many decimals SHOW — none for JPY, three for KWD.
- * Returns `null` for any non-finite input so `$NaN` can never ship.
+ * Returns `null` for any non-finite or absent input so `$NaN` can never ship.
  */
-export function formatMoney(amount: number, options: MoneyOptions = {}): string | null {
+export function formatMoney(amount: number | undefined, options: MoneyOptions = {}): string | null {
   if (!isRenderableNumber(amount)) return null;
   const currency = options.currency ?? ambientIntl.currency;
   const digits = currencyMinorUnits(currency);
@@ -141,7 +141,7 @@ export interface PercentOptions {
  * Format a ratio (`0.42` → `"42%"`). Pass `whole: true` when the value is already
  * a whole percentage. Returns `null` for non-finite input.
  */
-export function formatPercent(value: number, options: PercentOptions = {}): string | null {
+export function formatPercent(value: number | undefined, options: PercentOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
   const ratio = options.whole ? value / 100 : value;
   return new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
@@ -159,7 +159,7 @@ export interface NumOptions {
 }
 
 /** Format a plain number with thousands grouping. Returns `null` if non-finite. */
-export function formatNum(value: number, options: NumOptions = {}): string | null {
+export function formatNum(value: number | undefined, options: NumOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
   return new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
     notation: options.notation ?? "standard",
@@ -173,11 +173,13 @@ export type DateInput = string | number | Date;
 export interface DateTimeOptions {
   /** date = calendar day · time = clock · datetime = both · relative = "3 days ago". */
   mode?: "date" | "time" | "datetime" | "relative";
+  /** Drop the year ("Aug 12"), for somewhere narrow like a table cell. */
+  compact?: boolean;
   locale?: string;
   timeZone?: string;
 }
 
-function toDate(value: DateInput): Date | null {
+function toDate(value: DateInput | undefined): Date | null {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   if (typeof value === "number") return Number.isFinite(value) ? new Date(value) : null;
   if (typeof value === "string") {
@@ -200,7 +202,7 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
  * Format a date/time. Accepts ISO strings, epoch millis, or `Date`. Returns
  * `null` for anything unparseable so `Invalid Date` can never ship.
  */
-export function formatDateTime(value: DateInput, options: DateTimeOptions = {}): string | null {
+export function formatDateTime(value: DateInput | undefined, options: DateTimeOptions = {}): string | null {
   const date = toDate(value);
   if (!date) return null;
   const mode = options.mode ?? "date";
@@ -219,12 +221,19 @@ export function formatDateTime(value: DateInput, options: DateTimeOptions = {}):
     return rtf.format(Math.round(diff / 1000), "second");
   }
   const base: Intl.DateTimeFormatOptions = { timeZone };
+  const clock: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
   const parts: Intl.DateTimeFormatOptions =
     mode === "time"
-      ? { hour: "numeric", minute: "2-digit" }
-      : mode === "datetime"
-        ? { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
-        : { year: "numeric", month: "short", day: "numeric" };
+      ? clock
+      : {
+          // The year is the part a narrow column can afford to lose: dates in a
+          // table are overwhelmingly this year, and it reads as noise repeated
+          // down every row.
+          ...(options.compact ? {} : { year: "numeric" }),
+          month: "short",
+          day: "numeric",
+          ...(mode === "datetime" ? clock : {}),
+        };
   return new Intl.DateTimeFormat(locale, { ...base, ...parts }).format(date);
 }
 

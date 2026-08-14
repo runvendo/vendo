@@ -1,7 +1,8 @@
 /** DonutChart — recharts Pie internals, data props only (W2 §The Kit). */
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t } from "../tokens.js";
+import { font, seriesColor, t } from "../tokens.js";
+import { humanizeEnum } from "../values.js";
 import { ChartEmpty, ChartFrame } from "./sanitize.js";
 
 export interface DonutChartProps {
@@ -14,6 +15,8 @@ export interface DonutChartProps {
   format?: ValueFormat;
   /** false renders a full pie. */
   donut?: boolean;
+  /** Name + value under the ring. On by default. */
+  legend?: boolean;
   height?: number;
   emptyState?: string;
 }
@@ -24,6 +27,7 @@ export function DonutChart({
   valueKey,
   format = "number",
   donut = true,
+  legend = true,
   height = 220,
   emptyState = "No data to chart",
 }: DonutChartProps) {
@@ -37,7 +41,10 @@ export function DonutChart({
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
-    <div data-kit="DonutChart">
+    <div
+      data-kit="DonutChart"
+      style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-inline-gap, 7px)" }}
+    >
       <ChartFrame height={height}>
         <ResponsiveContainer width="100%" height="100%">
           <RPieChart>
@@ -60,6 +67,35 @@ export function DonutChart({
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>
+      {/* An unlabelled ring says NOTHING in a screenshot — a hover tooltip is
+          not a label (genbench spend-overview, 2026-08-11). Every slice is
+          named and valued on the page itself. */}
+      {legend ? (
+        <ul
+          data-kit="DonutLegend"
+          style={{
+            ...font,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "var(--vendo-density-inline-gap, 7px) var(--vendo-density-content-gap, 10px)",
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+            fontSize: "0.85em",
+          }}
+        >
+          {slices.map((slice, i) => (
+            <li key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                aria-hidden="true"
+                style={{ width: 9, height: 9, flexShrink: 0, borderRadius: 3, background: seriesColor(i) }}
+              />
+              <span>{humanizeEnum(slice.name)}</span>
+              <span style={{ color: t.muted, fontVariantNumeric: "tabular-nums" }}>{fmt(slice.value)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

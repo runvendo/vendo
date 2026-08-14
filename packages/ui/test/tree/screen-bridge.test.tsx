@@ -42,7 +42,7 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Callout"];
+const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Callout", "Accordion", "EnumBadge"];
 
 /** The payload the server serves: the screen's FIRST paint, flattened, plus the
  *  interactive half that can produce the next one — built by the engine itself,
@@ -474,6 +474,40 @@ export default function Notice() {
     expect(screen.getByText("Heads up")).toBeTruthy();
     expect(screen.getByText("Three invoices are overdue.")).toBeTruthy();
     expect(screen.queryByText(/Unknown component/u)).toBeNull();
+  });
+
+  it("renders a Kit element the screen put in a PROP, as that Kit component", async () => {
+    // The slot round trip, with nothing stubbed on either side: the VM serializes
+    // the element into `content` as `{$element}` data (vm-program.ts `emitValue`),
+    // the server's own flatten leaves it inside the prop, and the renderer builds
+    // the real EnumBadge back out of it (renderer.tsx `reifyElement`). An object
+    // handed to React as a child is the failure this closes.
+    const compiled = compile(`
+import { Accordion, EnumBadge, useQuery } from "@vendo/screen";
+
+export default function Invoice() {
+  const invoice = useQuery("get_invoice");
+  return (
+    <Accordion
+      defaultOpen={[0]}
+      items={[{ label: "Status", content: <EnumBadge value={invoice.data.status} tone="warning" /> }]}
+    />
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, { get_invoice: { data: { status: "past_due" } } })}
+        components={{}}
+        onAction={host.onAction}
+      />,
+    );
+
+    const badge = screen.getByText("Past due");
+    expect(badge.getAttribute("data-kit")).toBe("EnumBadge");
+    expect(badge.getAttribute("data-tone")).toBe("warning");
+    // The sigil is the renderer's business and never the DOM's.
+    expect(document.body.innerHTML).not.toContain("$element");
   });
 
   it("leaves a payload with no interactive half exactly as static as it was", async () => {

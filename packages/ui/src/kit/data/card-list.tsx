@@ -1,12 +1,17 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
+import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { readField, RowContext } from "../row.js";
+import { densityVars, font, t, type KitDensity } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
   key: string;
   label?: string;
   format?: ValueFormat;
+  /** Kit elements rendered as this field's VALUE for THIS item (the label
+   *  stays); the components inside name their field. */
+  cell?: ReactNode;
 }
 
 export interface CardListProps {
@@ -22,13 +27,11 @@ export interface CardListProps {
   columns?: number;
   /** Text shown when there are no items. */
   emptyState?: string;
+  /** Spacing scale for this list's subtree. */
+  density?: KitDensity;
 }
 
-function resolve(row: Record<string, unknown>, key: string): unknown {
-  return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
-}
-
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", density }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
@@ -54,47 +57,51 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
   return (
     <div
       data-kit="CardList"
-      style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-content-gap, 10px)" }}
+      style={{ ...densityVars(density), display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-content-gap, 10px)" }}
     >
       {items.map((item, index) => {
-        const badge = badgeField ? resolve(item, badgeField) : undefined;
+        const badge = badgeField ? readField(item, badgeField) : undefined;
         return (
-          <article
-            key={String(resolve(item, "id") ?? index)}
-            style={{
-              ...font,
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--vendo-density-field-gap, 6px)",
-              border: `1px solid ${t.border}`,
-              borderRadius: t.radiusLarge,
-              background: t.surface,
-              boxShadow: `0 4px 20px color-mix(in srgb, ${t.text} 5%, transparent)`,
-              padding: "var(--vendo-density-card-padding, 16px)",
-            }}
-          >
-            {(titleField || badge !== undefined) && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                {titleField ? (
-                  <span style={{ fontFamily: t.headingFamily, fontWeight: 650, letterSpacing: "-0.015em" }}>
-                    {String(resolve(item, titleField) ?? "—")}
-                  </span>
-                ) : <span />}
-                {badge !== undefined && badge !== null && badge !== "" ? (
-                  <EnumBadge value={String(badge)} />
-                ) : null}
-              </div>
-            )}
-            {fields.map((f) => {
-              const formatted = applyFormat(resolve(item, f.key), f.format ?? "text");
-              return (
+          // One provider per card — a field slot's components read their field
+          // off it, exactly as a table cell's do.
+          <RowContext.Provider key={String(readField(item, "id") ?? index)} value={item}>
+            <article
+              style={{
+                ...font,
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--vendo-density-field-gap, 6px)",
+                border: `1px solid ${t.border}`,
+                borderRadius: t.radiusLarge,
+                background: t.surface,
+                boxShadow: `0 4px 20px color-mix(in srgb, ${t.text} 5%, transparent)`,
+                padding: "var(--vendo-density-card-padding, 16px)",
+              }}
+            >
+              {(titleField || badge !== undefined) && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  {titleField ? (
+                    <span style={{ fontFamily: t.headingFamily, fontWeight: 650, letterSpacing: "-0.015em" }}>
+                      {String(readField(item, titleField) ?? "—")}
+                    </span>
+                  ) : <span />}
+                  {badge !== undefined && badge !== null && badge !== "" ? (
+                    <EnumBadge value={String(badge)} />
+                  ) : null}
+                </div>
+              )}
+              {fields.map((f) => (
                 <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
                   <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatted ?? "—"}</span>
+                  {f.cell ?? (
+                    <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {applyFormat(readField(item, f.key), f.format ?? "text") ?? "—"}
+                    </span>
+                  )}
                 </div>
-              );
-            })}
-          </article>
+              ))}
+            </article>
+          </RowContext.Provider>
         );
       })}
     </div>

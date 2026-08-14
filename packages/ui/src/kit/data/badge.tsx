@@ -1,18 +1,25 @@
 /** Badge — small status label using theme tones (W2 §The Kit). */
 import type { PropsWithChildren } from "react";
+import { applyFormat } from "../format.js";
+import { useFieldValue } from "../row.js";
+import { resolveTone } from "../tokens.js";
 import { EnumBadge, type EnumTone } from "../values.js";
 
 export interface BadgeProps {
   label?: string;
   tone?: EnumTone;
+  /** Inside a cell slot: the row field this label comes from. */
+  field?: string;
 }
 
 /**
  * A literal status pill. For enum data fields prefer `EnumBadge` (it humanizes
  * and tone-maps the raw value); `Badge` is for a copy label the model writes.
  */
-export function Badge({ label, tone = "neutral", children }: PropsWithChildren<BadgeProps>) {
-  const text = label ?? (typeof children === "string" ? children : "");
+export function Badge({ label, tone, field, children }: PropsWithChildren<BadgeProps>) {
+  const own = label ?? (typeof children === "string" ? children : "");
+  // A row field holds anything; `applyFormat` is the tier's total coercion.
+  const text = applyFormat(useFieldValue(field, own), "text") ?? "";
   // Reuse EnumBadge's tone styling with an explicit label (no humanization).
-  return <EnumBadge value={text} labels={{ [text]: text }} tone={tone} />;
+  return <EnumBadge value={text} labels={{ [text]: text }} tone={resolveTone(tone)} />;
 }

@@ -61,6 +61,10 @@ const GOOD = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"
 /** A deliberately bad app: it names a tool the host does not have. */
 const BAD = '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><DataTable rows={invoices.data}/></Stack></App>';
 
+/** Nests a node under a chart. The renderer hands `children` to every node, so
+ *  the caption inside the chart paints as nothing at all. */
+const NESTED = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><LineChart data={invoices.data} xKey="id" series={["amount"]}><Text text="Legend"/></LineChart></Stack></App>';
+
 const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
   ({ document: documentFrom(wire), request });
 
@@ -142,6 +146,19 @@ describe("the floor holds regardless of the builder", () => {
       where: 'query "invoices"',
       message: 'names unknown tool "host_wireMoney"; the host tools are: host_listInvoices',
       check: "tools-exist",
+    });
+  });
+
+  it("blocks a node nested inside a component that renders no children", async () => {
+    // The silent-breakage class this rule exists for: the model wrote a caption,
+    // the person got a blank, and nothing said a word.
+    const findings = await createCheckingLayer({ deps: deps() }).run(inputFor(NESTED));
+
+    expect(findings).toContainEqual({
+      severity: "block",
+      where: 'node "linechart-1"',
+      message: "nests 1 node inside <LineChart>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <LineChart> in a <Stack>, or give <LineChart> what it showed through its own props.",
+      check: "kit-nesting",
     });
   });
 

@@ -145,6 +145,13 @@ describe("Kit token fallbacks — an unthemed Kit is the default theme, exactly"
     expect(t.border).toBe(`var(--vendo-color-border, ${d.border})`);
   });
 
+  it("success and warning are tokens, not the literals the pills used to paint", () => {
+    // These two have no `colors` entry to read a default off, which makes them
+    // the one place a Kit color can quietly regress to a hardcoded hex.
+    expect(t.success).toContain("var(--vendo-color-success,");
+    expect(t.warning).toContain("var(--vendo-color-warning,");
+  });
+
   it("the type and radius fallbacks carry the default theme's own values", () => {
     expect(t.fontFamily).toBe(`var(--vendo-font-family, ${defaultVendoTheme.typography.fontFamily})`);
     expect(t.fontFamily).toContain("Onest");

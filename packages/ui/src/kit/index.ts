@@ -14,6 +14,7 @@
 
 // Semantics
 export * from "./format.js";
+export * from "./row.js";
 export * from "./state.js";
 export * from "./tokens.js";
 

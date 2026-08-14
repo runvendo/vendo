@@ -4,19 +4,23 @@
  * the honesty arm for when no tool backs the ask.
  */
 import type { PropsWithChildren } from "react";
-import { font, t } from "../tokens.js";
+import { font, t, toneColor, type KitTone } from "../tokens.js";
 
-export type CalloutTone = "info" | "accent" | "success" | "warning" | "danger";
+/** The shared vocabulary plus "info", which a Callout keeps as its own spelling:
+ *  elsewhere it is the legacy name for neutral, but a notice has ALWAYS been
+ *  brand-accented with the ⓘ, and it is still the default. */
+export type CalloutTone = KitTone | "info";
 
 const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
   info: { accent: t.accent, icon: "ⓘ" },
+  neutral: { accent: toneColor("neutral"), icon: "ⓘ" },
   // "accent" is the tone the sibling vocabularies teach (Badge/EnumBadge/
   // Stat/Progress), so generated code reaches for it constantly — re-gate
   // 2026-07-26 arm C crashed on it four times. First-class, brand-accented.
   accent: { accent: t.accent, icon: "●" },
-  success: { accent: "#1e7f53", icon: "✓" },
-  warning: { accent: "#b8860b", icon: "▲" },
-  danger: { accent: t.danger, icon: "✕" },
+  success: { accent: toneColor("success"), icon: "✓" },
+  warning: { accent: toneColor("warning"), icon: "▲" },
+  danger: { accent: toneColor("danger"), icon: "✕" },
 };
 
 export interface CalloutProps {

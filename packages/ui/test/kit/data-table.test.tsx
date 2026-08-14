@@ -5,11 +5,37 @@ import { DataTable } from "../../src/kit/data/data-table.js";
 
 // Money in the rows is DOLLARS: a `format:"money"` column pretty-prints the
 // value as it stands, so a host's cents field is divided by 100 upstream.
+// The dates are built off the CURRENT year because that is what decides whether
+// a date cell shows its year — a hardcoded year would flip every expectation
+// here the moment the calendar turned.
+const year = new Date().getFullYear();
 const rows = [
-  { id: 1, client: { name: "Hartwell" }, amount: 2500, dueDate: "2026-03-14", status: "overdue" },
-  { id: 2, client: { name: "Acme" }, amount: 900, dueDate: "2026-01-02", status: "paid" },
-  { id: 3, client: { name: "Borealis" }, amount: 1750, dueDate: "2026-02-20", status: "overdue" },
+  { id: 1, client: { name: "Hartwell" }, amount: 2500, dueDate: `${year}-03-14`, status: "overdue" },
+  { id: 2, client: { name: "Acme" }, amount: 900, dueDate: `${year}-01-02`, status: "paid" },
+  { id: 3, client: { name: "Borealis" }, amount: 1750, dueDate: `${year}-02-20`, status: "overdue" },
 ];
+
+/**
+ * jsdom lays nothing out, so a table can never overflow in a test. State the
+ * measurement the component reads — the component still does its own measuring,
+ * folding and header hiding.
+ */
+function stubOverflow(scrollWidth: number, clientWidth: number): () => void {
+  const observers = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as never;
+  for (const [prop, value] of [["scrollWidth", scrollWidth], ["clientWidth", clientWidth]] as const) {
+    Object.defineProperty(HTMLElement.prototype, prop, { configurable: true, get: () => value });
+  }
+  return () => {
+    globalThis.ResizeObserver = observers;
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollWidth;
+    delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
+  };
+}
 
 const columns = [
   { key: "client.name", label: "Client" },
@@ -22,7 +48,7 @@ describe("DataTable", () => {
     render(<DataTable rows={rows} columns={columns} />);
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.getByText("$2,500.00")).toBeTruthy();
-    expect(screen.getByText("Mar 14, 2026")).toBeTruthy();
+    expect(screen.getByText("Mar 14")).toBeTruthy();
   });
 
   it("applies an initial sortBy", () => {
@@ -77,10 +103,10 @@ describe("DataTable", () => {
   });
 
   // Every filter compares against the text the cell SHOWS. The columns are
-  // formatted — "$2,500.00", "Mar 14, 2026" — while the filters read the raw
-  // field ("2500", "2026-03-14"), so a person searching for what is in front
-  // of them got the empty state, and one searching the raw form got rows whose
-  // text does not contain what they typed.
+  // formatted — "$2,500.00", "Mar 14" — while the filters read the raw field
+  // ("2500", "2026-03-14"), so a person searching for what is in front of them
+  // got the empty state, and one searching the raw form got rows whose text
+  // does not contain what they typed.
   it("searches the text the cells actually show", () => {
     render(<DataTable rows={rows} columns={columns} searchable />);
     const search = screen.getByRole("searchbox");
@@ -96,11 +122,67 @@ describe("DataTable", () => {
   it("offers filter options in the words the column displays", () => {
     render(<DataTable rows={rows} columns={columns} filterableBy={["dueDate"]} />);
     const filter = screen.getByRole("combobox", { name: "Filter by Due" });
-    expect(within(filter).getByRole("option", { name: "Mar 14, 2026" })).toBeTruthy();
-    expect(within(filter).queryByRole("option", { name: "2026-03-14" })).toBeNull();
+    expect(within(filter).getByRole("option", { name: "Mar 14" })).toBeTruthy();
+    expect(within(filter).queryByRole("option", { name: `${year}-03-14` })).toBeNull();
 
-    fireEvent.change(filter, { target: { value: "Mar 14, 2026" } });
+    fireEvent.change(filter, { target: { value: "Mar 14" } });
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.queryByText("Acme")).toBeNull();
+  });
+
+  // The year is the same four characters on every row of a this-year column, so
+  // it is clutter — until the column straddles years, when dropping it would
+  // make two different days read as the same one.
+  it("drops the year from a date column that is entirely this year", () => {
+    render(<DataTable rows={rows} columns={columns} />);
+    expect(screen.getByText("Mar 14")).toBeTruthy();
+    expect(screen.queryByText(`Mar 14, ${year}`)).toBeNull();
+  });
+
+  it("keeps the year for the WHOLE column once its rows straddle years", () => {
+    const straddling = [
+      { id: 1, client: { name: "Hartwell" }, amount: 2500, dueDate: `${year}-03-14` },
+      { id: 2, client: { name: "Acme" }, amount: 900, dueDate: `${year - 1}-12-30` },
+    ];
+    render(<DataTable rows={straddling} columns={columns} />);
+    expect(screen.getByText(`Mar 14, ${year}`)).toBeTruthy();
+    expect(screen.getByText(`Dec 30, ${year - 1}`)).toBeTruthy();
+    expect(screen.queryByText("Mar 14")).toBeNull();
+  });
+
+  it("never breaks a formatted figure across two lines", () => {
+    render(<DataTable rows={rows} columns={columns} />);
+    expect(screen.getByText("$2,500.00").closest("td")!.style.whiteSpace).toBe("nowrap");
+    expect(screen.getByText("Hartwell").closest("td")!.style.whiteSpace).toBe("");
+  });
+
+  it("re-declares the spacing scale on its own element for density=compact", () => {
+    const { container } = render(<DataTable rows={rows} columns={columns} density="compact" />);
+    const root = container.querySelector<HTMLElement>('[data-kit="DataTable"]')!;
+    expect(root.style.getPropertyValue("--vendo-density-table-padding")).toBe("7px 10px");
+  });
+
+  // A narrow surface used to scroll the right-hand columns out of view with
+  // nothing to say they existed. They fold into the first cell instead.
+  it("folds the columns that do not fit into the first cell, headers and all", () => {
+    const restore = stubOverflow(700, 240);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      const headers = screen.getAllByRole("columnheader");
+      expect(headers).toHaveLength(1);
+      expect(headers[0]!.textContent).toContain("Client");
+
+      const firstRow = screen.getAllByRole("row")[1]!;
+      expect(within(firstRow).getAllByRole("cell")).toHaveLength(1);
+      expect(firstRow.textContent).toContain("Amount: $2,500.00");
+      expect(firstRow.textContent).toContain("Due: Mar 14");
+    } finally {
+      restore();
+    }
+  });
+
+  it("leaves the table wide where nothing can be measured (SSR, jsdom)", () => {
+    render(<DataTable rows={rows} columns={columns} />);
+    expect(screen.getAllByRole("columnheader")).toHaveLength(3);
   });
 });

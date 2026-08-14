@@ -1,6 +1,7 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
+import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { densityVars, font, resolveTone, t, toneColor, type KitDensity, type KitTone } from "../tokens.js";
 
 export interface StatProps {
   /** Metric name. */
@@ -11,7 +12,12 @@ export interface StatProps {
   format?: ValueFormat;
   /** A trend / delta caption, e.g. "+12% MoM". */
   trend?: string;
-  tone?: "default" | "accent" | "danger";
+  /** Emphasis. "default" is the older spelling of "neutral". */
+  tone?: KitTone | "default";
+  /** Spacing scale for this tile. */
+  density?: KitDensity;
+  /** Kit value components rendered under the number — a Sparkline, an EnumBadge. */
+  children?: ReactNode;
 }
 
 /** A KPI value is a number or a short phrase, never prose: past this length
@@ -19,8 +25,9 @@ export interface StatProps {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
-  const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+export function Stat({ label, value, format = "text", trend, tone, density, children }: StatProps) {
+  const resolvedTone = resolveTone(tone, "neutral");
+  const emphasis = toneColor(resolvedTone);
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -32,10 +39,11 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
   return (
     <article
       data-kit="Stat"
-      data-tone={tone}
+      data-tone={resolvedTone}
       aria-label={label}
       style={{
         ...font,
+        ...densityVars(density),
         display: "flex",
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
@@ -57,6 +65,9 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
           fontVariantNumeric: "tabular-nums",
+          // A money figure has no break opportunity of its own, so a tile
+          // narrower than its number cut it off mid-number ("$1,113.1").
+          overflowWrap: "anywhere",
         }}
       >
         {display}
@@ -64,6 +75,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
       {trend ? (
         <span style={{ color: t.muted, fontSize: "0.8em", lineHeight: 1.35 }}>{trend}</span>
       ) : null}
+      {children}
     </article>
   );
 }

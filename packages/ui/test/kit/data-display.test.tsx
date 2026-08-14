@@ -39,6 +39,29 @@ describe("Stat", () => {
     const value = screen.getByText("Growth (annual)");
     expect(value.getAttribute("title")).toBeNull();
   });
+
+  it("speaks the shared tone vocabulary, and 'default' still means neutral", () => {
+    const { container } = render(
+      <>
+        <Stat label="Plain" value={1} />
+        <Stat label="Old" value={1} tone="default" />
+        <Stat label="New" value={1} tone="success" />
+      </>,
+    );
+    const tiles = [...container.querySelectorAll<HTMLElement>('[data-kit="Stat"]')];
+    expect(tiles.map((tile) => tile.dataset.tone)).toEqual(["neutral", "neutral", "success"]);
+    // Neutral is exactly today's look; a real tone is not.
+    const color = (tile: HTMLElement) => tile.querySelector("strong")!.style.color;
+    expect(color(tiles[1]!)).toBe(color(tiles[0]!));
+    expect(color(tiles[2]!)).not.toBe(color(tiles[0]!));
+  });
+
+  // A money figure has no break opportunity of its own, so a tile narrower than
+  // its number cut it off mid-number ("$1,113.1").
+  it("lets a value too wide for its tile break rather than clip", () => {
+    render(<Stat label="Balance" value={1113.1} format="money" />);
+    expect(screen.getByText("$1,113.10").style.overflowWrap).toBe("anywhere");
+  });
 });
 
 describe("Badge", () => {

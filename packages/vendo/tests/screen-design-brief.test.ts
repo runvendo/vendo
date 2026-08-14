@@ -15,7 +15,7 @@
 import { type AppId, type Json, type ToolDescriptor } from "@vendoai/core";
 import { type BriefingPack } from "@vendoai/apps/contract";
 import { describe, expect, it } from "vitest";
-import { screenAssembler } from "../src/screen-agent.js";
+import { assembleScreen, screenAssembler, type ScreenInput } from "../src/screen-agent.js";
 import {
   boundRegistry,
   ctx,
@@ -125,5 +125,51 @@ describe("the writers' design brief", () => {
     expect(brief).toContain("must run while nobody is watching");
     expect(brief).toContain("a schedule, a product event");
     expect(brief).toContain("escalate the WHOLE ask");
+  });
+});
+
+/** Everything a measured surface adds to the brief, byte for byte. One constant,
+ *  because the two cases below are the same claim from either side: this text is
+ *  there when the host measured, and the brief is exactly this text away from the
+ *  one it has always assembled when nobody did. */
+const SURFACE_PARAGRAPH = "\n\nYou are writing into `420×880` CSS pixels, and nothing wider than that is\n"
+  + "on the person's screen. Fewer, richer columns rather than a table that runs off\n"
+  + "the edge, and a stat grid that wraps rather than a fixed count that clips.";
+
+/** One run through `assembleScreen`, which is where a `ScreenInput` — and the
+ *  host's viewport with it — enters. Not the `vendo_make` route above: a
+ *  `ScreenRequest` carries no dimensions, so this door is where a host opts in.
+ *  The model still speaks and never saves, so the brief is all this reads. */
+async function briefFor(viewport?: ScreenInput["viewport"]): Promise<string> {
+  const model = scriptedModel([textTurn("nothing to build")]);
+  await assembleScreen(
+    {
+      models: seats(model),
+      tools: { list: async () => [], call: async () => ({ status: "ok", output: {} }) },
+      workspace: testWorkspace(),
+      signal: new AbortController().signal,
+    },
+    { appId: APP, request: "show me my spending", ...(viewport === undefined ? {} : { viewport }) },
+  );
+  return model.systemPrompts[0] ?? "";
+}
+
+describe("the surface the screen is written for", () => {
+  it("names the room the screen has, and what to spend it on", async () => {
+    // Judged 2026-08-12: eight-column tables whose "Status column is cut off
+    // beyond the viewport" and a stat row clipped to "$1,113.1(" — every one of
+    // them written by a writer that was never told how wide it was writing.
+    const brief = await briefFor({ width: 420, height: 880 });
+    expect(brief).toContain("`420×880` CSS pixels");
+    expect(brief).toContain(SURFACE_PARAGRAPH);
+  });
+
+  it("says nothing about a surface nobody measured", async () => {
+    // The half-filled brief is what this stops: a line that announces a width and
+    // then has none is worse than the silence the writer has always had.
+    const bare = await briefFor();
+    expect(bare).not.toContain("CSS pixels");
+    // …and byte for byte, that silence is the whole difference.
+    expect((await briefFor({ width: 420, height: 880 })).replace(SURFACE_PARAGRAPH, "")).toBe(bare);
   });
 });

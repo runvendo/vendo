@@ -21,6 +21,7 @@ export const compileScreen = (tsx: string): string =>
 /** The Kit names a host surface holds, as the engine receives them. */
 export const CATALOG: readonly string[] = [
   "Stack", "Row", "Card", "Text", "Money", "DateTime", "Button", "Input", "Checkbox", "Callout", "Accordion", "DataTable",
+  "EnumBadge",
 ];
 
 export const bootTsx = (

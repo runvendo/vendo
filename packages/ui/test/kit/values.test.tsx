@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "../../src/kit/format.js";
+import { RowContext } from "../../src/kit/row.js";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
 
 describe("Money", () => {
@@ -25,6 +28,21 @@ describe("DateTime", () => {
   it("renders a placeholder for an unparseable value", () => {
     const { container } = render(<DateTime value="nope" />);
     expect(container.textContent).toBe("—");
+  });
+
+  it("compact drops the YEAR and keeps the clock", () => {
+    expect(formatDateTime("2026-08-12", { mode: "date" })).toBe("Aug 12, 2026");
+    expect(formatDateTime("2026-08-12", { mode: "date", compact: true })).toBe("Aug 12");
+    const stamp = formatDateTime(Date.UTC(2026, 7, 12, 15, 30), {
+      mode: "datetime",
+      compact: true,
+      timeZone: "UTC",
+    });
+    expect(stamp).toContain("Aug 12");
+    expect(stamp).toMatch(/3:30/);
+    expect(stamp).not.toContain("2026");
+    const { container } = render(<DateTime value="2026-08-12" mode="date" compact />);
+    expect(container.textContent).toBe("Aug 12");
   });
 });
 
@@ -62,5 +80,38 @@ describe("Text", () => {
   it("renders a heading element for the heading variant", () => {
     render(<Text text="Overview" variant="heading" />);
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+  });
+});
+
+describe("the cell slot — a value bound to the row it is standing in", () => {
+  const inRow = (row: Record<string, unknown>, node: ReactNode) =>
+    render(<RowContext.Provider value={row}>{node}</RowContext.Provider>);
+
+  it("takes its primary value from the row's field, not its own prop", () => {
+    expect(inRow({ amount: 12.5 }, <Money amount={0} field="amount" />).container.textContent).toBe("$12.50");
+    expect(inRow({ due: "2026-03-14" }, <DateTime value="" field="due" mode="date" />).container.textContent).toBe(
+      "Mar 14, 2026",
+    );
+    expect(inRow({ share: 0.42 }, <Percent value={0} field="share" />).container.textContent).toBe("42%");
+    expect(inRow({ n: 1234567 }, <Num value={0} field="n" />).container.textContent).toBe("1,234,567");
+    expect(inRow({ status: "past_due" }, <EnumBadge value={null} field="status" />).container.textContent).toBe(
+      "Past due",
+    );
+    expect(inRow({ client: { name: "Maple" } }, <Text text="" field="client.name" />).container.textContent).toBe(
+      "Maple",
+    );
+  });
+
+  it("falls back to the explicit prop outside a row — the same component reads the same either way", () => {
+    expect(render(<Money amount={7} field="amount" />).container.textContent).toBe("$7.00");
+    expect(render(<Text text="Maple" field="client.name" />).container.textContent).toBe("Maple");
+  });
+
+  it("a field holding the wrong type lands on the placeholder, never a crash", () => {
+    // Money needs a number and Text needs a node; a column bound to the wrong
+    // field must not take the screen down with it.
+    expect(inRow({ amount: "lots" }, <Money amount={1} field="amount" />).container.textContent).toBe("—");
+    expect(inRow({ client: { name: "Maple" } }, <Text text="" field="client" />).container.textContent).toBe("—");
+    expect(inRow({ status: "  " }, <EnumBadge value="paid" field="status" />).container.textContent).toBe("");
   });
 });

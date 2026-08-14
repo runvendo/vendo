@@ -170,7 +170,11 @@ const ENGINE = `(function () {
   function emitValue(value, slot, depth) {
     if (typeof value === "function") { var id = handlerId(slot); drawer[id] = value; return { $handler: id }; }
     if (value === null || typeof value !== "object") return typeof value === "symbol" ? undefined : value;
-    if (preact.isValidElement(value)) return emitNode(value, slot, depth);
+    // An element in a PROP reads back as a plain object, indistinguishable from
+    // data — so it carries a sigil, as a function does. It is what the renderer
+    // builds a component back out of (ui/tree/renderer.tsx bindValue). A tree
+    // node is never stamped: it already arrives where a node belongs.
+    if (preact.isValidElement(value)) { var element = emitNode(value, slot, depth); element.$element = true; return element; }
     // A frozen-clock screen can hold a real Date. Left to the object walk below
     // it would emit as {} — a Date has no enumerable own properties.
     if (typeof Date !== "undefined" && value instanceof Date) return value.toISOString();

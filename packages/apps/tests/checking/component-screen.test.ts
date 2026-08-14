@@ -848,6 +848,113 @@ export default function Everything() {
     expect(text).toContain("the rendered screen is not a valid tree");
     expect(text).toContain("too many nodes (max 5000)");
   });
+
+  /** Wide enough to write a chart, a table and a slot. Its own list because the
+   *  shared catalog is pinned verbatim by the sentences that enumerate it. */
+  const kitCatalog = [...catalog, "Badge", "DataTable", "EnumBadge", "LineChart", "Sparkline", "Stat"];
+
+  const painted = async (source: string): Promise<ComponentScreenCheck> =>
+    checkComponentScreen({ source, hostTools: tools, catalog: kitCatalog, runQuery: async () => ROWS });
+
+  it("refuses a node nested inside a component that renders no children", async () => {
+    // The renderer hands `children` to every node it renders, so this caption
+    // has always painted as nothing: the model wrote it, the person got a blank.
+    const result = await painted(`import { LineChart, Stack, Text } from "@vendo/screen";
+
+export default function Trend() {
+  return (
+    <Stack>
+      <LineChart data={[{ month: "Jan", amount: 1 }]} xKey="month" series={["amount"]}>
+        <Text text="Scheduled outflow" />
+      </LineChart>
+    </Stack>
+  );
+}
+`);
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain("nests 1 node inside <LineChart>, which renders nothing nested inside it");
+    expect(message).toContain("that content never reaches the screen");
+    // …and it says where the caption goes instead.
+    expect(message).toContain("Put it beside <LineChart> in a <Stack>, or give <LineChart> what it showed through its own props.");
+  });
+
+  it("counts a run of text as nesting too — a blank is a blank", async () => {
+    const result = await painted(`import { Badge, Stack } from "@vendo/screen";
+
+export default function Label() {
+  return <Stack><Badge label="Beta">and a note</Badge></Stack>;
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
+    expect(result.issues[0]?.message).toContain("nests 1 node inside <Badge>");
+  });
+
+  it("refuses a control in a cell slot, and names what a cell may hold", async () => {
+    const result = await painted(`import { Button, DataTable, tools } from "@vendo/screen";
+
+export default function Ledger() {
+  return (
+    <DataTable
+      rows={[{ id: "tr_1", status: "paid" }]}
+      columns={[{ key: "status", cell: <Button label="Cancel" onClick={() => tools.cancel_transfer({ id: "tr_1" })} /> }]}
+    />
+  );
+}
+`);
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
+    const message = result.issues[0]?.message ?? "";
+    // The locus is the column the control sits in, not just the table.
+    expect(message).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
+    expect(message).toContain("a cell is read, never operated");
+    expect(message).toContain("A cell may hold: Text, Money, DateTime, Percent, Num, EnumBadge, Badge, Sparkline, Progress, Stack, Row");
+  });
+
+  it("follows a control nested INSIDE a legal slot component", async () => {
+    const result = await painted(`import { Button, DataTable, Stack, Text, tools } from "@vendo/screen";
+
+export default function Ledger() {
+  return (
+    <DataTable
+      rows={[{ id: "tr_1", status: "paid" }]}
+      columns={[{ key: "status", cell: <Stack><Text field="status" /><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: "tr_1" })} /></Stack> }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
+    expect(result.issues[0]?.message).toContain('prop "columns[0].cell.children[1]" holds <Button> in a cell slot');
+  });
+
+  it("passes a legal slot and a legal nest — the rule is not a blanket ban", async () => {
+    // The negative case is what proves it: a value component in a cell reads its
+    // row by name, and <Stat> is one of the components that DOES render children.
+    const result = await painted(`import { DataTable, EnumBadge, Sparkline, Stack, Stat } from "@vendo/screen";
+
+export default function Ledger() {
+  return (
+    <Stack>
+      <Stat label="Paid" value={12}>
+        <Sparkline data={[1, 2, 3]} />
+      </Stat>
+      <DataTable
+        rows={[{ id: "tr_1", status: "paid" }]}
+        columns={[{ key: "status", cell: <EnumBadge field="status" /> }]}
+      />
+    </Stack>
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("screenCatalog", () => {
