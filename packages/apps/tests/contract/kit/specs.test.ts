@@ -16,14 +16,37 @@ import {
  * the screen typings all read the specs, so a prop that lives only in the
  * preamble prose is a prop the model cannot use.
  */
+/** Who READS each shared adjective — pinned here because the cost of getting it
+ *  wrong is invisible: attached to a component that ignores it, the prop
+ *  validates and the renderer drops it, which is the silent failure the whole
+ *  prop-name gate exists to turn into a blocking error. */
+const READERS: Record<string, readonly string[]> = {
+  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout"],
+  density: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
+  field: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress"],
+};
+
 describe("the Kit specs", () => {
-  it("carries the shared adjectives on every component, as config", () => {
+  it("carries each shared adjective on the components that read it, as config, and on no others", () => {
+    expect(Object.keys(READERS)).toEqual([...KIT_SHARED_PROP_NAMES]);
     for (const spec of KIT_SPECS) {
-      for (const name of KIT_SHARED_PROP_NAMES) {
-        expect(spec.props[name], `${spec.name}.${name}`).toBeDefined();
-        expect(kitPropClasses(spec.name)?.[name]).toBe("config");
+      for (const [name, readers] of Object.entries(READERS)) {
+        const reads = readers.includes(spec.name);
+        expect(spec.props[name] !== undefined, `${spec.name}.${name}`).toBe(reads);
+        if (reads) expect(kitPropClasses(spec.name)?.[name]).toBe("config");
       }
     }
+  });
+
+  it("leaves an adjective the component would only drop OUT of its allowed props", () => {
+    // The refusal is by NAME, not by value: zod strips an unknown key rather
+    // than failing it, so what turns `<DataTable tone="danger">` into a blocking
+    // error is its absence from the allowed-prop set the floor reads
+    // (`kitPropClasses` → wirePropNames → the `components-exist` check, pinned
+    // end to end in tests/checking/floor.test.ts).
+    expect(kitPropClasses("DataTable")?.tone).toBeUndefined();
+    expect(kitPropClasses("Divider")?.density).toBeUndefined();
+    expect(kitPropClasses("LineChart")?.field).toBeUndefined();
   });
 
   it("admits the whole tone vocabulary, and the two spellings stored apps carry", () => {

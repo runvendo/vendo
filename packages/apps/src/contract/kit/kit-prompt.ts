@@ -33,11 +33,11 @@ const PREAMBLE = [
   "`format:\"money\"` column all take an amount ALREADY in dollars, so divide a",
   "minor-unit field by 100 where you read it: `value={invoice.amount_cents / 100}`.",
   "",
-  "Two adjectives, on every component: **tone** (neutral | accent | success |",
-  "warning | danger) paints from the HOST's theme — the figure that is bad news is",
-  "`danger`, the one worth looking at is `accent`, and nothing invents a color.",
-  "**density** (comfortable | compact) set on a container tightens everything",
-  "inside it; an operations screen is `compact`.",
+  "Two adjectives. **tone** (neutral | accent | success | warning | danger) on",
+  "values, badges and surfaces paints from the HOST's theme — the figure that is",
+  "bad news is `danger`, the one worth looking at is `accent`, and nothing invents",
+  "a color. **density** (comfortable | compact) on containers and data blocks",
+  "tightens everything inside; an operations screen is `compact`.",
   "",
   "Cells are not sealed. A DataTable column and a CardList field each take a",
   "`cell` — Kit value components composed for ONE record — and a Stat takes them",
@@ -97,9 +97,9 @@ function classTag(cls: PropClass): string {
 
 function renderSpec(spec: KitComponentSpec): string {
   const lines: string[] = [`## <${spec.name}>`, spec.summary, ""];
-  // The two adjectives are on every component's props so that validation and the
-  // screen typings admit them everywhere; the preamble teaches them once, and
-  // restating them 31 times would spend a fifth of the catalog on two words.
+  // The shared adjectives sit in the props of every component that reads one, so
+  // validation and the screen typings admit them there; the preamble teaches them
+  // once, and restating them per component would spend a fifth of the catalog.
   const props = Object.entries(spec.props).filter(([name]) => !KIT_SHARED_PROP_NAMES.includes(name));
   if (props.length > 0) {
     lines.push("Props:");

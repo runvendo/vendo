@@ -26,11 +26,14 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
     expect(prompt).toContain("- `sortBy` [config] — initial sort");
   });
 
-  // The two adjectives are on every component's props so validation and the
-  // screen typings admit them everywhere — and they are taught ONCE, in the
+  // Each adjective is on the props of the components that READ it, so validation
+  // and the screen typings admit it there — and it is taught ONCE, in the
   // preamble, because 31 restatements would cost a fifth of the catalog.
   it("teaches tone and density in the preamble and never in a component's prop list", () => {
-    expect(kitPrompt()).toContain("Two adjectives, on every component");
+    const preamble = kitPrompt();
+    expect(preamble).toContain("Two adjectives.");
+    // …and the preamble no longer claims them for components that drop them.
+    expect(preamble).not.toContain("on every component");
     for (const name of ["DataTable", "Stat", "Card", "Divider"]) {
       const scoped = kitPrompt({ only: [name], omitPreamble: true });
       expect(scoped).not.toContain("- `tone`");

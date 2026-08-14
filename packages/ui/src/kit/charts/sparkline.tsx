@@ -1,8 +1,7 @@
 /** Sparkline — a compact inline trend, recharts Area internals (W2 §The Kit). */
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useFieldValue } from "../row.js";
-import { seriesColor } from "../tokens.js";
-import { font, t } from "../tokens.js";
+import { font, resolveTone, seriesColor, t, toneColor, type KitTone } from "../tokens.js";
 import { sanitizeNumbers } from "./sanitize.js";
 
 export interface SparklineProps {
@@ -13,11 +12,13 @@ export interface SparklineProps {
   height?: number;
   /** Placeholder shown when there is nothing renderable. */
   emptyState?: string;
+  /** Paints the line — a trend that is bad news is `danger`. */
+  tone?: KitTone;
   /** Inside a cell slot: the row field holding this trend's points. */
   field?: string;
 }
 
-export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", field }: SparklineProps) {
+export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", tone, field }: SparklineProps) {
   const input = useFieldValue(field, data);
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const raw = (Array.isArray(input) ? input : []).map((d) =>
@@ -32,6 +33,11 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
     );
   }
   const points = clean.map((v, i) => ({ i, v }));
+  const resolved = resolveTone(tone);
+  const line = resolved === "neutral" ? seriesColor(0) : toneColor(resolved);
+  // Per-tone gradient id: a document resolves `url(#id)` to the FIRST match, so
+  // one shared id would paint every sparkline on the page in the first one's fill.
+  const fillId = `vendo-spark-fill-${resolved}`;
   // The ratio is `ChartFrame`'s intrinsic-width trick (charts/sanitize.tsx) at
   // this form's own proportion: a parent that sizes to its content (the Kit's
   // `Row`) measures `width: 100%` as zero and recharts draws nothing, and a trend
@@ -42,17 +48,17 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={points} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
           <defs>
-            <linearGradient id="vendo-spark-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={seriesColor(0)} stopOpacity={0.25} />
-              <stop offset="100%" stopColor={seriesColor(0)} stopOpacity={0} />
+            <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={line} stopOpacity={0.25} />
+              <stop offset="100%" stopColor={line} stopOpacity={0} />
             </linearGradient>
           </defs>
           <Area
             type="monotone"
             dataKey="v"
-            stroke={seriesColor(0)}
+            stroke={line}
             strokeWidth={1.6}
-            fill="url(#vendo-spark-fill)"
+            fill={`url(#${fillId})`}
             dot={false}
             isAnimationActive={false}
           />

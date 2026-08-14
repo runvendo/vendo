@@ -20,23 +20,13 @@ import {
   type Json,
   type NumericReduction,
 } from "@vendoai/core";
+import { readField } from "./row.js";
 
 const isRow = (value: unknown): value is Record<string, Json> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const rowsOf = (value: Json | undefined): Record<string, Json>[] | undefined =>
   Array.isArray(value) ? value.filter(isRow) : undefined;
-
-/** A dotted field path off one row. Mirrors the reference grammar a screen
- *  writes (`row.progress.total`), so a nested numeric field reduces too. */
-const at = (row: Record<string, Json>, field: string): Json | undefined => {
-  let current: Json | undefined = row;
-  for (const segment of field.split(".")) {
-    if (!isRow(current)) return undefined;
-    current = current[segment];
-  }
-  return current;
-};
 
 /** The column, as numbers. Rows carrying an explicit null are sparse data, not
  *  a mismatch, so they are skipped; a non-numeric value IS a mismatch, and the
@@ -46,7 +36,9 @@ const at = (row: Record<string, Json>, field: string): Json | undefined => {
 const column = (rows: readonly Record<string, Json>[], field: string): number[] | undefined => {
   const numbers: number[] = [];
   for (const row of rows) {
-    const value = at(row, field);
+    // The ONE resolver, the same one every `field` prop and every column key
+    // reads a dotted path with — a nested numeric field reduces too.
+    const value = readField(row, field);
     if (value === null) continue;
     if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
     numbers.push(value);
@@ -109,7 +101,7 @@ export interface GroupedPoint {
 /** The bucket key of one date value: ISO date strings only. An epoch-ms number
  *  read as a date is how a numeric field silently buckets into 1970 instead of
  *  saying it is not a date. */
-const bucketKey = (value: Json | undefined, bucket: GroupByBucket): string | null => {
+const bucketKey = (value: unknown, bucket: GroupByBucket): string | null => {
   if (typeof value !== "string") return null;
   const time = Date.parse(value);
   if (!Number.isFinite(time)) return null;
@@ -133,7 +125,7 @@ export const groupBy = (
   if (aggregate !== "count" && valueField === undefined) return undefined;
   const groups = new Map<string, Record<string, Json>[]>();
   for (const row of source) {
-    const key = bucketKey(at(row, keyField), bucket);
+    const key = bucketKey(readField(row, keyField), bucket);
     if (key === null) return undefined;
     const existing = groups.get(key);
     if (existing === undefined) groups.set(key, [row]);

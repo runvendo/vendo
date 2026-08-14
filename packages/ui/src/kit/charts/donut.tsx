@@ -2,7 +2,6 @@
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
 import { font, seriesColor, t } from "../tokens.js";
-import { humanizeEnum } from "../values.js";
 import { ChartEmpty, ChartFrame } from "./sanitize.js";
 
 export interface DonutChartProps {
@@ -90,7 +89,10 @@ export function DonutChart({
                 aria-hidden="true"
                 style={{ width: 9, height: 9, flexShrink: 0, borderRadius: 3, background: seriesColor(i) }}
               />
-              <span>{humanizeEnum(slice.name)}</span>
+              {/* The name as the DATA spells it, which is what the slice's own
+                  tooltip shows: humanizing lowercased proper nouns ("ACME Corp"
+                  → "Acme corp") and made the two disagree. */}
+              <span>{slice.name}</span>
               <span style={{ color: t.muted, fontVariantNumeric: "tabular-nums" }}>{fmt(slice.value)}</span>
             </li>
           ))}

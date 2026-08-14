@@ -54,19 +54,34 @@ const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.
 const density = z.enum(["comfortable", "compact"]);
 
 /**
- * THE ADJECTIVES — accepted by every component, taught once in the prompt's
- * preamble rather than restated 31 times. Both resolve to theme tokens only:
- * `tone` to the palette, `density` to the host's own spacing ladder.
+ * THE ADJECTIVES — the props many components share, taught once in the prompt's
+ * preamble rather than restated 31 times. Each carries the components that
+ * actually READ it: on any other, the prop would validate and then be dropped
+ * at render — the "valid component, nothing happens" class this floor refuses.
+ * They resolve to theme tokens (`tone` the palette, `density` the host's own
+ * spacing ladder) or, for `field`, to the row a cell slot is painted for.
  */
-const SHARED_PROPS: Readonly<Record<string, PropSpec>> = {
-  tone: config(tone, "emphasis — neutral | accent | success | warning | danger"),
-  density: config(density, "comfortable (default) or compact; set on a container it tightens everything inside"),
-  field: config(z.string(), "inside a cell slot: the row field this component reads"),
-};
+const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly string[] }> = [
+  {
+    name: "tone",
+    spec: config(tone, "emphasis — neutral | accent | success | warning | danger"),
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout"],
+  },
+  {
+    name: "density",
+    spec: config(density, "comfortable (default) or compact; set on a container it tightens everything inside"),
+    on: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
+  },
+  {
+    name: "field",
+    spec: config(z.string(), "inside a cell slot: the row field this component reads"),
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress"],
+  },
+];
 
 /** The shared adjectives' names, so `kitPrompt` can leave them out of every
  *  component's prop list and teach them once. */
-export const KIT_SHARED_PROP_NAMES: readonly string[] = Object.keys(SHARED_PROPS);
+export const KIT_SHARED_PROP_NAMES: readonly string[] = SHARED_PROPS.map(({ name }) => name);
 
 // ---- specs ---------------------------------------------------------------
 const BASE_SPECS: KitComponentSpec[] = [
@@ -476,12 +491,17 @@ const BASE_SPECS: KitComponentSpec[] = [
   },
 ];
 
-/** Every spec, with the shared adjectives folded in — so validation, the wire's
- *  allowed-prop set and the screen typings all admit `tone` and `density`
- *  without 31 components restating them. */
+/** Every spec, with each shared adjective folded into the components that read
+ *  it — so validation, the wire's allowed-prop set and the screen typings admit
+ *  it exactly where it lands, and refuse it where it would be dropped. */
 export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => ({
   ...spec,
-  props: { ...spec.props, ...SHARED_PROPS },
+  props: {
+    ...spec.props,
+    ...Object.fromEntries(SHARED_PROPS
+      .filter(({ on }) => on.includes(spec.name))
+      .map(({ name, spec: prop }) => [name, prop])),
+  },
 }));
 
 /**

@@ -74,6 +74,15 @@ describe("EnumBadge", () => {
     const { container } = render(<EnumBadge value={null} />);
     expect(container.textContent).toBe("");
   });
+
+  // `labels`/`tones` are model-authored records, so an enum value that happens to
+  // name an Object.prototype member must read as ABSENT — a bare index hands
+  // React `Object.prototype.toString`, a function, as the pill's label.
+  it("an enum value that names a prototype member reads as data, never a method", () => {
+    const { container } = render(<EnumBadge value="toString" labels={{}} tones={{}} />);
+    expect(container.textContent).toBe("To string");
+    expect(screen.getByText("To string").getAttribute("data-tone")).toBe("neutral");
+  });
 });
 
 describe("Text", () => {
@@ -105,6 +114,13 @@ describe("the cell slot — a value bound to the row it is standing in", () => {
   it("falls back to the explicit prop outside a row — the same component reads the same either way", () => {
     expect(render(<Money amount={7} field="amount" />).container.textContent).toBe("$7.00");
     expect(render(<Text text="Maple" field="client.name" />).container.textContent).toBe("Maple");
+  });
+
+  // `active`, `isPaid`, `archived` — a boolean is one of the commonest fields
+  // there is, and React renders one as literally nothing.
+  it("shows a boolean field instead of swallowing it", () => {
+    expect(inRow({ active: false }, <Text field="active" />).container.textContent).toBe("false");
+    expect(inRow({ active: true }, <Text field="active" />).container.textContent).toBe("true");
   });
 
   it("a field holding the wrong type lands on the placeholder, never a crash", () => {

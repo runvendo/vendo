@@ -87,13 +87,15 @@ export const toneStyle: Record<KitTone, { color: string; background: string; bor
     border: t.border,
   },
   accent: { color: t.accentText, background: t.accent, border: t.accent },
+  // Darkened against `text`, not against `#000`: a literal black is not a token,
+  // and on a dark host theme it drove both foregrounds INTO the background.
   success: {
-    color: `color-mix(in srgb, ${t.success} 88%, #000)`,
+    color: `color-mix(in srgb, ${t.success} 88%, ${t.text})`,
     background: `color-mix(in srgb, ${t.success} 12%, ${t.surface})`,
     border: `color-mix(in srgb, ${t.success} 30%, ${t.border})`,
   },
   warning: {
-    color: `color-mix(in srgb, ${t.warning} 72%, #000)`,
+    color: `color-mix(in srgb, ${t.warning} 72%, ${t.text})`,
     background: `color-mix(in srgb, ${t.warning} 16%, ${t.surface})`,
     border: `color-mix(in srgb, ${t.warning} 34%, ${t.border})`,
   },
@@ -105,9 +107,12 @@ export const toneStyle: Record<KitTone, { color: string; background: string; bor
 };
 
 /** A tone's own color, for text and rules that carry a tone WITHOUT a pill —
- *  an emphasised Stat, a Card's border, a toned figure in a cell. */
-export function toneColor(tone: KitTone): string {
-  return tone === "accent" ? t.accent : toneStyle[tone].color;
+ *  an emphasised Stat, a Card's border, a toned figure in a cell. Total like
+ *  {@link resolveTone}, because this one is exported into code-land too and an
+ *  unknown word must fall back rather than throw on `toneStyle[bogus].color`. */
+export function toneColor(tone: string | undefined): string {
+  const resolved = resolveTone(tone);
+  return resolved === "accent" ? t.accent : toneStyle[resolved].color;
 }
 
 /**

@@ -65,6 +65,11 @@ const BAD = '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><S
  *  the caption inside the chart paints as nothing at all. */
 const NESTED = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><LineChart data={invoices.data} xKey="id" series={["amount"]}><Text text="Legend"/></LineChart></Stack></App>';
 
+/** A shared adjective on a component that does not read it. `tone` paints
+ *  nothing on a table: the prop validates, the renderer drops it, and the model
+ *  is told it succeeded — the silent drop the prop-name gate turns into a block. */
+const DEAF = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><DataTable rows={invoices.data} tone="danger"/></Stack></App>';
+
 const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
   ({ document: documentFrom(wire), request });
 
@@ -159,6 +164,17 @@ describe("the floor holds regardless of the builder", () => {
       where: 'node "linechart-1"',
       message: "nests 1 node inside <LineChart>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <LineChart> in a <Stack>, or give <LineChart> what it showed through its own props.",
       check: "kit-nesting",
+    });
+  });
+
+  it("blocks a shared adjective on a component that does not read it", async () => {
+    const findings = await createCheckingLayer({ deps: deps() }).run(inputFor(DEAF));
+
+    expect(findings).toContainEqual({
+      severity: "block",
+      where: 'node "datatable-1"',
+      message: expect.stringContaining('sets unknown prop "tone" on prewired component "DataTable"'),
+      check: "components-exist",
     });
   });
 

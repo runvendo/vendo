@@ -932,6 +932,28 @@ export default function Ledger() {
     expect(result.issues[0]?.message).toContain('prop "columns[0].cell.children[1]" holds <Button> in a cell slot');
   });
 
+  it("reads the sigil, not the shape — row data that describes a component is data", async () => {
+    // A "cell" column whose value happens to name a component and carry a
+    // children list. The VM stamps `$element` on what a screen wrote as an
+    // ELEMENT and on nothing else, and the renderer reifies on exactly that
+    // sigil — so this paints as text, and refusing it as a mis-nested cell
+    // would block an app over data the rule never governs.
+    const result = await painted(`import { DataTable } from "@vendo/screen";
+
+export default function Inventory() {
+  return (
+    <DataTable
+      rows={[{ id: "r1", cell: { component: "Button", children: [] } }]}
+      columns={[{ key: "id" }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
   it("passes a legal slot and a legal nest — the rule is not a blanket ban", async () => {
     // The negative case is what proves it: a value component in a cell reads its
     // row by name, and <Stat> is one of the components that DOES render children.

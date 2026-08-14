@@ -22,7 +22,8 @@ export type KitRow = Record<string, unknown>;
 export const RowContext = createContext<KitRow | undefined>(undefined);
 
 /** Resolve a dot-path against a record ("client.name"). The ONE resolver: the
- *  table, the card list and every `field` prop read a path the same way. */
+ *  table, the card list, the aggregates and every `field` prop read a path the
+ *  same way. */
 export function readField(row: KitRow | undefined, path: string): unknown {
   if (row === undefined) return undefined;
   return path.split(".").reduce<unknown>(

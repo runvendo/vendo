@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
+import { EnumBadge } from "../../src/kit/values.js";
 
 // Money in the rows is DOLLARS: a `format:"money"` column pretty-prints the
 // value as it stands, so a host's cents field is divided by 100 upstream.
@@ -20,19 +21,19 @@ const rows = [
  * measurement the component reads — the component still does its own measuring,
  * folding and header hiding.
  */
-function stubOverflow(scrollWidth: number, clientWidth: number): () => void {
+function stubLayout(columnWidth: number, clientWidth: number): () => void {
   const observers = globalThis.ResizeObserver;
   globalThis.ResizeObserver = class {
     observe() {}
     unobserve() {}
     disconnect() {}
   } as never;
-  for (const [prop, value] of [["scrollWidth", scrollWidth], ["clientWidth", clientWidth]] as const) {
+  for (const [prop, value] of [["offsetWidth", columnWidth], ["clientWidth", clientWidth]] as const) {
     Object.defineProperty(HTMLElement.prototype, prop, { configurable: true, get: () => value });
   }
   return () => {
     globalThis.ResizeObserver = observers;
-    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollWidth;
+    delete (HTMLElement.prototype as Partial<HTMLElement>).offsetWidth;
     delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
   };
 }
@@ -163,19 +164,94 @@ describe("DataTable", () => {
   });
 
   // A narrow surface used to scroll the right-hand columns out of view with
-  // nothing to say they existed. They fold into the first cell instead.
-  it("folds the columns that do not fit into the first cell, headers and all", () => {
-    const restore = stubOverflow(700, 240);
+  // nothing to say they existed. Only the ones that do not FIT fold — a table
+  // that folded every column but the first is a stack of cards, which is not a
+  // table and reads as one field per line.
+  it("keeps the columns that fit and folds only the rest into the first cell", () => {
+    // Three 200px columns; 420px of room, so two fit and the third folds.
+    const restore = stubLayout(200, 420);
     try {
       render(<DataTable rows={rows} columns={columns} />);
-      const headers = screen.getAllByRole("columnheader");
-      expect(headers).toHaveLength(1);
-      expect(headers[0]!.textContent).toContain("Client");
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toHaveLength(2);
+      expect(headers[0]).toContain("Client");
+      expect(headers[1]).toContain("Amount");
+      expect(headers.join()).not.toContain("Due");
 
       const firstRow = screen.getAllByRole("row")[1]!;
-      expect(within(firstRow).getAllByRole("cell")).toHaveLength(1);
+      expect(within(firstRow).getAllByRole("cell")).toHaveLength(2);
+      // The folded column rides in the FIRST cell, labelled, not in every cell.
+      const cells = within(firstRow).getAllByRole("cell");
+      expect(cells[0]!.textContent).toContain("Due: Mar 14");
+      expect(cells[1]!.textContent).not.toContain("Due:");
+    } finally {
+      restore();
+    }
+  });
+
+  it("keeps the first column however narrow the surface is", () => {
+    const restore = stubLayout(200, 40);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(1);
+      const firstRow = screen.getAllByRole("row")[1]!;
       expect(firstRow.textContent).toContain("Amount: $2,500.00");
       expect(firstRow.textContent).toContain("Due: Mar 14");
+    } finally {
+      restore();
+    }
+  });
+
+  // Folding a column must not undo the slot that column carries: rendering the
+  // formatted text instead folded a status pill back into the bare word
+  // "overdue" — the precise thing the slots exist to kill.
+  it("a folded column keeps its cell slot", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(
+        <DataTable
+          rows={rows}
+          columns={[
+            ...columns,
+            { key: "status", label: "Status", cell: <EnumBadge field="status" tones={{ overdue: "danger" }} /> },
+          ]}
+        />,
+      );
+      const firstRow = screen.getAllByRole("row")[1]!;
+      expect(firstRow.textContent).toContain("Status: ");
+      const badge = within(firstRow).getByText("Overdue");
+      expect(badge.getAttribute("data-kit")).toBe("EnumBadge");
+      expect(badge.getAttribute("data-tone")).toBe("danger");
+      expect(firstRow.textContent).not.toContain("Status: overdue");
+    } finally {
+      restore();
+    }
+  });
+
+  // The fold-out rides INSIDE the first cell, and that cell is often a figure —
+  // nowrap and tabular-nums, both inherited. An unbreakable folded line scrolls
+  // the table sideways, which is the failure folding exists to prevent.
+  it("wraps its folded lines even when the first column is a figure", () => {
+    const restore = stubLayout(200, 220);
+    try {
+      render(<DataTable rows={rows} columns={[columns[1]!, columns[0]!, columns[2]!]} />);
+      const cell = screen.getByText("$2,500.00").closest("td")!;
+      expect(cell.style.whiteSpace).toBe("nowrap");
+      const fold = cell.querySelector("div")!;
+      expect(fold.textContent).toContain("Client: Hartwell");
+      expect(fold.style.whiteSpace).toBe("normal");
+      expect(fold.style.fontVariantNumeric).toBe("normal");
+    } finally {
+      restore();
+    }
+  });
+
+  it("folds nothing when every column fits", () => {
+    const restore = stubLayout(100, 900);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      expect(screen.getAllByRole("row")[1]!.textContent).not.toContain("Due:");
     } finally {
       restore();
     }

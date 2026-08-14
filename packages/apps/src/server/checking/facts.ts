@@ -427,12 +427,13 @@ const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
 const SLOT_CONTENT: ReadonlySet<string> = new Set(KIT_SLOT_CONTENT_NAMES);
 
 /** A Kit element sitting in a PROP — what a `cell` slot holds. The screen VM
- *  serializes one as the node shape it stamps `$element`
- *  (genui/component/vm-program.ts `emitValue`); either mark reads as an element,
- *  so a data row that merely carries a "component" column is not mistaken for
- *  one. */
-const asElement = (value: unknown): { component: string; children?: unknown } | undefined =>
-  isRecord(value) && typeof value.component === "string" && (value.$element === true || Array.isArray(value.children))
+ *  stamps the SLOT's own element `$element` and leaves the ones nested under it
+ *  bare (genui/component/vm-program.ts `emitValue`), and the renderer reifies on
+ *  exactly that (`packages/ui` renderer.tsx `reifyElement`) — so this reads the
+ *  sigil at the slot and a `component` name below it, and a data row that merely
+ *  carries a "component" field is never mistaken for an element. */
+const asElement = (value: unknown, sigil: boolean): { component: string; children?: unknown } | undefined =>
+  isRecord(value) && typeof value.component === "string" && (!sigil || value.$element === true)
     ? (value as { component: string; children?: unknown })
     : undefined;
 
@@ -456,14 +457,14 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
 
   /** One `cell` slot: the element it holds, and every element nested in that
    *  one. */
-  const checkSlot = (nodeId: string, path: string, value: unknown): void => {
-    const element = asElement(value);
+  const checkSlot = (nodeId: string, path: string, value: unknown, sigil = true): void => {
+    const element = asElement(value, sigil);
     if (element === undefined) return;
     if (!SLOT_CONTENT.has(element.component)) {
       issues.push(atProp(nodeId, path, `holds <${element.component}> in a cell slot — a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`));
     }
     if (Array.isArray(element.children)) {
-      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, child));
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, child, false));
     }
   };
 

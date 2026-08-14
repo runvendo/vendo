@@ -4,7 +4,7 @@
  * the honesty arm for when no tool backs the ask.
  */
 import type { PropsWithChildren } from "react";
-import { font, t, toneColor, type KitTone } from "../tokens.js";
+import { font, resolveTone, t, toneColor, type KitTone } from "../tokens.js";
 
 /** The shared vocabulary plus "info", which a Callout keeps as its own spelling:
  *  elsewhere it is the legacy name for neutral, but a notice has ALWAYS been
@@ -29,17 +29,17 @@ export interface CalloutProps {
 }
 
 export function Callout({ tone = "info", title, children }: PropsWithChildren<CalloutProps>) {
-  // Unknown tone values fall back to info instead of crashing: generated
-  // island code passes arbitrary strings, and a themed notice with the wrong
-  // color always beats "Node could not render: Cannot destructure 'accent'".
-  // Object.hasOwn, not a bare index: an unvalidated tone like "constructor"
-  // or "toString" would otherwise pick up Object.prototype members instead
-  // of falling back (review 2026-07-26).
-  const { accent, icon } = Object.hasOwn(TONE, tone) ? TONE[tone] : TONE.info;
+  // "info" is read HERE, before the shared resolver would flatten it to neutral:
+  // it is this component's default and has always been the accented ⓘ. Every
+  // other word goes through the ONE resolver, so "default" lands on neutral like
+  // it does on a Card and an unvalidated string ("constructor") falls back
+  // instead of picking up an Object.prototype member (review 2026-07-26).
+  const resolved: CalloutTone = tone === "info" ? "info" : resolveTone(tone);
+  const { accent, icon } = TONE[resolved];
   return (
     <div
       data-kit="Callout"
-      data-tone={tone}
+      data-tone={resolved}
       role="status"
       style={{
         ...font,

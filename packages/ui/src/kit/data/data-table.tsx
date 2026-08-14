@@ -78,7 +78,7 @@ function cellText(value: unknown, format: ValueFormat, compact: boolean): string
  * dropdown offered "2026-03-14" as an option for a column reading "Mar 14".
  * Unrenderable cells (the "—" placeholder) filter as empty.
  */
-function displayText(row: Record<string, unknown>, column: DataTableColumn, compact = false): string {
+function displayText(row: Record<string, unknown>, column: DataTableColumn, compact: boolean): string {
   return cellText(readField(row, column.key), column.format ?? "text", compact) ?? "";
 }
 
@@ -235,28 +235,38 @@ export function DataTable(props: DataTableProps) {
    * The trigger is the measurement itself: no prop, no invented breakpoint.
    */
   const scroller = useRef<HTMLDivElement | null>(null);
-  const neededWidth = useRef(0);
-  const [folded, setFolded] = useState(false);
+  const headRow = useRef<HTMLTableRowElement | null>(null);
+  /** Each column's right edge at its NATURAL width, measured while every column
+   *  is still shown. Folding changes those widths, so a second measurement would
+   *  disagree with the first and the table would oscillate — the natural edges
+   *  are recorded once and every later decision is taken against them. */
+  const naturalEdges = useRef<number[]>([]);
+  const [visibleCount, setVisibleCount] = useState(columns.length);
   useEffect(() => {
     const node = scroller.current;
     // No ResizeObserver (SSR, jsdom): nothing is measured, so nothing folds and
-    // the wide table behaves exactly as it always did.
+    // the table behaves exactly as it always did.
     if (node === null || typeof ResizeObserver === "undefined") return;
-    const measure = () =>
-      setFolded((was) => {
-        // Folded, the table is one column and fits — measuring THAT would unfold
-        // it into an overflow again, forever. So the width the wide table needs
-        // is remembered while it is still wide.
-        if (!was) neededWidth.current = node.scrollWidth;
-        return node.clientWidth < neededWidth.current;
-      });
+    const measure = () => {
+      const headers = headRow.current?.children;
+      if (headers !== undefined && headers.length === columns.length) {
+        let edge = 0;
+        naturalEdges.current = [...headers].map((th) => (edge += (th as HTMLElement).offsetWidth));
+      }
+      const edges = naturalEdges.current;
+      if (edges.length === 0) return;
+      // Keep every column that has room, fold only the ones that do not. The
+      // first column always stays, however narrow the surface is.
+      setVisibleCount(Math.max(1, edges.filter((right) => right <= node.clientWidth).length));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
-  /** Folded, only the first column has a header and a cell of its own. */
-  const shown = <T,>(all: T[]): T[] => (folded ? all.slice(0, 1) : all);
+  }, [columns.length]);
+  const folded = visibleCount < columns.length;
+  /** Only the columns that fit keep a header and a cell of their own. */
+  const shown = <T,>(all: T[]): T[] => (folded ? all.slice(0, visibleCount) : all);
 
   return (
     <div
@@ -333,7 +343,7 @@ export function DataTable(props: DataTableProps) {
           ) : null}
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} style={{ background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})` }}>
+              <tr ref={headRow} key={hg.id} style={{ background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})` }}>
                 {shown(hg.headers).map((header) => {
                   const col = columns.find((c) => c.key === header.column.id);
                   const sorted = header.column.getIsSorted();
@@ -380,7 +390,7 @@ export function DataTable(props: DataTableProps) {
                   {/* One provider per row — a slot's components read their field
                       off it. A provider paints no element, so this is still tr > td. */}
                   <RowContext.Provider value={row.original}>
-                    {shown(row.getVisibleCells()).map((cell) => {
+                    {shown(row.getVisibleCells()).map((cell, cellIndex) => {
                       const col = columns.find((c) => c.key === cell.column.id);
                       // A slot is elements, not a figure: only formatted TEXT is
                       // tabular, and only formatted text is one unbreakable atom
@@ -398,7 +408,7 @@ export function DataTable(props: DataTableProps) {
                           }}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          {folded ? (
+                          {folded && cellIndex === 0 ? (
                             <div
                               style={{
                                 display: "flex",
@@ -407,15 +417,25 @@ export function DataTable(props: DataTableProps) {
                                 marginTop: 4,
                                 color: t.muted,
                                 fontSize: "0.85em",
+                                // The cell this rides in may be a FIGURE, whose
+                                // nowrap/tabular is inherited: a folded line is
+                                // prose, and an unbreakable one scrolls the
+                                // table sideways — the thing folding prevents.
+                                whiteSpace: "normal",
+                                fontVariantNumeric: "normal",
                               }}
                             >
-                              {columns.slice(1).flatMap((other) => {
-                                const text = displayText(row.original, other, compactDateKeys.has(other.key));
-                                return text === ""
+                              {columns.slice(visibleCount).flatMap((other) => {
+                                // A folded column keeps its SLOT — a status
+                                // column reads as its pill here too, not as the
+                                // bare word the slot exists to kill.
+                                const value =
+                                  other.cell ?? displayText(row.original, other, compactDateKeys.has(other.key));
+                                return value === ""
                                   ? []
                                   : [
                                       <span key={other.key}>
-                                        {columnLabel(other.key)}: {text}
+                                        {columnLabel(other.key)}: {value}
                                       </span>,
                                     ];
                               })}
