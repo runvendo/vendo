@@ -1,5 +1,78 @@
 # @vendoai/apps
 
+## 0.17.0
+
+### Minor Changes
+
+- c17d492: A parked press gets its answer: the approval modal, the refresh on resolution, and the animated landing.
+
+  A guarded action pressed on a generated screen parked for approval and then
+  dead-ended twice over: the ask had no UI anywhere on the page (only a badge
+  count), and once someone approved it — over the wire, from the chat card — the
+  action ran server-side while the screen sat on "Sending…" and stale numbers
+  forever. The resumed call's outcome was simply discarded.
+
+  Now the whole loop closes. The apps runtime persists what became of a parked
+  call (`PARKED_CALL_OUTCOME_COLLECTION`, shared with the BYO lane so both write
+  the same rows), `GET /approvals/:id` serves it — answering `pending` while the
+  resumed call is still running, so the decide window reads as what it is — and
+  the screen watches its own parked presses: on `executed` it re-reads its query
+  plan and repaints backend truth; on `declined`/`expired` it re-reads too, so a
+  screen whose own state latched "sending" re-arms instead of locking forever.
+
+  The ask itself is a centered modal, mounted wherever screens mount (slot, chat
+  card, workspace stage, BYO embed, remix): the ask at hero size, Approve/Deny,
+  a designed in-flight state for the seconds the decision takes to run, and a
+  queue so burst presses ask one question at a time. Esc closes without deciding
+  — the pending notice on the pressed control is now pressable and re-raises the
+  ask. `ApprovalResolution`'s pending arm may now omit `request` (the decide
+  window has no ask left to show); consumers skeleton or fall back.
+
+  Refresh repaints animate: an arriving row opens under a fading highlight, a
+  leaving row collapses and returns its gap, and numeric leaves roll to their new
+  figure — repaints only, never first paint, never streams, and never under
+  `prefers-reduced-motion`.
+
+- c79866f: One idiom for actions — a plain `<Button>` that calls a tool, and the product
+  does the asking.
+
+  `<ActionButton>` is removed before it ever shipped. It was a second way to spell
+  a write, and the component catalog the manual interpolates
+  (`contract/kit/kit-prompt.ts`) already taught the first one — so a model reading
+  the manual met two idioms for the same press and had to pick. A screen writes the
+  call the way React writes every other event:
+
+  ```tsx
+  <Button
+    label="Cancel"
+    variant="danger"
+    onClick={() => tools.cancel_transfer({ id: transfer.id })}
+  />
+  ```
+
+  Nothing about the press changes: the same `tools` proxy, the same intent, the
+  same guard, the same approval modal, the same refresh on success. What the
+  element cost was the extra idiom, the ambient declaration that had to be printed
+  beside the catalog, and the engine's own component in the VM.
+
+  The confirm rule it carried stays, said plainly instead of attached to one
+  component. The manual now states it on the Actions paragraph — destructive and
+  money-moving calls are confirmed by the product OUTSIDE the screen, so a screen
+  never builds a confirm step of its own — and the reviewer is told the same about
+  any control that files its tool call directly: asking twice is the bug, not
+  asking once.
+
+### Patch Changes
+
+- 729dd3e: A create that rode its plan to an automation now surfaces the envelope instead of dropping it: `AppsRuntime.create` gains an additive `onServerWork` hook carrying what the server lane produced (the authored automation with its armed state and pending-grant count, arming/flip issues, and the failure sentences when required server work could not be built), and `vendo_make` publishes the same `data-vendo-automation` thread card for a first-ask automation that the edit path has published since Wave 9. Required server work that could not be built rides the receipt's `say` as an honest caveat instead of dying in the server log.
+- 9ea21ef: The vendo Cloud gateway's own model family (`vendo`, `vendo-paint`, `vendo-judge`, `vendo-extract`) joins the capability rule that already protected the Claude 5 line: sampling params are dropped and the explicit 64K output cap is set on every call. The family ids are unknown to the stock `@ai-sdk/anthropic` capability registry, which silently clamps unknown models to 4096 max_tokens — a screen agent's generated document truncated mid-wire, nothing painted, no app row landed, and every row-scoped verb (validate, commitSource, schedule) answered not-found. Field-hit on a Cloud-keyed deployment where every escalated build and automation arm failed with "has no row to hold its source".
+- 8ded5cc: The automation ask stops falling into the two-step trap. The `schedule` verb's words matched its behavior nowhere: titled "Set when this runs" and described as "Set or change … what you are arming", it taught calling agents to build a view with `vendo_make` and then arm it here — but the verb only re-times an EXISTING automation, so the ask died with a refusal and no automation was ever authored (field: every scheduled-task ask on the linkwarden baseline). Now the verb says the one thing it does — retitled "Change when this runs", described as never creating, naming `vendo_make` (this app in `app`, schedule and action in one request) as the authoring door — and the no-trigger refusal carries the same exact next move so a mid-turn agent can recover. The screen agent's escalate door also names away work explicitly ("any part that must run while nobody is watching — a schedule, a product event — … escalate the WHOLE ask"), closing the gap where its skill taught the `<Server>` declaration but the door's own text listed only real-code reasons to leave, so a schedule ask got assembled as a plain view with no trigger. The MCP app shim is regenerated for the retitle.
+- Updated dependencies [c17d492]
+- Updated dependencies [64004b6]
+- Updated dependencies [85fc732]
+- Updated dependencies [8ded5cc]
+  - @vendoai/core@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes

@@ -1,5 +1,44 @@
 # @vendoai/core
 
+## 0.17.0
+
+### Minor Changes
+
+- c17d492: A parked press gets its answer: the approval modal, the refresh on resolution, and the animated landing.
+
+  A guarded action pressed on a generated screen parked for approval and then
+  dead-ended twice over: the ask had no UI anywhere on the page (only a badge
+  count), and once someone approved it — over the wire, from the chat card — the
+  action ran server-side while the screen sat on "Sending…" and stale numbers
+  forever. The resumed call's outcome was simply discarded.
+
+  Now the whole loop closes. The apps runtime persists what became of a parked
+  call (`PARKED_CALL_OUTCOME_COLLECTION`, shared with the BYO lane so both write
+  the same rows), `GET /approvals/:id` serves it — answering `pending` while the
+  resumed call is still running, so the decide window reads as what it is — and
+  the screen watches its own parked presses: on `executed` it re-reads its query
+  plan and repaints backend truth; on `declined`/`expired` it re-reads too, so a
+  screen whose own state latched "sending" re-arms instead of locking forever.
+
+  The ask itself is a centered modal, mounted wherever screens mount (slot, chat
+  card, workspace stage, BYO embed, remix): the ask at hero size, Approve/Deny,
+  a designed in-flight state for the seconds the decision takes to run, and a
+  queue so burst presses ask one question at a time. Esc closes without deciding
+  — the pending notice on the pressed control is now pressable and re-raises the
+  ask. `ApprovalResolution`'s pending arm may now omit `request` (the decide
+  window has no ask left to show); consumers skeleton or fall back.
+
+  Refresh repaints animate: an arriving row opens under a fading highlight, a
+  leaving row collapses and returns its gap, and numeric leaves roll to their new
+  figure — repaints only, never first paint, never streams, and never under
+  `prefers-reduced-motion`.
+
+### Patch Changes
+
+- 64004b6: Arming asks become visible on every StoreAdapter. The automations arming capture wrote its approval rows to `vendo_approvals` without the `subject`/`status`/`call` refs the guard's ref-filtered feeds query by — repo-shipped stores masked it (the reserved table derives those refs from the row itself), but a generic or cloud-hosted records store honors exactly what a writer passes, so the asks were counted by `pendingGrants` yet invisible to `GET /approvals` and immune to the guard's abandoned-ask sweep: an automation card "waiting on N permissions" with nothing to decide, forever. Core now exports `approvalRecordRefs` as the one refs contract for the collection's writers; the guard's park delegates to it; the automations capture stamps it on mint, keeps it across the consume flip, and re-stamps it when arming adopts a pre-contract pending ask — so re-enabling an automation heals rows minted before the fix.
+- 85fc732: The text channel's three collections join the engine allowlist. `vendo_channel_links`, `vendo_channel_asks` and `vendo_channel_events` were never added to `ENGINE_COLLECTIONS`, so a deployment on a Cloud-hosted store — the posture a Cloud host gets by leaving the store slot unset — had its first channel write refused with `collection "vendo_channel_links" is not an engine collection`, which left the link route, the status and unlink doors, and every inbound text answering 403 on a live deployment while the suite stayed green: every channel test composes a local store, and a local store has no allowlist in front of it. The names are added with the `file:line` comment each entry in that list carries, `ENGINE_ALLOWLIST_VERSION` moves to 2 as that constant's contract requires, and a new seam test drives the channel repositories through `hostedStore` and the fake console — which serves the same gate as the live door precisely so a fake cannot bless a collection production refuses.
+- 8ded5cc: The automation ask stops falling into the two-step trap. The `schedule` verb's words matched its behavior nowhere: titled "Set when this runs" and described as "Set or change … what you are arming", it taught calling agents to build a view with `vendo_make` and then arm it here — but the verb only re-times an EXISTING automation, so the ask died with a refusal and no automation was ever authored (field: every scheduled-task ask on the linkwarden baseline). Now the verb says the one thing it does — retitled "Change when this runs", described as never creating, naming `vendo_make` (this app in `app`, schedule and action in one request) as the authoring door — and the no-trigger refusal carries the same exact next move so a mid-turn agent can recover. The screen agent's escalate door also names away work explicitly ("any part that must run while nobody is watching — a schedule, a product event — … escalate the WHOLE ask"), closing the gap where its skill taught the `<Server>` declaration but the door's own text listed only real-code reasons to leave, so a schedule ask got assembled as a plain view with no trigger. The MCP app shim is regenerated for the retitle.
+
 ## 0.16.0
 
 ## 0.15.0

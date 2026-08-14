@@ -1,5 +1,107 @@
 # @vendoai/vendo
 
+## 0.17.0
+
+### Minor Changes
+
+- c17d492: A parked press gets its answer: the approval modal, the refresh on resolution, and the animated landing.
+
+  A guarded action pressed on a generated screen parked for approval and then
+  dead-ended twice over: the ask had no UI anywhere on the page (only a badge
+  count), and once someone approved it — over the wire, from the chat card — the
+  action ran server-side while the screen sat on "Sending…" and stale numbers
+  forever. The resumed call's outcome was simply discarded.
+
+  Now the whole loop closes. The apps runtime persists what became of a parked
+  call (`PARKED_CALL_OUTCOME_COLLECTION`, shared with the BYO lane so both write
+  the same rows), `GET /approvals/:id` serves it — answering `pending` while the
+  resumed call is still running, so the decide window reads as what it is — and
+  the screen watches its own parked presses: on `executed` it re-reads its query
+  plan and repaints backend truth; on `declined`/`expired` it re-reads too, so a
+  screen whose own state latched "sending" re-arms instead of locking forever.
+
+  The ask itself is a centered modal, mounted wherever screens mount (slot, chat
+  card, workspace stage, BYO embed, remix): the ask at hero size, Approve/Deny,
+  a designed in-flight state for the seconds the decision takes to run, and a
+  queue so burst presses ask one question at a time. Esc closes without deciding
+  — the pending notice on the pressed control is now pressable and re-raises the
+  ask. `ApprovalResolution`'s pending arm may now omit `request` (the decide
+  window has no ask left to show); consumers skeleton or fall back.
+
+  Refresh repaints animate: an arriving row opens under a fading highlight, a
+  leaving row collapses and returns its gap, and numeric leaves roll to their new
+  figure — repaints only, never first paint, never streams, and never under
+  `prefers-reduced-motion`.
+
+- 8af9e4c: A deployment's users can use the product over text message. `createVendo({ channels: { text: true } })` plus one anchor to `/api/vendo/channels/text/link` is the whole opt-in: a signed-in user opens the anchor, their phone jumps into a prefilled first message, and from then on they text the agent, which acts as them exactly as it does in a web chat — same guard, same threads, same audit. Linking takes two texts because the identity router that binds the phone consumes the first one, so the link page says so and the code is short and unambiguous enough to retype. The phone ↔ user binding lives in the deployment's own store (`vendo_channel_links`, swept by `erase.bySubject`); Vendo Cloud carries the numbers and the delivery and never learns who a phone belongs to. A gated tool call parks as usual and the consent card becomes a text carrying the exact action and arguments — "YES" from the linked phone decides the same approval record the turn is blocked on, so an approval wait is now a per-turn bound (10 minutes on a channel turn, the frozen 90 seconds everywhere else).
+
+### Patch Changes
+
+- d1de477: next-auth v4 hosts fail loud and correct instead of silently breaking: the
+  authJs preset resolves `AUTH_SECRET` then v4's `NEXTAUTH_SECRET` (Auth.js's
+  own legacy order), defers module/secret work until an Auth.js session cookie
+  is actually present (a misconfigured preset no longer 501s anonymous
+  traffic), and names next-auth v4 once when it sees a v4 session cookie.
+  `vendo init` prints a v4 advisory when wiring authJs onto a major-4 host.
+  The wire surfaces a failed principal resolver's own message instead of a
+  generic Internal Vendo error. Doctor distinguishes a declined actAs mint
+  (new E-AUTH-008 warning) from an unconfigured seam (E-AUTH-007), passes the
+  wire's failure reason through E-AUTH-004, and its act-as pass message stops
+  claiming host verification the probe never performs.
+- 0e29c39: A `package.json` saved with a UTF-8 BOM — what Notepad and PowerShell's `Set-Content` produce — no longer crashes `vendo init` with a raw SyntaxError: the CLI strips a leading BOM everywhere it reads host files (the shared `readOptional`, framework detection, doctor's dependency check, dep-version telemetry, and MCP server.json identity), matching how npm and Node's own `require()` treat the same file. A genuinely malformed `package.json` now fails with one clean sentence — `vendo init: package.json is not valid JSON (…) — fix it and re-run vendo init` — instead of a stack dump.
+- 54309b4: A development process fires its own scheduled automations. Two gaps compounded into armed-and-never-fired schedules on every local deployment: under the hosted store the composition deferred schedule/external firing to Cloud's scheduler unconditionally — but Cloud cannot reach a dev server (a localhost wire is in no deployment inventory), so nobody fired; and even self-hosted, the local tick is an external caller's job (`POST /tick` with `VENDO_TICK_SECRET`) that no laptop has. Now a development composition keeps schedule firing local (the schedule-cursor claims are atomic in the shared store, so a second firer can never double-run a tick) and arms the engine's own minute ticker from the ready() latch — the same Workers-safe arming the background sweep uses, unref'd so it never keeps a dev server from exiting. Deployed processes are unchanged: hosted deploys leave firing to Cloud, self-hosted production still uses the external tick caller. The hosted-store boot notice tells the development story honestly.
+- ea830ec: Three doctor honesty fixes for real-world deployments. Console-managed deployments stop failing E-CFG-001: with `VENDO_API_KEY` set, a missing cloud-resolvable surface (`brief.md`, `policy.json`, `theme.json`, `overrides.json`) is a warning pointing at `vendo config status` — those surfaces legitimately live as published config (`tools.json` stays fatal; keyless behavior is unchanged). E-LIVE-001 now carries what actually came back from `/status` — the wire's own `error.code`/`error.message` plus a dev-server-log hint — and an answered non-JSON error page is reported as E-LIVE-001 with its HTTP status instead of being mislabeled "unreachable" (E-LIVE-002 is reserved for a fetch that never answered). And every `fix_ref` URL now points at `docs.vendo.run/agents/verify`, which serves the playbook directly instead of a redirect some agent HTTP clients refuse.
+- c875814: Two field-outage guards. The development automations ticker is now one per process, adopted by the newest composition — Next dev re-evaluates route modules on every recompile, and each orphaned composition kept its minute-ticker alive, grinding the hosted store into rate limits on long dev sessions (#1250). Arming stops the predecessor's interval and starts the newcomer's, so exactly one ticker runs and it belongs to the composition actually serving requests (the slot rides `Symbol.for` on globalThis so it survives module churn). And the hosted store now names version skew instead of failing silently: when the console answers "Unknown store operation" for an op this client shipped with, the error says the real cause — this @vendoai/vendo is older than the console, update the package — and one loud log line reaches the server operator (#1251); previously every store-backed route just 501'd with nothing in the log.
+- 1865bdd: Two round trips become one, and a Cloud connection survives the gap between tool calls.
+
+  Every guard decision paid its two bookkeeping lookups — is there an approved
+  replay for exactly this call, and is there a matching standing grant — strictly
+  one after the other, even though they read different collections and neither
+  consults the other's answer. They now go out together. Precedence is untouched:
+  the replay verdict is still read first, the grant only after it, and the
+  single-use CAS spend still happens exactly once. Against a Cloud-hosted store
+  the pair's p50 drops from ~400ms to ~250ms.
+
+  Separately, the Vendo Cloud adapters (`hostedStore`, `cloudSandbox`,
+  `cloudConnections`, `cloudTools`) had no connection pooling of their own, so
+  they inherited Node's stock dispatcher — which drops an idle keep-alive socket
+  after about four seconds. That is shorter than the gap between two of an
+  agent's tool calls, so nearly every Cloud round trip paid a fresh TCP+TLS
+  handshake: measured against console.vendo.run, five reconnects in five calls
+  across a six-second idle gap. Their default `fetch` now rides one shared pool
+  that holds a connection for a minute — zero reconnects across the same gap, and
+  ~85ms off an after-idle store read. A host passing its own `fetch` still wins,
+  exactly as before, and the pool is Node-only by construction: an edge/Worker
+  target that cannot load undici keeps today's plain fetch.
+
+- 408b791: `vendo init`'s provider auto-install now runs on Windows — the spawn goes through the platform shell (package managers are `.cmd` shims there) with every arg quoted so caret-bearing specs like `ai@^6` survive cmd.exe — and a failed install's warning carries the installer's own stderr tail instead of a bare "could not install". A resolvable pre-v6 `ai` (typically another package's workspace-hoisted copy) is now a floor violation rather than a satisfied dependency: init installs `ai@^6` over it, and `vendo doctor` fails E-DEP-001 naming your package manager's exact upgrade command and the workspace-hoist story instead of passing green into runtime 500s.
+- 8ded5cc: The automation ask stops falling into the two-step trap. The `schedule` verb's words matched its behavior nowhere: titled "Set when this runs" and described as "Set or change … what you are arming", it taught calling agents to build a view with `vendo_make` and then arm it here — but the verb only re-times an EXISTING automation, so the ask died with a refusal and no automation was ever authored (field: every scheduled-task ask on the linkwarden baseline). Now the verb says the one thing it does — retitled "Change when this runs", described as never creating, naming `vendo_make` (this app in `app`, schedule and action in one request) as the authoring door — and the no-trigger refusal carries the same exact next move so a mid-turn agent can recover. The screen agent's escalate door also names away work explicitly ("any part that must run while nobody is watching — a schedule, a product event — … escalate the WHOLE ask"), closing the gap where its skill taught the `<Server>` declaration but the door's own text listed only real-code reasons to leave, so a schedule ask got assembled as a plain view with no trigger. The MCP app shim is regenerated for the retitle.
+- Updated dependencies [c17d492]
+- Updated dependencies [64004b6]
+- Updated dependencies [d1de477]
+- Updated dependencies [85fc732]
+- Updated dependencies [729dd3e]
+- Updated dependencies [54309b4]
+- Updated dependencies [9ea21ef]
+- Updated dependencies [1865bdd]
+- Updated dependencies [565caf0]
+- Updated dependencies [c79866f]
+- Updated dependencies [c8ce625]
+- Updated dependencies [8ded5cc]
+- Updated dependencies [8af9e4c]
+- Updated dependencies [65e82e7]
+  - @vendoai/core@0.17.0
+  - @vendoai/apps@0.17.0
+  - @vendoai/ui@0.17.0
+  - @vendoai/guard@0.17.0
+  - @vendoai/automations@0.17.0
+  - @vendoai/actions@0.17.0
+  - @vendoai/harnesses@0.17.0
+  - @vendoai/mcp@0.17.0
+  - @vendoai/agents@0.17.0
+  - @vendoai/knowledge@0.17.0
+  - @vendoai/store@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes

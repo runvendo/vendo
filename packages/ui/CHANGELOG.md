@@ -1,5 +1,53 @@
 # @vendoai/ui
 
+## 0.17.0
+
+### Minor Changes
+
+- c17d492: A parked press gets its answer: the approval modal, the refresh on resolution, and the animated landing.
+
+  A guarded action pressed on a generated screen parked for approval and then
+  dead-ended twice over: the ask had no UI anywhere on the page (only a badge
+  count), and once someone approved it — over the wire, from the chat card — the
+  action ran server-side while the screen sat on "Sending…" and stale numbers
+  forever. The resumed call's outcome was simply discarded.
+
+  Now the whole loop closes. The apps runtime persists what became of a parked
+  call (`PARKED_CALL_OUTCOME_COLLECTION`, shared with the BYO lane so both write
+  the same rows), `GET /approvals/:id` serves it — answering `pending` while the
+  resumed call is still running, so the decide window reads as what it is — and
+  the screen watches its own parked presses: on `executed` it re-reads its query
+  plan and repaints backend truth; on `declined`/`expired` it re-reads too, so a
+  screen whose own state latched "sending" re-arms instead of locking forever.
+
+  The ask itself is a centered modal, mounted wherever screens mount (slot, chat
+  card, workspace stage, BYO embed, remix): the ask at hero size, Approve/Deny,
+  a designed in-flight state for the seconds the decision takes to run, and a
+  queue so burst presses ask one question at a time. Esc closes without deciding
+  — the pending notice on the pressed control is now pressable and re-raises the
+  ask. `ApprovalResolution`'s pending arm may now omit `request` (the decide
+  window has no ask left to show); consumers skeleton or fall back.
+
+  Refresh repaints animate: an arriving row opens under a fading highlight, a
+  leaving row collapses and returns its gap, and numeric leaves roll to their new
+  figure — repaints only, never first paint, never streams, and never under
+  `prefers-reduced-motion`.
+
+### Patch Changes
+
+- 565caf0: The overlay launcher anchors to any viewport corner and takes host offsets. `launcher` accepts `"top-right"` / `"top-left"` alongside the bottom corners, and the object form gains `offset: { x?, y? }` — extra pixels pushed inward from the anchored corner, ridden as CSS variables folded into the existing safe-area calc so every current install stays pixel-identical. The whole launcher cluster moves as one: the first-run whisper and the completion toast follow the pill's corner (sitting below it in top corners) and inherit the same offsets. Drag is deliberately deferred; offsets cover the collision a host can predict, and `useVendoOverlay` still covers the rest.
+- c8ce625: The overlay remembers conversations. A page reload resumes the conversation the user was in (the last adopted thread id persists per origin, and a transcript that ends mid-turn re-attaches to the in-flight stream), and a new previous-conversations header button — beside expand, new-conversation, and close — opens a picker listing the caller's earlier threads: select one to resume it in place, Cancel or Escape to stay. New conversation forgets the remembered id; a remembered id that no longer resolves (deleted thread, different signed-in user) self-heals to a fresh conversation through useVendoThread's existing validation, so a stale id can never strand the surface. The picker stays internal to the overlay — no new export surface — and the header icon ladder gains one slot in every pointer and takeover variant.
+- 65e82e7: The in-thread automation card becomes the arming consent surface (#1090). A turn that arms an automation used to render a read-only card saying "Enabled · waiting on N permissions" while the decidable grant rows lived only on the workspace automations panel — a surface the stock overlay never mounts, and one a page navigation away in hosts whose conversation does not survive navigation, so the person could see the debt and never pay it. The card's pending asks now ride the durable approvals feed (reload-safe, never the stream) and render as the same grant-set card the panel shows, right under the automation card: every permission enumerated, one Allow settling the whole set atomically (the set id read from the automations projection at decide time), a denial disarming in the same decision, and the settled record staying in the transcript. Decisions travel the same client path as every other consent surface, so either side's decision settles the other. When the feed cannot answer, the card keeps the wire part's snapshot count — an error never reads as "nothing pending". The shared asks→rows mapping (`grantSetPermissions`) is now a public chrome export, used by the panel and the thread alike.
+- Updated dependencies [c17d492]
+- Updated dependencies [64004b6]
+- Updated dependencies [85fc732]
+- Updated dependencies [729dd3e]
+- Updated dependencies [9ea21ef]
+- Updated dependencies [c79866f]
+- Updated dependencies [8ded5cc]
+  - @vendoai/core@0.17.0
+  - @vendoai/apps@0.17.0
+
 ## 0.16.0
 
 ### Patch Changes

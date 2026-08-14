@@ -1,5 +1,21 @@
 # @vendoai/automations
 
+## 0.17.0
+
+### Patch Changes
+
+- 64004b6: Arming asks become visible on every StoreAdapter. The automations arming capture wrote its approval rows to `vendo_approvals` without the `subject`/`status`/`call` refs the guard's ref-filtered feeds query by — repo-shipped stores masked it (the reserved table derives those refs from the row itself), but a generic or cloud-hosted records store honors exactly what a writer passes, so the asks were counted by `pendingGrants` yet invisible to `GET /approvals` and immune to the guard's abandoned-ask sweep: an automation card "waiting on N permissions" with nothing to decide, forever. Core now exports `approvalRecordRefs` as the one refs contract for the collection's writers; the guard's park delegates to it; the automations capture stamps it on mint, keeps it across the consume flip, and re-stamps it when arming adopts a pre-contract pending ask — so re-enabling an automation heals rows minted before the fix.
+- 54309b4: A development process fires its own scheduled automations. Two gaps compounded into armed-and-never-fired schedules on every local deployment: under the hosted store the composition deferred schedule/external firing to Cloud's scheduler unconditionally — but Cloud cannot reach a dev server (a localhost wire is in no deployment inventory), so nobody fired; and even self-hosted, the local tick is an external caller's job (`POST /tick` with `VENDO_TICK_SECRET`) that no laptop has. Now a development composition keeps schedule firing local (the schedule-cursor claims are atomic in the shared store, so a second firer can never double-run a tick) and arms the engine's own minute ticker from the ready() latch — the same Workers-safe arming the background sweep uses, unref'd so it never keeps a dev server from exiting. Deployed processes are unchanged: hosted deploys leave firing to Cloud, self-hosted production still uses the external tick caller. The hosted-store boot notice tells the development story honestly.
+- Updated dependencies [c17d492]
+- Updated dependencies [64004b6]
+- Updated dependencies [85fc732]
+- Updated dependencies [729dd3e]
+- Updated dependencies [9ea21ef]
+- Updated dependencies [c79866f]
+- Updated dependencies [8ded5cc]
+  - @vendoai/core@0.17.0
+  - @vendoai/apps@0.17.0
+
 ## 0.16.0
 
 ### Patch Changes
