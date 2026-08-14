@@ -122,7 +122,8 @@ export interface HarnessTurnsConfig {
   /** The shipped tool-bridge rails composition owns, per turn (`toolOutputCap`,
    *  the connect `preflight`, the capability-miss `onCall`). */
   bridge?: (ctx: RunContext, threadId: ThreadId) => HarnessRuntimeDeps["bridge"];
-  /** Test seam only; production uses the frozen APPROVAL_WAIT_MS. */
+  /** The deployment-wide approval wait. Unset uses the frozen
+   *  APPROVAL_WAIT_MS; a single turn may override it (`stream`). */
   approvalWaitMs?: number;
   /** Build contract §9.1 — the host's own org query, keyed on the Principal so
    *  the workspace door can resolve it with no request in hand. It decides the
@@ -146,6 +147,10 @@ export interface HarnessTurns {
     message: UIMessage;
     ctx: RunContext;
     signal?: AbortSignal;
+    /** How long an interactive approval may block THIS turn. Unset keeps the
+     *  frozen APPROVAL_WAIT_MS (a web tab's bound); a turn served over a
+     *  channel where the person answers on a human clock passes its own. */
+    approvalWaitMs?: number;
   }): Promise<Response>;
   /** Prompt-cache warming (sub-1s shipment): ONE degenerate turn through the
    *  normal assembly — same registry projection, same system prompt, same
@@ -458,7 +463,11 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
             return bridge?.onCall?.(call) ?? (() => {});
           },
         },
-        ...(config.approvalWaitMs === undefined ? {} : { approvalWaitMs: config.approvalWaitMs }),
+        // The turn's own wait wins over the deployment's, and both fall back to
+        // the frozen default inside the runtime.
+        ...((input.approvalWaitMs ?? config.approvalWaitMs) === undefined
+          ? {}
+          : { approvalWaitMs: input.approvalWaitMs ?? config.approvalWaitMs }),
         liveTurn: (published) => {
           const unpublish = config.liveTurn?.(published);
           return () => {

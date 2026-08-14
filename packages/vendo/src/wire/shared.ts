@@ -18,6 +18,7 @@ import type { VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { ByoApprovalResolution } from "../byo-approvals.js";
 import type { HarnessTurns } from "../harness-turn.js";
+import type { ChannelDoor } from "../channels.js";
 import type { ConnectionsService } from "../connections.js";
 
 /** The shared wire toolkit (kill-list B4): the route-table types and matcher,
@@ -107,6 +108,12 @@ export interface WireDeps {
     read(approvalId: string, principal: Principal): Promise<ByoApprovalResolution>;
   };
   connections: ConnectionsService;
+  /** The composed text-channel door: the link invite, the status/unlink pair,
+      and the inbound runner the machine door drives. */
+  channels: ChannelDoor;
+  /** The bearer an inbound delivery must present (HMAC of VENDO_API_KEY).
+      Undefined with no Cloud key — the door then refuses every delivery. */
+  channelInboundSecret: () => Promise<string | undefined>;
   sandbox: SandboxVenue;
   model: ModelVenue;
   doctor: {

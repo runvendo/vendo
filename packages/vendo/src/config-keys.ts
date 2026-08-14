@@ -66,6 +66,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "loadout",
   "apps",
   "automations",
+  "channels",
 ] as const;
 
 export type CreateVendoConfigKey = (typeof CREATE_VENDO_CONFIG_KEYS)[number];

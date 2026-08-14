@@ -69,7 +69,9 @@ export interface TurnToolsOptions {
    *  the ctx projection above is. Loadout curation is the brain's own strategy
    *  now (`vendo()`'s tool-search hand), not a runtime rail. */
   toolSurface?: Harness["toolSurface"];
-  /** Test seam only — production always uses {@link APPROVAL_WAIT_MS}. */
+  /** This turn's bound on an interactive approval wait. Unset uses
+   *  {@link APPROVAL_WAIT_MS} — the web's closed-tab bound, unchanged. A turn
+   *  whose person answers on a human clock (a text message) passes its own. */
   approvalWaitMs?: number;
 }
 

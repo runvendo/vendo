@@ -108,7 +108,8 @@ export interface HarnessRuntimeDeps {
    *  `preflight` connect gate, and the capability-miss `onCall` hook. The writer
    *  and the per-turn connect-card set are the runtime's to supply. */
   bridge?: Omit<ToolBridgeOptions, "registry" | "ctx" | "guard" | "writer" | "connectCards">;
-  /** Test seam only; production uses the frozen APPROVAL_WAIT_MS. */
+  /** This turn's bound on an interactive approval wait; unset uses the frozen
+   *  APPROVAL_WAIT_MS. */
   approvalWaitMs?: number;
   /**
    * Publish the turn now in flight to the host process's own doors, and retract

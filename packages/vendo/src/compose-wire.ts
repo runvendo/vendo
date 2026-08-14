@@ -75,6 +75,8 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     automations,
     byoApprovals,
     connections,
+    channels: composition.channelDoor,
+    channelInboundSecret: composition.channelInboundSecret,
     sandbox: sandbox.venue,
     model: inference.agent.venue,
     doctor,
@@ -126,7 +128,7 @@ export const vendoInstance = (
   handler: (request: Request) => Promise<Response>,
 ): Vendo => {
   const { automationsMounted, ready, automations, guard, byoApprovals } = composition;
-  const { apps, actions, selectedConnections, store, harnessDoor } = composition;
+  const { apps, actions, selectedConnections, store, harnessDoor, channelDoor } = composition;
   return {
     handler,
     async emit(event, payload, principal) {
@@ -163,6 +165,27 @@ export const vendoInstance = (
     // adapter is handed back untouched. The cache-invalidating wrapper is an
     // internal composition detail (see selectedConnections above).
     connections: selectedConnections,
+    // The named channel surface, over the same door the wire routes call: the
+    // host mints a link from its own server code exactly as the anchor does.
+    // Each leg latches `ready()` for the same reason `emit` does — every one of
+    // them reads or writes the link rows, so the schema has to be there first
+    // (the wire's own handler awaits the same latch before routing).
+    channels: {
+      text: {
+        link: async (principal) => {
+          await ready();
+          return { url: (await channelDoor.invite(principal)).url };
+        },
+        status: async (principal) => {
+          await ready();
+          return channelDoor.status(principal);
+        },
+        unlink: async (principal) => {
+          await ready();
+          return channelDoor.unlink(principal);
+        },
+      },
+    },
     store,
     // The SAME door the wire's chat route runs (see `harnessDoor`), latched by
     // `ready()` because a harness turn reads the transcript and writes workspace

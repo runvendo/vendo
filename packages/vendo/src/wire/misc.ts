@@ -41,7 +41,7 @@ function constantTimeEqual(a: string, b: string): boolean {
     values regardless of input length — equal digests iff equal inputs (SHA-256
     collision resistance) — and the byte compare leaks neither length nor content
     through timing. Replaces the `===` bearer compare, a classic timing oracle. */
-async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   const key = await compareKey();
   const encoder = new TextEncoder();
   const [da, db] = await Promise.all([

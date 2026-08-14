@@ -61,6 +61,10 @@ export interface Vendo {
   automations: AutomationsEngine;
   actions: ActionsRegistry;
   connections: ConnectionsService;
+  /** Where this deployment's users reach the agent besides the web
+      (`createVendo({ channels: { text: true } })`). The surface is always
+      here; with no channel configured every call refuses by naming the fix. */
+  channels: VendoChannels;
   store: VendoStore;
   /** Architecture §3 — THE door every turn is served through: the composed
       `Harness` (`harness:`, or `vendo()`). `POST /threads` routes here, and so
@@ -407,6 +411,33 @@ export interface CreateVendoConfig {
       Only `false` today, because the subsystem has no other host-facing knob;
       it widens to an options object the day it grows one. */
   automations?: false;
+  /** Where this deployment's users can reach the agent besides the web.
+      `{ text: true }` opens the TEXT channel: a user links their phone from
+      inside the product (one anchor to `/api/vendo/channels/text/link`) and
+      from then on texts the agent, which acts as them exactly as it does in a
+      web chat. Vendo Cloud carries the numbers and the delivery, so the flag
+      needs VENDO_API_KEY; without one the surface refuses by naming the key
+      (precedence: selectChannels). Unset, the channel is simply not there.
+
+      The phone ↔ user binding lives in THIS deployment's store
+      (`vendo_channel_links`) and nowhere else: Cloud knows how to reach the
+      deployment, never who its users are. */
+  channels?: { text?: boolean };
+}
+
+/** The text channel's host-facing surface — what `vendo.channels.text` is. */
+export interface TextChannelApi {
+  /** Mint this user's claim code and answer the URL that opens their messages
+      app with the first text prefilled. The wire route
+      `GET /api/vendo/channels/text/link` is the same thing behind an anchor. */
+  link(principal: Principal): Promise<{ url: string }>;
+  /** Whether this user has a phone linked, masked for display. */
+  status(principal: Principal): Promise<{ linked: boolean; phone?: string }>;
+  unlink(principal: Principal): Promise<void>;
+}
+
+export interface VendoChannels {
+  text: TextChannelApi;
 }
 
 /** The options `apps:` carries when app generation IS mounted — derived rather

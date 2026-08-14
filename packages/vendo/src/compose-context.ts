@@ -56,6 +56,7 @@ import type { CloudConfig } from "./cloud-config.js";
 import { composeActions } from "./compose-actions.js";
 import { composeApps } from "./compose-apps.js";
 import { composeAutomations } from "./compose-automations.js";
+import { composeChannels } from "./compose-channels.js";
 import { composeAdapters, composeReady } from "./compose-adapters.js";
 import { composeConfig } from "./compose-config.js";
 import { composeConnections, composeDiscovery } from "./compose-discovery.js";
@@ -68,6 +69,7 @@ import { composeSweep } from "./compose-sweep.js";
 import { composeTools, emitDeploymentBoot } from "./compose-tools.js";
 import type { ConfigSurfaceName } from "./config-surface.js";
 import type { ResolvedSweep } from "./compose-config.js";
+import type { ChannelDoor, ChannelsService } from "./channels.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns } from "./harness-turn.js";
 import type { resolveModels } from "./models-config.js";
@@ -236,6 +238,16 @@ export interface VendoComposition {
   /** The same adapter, wrapped so a disconnect invalidates the toolkit cache. */
   connections: ConnectionsService;
 
+  // ── compose-channels.ts ────────────────────────────────────────────────────
+  /** What the adapter rule chose for the text channel (`selectChannels`). */
+  channels: ChannelsService;
+  /** The composed door: link/status/unlink for the host and the wire, and the
+   *  inbound runner the machine door drives. */
+  channelDoor: ChannelDoor;
+  /** The bearer Vendo Cloud presents on an inbound delivery, derived from
+   *  VENDO_API_KEY; undefined when this deployment has no Cloud key. */
+  channelInboundSecret: () => Promise<string | undefined>;
+
   // ── compose-sweep.ts ───────────────────────────────────────────────────────
   runSweep: () => Promise<void>;
   sweepEnabled: boolean;
@@ -282,6 +294,9 @@ export const createComposition = (input: CreateVendoConfig): VendoComposition =>
   Object.assign(composition, composeSweep(composition));
   Object.assign(composition, composeAutomations(composition));
   Object.assign(composition, composeConnections(composition));
+  // After the harness door it serves turns through, and after the connections
+  // lane, because the channel is another way INTO the same composed turn.
+  Object.assign(composition, composeChannels(composition));
   Object.assign(composition, composeMcp(composition));
   // LAST, and it has to be: `deployment_boot` names the adapters this
   // deployment RUNS, and the connections adapter is not selected until

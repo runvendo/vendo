@@ -20,6 +20,7 @@ import { appRoutes } from "./wire/apps.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { boxRoutes, fnProxyRoutes, servedProxyRoutes } from "./wire/box.js";
+import { channelRoutes } from "./wire/channels.js";
 import { connectionRoutes } from "./wire/connections.js";
 import { createContextResolver } from "./wire/context.js";
 import { doctorBaseUrlRoutes, doctorRoutes } from "./wire/doctor.js";
@@ -47,7 +48,7 @@ import { threadRoutes } from "./wire/threads.js";
 
 // 09-vendo §2 — the composition's own type surface, re-exported from the entry
 // every importer already names it through.
-export type { CreateVendoConfig, Vendo } from "./types.js";
+export type { CreateVendoConfig, TextChannelApi, Vendo, VendoChannels } from "./types.js";
 
 // Architecture §3 — the harness runtime and the default thinker. `vendo()` is
 // composed HERE (not by the host) when `harness:` is unset (compose-harness.ts);
@@ -116,6 +117,17 @@ export {
   type CloudConnectionsOptions,
   type ConnectionsService,
 } from "./connections.js";
+
+// The shipped channel adapters ride the same surface, for the same reason: a
+// host can pass one explicitly the day it brings its own messaging account.
+export {
+  cloudTextChannel,
+  unconfiguredChannels,
+  type ChannelsService,
+  type CloudTextChannelOptions,
+  type InboundTextEvent,
+  type TextChannelRegistration,
+} from "./channels.js";
 
 // The Cloud sandbox adapter rides the server surface like the connections
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
@@ -263,6 +275,9 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   ...threadRoutes,
   ...approvalRoutes,
   ...connectionRoutes,
+  // The text channel: the link surface a person opens, Vendo Cloud's inbound
+  // machine door, and the API-only status/unlink pair.
+  ...channelRoutes,
   ...grantRoutes,
   ...orgsRoutes,
   // The whole /apps surface goes with app generation: with `apps: false` there
