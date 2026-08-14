@@ -36,6 +36,10 @@
     "./postgres": {
       "types": "./dist/postgres.d.ts",
       "default": "./dist/postgres.js"
+    },
+    "./test-util": {
+      "types": "./dist/hosted-store.test-util.d.ts",
+      "default": "./dist/hosted-store.test-util.js"
     }
   },
   "files": [

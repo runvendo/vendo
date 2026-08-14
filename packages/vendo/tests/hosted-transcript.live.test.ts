@@ -15,10 +15,9 @@
  * the end, and every id is per-run unique so two runs never collide.
  */
 import { VendoError, type Principal } from "@vendoai/core";
-import { harnessStateStore, threadMessageStore } from "@vendoai/store";
+import { harnessStateStore, hostedStore, threadMessageStore, type HostedStore } from "@vendoai/store";
 import type { UIMessage } from "ai";
 import { afterAll, describe, expect, it } from "vitest";
-import { hostedStore, type HostedStore } from "../src/hosted-store.js";
 
 // A named secret can EXIST and be empty (`infisical secrets get` exits 0 either
 // way), so the gate checks for content rather than for presence.

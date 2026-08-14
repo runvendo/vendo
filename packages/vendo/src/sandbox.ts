@@ -1,7 +1,5 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { log, VendoError } from "@vendoai/core";
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
-import { raiseCloudError } from "./cloud-console.js";
+import { deploymentIdentityHeaders, log, raiseCloudError, VendoError } from "@vendoai/core";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
 import {
   CLOUD_BOX_PORT,

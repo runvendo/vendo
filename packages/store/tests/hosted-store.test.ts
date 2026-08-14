@@ -29,7 +29,7 @@ import {
   type StoreAdapter,
 } from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
-import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
+import { createStore, secretStore, storeSecrets, type VendoStore } from "../src/index.js";
 import { hostedStore, hostedStoreOps, type HostedStore } from "../src/hosted-store.js";
 import { fakeConsole } from "../src/hosted-store.test-util.js";
 
@@ -1165,7 +1165,9 @@ describe("hostedStoreOps — the 35-op wire client", () => {
   });
 
   it("surfaces an unsupported op cleanly, naming it — never a silent fallback", async () => {
-    const notImplemented = (body: BodyInit | null) => hostedStoreOps({
+    // `Response`'s own body parameter rather than DOM's `BodyInit`: this
+    // package compiles against ES2022 + @types/node, with no DOM lib.
+    const notImplemented = (body: ConstructorParameters<typeof Response>[0]) => hostedStoreOps({
       apiKey: "vnd_secret",
       baseUrl: "https://cloud.test",
       fetch: (async () => new Response(body, {

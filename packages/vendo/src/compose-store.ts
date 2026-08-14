@@ -8,13 +8,15 @@ import type { FilesAdapter, StoreOps } from "@vendoai/core";
 import {
   createStore,
   createStoreOps,
+  hostedStore,
   maybeDbFor,
   storeFiles,
   threadMessageStore,
+  type HostedStore,
   type VendoStore,
 } from "@vendoai/store";
 import { cloudKeyOptions } from "./compose-selection.js";
-import { hostedStore, type HostedStore } from "./hosted-store.js";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { environment } from "./wire/shared.js";
 
 /** Per-process latch for the hosted-store automations notice below — a dev
@@ -127,7 +129,10 @@ export function selectStore(
   const selected = ((): VendoStore => {
     if (configured !== undefined) return configured;
     const cloud = cloudKeyOptions();
-    if (cloud !== undefined) return hostedStore(cloud);
+    // The kept-alive pool is the umbrella's to supply: it reaches undici, so it
+    // cannot live in @vendoai/store, which @vendoai/agents composes on an edge
+    // target too. A host passing its own `fetch` still wins (adapter rule).
+    if (cloud !== undefined) return hostedStore({ ...cloud, fetch: keepAliveFetch });
     const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
     return createStore(encryptionKey === undefined
       ? { allowUnencryptedSecrets: environment("NODE_ENV") !== "production" }

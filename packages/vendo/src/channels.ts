@@ -1,5 +1,4 @@
-import { VendoError, defaultFetch, type Principal } from "@vendoai/core";
-import { consoleSender, raiseCloudError } from "./cloud-console.js";
+import { consoleSender, defaultFetch, raiseCloudError, VendoError, type Principal } from "@vendoai/core";
 import { hex } from "./wire/shared.js";
 
 /** The TEXT CHANNEL seam: a deployment's users reach the agent over

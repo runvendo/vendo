@@ -25,7 +25,7 @@ import { createGuard, isGuardInstance, permissionsHandler, type GuardRules, type
 import { provideHarnessAdapters, vendo } from "@vendoai/harnesses";
 import { vendoModel } from "@vendoai/harnesses/inference";
 import { resolveDevCredential } from "@vendoai/harnesses/inference/credential";
-import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
+import { createStore, hostedStore, storeFiles, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { startRun, type AgentRun, type RunOptions } from "./away.js";
@@ -159,11 +159,8 @@ export const agentComposition = (agent: VendoAgent): AgentComposition | undefine
  * The Cloud rungs. Their concrete shapes ship with the Cloud wiring, so this
  * package holds only the seam: an interface that returns a store/adapter.
  * `createVendo` (or the host) fills it; unfilled, the rung is a clear error.
- * The store rung waits on `threadStore`, which still opens with `dbFor` —
- * every session and away-run routes through it (#1259).
  */
 export interface CloudAdapters {
-  store?: (key: { apiKey: string; baseUrl?: string }) => VendoStore;
   sandbox?: (key: { apiKey: string; baseUrl?: string }) => SandboxAdapter;
 }
 let cloudAdapters: CloudAdapters = {};
@@ -228,18 +225,7 @@ export function e2b(options: E2bOptions = {}): SandboxAdapter {
 
 const defaultStore = (): VendoStore => {
   const key = cloudKey();
-  if (key !== undefined) {
-    if (cloudAdapters.store === undefined) {
-      throw new VendoError(
-        "not-implemented",
-        "A VENDO_API_KEY is set but this build has no Cloud store rung wired (tenant-store access is "
-        + "under redesign). Pass `store: postgres(url)` explicitly, importing `postgres` from "
-        + "`@vendoai/agents` — or unset the key for the embedded store.",
-      );
-    }
-    return cloudAdapters.store(key);
-  }
-  return createStore();
+  return key === undefined ? createStore() : hostedStore(key);
 };
 
 /** The ladder itself lives in @vendoai/apps (`selectSandbox`) — ONE

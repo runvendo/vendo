@@ -11,5 +11,8 @@
     "sourceMap": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test-util.ts"]
+  // hosted-store.test-util.ts is NOT excluded: it is the published `./test-util`
+  // subpath — the ONE fake console every consumer of the hosted store drives it
+  // through, so a second copy cannot drift from this one.
+  "exclude": ["src/**/*.test.ts", "src/fixtures.test-util.ts", "src/backends.test-util.ts"]
 }

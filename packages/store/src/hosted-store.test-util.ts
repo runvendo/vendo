@@ -322,7 +322,9 @@ export function fakeConsole() {
     return miss();
   };
 
-  const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  // `fetch`'s own first parameter rather than DOM's `RequestInfo`: this package
+  // compiles against ES2022 + @types/node, with no DOM lib.
+  const handler = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
     const url = new URL(request.url);
     const recorded = await record(request);

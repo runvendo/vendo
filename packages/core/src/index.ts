@@ -8,7 +8,13 @@ export * from "./app-document.js";
 export * from "./app-surfaces.js";
 export * from "./audit.js";
 export * from "./capability-miss.js";
+// The key-authed console client plumbing every Cloud adapter shares — the
+// deployment-identity headers, the wire-legal error table, and the sender.
+// `keepAliveFetch` deliberately stays in @vendoai/vendo: it reaches undici, and
+// core is bundled for browser and edge targets (portability-gate.mjs).
+export * from "./cloud-console.js";
 export * from "./cloud-standing.js";
+export * from "./deployment-identity.js";
 export * from "./descriptor-hash.js";
 export * from "./errors.js";
 export * from "./formats.js";
@@ -49,6 +55,7 @@ export * from "./stream-parts.js";
 export * from "./tool-envelopes.js";
 export * from "./tools.js";
 export * from "./url.js";
+export * from "./version.js";
 export * from "./genui/tree-node.js";
 export * from "./filesystem.js";
 export * from "./triggers.js";

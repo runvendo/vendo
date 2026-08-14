@@ -8,9 +8,10 @@
  */
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import { inMemoryBoxFiles } from "@vendoai/apps/testing";
-import { agent } from "@vendoai/agents";
+import { agent, agentComposition } from "@vendoai/agents";
+import type { Principal } from "@vendoai/core";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, threadStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -45,6 +46,9 @@ const noKeys = (): void => {
 };
 
 const boxy = () => defineHarness({ name: "boxy", requires: { sandbox: true }, async *run() {} });
+const inert = () => defineHarness({ name: "inert", async *run() {} });
+
+const seamUser: Principal = { kind: "user", subject: "user_seam" };
 
 const fakeSandbox = (): SandboxAdapter & { created: unknown[] } => {
   const created: unknown[] = [];
@@ -209,13 +213,35 @@ describe("the umbrella fills the agent's unset Cloud slots, and only those", () 
     expect(sandbox.created).toHaveLength(1);
   });
 
-  it("leaves the store's Cloud rung unfilled — it fails loudly instead of composing a store its sessions cannot use", async () => {
+  it("composes the hosted store from a VENDO_API_KEY alone", async () => {
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("VENDO_API_KEY", "vk_seam");
-    // The tenant-store shape is under redesign (2026-08-04 hold); until it
-    // lands, an unset `store:` with a key must say so, not silently pick the
-    // HTTP hosted store, which serves neither transcript nor workspace.
-    expect(() => agent({ name: "support", harness: defineHarness({ name: "inert", async *run() {} }) }))
-      .toThrow(/Cloud store rung/);
+    vi.stubEnv("VENDO_CLOUD_URL", "https://console.seam.test");
+    const fetchSpy = vi.fn(async () => Response.json({ record: null }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    // No `store:` anywhere, and the proof is a real conversation read going out
+    // over the console wire — not that a slot is non-empty.
+    const support = agent({ name: "support", harness: inert() });
+    const composed = agentComposition(support);
+    expect(await threadStore(composed!.store).get(seamUser, "thr_seam")).toBeNull();
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://console.seam.test/api/v1/store/transcripts/getThread");
+    expect((init.headers as Record<string, string>)["authorization"]).toBe("Bearer vk_seam");
+  });
+
+  it("lets an explicitly passed store win over the key", async () => {
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("VENDO_API_KEY", "vk_seam");
+    const fetchSpy = vi.fn(async () => Response.json({ record: null }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const store = await tempStore();
+
+    const support = agent({ name: "support", harness: inert(), store });
+    // Written through the composition's store, read back through the host's own
+    // handle: the same rows, and the console never heard about it.
+    await threadStore(agentComposition(support)!.store).put(seamUser, { id: "thr_byo", messages: [] });
+    expect(await threadStore(store).get(seamUser, "thr_byo")).not.toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

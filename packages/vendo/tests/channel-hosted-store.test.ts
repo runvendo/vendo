@@ -1,8 +1,8 @@
 import type { ApprovalId } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { ChannelAskRepository, ChannelEventLog, ChannelLinkRepository } from "../src/channel-links.js";
-import { hostedStore } from "../src/hosted-store.js";
-import { fakeConsole } from "../src/hosted-store.test-util.js";
+import { hostedStore } from "@vendoai/store";
+import { fakeConsole } from "@vendoai/store/test-util";
 
 /**
  * The channel's rows against the HOSTED door — the seam that actually ships.

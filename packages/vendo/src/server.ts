@@ -161,7 +161,7 @@ export {
 // The hosted-store adapter rides the server surface like the other Cloud
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
-export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
+export { hostedStore, hostedStoreOps, type HostedStore, type HostedStoreOptions } from "@vendoai/store";
 
 // The composition merge, for anyone re-expressing a `ToolRegistry` as the
 // `tools:` entries createVendo takes.
@@ -201,13 +201,6 @@ export { guard, createGuard, type GuardRules, type VendoGuard } from "@vendoai/g
 // IMPORT time, not at compose: `agent()` resolves its own slots at
 // CONSTRUCTION, which is before createVendo ever runs. Pure closure
 // assignment, no I/O — safe at module scope under workerd (portability gate).
-//
-// The store rung stays unfilled for one reason: `threadStore` still opens with
-// `dbFor`, which knows only handles @vendoai/store minted, and every session
-// and away-run routes through it — so filling this rung would move the failure
-// from boot to the developer's first turn. (createVendo is clear of it: its
-// own thread lifecycle rides `records`.) A VENDO_API_KEY-only `agent()`
-// therefore fails loudly, naming `store: postgres(url)`. Tracked in #1259.
 provideCloudAdapters({ sandbox: cloudSandbox });
 
 function isJsonRequest(request: Request): boolean {

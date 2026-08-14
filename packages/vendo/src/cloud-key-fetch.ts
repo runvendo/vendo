@@ -3,9 +3,7 @@
  *  state on top — Node-only concerns that used to ride into Worker bundles
  *  whenever runtime code borrowed it. Keep this module free of node builtins
  *  and CLI imports; the portability gate bundles it. */
-import { defaultFetch } from "@vendoai/core";
-
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { defaultFetch, deploymentIdentityHeaders } from "@vendoai/core";
 import { VERSION } from "./wire/shared.js";
 
 const DEFAULT_CLOUD_URL = "https://console.vendo.run";

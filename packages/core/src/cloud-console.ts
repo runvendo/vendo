@@ -1,4 +1,5 @@
-import { VendoError, cloudStandingError, type VendoErrorCode } from "@vendoai/core";
+import { cloudStandingError } from "./cloud-standing.js";
+import { VendoError, type VendoErrorCode } from "./errors.js";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** Console-client plumbing shared by the Cloud adapters (cloudSandbox,

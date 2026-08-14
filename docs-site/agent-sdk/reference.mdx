@@ -31,7 +31,7 @@ export function agent(config: AgentConfig): VendoAgent;
 | `guard` | `VendoGuard \| GuardRules` | a built guard wins verbatim; rules are completed with this composition's store. Unset → `createGuard({ store })` |
 | `skills` | `readonly string[]` | skill folders, boot-loaded and mounted read-only at `/host/skills` |
 | `egress` | `EgressConfig` | outbound allowlist for the box; unset = the harness's minimum |
-| `store` | `VendoStore` | unset alone → embedded. `createVendo` fills it from `VENDO_API_KEY` (the Cloud hosted store), but `agent()`'s own store rung is not wired yet ([#1259](https://github.com/runvendo/vendo/issues/1259)), so here unset + a key is a boot error naming `postgres(url)` |
+| `store` | `VendoStore` | unset alone → embedded. Unset + `VENDO_API_KEY` → the Cloud hosted store, for `agent()` as for `createVendo`. An explicit `store` always wins |
 | `sandbox` | `SandboxAdapter` | `e2b()`, or unset + `VENDO_API_KEY` → the Cloud pool. Required by a harness declaring `requires.sandbox` |
 | `door` | `DoorConfig` | where a thinker running outside this process dials back for tools; unset → `VENDO_BASE_URL` |
 | `instructions` | `string` | the host's prompt block |

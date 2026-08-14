@@ -1,8 +1,8 @@
 import {
   defaultFetch,
+  deploymentIdentityHeaders,
   VendoError,
 } from "@vendoai/core";
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** The Cloud hosted-config client — the read half of the config-resolution seam
  * (cse lane 3). The composition seam (selectConfigSurface in server.ts) consults

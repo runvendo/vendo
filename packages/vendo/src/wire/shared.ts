@@ -26,7 +26,9 @@ import type { ConnectionsService } from "../connections.js";
     shares. The per-request RunContext resolution lives in wire/context.ts;
     server.ts assembles the table from the per-area modules under src/wire/. */
 
-export const VERSION = "0.18.0";
+/** Re-exported, not redeclared: the one version literal lives in
+    @vendoai/core, beside the deployment-identity headers that stamp it. */
+export { VERSION } from "@vendoai/core";
 export const BASE_PATH = "/api/vendo";
 
 /** Re-exported, not redeclared: the venue tag is what the ONE sandbox ladder

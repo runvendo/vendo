@@ -19,7 +19,7 @@ import type { SandboxAdapter } from "@vendoai/apps";
 import type { Connector } from "@vendoai/actions";
 import type { ConnectionsService } from "../src/connections.js";
 import { VERSION as WIRE_VERSION } from "../src/wire/shared.js";
-import { appStore, createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
+import { appStore, createStore, hostedStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { LanguageModel } from "ai";
@@ -27,8 +27,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 // authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
 // "./server.js" — corpus-triage Task 9.
 import { authJs } from "../src/auth-presets/auth-js.js";
-import { hostedStore } from "../src/hosted-store.js";
-import { fakeConsole } from "../src/hosted-store.test-util.js";
+import { fakeConsole } from "@vendoai/store/test-util";
 import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "../src/server.js";
 
 const cleanups: Array<() => Promise<void>> = [];

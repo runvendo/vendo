@@ -1,14 +1,16 @@
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
-import type { AuditEvent, ToolRegistry } from "@vendoai/core";
+import type { AuditEvent, Principal, ToolRegistry } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
-import { createStore } from "@vendoai/store";
+import { createStore, threadStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { agent, e2b, postgres, provideCloudAdapters, withDefaultTemplate } from "../src/agent.js";
+import { agent, agentComposition, e2b, postgres, provideCloudAdapters, withDefaultTemplate } from "../src/agent.js";
 import { tool } from "../src/tools.js";
 
 let stores = 0;
 const memoryStore = () => createStore({ dataDir: `memory://agents-test-${stores++}` });
+
+const user: Principal = { kind: "user", subject: "user_1" };
 
 const inert = () =>
   defineHarness({
@@ -73,7 +75,8 @@ const fakeGuard = (): VendoGuard & { reports: AuditEvent[]; bound: ToolRegistry[
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  provideCloudAdapters({ store: undefined, sandbox: undefined });
+  vi.unstubAllGlobals();
+  provideCloudAdapters({ sandbox: undefined });
 });
 
 describe("agent() boot", () => {
@@ -154,17 +157,25 @@ describe("the sandbox ladder", () => {
 });
 
 describe("the store ladder", () => {
-  it("a VENDO_API_KEY with no Cloud store rung wired is a clear error, not a silent fallback", () => {
+  it("a key alone composes a HostedStore, and its conversations really go to Cloud", async () => {
     vi.stubEnv("VENDO_API_KEY", "vk_test");
-    expect(() => agent({ name: "support", harness: inert(), guard: fakeGuard() }))
-      .toThrow(/Cloud store rung/);
+    vi.stubEnv("VENDO_CLOUD_URL", "https://console.test");
+    const fetchSpy = vi.fn(async () => Response.json({ record: null }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const composed = agentComposition(agent({ name: "support", harness: inert(), guard: fakeGuard() }));
+
+    // Not "a slot is filled" — a real thread read, over the real wire client.
+    expect(await threadStore(composed!.store).get(user, "thr_cloud")).toBeNull();
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://console.test/api/v1/store/transcripts/getThread");
+    expect((init.headers as Record<string, string>)["authorization"]).toBe("Bearer vk_test");
   });
 
-  it("the Cloud rung is an interface that returns a store", () => {
+  it("an explicitly passed store wins over the key", () => {
     vi.stubEnv("VENDO_API_KEY", "vk_test");
     const store = memoryStore();
-    provideCloudAdapters({ store: () => store });
-    expect(() => agent({ name: "support", harness: inert(), guard: fakeGuard() })).not.toThrow();
+    const composed = agentComposition(agent({ name: "support", harness: inert(), guard: fakeGuard(), store }));
+    expect(composed?.store).toBe(store);
   });
 });
 

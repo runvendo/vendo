@@ -1,14 +1,15 @@
 import {
   type AppDocument,
   type AppId,
+  consoleSender,
   defaultFetch,
+  raiseCloudError,
 } from "@vendoai/core";
 import {
   publishRecordSchema,
   shareSnapshotSchema,
   type CloudAppsClient,
 } from "@vendoai/apps";
-import { consoleSender, raiseCloudError } from "./cloud-console.js";
 
 /** The Cloud share/publish client — the implementation the composition seam
  * (createVendo) injects into the apps block's CloudAppsClient seam when

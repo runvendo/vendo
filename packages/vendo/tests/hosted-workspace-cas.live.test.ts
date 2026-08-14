@@ -26,9 +26,8 @@
  * Gated on `VENDO_API_KEY` like every other `.live.test.ts`.
  */
 import type { Membership, Principal } from "@vendoai/core";
-import { workspaceStore } from "@vendoai/store";
+import { hostedStore, workspaceStore, type HostedStore } from "@vendoai/store";
 import { afterAll, describe, expect, it } from "vitest";
-import { hostedStore, type HostedStore } from "../src/hosted-store.js";
 
 const apiKey = process.env["VENDO_API_KEY"] ?? "";
 const live = apiKey === "" ? describe.skip : describe;

@@ -81,11 +81,9 @@ npx vendo login
 ```
 
 Mints a `VENDO_API_KEY` into `.env.local` — never printed. It fills the
-model seat (through the Cloud gateway) and the sandbox, and for `createVendo`
-the store too — the Cloud hosted store. Standalone `agent()` is the exception:
-its store rung is not wired yet
-([#1259](https://github.com/runvendo/vendo/issues/1259)), so until it lands you
-pass `store: postgres(url)` yourself — a key-only `agent()` refuses to boot.
+model seat (through the Cloud gateway), the sandbox, and the store — the Cloud
+hosted store — for standalone `agent()` and `createVendo` alike. Pass
+`store: postgres(url)` and yours wins instead.
 
 ### No Vendo key — bring your own {#bring-your-own}
 

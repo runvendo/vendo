@@ -65,12 +65,6 @@ describe("the symbols a boot error names", () => {
       .toThrow(/import `e2b` from `@vendoai\/agents`/);
   });
 
-  it("says where postgres lives, on the store error", () => {
-    vi.stubEnv("VENDO_API_KEY", "vk_test");
-    expect(() => agent({ name: "support" }))
-      .toThrow(/importing `postgres` from `@vendoai\/agents`/);
-  });
-
   // The paths above are only true because this package exports them.
   it("exports the symbols it points at", () => {
     expect(typeof e2b).toBe("function");

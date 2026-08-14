@@ -10,7 +10,7 @@
  * request down. The console truncates and fails open on its side
  * (parseDeploymentHeaders), so sending is always safe. */
 
-import { VERSION } from "./wire/shared.js";
+import { VERSION } from "./version.js";
 
 type RuntimeProcess = {
   getBuiltinModule?: (id: string) => unknown;

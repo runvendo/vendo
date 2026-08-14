@@ -1,5 +1,6 @@
 import {
   METER_EXHAUSTED_CODE,
+  deploymentIdentityHeaders,
   formatMeterExhausted,
   parseMeterExhausted,
 } from "@vendoai/core";
@@ -9,7 +10,6 @@ import {
   writeCloudSession,
   type CloudSession,
 } from "./session.js";
-import { deploymentIdentityHeaders } from "../../deployment-identity.js";
 import { CLI_VERSION } from "../shared.js";
 
 export function isVendoKey(key: string): boolean {

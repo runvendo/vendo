@@ -5,10 +5,9 @@ import {
   type AppId,
   type RunContext,
 } from "@vendoai/core";
-import { appAccess } from "@vendoai/store";
+import { appAccess, hostedStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
-import { hostedStore } from "../src/hosted-store.js";
-import { fakeConsole } from "../src/hosted-store.test-util.js";
+import { fakeConsole } from "@vendoai/store/test-util";
 
 /**
  * Build contract §9.2 — the principal grammar belongs to the DOOR.

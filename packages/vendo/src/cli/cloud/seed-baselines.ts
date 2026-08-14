@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { seedBaselineSchema, type SeedBaseline } from "@vendoai/apps";
 import type { Json } from "@vendoai/core";
-import { hostedStore } from "../../hosted-store.js";
+import { hostedStore } from "@vendoai/store";
 
 /**
  * Push the pin baselines `vendo sync` captured to Vendo Cloud, so the console's

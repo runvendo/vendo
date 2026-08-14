@@ -1,7 +1,10 @@
 import {
   type BlobStore,
   cloudStandingError,
+  consoleSender,
+  defaultFetch,
   parseStoreWireError,
+  raiseCloudError,
   type RecordInput,
   type RecordQuery,
   type RecordStore,
@@ -14,15 +17,9 @@ import {
   type VendoRecord,
   vendoRecordSchema,
 } from "@vendoai/core";
-import {
-  DEDICATED_RECORD_COLLECTIONS,
-  RESERVED_COLLECTIONS,
-  type EraseReport,
-  type VendoStore,
-} from "@vendoai/store";
-import { consoleSender, raiseCloudError } from "./cloud-console.js";
-import { keepAliveFetch } from "./keep-alive-fetch.js";
-import { environment } from "./wire/shared.js";
+import type { EraseReport } from "./erase.js";
+import { DEDICATED_RECORD_COLLECTIONS, RESERVED_COLLECTIONS } from "./routing.js";
+import type { VendoStore } from "./store.js";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
@@ -136,7 +133,7 @@ const appScope = (scope: string): { appId: string; collection: string } | undefi
 export function hostedStore(options: HostedStoreOptions): HostedStore {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetch ?? keepAliveFetch;
+  const fetchImpl = options.fetch ?? defaultFetch;
 
   const send = consoleSender({
     base,
@@ -290,7 +287,8 @@ type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
  * Read ONCE at import, like the skew latch below: a debug switch belongs to the
  * process, so the adapter itself still reads nothing at construction or on any
  * call, and unset there is no wrapper to pay for. */
-const TRACE = environment("VENDO_STORE_TRACE") !== undefined;
+const TRACE = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+  .process?.env?.VENDO_STORE_TRACE !== undefined;
 
 /** The `outcome=` field of a FAILED call's trace line. Failures are the tail of
  * the latency distribution, not an afterthought: an exhausted 30s budget is the
@@ -385,7 +383,7 @@ function storeWireClient(
     mountPath: CONSOLE_STORE_PATH,
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    fetchImpl: options.fetch ?? keepAliveFetch,
+    fetchImpl: options.fetch ?? defaultFetch,
     raise,
   });
 

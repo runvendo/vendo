@@ -30,7 +30,7 @@ export {
 export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
 export { backfillAppRefKey, type AppRefKeyBackfillReport } from "./backfill-app-data.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
-// (the umbrella's hostedStore) can mirror this engine's per-collection
+// (`hostedStore` below) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic
 // collections and vendo_threads — without re-deriving the routing table.
 export {
@@ -71,3 +71,7 @@ export {
 } from "./workspace.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 export { harnessStateStore } from "./harness-state.js";
+// The Cloud store: the same StoreAdapter and the same 35 ops, over the console
+// wire instead of a local Postgres. It lives HERE so every helper above can be
+// served by it without the caller reaching for the umbrella.
+export { hostedStore, hostedStoreOps, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";

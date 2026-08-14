@@ -10,12 +10,11 @@ import {
   type Principal,
 } from "@vendoai/core";
 import { triggerKey } from "@vendoai/automations";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, hostedStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
-import { hostedStore } from "../src/hosted-store.js";
-import { fakeConsole } from "../src/hosted-store.test-util.js";
+import { fakeConsole } from "@vendoai/store/test-util";
 
 /**
  * wave 2 (Cloud auto): a keyed deployment runs schedule- and external-triggered

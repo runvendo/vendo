@@ -1,5 +1,4 @@
-import { defaultFetch, type SecretsProvider } from "@vendoai/core";
-import { consoleSender, raiseCloudError } from "./cloud-console.js";
+import { consoleSender, defaultFetch, raiseCloudError, type SecretsProvider } from "@vendoai/core";
 
 /** The Cloud secrets provider — the implementation the composition seam
  * (selectSecrets in server.ts) chains BEHIND envSecrets when VENDO_API_KEY

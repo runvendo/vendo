@@ -1,6 +1,8 @@
-import { VendoError, type Json, type Principal, type ThreadId } from "@vendoai/core";
+import { VendoError, type Json, type Principal, type StoreOps, type ThreadId, type VendoRecord } from "@vendoai/core";
+import type { Db } from "../db-postgres.js";
 import { harnessStateKey } from "../harness-state.js";
-import { dbFor, type VendoStore } from "../store.js";
+import type { VendoStore } from "../store.js";
+import { backendOf } from "./backend.js";
 import type { ThreadRow } from "./types.js";
 import { putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./rows.js";
 import { iso, text } from "./utils.js";
@@ -17,16 +19,113 @@ export interface AskUserAnswer {
   answer: Json;
 }
 
-/** 02-store §3 */
-export function threadStore(store: VendoStore): {
+/** 02-store §3 — the surface, whichever backend serves it. */
+export interface ThreadStore {
   put(principal: Principal, thread: { id: ThreadId; messages: Json[] }): Promise<ThreadRow>;
   get(principal: Principal, id: ThreadId): Promise<ThreadRow | null>;
   list(principal: Principal): Promise<Array<{ id: ThreadId; createdAt: string; updatedAt: string }>>;
   delete(principal: Principal, id: ThreadId): Promise<void>;
   /** Record an `ask_user` answer into the answerer's OWN thread. */
   recordAnswer(principal: Principal, answer: AskUserAnswer): Promise<void>;
-} {
-  const db = dbFor(store);
+}
+
+/** 02-store §3 */
+export function threadStore(store: VendoStore): ThreadStore {
+  const backend = backendOf(store, "conversations (02-store §3)");
+  return backend.kind === "ops" ? overOps(backend.ops) : overSql(backend.db);
+}
+
+/** The inverse of `threadRecord` (routing.ts): the wire's transcript record,
+ *  read back as the row every caller of this helper already speaks. */
+function threadFromRecord(record: VendoRecord): ThreadRow {
+  const data = record.data as { subject?: unknown; messages?: unknown; title?: unknown };
+  return {
+    id: record.id,
+    subject: text(data.subject),
+    messages: Array.isArray(data.messages) ? data.messages as Json[] : [],
+    ...(typeof data.title === "string" ? { title: data.title } : {}),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ...(record.revision === undefined ? {} : { revision: record.revision }),
+  };
+}
+
+/**
+ * The hosted half: conversations ride `vendo/store-wire@1`'s transcripts
+ * family, verb for verb — which is what lets a key-only deployment hold one.
+ *
+ * Three honest differences from the SQL half:
+ * - **Ownership is read-then-write**, not one statement. The TOCTOU window that
+ *   opens is between two writes by the same subject to a thread whose owner
+ *   would have to change mid-call, which the store has no verb for. (`put` is
+ *   the exception: it sends the subject, and the service's own guarded upsert
+ *   refuses a cross-subject flip atomically, exactly as SQL does.)
+ * - **`list` is ordered by the wire's cursor column** rather than by
+ *   `updated_at DESC`. It is still every thread: the pages are walked to
+ *   exhaustion, because the returned array is the caller's only handle.
+ * - **An answer carries its question id in its payload.** The wire derives the
+ *   answer's row id from the answer itself, so `questionId` rides along as
+ *   `id` — which is what keeps `ans_<questionId>` the row id here too, and with
+ *   it the loud refusal of a reused question id.
+ */
+function overOps(ops: StoreOps): ThreadStore {
+  /** The thread record is the ownership record on the wire exactly as the
+   *  `vendo_threads` row is in SQL: `data.subject` is the same field the join
+   *  reads. A foreign or absent thread yields nothing, so reads answer empty
+   *  and writes refuse — mirroring the local empty-read. */
+  const owned = async (principal: Principal, id: ThreadId): Promise<VendoRecord | undefined> => {
+    const record = await ops.transcripts.getThread(id);
+    if (record === null) return undefined;
+    return (record.data as { subject?: unknown }).subject === principal.subject ? record : undefined;
+  };
+
+  return {
+    async put(principal, thread) {
+      const parsed = parseThreadData({ subject: principal.subject, messages: thread.messages }, thread.id);
+      return threadFromRecord(await ops.transcripts.putThread({ id: thread.id, ...parsed }));
+    },
+    async get(principal, id) {
+      const record = await owned(principal, id);
+      return record === undefined ? null : threadFromRecord(record);
+    },
+    async list(principal) {
+      // `ThreadStore.list` hands back a complete array — it has no cursor of its
+      // own — so the service's pages are followed here. A service that repeats a
+      // cursor ends the walk rather than spinning (byo-approvals' `listAll`).
+      const records: VendoRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await ops.transcripts.listThreads({
+          subject: principal.subject,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        records.push(...page.records);
+        if (page.cursor === undefined || page.cursor === cursor) break;
+        cursor = page.cursor;
+      } while (cursor !== undefined);
+      return records.map((record) => ({
+        id: record.id,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      }));
+    },
+    async delete(principal, id) {
+      // The service cascades (thread + messages + harness state) exactly as the
+      // SQL transaction below does; a foreign principal sweeps nothing.
+      if (await owned(principal, id) === undefined) return;
+      await ops.transcripts.deleteThread(id);
+    },
+    async recordAnswer(principal, { threadId, questionId, answer }) {
+      if (await owned(principal, threadId) === undefined) {
+        throw new VendoError("conflict", `thread ${threadId} does not belong to this subject`);
+      }
+      await ops.transcripts.recordAnswer(threadId, { id: questionId, answer });
+    },
+  };
+}
+
+/** The SQL half: the statements are the enforcement. */
+function overSql(db: Db): ThreadStore {
   return {
     async put(principal, thread) {
       const parsed = parseThreadData({ subject: principal.subject, messages: thread.messages }, thread.id);

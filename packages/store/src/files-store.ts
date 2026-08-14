@@ -22,7 +22,18 @@ export const WORKSPACE_BLOB_NAMESPACE = "workspace";
  * the fix rather than silently succeeding until Postgres complains.
  */
 export function storeFiles(store: VendoStore): FilesAdapter {
-  return storeFilesForDb(dbFor(store));
+  // The Db handle is bound LAZILY, on the first call. Every composition builds
+  // this adapter for whatever store it composed — a hosted one included, where
+  // `dbFor` has no handle to give and throws. A hosted deployment's blobs ride
+  // the wire instead, so it never reaches these methods; binding eagerly turned
+  // that into a boot failure.
+  let bound: FilesAdapter | undefined;
+  const local = (): FilesAdapter => (bound ??= storeFilesForDb(dbFor(store)));
+  return {
+    put: (key, bytes, meta) => local().put(key, bytes, meta),
+    get: (key) => local().get(key),
+    delete: (key) => local().delete(key),
+  };
 }
 
 /** The same adapter bound to an explicit Db handle — ops.ts hands it the
