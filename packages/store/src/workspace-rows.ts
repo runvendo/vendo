@@ -471,16 +471,20 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     /** The batch is a LOOP here, deliberately: these statements are already on
         the database's own connection, so there is no round trip to save, and
         each path keeps the per-path compare-and-swap (and the re-aim loop the
-        /user mounts depend on) exactly as `land` gives it. */
+        /user mounts depend on) exactly as `land` gives it.
+
+        The two passes are ordered, and that order is the safety property: the
+        writes go first, and a single lost swap cancels every TOMBSTONE in the
+        batch. A delete that landed ahead of the conflict would be silent data
+        loss — the caller is told `conflict`, re-reads, retries, and the file it
+        never got to keep is already gone (a delete has no CAS of its own to
+        refuse it, and history's copy is not what the caller asked for). */
     async commitAll(owner, entries, intent) {
       const conflicts: string[] = [];
       const landed: CommitAllResult["landed"] = [];
       const removed: string[] = [];
       for (const entry of entries) {
-        if ("delete" in entry) {
-          if (await removeRow(owner, entry.path, intent)) removed.push(entry.path);
-          continue;
-        }
+        if ("delete" in entry) continue;
         const written = await landRow(owner, entry.write, {
           ...(intent === undefined ? {} : { intent }),
           ...(entry.strict ? { strict: true } : {}),
@@ -496,6 +500,11 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
           updatedAt: written.updatedAt,
           changed: written.landed,
         });
+      }
+      if (conflicts.length > 0) return { conflicts, landed, removed };
+      for (const entry of entries) {
+        if (!("delete" in entry)) continue;
+        if (await removeRow(owner, entry.path, intent)) removed.push(entry.path);
       }
       return { conflicts, landed, removed };
     },

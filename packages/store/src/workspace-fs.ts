@@ -527,31 +527,35 @@ export class WorkspaceStoreFs implements WorkspaceFs {
    * Only paths whose bytes actually changed are written (§3.5), so `changed` is
    * the honest O(files changed) count. `/user/scratch/**` never lands.
    */
+  /**
+   * Build contract §8/§9.3 — the box is born filtered, so `can()` runs at
+   * exactly two moments; this is the second. Live rows, per changed path,
+   * BEFORE anything is placed: a mid-session revoke must bite here even though
+   * the reads it already served stand.
+   */
+  private async assertCommittable(): Promise<void> {
+    if (this.mounts.canCommit === undefined) return;
+    for (const path of [...this.staged.keys(), ...this.removed]) {
+      if (!this.persists(path)) continue;
+      if (await this.mounts.canCommit(path)) continue;
+      // §9.4 — `forbidden` says "you can see this, but not change it", and the
+      // fork offer renders off exactly that. A caller who cannot even view the
+      // path gets what a path that isn't there gets, or the code itself becomes
+      // an existence oracle for every org app id.
+      if (this.mounts.canView !== undefined && !(await this.mounts.canView(path))) {
+        throw pathNotFound(path);
+      }
+      throw pathForbidden(path);
+    }
+  }
+
   async commit(opts?: { message?: string }): Promise<CommitResult> {
     // The harness commits after EVERY tool call (harnesses/runtime.ts), and
     // almost none of them touched a file. Nothing staged and nothing removed is
     // nothing to place, nothing to land and nothing to say — answer without
     // touching the store at all.
     if (this.staged.size === 0 && this.removed.size === 0) return { status: "ok", changed: [] };
-    // Build contract §8/§9.3 — the box is born filtered, so `can()` runs at
-    // exactly two moments; this is the second. Live rows, per changed path,
-    // BEFORE anything is placed: a mid-session revoke must bite here even
-    // though the reads it already served stand.
-    if (this.mounts.canCommit !== undefined) {
-      for (const path of [...this.staged.keys(), ...this.removed]) {
-        if (!this.persists(path)) continue;
-        if (!(await this.mounts.canCommit(path))) {
-          // §9.4 — `forbidden` says "you can see this, but not change it", and
-          // the fork offer renders off exactly that. A caller who cannot even
-          // view the path gets what a path that isn't there gets, or the code
-          // itself becomes an existence oracle for every org app id.
-          if (this.mounts.canView !== undefined && !(await this.mounts.canView(path))) {
-            throw pathNotFound(path);
-          }
-          throw pathForbidden(path);
-        }
-      }
-    }
+    await this.assertCommittable();
     const landing: PreparedWrite[] = [];
     for (const [path, staged] of this.staged) {
       if (!this.persists(path)) continue;
@@ -600,7 +604,6 @@ export class WorkspaceStoreFs implements WorkspaceFs {
     for (const path of [...this.removed].filter((candidate) => this.persists(candidate))) {
       entriesFor(this.ownerOf(path)!).push({ path, delete: true });
     }
-    this.removed.clear();
     for (const prepared of landing) {
       // Build contract §9.7 — commit policy is PER MOUNT: `/user` keeps the
       // last-write-wins re-aim loop, `/orgs` is strict compare-and-swap, so a
@@ -623,6 +626,12 @@ export class WorkspaceStoreFs implements WorkspaceFs {
     for (const [owner, entries] of byOwner) {
       const result = await this.rows.commitAll(owner, entries, opts?.message);
       conflicts.push(...result.conflicts);
+      // A refused commit removed nothing, so the deletions stay STAGED: the
+      // caller re-reads and re-applies the same turn, and a delete it never
+      // landed must be part of what it re-applies.
+      if (result.conflicts.length === 0) {
+        for (const entry of entries) if ("delete" in entry) this.removed.delete(entry.path);
+      }
       for (const path of result.removed) {
         this.index.delete(path);
         changed.push(path);

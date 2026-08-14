@@ -129,10 +129,6 @@ const FROZEN_REASON = "vendo is frozen — nothing runs until it is unfrozen";
  *  reuses one). A freeze flipped in another process therefore starts blocking
  *  new checks within this window, and blocks every DISPATCH immediately. */
 const FROZEN_CACHE_MS = 10_000;
-/** How long a preview pass's grant read may be handed to the real pass that
- *  follows it. The two run moments apart for one logical call; anything older
- *  is a different moment and reads the store again. */
-const PREVIEW_SHARE_MS = 10_000;
 /** Build contract §7 — the effect ledger: one row per completed mutating call,
  *  keyed by (run, tool, exact input). It is what makes fail-and-re-run correct:
  *  a re-run of a run that already sent the payment must not send it again. */
@@ -183,14 +179,6 @@ interface DecisionMetadata {
   decision: DraftDecision;
   rationale?: string;
   invalidatedGrants?: PermissionGrant[];
-}
-
-/** What the subject's standing grants say about one call: the one that
- *  authorizes it, and the same-tool grants a descriptor change has invalidated
- *  (which the park offer names). */
-interface MatchedGrant {
-  grant?: PermissionGrant;
-  invalidated: PermissionGrant[];
 }
 
 interface CompletedDecision {
@@ -509,10 +497,6 @@ class GuardImplementation implements VendoGuard {
   #lastSweepAt = 0;
   /** The last freeze answer a fresh read produced (see {@link frozen}). */
   #frozenCache: { at: number; value: boolean } | undefined;
-  /** The last preview pass's grant read, waiting for its real pass. One entry:
-   *  the caller that previews executes moments later, so a second preview means
-   *  the first one's call is gone. */
-  #previewedGrant: { key: string; at: number; matched: MatchedGrant } | undefined;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
   readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
@@ -1360,20 +1344,18 @@ class GuardImplementation implements VendoGuard {
     // after it — and the replay's single-use CAS spend still happens once,
     // because `#approvedReplay` is still called once.
     //
-    // The grant read is also the PREVIEW pass's, handed forward: a caller that
-    // previews (the harness bridge, the SDK's needsApproval hook) makes the
-    // real, dispatching call for the same (call, descriptor, ctx) moments
-    // later, and standing grants cannot have moved in between in a way this
-    // pass would act on — the approval tap that CAN move them lands on the
-    // replay, which is deliberately not shared: it must be re-read to see the
-    // fresh yes, and its single-use CAS spend happens on the real pass only.
-    const key = this.#previewKey(call, descriptor, ctx);
-    const previewed = commitRun ? this.#takePreviewedGrant(key) : undefined;
+    // Neither read is shared with the PREVIEW pass that precedes the real one,
+    // and the grant read is the reason: a grant is not a decision input the way
+    // a rule is — it IS the authority the call executes on, so reusing the
+    // preview's answer would leave a window in which a permission the person
+    // just took back still runs the tool. That is the same window the freeze
+    // re-read below `bind().execute` exists to close, and it gets the same
+    // answer: read it again. (The replay is unshared for its own reason — the
+    // single-use CAS spend belongs to the real pass.)
     const [replayable, matched] = await Promise.all([
       this.#approvedReplay(call, descriptor, ctx, commitRun),
-      previewed ?? this.#matchingGrant(call, descriptor, ctx),
+      this.#matchingGrant(call, descriptor, ctx),
     ]);
-    if (!commitRun) this.#previewedGrant = { key, at: Date.now(), matched };
 
     // An exact approved replay answers a confirmEach ask (05 §2 stays otherwise:
     // grants/rules/judge never suppress confirmEach — the grant lookup above is
@@ -1870,40 +1852,11 @@ class GuardImplementation implements VendoGuard {
     return false;
   }
 
-  /** Everything `#matchingGrant` answers off: the call, the frozen descriptor,
-   *  and the context bits `durationMatches`/`presenceMatches`/`scopeMatches`
-   *  read. A preview whose key differs is not this call. */
-  #previewKey(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): string {
-    return canonicalJson([
-      call.id,
-      call.tool,
-      exactInputHash(call.args),
-      descriptorHash(descriptor),
-      ctx.principal.subject,
-      ctx.venue,
-      ctx.presence,
-      ctx.sessionId,
-      ctx.appId ?? null,
-      ctx.trigger?.id ?? null,
-      ctx.trigger?.runId ?? null,
-    ]);
-  }
-
-  /** The preview's grant read, once — the real pass consumes it, and anything
-   *  that goes unconsumed expires rather than waiting for a caller that may
-   *  never come. */
-  #takePreviewedGrant(key: string): MatchedGrant | undefined {
-    const previewed = this.#previewedGrant;
-    this.#previewedGrant = undefined;
-    if (previewed === undefined || previewed.key !== key) return undefined;
-    return Date.now() - previewed.at < PREVIEW_SHARE_MS ? previewed.matched : undefined;
-  }
-
   async #matchingGrant(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
-  ): Promise<MatchedGrant> {
+  ): Promise<{ grant?: PermissionGrant; invalidated: PermissionGrant[] }> {
     // `tool` is an indexed column on the routed grants door — (subject, tool) —
     // so the predicate rides the query instead of paging every grant the
     // subject ever held back to filter it here. The rest of the tests below

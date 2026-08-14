@@ -1,4 +1,4 @@
-import type { PermissionGrant, VendoRecord } from "@vendoai/core";
+import type { GrantId, PermissionGrant, VendoRecord } from "@vendoai/core";
 import { descriptorHash } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
@@ -98,33 +98,32 @@ describe("grants are filtered by tool in the query, not in JavaScript", () => {
     });
   });
 
-  it("reads the grants once for a preview and the real call it precedes", async () => {
+  /** The grant is not a decision input the way a rule is — it IS the authority
+   *  the call executes on, and the preview-to-dispatch gap is exactly the
+   *  window the kill switch's own re-read comment (guard.ts, `bind().execute`)
+   *  exists to close. A permission taken back inside that window must bite
+   *  there too, so the grants are read again for the real pass. */
+  it("refuses a call whose grant was revoked between the preview and the real call", async () => {
     const sqlStore = await store();
-    await seedGrant(sqlStore, { descriptor: descriptor("write") });
+    const grant = await seedGrant(sqlStore, { descriptor: descriptor("destructive") });
     const guard = createGuard({ store: sqlStore });
-    const write = call("host_write", { invoiceId: "inv_2" }, "call_previewed");
-    const emitted = recordSql(sqlStore);
-    const grantLists = (): number =>
-      emitted.filter((sql) => sql.includes("FROM vendo_grants") && sql.includes("subject =")).length;
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const destructive = call("host_destructive", { invoiceId: "inv_2" }, "call_revoked");
 
-    // The bridge previews, then makes the REAL dispatching call moments later
-    // for the same call id — one logical call, and the standing grants behind
-    // it are read for it once.
-    await expect(guard.previewCheck!(write, descriptor("write"), context())).resolves.toMatchObject({
-      action: "run",
-      decidedBy: "grant",
-    });
-    expect(grantLists()).toBe(1);
-    await expect(guard.check(write, descriptor("write"), context())).resolves.toMatchObject({
-      action: "run",
-      decidedBy: "grant",
-    });
-    expect(grantLists()).toBe(1);
-
-    // A DIFFERENT call is not that call: it reads for itself.
+    // The SDK previews first: the standing grant answers, so nothing pauses.
     await expect(
-      guard.check(call("host_write", { invoiceId: "inv_3" }, "call_other"), descriptor("write"), context()),
+      guard.previewCheck!(destructive, descriptor("destructive"), context()),
     ).resolves.toMatchObject({ action: "run", decidedBy: "grant" });
-    expect(grantLists()).toBe(2);
+
+    // …and the person takes the permission back before the dispatch.
+    await guard.grants.revoke(grant.id as GrantId, alice);
+
+    // The real pass has to see that. Without the grant, a destructive call
+    // needs a human — it parks, and the tool never runs.
+    await expect(bound.execute(destructive, context())).resolves.toMatchObject({
+      status: "pending-approval",
+    });
+    expect(tools.executions).toHaveLength(0);
   });
 });
