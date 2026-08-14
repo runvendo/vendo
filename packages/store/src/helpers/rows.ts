@@ -154,17 +154,28 @@ export async function replaceThreadMessages(
  *  `FOR KEY SHARE OF t` its single-row sibling carries: a concurrent
  *  `deleteThread` cascade cannot slip between them and leave orphan rows.
  *
+ *  `seq` is assigned HERE, by statement 2, and never by the caller — the fix
+ *  for a real race (proven on PostgreSQL 17: 40 concurrent appends, 21 distinct
+ *  seqs). `seq` carries conversation order and has no unique constraint, so two
+ *  turns landing on the same number make the transcript fall back to ordering
+ *  by message id, which is not turn order. Any `max(seq) + 1` read taken BEFORE
+ *  the thread row is held is read by both racers under READ COMMITTED and hands
+ *  them the same answer. Statement 1 above is what serialises them: the loser
+ *  blocks there (on the row lock, or on the primary key when both are creating
+ *  the thread) until the winner COMMITs, so statement 2's subquery — a new
+ *  snapshot in READ COMMITTED — already sees the winner's rows.
+ *
  *  `seq` is NOT updated on conflict. An append names where NEW messages go; a
  *  message the thread already holds has a decided position, and moving it would
- *  reorder the conversation the next turn reads. It is also the only rule the
- *  wire half can honor — a wire body carries no seq — so both halves of
- *  `upsertMany` share this statement's semantics exactly. */
+ *  reorder the conversation the next turn reads. New rows land after the tail in
+ *  batch order, which is the only rule the wire half can honor anyway — a wire
+ *  body carries no seq — so both halves of `upsertMany` share this exactly. */
 export async function appendThreadMessages(
   db: Db,
   input: {
     threadId: string;
     subject: string;
-    messages: ReadonlyArray<{ id: string; seq: number; message: unknown }>;
+    messages: ReadonlyArray<{ id: string; message: unknown }>;
     title?: string;
   },
   now = new Date().toISOString(),
@@ -203,10 +214,12 @@ export async function appendThreadMessages(
   if (input.messages.length === 0) return { revision: String(row["revision"]), count: 0 };
   const landed = await db.query(
     `INSERT INTO vendo_thread_messages (thread_id, id, seq, message, created_at, updated_at)
-     SELECT $1, m.id, m.seq, a.elem, $5, $5
-     FROM unnest($2::text[], $3::integer[]) WITH ORDINALITY AS m(id, seq, n)
-     JOIN jsonb_array_elements($4::jsonb) WITH ORDINALITY AS a(elem, ordinality)
+     SELECT $1, m.id, tail.next + m.n - 1, a.elem, $4, $4
+     FROM unnest($2::text[]) WITH ORDINALITY AS m(id, n)
+     JOIN jsonb_array_elements($3::jsonb) WITH ORDINALITY AS a(elem, ordinality)
        ON a.ordinality = m.n
+     CROSS JOIN (SELECT COALESCE(max(seq) + 1, 0) AS next
+                 FROM vendo_thread_messages WHERE thread_id = $1) tail
      ON CONFLICT (thread_id, id) DO UPDATE
        SET message = EXCLUDED.message, updated_at = EXCLUDED.updated_at,
            revision = vendo_thread_messages.revision + 1
@@ -214,7 +227,6 @@ export async function appendThreadMessages(
     [
       input.threadId,
       input.messages.map((entry) => entry.id),
-      input.messages.map((entry) => entry.seq),
       JSON.stringify(input.messages.map((entry) => entry.message)),
       now,
     ],

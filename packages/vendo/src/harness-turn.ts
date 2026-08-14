@@ -395,13 +395,14 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // disjoint message ids can no longer collide at all.
         fresh
           ? threads.persist(thread, [input.message], { fresh })
+          // No position is passed: the store assigns one while it holds the
+          // thread row, so two turns racing on this conversation cannot claim
+          // the same slot. An answer to a pending approval matches an existing
+          // id and keeps the position it already has.
           : transcript.upsertMany(
             input.ctx.principal,
             thread.id,
-            // Its position in the canonical array, which `upsertMessage` just
-            // decided: appended for a new message, in place for an answer to a
-            // pending approval (where the stored row keeps the seq it has).
-            [{ message: input.message, seq: thread.messages.findIndex((message) => message.id === input.message.id) }],
+            [input.message],
             { title: deriveTitle(thread.messages) },
           ),
         // §9.7 — the turn's façade mounts every org the wire asserted for this

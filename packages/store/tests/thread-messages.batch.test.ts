@@ -88,13 +88,13 @@ for (const backend of backends()) {
     const writeTurns = async (store: VendoStore, thread: string): Promise<void> => {
       const messages = threadMessageStore<UIMessage>(store);
       await messages.upsertMany(alice, thread, [
-        { message: message("m_1", "book me a table"), seq: 0 },
-        { message: message("m_2", "which night?", "assistant"), seq: 1 },
-        { message: message("m_3", "friday"), seq: 2 },
+        message("m_1", "book me a table"),
+        message("m_2", "which night?", "assistant"),
+        message("m_3", "friday"),
       ], { title: "book me a table" });
       await messages.upsertMany(alice, thread, [
-        { message: message("m_2", "friday it is", "assistant"), seq: 1 },
-        { message: message("m_4", "booked", "assistant"), seq: 3 },
+        message("m_2", "friday it is", "assistant"),
+        message("m_4", "booked", "assistant"),
       ]);
     };
 
@@ -123,14 +123,12 @@ for (const backend of backends()) {
     it("both halves refuse a foreign subject and write nothing", async () => {
       await own("thr_batch_foreign", alice.subject);
       const alicesMessages = threadMessageStore<UIMessage>(pick("sql"));
-      await alicesMessages.upsertMany(alice, "thr_batch_foreign", [
-        { message: message("m_1", "mine"), seq: 0 },
-      ]);
+      await alicesMessages.upsertMany(alice, "thr_batch_foreign", [message("m_1", "mine")]);
 
       for (const mode of ["sql", "ops"] as const) {
         const messages = threadMessageStore<UIMessage>(pick(mode));
         await expect(
-          messages.upsertMany(bob, "thr_batch_foreign", [{ message: message("m_bob", "yours"), seq: 1 }]),
+          messages.upsertMany(bob, "thr_batch_foreign", [message("m_bob", "yours")]),
           mode,
         ).rejects.toBeInstanceOf(VendoError);
       }
@@ -148,6 +146,51 @@ for (const backend of backends()) {
       const read = async (thread: string): Promise<unknown[]> =>
         await threadMessageStore<UIMessage>(pick("sql")).list(alice, thread);
       expect(JSON.stringify(await read("thr_batch_skew"))).toBe(JSON.stringify(await read("thr_batch_native")));
+    });
+
+    /**
+     * TWO TURNS, ONE CONVERSATION — the seam this whole op sits on.
+     *
+     * `seq` carries the conversation's order, and it has no unique constraint
+     * (THREAD_MESSAGES_AGGREGATE says so): equal seqs make the transcript fall
+     * back to ordering by message ID, which is not turn order. A conversation
+     * that reads back scrambled is a broken product, and it would be
+     * intermittent and near-undiagnosable in the field.
+     *
+     * PGlite cannot prove anything here — it is one connection, so nothing
+     * interleaves. This needs genuine concurrent backends, so it runs on the
+     * postgres leg only (POSTGRES_URL).
+     */
+    it.runIf(backend.name === "postgres")("concurrent appends to one thread never share a seq", async () => {
+      const ops = createStoreOps(made.store);
+      const thread = "thr_batch_race";
+      const ROUNDS = 20;
+      // Round 0 deliberately races on a thread that does NOT exist yet, so the
+      // create path (two writers conflicting on the primary key) is covered
+      // alongside the update path (two writers queuing on the row lock).
+      for (let round = 0; round < ROUNDS; round += 1) {
+        await Promise.all([
+          ops.transcripts.appendMessages!(thread, alice.subject, [message(`m_${round}_a`, `round ${round} a`)]),
+          ops.transcripts.appendMessages!(thread, alice.subject, [message(`m_${round}_b`, `round ${round} b`)]),
+        ]);
+      }
+
+      const rows = await made.sql(
+        "SELECT id, seq FROM vendo_thread_messages WHERE thread_id = $1 ORDER BY seq ASC, id ASC",
+        [thread],
+      );
+      expect(rows).toHaveLength(ROUNDS * 2);
+      const seqs = rows.map((row) => Number(row["seq"]));
+      // THE claim: a seq identifies one position in the conversation.
+      expect(new Set(seqs).size, `duplicate seqs: ${JSON.stringify(seqs)}`).toBe(seqs.length);
+
+      // And the read-back order is the true append order: the two racers within
+      // a round may land either way round, but round k must precede round k+1.
+      const listed = await threadMessageStore<UIMessage>(pick("sql")).list(alice, thread);
+      const roundOf = (id: string): number => Number(id.split("_")[1]);
+      const rounds = listed.map((m) => roundOf(m.id));
+      expect(rounds, `transcript out of turn order: ${listed.map((m) => m.id).join(",")}`)
+        .toEqual([...rounds].sort((left, right) => left - right));
     });
 
     it("answers with the revision and the row count, never the transcript", async () => {

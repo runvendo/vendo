@@ -35,11 +35,17 @@ export interface ThreadMessageStore<M extends ThreadMessageLike = ThreadMessageL
    *  listing title the caller derived. What `upsert` does per message — and,
    *  over the wire, per message plus a full thread download — this does once.
    *  A message the thread already holds is updated in place and keeps its
-   *  position; only genuinely new ones are appended. */
+   *  position; genuinely new ones are appended after the tail, in the order
+   *  given.
+   *
+   *  Unlike `upsert`, this takes NO `seq`: a caller computing a position
+   *  outside the write cannot avoid racing another turn on the same thread for
+   *  it (proven on PostgreSQL 17), so the position is the statement's to assign
+   *  while it holds the thread row. */
   upsertMany(
     principal: Principal,
     threadId: ThreadId,
-    entries: ReadonlyArray<{ message: M; seq: number }>,
+    messages: ReadonlyArray<M>,
     opts?: { title?: string },
   ): Promise<void>;
   /** Reassembled by seq, oldest → newest. */
@@ -154,15 +160,15 @@ function overOps<M extends ThreadMessageLike>(ops: StoreOps): ThreadMessageStore
       }
       await ops.transcripts.putMessage(threadId, message);
     },
-    async upsertMany(principal, threadId, entries, opts) {
-      if (entries.length === 0) return;
-      for (const entry of entries) requireMessageId(entry.message);
+    async upsertMany(principal, threadId, messages, opts) {
+      if (messages.length === 0) return;
+      for (const message of messages) requireMessageId(message);
       const append = ops.transcripts.appendMessages;
       if (append !== undefined && await servesAppendMessages(ops)) {
         await append(
           threadId,
           principal.subject,
-          entries.map((entry) => entry.message),
+          [...messages],
           { ...(opts?.title === undefined ? {} : { title: opts.title }) },
         );
         return;
@@ -178,8 +184,8 @@ function overOps<M extends ThreadMessageLike>(ops: StoreOps): ThreadMessageStore
       if (await ownedThread(principal, threadId) === undefined) {
         throw new VendoError("conflict", `thread ${threadId} does not belong to this subject`);
       }
-      for (const entry of entries) {
-        await ops.transcripts.putMessage(threadId, entry.message);
+      for (const message of messages) {
+        await ops.transcripts.putMessage(threadId, message);
       }
     },
     async list(principal, threadId) {
@@ -263,8 +269,8 @@ function overSql<M extends ThreadMessageLike>(db: Db): ThreadMessageStore<M> {
       // landed, so surface it rather than pretending it did.
       throw new VendoError("conflict", `could not write message ${JSON.stringify(messageId)} to thread ${threadId}`);
     },
-    async upsertMany(principal, threadId, entries, opts) {
-      if (entries.length === 0) return;
+    async upsertMany(principal, threadId, messages, opts) {
+      if (messages.length === 0) return;
       // The SAME statements the hosted half reaches through the wire op, on the
       // same rows: ownership is the thread upsert's guard, and the batch lands
       // in one transaction with it.
@@ -272,11 +278,7 @@ function overSql<M extends ThreadMessageLike>(db: Db): ThreadMessageStore<M> {
         await appendThreadMessages({ ...db, query }, {
           threadId,
           subject: principal.subject,
-          messages: entries.map((entry) => ({
-            id: requireMessageId(entry.message),
-            seq: entry.seq,
-            message: entry.message,
-          })),
+          messages: messages.map((message) => ({ id: requireMessageId(message), message })),
           ...(opts?.title === undefined ? {} : { title: opts.title }),
         });
       });

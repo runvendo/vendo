@@ -79,13 +79,14 @@ function deepFreeze<T>(value: T): T {
 export interface TranscriptStore {
   /** One row per message; per-row CAS on `revision` for edits. */
   upsert(principal: Principal, threadId: ThreadId, message: UIMessage, seq: number): Promise<void>;
-  /** The whole turn's changed messages in ONE call. Optional the way every
+  /** The whole turn's changed messages in ONE call, in array order — the store
+   *  assigns positions itself, under the row it writes. Optional the way every
    *  capability in this codebase is optional: a store that cannot batch omits
    *  it and the per-message loop below still runs. */
   upsertMany?(
     principal: Principal,
     threadId: ThreadId,
-    entries: ReadonlyArray<{ message: UIMessage; seq: number }>,
+    messages: ReadonlyArray<UIMessage>,
   ): Promise<void>;
   /** Reassembled by seq, oldest → newest. */
   list(principal: Principal, threadId: ThreadId): Promise<UIMessage[]>;
@@ -755,7 +756,7 @@ async function persistTurn(
   for (let attempt = 0; ; attempt += 1) {
     try {
       if (transcript.upsertMany !== undefined) {
-        await transcript.upsertMany(input.ctx.principal, input.threadId, changed);
+        await transcript.upsertMany(input.ctx.principal, input.threadId, changed.map(({ message }) => message));
       } else {
         for (const { message, seq } of changed) {
           await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
