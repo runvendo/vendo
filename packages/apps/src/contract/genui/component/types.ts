@@ -127,24 +127,6 @@ export const SCREEN_TEXT_NODE = "#text";
  */
 export const SCREEN_FILE = "app.tsx";
 
-/**
- * The one component `@vendo/screen` exports that is not a catalog name:
- * `<ActionButton tool="cancel_transfer" args={{ id }} label="Cancel"/>` — a
- * write as ONE element.
- *
- * It renders the Kit's own `Button`, and its press files exactly the call a
- * handler files: the same `tools` proxy, the same intent, and therefore the same
- * guard, the same approval and the same refresh on the way back (./vm-program.ts).
- * It carries no ceremony of its own — whether a press is asked about is the
- * guard's policy, decided outside the screen — which is why a screen written with
- * it writes no confirm panel.
- *
- * Held with the engine's vocabulary because the engine IMPLEMENTS it and the type
- * declarations DECLARE it (`checking/screen-typings.ts`): a second spelling in
- * either is a component a screen may import and cannot render.
- */
-export const SCREEN_ACTION_COMPONENT = "ActionButton";
-
 /** A node of the flat tree {@link flattenTree} prints. */
 export interface FlatNode {
   id: string;

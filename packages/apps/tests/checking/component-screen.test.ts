@@ -555,9 +555,7 @@ export default function S() { return <div><Text text="x" /></div>; }
 
     expect(codes).toEqual(["types"]);
     expect(text).toContain("line 2: writes the HTML element <div>");
-    // The catalog, and the one component the module carries that no catalog
-    // does — a list of what a screen may render must not omit something it may.
-    expect(text).toContain("It renders only the components it imports from \"@vendo/screen\": Stack, Row, Card, Text, Money, DateTime, Button, Callout, ActionButton.");
+    expect(text).toContain("It renders only the components it imports from \"@vendo/screen\": Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
     expect(text).toContain("Lay out with <Stack>/<Row>/<Grid> and write text with <Text>.");
     // The closing tag is the same break; a repair list that says everything
     // twice reads as two problems.
@@ -582,7 +580,7 @@ export default function S() { return <Sidebar><Text text="x" /></Sidebar>; }
 `);
 
     expect(text).toContain("renders <Sidebar>, which this screen never imported");
-    expect(text).toContain("The components available are: Stack, Row, Card, Text, Money, DateTime, Button, Callout, ActionButton.");
+    expect(text).toContain("The components available are: Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
   });
 
   it("refuses a member the screen module does not export", async () => {
