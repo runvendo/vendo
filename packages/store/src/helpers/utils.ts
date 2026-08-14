@@ -27,7 +27,10 @@ export function text(value: unknown): string {
  *  its ORDER BY route BOTH the column and the cursor parameter through this
  *  same truncated expression. */
 export function cursorMs(expr: string): string {
-  return `date_trunc('milliseconds', ${expr})`;
+  // 3-arg form is IMMUTABLE and indexable; 2-arg reads the TimeZone GUC and Postgres rejects it in
+  // an index expression. Millisecond truncation is timezone-invariant — verified equal under
+  // Asia/Kolkata, America/St_Johns, Pacific/Chatham.
+  return `date_trunc('milliseconds', ${expr}, 'UTC')`;
 }
 
 export function encodeCursor(date: IsoDateTime, id: string): string {

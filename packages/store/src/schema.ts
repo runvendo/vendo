@@ -293,6 +293,27 @@ const ADDITIVE_DDL = [
   // booted before its CREATE was removed. The version gate would never re-run the
   // DDL loop on those databases, so the drop lives here and runs every boot.
   "DROP TABLE IF EXISTS vendo_sessions",
+  // The routed lists sort by the truncated cursor expression (helpers/utils.ts cursorMs),
+  // so a plain (created_at, id) index cannot serve them — the sort key is an expression.
+  // These match it exactly, in both the unfiltered and the ref-filtered shape, which turns
+  // every hot list from a seq scan + sort into a top-N index scan. They live here rather
+  // than in DDL because ADDITIVE_DDL runs on every ensureSchema: behind a version bump
+  // they would never reach a database already at the current version.
+  // vendo_state's created_at and id are ALTERed in above, so these must stay after them.
+  "CREATE INDEX IF NOT EXISTS vendo_threads_created_idx    ON vendo_threads    (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_apps_created_idx       ON vendo_apps       (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_runs_started_idx       ON vendo_runs       (date_trunc('milliseconds', started_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_approvals_created_idx  ON vendo_approvals  (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_grants_granted_idx     ON vendo_grants     (date_trunc('milliseconds', granted_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_state_created_idx      ON vendo_state      (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_app_grants_created_idx ON vendo_app_grants (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_effects_at_idx         ON vendo_effects    (date_trunc('milliseconds', at, 'UTC') DESC, key DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_threads_subject_created_idx   ON vendo_threads   (subject, date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_runs_status_started_idx       ON vendo_runs      (status,  date_trunc('milliseconds', started_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_approvals_status_created_idx  ON vendo_approvals (status,  date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_state_subject_created_idx     ON vendo_state     (subject, date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_audit_app_at_idx              ON vendo_audit     (app_id,  date_trunc('milliseconds', at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_grants_app_granted_idx        ON vendo_grants    (app_id,  date_trunc('milliseconds', granted_at, 'UTC') DESC, id DESC)",
 ] as const;
 
 // v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys

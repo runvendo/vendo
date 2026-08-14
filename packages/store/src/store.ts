@@ -53,9 +53,14 @@ export function secretsConfigFor(store: VendoStore): Pick<StoreInternals, "encry
   return internals.get(store) ?? { encryptionKey: undefined, allowPlaintextSecrets: false };
 }
 
-/** 02-store §1 — assemble a VendoStore over an already-picked Db engine.
- *  Package-internal: the public `createStore` fronts live in
- *  ./create-store.ts and ./postgres.ts. */
+/** 02-store §1 — assemble a VendoStore over an already-picked Db engine. The
+ *  composition rung under the zero-config `createStore` fronts (./create-store.ts,
+ *  ./postgres.ts), for hosts that own their connection: a pooler-backed handle, a
+ *  transaction-scoped one, a Db spread over another (`{ ...db, query }`).
+ *  Two things the caller now owns: `store.close()` closes the Db it was given, and
+ *  `withSchemaLock` is the caller's to implement — a handle that cannot hold a
+ *  session-scoped lock must THROW there rather than no-op, or two concurrent
+ *  migrators both run the schema's data-moving backfills. */
 export function createStoreForDb(
   db: Db,
   config: Pick<StoreConfig, "encryption" | "allowUnencryptedSecrets"> = {},

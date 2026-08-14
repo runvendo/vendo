@@ -3,6 +3,10 @@
  *  keep the PGlite wasm engine out of the bundle graph. */
 export { createStore } from "./create-store.js";
 export { maybeDbFor, type VendoStore } from "./store.js";
+// The Db seam: a host that already holds a connection (a pooler, an open
+// transaction) builds the store over it instead of handing us a url.
+export { createStoreForDb } from "./store.js";
+export type { Db, Query } from "./db-postgres.js";
 // Composed state, read off the engine handle `maybeDbFor` returns: the data dir
 // this store writes to when a redeploy wipes it. The deployment that composed
 // the store is what tells its operator (createVendo's boot block).

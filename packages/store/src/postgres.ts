@@ -35,6 +35,8 @@ export function createStore(config: PostgresStoreConfig): VendoStore {
 // main entry exports (keep this list in lockstep with index.ts).
 export { createStoreOps } from "./ops.js";
 export { maybeDbFor } from "./store.js";
+export { createStoreForDb } from "./store.js";
+export type { Db, Query } from "./db-postgres.js";
 export {
   appDataFiles,
   appDataRows,
