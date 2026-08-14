@@ -3,7 +3,7 @@ import { VendoError } from "./errors.js";
 /** Named in every refusal so a caller can tell "this name was never an engine
     collection" from "this build's list is older than yours". Bump it whenever
     ENGINE_COLLECTIONS or ENGINE_COLLECTION_PATTERNS changes. */
-export const ENGINE_ALLOWLIST_VERSION = 1;
+export const ENGINE_ALLOWLIST_VERSION = 2;
 
 /** The collections the `engine` op family may touch: Vendo's OWN internal
     drawers, nothing a host or a generated app owns. The list lives in core
@@ -60,6 +60,9 @@ export const ENGINE_COLLECTIONS = [
   "automations:sponsored", // SPONSORED, packages/automations/src/sponsorship.ts:29
   "guard:controls", // CONTROLS_COLLECTION, packages/guard/src/guard.ts:117 — host-level config, see above
   "guard:approval-claims", // APPROVAL_CLAIMS_COLLECTION, packages/guard/src/guard.ts:111
+  "vendo_channel_links", // LINK_COLLECTION, packages/vendo/src/channel-links.ts:22
+  "vendo_channel_events", // EVENT_COLLECTION, packages/vendo/src/channel-links.ts:25
+  "vendo_channel_asks", // ASK_COLLECTION, packages/vendo/src/channel-links.ts:33
 ] as const;
 
 export type EngineCollection = typeof ENGINE_COLLECTIONS[number];

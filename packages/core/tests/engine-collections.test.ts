@@ -27,10 +27,10 @@ function messageOf(run: () => unknown): string {
 }
 
 describe("engine allowlist", () => {
-  it("holds 35 distinct static collections", () => {
-    expect(ENGINE_ALLOWLIST_VERSION).toBe(1);
-    expect(ENGINE_COLLECTIONS).toHaveLength(35);
-    expect(new Set(ENGINE_COLLECTIONS).size).toBe(35);
+  it("holds 38 distinct static collections", () => {
+    expect(ENGINE_ALLOWLIST_VERSION).toBe(2);
+    expect(ENGINE_COLLECTIONS).toHaveLength(38);
+    expect(new Set(ENGINE_COLLECTIONS).size).toBe(38);
   });
 
   it("admits one name from each group and refuses host/app data", () => {
@@ -69,7 +69,10 @@ describe("engine allowlist", () => {
   it("refuses an unknown name, naming the version and the right door", () => {
     expect(codeOf(() => assertEngineCollection("users"))).toBe("blocked");
     const message = messageOf(() => assertEngineCollection("users"));
-    expect(message).toContain("v1");
+    // Against the constant, like the conformance suite's own check
+    // (conformance/store-ops.ts:241): the point is that the refusal names THIS
+    // build's list, so a bump does not turn into a test edit every time.
+    expect(message).toContain(`v${ENGINE_ALLOWLIST_VERSION}`);
     expect(message).toContain("appData");
     // "users" is not a typo of anything here, so it collects no guess.
     expect(message).not.toContain("did you mean");
