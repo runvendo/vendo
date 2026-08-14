@@ -2,7 +2,7 @@
  * The code lane — `agent.run(task)`. Real embedded store, real guard, real
  * runtime; only the thinker is scripted (CLAUDE.md: test the SEAM).
  */
-import { agentRunReportSchema } from "@vendoai/core";
+import { VendoError, agentRunReportSchema } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, threadStore } from "@vendoai/store";
@@ -145,6 +145,53 @@ describe("run()", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: "tool-result", tool: "invoices_list", outcome: "ok" }),
     );
+  });
+
+  it("keeps nothing for a consumer that never arrived", async () => {
+    const support = agent({
+      name: "support",
+      harness: defineHarness({
+        name: "noisy",
+        async *run() {
+          yield { type: "status" as const, label: "Reading the ledger" };
+          yield { type: "text" as const, delta: "Two invoices." };
+        },
+      }),
+      store: memoryStore(),
+    });
+
+    const running = support.run("Check the invoices.", { as: "u_42" });
+    await running;
+
+    // Nobody read while it ran, so the run buffered nothing on the way — a run
+    // whose events nobody watches must not grow with what it says.
+    expect(await collect(running.events)).toEqual([]);
+  });
+
+  it("gives a reader everything said after it attached, and refuses a second one", async () => {
+    const support = agent({
+      name: "support",
+      harness: defineHarness({
+        name: "noisy",
+        async *run() {
+          yield { type: "status" as const, label: "Reading the ledger" };
+          yield { type: "text" as const, delta: "Two invoices." };
+        },
+      }),
+      store: memoryStore(),
+    });
+
+    const running = support.run("Check the invoices.", { as: "u_42" });
+    expect(await collect(running.events)).toEqual([
+      { type: "status", label: "Reading the ledger" },
+      { type: "text", delta: "Two invoices." },
+    ]);
+    await running;
+
+    const second = await collect(running.events).catch((error: unknown) => error);
+    expect(second).toBeInstanceOf(VendoError);
+    expect((second as VendoError).code).toBe("validation");
+    expect((second as VendoError).message).toMatch(/run\.events is single-reader/);
   });
 
   it("a run nobody was there to approve finishes ok, with the cards a person has to answer", async () => {

@@ -13,6 +13,13 @@ describe("the package surface", () => {
     expect(agents.postgres).toBeTypeOf("function");
     expect(agents.provideCloudAdapters).toBeTypeOf("function");
   });
+
+  it("exports the type a host writes its `system` hook against", () => {
+    // Typed from the ROOT: a host that has to reach into a deep path to name the
+    // hook it is already passing has no exported contract at all.
+    const system: agents.SystemPromptHook = (_ctx, prompt) => prompt.assembled;
+    expect(system).toBeTypeOf("function");
+  });
 });
 
 describe("mcp sources", () => {
