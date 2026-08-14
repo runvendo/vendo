@@ -7,17 +7,20 @@ import {
   type AtomicRecordStore,
   auditContext,
   type AuditEvent,
+  buildGrant,
   canonicalJson,
   DEFAULT_TRIGGER_ID,
   descriptorHash,
   emitUsage,
   type GrantId,
+  grantRefs,
   type GrantScope,
   type GuardDecision,
   type IsoDateTime,
   isUnattended,
   type Json,
   log,
+  type MintGrantInput,
   type PermissionGrant,
   presenceOnlyCall,
   type Principal,
@@ -657,6 +660,16 @@ class GuardImplementation implements VendoGuard {
     if (data.status !== "approved" || data.consumedAt !== undefined) return "already-spent";
     if (data.voidedAt !== undefined) return "taken-back";
     return await this.#spendConsumedTransition(id, principal.subject);
+  }
+
+  /** The ONE mint. Every remembered yes — this guard's own decide path below,
+   *  and the automations engine's consent moment through core's `Guard` seam —
+   *  becomes a row here, so the grant and its listing refs cannot be spelled
+   *  two ways by two writers. */
+  async mintGrant(input: MintGrantInput): Promise<GrantId> {
+    const grant = buildGrant(input, makeId("grt_"), now());
+    await this.#engine.put(GRANTS_COLLECTION, { id: grant.id, data: grant, refs: grantRefs(grant) });
+    return grant.id;
   }
 
   /** The TTL backstop over the general approvals
@@ -2105,36 +2118,18 @@ class GuardImplementation implements VendoGuard {
     applied.push(entry);
     if (!decision.approve && provenance === "human") await this.#supersedeApprovedSiblings(decided);
 
-    let grant: PermissionGrant | undefined;
+    let grantId: GrantId | undefined;
     if (decision.approve && decision.remember !== undefined) {
-      const duration = decision.remember.duration;
-      grant = {
-        id: makeId("grt_") as GrantId,
-        subject: principal.subject,
-        tool: data.request.call.tool,
-        descriptorHash: descriptorHash(data.request.descriptor),
-        scope: normalizeRememberedScope(decision.remember.scope, data.request),
-        duration,
-        ...(duration === "session"
-          ? { contextKey: data.sessionId }
-          : duration === "task"
-            ? { contextKey: data.request.ctx.trigger?.runId ?? data.sessionId }
-            : {}),
-        ...(data.request.ctx.appId === undefined ? {} : { appId: data.request.ctx.appId }),
+      grantId = await this.mintGrant({
+        request: data.request,
+        remember: {
+          duration: decision.remember.duration,
+          scope: normalizeRememberedScope(decision.remember.scope, data.request),
+        },
         source: batch ? "batch" : "chat",
-        grantedAt: decidedAt,
-      };
-      const refs: Record<string, string> = {
-        subject: grant.subject,
-        tool: grant.tool,
-      };
-      if (grant.appId !== undefined) refs.app_id = grant.appId;
-      await this.#engine.put(GRANTS_COLLECTION, {
-        id: grant.id,
-        data: grant,
-        refs,
+        contextKey: data.sessionId,
       });
-      entry.grantId = grant.id;
+      entry.grantId = grantId;
     }
 
     const requestCtx = data.request.ctx;
@@ -2151,7 +2146,7 @@ class GuardImplementation implements VendoGuard {
       inputPreview: data.request.inputPreview,
       detail: {
         approved: decision.approve,
-        ...(grant === undefined ? {} : { grantId: grant.id }),
+        ...(grantId === undefined ? {} : { grantId }),
       },
     });
   }

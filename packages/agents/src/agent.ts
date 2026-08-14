@@ -21,7 +21,7 @@ import {
   type Skill,
   type ToolRegistry,
 } from "@vendoai/core";
-import { createGuard, isGuardInstance, type GuardRules, type VendoGuard } from "@vendoai/guard";
+import { createGuard, isGuardInstance, permissionsHandler, type GuardRules, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters, vendo } from "@vendoai/harnesses";
 import { vendoModel } from "@vendoai/harnesses/inference";
 import { resolveDevCredential } from "@vendoai/harnesses/inference/credential";
@@ -31,6 +31,7 @@ import { randomUUID } from "node:crypto";
 import { startRun, type AgentRun, type RunOptions } from "./away.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
+import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
 import type { SystemPromptHook } from "./prompt.js";
 import {
   createSession,
@@ -69,6 +70,9 @@ export interface AgentConfig {
    *  tools; unset → `VENDO_BASE_URL`. Required by any harness that declares
    *  `requires.toolDoor` — see {@link resolveDoor}. */
   door?: DoorConfig;
+  /** Who is asking, for {@link VendoAgent.permissions}. Unset → those routes
+   *  401: a person's own asks and grants need a person. */
+  principal?: AgentPrincipal;
   /** The host's prompt block. */
   instructions?: string;
   /**
@@ -111,6 +115,13 @@ export interface VendoAgent {
    * turn's own credential.
    */
   readonly door?: (request: Request) => Promise<Response>;
+  /**
+   * This agent's approvals and grants wire — what `@vendoai/ui`'s consent
+   * surfaces already post to. MOUNT THIS at `PERMISSIONS_PATH`
+   * (`/api/vendo`); `undefined` comes back for every path it does not own,
+   * `DOOR_PATH` included, so ONE catch-all route can serve both.
+   */
+  readonly permissions: (request: Request) => Promise<Response | undefined>;
 }
 
 /**
@@ -377,6 +388,13 @@ export function agent(config: AgentConfig): VendoAgent {
       await requireModel();
       return createSession(deps, subject, options);
     },
+    // No principal resolver is not "everyone": these routes hand a person their
+    // own pending asks and standing grants, so with nobody to identify they 401.
+    permissions: permissionsHandler({
+      guard,
+      principal: schemaReadyPrincipal(config.principal ?? (async () => null), store),
+      mount: PERMISSIONS_PATH,
+    }),
     ...(door === undefined ? {} : { door: door.handler }),
   };
   compositions.set(built, { ...deps, ...(sandbox === undefined ? {} : { sandbox }) });

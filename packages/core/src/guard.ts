@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AuditEvent } from "./audit.js";
 import { grantIdSchema, type ApprovalId, type GrantId } from "./ids.js";
-import { approvalRequestSchema, type ApprovalRequest } from "./grants.js";
+import { approvalRequestSchema, type ApprovalRequest, type MintGrantInput } from "./grants.js";
 import type { Principal } from "./principal.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolDescriptor } from "./tools.js";
@@ -75,6 +75,13 @@ export interface Guard extends GuardLike {
    *  `taken-back` (the person revoked it — grant nothing). Callers
    *  feature-detect; a guard that omits it is used exactly as before. */
   spendApproval?(id: ApprovalId, principal: Principal): Promise<"spent" | "already-spent" | "taken-back">;
+  /** Mint the grant a decided approval turns into (optional — same
+   *  feature-detected shape as `spendApproval`). The guard's own decide path
+   *  mints through this, and so does the automations engine's consent moment,
+   *  so there is ONE implementation of what a remembered yes becomes rather
+   *  than one per caller. A guard that omits it leaves the caller writing the
+   *  row itself, from the same `buildGrant`. */
+  mintGrant?(input: MintGrantInput): Promise<GrantId>;
   /** genqa defect 1 (double-count) — a preview of `check()`'s verdict for a
    *  caller that is about to make (or ask the AI SDK to make) the REAL,
    *  dispatching call itself moments later for the SAME logical call: a

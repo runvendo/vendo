@@ -26,6 +26,7 @@ export {
   type RunOptions,
 } from "./away.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
+export { PERMISSIONS_PATH, type AgentPrincipal } from "./permissions.js";
 export { assemblePrompt, type PromptInput, type SystemPromptHook } from "./prompt.js";
 export type { AgentSession, ApprovalEvent, RespondOptions, SessionOptions } from "./session.js";
 export {

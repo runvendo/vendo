@@ -6,12 +6,14 @@
  * Lifted out of `createAutomationsEngine` unchanged.
  */
 import {
+  buildGrant,
   DEFAULT_TRIGGER_ID,
   descriptorHash,
+  grantRefs,
   permissionGrantSchema,
-  serviceToolSlug,
   USE_SERVICE_TOOL,
   type ApprovalRequest,
+  type MintGrantInput,
   type PermissionGrant,
   type RunContext,
   type ToolDescriptor,
@@ -146,45 +148,27 @@ const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantR
   return { descriptors, liveAutomationGrants, liveGrant, grantedServiceSlugs, anyLiveAutomationGrant };
 };
 
-/** The write: what a decided approval turns into. */
+/** The write: what a decided approval turns into — the guard's ONE mint when it
+ *  offers one, and the identical row written here when a host's custom guard
+ *  does not. Both arms build it with core's `buildGrant`, so the fallback can
+ *  never drift into meaning something else. */
 const createGrantMint = (
-  { base: { engine, iso } }: GrantsDeps,
+  { base: { config, engine, iso } }: GrantsDeps,
 ): Pick<GrantsAccess, "mintGrant"> => {
   const mintGrant = async (request: ApprovalRequest, triggerId: string | undefined): Promise<string> => {
-    // A connector dispatch is granted at the width of its SLUG, never its tool
-    // name: "allow use_service_tool" would be consent to the broker's whole
-    // catalog. Every other tool keeps the tool-wide grant an automation has
-    // always minted — the slug is the only thing that narrows here.
-    const slug = serviceToolSlug(request.call);
-    const grant: PermissionGrant = {
-      id: id("grt_"),
-      subject: request.ctx.principal.subject,
-      tool: request.call.tool,
-      descriptorHash: descriptorHash(request.descriptor),
-      scope: slug === undefined ? { kind: "tool" } : { kind: "service-tool", slug },
-      duration: "standing",
-      ...(request.ctx.appId === undefined ? {} : { appId: request.ctx.appId }),
+    const input: MintGrantInput = {
+      request,
+      remember: { duration: "standing" },
+      source: "automation",
       // The trigger the person was actually looking at. Without it the grant
       // would be app-wide, and arming one trigger would silently authorize every
       // other trigger of the same app.
       ...(triggerId === undefined ? {} : { triggerId }),
-      source: "automation",
-      grantedAt: iso(),
     };
-    await engine.put(GRANTS, {
-      id: grant.id,
-      data: grant,
-      refs: {
-        subject: grant.subject,
-        tool: grant.tool,
-        ...(grant.appId === undefined ? {} : { app_id: grant.appId }),
-        // The reserved grants table derives this ref from the row's own column,
-        // but a generic StoreAdapter honors what is passed here — and one that
-        // filtered on `app_id` alone would hand back a sibling trigger's grant,
-        // making the ref-trusting adapter WIDER than the JS filter above it.
-        ...(grant.triggerId === undefined ? {} : { trigger_id: grant.triggerId }),
-      },
-    });
+    const minted = await config.guard.mintGrant?.(input);
+    if (minted !== undefined) return minted;
+    const grant = buildGrant(input, id("grt_"), iso());
+    await engine.put(GRANTS, { id: grant.id, data: grant, refs: grantRefs(grant) });
     return grant.id;
   };
 

@@ -15,6 +15,15 @@ export { resolvePolicyConfig } from "./policy.js";
 // (hosts validating a policy file before handing it to the guard); 0.4.x
 // dropped them from the barrel by accident, so restore them here.
 export { policyFileSchema, policyRuleSchema } from "./types.js";
+// The ONE permission wire: the five approval/grant routes every mount serves,
+// as a request→body function (the umbrella's routes delegate to it) and as a
+// ready fetch handler (what @vendoai/agents mounts).
+export {
+  handlePermissionRequest,
+  permissionsHandler,
+  type PermissionRequest,
+  type PermissionsHandlerDeps,
+} from "./permission-wire.js";
 // Build contract §9.10 — the org-admin policy document's parser, exported for
 // the composition seam that reads `/orgs/<orgId>/policy.json` out of the
 // workspace and unions the rules into the guard's `orgPolicy` resolver.

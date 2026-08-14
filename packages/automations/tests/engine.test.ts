@@ -7,8 +7,10 @@ import {
   type AppDocument,
   type ApprovalId,
   type AuditEvent,
+  type GrantId,
   type Guard,
   type Json,
+  type MintGrantInput,
   type RecordStore,
   type RunContext,
   type StoreAdapter,
@@ -91,6 +93,9 @@ class GuardDouble implements Guard {
   /** The optional spend seam (05 §2 amendment), scripted. Left unset by default
    *  so every existing case still exercises the pre-seam fallback path. */
   spendApproval?: (id: ApprovalId) => Promise<"spent" | "already-spent" | "taken-back">;
+  /** The optional mint seam, scripted. Left unset by default so every existing
+   *  case still exercises the local-write fallback a custom guard leaves us. */
+  mintGrant?: (input: MintGrantInput) => Promise<GrantId>;
   /** Ids passed to {@link abandonApprovals}, in order. */
   readonly abandoned: ApprovalId[] = [];
   /** The store this double writes abandonment through, so a test can read the
@@ -361,6 +366,39 @@ describe("automations enable and grant capture", () => {
       consumedAt: NOW.toISOString(),
     });
     expect((await store.records("automations:captures").list()).records).toHaveLength(0);
+  });
+
+  // The case above is the other half: a GuardDouble with no mint seam, whose
+  // grant this engine writes itself from the very same buildGrant.
+  it("mints THROUGH the guard when it offers the seam — one implementation, not two", async () => {
+    const minted: MintGrantInput[] = [];
+    guard.mintGrant = async (input) => {
+      minted.push(input);
+      return "grt_from_guard";
+    };
+    const doc = app("app_guard_mint", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "agentic", prompt: "do work" },
+    });
+    await seedApp(store, doc);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry([readTool]), guard, store, now: () => NOW,
+    });
+    const { missing } = await engine.enable(doc.id, "main", ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    // Everything the grant means is told to the guard; nothing about it is
+    // decided twice.
+    expect(minted).toMatchObject([{
+      request: { id: missing[0]!.id, call: { tool: readTool.name } },
+      remember: { duration: "standing" },
+      source: "automation",
+      triggerId: "main",
+    }]);
+    // …and the engine wrote no second row of its own.
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
   });
 
   it("ignores app-bound chat grants and preserves schedule cursors, webhook secrets, and disable state", async () => {
