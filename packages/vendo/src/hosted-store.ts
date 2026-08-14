@@ -20,6 +20,7 @@ import {
 } from "@vendoai/store";
 import { consoleSender, raiseCloudError } from "./cloud-console.js";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
+import { environment } from "./wire/shared.js";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
@@ -279,6 +280,16 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
+/** Measurement instrument, not a feature: with VENDO_STORE_TRACE set, every
+ * call through the store client below — the 35 ops AND the StoreAdapter façade,
+ * which rides the same client — emits one greppable stderr line naming the op,
+ * its path, the round trip in milliseconds (the body read included, since that
+ * is what the caller waits for) and the response size in bytes. Read ONCE at
+ * import, like the skew latch below: a debug switch belongs to the process, so
+ * the adapter itself still reads nothing at construction or on any call, and
+ * unset there is no wrapper to pay for. */
+const TRACE = environment("VENDO_STORE_TRACE") !== undefined;
+
 /** ONE key per LOGICAL mutation. The retry below replays it verbatim — that
  * replay is the only reason the server can tell "do it again" from "you
  * already did it"; a fresh key per attempt would double-apply the write. */
@@ -355,7 +366,7 @@ function storeWireClient(
     raise,
   });
 
-  const call = async (op: StoreWireOp, path: string, init?: RequestInit): Promise<Response> => {
+  const wire = async (op: StoreWireOp, path: string, init?: RequestInit): Promise<Response> => {
     const attempt = (): Promise<Response> => send(path, init);
     try {
       // The retry sends the SAME init — same key, same body — so a mutation
@@ -384,6 +395,17 @@ function storeWireClient(
       }
       throw error;
     }
+  };
+
+  /** Untraced, `call` IS `wire` — see {@link TRACE}. */
+  const call: typeof wire = !TRACE ? wire : async (op, path, init) => {
+    const started = performance.now();
+    const response = await wire(op, path, init);
+    const body = await response.arrayBuffer();
+    console.error(
+      `vendo-store-trace op=${op} path=${path} ms=${Math.round(performance.now() - started)} bytes=${body.byteLength}`,
+    );
+    return new Response(body, { status: response.status, headers: response.headers });
   };
 
   const json = async (response: Response): Promise<unknown> => response.json().catch(() => ({}));
