@@ -430,7 +430,22 @@ function storeWireClient(
     // Rebuilding it instead would be a real behavior change on a null-body
     // status — `new Response(body, { status: 204 })` throws — and would put the
     // instrument in the path of every hosted call it is supposed to observe.
-    line((await response.clone().arrayBuffer()).byteLength, "ok");
+    //
+    // Measuring must never FAIL the call it is measuring either. A body stream
+    // that breaks mid-read is not an error to this client: `json`'s catch reads
+    // it as `{}`, which a void mutation ignores entirely and a payload reader
+    // reports as service misbehavior. Letting the measurement's own rejection
+    // escape would turn tracing on into "some calls now fail", which is the one
+    // thing an instrument may not do — so a broken read is a fact ABOUT the
+    // call, recorded in the line, not a fact that changes it.
+    let bytes = 0;
+    let outcome = "ok";
+    try {
+      bytes = (await response.clone().arrayBuffer()).byteLength;
+    } catch {
+      outcome = "unreadable-body";
+    }
+    line(bytes, outcome);
     return response;
   };
 
