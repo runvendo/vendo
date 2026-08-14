@@ -10,7 +10,6 @@
  */
 import {
   AGENT_CONTEXT_MARK,
-  type ApprovalId,
   type ApprovalRequest,
   type Principal,
   type RunContext,
@@ -18,13 +17,26 @@ import {
 import type { VendoGuard } from "@vendoai/guard";
 import { THREAD_ID_HEADER } from "@vendoai/harnesses";
 import type { UIMessage } from "ai";
-import type { ChannelLink, ChannelLinkRepository } from "./channel-links.js";
+import type { ChannelAskRepository, ChannelLink, ChannelLinkRepository } from "./channel-links.js";
 import type { ChannelsService, InboundTextEvent } from "./channels.js";
 import type { HarnessTurns } from "./harness-turn.js";
 
 /** Texting humans reply on a human clock — they put the phone down, they drive,
  *  they come back. The web's 90s wait is a closed-tab bound and would time out
- *  every real approval here. */
+ *  every real approval here.
+ *
+ *  WHAT THIS REQUIRES OF A HOST: the parked call is resumed by the instance that
+ *  parked it. The guard's decision callbacks are in-process (`guard.ts`
+ *  `#approvalCallbacks`) and the waiter is an in-process promise
+ *  (`turn-tools.ts`), so a "YES" delivered to a DIFFERENT instance decides the
+ *  approval record without waking the turn that is holding the call — the answer
+ *  is understood and recorded, and the effect still does not land. So
+ *  approve-by-text needs a deployment that keeps one long-lived process for the
+ *  ten minutes: a container host (Railway, Render, Fly), not a function that is
+ *  billed by the second and killed well inside the window. Making it survive a
+ *  restart or a second replica is resumable turns — a durable job that re-enters
+ *  the tool call once the record is decided — which is an architecture, not a
+ *  patch, and is deliberately NOT in this change. */
 export const CHANNEL_APPROVAL_WAIT_MS = 600_000;
 
 /** Rolling threads: a burst keeps its context, and a conversation that has been
@@ -50,43 +62,14 @@ const NOTHING_TO_SAY = "Something went wrong on my end. Try that again in a mome
 const YES = /^y(es)?$/i;
 const NO = /^n(o)?$/i;
 
-/**
- * The approvals THIS conversation asked about.
- *
- * Load-bearing, not bookkeeping: a "YES" must only ever decide a card that went
- * out over this channel. `guard.approvals.pending` is scoped to the subject, so
- * deciding the newest pending one would let a text approve the card the person
- * is looking at in a web tab — consent for a money-moving call, given on a
- * surface that never showed it.
- */
-export interface ChannelAsks {
-  add(conversationId: string, approvalId: ApprovalId): void;
-  ids(conversationId: string): readonly ApprovalId[];
-}
-
-/** How many conversations' asks to keep — bounded so a long-lived deployment
- *  cannot grow an entry per conversation forever. */
-const ASKS_CAP = 500;
-
-export function channelAsks(): ChannelAsks {
-  const byConversation = new Map<string, ApprovalId[]>();
-  return {
-    add(conversationId, approvalId) {
-      if (byConversation.size >= ASKS_CAP && !byConversation.has(conversationId)) {
-        byConversation.clear();
-      }
-      byConversation.set(conversationId, [...byConversation.get(conversationId) ?? [], approvalId]);
-    },
-    ids: (conversationId) => byConversation.get(conversationId) ?? [],
-  };
-}
-
 export interface ChannelTurnDeps {
   harness: Pick<HarnessTurns, "stream">;
   guard: VendoGuard;
   channel: ChannelsService;
   links: ChannelLinkRepository;
-  asks: ChannelAsks;
+  /** Which cards actually went out over this channel — see
+   *  `ChannelAskRepository`, and why it is in the store and not in memory. */
+  asks: ChannelAskRepository;
 }
 
 /** What the person is told when a call parks: the exact action and its exact
@@ -149,13 +132,14 @@ export async function runChannelTurn(
 
   const answer = event.text.trim();
   if (YES.test(answer) || NO.test(answer)) {
-    const asked = deps.asks.ids(event.conversationId);
+    const asked = await deps.asks.ids(event.conversationId);
     const mine = (await deps.guard.approvals.pending(principal))
       .filter((request) => asked.includes(request.id))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .at(-1);
     if (mine !== undefined) {
       await deps.guard.approvals.decide(mine.id, { approve: YES.test(answer) }, principal);
+      await deps.asks.consume(mine.id);
       return;
     }
   }
@@ -173,11 +157,9 @@ export async function runChannelTurn(
     // would leave a card decidable by a later bare YES even though the text
     // carrying its action and arguments never arrived — consent for a
     // money-moving call, given on a surface that never showed it, which is the
-    // exact failure `ChannelAsks` exists to prevent. A rejected send leaves it
+    // exact failure the ask rows exist to prevent. A rejected send leaves it
     // unrecorded, so it stays unanswerable and the turn times out instead.
-    return send(approvalText(request)).then(() => {
-      deps.asks.add(event.conversationId, request.id);
-    });
+    return send(approvalText(request)).then(() => deps.asks.add(link.subject, event.conversationId, request.id));
   });
   try {
     const threadId = rollingThread(link);

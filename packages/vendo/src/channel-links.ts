@@ -11,10 +11,29 @@
  * only, so a hosted store serves it too, and the refs carry the subject so
  * `eraseStore().bySubject` sweeps a departing user's link with the rest.
  */
-import { VendoError, type IsoDateTime, type StoreAdapter, type VendoRecord } from "@vendoai/core";
+import {
+  VendoError,
+  type ApprovalId,
+  type IsoDateTime,
+  type StoreAdapter,
+  type VendoRecord,
+} from "@vendoai/core";
 
 const LINK_COLLECTION = "vendo_channel_links";
 const LINK_ID_PATTERN = /^chl_[0-9a-f]+$/;
+
+const EVENT_COLLECTION = "vendo_channel_events";
+/** How long a delivered event id is remembered. Cloud retries a delivery that
+ *  did not answer 202, and a retry must never run the turn twice — but the rows
+ *  must not pile up for the life of the deployment either, so a claim prunes the
+ *  conversation's stale ones as it goes. A day outlasts every retry the broker
+ *  will make, and matches the window a conversation itself lives in. */
+const DELIVERY_MEMORY_MS = 24 * 60 * 60_000;
+
+const ASK_COLLECTION = "vendo_channel_asks";
+/** An approval id IS the row id, and the guard mints them `apr_<uuid>`
+ *  (guard.ts:205) — so a row that is not one was not written by this file. */
+const ASK_ID_PATTERN = /^apr_[0-9a-f-]+$/;
 
 /** Unambiguous alphabet: no O/0, no I/1/L. A person retypes this code from one
  *  message into another, on a phone keyboard. */
@@ -215,5 +234,128 @@ export class ChannelLinkRepository {
       cursor = page.cursor;
     } while (cursor !== undefined);
     return links;
+  }
+}
+
+/**
+ * The approvals THIS conversation asked about.
+ *
+ * Load-bearing, not bookkeeping: a "YES" must only ever decide a card that went
+ * out over this channel. `guard.approvals.pending` is scoped to the subject, so
+ * deciding the newest pending one would let a text approve the card the person
+ * is looking at in a web tab — consent for a money-moving call, given on a
+ * surface that never showed it.
+ *
+ * In the STORE rather than in memory, because the ask and its answer arrive as
+ * two separate inbound deliveries and a deployment is a request handler: on a
+ * serverless host those two land on different instances, and a restart parts
+ * them anywhere. A composition-scoped map answers the second delivery with an
+ * empty set, so the "YES" reads as an ordinary message and the card the person
+ * WAS shown sits pending until it times out. Rows carry the subject, so
+ * `eraseStore().bySubject` sweeps them with the link.
+ */
+export class ChannelAskRepository {
+  constructor(private readonly store: StoreAdapter) {}
+
+  /** Remember that this conversation was told about this approval. The approval
+   *  id is the row id, so recording the same ask twice leaves one row. */
+  async add(subject: string, conversationId: string, approvalId: ApprovalId): Promise<void> {
+    await this.records().put({
+      id: approvalId,
+      data: { subject, conversationId },
+      refs: { subject, conversation: conversationId },
+    });
+  }
+
+  /** The approvals this conversation may answer. */
+  async ids(conversationId: string): Promise<readonly ApprovalId[]> {
+    const ids: ApprovalId[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.records().list({
+        refs: { conversation: conversationId },
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      for (const record of page.records) {
+        if (ASK_ID_PATTERN.test(record.id)) ids.push(record.id as ApprovalId);
+      }
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+    return ids;
+  }
+
+  /** Spend the row the moment its card is decided: a card answered once is not
+   *  answerable again, and the rows must not outlive the conversations. */
+  async consume(approvalId: ApprovalId): Promise<void> {
+    await this.records().delete(approvalId);
+  }
+
+  private records(): ReturnType<StoreAdapter["records"]> {
+    return this.store.records(ASK_COLLECTION);
+  }
+}
+
+/** The row id for a delivery: a digest, because the id is the vendor's string
+ *  and a record id is ours. Hashing keeps two different deliveries from ever
+ *  sanitizing down to the same row — which would silently swallow a real text. */
+async function deliveryRowId(eventId: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
+  return `cev_${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Which deliveries this deployment has already run.
+ *
+ * In the store for the same reason the ask rows are: `eventId` is the wire
+ * contract's idempotency key, and a Set in one instance's memory cannot honour
+ * it. Cloud retries a delivery that did not answer 202, and on a serverless host
+ * that retry is a different instance — which would run the person's text a
+ * SECOND time, with a second tool call and a second charge behind it.
+ *
+ * Read-then-write rather than a conditional insert, because the records door has
+ * no create-if-absent. Retries are sequential by construction — one exists only
+ * because the delivery before it did not answer — so a retry does not land in
+ * the window between the read and the write. Two genuinely concurrent copies of
+ * one delivery would still both run; closing that needs a conditional write at
+ * the adapter layer.
+ *
+ * The row holds the event id and a timestamp, never the phone or the text, so
+ * there is nothing here for `eraseStore().bySubject` to have to reach.
+ */
+export class ChannelEventLog {
+  constructor(private readonly store: StoreAdapter) {}
+
+  /** True when this delivery is ours to run, false when it already ran. */
+  async claim(eventId: string, conversationId: string): Promise<boolean> {
+    const id = await deliveryRowId(eventId);
+    if (await this.records().get(id) !== null) return false;
+    await this.records().put({
+      id,
+      data: { eventId, seenAt: new Date(Date.now()).toISOString() },
+      refs: { conversation: conversationId },
+    });
+    await this.prune(conversationId);
+    return true;
+  }
+
+  /** Drop this conversation's deliveries once they are older than any retry. */
+  private async prune(conversationId: string): Promise<void> {
+    const cutoff = Date.now() - DELIVERY_MEMORY_MS;
+    let cursor: string | undefined;
+    do {
+      const page = await this.records().list({
+        refs: { conversation: conversationId },
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      for (const record of page.records) {
+        const seenAt = (record.data as { seenAt?: string } | null)?.seenAt;
+        if (seenAt !== undefined && Date.parse(seenAt) < cutoff) await this.records().delete(record.id);
+      }
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+  }
+
+  private records(): ReturnType<StoreAdapter["records"]> {
+    return this.store.records(EVENT_COLLECTION);
   }
 }

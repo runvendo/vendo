@@ -3,8 +3,15 @@
  * binding lives, and the one door the wire and the host both call.
  */
 import { VendoError } from "@vendoai/core";
-import { CODE_PATTERN, ChannelLinkRepository, maskPhone, normalizeCode } from "./channel-links.js";
-import { channelAsks, runChannelTurn } from "./channel-turn.js";
+import {
+  CODE_PATTERN,
+  ChannelAskRepository,
+  ChannelLinkRepository,
+  ChannelEventLog,
+  maskPhone,
+  normalizeCode,
+} from "./channel-links.js";
+import { runChannelTurn } from "./channel-turn.js";
 import {
   channelInboundSecret as deriveInboundSecret,
   cloudTextChannel,
@@ -36,9 +43,6 @@ export function selectChannels(configured: CreateVendoConfig["channels"]): Chann
   return cloudTextChannel(cloud);
 }
 
-/** How many delivered event ids to remember. Cloud retries a delivery that did
- *  not answer 202, and a retry must not run the turn twice. */
-const SEEN_EVENTS_CAP = 500;
 
 export const composeChannels = (composition: VendoComposition): Pick<VendoComposition,
   "channels" | "channelDoor" | "channelInboundSecret"> => {
@@ -83,11 +87,13 @@ export const composeChannels = (composition: VendoComposition): Pick<VendoCompos
     }
   };
 
-  const seenEvents = new Set<string>();
-  // Which approvals each conversation asked about — the set a "YES" may decide
-  // from. Composition-scoped because the ask and its answer arrive as two
-  // separate deliveries.
-  const asks = channelAsks();
+  // Both of these live in the STORE, not in this closure. A deployment is a
+  // request handler: on a serverless host consecutive deliveries land on
+  // different instances, and a restart parts any two of them. In-memory state
+  // here reads as "never seen it" on the instance that needs it most — the one
+  // holding the retry, or the one holding the "YES".
+  const delivered = new ChannelEventLog(composition.store);
+  const asks = new ChannelAskRepository(composition.store);
 
   const door: ChannelDoor = {
     async invite(principal) {
@@ -114,11 +120,7 @@ export const composeChannels = (composition: VendoComposition): Pick<VendoCompos
     },
 
     async inbound(event) {
-      if (seenEvents.has(event.eventId)) return;
-      // Oldest out, not everything out: clearing the whole set would let a
-      // retry of the delivery just before the cap run its turn a second time.
-      if (seenEvents.size >= SEEN_EVENTS_CAP) seenEvents.delete(seenEvents.values().next().value!);
-      seenEvents.add(event.eventId);
+      if (!await delivered.claim(event.eventId, event.conversationId)) return;
       // A text that IS a live code claims the link — whether the phone is a
       // stranger sending the second text of a link, or an already-linked phone
       // moving to another account. `claim` answers null for anything that is

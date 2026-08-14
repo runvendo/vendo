@@ -1,9 +1,16 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ApprovalId } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChannelLinkRepository, LINK_CODE_TTL_MS, maskPhone } from "../src/channel-links.js";
+import {
+  ChannelAskRepository,
+  ChannelEventLog,
+  ChannelLinkRepository,
+  LINK_CODE_TTL_MS,
+  maskPhone,
+} from "../src/channel-links.js";
 
 /**
  * The phone ↔ principal binding: minted from inside the product, claimed by the
@@ -21,7 +28,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function repository(): Promise<ChannelLinkRepository> {
+async function freshStore(): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-channel-links-"));
   const store: VendoStore = createStore({ dataDir });
   cleanups.push(async () => {
@@ -29,7 +36,11 @@ async function repository(): Promise<ChannelLinkRepository> {
     await rm(dataDir, { recursive: true, force: true });
   });
   await store.ensureSchema();
-  return new ChannelLinkRepository(store);
+  return store;
+}
+
+async function repository(): Promise<ChannelLinkRepository> {
+  return new ChannelLinkRepository(await freshStore());
 }
 
 /** Travel without touching timers: the repository asks `Date.now()`, and PGlite
@@ -158,5 +169,96 @@ describe("maskPhone", () => {
     expect(maskPhone("+15551230123")).toBe("+1 ••• ••• 0123");
     expect(maskPhone("+1 (555) 123-0123")).toBe("+1 ••• ••• 0123");
     expect(maskPhone("+15551230123")).not.toContain("555");
+  });
+});
+
+const APPROVAL = "apr_11111111-1111-1111-1111-111111111111" as ApprovalId;
+const OTHER_APPROVAL = "apr_22222222-2222-2222-2222-222222222222" as ApprovalId;
+
+/**
+ * The rows that let a bare "YES" mean something.
+ *
+ * THE FAILURE THESE PIN: the ask and its answer are two separate inbound
+ * deliveries, so the copy of the deployment that hears "YES" is not reliably the
+ * copy that asked. Holding this in a composition-scoped Map answered the second
+ * delivery with an empty set, and the card the person WAS shown became an
+ * ordinary message — the answer read as a new question, the card left to time
+ * out. Everything here is therefore asserted through a SECOND repository over
+ * the same store: a different instance, reading what the first one wrote.
+ */
+describe("the ask rows a YES is answered from", () => {
+  it("are readable by another instance over the same store", async () => {
+    const store = await freshStore();
+    await new ChannelAskRepository(store).add("user_a", "conv_1", APPROVAL);
+
+    const elsewhere = new ChannelAskRepository(store);
+    expect(await elsewhere.ids("conv_1")).toEqual([APPROVAL]);
+    // Scoped to the conversation that was actually told: a card texted to one
+    // conversation is not answerable from another.
+    expect(await elsewhere.ids("conv_2")).toEqual([]);
+  });
+
+  it("are spent when the card is decided, so one YES cannot answer twice", async () => {
+    const store = await freshStore();
+    const asks = new ChannelAskRepository(store);
+    await asks.add("user_a", "conv_1", APPROVAL);
+    await asks.add("user_a", "conv_1", OTHER_APPROVAL);
+
+    await new ChannelAskRepository(store).consume(APPROVAL);
+
+    expect(await asks.ids("conv_1")).toEqual([OTHER_APPROVAL]);
+  });
+
+  it("records one row per card, however many times the ask is retried", async () => {
+    const store = await freshStore();
+    const asks = new ChannelAskRepository(store);
+    await asks.add("user_a", "conv_1", APPROVAL);
+    await asks.add("user_a", "conv_1", APPROVAL);
+
+    expect(await asks.ids("conv_1")).toEqual([APPROVAL]);
+  });
+});
+
+/**
+ * Delivery idempotency, which the wire contract makes `eventId`'s job.
+ *
+ * THE FAILURE THIS PINS: Cloud retries a delivery that did not answer 202, and a
+ * retry lands wherever the load balancer sends it. Remembered in one instance's
+ * memory, the retry looks new to the instance holding it — and the person's text
+ * runs a SECOND time, with a second tool call behind it.
+ */
+describe("the delivery log", () => {
+  it("gives one delivery to exactly one caller, on any instance", async () => {
+    const store = await freshStore();
+    const log = new ChannelEventLog(store);
+
+    expect(await log.claim("evt_1", "conv_1")).toBe(true);
+    expect(await log.claim("evt_1", "conv_1")).toBe(false);
+    expect(await new ChannelEventLog(store).claim("evt_1", "conv_1")).toBe(false);
+    expect(await log.claim("evt_2", "conv_1")).toBe(true);
+  });
+
+  it("keeps a vendor's event id out of the row id, so two ids never collide", async () => {
+    const store = await freshStore();
+    const log = new ChannelEventLog(store);
+
+    // Two ids a naive sanitize would fold onto one row — the second text would
+    // then be swallowed as a retry of the first and never answered.
+    expect(await log.claim("evt/1", "conv_1")).toBe(true);
+    expect(await log.claim("evt_1", "conv_1")).toBe(true);
+  });
+
+  it("forgets deliveries older than a day and keeps the ones inside it", async () => {
+    const store = await freshStore();
+    const log = new ChannelEventLog(store);
+    expect(await log.claim("evt_old", "conv_1")).toBe(true);
+
+    at(25 * 60 * 60_000);
+    expect(await log.claim("evt_new", "conv_1")).toBe(true);
+
+    // The old row was pruned by that claim, so its id is free again; the fresh
+    // one is still remembered, because a retry can still be in flight.
+    expect(await log.claim("evt_old", "conv_1")).toBe(true);
+    expect(await log.claim("evt_new", "conv_1")).toBe(false);
   });
 });
