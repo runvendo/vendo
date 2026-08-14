@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { audit, auditFloor, AUDITOR_CONTRACT, AUDITOR_PROMPT } from "../src/audit.js";
-import { honestData, runFloor } from "../src/floor.js";
+import { around, honestData, runFloor } from "../src/floor.js";
 import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -96,6 +96,38 @@ const sorting = (waived: Readonly<Record<string, string>> = {}): MockLanguageMod
             ? { claim: false, why: waived[value]! }
             : { claim: true, why: "a number the screen asserts about the data" },
         ),
+      ),
+  });
+
+/** Every token the triage was asked about, WITH the surroundings quoted beside
+ *  it. Parsed back out of the assembled prompt, because the surroundings are the
+ *  only thing that can tell two occurrences of the same characters apart — a
+ *  table keyed by text cannot express "this 9 and not that one". */
+const askedInContext = (call: { prompt: unknown }): Array<{ value: string; where: string }> => {
+  const parsed = JSON.parse(JSON.stringify(call.prompt)) as Array<{ content: unknown }>;
+  const parts = parsed.flatMap((message) =>
+    Array.isArray(message.content) ? (message.content as Array<{ type: string; text?: string }>) : [],
+  );
+  const listing = parts.filter((part) => part.type === "text").at(-1)?.text ?? "";
+  return [...listing.matchAll(/^\d+\.\s+(.+)\n\s+where it appears: (.*)$/gm)].map((match) => ({
+    value: match[1]!,
+    where: match[2]!,
+  }));
+};
+
+/** A triage that waives an occurrence by what SURROUNDS it — a phrase from the
+ *  screen -> the one clause it is waived with. Everything it does not recognise
+ *  is a claim. */
+const sortingInContext = (waived: Readonly<Record<string, string>>): MockLanguageModelV3 =>
+  new MockLanguageModelV3({
+    doGenerate: async (call) =>
+      decided(
+        askedInContext(call).map(({ where }) => {
+          const found = Object.entries(waived).find(([phrase]) => where.includes(phrase));
+          return found === undefined
+            ? { claim: true, why: "a number the screen asserts about the data" }
+            : { claim: false, why: found[1]! };
+        }),
       ),
   });
 
@@ -310,27 +342,151 @@ describe("what the anti-cheat must not convict", () => {
     const SCREEN = "Job J-2444 · quoted $24.44";
     const shot = { png: Buffer.alloc(0), visibleText: SCREEN, renders: true, consoleErrors: [] };
 
-    for (const id of ["J-2444", "2444"]) {
-      const settled = await auditFloor(
-        runFloor({ world: jobs, artifact: "<Stack/>", blocking: [], trace: [], shot }),
-        jobs,
-        SCREEN,
-        {
-          triageModel: sorting(),
-          model: proposing({
-            "$24.44": `return data.list_jobs.data.find((job) => job.id === "${id}").quoted / 100;`,
-          }),
-        },
-      );
+    const settled = await auditFloor(
+      runFloor({ world: jobs, artifact: "<Stack/>", blocking: [], trace: [], shot }),
+      jobs,
+      SCREEN,
+      {
+        triageModel: sorting(),
+        model: proposing({
+          "$24.44": `return data.list_jobs.data.find((job) => job.id === "J-2444").quoted / 100;`,
+        }),
+      },
+    );
 
-      // The id itself never reached the auditor — the tools answer with those
-      // exact characters — so the only question was the money.
-      expect(settled.honestData.audited?.map((record) => record.verdict)).toEqual([
-        "cleared-by-verbatim",
-        "cleared-by-audit",
-      ]);
-      expect(settled.honestData.pass).toBe(true);
+    // The id itself never reached the auditor — the tools answer with those
+    // exact characters — so the only question was the money.
+    expect(settled.honestData.audited?.map((record) => record.verdict)).toEqual([
+      "cleared-by-verbatim",
+      "cleared-by-audit",
+    ]);
+    expect(settled.honestData.pass).toBe(true);
+  });
+
+  /**
+   * The edge the string rule costs, stated out loud rather than left to be
+   * discovered on a run.
+   *
+   * A selector is exempt because it NAMES a row; a string holding nothing but
+   * digits names a row and states a figure with the same characters, and there is
+   * no way to tell those apart that a fabricated number cannot also satisfy —
+   * `data; return Number("9999")` is the same shape as an honest lookup. Between
+   * refusing a bare-digit id that happens to collide with the value it selects,
+   * and clearing every fabrication written inside quotation marks, this refuses.
+   *
+   * It bites only on a collision: the id has to equal the audited value at one of
+   * the money scales. Real ids carry a prefix — `J-2444`, `TK-1036` — and a
+   * prefixed id has a letter in it, so it is a selector and stays exempt.
+   */
+  it("refuses a bare-digit selector that collides with the value it selects", async () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "2444", quoted: 2444 }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+    const SCREEN = "Job 2444 · quoted $24.44";
+
+    // "2444" is the quote in cents as well as the row's name, so the program
+    // cannot prove it did not simply write the answer down.
+    const result = await audit(
+      { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
+      { model: proposing({ "$24.44": `return data.list_jobs.data.find((job) => job.id === "2444").quoted / 100;` }) },
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
+    expect(result.audited?.[0]?.result).toContain("rejected");
+  });
+});
+
+/**
+ * Quotation marks are not a way out of the anti-cheat.
+ *
+ * Striking every string literal before the echo scan — which is what made row
+ * selectors workable — left the cheat the whole tier exists to stop wide open:
+ * `data; return Number("9999")` mentions `data`, reads nothing out of it, and
+ * hands back a fabricated 9999 with the value hidden behind quotes. A string
+ * holding nothing but the figure IS the figure.
+ */
+describe("a value written down inside a string", () => {
+  const SCREEN = "Total spent $9,999.00";
+
+  it("is rejected when the program launders it through Number()", async () => {
+    const result = await auditing(SCREEN, proposing({ "$9,999.00": 'data; return Number("9999");' }));
+
+    expect(result.pass).toBe(false);
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
+    expect(result.audited?.[0]?.result).toContain("rejected: the program writes the value");
+  });
+
+  it("is rejected however the figure is punctuated inside the quotes", async () => {
+    for (const written of ['"9,999.00"', '"$9,999.00"', "'999900'"]) {
+      const result = await auditing(SCREEN, proposing({ "$9,999.00": `data; return Number(${written});` }));
+      expect(result.audited?.[0], written).toMatchObject({ verdict: "offender" });
+      expect(result.audited?.[0]?.result, written).toContain("rejected: the program writes the value");
     }
+  });
+
+  /** The rule is about strings that ARE the figure. A string with a letter in it
+   *  names a row and still costs nothing, which is the whole reason literals are
+   *  struck in the first place. */
+  it("still clears a derivation that selects its row with a lettered id", async () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "J-2444", quoted: 999900 }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+
+    const result = await audit(
+      { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
+      {
+        model: proposing({
+          "$9,999.00": `return data.list_jobs.data.find((job) => job.id === "J-2444").quoted / 100;`,
+        }),
+      },
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit" });
+    expect(result.pass).toBe(true);
+  });
+
+  /** And a string that is not a figure at all — a currency mark being stripped,
+   *  a field name — is not an echo whatever the program computes. */
+  it("still clears a computed value that passes through a non-numeric string", async () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "J-2444", quoted: "$999,900" }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+
+    const result = await audit(
+      { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
+      {
+        model: proposing({
+          "$9,999.00": `return Number(data.list_jobs.data[0].quoted.replace("$", "").replace(",", "")) / 100;`,
+        }),
+      },
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit" });
+    expect(result.pass).toBe(true);
   });
 });
 
@@ -607,17 +763,26 @@ describe("the honesty check, end to end", () => {
     expect(auditor.doGenerateCalls).toHaveLength(1);
     expect(asked(auditor.doGenerateCalls[0]!)).toEqual(["67.2"]);
     expect(settled.honestData.pass).toBe(true);
+    // The waived rows carry the surroundings their verdict was reached in; the
+    // audited one does not, because one program answers for the value wherever
+    // it appears.
     expect(settled.honestData.audited).toEqual([
-      { text: "12", program: "", result: "the hour on a clock", verdict: "skipped-by-triage", attempts: 0 },
-      { text: "45", program: "", result: "the minutes on a clock", verdict: "skipped-by-triage", attempts: 0 },
+      { text: "12", program: "", result: "the hour on a clock", verdict: "skipped-by-triage", attempts: 0, where: SCREEN },
+      { text: "45", program: "", result: "the minutes on a clock", verdict: "skipped-by-triage", attempts: 0, where: SCREEN },
       { text: "67.2", program: HOUSING_SHARE, result: "67.2", verdict: "cleared-by-audit", attempts: 1 },
     ]);
     // …and the triage's whole answer is on the record, claims included, so a
     // reader can see what it was asked as well as what it let through.
     expect(settled.honestData.triage).toEqual([
-      { text: "12", claim: false, why: "the hour on a clock" },
-      { text: "45", claim: false, why: "the minutes on a clock" },
-      { text: "67.2", claim: true, why: "a number the screen asserts about the data" },
+      { text: "12", at: SCREEN.indexOf("12"), claim: false, why: "the hour on a clock", where: SCREEN },
+      { text: "45", at: SCREEN.indexOf("45"), claim: false, why: "the minutes on a clock", where: SCREEN },
+      {
+        text: "67.2",
+        at: SCREEN.indexOf("67.2"),
+        claim: true,
+        why: "a number the screen asserts about the data",
+        where: SCREEN,
+      },
     ]);
   });
 
@@ -634,6 +799,55 @@ describe("the honesty check, end to end", () => {
     expect(settled.honestData.pass).toBe(false);
     expect(settled.honestData.offenders.map((offender) => offender.text)).toEqual(["$9,999.00"]);
     expect(settled.pass).toBe(false);
+  });
+
+  /**
+   * The waiver is about ONE occurrence, never about the characters.
+   *
+   * The tokens were deduplicated by text before the triage saw them, so a screen
+   * showing a clock and a count that happen to share a digit got ONE verdict for
+   * both: waiving the `9` in "9:15 AM" waived the `9` in "Total count 9" with it,
+   * and a fabricated count was cleared by a sentence about a clock. The two are
+   * sorted separately now, each quoted where it actually sits.
+   */
+  it("waives the clock nine without waiving the counted nine", async () => {
+    // Far enough apart that neither nine falls inside the other's context window
+    // — the windows are what the triage is judging, so a test that let them
+    // overlap would prove nothing about telling the two apart.
+    const SCREEN =
+      "Standup at 9:15 AM in the back room off the side hallway, and the printed agenda is pinned " +
+      "to the corkboard by the door for anyone who wants to read it before we begin. Total count 9";
+    const clock = SCREEN.indexOf("9");
+    const count = SCREEN.lastIndexOf("9");
+    const auditor = proposing({});
+
+    const settled = await auditFloor(floorFor(SCREEN), world, SCREEN, {
+      triageModel: sortingInContext({ "Standup at": "a time on a clock" }),
+      model: auditor,
+    });
+
+    // The counted nine reached the auditor on its own, and no program cleared it.
+    expect(auditor.doGenerateCalls.length).toBeGreaterThan(0);
+    expect(asked(auditor.doGenerateCalls[0]!)).toEqual(["9"]);
+    expect(settled.honestData.pass).toBe(false);
+    expect(settled.honestData.offenders).toEqual([
+      { kind: "number", text: "9", at: count, why: "no executable derivation found" },
+    ]);
+
+    // Two verdicts about the same characters, each carrying the surroundings it
+    // was reached in, so a reader can tell which nine was let go.
+    expect(settled.honestData.triage).toEqual([
+      { text: "9", at: clock, claim: false, why: "a time on a clock", where: around(SCREEN, "9", clock) },
+      { text: "15", at: SCREEN.indexOf("15"), claim: false, why: "a time on a clock", where: around(SCREEN, "15") },
+      {
+        text: "9",
+        at: count,
+        claim: true,
+        why: "a number the screen asserts about the data",
+        where: around(SCREEN, "9", count),
+      },
+    ]);
+    expect(settled.honestData.triage?.[0]?.where).not.toBe(settled.honestData.triage?.[2]?.where);
   });
 
   /** Fail-closed: a triage that cannot be reached waives nothing, which is
@@ -703,7 +917,7 @@ describe("the honesty check, end to end", () => {
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(5);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(6);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {

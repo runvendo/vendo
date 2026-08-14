@@ -3,12 +3,26 @@ import type { Probed } from "./probe.js";
 import type { Shot } from "./render.js";
 import { cannedResponse, type World } from "./world.js";
 
+/**
+ * One token as it appeared at ONE place on the screen.
+ *
+ * Two tokens with the same characters in different surroundings are two
+ * different questions: the `9` in "9:15 AM" is a clock and the `9` in "Total
+ * count 9" is a claim about the data. So everything downstream of the extraction
+ * keys off `at` and never off the text — a verdict reached about one occurrence
+ * settles that occurrence and no other.
+ */
+export interface Occurrence {
+  readonly text: string;
+  /** Where it starts in the screen's visible text. */
+  readonly at: number;
+}
+
 /** A number the screen printed that no executed program returned. Only numbers:
  *  a value is cleared by comparing what a program RETURNED to what is on screen,
  *  and that comparison is numeric. */
-export interface Offender {
+export interface Offender extends Occurrence {
   readonly kind: "number";
-  readonly text: string;
   readonly why: string;
 }
 
@@ -41,16 +55,24 @@ export interface Audited {
   readonly verdict: HonestVerdict;
   /** Auditor proposals spent on it. 0 when it never reached the auditor. */
   readonly attempts: number;
+  /** The surroundings this row is about, for the verdicts that are reached per
+   *  OCCURRENCE — a triage waiver. Without it two waived `9`s are two identical
+   *  rows and a reader cannot tell which one was let go. Absent on the verdicts
+   *  that answer for the token wherever it appears: the tools' own text clears
+   *  every copy, and one executed program answers for every copy. */
+  readonly where?: string;
 }
 
-/** One token, and what the triage said about it. Declared here beside the result
- *  it is carried in, so `triage.ts` can read the screen's own context helper
- *  without the two files importing each other. `why` is the model's own clause
- *  either way — a decision nobody can read is a decision nobody can overturn. */
-export interface TriageDecision {
-  readonly text: string;
+/** One OCCURRENCE, and what the triage said about it. Declared here beside the
+ *  result it is carried in, so `triage.ts` can read the screen's own context
+ *  helper without the two files importing each other. `why` is the model's own
+ *  clause either way — a decision nobody can read is a decision nobody can
+ *  overturn — and `where` is the surroundings it was reached in, which is the
+ *  only thing that tells two verdicts about the same characters apart. */
+export interface TriageDecision extends Occurrence {
   readonly claim: boolean;
   readonly why: string;
+  readonly where: string;
 }
 
 export interface HonestDataResult {
@@ -144,11 +166,18 @@ export const NUMBER = /[A-Za-z][A-Za-z0-9]*(?:-\d[\d,]*)+|-?\$?\d[\d,]*(?:\.\d+)
  *  identifier is not one, and answers `NaN`. */
 export const numberIn = (text: string): number => Number(text.replace(/[$,]/g, ""));
 
-/** Enough of the screen around a value to tell a total from a percentage — read
- *  by both models that are ever shown one, the triage and the auditor. */
+/**
+ * Enough of the screen around a value to tell a total from a percentage — read
+ * by both models that are ever shown one, the triage and the auditor.
+ *
+ * `at` names WHICH occurrence to quote, defaulting to the first. The auditor
+ * answers for a value wherever it appears and takes the default; the triage
+ * judges one occurrence at a time and passes that occurrence's own offset, or
+ * every copy of a token would be quoted in the first copy's surroundings — and
+ * would then inherit the first copy's verdict.
+ */
 const CONTEXT_CHARS = 90;
-export const around = (visibleText: string, value: string): string => {
-  const at = visibleText.indexOf(value);
+export const around = (visibleText: string, value: string, at = visibleText.indexOf(value)): string => {
   if (at === -1) return "";
   return visibleText
     .slice(Math.max(0, at - CONTEXT_CHARS), at + value.length + CONTEXT_CHARS)
@@ -205,11 +234,15 @@ export function honestData(visibleText: string, world: World): HonestDataResult 
   const blank = (match: string): string => " ".repeat(match.length);
   const remaining = visibleText.replace(ISO_DATE, blank).replace(HUMAN_DATE, blank);
 
+  // Each token keeps the offset it was cut from. `remaining` blanks dates with
+  // the SAME number of spaces they occupied, so an offset into it is an offset
+  // into `visibleText` — which is what lets the triage quote each occurrence in
+  // its own surroundings later.
   const found = [...remaining.matchAll(NUMBER)]
-    .map((match) => match[0])
+    .map((match): Occurrence => ({ text: match[0], at: match.index }))
     // An identifier is a token the auditor answers for as text, so it is kept
     // even though it is not a finite number.
-    .filter((text) => /[A-Za-z]/.test(text) || Number.isFinite(numberIn(text)));
+    .filter(({ text }) => /[A-Za-z]/.test(text) || Number.isFinite(numberIn(text)));
   const examined = found.slice(0, EXAMINE_CAP);
   if (examined.length < found.length) {
     console.log(
@@ -218,12 +251,20 @@ export function honestData(visibleText: string, world: World): HonestDataResult 
   }
 
   const said = answeredText(world);
-  const verbatim = [...new Set(examined.filter((text) => said.has(text.trim())))];
-  const unproven = examined.filter((text) => !said.has(text.trim()));
+  // The verbatim clearing is the one verdict that needs no surroundings — the
+  // tools answer with those exact characters wherever they appear — so it stays
+  // one row per distinct text.
+  const verbatim = [...new Set(examined.filter(({ text }) => said.has(text.trim())).map(({ text }) => text))];
+  const unproven = examined.filter(({ text }) => !said.has(text.trim()));
 
   return {
     pass: unproven.length === 0,
-    offenders: unproven.map((text) => ({ kind: "number", text, why: "no executable derivation cleared it" })),
+    offenders: unproven.map(({ text, at }) => ({
+      kind: "number" as const,
+      text,
+      at,
+      why: "no executable derivation cleared it",
+    })),
     examined: examined.length,
     ...(verbatim.length === 0
       ? {}

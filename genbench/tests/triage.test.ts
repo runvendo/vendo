@@ -38,6 +38,16 @@ const answering = (decisions: Array<{ claim: boolean; why?: string }>): MockLang
 
 const SCREEN = "Job J-2444 · started 12:45 · quoted $13,200.00";
 
+/** Where a token actually sits on SCREEN. Every stage below the extraction
+ *  judges an OCCURRENCE, so a test names one by its offset rather than by its
+ *  characters — two tokens can share characters and never share a verdict. */
+const at = (text: string): number => SCREEN.indexOf(text);
+const token = (text: string) => ({ text, at: at(text) });
+
+/** SCREEN is shorter than the context window, so every token's surroundings are
+ *  the whole line. */
+const WHERE = SCREEN;
+
 describe("the triage", () => {
   it("answers one decision per token, in the order it was asked", async () => {
     const model = answering([
@@ -45,11 +55,11 @@ describe("the triage", () => {
       { claim: true, why: "the quote for this job" },
     ]);
 
-    const sorted = await triage({ values: ["12", "$13,200.00"], visibleText: SCREEN }, { model });
+    const sorted = await triage({ tokens: [token("12"), token("$13,200.00")], visibleText: SCREEN }, { model });
 
     expect(sorted.decisions).toEqual([
-      { text: "12", claim: false, why: "the hour on a clock" },
-      { text: "$13,200.00", claim: true, why: "the quote for this job" },
+      { text: "12", at: at("12"), claim: false, why: "the hour on a clock", where: WHERE },
+      { text: "$13,200.00", at: at("$13,200.00"), claim: true, why: "the quote for this job", where: WHERE },
     ]);
     expect(sorted.degraded).toBeUndefined();
     expect(sorted.usage.calls).toBe(1);
@@ -61,7 +71,7 @@ describe("the triage", () => {
   it("shows the model where on the screen each token appeared", async () => {
     const model = answering([{ claim: true, why: "the quote for this job" }]);
 
-    await triage({ values: ["$13,200.00"], visibleText: SCREEN }, { model });
+    await triage({ tokens: [token("$13,200.00")], visibleText: SCREEN }, { model });
 
     const sent = JSON.stringify(model.doGenerateCalls[0]!.prompt);
     expect(sent).toContain("$13,200.00");
@@ -72,7 +82,7 @@ describe("the triage", () => {
   it("sorts a whole screen in ONE call", async () => {
     const model = answering([{ claim: false, why: "an id" }, { claim: false, why: "a clock" }, { claim: true, why: "a total" }]);
 
-    await triage({ values: ["J-2444", "12", "$13,200.00"], visibleText: SCREEN }, { model });
+    await triage({ tokens: [token("J-2444"), token("12"), token("$13,200.00")], visibleText: SCREEN }, { model });
 
     expect(model.doGenerateCalls).toHaveLength(1);
   });
@@ -80,7 +90,7 @@ describe("the triage", () => {
   it("calls nobody when nothing survived the verbatim clearing", async () => {
     const model = answering([]);
 
-    const sorted = await triage({ values: [], visibleText: SCREEN }, { model });
+    const sorted = await triage({ tokens: [], visibleText: SCREEN }, { model });
 
     expect(model.doGenerateCalls).toHaveLength(0);
     expect(sorted.decisions).toEqual([]);
@@ -101,7 +111,7 @@ describe("fail-closed", () => {
       },
     });
 
-    const sorted = await triage({ values: ["12", "$13,200.00"], visibleText: SCREEN }, { model });
+    const sorted = await triage({ tokens: [token("12"), token("$13,200.00")], visibleText: SCREEN }, { model });
 
     expect(sorted.degraded).toBe(true);
     expect(sorted.error).toContain("503");
@@ -111,18 +121,18 @@ describe("fail-closed", () => {
   it("gives up on a request that never answers, so the case is still written", async () => {
     const model = new MockLanguageModelV3({ doGenerate: () => new Promise(() => undefined) });
 
-    const sorted = await triage({ values: ["12"], visibleText: SCREEN }, { model, timeoutMs: 20 });
+    const sorted = await triage({ tokens: [token("12")], visibleText: SCREEN }, { model, timeoutMs: 20 });
 
     expect(sorted.degraded).toBe(true);
     expect(sorted.error).toContain("did not answer within 20ms");
-    expect(sorted.decisions).toEqual([{ text: "12", claim: true, why: sorted.error }]);
+    expect(sorted.decisions).toEqual([{ text: "12", at: at("12"), claim: true, why: sorted.error, where: WHERE }]);
   });
 
   /** An answer that does not line up with the batch is not a triage of this
    *  screen — it is a guess about which token each decision belongs to. */
   it("waives nothing when the answer does not line up with the batch", async () => {
     const sorted = await triage(
-      { values: ["12", "45", "$13,200.00"], visibleText: SCREEN },
+      { tokens: [token("12"), token("45"), token("$13,200.00")], visibleText: SCREEN },
       { model: answering([{ claim: false, why: "a clock" }]) },
     );
 
@@ -134,7 +144,7 @@ describe("fail-closed", () => {
     // A waiver nobody can read is a waiver nobody can overturn, and the preview
     // prints this clause beside the value it excused.
     const sorted = await triage(
-      { values: ["12"], visibleText: SCREEN },
+      { tokens: [token("12")], visibleText: SCREEN },
       { model: answering([{ claim: false, why: "   " }]) },
     );
 
@@ -145,7 +155,7 @@ describe("fail-closed", () => {
 describe("TriageContract", () => {
   it("pins the triage's own model, separately from whoever is being graded", () => {
     expect(TriageContract.model).toBe("claude-sonnet-5");
-    expect(TriageContract.triageVersion).toBe(1);
+    expect(TriageContract.triageVersion).toBe(2);
   });
 
   /** One screen's honesty bill is priced in a single pass over the triage's and
