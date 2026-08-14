@@ -127,6 +127,8 @@ export interface AgentRun<T = never> extends PromiseLike<AgentReport<T>> {
   /** Available before the run starts, so a caller can show it (or hand it back
    *  as `run({ threadId })`) without waiting for the report. */
   readonly threadId: string;
+  /** Read ONCE, while the run runs: nothing is kept for a reader that never
+   *  attaches, and a second reader alongside the first throws. */
   readonly events: AsyncIterable<RunEvent>;
 }
 
@@ -189,18 +191,20 @@ function withResultTool(
 }
 
 /** One buffer, one waiter — everything an `AsyncIterable` fed from callbacks
- *  needs. A caller that never reads `events` costs the run nothing but the
- *  buffer. */
+ *  needs. Nothing is buffered unless a reader is attached: a run whose events
+ *  nobody reads is the common case, and buffering for it grew without a bound. */
 function eventQueue<T>(): { push: (item: T) => void; close: () => void; iterable: AsyncIterable<T> } {
   const buffered: T[] = [];
   let wake: (() => void) | undefined;
   let closed = false;
+  let reading = false;
   const nudge = (): void => {
     wake?.();
     wake = undefined;
   };
   return {
     push: (item) => {
+      if (!reading) return;
       buffered.push(item);
       nudge();
     },
@@ -210,12 +214,27 @@ function eventQueue<T>(): { push: (item: T) => void; close: () => void; iterable
     },
     iterable: {
       async *[Symbol.asyncIterator]() {
-        while (true) {
-          while (buffered.length > 0) yield buffered.shift() as T;
-          if (closed) return;
-          await new Promise<void>((resolve) => {
-            wake = resolve;
-          });
+        if (reading) throw new VendoError("validation", "run.events is single-reader — it is already being read.");
+        reading = true;
+        try {
+          while (true) {
+            while (buffered.length > 0) yield buffered.shift() as T;
+            if (closed) return;
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          }
+        } finally {
+          // A reader that LEFT is no reader at all — `break` gets here through
+          // `.return()`. What it did not take is dropped and nothing more is
+          // kept, or a cancelled read leaves the buffer growing forever, which
+          // is the whole growth this queue exists to avoid. Its seat goes back
+          // only while the run is still going: single-reader is there so two
+          // consumers cannot split ONE live stream, and a finished run has
+          // nothing left to hand a replacement, so reading it again stays the
+          // named error rather than a silently empty stream.
+          buffered.length = 0;
+          if (!closed) reading = false;
         }
       },
     },
