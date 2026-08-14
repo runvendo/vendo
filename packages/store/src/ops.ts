@@ -180,7 +180,23 @@ export function createStoreOps(
     return result.rows[0] !== undefined;
   };
 
-  /** Every message write is a thread write (same token discipline as the doors). */
+  /** Every message write is a thread write (same token discipline as the doors)
+   *  — and it is also how every message write TAKES THE THREAD ROW.
+   *
+   *  Call it BEFORE allocating a position, never after. `seq` has no unique
+   *  constraint, so two writers landing on one number leave the transcript
+   *  ordering by message id instead of by turn (THREAD_MESSAGES_AGGREGATE says
+   *  so). Any `max(seq) + 1` computed while this row is unheld is computed by
+   *  every concurrent writer from its own READ COMMITTED snapshot, and they all
+   *  get the same answer: measured on PostgreSQL 17, a batch append racing
+   *  `putMessage` collided on 20 of 20 rounds. Holding the row first makes the
+   *  loser block here until the winner COMMITs, so its allocation runs on a
+   *  fresh snapshot that already contains the winner's rows.
+   *
+   *  Every transcript writer therefore takes the SAME two locks in the SAME
+   *  order — thread row, then message rows — which is also why none of them can
+   *  deadlock against another. `appendThreadMessages` (helpers/rows.ts) is the
+   *  batch path's copy of this rule; keep the two honest with each other. */
   const touchThread = async (q: Query, threadId: string, now: string): Promise<void> => {
     await q(
       "UPDATE vendo_threads SET updated_at = $2, revision = revision + 1 WHERE id = $1",
@@ -340,6 +356,10 @@ export function createStoreOps(
           : `msg_${globalThis.crypto.randomUUID()}`;
         return await db.transaction(async (q) => {
           const now = new Date().toISOString();
+          // The thread row FIRST: it is what serialises this write's position
+          // against every other transcript writer (see touchThread). An absent
+          // thread updates nothing here and is reported below, as it always was.
+          await touchThread(q, threadId, now);
           if (!(await appendMessage(q, threadId, rowId, message, now))) {
             // The id already holds a row (an edit), or the thread is absent.
             const updated = await q(
@@ -351,7 +371,6 @@ export function createStoreOps(
               throw new VendoError("not-found", `thread ${threadId} not found`);
             }
           }
-          await touchThread(q, threadId, now);
           const record = await readThread(txDb(q), threadId);
           if (record === null) throw new VendoError("not-found", `thread ${threadId} not found`);
           return record;
@@ -390,6 +409,9 @@ export function createStoreOps(
         };
         return await db.transaction(async (q) => {
           const now = new Date().toISOString();
+          // The thread row FIRST, for the same reason putMessage does it: the
+          // position this answer takes must be allocated under that lock.
+          await touchThread(q, threadId, now);
           if (!(await appendMessage(q, threadId, rowId, message, now))) {
             const owned = await q("SELECT 1 FROM vendo_threads WHERE id = $1", [threadId]);
             if (owned.rows[0] === undefined) {
@@ -401,7 +423,6 @@ export function createStoreOps(
               + "an answer is never overwritten, so mint a fresh id for a new answer",
             );
           }
-          await touchThread(q, threadId, now);
           const record = await readThread(txDb(q), threadId);
           if (record === null) throw new VendoError("not-found", `thread ${threadId} not found`);
           return record;

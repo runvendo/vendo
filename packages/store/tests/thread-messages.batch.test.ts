@@ -161,37 +161,74 @@ for (const backend of backends()) {
      * interleaves. This needs genuine concurrent backends, so it runs on the
      * postgres leg only (POSTGRES_URL).
      */
-    it.runIf(backend.name === "postgres")("concurrent appends to one thread never share a seq", async () => {
-      const ops = createStoreOps(made.store);
-      const thread = "thr_batch_race";
-      const ROUNDS = 20;
-      // Round 0 deliberately races on a thread that does NOT exist yet, so the
-      // create path (two writers conflicting on the primary key) is covered
-      // alongside the update path (two writers queuing on the row lock).
-      for (let round = 0; round < ROUNDS; round += 1) {
-        await Promise.all([
-          ops.transcripts.appendMessages!(thread, alice.subject, [message(`m_${round}_a`, `round ${round} a`)]),
-          ops.transcripts.appendMessages!(thread, alice.subject, [message(`m_${round}_b`, `round ${round} b`)]),
-        ]);
-      }
+    /**
+     * EVERY transcript writer that allocates a position, raced against the batch
+     * append — not just the batch path against itself. The first round of this
+     * test only paired `appendMessages` with `appendMessages`, and that is
+     * precisely why it missed the same bug living in `putMessage` and
+     * `recordAnswer`: a race test proves only the pairing it actually runs.
+     */
+    const rivals = [
+      {
+        name: "appendMessages",
+        // Not pre-created: round 0 then races on a thread that does NOT exist
+        // yet, covering the create path (two writers conflicting on the primary
+        // key) alongside the update path (two queuing on the row lock).
+        seeded: false,
+        write: (ops: StoreOps, thread: string, round: number) =>
+          ops.transcripts.appendMessages!(thread, alice.subject, [message(`m_${round}_b`, "rival")]),
+      },
+      {
+        name: "putMessage",
+        seeded: true,
+        write: (ops: StoreOps, thread: string, round: number) =>
+          ops.transcripts.putMessage(thread, message(`m_${round}_b`, "rival")),
+      },
+      {
+        name: "recordAnswer",
+        seeded: true,
+        write: (ops: StoreOps, thread: string, round: number) =>
+          ops.transcripts.recordAnswer(thread, { id: `m_${round}_b`, value: round }),
+      },
+    ];
 
-      const rows = await made.sql(
-        "SELECT id, seq FROM vendo_thread_messages WHERE thread_id = $1 ORDER BY seq ASC, id ASC",
-        [thread],
+    for (const rival of rivals) {
+      it.runIf(backend.name === "postgres")(
+        `appendMessages racing ${rival.name} never shares a seq`,
+        async () => {
+          const ops = createStoreOps(made.store);
+          const thread = `thr_race_${rival.name.toLowerCase()}`;
+          const ROUNDS = 20;
+          if (rival.seeded) {
+            await ops.transcripts.putThread({ id: thread, subject: alice.subject, messages: [] });
+          }
+          for (let round = 0; round < ROUNDS; round += 1) {
+            await Promise.all([
+              ops.transcripts.appendMessages!(thread, alice.subject, [message(`m_${round}_a`, "batch")]),
+              rival.write(ops, thread, round),
+            ]);
+          }
+
+          const rows = await made.sql(
+            "SELECT id, seq FROM vendo_thread_messages WHERE thread_id = $1 ORDER BY seq ASC, id ASC",
+            [thread],
+          );
+          expect(rows).toHaveLength(ROUNDS * 2);
+          const seqs = rows.map((row) => Number(row["seq"]));
+          // THE claim: a seq identifies one position in the conversation.
+          expect(new Set(seqs).size, `duplicate seqs: ${JSON.stringify(seqs)}`).toBe(seqs.length);
+
+          // And the read-back order is the true append order: the two racers
+          // within a round may land either way round, but round k must precede
+          // round k+1. (`recordAnswer` prefixes its row id, so the round is read
+          // off the first digits rather than a fixed segment.)
+          const listed = await threadMessageStore<UIMessage>(pick("sql")).list(alice, thread);
+          const rounds = listed.map((m) => Number(/(\d+)/.exec(m.id)![1]));
+          expect(rounds, `transcript out of turn order: ${listed.map((m) => m.id).join(",")}`)
+            .toEqual([...rounds].sort((left, right) => left - right));
+        },
       );
-      expect(rows).toHaveLength(ROUNDS * 2);
-      const seqs = rows.map((row) => Number(row["seq"]));
-      // THE claim: a seq identifies one position in the conversation.
-      expect(new Set(seqs).size, `duplicate seqs: ${JSON.stringify(seqs)}`).toBe(seqs.length);
-
-      // And the read-back order is the true append order: the two racers within
-      // a round may land either way round, but round k must precede round k+1.
-      const listed = await threadMessageStore<UIMessage>(pick("sql")).list(alice, thread);
-      const roundOf = (id: string): number => Number(id.split("_")[1]);
-      const rounds = listed.map((m) => roundOf(m.id));
-      expect(rounds, `transcript out of turn order: ${listed.map((m) => m.id).join(",")}`)
-        .toEqual([...rounds].sort((left, right) => left - right));
-    });
+    }
 
     it("answers with the revision and the row count, never the transcript", async () => {
       await own("thr_batch_payload", alice.subject);
