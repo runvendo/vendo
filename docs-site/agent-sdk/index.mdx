@@ -84,8 +84,8 @@ Mints a `VENDO_API_KEY` into `.env.local` — never printed. It fills the
 model seat (through the Cloud gateway) and the sandbox, and for `createVendo`
 the store too — the Cloud hosted store. Standalone `agent()` is the exception:
 its store rung is not wired yet
-([#1259](https://github.com/runvendo/vendo/issues/1259)), so until it lands a
-key-only `agent()` passes `store: postgres(url)` or refuses to boot.
+([#1259](https://github.com/runvendo/vendo/issues/1259)), so until it lands you
+pass `store: postgres(url)` yourself — a key-only `agent()` refuses to boot.
 
 ### No Vendo key — bring your own {#bring-your-own}
 
