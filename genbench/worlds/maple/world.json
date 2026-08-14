@@ -19,7 +19,6 @@
   "style": [
     "uses the theme exactly: brand green, Onest, 8px corners — no invented colors or fonts",
     "money always shows 2 decimals with currency symbol",
-    "destructive actions ask for confirmation",
     "dates shown as 'Aug 1' style, never ISO"
   ],
   "tools": {
