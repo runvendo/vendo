@@ -1,6 +1,5 @@
 import {
   type BlobStore,
-  defaultFetch,
   parseStoreWireError,
   type RecordInput,
   type RecordQuery,
@@ -20,6 +19,7 @@ import {
   type VendoStore,
 } from "@vendoai/store";
 import { consoleSender, raiseCloudError } from "./cloud-console.js";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
@@ -133,7 +133,7 @@ const appScope = (scope: string): { appId: string; collection: string } | undefi
 export function hostedStore(options: HostedStoreOptions): HostedStore {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetch ?? defaultFetch;
+  const fetchImpl = options.fetch ?? keepAliveFetch;
 
   const send = consoleSender({
     base,
@@ -351,7 +351,7 @@ function storeWireClient(
     mountPath: CONSOLE_STORE_PATH,
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    fetchImpl: options.fetch ?? defaultFetch,
+    fetchImpl: options.fetch ?? keepAliveFetch,
     raise,
   });
 

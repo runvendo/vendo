@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from "@vendoai/core";
 import type { GuardDecision, RiskLabel, RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
-import { createMemoryStore } from "./fixtures/memory-store.js";
+import { createMemoryStore, type MemoryStore } from "./fixtures/memory-store.js";
 import { FixtureTools, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
 
 afterEach(() => {
@@ -91,6 +91,44 @@ describe("decision pipeline conformance", () => {
       }
     }
   }
+
+  it("issues the approvals and grants lookups concurrently, not one after the other", async () => {
+    // Both are read-only bookkeeping on different collections, and neither
+    // reads the other's answer — so the pair costs one round trip, not two.
+    // Wraps the real store to hold every list open long enough to see whether
+    // the two overlap; sequential lookups cannot overlap by construction.
+    const store = createMemoryStore();
+    const HELD_MS = 50;
+    const spans: Array<{ collection: string; start: number; end: number }> = [];
+    const held: MemoryStore = {
+      ...store,
+      records: (collection: string) => {
+        const records = store.records(collection);
+        return {
+          ...records,
+          list: async (query?: Parameters<typeof records.list>[0]) => {
+            const start = performance.now();
+            await new Promise((resolve) => setTimeout(resolve, HELD_MS));
+            const page = await records.list(query);
+            spans.push({ collection, start, end: performance.now() });
+            return page;
+          },
+        };
+      },
+    };
+    const d = descriptor("write");
+    const guard = createGuard({ store: held, policy: { rules: [{ match: {}, action: "ask" }] } });
+
+    await guard.check(call(d.name, { amount: 1 }, "call_concurrent"), d, context());
+
+    const approvals = spans.find((span) => span.collection === "vendo_approvals");
+    const grants = spans.find((span) => span.collection === "vendo_grants");
+    if (approvals === undefined || grants === undefined) {
+      throw new Error("expected the pipeline to look up both approvals and grants");
+    }
+    expect(grants.start).toBeLessThan(approvals.end);
+    expect(approvals.start).toBeLessThan(grants.end);
+  });
 
   it("rejects an app-bound chat grant for away automation authority", async () => {
     const store = createMemoryStore();

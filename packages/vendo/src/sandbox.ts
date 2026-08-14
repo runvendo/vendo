@@ -1,7 +1,8 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { defaultFetch, log, VendoError } from "@vendoai/core";
+import { log, VendoError } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import { raiseCloudError } from "./cloud-console.js";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
 import {
   CLOUD_BOX_PORT,
   CLOUD_SANDBOX_PATH,
@@ -279,7 +280,7 @@ const decodeOrReport = (snapshotRef: string): CloudSnapshotState => {
 export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetch ?? defaultFetch;
+  const fetchImpl = options.fetch ?? keepAliveFetch;
 
   const send = async (path: string, init: RequestInit = {}): Promise<Response> => {
     const response = await fetchImpl(`${base}${CLOUD_SANDBOX_PATH}${path}`, {
