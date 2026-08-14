@@ -125,6 +125,14 @@ const FREEZE_ROW = "freeze";
 /** The block a frozen guard returns — the same words at the check and at the
  *  execute re-read, so the two agree. */
 const FROZEN_REASON = "vendo is frozen — nothing runs until it is unfrozen";
+/** How long a CHECK-TIME freeze answer may be reused (the execute gate never
+ *  reuses one). A freeze flipped in another process therefore starts blocking
+ *  new checks within this window, and blocks every DISPATCH immediately. */
+const FROZEN_CACHE_MS = 10_000;
+/** How long a preview pass's grant read may be handed to the real pass that
+ *  follows it. The two run moments apart for one logical call; anything older
+ *  is a different moment and reads the store again. */
+const PREVIEW_SHARE_MS = 10_000;
 /** Build contract §7 — the effect ledger: one row per completed mutating call,
  *  keyed by (run, tool, exact input). It is what makes fail-and-re-run correct:
  *  a re-run of a run that already sent the payment must not send it again. */
@@ -175,6 +183,14 @@ interface DecisionMetadata {
   decision: DraftDecision;
   rationale?: string;
   invalidatedGrants?: PermissionGrant[];
+}
+
+/** What the subject's standing grants say about one call: the one that
+ *  authorizes it, and the same-tool grants a descriptor change has invalidated
+ *  (which the park offer names). */
+interface MatchedGrant {
+  grant?: PermissionGrant;
+  invalidated: PermissionGrant[];
 }
 
 interface CompletedDecision {
@@ -491,6 +507,12 @@ class GuardImplementation implements VendoGuard {
   readonly #callWindows = new Map<string, number[]>();
   readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
   #lastSweepAt = 0;
+  /** The last freeze answer a fresh read produced (see {@link frozen}). */
+  #frozenCache: { at: number; value: boolean } | undefined;
+  /** The last preview pass's grant read, waiting for its real pass. One entry:
+   *  the caller that previews executes moments later, so a second preview means
+   *  the first one's call is gone. */
+  #previewedGrant: { key: string; at: number; matched: MatchedGrant } | undefined;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
   readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
@@ -874,7 +896,21 @@ class GuardImplementation implements VendoGuard {
     await this.#setFrozen(false, by);
   }
 
-  async frozen(): Promise<boolean> {
+  /** Reads the flag row every time, unless the caller says a slightly stale
+   *  answer will do (`cached`). Only the CHECK-TIME read does: it is one static
+   *  row, read on every tool call, and the gate immediately before dispatch
+   *  (`bind().execute`) is uncached — so the freeze a cached check missed still
+   *  cannot reach a tool. Every fresh read refreshes the cached value, this
+   *  guard's own freeze()/unfreeze() included, so an in-process flip is visible
+   *  at once and only another process's flip can be up to
+   *  {@link FROZEN_CACHE_MS} stale. */
+  async frozen(opts?: { cached?: boolean }): Promise<boolean> {
+    if (
+      opts?.cached === true && this.#frozenCache !== undefined
+      && Date.now() - this.#frozenCache.at < FROZEN_CACHE_MS
+    ) {
+      return this.#frozenCache.value;
+    }
     let record: VendoRecord | null;
     try {
       record = await this.#engine.get(CONTROLS_COLLECTION, FREEZE_ROW);
@@ -884,17 +920,24 @@ class GuardImplementation implements VendoGuard {
       // in the pipeline is contained — never let it escape check()/execute() as
       // an unhandled rejection while the guard silently stops gating.
       await this.#reportUnreadableControl(errorMessage(error));
-      return true;
+      return this.#rememberFrozen(true);
     }
     // Absent row: the switch was never pulled — normal, unfrozen.
-    if (record === null) return false;
+    if (record === null) return this.#rememberFrozen(false);
     const frozen = (record.data as { frozen?: unknown }).frozen;
-    if (typeof frozen === "boolean") return frozen;
+    if (typeof frozen === "boolean") return this.#rememberFrozen(frozen);
     // A control row that EXISTS but does not parse is a kill switch we can no
     // longer read. Fail CLOSED — treat it as frozen — rather than let a corrupt
     // switch read as "run everything".
     await this.#reportUnreadableControl();
-    return true;
+    return this.#rememberFrozen(true);
+  }
+
+  /** What the next check-time read may answer with. Fail-closed answers are
+   *  cached like any other: the safe direction stays safe for at most a TTL. */
+  #rememberFrozen(value: boolean): boolean {
+    this.#frozenCache = { at: Date.now(), value };
+    return value;
   }
 
   /** The kill switch could not be read as a boolean — the row is corrupt, or
@@ -960,6 +1003,7 @@ class GuardImplementation implements VendoGuard {
       id: FREEZE_ROW,
       data: { frozen, by, at: now() },
     });
+    this.#rememberFrozen(frozen);
     await this.report({
       id: makeId("aud_"),
       at: now(),
@@ -1023,7 +1067,7 @@ class GuardImplementation implements VendoGuard {
     // `risk` (01-core §7) does not promise: it is the EFFECTIVE grade. Rather
     // than chip a possibly-wrong label, the frozen row OMITS `risk` entirely
     // (the console feed degrades cleanly to venue-led when risk is absent).
-    if (await this.frozen()) {
+    if (await this.frozen({ cached: true })) {
       // The block is the truth; the audit is best-effort. A `vendo_audit` that
       // is momentarily unavailable must never turn a freeze into an error (or,
       // worse, an un-block) — swallow the write failure and still return the
@@ -1315,10 +1359,21 @@ class GuardImplementation implements VendoGuard {
     // exactly as it was — the replay verdict is read first, the grant only
     // after it — and the replay's single-use CAS spend still happens once,
     // because `#approvedReplay` is still called once.
+    //
+    // The grant read is also the PREVIEW pass's, handed forward: a caller that
+    // previews (the harness bridge, the SDK's needsApproval hook) makes the
+    // real, dispatching call for the same (call, descriptor, ctx) moments
+    // later, and standing grants cannot have moved in between in a way this
+    // pass would act on — the approval tap that CAN move them lands on the
+    // replay, which is deliberately not shared: it must be re-read to see the
+    // fresh yes, and its single-use CAS spend happens on the real pass only.
+    const key = this.#previewKey(call, descriptor, ctx);
+    const previewed = commitRun ? this.#takePreviewedGrant(key) : undefined;
     const [replayable, matched] = await Promise.all([
       this.#approvedReplay(call, descriptor, ctx, commitRun),
-      this.#matchingGrant(call, descriptor, ctx),
+      previewed ?? this.#matchingGrant(call, descriptor, ctx),
     ]);
+    if (!commitRun) this.#previewedGrant = { key, at: Date.now(), matched };
 
     // An exact approved replay answers a confirmEach ask (05 §2 stays otherwise:
     // grants/rules/judge never suppress confirmEach — the grant lookup above is
@@ -1815,13 +1870,46 @@ class GuardImplementation implements VendoGuard {
     return false;
   }
 
+  /** Everything `#matchingGrant` answers off: the call, the frozen descriptor,
+   *  and the context bits `durationMatches`/`presenceMatches`/`scopeMatches`
+   *  read. A preview whose key differs is not this call. */
+  #previewKey(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): string {
+    return canonicalJson([
+      call.id,
+      call.tool,
+      exactInputHash(call.args),
+      descriptorHash(descriptor),
+      ctx.principal.subject,
+      ctx.venue,
+      ctx.presence,
+      ctx.sessionId,
+      ctx.appId ?? null,
+      ctx.trigger?.id ?? null,
+      ctx.trigger?.runId ?? null,
+    ]);
+  }
+
+  /** The preview's grant read, once — the real pass consumes it, and anything
+   *  that goes unconsumed expires rather than waiting for a caller that may
+   *  never come. */
+  #takePreviewedGrant(key: string): MatchedGrant | undefined {
+    const previewed = this.#previewedGrant;
+    this.#previewedGrant = undefined;
+    if (previewed === undefined || previewed.key !== key) return undefined;
+    return Date.now() - previewed.at < PREVIEW_SHARE_MS ? previewed.matched : undefined;
+  }
+
   async #matchingGrant(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
-  ): Promise<{ grant?: PermissionGrant; invalidated: PermissionGrant[] }> {
+  ): Promise<MatchedGrant> {
+    // `tool` is an indexed column on the routed grants door — (subject, tool) —
+    // so the predicate rides the query instead of paging every grant the
+    // subject ever held back to filter it here. The rest of the tests below
+    // read fields no door indexes, which is why they stay in JavaScript.
     const records = await listAll(this.#engine, GRANTS_COLLECTION, {
-      refs: { subject: ctx.principal.subject },
+      refs: { subject: ctx.principal.subject, tool: call.tool },
     });
     const fingerprint = descriptorHash(descriptor);
     const at = Date.now();
@@ -1831,7 +1919,6 @@ class GuardImplementation implements VendoGuard {
       const grant = grantData(record);
       const expiresAt = grant.expiresAt === undefined ? undefined : Date.parse(grant.expiresAt);
       if (grant.subject !== ctx.principal.subject) continue;
-      if (grant.tool !== call.tool) continue;
       if (grant.revokedAt !== undefined) continue;
       if (expiresAt !== undefined && (!Number.isFinite(expiresAt) || expiresAt <= at)) continue;
       if (!durationMatches(grant, ctx) || !presenceMatches(grant, ctx)) continue;

@@ -100,6 +100,23 @@ export interface PreparedWrite {
   prior: Current | undefined;
 }
 
+/** One path's mutation inside a batched commit: a prepared write to land, or a
+ *  tombstone. `expectedRevision` is the revision the turn checked out (`null` =
+ *  "did not exist then"), and `strict` is the mount's policy — the same pair
+ *  `land` takes, per entry. */
+export type WorkspaceCommitEntry =
+  | { path: string; write: PreparedWrite; strict: boolean; expectedRevision: number | null }
+  | { path: string; delete: true };
+
+/** What one batched commit did: the paths that lost their compare-and-swap, the
+ *  rows that now hold new content (`changed` false when the head already held
+ *  exactly these bytes), and the tombstones that actually removed a row. */
+export interface CommitAllResult {
+  conflicts: string[];
+  landed: Array<{ path: string; revision: number; updatedAt: IsoDateTime; changed: boolean }>;
+  removed: string[];
+}
+
 /** Row-level access to the workspace pair (build contract §3.3). Content lands
  *  inline or in the files adapter; every overwrite appends the superseded
  *  revision to history. */
@@ -134,6 +151,16 @@ export interface WorkspaceRows {
       expectedRevision?: number | null;
     },
   ): Promise<{ landed: boolean; revision: number; updatedAt: IsoDateTime; conflict?: true }>;
+  /** Land a whole commit's worth of entries — the turn's removals and its
+      prepared writes, in one pass. The SQL backend runs the same per-path
+      statements `land`/`remove` do; a backend over the 42-op wire sends ONE
+      `workspace.commit`, which is what takes a turn's commit from a round trip
+      per file to a round trip. */
+  commitAll(
+    owner: string,
+    entries: ReadonlyArray<WorkspaceCommitEntry>,
+    intent?: string,
+  ): Promise<CommitAllResult>;
   /** Drop a prepared write that will never land, so its blob is not orphaned. */
   discard(prepared: PreparedWrite): Promise<void>;
   /** Deleting records what it removed, because history is append-only (§3.3).
@@ -383,6 +410,17 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
     );
   };
 
+  const removeRow = async (owner: string, path: string, intent?: string): Promise<boolean> => {
+    const current = await currentOf(owner, path);
+    if (current === undefined) return false;
+    // History is append-only (§3.3): the delete records what it removed, so
+    // the blob stays — the history row is its pointer now.
+    await appendHistory(owner, path, current, intent, new Date().toISOString());
+    await db.query("DELETE FROM vendo_workspace_files WHERE path = $1 AND owner = $2", [path, owner]);
+    await trim(owner, path);
+    return true;
+  };
+
   return {
     async index(owners) {
       const result = await db.query(
@@ -430,19 +468,44 @@ export function workspaceRows(db: Db, files: FilesAdapter): WorkspaceRows {
       });
     },
 
+    /** The batch is a LOOP here, deliberately: these statements are already on
+        the database's own connection, so there is no round trip to save, and
+        each path keeps the per-path compare-and-swap (and the re-aim loop the
+        /user mounts depend on) exactly as `land` gives it. */
+    async commitAll(owner, entries, intent) {
+      const conflicts: string[] = [];
+      const landed: CommitAllResult["landed"] = [];
+      const removed: string[] = [];
+      for (const entry of entries) {
+        if ("delete" in entry) {
+          if (await removeRow(owner, entry.path, intent)) removed.push(entry.path);
+          continue;
+        }
+        const written = await landRow(owner, entry.write, {
+          ...(intent === undefined ? {} : { intent }),
+          ...(entry.strict ? { strict: true } : {}),
+          expectedRevision: entry.expectedRevision,
+        });
+        if (written.conflict === true) {
+          conflicts.push(entry.path);
+          continue;
+        }
+        landed.push({
+          path: entry.path,
+          revision: written.revision,
+          updatedAt: written.updatedAt,
+          changed: written.landed,
+        });
+      }
+      return { conflicts, landed, removed };
+    },
+
     async discard(prepared) {
       await dropBlob(prepared.stored);
     },
 
     async remove(owner, path, intent) {
-      const current = await currentOf(owner, path);
-      if (current === undefined) return false;
-      // History is append-only (§3.3): the delete records what it removed, so
-      // the blob stays — the history row is its pointer now.
-      await appendHistory(owner, path, current, intent, new Date().toISOString());
-      await db.query("DELETE FROM vendo_workspace_files WHERE path = $1 AND owner = $2", [path, owner]);
-      await trim(owner, path);
-      return true;
+      return await removeRow(owner, path, intent);
     },
 
     async moveApp(appId, from, to) {

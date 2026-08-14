@@ -1,6 +1,7 @@
 import { VendoError, type StoreOps } from "@vendoai/core";
 import { iso } from "./helpers/utils.js";
 import type {
+  CommitAllResult,
   WorkspaceFileMeta,
   WorkspaceHistoryEntry,
   WorkspaceRows,
@@ -123,30 +124,35 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
     return commits;
   };
 
+  /** One owner's whole path index. */
+  const indexOf = async (owner: string): Promise<WorkspaceFileMeta[]> => {
+    const metas: WorkspaceFileMeta[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await ops.workspace.index({
+        owner,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      for (const entry of page.entries) {
+        const row = entry as Record<string, unknown>;
+        if (typeof row["path"] !== "string") continue;
+        metas.push({
+          path: row["path"],
+          owner,
+          bytes: Number(row["bytes"] ?? 0),
+          revision: Number(row["revision"] ?? 0),
+          updatedAt: iso(row["updatedAt"] ?? new Date(0).toISOString()),
+        });
+      }
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+    return metas;
+  };
+
   return {
     async index(owners) {
       const metas: WorkspaceFileMeta[] = [];
-      for (const owner of owners) {
-        let cursor: string | undefined;
-        do {
-          const page = await ops.workspace.index({
-            owner,
-            ...(cursor === undefined ? {} : { cursor }),
-          });
-          for (const entry of page.entries) {
-            const row = entry as Record<string, unknown>;
-            if (typeof row["path"] !== "string") continue;
-            metas.push({
-              path: row["path"],
-              owner,
-              bytes: Number(row["bytes"] ?? 0),
-              revision: Number(row["revision"] ?? 0),
-              updatedAt: iso(row["updatedAt"] ?? new Date(0).toISOString()),
-            });
-          }
-          cursor = page.cursor;
-        } while (cursor !== undefined);
-      }
+      for (const owner of owners) metas.push(...await indexOf(owner));
       return metas.sort((left, right) => (left.path < right.path ? -1 : 1));
     },
 
@@ -209,6 +215,63 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
         throw error;
       }
       return { landed: true, revision: checkedOut + 1, updatedAt: new Date().toISOString() };
+    },
+
+    /** The whole turn in ONE `workspace.commit` — the wire has been
+        array-shaped all along, and the per-path loop this replaces paid a round
+        trip per file. Per-entry `expectedRevision` rides along unchanged, so
+        the strict mounts keep their compare-and-swap and a stale one still
+        refuses the WHOLE commit. */
+    async commitAll(owner, entries, _intent) {
+      const wire: unknown[] = [];
+      const landed: CommitAllResult["landed"] = [];
+      const removed: string[] = [];
+      const guarded = new Map<string, number | null>();
+      for (const entry of entries) {
+        if ("delete" in entry) {
+          // The wire's tombstone never says whether a row was there, and the
+          // façade counts only real removals — so ask, exactly as the per-path
+          // remove did.
+          if ((await readOne(owner, entry.path)) === undefined) continue;
+          wire.push({ path: entry.path, delete: true });
+          removed.push(entry.path);
+          continue;
+        }
+        if (entry.strict) guarded.set(entry.path, entry.expectedRevision);
+        wire.push({
+          path: entry.path,
+          data: workspaceBytesToJson(entry.write.content),
+          ...(entry.strict ? { expectedRevision: entry.expectedRevision } : {}),
+        });
+        landed.push({
+          // The server assigns the real revision; this is the checked-out one
+          // plus one, exactly as the per-path `land` reported it.
+          path: entry.path,
+          revision: (entry.expectedRevision ?? 0) + 1,
+          updatedAt: new Date().toISOString(),
+          changed: true,
+        });
+      }
+      if (wire.length === 0) return { conflicts: [], landed: [], removed: [] };
+      try {
+        await ops.workspace.commit(wire, { owner });
+      } catch (error) {
+        if (!(error instanceof VendoError) || error.code !== "conflict") throw error;
+        // §9.7 — a lost swap is the frozen conflict branch, not a failure. The
+        // refusal names no path on the wire (the error envelope carries a code
+        // and a message, nothing else), so read the heads back and re-run the
+        // server's own comparison: nothing landed, so a guarded path whose head
+        // is not what this turn checked out is precisely one that moved.
+        const heads = new Map((await indexOf(owner)).map((meta) => [meta.path, meta.revision]));
+        const conflicts = [...guarded]
+          .filter(([path, at]) => (heads.get(path) ?? null) !== at)
+          .map(([path]) => path);
+        // A conflict under no moved path is not this branch — it is the
+        // idempotency ledger refusing a reused key, and it belongs to the caller.
+        if (conflicts.length === 0) throw error;
+        return { conflicts, landed: [], removed: [] };
+      }
+      return { conflicts: [], landed, removed };
     },
 
     async discard() {
