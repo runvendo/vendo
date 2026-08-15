@@ -273,7 +273,13 @@ describe("vendo/store-wire@1", () => {
       thread: { id: "", subject: "s", messages: [] },
     }).success).toBe(false);
 
-    expect(storeWireTranscriptsGetThreadRequestSchema.parse({ id: "t1", limit: 50 }).limit).toBe(50);
+    // An id and nothing else. The `cursor`/`limit` this schema used to declare
+    // were a windowing request the answer has no room to page with, so no mount
+    // ever honored them; an older client still sending them is READ, not
+    // refused, which is what `.passthrough()` buys.
+    expect(storeWireTranscriptsGetThreadRequestSchema.parse({ id: "t1" }).id).toBe("t1");
+    expect("limit" in storeWireTranscriptsGetThreadRequestSchema.shape).toBe(false);
+    expect(storeWireTranscriptsGetThreadRequestSchema.safeParse({ id: "t1", limit: 50 }).success).toBe(true);
     expect(storeWireTranscriptsListThreadsRequestSchema.parse({ subject: "sub_user1" }).subject).toBe("sub_user1");
     expect(storeWireTranscriptsDeleteThreadRequestSchema.parse({ id: "t1" }).id).toBe("t1");
     expect(storeWireTranscriptsPutMessageRequestSchema.parse({ threadId: "t1", message: { role: "user", content: "test" } }).threadId).toBe("t1");
@@ -354,6 +360,22 @@ describe("vendo/store-wire@1", () => {
     expect(roundTripped.message).toBe("unknown record");
     expect(STORE_WIRE_STATUS_BY_CODE["cloud-required"]).toBe(402);
     expect(STORE_WIRE_STATUS_BY_CODE["validation"]).toBe(400);
+  });
+
+  /** `VendoError.detail` crosses. `workspace.commit`'s conflict names the paths
+      that moved in `detail.conflicts`, and before this the envelope carried a
+      code and a sentence, so a hosted caller had to re-read the whole index and
+      re-derive them by hand. A refusal with no detail still sends no key. */
+  it("the error envelope carries VendoError.detail, and omits it when there is none", () => {
+    const conflict = new VendoError("conflict", "the workspace moved on", { conflicts: ["a.json", "b.json"] });
+    const { status, body } = storeWireErrorBody(conflict);
+    expect(status).toBe(409);
+    expect(body.error.detail).toEqual({ conflicts: ["a.json", "b.json"] });
+    expect(parseStoreWireError(status, body).detail).toEqual({ conflicts: ["a.json", "b.json"] });
+
+    const plain = storeWireErrorBody(new VendoError("not-found", "unknown record"));
+    expect("detail" in plain.body.error).toBe(false);
+    expect(parseStoreWireError(plain.status, plain.body).detail).toBeUndefined();
   });
 
   it("parseStoreWireError: enveloped code wins, bare statuses map, junk degrades honestly", () => {

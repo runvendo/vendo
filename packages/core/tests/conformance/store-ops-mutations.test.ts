@@ -39,6 +39,7 @@ type Flaw =
   | "appendSortsTheBatch"
   | "appendNeverEdits"
   | "appendAcceptsAnEmptyBatch"
+  | "appendQuietlyDropsADuplicateId"
   | "appendRefusesAThreadItShouldCreate"
   | "appendRevisionNeverMoves"
   | "commitIgnoresItsGuard"
@@ -154,6 +155,17 @@ function broken(flaw: Flaw): StoreOps {
     case "appendAcceptsAnEmptyBatch":
       return { ...ops, transcripts: { ...ops.transcripts, appendMessages: async (threadId, subject, messages, opts) =>
         messages.length === 0 ? { revision: "0", count: 0 } : await append(threadId, subject, messages, opts) } };
+    case "appendQuietlyDropsADuplicateId":
+      return { ...ops, transcripts: { ...ops.transcripts, appendMessages: (threadId, subject, messages, opts) => {
+        // De-duplicating instead of refusing: the caller believes both landed.
+        const seen = new Set<string>();
+        return append(threadId, subject, messages.filter((message) => {
+          const id = String((message as { id?: unknown }).id);
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        }), opts);
+      } } };
     case "appendRefusesAThreadItShouldCreate":
       return { ...ops, transcripts: { ...ops.transcripts, appendMessages: async (threadId, subject, messages, opts) => {
         if (await ops.transcripts.getThread(threadId) === null) {
@@ -237,6 +249,7 @@ const proofs: Array<{ flaw: Flaw; case: string; red: RegExp }> = [
   { flaw: "appendSortsTheBatch", case: "transcripts.appendMessages lands a batch after the tail, in the caller's order", red: /did not land after the tail in the order they were written/ },
   { flaw: "appendNeverEdits", case: "transcripts.appendMessages edits an id the thread already holds, without moving it", red: /appended again, or moved, instead of edited in place/ },
   { flaw: "appendAcceptsAnEmptyBatch", case: "transcripts.appendMessages refuses an empty batch and two messages under one id", red: /an empty batch did not throw/ },
+  { flaw: "appendQuietlyDropsADuplicateId", case: "transcripts.appendMessages refuses an empty batch and two messages under one id", red: /two messages sharing one id did not throw/ },
   { flaw: "appendRefusesAThreadItShouldCreate", case: "transcripts.appendMessages creates a thread that does not exist yet, under the named subject", red: /thread thr_new not found/ },
   { flaw: "appendRevisionNeverMoves", case: "transcripts.appendMessages reports a revision that moves with every batch", red: /reported a revision an earlier one already used/ },
   { flaw: "commitIgnoresItsGuard", case: "workspace.commit lands exactly one of two simultaneous compare-and-swaps", red: /exactly one commit off one revision may land, 2 did/ },
@@ -256,9 +269,13 @@ const caseNamed = (name: string, options: Parameters<typeof storeOpsConformance>
 };
 
 describe("every hardened StoreOps case fails against the mistake it names", () => {
-  it("covers one flaw per new case, with no case named twice", () => {
-    expect(new Set(proofs.map((proof) => proof.case)).size).toBe(proofs.length);
+  it("names a distinct flaw per proof, and a case that exists for each", () => {
     expect(new Set(proofs.map((proof) => proof.flaw)).size).toBe(proofs.length);
+    // A case may be guarded by more than one flaw (the refusals case carries
+    // two independent refusals), but every named case has to exist.
+    const suite = storeOpsConformance({ makeOps: async () => ({ ops: memoryStoreOps() }) });
+    const names = new Set(suite.cases.map((one) => one.name));
+    for (const proof of proofs) expect(names).toContain(proof.case);
   });
 
   for (const proof of proofs) {
