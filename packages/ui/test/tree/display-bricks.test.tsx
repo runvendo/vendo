@@ -83,27 +83,26 @@ describe("display bricks", () => {
     // these IS `url(` to the browser whatever the raw string reads.
     expect(safeStyle({ background: "\\75 rl(https://evil/x)" })).toEqual({});
     expect(safeStyle({ background: "u\\72 l(https://evil/y)" })).toEqual({});
-    // A custom-property DEFINITION is never on the allowlist, so the model cannot
-    // mint its own token: `--x` is dropped and `var(--x)` resolves to nothing. The
-    // reference itself survives now — themed `var(--vendo-*)` is the whole point.
-    expect(safeStyle({ "--x": "url(/pixel)", background: "var(--x)" } as CSSProperties))
-      .toEqual({ background: "var(--x)" });
+    // A custom-property DEFINITION is never allowlisted, and a `var()` onto a
+    // non-`--vendo-` token is dropped for being outside the theme namespace — so
+    // this smuggle loses on both counts, both declarations go.
+    expect(safeStyle({ "--x": "url(/pixel)", background: "var(--x)" } as CSSProperties)).toEqual({});
   });
 
-  it("keeps themed var() theme tokens and still drops a url smuggled in a fallback", () => {
-    // (a) The standard theme pattern survives — the regression #1325 dropped it.
+  it("keeps only --vendo- theme var() tokens, dropping foreign refs and url fetches", () => {
+    // Survives: the standard theme pattern — regression #1325 dropped it entirely.
     expect(safeStyle({ background: "var(--vendo-color-background, #ffffff)" }))
       .toEqual({ background: "var(--vendo-color-background, #ffffff)" });
-    // (b) A themed filter survives the same way.
     expect(safeStyle({ filter: "var(--vendo-x)" })).toEqual({ filter: "var(--vendo-x)" });
-    // (c) A gradient mixing a var() token survives — both functions are on the list.
+    // Survives nested in a gradient — both functions are on the list, ref is --vendo-.
     expect(safeStyle({ background: "linear-gradient(var(--vendo-accent), #fff)" }))
       .toEqual({ background: "linear-gradient(var(--vendo-accent), #fff)" });
-    // (d) A bare url() still drops.
+    // Dropped: a var() onto a non-`--vendo-` token — a host could point it at a url.
+    expect(safeStyle({ background: "var(--unapproved-host-token)" })).toEqual({});
+    expect(safeStyle({ background: "linear-gradient(var(--evil), #fff)" })).toEqual({});
+    // Dropped: a bare url(), and a url() smuggled into a var() fallback (url anywhere).
     expect(safeStyle({ background: "url(https://evil/x)" })).toEqual({});
-    // (e) A url() smuggled into a var() fallback still drops — the scan sees `url(`
-    // anywhere in the value, so `var` on the list does not let it through.
-    expect(safeStyle({ background: "var(--x, url(https://evil/x))" })).toEqual({});
+    expect(safeStyle({ background: "var(--vendo-x, url(https://evil/x))" })).toEqual({});
   });
 
   it("paints the surface inside its own box", () => {

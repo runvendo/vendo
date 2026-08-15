@@ -62,12 +62,12 @@ const POSITION_KEEP: ReadonlySet<string> = new Set(["static", "relative", "absol
  * and a fetching one (`url()`, `image-set()`). Kept, but only when every CSS
  * function its value calls is on the property's list — `cursor` calls none
  * (keyword cursors only), so a `url()` cursor is dropped like any other fetch.
- * `var()` is on the list so the standard theme value survives (`background:
- * var(--vendo-color-background, #fff)`); it is safe because the scan sees every
- * function anywhere in the value, so a `url()` smuggled into a `var()` fallback
- * (`var(--x, url(evil))`) still puts `url` on the list and drops the whole
- * declaration — and a custom-property DEFINITION is never allowlisted, so the
- * model cannot mint its own token for `var()` to resolve to.
+ * `var()` is on the list, but only a reference to the approved `--vendo-*` theme
+ * surface the host controls survives (`background: var(--vendo-color-background,
+ * #fff)`): a `var()` onto any other token could resolve to a host- or
+ * ancestor-defined `url()` the browser then fetches, so it drops. A `url()`
+ * smuggled into a `var()` fallback (`var(--vendo-x, url(evil))`) drops the same
+ * way — the scan sees every function anywhere in the value.
  */
 const GRADIENTS = ["linear-gradient", "radial-gradient", "conic-gradient",
   "repeating-linear-gradient", "repeating-radial-gradient", "repeating-conic-gradient"];
@@ -117,10 +117,20 @@ const FUNCTION = /([-\w]+)\s*\(/gu;
 const functionsCalled = (value: string): string[] =>
   [...unescaped(preprocessed(value)).matchAll(FUNCTION)].map(([, name]) => name!.toLowerCase());
 
+/** The custom property each `var()` reads (its first argument), escapes resolved
+ *  the same way. A `var()` may resolve to whatever that token holds, so only the
+ *  approved `--vendo-*` theme surface is ours to trust; one reference outside it
+ *  (a host could point it at a `url()`) drops the whole declaration. */
+const VAR_REF = /(?<![-\w])var\s*\(\s*(--[^\s,)]*)/giu;
+const varsInThemeNamespace = (value: string): boolean =>
+  [...unescaped(preprocessed(value)).matchAll(VAR_REF)].every(([, name]) => name!.startsWith("--vendo-"));
+
 const keep = (property: string, value: unknown): boolean => {
   if (property === "position") return POSITION_KEEP.has(String(value).trim().toLowerCase());
   const allowed = VALUE_RESTRICTED[property];
-  if (allowed !== undefined) return functionsCalled(String(value)).every((name) => allowed.has(name));
+  if (allowed !== undefined)
+    return functionsCalled(String(value)).every((name) => allowed.has(name))
+      && varsInThemeNamespace(String(value));
   return ALLOWED_STYLE.has(property);
 };
 
