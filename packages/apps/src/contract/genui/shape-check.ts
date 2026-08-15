@@ -1,17 +1,10 @@
 /**
- * Internal: the compile-time binding shape check of the vendo-genui/v2 wire
- * compiler (v2 spec §3,
- * docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). Runs as a
- * post-pass over the emitted nodes when the caller supplies `toolShapes`
- * (shape cards keyed by tool): every `$path` binding is resolved query →
- * tool → response shape, walked by pointer, and flowed through its
+ * The binding shape check: every `$path` binding in a rendered tree resolved
+ * query → tool → response shape, walked by pointer, and flowed through its
  * `$reshape` chain. A binding into fields absent from a KNOWN shape is the
- * compile error the spec routes to per-binding repair; unknown tools and
- * `json` regions stay defensive (the renderer's contained notice is the
- * runtime backstop). {@link BindingShapeError} and {@link checkBindingShapes}
- * are public (root exports): the checker's second consumer is the graduation
- * fn-result post-pass (Wave 7 H2), which re-checks an already compiled tree
- * once the fn: result shapes are sampled.
+ * repair contract the screen's bindings-fit check reads (`checking/facts.ts`);
+ * unknown tools and `json` regions stay defensive (the renderer's contained
+ * notice is the runtime backstop).
  */
 
 import {
@@ -24,9 +17,7 @@ import {
   type TreeNode,
   walkShapePointer,
 } from "@vendoai/core";
-import type { TreeQuery } from "../tree.js";
-import type { WireIssue } from "./expression.js";
-import { mergeIssues, type CompileState } from "./state.js";
+import type { TreeQuery } from "./tree.js";
 
 /** v2 spec §3 — one per-binding compile error: the repair contract. The
  *  node/prop anchor tells the repair loop WHERE; missing/available tell the
@@ -299,21 +290,10 @@ const collectFromValue = (
   }
 };
 
-/** Mirrors binding shape errors into the issue stream (capped like every
- *  issue; no index — post-pass, not a cursor). Shared by compileWire's
- *  finishResult and the patch compiler, keeping the message format
- *  byte-identical. */
-export const mirrorBindingIssues = (state: CompileState, bindingErrors: readonly BindingShapeError[]): void => {
-  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
-    code: "shape-mismatch",
-    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
-  })));
-};
-
 /**
- * v2 spec §3 — check every `$path` binding in the emitted nodes against the
- * supplied tool shapes. Pure and total; returns the per-binding repair list
- * in node/prop document order.
+ * Check every `$path` binding in the emitted nodes against the supplied tool
+ * shapes. Pure and total; returns the per-binding repair list in node/prop
+ * document order.
  */
 export const checkBindingShapes = (
   nodes: readonly TreeNode[],
