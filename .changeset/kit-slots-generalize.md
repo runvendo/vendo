@@ -22,3 +22,8 @@ element under a key no slot declares is refused by name instead of reaching a
 renderer that would drop it. Tabs' and Accordion's element-valued `content`,
 unchecked until now, goes through the same gate. `kitPrompt` prints the slots
 from the same declaration, so the model is taught the table the floor enforces.
+
+The renderer closes the matching gap: an element in a slot resolved only the
+Kit, while the CHILDREN path resolved the Kit and the display bricks, so a brick
+tag written into a slot painted nothing at all. `reifyElement` now reads the
+same two registries `builtinContent` does.
