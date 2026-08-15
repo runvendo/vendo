@@ -140,7 +140,7 @@
       "a rule is built by picking an event, then a property, then a value, all from the tool's rows — picking checkout_started leaves plan and country as its properties",
       "a second rule can be added and joined to the first with AND or OR, without leaving the screen",
       "the matching-people count shown before saving is one the tool returned — checkout_started plan is pro reads 1,386 people",
-      "saving calls the create tool with the name that was typed and a definition carrying both rules and the and/or between them",
+      "a name field and a save control sit with the rules, so the segment is named and saved without leaving the builder",
       "invents no event, property or value the tool did not return"
     ],
     "tags": ["action"],

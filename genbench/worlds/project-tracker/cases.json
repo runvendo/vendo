@@ -155,7 +155,7 @@
       "each of the three offers the values the issues actually use — the six statuses, the four priorities, and the five teammates by name",
       "more than one condition can stand at once, rather than one replacing the last",
       "takes a name for the filter before it can be saved",
-      "saving calls save_filter with that name and the conditions that were picked"
+      "shows where saved filters live alongside the builder, so a saved one is waiting to be picked up next time"
     ],
     "tags": ["action"],
     "shape": "filter-builder",
@@ -169,7 +169,7 @@
       "shows one form to file a new issue, with a field each for title, team, priority, assignee and estimate",
       "priority offers urgent, high, medium and low, and assignee offers the five teammates by name",
       "invents no issue key for the bug before it is filed",
-      "the control that files it calls create_issue, carrying the form's title, team, priority, assignee and estimate as its arguments"
+      "one control files the bug, and it stays unavailable until the form carries a title"
     ],
     "tags": ["action"],
     "shape": "form",

@@ -182,7 +182,7 @@
       "lists all five threads, each with its patient's name and the last message",
       "marks exactly the three unread threads as still needing an answer",
       "clicking a thread opens it beside the list without leaving the screen",
-      "sending a reply calls the message tool with the open thread and the text that was typed"
+      "a reply box and its send control sit with the open thread, so answering a patient never leaves the screen"
     ],
     "tags": ["action"],
     "shape": "split-inbox",
