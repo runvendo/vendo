@@ -2,7 +2,7 @@
 import { Fragment, type ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { font, t } from "../tokens.js";
+import { font, hairline, microLabel, numeric, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface KeyValueItem {
@@ -47,32 +47,22 @@ export function KeyValue({ record, items = [], dividers = false }: KeyValueProps
           const edge = !dividers || index === items.length - 1
             ? {}
             : {
-                borderBottom: `var(--vendo-border-width, 1px) solid ${t.border}`,
+                borderBottom: hairline,
                 paddingBottom: "var(--vendo-density-field-gap, 6px)",
               };
           return (
             <Fragment key={item.key}>
-              <dt
-                style={{
-                  ...edge,
-                  color: t.muted,
-                  fontSize: "0.72em",
-                  fontWeight: 650,
-                  letterSpacing: "0.07em",
-                  textTransform: "uppercase",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <dt style={{ ...microLabel, ...edge, whiteSpace: "nowrap" }}>
                 {item.label ?? humanizeEnum(item.key.split(".").pop() ?? item.key)}
               </dt>
               <dd
                 style={{
+                  ...numeric,
                   ...edge,
                   margin: 0,
                   justifySelf: "end",
                   textAlign: "right",
                   minWidth: 0,
-                  fontVariantNumeric: "tabular-nums",
                   overflowWrap: "anywhere",
                 }}
               >

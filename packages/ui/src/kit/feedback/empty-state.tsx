@@ -24,7 +24,7 @@ export function EmptyState({ icon, title, description, children }: PropsWithChil
         flexDirection: "column",
         alignItems: "center",
         gap: "var(--vendo-density-field-gap, 6px)",
-        border: `var(--vendo-border-width, 1px) dashed ${t.border}`,
+        border: `${t.borderWidth} dashed ${t.border}`,
         borderRadius: t.radiusMedium,
         background: `color-mix(in srgb, ${t.background} 40%, transparent)`,
         padding: "calc(var(--vendo-font-size, 15px) * 1.8) var(--vendo-density-card-padding, 16px)",
@@ -48,7 +48,7 @@ export function EmptyState({ icon, title, description, children }: PropsWithChil
           <Icon name={icon} size={19} />
         </span>
       ) : null}
-      <span style={{ fontFamily: t.headingFamily, fontWeight: 650, letterSpacing: "-0.015em" }}>{title}</span>
+      <span style={{ fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, letterSpacing: "-0.015em" }}>{title}</span>
       {description ? (
         <span style={{ color: t.muted, fontSize: "0.9em", lineHeight: 1.45, maxWidth: "44ch" }}>{description}</span>
       ) : null}

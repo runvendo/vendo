@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { applyFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { font, t } from "../tokens.js";
+import { font, hairline, microLabel, numeric, t } from "../tokens.js";
 
 export interface TimelineProps {
   /** Entries from a tool call, in the order they should read. */
@@ -48,7 +48,7 @@ export function Timeline({
           ...font,
           color: t.muted,
           textAlign: "center",
-          border: `var(--vendo-border-width, 1px) dashed ${t.border}`,
+          border: `${t.borderWidth} dashed ${t.border}`,
           borderRadius: t.radiusMedium,
           padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
         }}
@@ -78,14 +78,14 @@ export function Timeline({
                       marginTop: "0.45em",
                       borderRadius: "50%",
                       background: t.accent,
-                      boxShadow: `0 0 0 calc(var(--vendo-border-width, 1px) * 3) color-mix(in srgb, ${t.accent} 14%, transparent)`,
+                      boxShadow: `0 0 0 calc(${t.borderWidth} * 3) color-mix(in srgb, ${t.accent} 14%, transparent)`,
                     }}
                   />
                 )}
                 {/* The spine joins this entry to the next, so the last one ends
                     at its dot instead of trailing a stub. */}
                 {index < entries.length - 1 ? (
-                  <span style={{ flex: 1, marginTop: 5, borderLeft: `var(--vendo-border-width, 1px) solid ${t.border}` }} />
+                  <span style={{ flex: 1, marginTop: 5, borderLeft: hairline }} />
                 ) : null}
               </div>
               <div
@@ -101,7 +101,7 @@ export function Timeline({
                 }}
               >
                 {timeAlign === "start" && time ? <TimeText time={time} /> : null}
-                <div style={{ minWidth: 0, fontWeight: 600, lineHeight: 1.4 }}>{cell ?? title}</div>
+                <div style={{ minWidth: 0, fontWeight: t.weightEmphasis, lineHeight: 1.4 }}>{cell ?? title}</div>
                 {timeAlign === "end" && time ? <TimeText time={time} /> : null}
               </div>
             </li>
@@ -114,19 +114,6 @@ export function Timeline({
 
 function TimeText({ time }: { time: string }) {
   return (
-    <span
-      style={{
-        color: t.muted,
-        flexShrink: 0,
-        fontSize: "0.72em",
-        fontWeight: 650,
-        letterSpacing: "0.07em",
-        textTransform: "uppercase",
-        fontVariantNumeric: "tabular-nums",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {time}
-    </span>
+    <span style={{ ...microLabel, ...numeric, flexShrink: 0, whiteSpace: "nowrap" }}>{time}</span>
   );
 }

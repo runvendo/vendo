@@ -62,9 +62,9 @@ export function Avatar({ name = "", size = "md" }: AvatarProps) {
           color: `color-mix(in srgb, ${seed} 80%, ${t.text})`,
           // The ring is what keeps a stacked disc readable against the one
           // behind it, and reads as nothing on a plain surface.
-          boxShadow: `0 0 0 calc(var(--vendo-border-width, 1px) * 2) ${t.surface}`,
+          boxShadow: `0 0 0 calc(${t.borderWidth} * 2) ${t.surface}`,
           fontSize: Math.round(px * 0.38),
-          fontWeight: 650,
+          fontWeight: t.weightEmphasis,
           letterSpacing: "0.02em",
           lineHeight: 1,
           userSelect: "none",

@@ -1,7 +1,7 @@
 /** CodeBlock — code or a raw payload, shown exactly as it came (W2 §The Kit).
  *  No highlighting (a parser is a dependency) and no copy button (the clipboard
  *  is a permission the jail does not have). */
-import { font, t } from "../tokens.js";
+import { font, hairline, microLabel, t } from "../tokens.js";
 
 export interface CodeBlockProps {
   /** The code / payload to show. */
@@ -20,24 +20,20 @@ export function CodeBlock({ code = "", language }: CodeBlockProps) {
       style={{
         ...font,
         position: "relative",
-        border: `var(--vendo-border-width, 1px) solid ${t.border}`,
+        border: hairline,
         borderRadius: t.radiusMedium,
-        background: `var(--vendo-color-surface-raised, color-mix(in srgb, ${t.background} 60%, ${t.surface}))`,
-        boxShadow: `var(--vendo-shadow-small, 0 1px 2px color-mix(in srgb, ${t.text} 6%, transparent))`,
+        background: t.surfaceRaised,
         overflow: "hidden",
       }}
     >
       {language ? (
         <span
           style={{
+            ...microLabel,
             position: "absolute",
             insetInlineEnd: 10,
             insetBlockStart: 8,
-            color: t.muted,
             fontSize: "0.68em",
-            fontWeight: 650,
-            letterSpacing: "0.09em",
-            textTransform: "uppercase",
             userSelect: "none",
           }}
         >

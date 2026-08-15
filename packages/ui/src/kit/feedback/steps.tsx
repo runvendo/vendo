@@ -1,7 +1,7 @@
 /** Steps — a progress trail: what is done, what is happening, what is left
  *  (W2 §The Kit). Everything before `active` reads as done. */
 import { Icon } from "../icon.js";
-import { font, t } from "../tokens.js";
+import { font, hairline, t } from "../tokens.js";
 
 export interface StepItem {
   label: string;
@@ -63,11 +63,11 @@ export function Steps({ items = [], active = 0, orientation = "horizontal" }: St
                 width: 20,
                 height: 20,
                 borderRadius: "50%",
-                border: state === "current" ? `2px solid ${t.accent}` : `var(--vendo-border-width, 1px) solid ${t.border}`,
+                border: state === "current" ? `calc(${t.borderWidth} * 2) solid ${t.accent}` : hairline,
                 background: state === "done" ? t.accent : "transparent",
                 color: state === "done" ? t.accentText : state === "current" ? t.accent : t.muted,
                 fontSize: "0.68em",
-                fontWeight: 700,
+                fontWeight: t.weightEmphasis,
                 fontVariantNumeric: "tabular-nums",
                 lineHeight: 1,
               }}
@@ -79,7 +79,7 @@ export function Steps({ items = [], active = 0, orientation = "horizontal" }: St
                 style={{
                   color: state === "todo" ? t.muted : t.text,
                   fontSize: "0.9em",
-                  fontWeight: state === "current" ? 700 : 600,
+                  fontWeight: state === "current" ? t.weightEmphasis : t.weightNormal,
                   letterSpacing: "-0.01em",
                 }}
               >
