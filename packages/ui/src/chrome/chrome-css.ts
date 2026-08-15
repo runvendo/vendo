@@ -468,9 +468,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* The live step's mark: a hairline ring at the tick's 12px, so a step settling
    swaps one glyph for another without nudging the label. Gray — the work is
    ours and unremarkable; only a step waiting on the READER takes the accent
-   (.fl-beat-ring below). \`fl-spin\` is defined with the tool chip further down. */
+   (.fl-beat-ring below). \`fl-spin\` is defined with the tool chip further down.
+   1px, not the 1.5px this was authored at: Blink floors border-width to whole
+   CSS pixels, so 1.5px computed to 1px at every DPR and the stroke that shipped
+   — and passed its visual proof — was always this one. Written as it renders.
+   A true 1.5px needs the masked-gradient ring .fl-beat-ring uses, which softens
+   to an antialiased smudge at 1x and would make the two marks one shape. */
 .fl-beat-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
-  border: 1.5px solid var(--vendo-border); border-top-color: var(--vendo-fg-muted); }
+  border: 1px solid var(--vendo-border); border-top-color: var(--vendo-fg-muted); }
 @media (prefers-reduced-motion: no-preference) {
   .fl-beat-spin { animation: fl-spin .7s linear infinite; }
 }

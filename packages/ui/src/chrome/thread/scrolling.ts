@@ -201,10 +201,18 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   }, [messages, contentRevision]);
 
   // A generated view mounts and grows AFTER the messages effect runs (the jail
-  // renders async; logos/images load late). Without watching actual size, the
-  // stick fires before the growth and the newest content — the approval card,
-  // the closing line — lands below the fold. Observe the content box and
+  // renders async; logos/images load late), and streamed text is REVEALED at
+  // its own paced rate between deltas (chrome/markdown's useSmoothText), which
+  // changes no message identity at all. Without watching actual size, the stick
+  // fires before the growth and the newest content — the approval card, the
+  // line still being typed — lands below the fold. Observe the content box and
   // re-stick whenever it grows while the reader is at the bottom.
+  // Keyed on whether the list EXISTS: an empty thread renders the landing
+  // instead of .fl-msglist, so a mount-only observer attaches to nothing and,
+  // having nothing to re-run on, stays absent for the rest of the session —
+  // the first turn of every new conversation then followed only the wire's
+  // deltas and streamed a third of its frames below the fold.
+  const listMounted = messages.length > 0;
   useEffect(() => {
     const node = listRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
@@ -227,7 +235,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
       observer.disconnect();
       mutation.disconnect();
     };
-  }, []);
+  }, [listMounted]);
 
   // 3A snippet: trailing text of the newest message (bounded; presentational).
   // Agent-context parts are hidden turns the surfaces send on the person's
