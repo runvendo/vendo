@@ -142,6 +142,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-msglist-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
   animation: fl-fade-in .18s ease; }
 .fl-msglist { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  /* Stick-to-bottom owns this list's scrollTop; browser scroll anchoring must
+     not also write it. Mid-reply the transcript SHRINKS (a settling step folds
+     its rail away) at the same time as the tail grows, and anchoring answers by
+     moving scrollTop to hold its chosen anchor still — by a different amount
+     than the height changed. The reader, who touched nothing, is then a few
+     pixels off the bottom, which the hook can only read as "they scrolled
+     away": the stick releases mid-stream and never re-arms. Measured at a
+     33px phantom gap against a 32px slack — a bigger slack only moves the
+     cliff, so the second writer goes instead. */
+  overflow-anchor: none;
   display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 26px; scrollbar-width: none;
   /* Faint fades at both ends hint at content past the edge (the scrollbar is
      hidden). The bottom cushion is deeper than its fade on purpose: the newest
