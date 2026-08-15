@@ -8,12 +8,10 @@
  * the same three providers, gated on the same env vars. A provider that cannot
  * hold this journey is a provider Vendo cannot ship on.
  *
- * Two shapes differ from the deleted file, and both are the harness path's own,
- * not a weakened assertion:
- *   - the approval is answered IN-STREAM (the turn blocks on the tap) instead of
- *     by a client re-post, so the tap arrives through the guard here;
- *   - a blocked outcome is a `tool-output-denied` part rather than an ok-shaped
- *     part carrying `{status:"blocked"}` — the runtime's refusal affordance.
+ * One shape differs from the deleted file, and it is the harness path's own, not
+ * a weakened assertion: the approval is answered IN-STREAM (the turn blocks on
+ * the tap) instead of by a client re-post, so the tap arrives through the guard
+ * here.
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -118,7 +116,8 @@ async function runProviderJourney(model: LanguageModel): Promise<void> {
   expect(approval.registry.invocations.send_echo).toBe(1);
 
   const blocked = await leg(model, "thr_live_blocked", "BLOCKED: run the required tool now.");
-  expect(blocked.parts.some((part) => part.type === "tool-output-denied")).toBe(true);
+  expect(blocked.parts.find((part) => part.type === "tool-output-available"))
+    .toMatchObject({ output: { status: "blocked" } });
   expect(blocked.registry.invocations.blocked_write ?? 0).toBe(0);
 
   const view = await leg(model, "thr_live_view", "VIEW: run the required tool now.");

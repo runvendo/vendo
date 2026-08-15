@@ -135,9 +135,40 @@ describe("the generation choke — the agent is told, and the turn goes on", () 
     expect(model.calls).toBe(2);
     expect(JSON.stringify(model.prompts[1])).toContain(GENERATION_CAP);
     expect(turn.some((chunk) => chunk["delta"] === "You've used every app on your plan.")).toBe(true);
-    // A refusal is not a failure: the thread's own affordance for the call is
-    // the denied one.
-    expect(turn.some((chunk) => chunk["type"] === "tool-output-denied")).toBe(true);
+    // A refusal is not a failure — and it is not a person's answer either. The
+    // call settles as the typed `blocked` outcome, carrying the reason. The
+    // ai-SDK's `output-denied` is the terminal state of an approval a PERSON
+    // turned down, and borrowing it both mis-attributed the refusal on screen
+    // and wrote a part `convertToModelMessages` cannot read (it takes the
+    // refusal's words off `approval.reason`, which a policy refusal has none of).
+    expect(turn.some((chunk) => chunk["type"] === "tool-output-denied")).toBe(false);
+    expect(turn.find((chunk) => chunk["type"] === "tool-output-available"))
+      .toMatchObject({ output: { status: "blocked", reason: expect.stringContaining(GENERATION_CAP) } });
+  });
+
+  it("leaves the thread ALIVE — the next turn in the same thread still answers", async () => {
+    // The gap the first cut shipped through: the denial is persisted, and the
+    // NEXT turn rebuilds that history for the provider. One refused build used
+    // to kill every later turn in the thread ("The response didn't finish"),
+    // while a suite that only ever sent the refused turn stayed green.
+    const { model, chat } = await compose({
+      limits: noGenerations,
+      turns: [
+        toolCallTurn(VENDO_MAKE_TOOL, { request: "a spending dashboard" }),
+        textTurn("You've used every app on your plan."),
+        textTurn("Your last three months are all here in chat."),
+      ],
+    });
+
+    await chat("build me a dashboard");
+    const next = await chat("just tell me the numbers then");
+
+    expect(next.filter((chunk) => chunk["type"] === "error")).toEqual([]);
+    expect(next.some((chunk) => chunk["type"] === "data-vendo-turn-error")).toBe(false);
+    expect(next.some((chunk) => chunk["delta"] === "Your last three months are all here in chat.")).toBe(true);
+    expect(model.calls).toBe(3);
+    // The refusal is still IN that history, in the words the host wrote.
+    expect(JSON.stringify(model.prompts[2])).toContain(GENERATION_CAP);
   });
 
   it("leaves a message-only policy's generations alone", async () => {

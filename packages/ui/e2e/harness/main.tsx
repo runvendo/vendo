@@ -459,11 +459,29 @@ const limitThread: Thread = {
     {
       id: "msg_limit_host",
       role: "assistant",
-      parts: [{
-        type: "data-vendo-limit",
-        id: "vendo-limit:1",
-        data: { message: "You've used all 50 requests on the Free plan. Your allowance resets on the 1st." },
-      }],
+      parts: [
+        // The refused build itself, in the shape the runtime really persists for
+        // it (harnesses/src/wire.ts): the typed `blocked` outcome. The fixture
+        // used to carry the card ALONE, which is why the beat above it could say
+        // "you declined it" over a card explaining a limit — nothing in a browser
+        // ever rendered the two together.
+        {
+          type: "dynamic-tool",
+          toolName: "vendo_make",
+          toolCallId: "call_limit_build",
+          state: "output-available",
+          input: { request: "a spending breakdown for last quarter" },
+          output: {
+            status: "blocked",
+            reason: "The app was not built: this user has reached a limit the host's own policy sets.",
+          },
+        },
+        {
+          type: "data-vendo-limit",
+          id: "vendo-limit:1",
+          data: { message: "You've used all 50 requests on the Free plan. Your allowance resets on the 1st." },
+        },
+      ] as Thread["messages"][number]["parts"],
     },
     {
       id: "msg_limit_user_2",

@@ -29,6 +29,14 @@ test("the limit card says who set the cap, in their words or ours", async ({ pag
 
   // Quiet, not loud: the failure register belongs to failures.
   await expect(cards.locator(".fl-beat-error")).toHaveCount(0);
+
+  // The beat over the card names who refused — the host's rules. It read "you
+  // declined it" directly above a card explaining the person had hit a limit:
+  // the two lines contradicting each other about who said no.
+  const beat = page.locator("[data-vendo-tool='vendo_make']");
+  await expect(beat).toContainText("wasn't allowed");
+  await expect(beat).not.toContainText("you declined it");
+  await expect(beat).toHaveClass("fl-beat fl-beat-done");
   // The turn either side of the denials survives — the thread keeps going.
   await expect(page.getByText("build me a spending breakdown for last quarter")).toBeVisible();
   await expect(page.getByText("just a plain list of last month's charges then")).toBeVisible();
