@@ -1345,6 +1345,88 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** The decision tally: the same drawer, the same four filters, collapsed
+          to counts per UTC hour. Three assertions and not one deep-equal on
+          purpose — the three ways a group-by goes wrong (a bucket that never
+          arrives, a group labelled with the wrong dimension, a count that is
+          off) are three different bugs, and a case that reports them with one
+          message tells whoever it caught nothing about which. */
+      opsCase(opts, "audit.tally counts events per UTC hour, split by outcome and decidedBy", async (ops) => {
+        await seedAudit(ops, [
+          // Before the floor — and the floor is INCLUSIVE, so only this one is
+          // out of the window.
+          auditEvent("aud_t0", -30, { outcome: "ok", decidedBy: "grant" }),
+          auditEvent("aud_t1", 0, { outcome: "ok", decidedBy: "grant" }),
+          auditEvent("aud_t2", 20, { outcome: "ok", decidedBy: "grant" }),
+          auditEvent("aud_t3", 40, { outcome: "blocked", decidedBy: "denied" }),
+          auditEvent("aud_t4", 70, { outcome: "ok", decidedBy: "grant" }),
+          // A control event: not a call, so it carries neither dimension. Its
+          // group is `null`/`null` — never dropped, never merged into another.
+          auditEvent("aud_t5", 80, { kind: "policy-decision" }),
+        ]);
+        const from = new Date(Date.UTC(2026, 0, 1, 0, 0)).toISOString() as IsoDateTime;
+        const rows = await ops.audit.tally({ from });
+
+        // Ascending by bucket, one row per (hour, outcome, decidedBy) group that
+        // has events in it — and hours with none are omitted, not zero-filled.
+        assertDeepEqual(
+          rows.map((row) => row.bucket),
+          ["2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z", "2026-01-01T01:00:00.000Z", "2026-01-01T01:00:00.000Z"],
+          "the tally's buckets are not the window's UTC hours, ascending",
+        );
+        // Sorted by outcome then decidedBy inside a bucket, with an absent
+        // dimension LAST.
+        assertDeepEqual(
+          rows.map((row) => `${row.outcome ?? "-"}/${row.decidedBy ?? "-"}`),
+          ["blocked/denied", "ok/grant", "ok/grant", "-/-"],
+          "the tally labelled a group with the wrong outcome or decidedBy, or ordered the groups differently",
+        );
+        assertDeepEqual(
+          rows.map((row) => row.count),
+          [1, 2, 1, 1],
+          "the tally counted the wrong number of events in a group",
+        );
+      }),
+
+      /** ONE WHERE, TWO DOORS — the case that matters more than the arithmetic.
+          A tally is only ever read next to the feed it summarises, so the two
+          have to narrow identically: nothing in an implementation forces a
+          grouped statement's filters to match a paged one's, and a tally that
+          counts rows the feed does not show (or misses rows it does) is a
+          number a reviewer cannot reconcile with what is on the screen. */
+      opsCase(opts, "audit.tally narrows on the same four filters as audit.list, ANDed", async (ops) => {
+        await seedAudit(ops, [
+          auditEvent("aud_f1", 1, { kind: "tool-call", venue: "chat", outcome: "ok", decidedBy: "grant" }),
+          auditEvent("aud_f2", 2, { kind: "approval", venue: "app", outcome: "blocked", decidedBy: "denied" }),
+          auditEvent("aud_f3", 3, { kind: "tool-call", venue: "app", outcome: "ok", decidedBy: "rule" }),
+          auditEvent("aud_f4", 4, { kind: "tool-call", venue: "chat", outcome: "blocked", decidedBy: "grant" }),
+        ]);
+        const from = new Date(Date.UTC(2026, 0, 1, 0, 0)).toISOString() as IsoDateTime;
+        const counted = async (filters: AuditQuery): Promise<number> =>
+          (await ops.audit.tally({ ...filters, from })).reduce((total, row) => total + row.count, 0);
+        const listed = async (filters: AuditQuery): Promise<number> =>
+          (await ops.audit.list(filters)).events.length;
+
+        for (const filters of [
+          {},
+          { kind: "tool-call" },
+          { venue: "app" },
+          { outcome: "ok" },
+          { decidedBy: "grant" },
+          // ANDed, never ORed: this pair drops rows either filter alone keeps.
+          { kind: "tool-call", venue: "chat" },
+          { kind: "tool-call", venue: "chat", outcome: "blocked", decidedBy: "grant" },
+        ] satisfies AuditQuery[]) {
+          const total = await counted(filters);
+          const shown = await listed(filters);
+          assert(
+            total === shown,
+            `the tally counted ${total} events where the feed shows ${shown} for ${JSON.stringify(filters)}`,
+          );
+          assert(total > 0, `the case's own fixture makes ${JSON.stringify(filters)} match nothing, so it proves nothing`);
+        }
+      }),
+
       // =====================================================================
       // secrets
       // =====================================================================

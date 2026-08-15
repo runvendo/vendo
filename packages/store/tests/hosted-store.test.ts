@@ -16,6 +16,7 @@ import {
   storeWireAppDataPutFileRequestSchema,
   storeWireAppDataPutRequestSchema,
   storeWireAuditListRequestSchema,
+  storeWireAuditTallyRequestSchema,
   storeWireBlobsDeleteRequestSchema,
   storeWireBlobsGetRequestSchema,
   storeWireBlobsListRequestSchema,
@@ -616,7 +617,7 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 44-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 45-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
 // and the response decoding for every op — engine, appData and blobs against the
@@ -647,7 +648,7 @@ const wireRecord = {
  * `lifecycle.erase` came to declare a route no mount has ever served. `keyed`
  * marks the mutations that carry an Idempotency-Key.
  *
- * 43 of STORE_WIRE_PATHS' 44: `transcripts.appendMessages` is the one op a
+ * 44 of STORE_WIRE_PATHS' 45: `transcripts.appendMessages` is the one op a
  * client feature-detects before sending (STORE_WIRE_APPEND_MESSAGES_OPS), so it
  * is driven where that detection is — thread-messages.batch.test.ts — rather
  * than blind through this walker. */
@@ -698,6 +699,9 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "retention.quarantine": { method: "POST", path: P["retention.quarantine"], keyed: true },
   "retention.purge": { method: "POST", path: P["retention.purge"], keyed: true },
   status: { method: "GET", path: P.status },
+  // Last, because the manifest declares it last — appending is the only edit to
+  // that order which cannot re-date a level a mount already reports.
+  "audit.tally": { method: "POST", path: P["audit.tally"] },
 };
 
 const door = (op: string): string => `${DOORS[op]!.method} ${DOORS[op]!.path}`;
@@ -776,6 +780,9 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("retention.quarantine")]: { moved: 3 },
   [door("retention.purge")]: { purged: 2 },
   [door("status")]: { format: "vendo/store-wire@1", ops: 35 },
+  [door("audit.tally")]: {
+    rows: [{ bucket: "2026-08-14T09:00:00.000Z", outcome: "ok", decidedBy: "grant", count: 4 }],
+  },
 };
 
 /** Where an appData op lands: the app, the collection it invented, and the
@@ -833,23 +840,26 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z");
   await ops.retention!.purge("vendo_runs", "2026-01-01T00:00:00.000Z");
   await ops.status();
+  await ops.audit.tally({ from: "2026-01-01T00:00:00.000Z" });
 };
 
-describe("hostedStoreOps — the 44-op wire client", () => {
-  it("routes 43 of the 44 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 45-op wire client", () => {
+  it("routes 44 of the 45 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(43);
+    expect(calls).toHaveLength(44);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 24 mutations, 19 reads — and the /status handshake is the one GET with
+    // 24 mutations, 20 reads — and the /status handshake is the one GET with
     // no body at all.
     expect(expected.filter((route) => route.keyed === true)).toHaveLength(24);
-    expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
+    expect(calls.filter((call) => call.method === "GET")).toEqual([
+      expect.objectContaining({ path: P.status, method: "GET", body: undefined }),
+    ]);
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
     expect(new Set(keys).size).toBe(24);
@@ -1083,27 +1093,37 @@ describe("hostedStoreOps — the 44-op wire client", () => {
     });
     expect(calls[0]!.body).toEqual({ kind: "tool-call", outcome: "blocked", limit: 25 });
 
+    // The tally sends the same filters flat, with `from` where the page keys
+    // would be, and reads its answer off `rows` — a bare list, like footprint's:
+    // a tally answers a whole window, so there is no page to wrap it in.
+    expect(await ops.audit.tally({ from: "2026-08-14T00:00:00.000Z", kind: "tool-call" })).toEqual([
+      { bucket: "2026-08-14T09:00:00.000Z", outcome: "ok", decidedBy: "grant", count: 4 },
+    ]);
+    expect(calls[1]!.body).toEqual({ from: "2026-08-14T00:00:00.000Z", kind: "tool-call" });
+    expect(calls[1]!.idempotencyKey).toBeNull();
+
     expect(await ops.secrets.get("stripe_key")).toBe("shhh");
-    expect(calls[1]!.body).toEqual({ name: "stripe_key" });
+    expect(calls[2]!.body).toEqual({ name: "stripe_key" });
     // The value crosses in the clear under TLS; the mount encrypts at rest.
     await ops.secrets.set("stripe_key", "sk_live_1");
-    expect(calls[2]!.body).toEqual({ name: "stripe_key", value: "sk_live_1" });
+    expect(calls[3]!.body).toEqual({ name: "stripe_key", value: "sk_live_1" });
     expect(await ops.secrets.list()).toEqual(["stripe_key"]);
-    expect(calls[3]!.body).toEqual({});
+    expect(calls[4]!.body).toEqual({});
     await ops.secrets.delete("stripe_key");
-    expect(calls[4]!.body).toEqual({ name: "stripe_key" });
+    expect(calls[5]!.body).toEqual({ name: "stripe_key" });
 
     expect(await ops.footprint()).toEqual([{ collection: "vendo_runs", kind: "storage", bytes: 4096 }]);
-    expect(calls[5]!.body).toEqual({});
+    expect(calls[6]!.body).toEqual({});
 
     expect(await ops.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z")).toEqual({ moved: 3 });
-    expect(calls[6]!.body).toEqual({ collection: "vendo_runs", olderThan: "2026-01-01T00:00:00.000Z" });
+    expect(calls[7]!.body).toEqual({ collection: "vendo_runs", olderThan: "2026-01-01T00:00:00.000Z" });
     // The purge cutoff is on the QUARANTINE time, not on the row's own age.
     expect(await ops.retention!.purge("vendo_runs", "2026-02-01T00:00:00.000Z")).toEqual({ purged: 2 });
-    expect(calls[7]!.body).toEqual({ collection: "vendo_runs", quarantinedBefore: "2026-02-01T00:00:00.000Z" });
+    expect(calls[8]!.body).toEqual({ collection: "vendo_runs", quarantinedBefore: "2026-02-01T00:00:00.000Z" });
 
     const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
       ["audit.list", storeWireAuditListRequestSchema],
+      ["audit.tally", storeWireAuditTallyRequestSchema],
       ["secrets.get", storeWireSecretsGetRequestSchema],
       ["secrets.set", storeWireSecretsSetRequestSchema],
       ["secrets.list", storeWireSecretsListRequestSchema],

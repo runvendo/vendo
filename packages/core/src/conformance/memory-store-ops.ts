@@ -7,6 +7,8 @@ import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
   type AppDataTarget,
+  type AuditFilters,
+  type AuditTallyRow,
   type CollectionFootprint,
   type RecordInput,
   type RecordQuery,
@@ -53,6 +55,20 @@ const decodeWatermark = (after: string): { value: string; id: string } | undefin
 /** The synthetic harness appId a thread's state rides under (the store's
     `harnessStateKey`), so deleting the thread can sweep it. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
+
+/** The UTC hour an event falls in, as the instant that hour starts — the tally's
+    bucket key. */
+const hourBucket = (at: IsoDateTime): IsoDateTime => {
+  const hour = new Date(at);
+  hour.setUTCMinutes(0, 0, 0);
+  return hour.toISOString() as IsoDateTime;
+};
+
+/** Ascending, with an ABSENT dimension last: `null` is a group of its own (a
+    control event is not a call and carries no outcome), and where it sorts has
+    to be contract or two implementations answer the same window in two orders. */
+const byDimension = (a: string | null, b: string | null): number =>
+  a === b ? 0 : a === null ? 1 : b === null ? -1 : (a < b ? -1 : 1);
 
 /** Store wire v1: every list op pages at 100 by default and caps at 1000. */
 const DEFAULT_PAGE = 100;
@@ -669,8 +685,17 @@ export function memoryStoreOps(): StoreOps {
   };
 
   // ---------------------------------------------------------------------------
-  // audit — the typed read over the append-only drawer
+  // audit — the typed reads over the append-only drawer: the feed, and the
+  // same rows counted
   // ---------------------------------------------------------------------------
+
+  /** The four filters, ANDed — one copy, read by both doors, because a tally
+      that narrows differently from the feed counts rows the feed never shows. */
+  const matchesFilters = (event: AuditEvent, filters: AuditFilters): boolean =>
+    (filters.kind === undefined || event.kind === filters.kind)
+    && (filters.venue === undefined || event.venue === filters.venue)
+    && (filters.outcome === undefined || event.outcome === filters.outcome)
+    && (filters.decidedBy === undefined || event.decidedBy === filters.decidedBy);
 
   const audit: StoreOps["audit"] = {
     async list(query = {}) {
@@ -684,12 +709,35 @@ export function memoryStoreOps(): StoreOps {
       // all — none of which this shortcut changes.
       const events = page.records
         .map((record) => record.data as AuditEvent)
-        .filter((event) =>
-          (query.kind === undefined || event.kind === query.kind)
-          && (query.venue === undefined || event.venue === query.venue)
-          && (query.outcome === undefined || event.outcome === query.outcome)
-          && (query.decidedBy === undefined || event.decidedBy === query.decidedBy));
+        .filter((event) => matchesFilters(event, query));
       return { events, ...(page.cursor === undefined ? {} : { cursor: page.cursor }) };
+    },
+    // Counting, where the real backend groups in SQL. Over the WHOLE drawer and
+    // not through `list`: a page is capped at 1000 rows and a tally answers a
+    // window, so a reference that counted a page would quietly answer a
+    // different question as soon as the window outgrew one.
+    async tally(query) {
+      const from = Date.parse(query.from);
+      const groups = new Map<string, AuditTallyRow>();
+      for (const record of col("vendo_audit").values()) {
+        const event = record.data as AuditEvent;
+        // The floor is INCLUSIVE.
+        if (Date.parse(event.at) < from || !matchesFilters(event, query)) continue;
+        const row = {
+          bucket: hourBucket(event.at),
+          outcome: event.outcome ?? null,
+          decidedBy: event.decidedBy ?? null,
+          count: 1,
+        };
+        const key = `${row.bucket}|${row.outcome}|${row.decidedBy}`;
+        const group = groups.get(key);
+        if (group === undefined) groups.set(key, row);
+        else group.count += 1;
+      }
+      return [...groups.values()].sort((a, b) =>
+        (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0)
+        || byDimension(a.outcome, b.outcome)
+        || byDimension(a.decidedBy, b.decidedBy));
     },
   };
 

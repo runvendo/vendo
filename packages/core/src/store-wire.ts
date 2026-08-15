@@ -66,7 +66,7 @@ export const STORE_WIRE_PATHS = {
   // that builds its mount from this table never receives an erase at all.
   "lifecycle.erase": "/erase",
   "lifecycle.promote": "/lifecycle/promote",
-  // audit (1)
+  // audit (1 of 2 — `audit.tally` is the newest op and rides the tail, below)
   "audit.list": "/audit/list",
   // secrets (4)
   "secrets.get": "/secrets/get",
@@ -83,6 +83,18 @@ export const STORE_WIRE_PATHS = {
   "retention.purge": "/retention/purge",
   // status (1)
   status: "/status",
+  // audit.tally (1) — declared AFTER `status`, which is not a filing mistake.
+  // `ops` is a monotone level over THIS order, so a number a shipped mount is
+  // already reporting must keep meaning what it meant: appending is the only
+  // edit that cannot re-date one. Slot this op anywhere earlier and every mount
+  // reporting 44 today ("everything through /status") starts claiming a tally
+  // it has never served — the renumbering hazard
+  // STORE_WIRE_APPEND_MESSAGES_OPS spells out below, arriving from the other
+  // direction. Its cost is the level's known coarseness: an engine that stops
+  // short of retention can serve this op and still not be able to say so, which
+  // is fine, because a missing op is read off its own 501 and never off the
+  // level.
+  "audit.tally": "/audit/tally",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -327,17 +339,18 @@ export interface StoreWireAppendMessagesResult {
     the mount is behind — never send it blind and read the 501 as a fallback
     signal (#1251: a failed mutation is not a capability answer).
 
-    ⚠ AND THIS IS THE LAST CONSTANT OF ITS KIND. Ops 37-44 (audit, secrets,
-    footprint, retention) added no twin, and a future op should not either. A
-    pre-send check earns its keep only when sending blind is unsafe, and that is
-    true of exactly one shape: a MUTATION with a cheaper fallback, where a 501
-    leaves the caller unable to tell "never ran" from "ran and failed". Every one
-    of 37-44 is a new PATH, so an older mount refuses it with the enveloped 501
-    this protocol already answers unknown ops with — loud, specific, and
-    impossible to mistake for data. The one genuinely invisible addition, the
-    watermark bound on `engine.list`, is a FIELD on an existing op that
-    `.passthrough()` would let an old mount ignore in silence; it is detected by
-    the echo on its own answer (`EngineListPage.watermark`), not from here. */
+    ⚠ AND THIS IS THE LAST CONSTANT OF ITS KIND. Ops 37-45 (audit, secrets,
+    footprint, retention, the audit tally) added no twin, and a future op should
+    not either. A pre-send check earns its keep only when sending blind is
+    unsafe, and that is true of exactly one shape: a MUTATION with a cheaper
+    fallback, where a 501 leaves the caller unable to tell "never ran" from
+    "ran and failed". Every one of 37-45 is a new PATH, so an older mount
+    refuses it with the enveloped 501 this protocol already answers unknown ops
+    with — loud, specific, and impossible to mistake for data. The one
+    genuinely invisible addition, the watermark bound on `engine.list`, is a
+    FIELD on an existing op that `.passthrough()` would let an old mount ignore
+    in silence; it is detected by the echo on its own answer
+    (`EngineListPage.watermark`), not from here. */
 export const STORE_WIRE_APPEND_MESSAGES_OPS = 36;
 
 export const storeWireTranscriptsRecordAnswerRequestSchema = z.object({
@@ -438,17 +451,34 @@ export const storeWireLifecyclePromoteRequestSchema = z.object({
 // audit
 // ---------------------------------------------------------------------------
 
-/** The four filters are ANDed and every one is optional, so an empty body is
-    the whole feed, newest first. The enums are spelled here rather than
-    imported from `auditEventSchema` because this is the REQUEST, and a request
-    that names a kind this build has not heard of should be refused by the
-    mount's own validation, not silently widened. */
-export const storeWireAuditListRequestSchema = cursorQuerySchema.extend({
+/** The four filters, ANDed and every one optional — ONE copy, shared by the
+    feed and the tally the way `AuditFilters` is shared on the contract side: a
+    WHERE spelled twice is a WHERE that drifts, and a tally that counts a
+    different set of rows than the feed shows is the drift nobody can see.
+    The enums are spelled here rather than imported from `auditEventSchema`
+    because this is the REQUEST, and a request that names a kind this build has
+    not heard of should be refused by the mount's own validation, not silently
+    widened. */
+const auditFilterFields = {
   kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth", "principal"]).optional(),
   venue: z.enum(["chat", "app", "automation", "mcp"]).optional(),
   outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]).optional(),
   decidedBy: z.enum(["grant", "rule", "judge", "default", "confirmEach", "breaker", "denied", "org", "frozen"]).optional(),
-});
+};
+
+/** An empty body is the whole feed, newest first. */
+export const storeWireAuditListRequestSchema = cursorQuerySchema.extend(auditFilterFields);
+
+/** The tally's body: the same four filters, and `from` INSTEAD of a page.
+    A real datetime (like retention's cutoffs, unlike a watermark's opaque
+    echo): it is a window the caller authored, not a value it read back. Not
+    optional — a tally has no cursor, so this floor is the only thing bounding
+    the answer, and a body without one asks a mount to group an append-only
+    drawer's whole history. */
+export const storeWireAuditTallyRequestSchema = z.object({
+  ...auditFilterFields,
+  from: isoDateTimeSchema,
+}).passthrough();
 
 // ---------------------------------------------------------------------------
 // secrets

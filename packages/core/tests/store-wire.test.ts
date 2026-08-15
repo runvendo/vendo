@@ -43,17 +43,18 @@ import {
   storeWireWorkspaceHistoryRequestSchema,
   storeWireLifecycleEraseRequestSchema,
   storeWireLifecyclePromoteRequestSchema,
+  storeWireAuditTallyRequestSchema,
   type EraseTarget,
   type StoreWireStatus,
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 44 mount-relative paths", () => {
+  it("exposes the format constant and 45 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
     // 12 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
-    // + workspace(4) + lifecycle(2) + audit(1) + secrets(4) + footprint(1)
-    // + retention(2) + status(1) = 44
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(44);
+    // + workspace(4) + lifecycle(2) + audit(2) + secrets(4) + footprint(1)
+    // + retention(2) + status(1) = 45
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(45);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
@@ -68,12 +69,41 @@ describe("vendo/store-wire@1", () => {
 
   // `ops` on /status is a LEVEL over this order, so an implementation that
   // stops short of the newest ops can only report an honest number when those
-  // ops are the tail. retention is the one family nothing serves yet; if a
-  // later op is ever declared after it, the local engine's 42 starts claiming
-  // ops it does not have.
+  // ops are the tail. retention is the family nothing serves yet, and the audit
+  // tally is the newest op no mount answers — both sit behind everything a
+  // shipped mount already serves.
   it("declares the ops nothing serves yet LAST, so the /status level can stay honest", () => {
     const ops = Object.keys(STORE_WIRE_PATHS).filter((op) => op !== "status");
-    expect(ops.slice(-2)).toEqual(["retention.quarantine", "retention.purge"]);
+    expect(ops.slice(-3)).toEqual(["retention.quarantine", "retention.purge", "audit.tally"]);
+  });
+
+  // The rule the tail exists for, stated as the thing that would break: a new op
+  // may only be APPENDED. Slot one in the middle and every number a mount is
+  // already reporting silently starts naming a different op — the renumbering
+  // hazard STORE_WIRE_APPEND_MESSAGES_OPS is pinned against, arriving from the
+  // other side. `status` was the 44th op when it was last the end of this list,
+  // and a mount reporting 44 means "everything through /status" forever.
+  it("keeps every already-reported level meaning what it meant, by only ever appending", () => {
+    const ops = Object.keys(STORE_WIRE_PATHS);
+    expect(ops.indexOf("status") + 1).toBe(44);
+    expect(ops.indexOf("audit.tally") + 1).toBe(45);
+  });
+
+  // The tally is the one read in this protocol with a REQUIRED argument, and
+  // the requirement is the whole design: there is no cursor to page a tally, so
+  // `from` is the only thing bounding what a mount groups. A body without one
+  // asks it to group an append-only drawer's entire history.
+  it("audit.tally's body carries the four filters and refuses to be sent without its floor", () => {
+    const tally = (body: unknown): boolean => storeWireAuditTallyRequestSchema.safeParse(body).success;
+    expect(tally({ from: "2026-08-14T00:00:00.000Z" })).toBe(true);
+    expect(tally({ from: "2026-08-14T00:00:00.000Z", kind: "tool-call", venue: "chat", outcome: "ok", decidedBy: "grant" })).toBe(true);
+    expect(tally({ kind: "tool-call" })).toBe(false);
+    // A real datetime, unlike a watermark's opaque echo: this is a window the
+    // caller authored, not a value it read back off a page.
+    expect(tally({ from: "yesterday" })).toBe(false);
+    // The same four enums as the feed, refused the same way — one copy of them
+    // on the wire, so the two doors cannot come to narrow differently.
+    expect(tally({ from: "2026-08-14T00:00:00.000Z", outcome: "allowed" })).toBe(false);
   });
 
   describe("engine.list's watermark bound", () => {

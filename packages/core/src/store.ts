@@ -156,7 +156,7 @@ export interface StoreAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// StoreOps — the named-operation contract for the 44-op / 12-family store.
+// StoreOps — the named-operation contract for the 45-op / 12-family store.
 // Both the local backend (store/ops.ts) and the cloud client
 // (hosted-store.ts) implement this interface.
 // ---------------------------------------------------------------------------
@@ -260,25 +260,31 @@ export interface EngineListPage {
 }
 
 // ---------------------------------------------------------------------------
-// audit.list — the typed read over the audit drawer
+// audit.list / audit.tally — the typed reads over the audit drawer
 // ---------------------------------------------------------------------------
 
-/** Which audit rows to read. Four filters, ANDed, all optional — the ones a
-    reviewer's feed and a decision tally actually narrow on, and no more.
+/** Which audit rows a read narrows to. Four filters, ANDed, all optional — the
+    ones a reviewer's feed and a decision tally actually narrow on, and no more.
 
     Narrowing by SUBJECT, app or tool is deliberately NOT here: those are
     `vendo_audit` ref keys and `engine.list("vendo_audit", { refs })` already
-    serves them. This op exists for the three fields that are not refs
+    serves them. These reads exist for the three fields that are not refs
     (`venue` is a column, `outcome` and `decidedBy` live inside the event) plus
     `kind`, which every real feed pairs with them.
 
     Values are the AuditEvent's own field types, so there is no second copy of
-    any of these enums to drift. */
-export interface AuditQuery {
+    any of these enums to drift. Shared by both audit reads for the same reason:
+    a WHERE the feed and the tally could spell differently is a WHERE that will,
+    and then the tally stops counting the rows the feed shows. */
+export interface AuditFilters {
   kind?: AuditEvent["kind"];
   venue?: AuditEvent["venue"];
   outcome?: NonNullable<AuditEvent["outcome"]>;
   decidedBy?: NonNullable<AuditEvent["decidedBy"]>;
+}
+
+/** {@link AuditFilters} plus the page — `audit.list`'s query. */
+export interface AuditQuery extends AuditFilters {
   cursor?: string;
   limit?: number;
 }
@@ -290,6 +296,50 @@ export interface AuditQuery {
 export interface AuditPage {
   events: AuditEvent[];
   cursor?: string;
+}
+
+/** What to count, and over what stretch of time. The same four filters the feed
+    narrows on ({@link AuditFilters}), plus the one thing a count needs that a
+    page does not: a floor.
+
+    `from` is INCLUSIVE and REQUIRED, and it is the whole of the window — there
+    is no `to`, because a tally is always "since": the rows a reviewer is
+    counting end at now, and an upper bound is grammar no consumer has asked
+    for (an optional one can be added later without breaking a caller).
+    Required rather than optional because it is this op's ONLY bound: there is
+    no cursor to page a tally, so an unbounded call scans a drawer that only
+    ever grows and answers with a row per hour it has ever held. A caller who
+    cannot leave the floor out cannot write that call by accident, and `from`
+    is also the caller's cost dial — the answer is at most one row per UTC hour
+    in the window per outcome/decidedBy pair actually seen. */
+export interface AuditTallyQuery extends AuditFilters {
+  from: IsoDateTime;
+}
+
+/** One counted group: a UTC hour, the two dimensions the count is split by, and
+    how many matching events landed in it.
+
+    `bucket` is the START of the hour as an instant, not an hour-of-day number:
+    a number only identifies a bucket inside a single day, and this window is
+    whatever the caller's `from` makes it. A consumer charting one day reads its
+    0-23 index straight off the instant.
+
+    `outcome` and `decidedBy` are NULL when the events in the group carry none —
+    a control event is not a call and has no outcome — and null is a group of
+    its own, never dropped and never merged into another. They are the
+    AuditEvent's own field types for the same reason the filters are: a second
+    copy of either enum is a second thing to drift.
+
+    Hours holding nothing are OMITTED: a group-by answers with the groups that
+    exist, and a consumer that wants a fixed 24-slot row starts with zeros and
+    fills. Rows are sorted by `bucket`, then `outcome`, then `decidedBy`,
+    ascending, with a null dimension last — "whatever order the engine grouped
+    in" is not an answer two implementations would ever give alike. */
+export interface AuditTallyRow {
+  bucket: IsoDateTime;
+  outcome: NonNullable<AuditEvent["outcome"]> | null;
+  decidedBy: NonNullable<AuditEvent["decidedBy"]> | null;
+  count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +374,7 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 44 store operations across 12 families.
+/** The typed contract for all 45 store operations across 12 families.
     Lean by design — this is the CONTRACT interface, not the implementation.
 
     Two members are OPTIONAL, and both mean the same thing: an implementation
@@ -418,11 +468,20 @@ export interface StoreOps {
         makes a create distinguishable from an overwrite in the trail. */
     history(query?: { cursor?: string; limit?: number; owner?: string; path?: string }): Promise<{ entries: unknown[]; cursor?: string }>;
   };
-  /** The audit drawer's own read. One verb, because reading is all anyone does
-      to it: `vendo_audit` is append-only, and rows leave it only through the
-      erase cascade and the retention window. */
+  /** The audit drawer's own reads — both of them reads, because reading is all
+      anyone does to it: `vendo_audit` is append-only, and rows leave it only
+      through the erase cascade and the retention window.
+
+      Two verbs and not one because a count is not a page. A reviewer's feed
+      wants the newest rows and pages through them; a decision tally wants a
+      whole window collapsed to numbers, and getting it out of `list` means
+      downloading every row in the window to count it client-side. Same drawer,
+      same four filters, two answers. */
   audit: {
     list(query?: AuditQuery): Promise<AuditPage>;
+    /** Matching events counted per UTC hour, split by outcome and decidedBy —
+        the grouped read a decision tally is, in one call. */
+    tally(query: AuditTallyQuery): Promise<AuditTallyRow[]>;
   };
   /** The store's secret vault — the values a host's connectors authenticate
       with, kept where the rest of its data is kept.

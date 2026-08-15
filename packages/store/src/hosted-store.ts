@@ -1,5 +1,6 @@
 import {
   type AuditEvent,
+  type AuditTallyRow,
   type BlobStore,
   cloudStandingError,
   type CollectionFootprint,
@@ -78,7 +79,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 44-op named-operation surface over the same mount and the same key —
+  /** The 45-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
    * above are built ON these ops: engine for Vendo's own collections, appData
    * for an app's own drawers. */
@@ -164,7 +165,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
-  // The StoreAdapter façade rides the SAME 44 ops as `ops` below — it has no
+  // The StoreAdapter façade rides the SAME 45 ops as `ops` below — it has no
   // doors of its own since the generic records family left the wire. A
   // collection (or blob namespace) either names an app's own drawer, which the
   // appData family serves with the owner stamped on, or it names one of Vendo's
@@ -281,15 +282,15 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 44-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 45-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 44 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 45 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
 /** Measurement instrument, not a feature: with VENDO_STORE_TRACE set, every
- * call through the store client below — the 44 ops AND the StoreAdapter façade,
+ * call through the store client below — the 45 ops AND the StoreAdapter façade,
  * which rides the same client — emits one greppable stderr line naming the op,
  * its path, the round trip in milliseconds (the body read included, since that
  * is what the caller waits for), the response size in bytes and the outcome.
@@ -355,7 +356,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 44-op store contract, speaking
+ * The Cloud client for the whole 45-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -779,9 +780,11 @@ function storeWireClient(
         await mutate("lifecycle.promote", P["lifecycle.promote"], { appId, orgId });
       },
     },
-    // The audit drawer's one read, and the only door that answers with the type
-    // it stores: `vendo_audit`'s rows ARE AuditEvents, so handing back records
-    // would put a cast at every call site instead of one here.
+    // The audit drawer's reads. `list` is the only door that answers with the
+    // type it stores — `vendo_audit`'s rows ARE AuditEvents, so handing back
+    // records would put a cast at every call site instead of one here — and
+    // `tally` is the same drawer counted rather than paged, which is the one
+    // shape a client cannot assemble from `list` without downloading the window.
     audit: {
       async list(query) {
         const payload = await post("audit.list", P["audit.list"], { ...query });
@@ -789,6 +792,10 @@ function storeWireClient(
           events: field<AuditEvent[]>(payload, "events", "invalid audit page", Array.isArray),
           ...cursorOf(payload),
         };
+      },
+      async tally(query) {
+        const payload = await post("audit.tally", P["audit.tally"], { ...query });
+        return field<AuditTallyRow[]>(payload, "rows", "invalid audit tally", Array.isArray);
       },
     },
     // `get` is the one read in this protocol that answers with a CREDENTIAL. The

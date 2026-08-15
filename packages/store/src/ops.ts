@@ -3,8 +3,11 @@ import {
   VENDO_STORE_WIRE_FORMAT,
   VendoError,
   type AuditEvent,
+  type AuditFilters,
   type AuditPage,
   type AuditQuery,
+  type AuditTallyQuery,
+  type AuditTallyRow,
   type FilesAdapter,
   type Json,
   type RecordStore,
@@ -102,10 +105,32 @@ const commitEntries = (commit: VendoRecord): WorkspaceEntry[] =>
 const commitTouches = (commit: VendoRecord, path: string): boolean =>
   commitEntries(commit).some((entry) => entry.path === path);
 
-/** `audit.list`'s statement (01 §12 `AuditQuery`). `kind` and `venue` are real
- *  columns; `outcome` and `decidedBy` are not — they live inside the stored
- *  event, so they are read out of the jsonb. Every filter is optional and they
- *  AND together, so an empty query is the whole feed.
+/** The four filters both audit doors narrow on (01 §12 `AuditFilters`), as the
+ *  WHERE and its bind parameters. `kind` and `venue` are real columns;
+ *  `outcome` and `decidedBy` are not — they live inside the stored event, so
+ *  they are read out of the jsonb. Every filter is optional and they AND
+ *  together, so no filter at all is the whole drawer.
+ *
+ *  ONE copy, shared by the feed and the tally: a grouped statement that spells
+ *  this WHERE its own way counts rows the feed never shows, and a reviewer
+ *  reconciling the tally against the feed has no way to tell which one lied.
+ *  Each door appends its own remaining clause (a cursor, a floor) to what comes
+ *  back. */
+function auditWhere(filters: AuditFilters): { params: unknown[]; clauses: string[] } {
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+  const add = (sql: string, value: unknown): void => {
+    params.push(value);
+    clauses.push(sql.replace("?", `$${params.length}`));
+  };
+  if (filters.kind !== undefined) add("kind = ?", filters.kind);
+  if (filters.venue !== undefined) add("venue = ?", filters.venue);
+  if (filters.outcome !== undefined) add("event->>'outcome' = ?", filters.outcome);
+  if (filters.decidedBy !== undefined) add("event->>'decidedBy' = ?", filters.decidedBy);
+  return { params, clauses };
+}
+
+/** `audit.list`'s statement (01 §12 `AuditQuery`).
  *
  *  The ordering and the cursor are the routed `vendo_audit` door's, verbatim
  *  (cursorMs, ORDER BY the truncated instant then id, over-fetch by one): both
@@ -113,16 +138,7 @@ const commitTouches = (commit: VendoRecord, path: string): boolean =>
  *  same place in the other. */
 async function auditPage(db: Db, query: AuditQuery): Promise<AuditPage> {
   const limit = pageLimit(query.limit);
-  const params: unknown[] = [];
-  const clauses: string[] = [];
-  const add = (sql: string, value: unknown): void => {
-    params.push(value);
-    clauses.push(sql.replace("?", `$${params.length}`));
-  };
-  if (query.kind !== undefined) add("kind = ?", query.kind);
-  if (query.venue !== undefined) add("venue = ?", query.venue);
-  if (query.outcome !== undefined) add("event->>'outcome' = ?", query.outcome);
-  if (query.decidedBy !== undefined) add("event->>'decidedBy' = ?", query.decidedBy);
+  const { params, clauses } = auditWhere(query);
   if (query.cursor !== undefined) {
     const cursor = decodeCursor(query.cursor);
     params.push(cursor.c, cursor.i);
@@ -144,6 +160,43 @@ async function auditPage(db: Db, query: AuditQuery): Promise<AuditPage> {
       ? { cursor: encodeCursor(iso(last["at"]), text(last["id"])) }
       : {}),
   };
+}
+
+/** `audit.tally`'s statement (01 §12 `AuditTallyQuery`): the feed's WHERE plus
+ *  an inclusive floor, grouped into UTC hours and split by the two dimensions a
+ *  decision tally reads.
+ *
+ *  `date_trunc`'s 3-ARG form, like `cursorMs` and for the same reason: the
+ *  2-arg form buckets in whatever the session's TimeZone happens to be, so the
+ *  same drawer would tally into different hours on two connections. The bucket
+ *  is named in UTC because the contract says UTC.
+ *
+ *  No LIMIT and no cursor: `from` is the bound, and the answer is one row per
+ *  hour actually holding events per pair actually seen. Empty hours never
+ *  become rows — a GROUP BY answers with the groups that exist. */
+async function auditTally(db: Db, query: AuditTallyQuery): Promise<AuditTallyRow[]> {
+  const { params, clauses } = auditWhere(query);
+  params.push(query.from);
+  clauses.push(`at >= $${params.length}`);
+  const result = await db.query(
+    `SELECT date_trunc('hour', at, 'UTC') AS bucket,
+            event->>'outcome' AS outcome,
+            event->>'decidedBy' AS decided_by,
+            count(*) AS count
+       FROM vendo_audit WHERE ${clauses.join(" AND ")}
+      GROUP BY 1, 2, 3
+      ORDER BY 1, 2, 3`,
+    params,
+  );
+  // ORDER BY puts NULLs last by default, which IS the contract's order (an
+  // absent dimension sorts after every present one) — not an accident to
+  // preserve by luck. `count(*)` is a bigint and arrives as a string.
+  return result.rows.map((row) => ({
+    bucket: iso(row["bucket"]),
+    outcome: (row["outcome"] ?? null) as AuditTallyRow["outcome"],
+    decidedBy: (row["decided_by"] ?? null) as AuditTallyRow["decidedBy"],
+    count: Number(row["count"]),
+  }));
 }
 
 const encoder = new TextEncoder();
@@ -712,14 +765,19 @@ export function createStoreOps(
     },
 
     // -----------------------------------------------------------------------
-    // audit — one verb, because reading is all anyone does to an append-only
-    // drawer. The filters that ARE refs (subject, app, tool) are already served
-    // by engine.list("vendo_audit", { refs }); this door exists for the ones
-    // that are not.
+    // audit — two verbs, both READS, because reading is all anyone does to an
+    // append-only drawer. The filters that ARE refs (subject, app, tool) are
+    // already served by engine.list("vendo_audit", { refs }); this door exists
+    // for the ones that are not. `tally` is the same WHERE grouped rather than
+    // paged: a decision tally read through `list` means shipping every row in
+    // the window across the wire to count it at the other end.
     // -----------------------------------------------------------------------
     audit: {
       async list(query = {}) {
         return await auditPage(db, query);
+      },
+      async tally(query) {
+        return await auditTally(db, query);
       },
     },
 
@@ -823,11 +881,17 @@ export function createStoreOps(
     },
 
     async status() {
-      // 42 of STORE_WIRE_PATHS' 44: `ops` is a LEVEL over that list's declared
+      // 42 of STORE_WIRE_PATHS' 45: `ops` is a LEVEL over that list's declared
       // order, and the two this engine does not serve — retention.quarantine and
       // retention.purge — are declared last for exactly this reason, so the
       // level stops honestly at footprint instead of claiming a family that is
       // absent from the object above.
+      //
+      // It stops there DESPITE serving audit.tally, the op declared past them:
+      // a level is a prefix and cannot say "all but the two in the middle". The
+      // number is unchanged rather than raised, because a raised one would
+      // claim the retention family this engine still has nowhere to quarantine
+      // to. A caller learns about a missing op from its own 501, never here.
       return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
     },
   };
