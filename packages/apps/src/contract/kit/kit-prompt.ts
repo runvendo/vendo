@@ -14,7 +14,7 @@ export interface KitPromptOptions {
   omitPreamble?: boolean;
 }
 
-const PREAMBLE = [
+export const PREAMBLE = [
   "# The Kit",
   "",
   "Build the app from these components — you only fill props; they sort, filter,",
