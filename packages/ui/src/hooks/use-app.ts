@@ -5,6 +5,7 @@ import {
   type Json,
   type ToolOutcome,
 } from "@vendoai/core";
+import { effectiveAppBuildUiDeadlineMs } from "@vendoai/apps/contract";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";
@@ -16,6 +17,12 @@ const LOAD_ATTEMPTS = 3;
 /** Doubling from here: 300ms, 600ms. Short enough that a transient blip heals
  *  inside the skeleton the user is already looking at. */
 const RETRY_BASE_MS = 300;
+/** A screen that is not servable YET answers the build window's `{kind:"pending"}`
+ *  (wire/apps.ts) rather than failing — a ✦ remix's row lands tens of seconds
+ *  before the screen its first edit generates. Keep asking on the app embed's
+ *  cadence (APP_POLL_MS, chrome/embeds.tsx) until it lands or the ONE shared
+ *  build deadline turns the wait into an error the surface can act on. */
+const PENDING_POLL_MS = 1200;
 
 export interface AppOptions {
   /** H16 — `false` means DON'T boot: no `apps.get`, no `apps.open`, no iframe.
@@ -52,10 +59,25 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
     const current = () => generation === generationRef.current;
     if (!loadedRef.current) setIsLoading(true);
     setError(undefined);
-    for (let attempt = 1; current(); attempt += 1) {
+    const deadline = Date.now() + effectiveAppBuildUiDeadlineMs();
+    for (let attempt = 1; current();) {
       try {
-        const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
+        const [nextApp, nextSurface] = await Promise.all([
+          client.apps.get(appId),
+          client.apps.open(appId, { pending: true }),
+        ]);
         if (!current()) return;
+        if (nextSurface.kind === "pending") {
+          if (Date.now() >= deadline) {
+            setError(new Error(`app ${appId} was still being generated when the build window ran out`));
+            setIsLoading(false);
+            return;
+          }
+          // A pending answer is the wire working, not a failure: it must not
+          // spend one of the retries above, or the wait ends in 900ms again.
+          await new Promise(resolve => setTimeout(resolve, PENDING_POLL_MS));
+          continue;
+        }
         setApp(nextApp);
         setSurface(nextSurface);
         loadedRef.current = true;
@@ -69,6 +91,7 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
           return;
         }
         await new Promise(resolve => setTimeout(resolve, RETRY_BASE_MS * 2 ** (attempt - 1)));
+        attempt += 1;
       }
     }
   }, [appId, client]);

@@ -373,6 +373,15 @@ export const createAppOpener = (
   }
 
   if (app.tree === undefined) {
+    // A remix's row lands the instant ✦ fires; its screen is what the first edit
+    // GENERATES, tens of seconds later. "Not ready yet" is not "broken", so it
+    // answers the same not-found every app gives before its build lands — which
+    // the wire's build window (openWithPendingWindow, wire/apps.ts) turns into
+    // {kind:"pending"} for a caller who can see the app. A validation failure
+    // here is what left the ✦ pill on "Remixing…" until a page reload.
+    if (app.seed !== undefined) {
+      throw new VendoError("not-found", `app ${app.id} has no screen yet`);
+    }
     throw new VendoError("validation", "tree app has no ui payload");
   }
   // v2 spec §§1–2 — the canonical vendo-genui/v2 tree: validate, resolve

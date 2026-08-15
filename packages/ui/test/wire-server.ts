@@ -320,6 +320,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
     /** PR3 — apps served as an `{kind:"http"}` surface (app id → url): the
      *  second surface kind a slot must mount. */
     httpApps: new Map<string, string>(),
+    /** ⚠️ TEST EDIT (infrastructure) — how many open polls a SEEDED app answers
+     *  before the screen its first edit generates lands (app id → polls left).
+     *  Mirrors the real door: a remix's row exists tens of seconds before its
+     *  screen, and "not ready yet" is the build window's pending, never a
+     *  failure (persistence/open.ts, wire/apps.ts). */
+    pendingScreens: new Map<string, number>(),
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.
@@ -1241,6 +1247,13 @@ export async function createWireServer(options: WireServerOptions = {}) {
           return wireError(response, "not-found", "App not found", 404);
         }
         if (action === "open" && method === "GET") {
+          const screenPolls = state.pendingScreens.get(id) ?? 0;
+          if (screenPolls > 0) {
+            state.pendingScreens.set(id, screenPolls - 1);
+            return url.searchParams.get("pending") === "1"
+              ? json(response, { kind: "pending" })
+              : wireError(response, "not-found", `app ${id} has no screen yet`, 404);
+          }
           // A served (rung-4) app answers with its machine url; everything else
           // is a tree. Both must mount in a slot.
           const served = state.httpApps.get(id);

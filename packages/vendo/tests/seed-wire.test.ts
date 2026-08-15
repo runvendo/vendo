@@ -70,6 +70,14 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
     expect(app.components?.[seedComponentName(component)]).toBeUndefined();
     expect(JSON.stringify(app)).not.toContain(source.trim());
 
+    // The screen is what the first edit generates, tens of seconds after the
+    // row lands (here, never — no model). "Not ready yet" is not "broken", so
+    // the flagged open answers the build window's pending and the ✦ surface
+    // keeps asking, instead of a failure it can only give up on.
+    const notReady = await vendo.handler(request("GET", `/apps/${app.id}/open?pending=1`));
+    expect(notReady.status).toBe(200);
+    expect(await notReady.json()).toEqual({ kind: "pending" });
+
     // The slot is a PLACEMENT row, readable on the slots' own route.
     const placements = await (await vendo.handler(request("GET", "/apps/placements?slots=dashboard"))).json();
     expect(placements).toContainEqual(expect.objectContaining({ slot: "dashboard", app: app.id }));

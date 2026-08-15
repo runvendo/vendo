@@ -143,7 +143,11 @@ function useRemixFork(slot: string | null) {
 /** The popover's status line, read straight off the open payload — the venue
  *  verdict is SERVER-authoritative (lane W1c owns the review lifecycle; this
  *  only renders what the payload reports). */
-function remixStatus(review: boolean, surface: OpenSurface | undefined): string {
+function remixStatus(review: boolean, surface: OpenSurface | undefined, failed: boolean): string {
+  // The bounded load gave up (use-app.ts) — the generation outran the build
+  // window, or the wire stopped answering. Same sentence either way: the fact,
+  // and the reassurance that the host's own component is still what is on screen.
+  if (failed) return "The remix didn’t load — nothing changed on the page.";
   if (!review) return "Sandboxed — only you see this";
   if (surface?.kind === "failed") return surface.reason;
   if (surface?.kind !== "tree") return "Waiting for review";
@@ -242,11 +246,16 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
     && (review || (venue !== undefined && !venue.granted && venue.reason === "pending-review"));
 
   // The seed's provenance row lands the instant the fork is minted; its screen
-  // arrives seconds later (until then `open` has no ui payload to serve). The
+  // arrives tens of seconds later (until then `open` answers the build window's
+  // pending, which `useApp` keeps asking through rather than failing). The
   // pill reads that OPEN PAYLOAD — the same signal the mount below waits on —
   // or it claims "Remixed" over the host's untouched original for the whole
   // generation, which reads as broken.
-  const pending = surface === undefined;
+  const pending = surface === undefined && error === undefined;
+  // That wait is bounded, so the pill needs a third state in the slot's own
+  // failure voice ("This view didn't load"): claiming work forever is the same
+  // lie "Remixed" was, one step later.
+  const failed = surface === undefined && error !== undefined;
 
   // Until the fork's surface arrives (or if it never does), the original child
   // is the honest content — the wrapper never trades working host markup for
@@ -281,11 +290,11 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
             onClick={() => onMenuToggle(!menuOpen)}
           >
             <span aria-hidden="true" className="fl-remix-pill-mark">✦</span>
-            {pending ? "Remixing…" : "Remixed"}
+            {failed ? "Didn’t load" : pending ? "Remixing…" : "Remixed"}
           </button>
           {menuOpen ? (
             <div className="fl-remix-menu" role="group" aria-label={`Remix of ${slot}`}>
-              <span className="fl-remix-status" role="status">{remixStatus(review, surface)}</span>
+              <span className="fl-remix-status" role="status">{remixStatus(review, surface, failed)}</span>
               <button
                 type="button"
                 onClick={() => {

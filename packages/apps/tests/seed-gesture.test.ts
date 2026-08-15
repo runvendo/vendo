@@ -118,7 +118,10 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
     // open, and the wrapper keeps the host component it was going to replace.
     expect(app.seed?.instruction).toBe("make the number blue");
     expect(screenOf(app)).toBeUndefined();
-    await expect(runtime.open(app.id, ctx)).rejects.toThrow(/no ui payload/);
+    // "Not ready yet" is not "broken": the door answers the same not-found an
+    // app gives before its build lands, which the wire's build window turns
+    // into {kind:"pending"} — so a surface keeps asking instead of giving up.
+    await expect(runtime.open(app.id, ctx)).rejects.toMatchObject({ code: "not-found" });
   });
 
   it("does not surface as a thrown gesture when the edit itself THROWS", async () => {

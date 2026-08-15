@@ -386,6 +386,37 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     expect(managePill().getAttribute("aria-busy")).toBeNull();
   });
 
+  it("waits out a generation far longer than the load retries, and mounts the screen with no reload", async () => {
+    // The real model takes 9–38s to write the remix's screen. The load's three
+    // retries are spent in ~900ms, and the surface then never asked again: the
+    // pill sat on "Remixing…" until the person reloaded the page. A screen that
+    // is not ready is the build window's pending, and the wait rides it out.
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
+    wire.state.pendingScreens.set(forked.id, 3);
+    mount();
+    await waitFor(() => expect(managePill().textContent).toContain("Remixing…"));
+    expect(forkIframe()).toBeNull();
+    // No remount, no reload — the same mounted wrapper picks the screen up.
+    await waitFor(() => expect(forkIframe()).toBeTruthy(), { timeout: 30_000 });
+    expect(managePill().textContent).toContain("Remixed");
+    expect(managePill().getAttribute("aria-busy")).toBeNull();
+  }, 30_000);
+
+  it("stops claiming work when the load gives up, and says the page is untouched", async () => {
+    // The wait is bounded, so the pill must have somewhere to land: "Remixing…"
+    // past the point of asking is the same lie the badge was added to end.
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
+    const dead = { method: "GET", path: `/apps/${forked.id}/open`, code: "validation", message: "boom", status: 400 };
+    wire.state.failures.push({ ...dead }, { ...dead }, { ...dead });
+    mount();
+    await waitFor(() => expect(managePill().textContent).toContain("Didn’t load"));
+    expect(managePill().getAttribute("aria-busy")).toBeNull();
+    // The host's own markup never left, and the popover says so.
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    fireEvent.click(managePill());
+    expect(screen.getByRole("status").textContent).toContain("nothing changed on the page");
+  });
+
   it("wraps only a statically importable component: inline JSX gets no affordance, and a dev warning", () => {
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
