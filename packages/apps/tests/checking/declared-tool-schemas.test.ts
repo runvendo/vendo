@@ -12,9 +12,9 @@
  *
  * Both halves of the seam are real here: the declaration travels the SHIPPED
  * write path (a `ToolRegistry` descriptor → `generationToolContext` → the floor's
- * dependencies) and is read back through the SHIPPED read path (the `validate`
- * door → `screenTypesCheck` → `tsc`). Neither side is stubbed, so they cannot
- * agree by construction.
+ * dependencies) and is read back through the SHIPPED read path (the checks
+ * floor's own gauntlet → `componentScreenTypings` → `tsc`). Neither side is
+ * stubbed, so they cannot agree by construction.
  */
 import {
   type JsonSchema,
@@ -122,28 +122,43 @@ const runtime = (options: { declared: boolean; sampled: boolean }) => createApps
   model: scriptedLanguageModel(() => "no"),
 });
 
-const DONUT = `<App name="Spending"><Query id="spending" tool="${TOOL}"/><MapleSpendingDonut slices={spending.data}/></App>`;
-const WRONG_FIELD = `<App name="Spending"><Query id="spending" tool="${TOOL}"/><Text text={spending.total}/></App>`;
+const DONUT = `import { MapleSpendingDonut, useQuery } from "@vendo/screen";
 
-const blocked = (findings: readonly { severity: string; message: string }[]): string =>
-  findings.filter(({ severity }) => severity === "block").map(({ message }) => message).join("\n");
+export default function Spending() {
+  const spending = useQuery("${TOOL}");
+  return <MapleSpendingDonut slices={spending.data} />;
+}
+`;
+const WRONG_FIELD = `import { Text, useQuery } from "@vendo/screen";
+
+export default function Spending() {
+  const spending = useQuery("${TOOL}");
+  return <Text text={spending.total} />;
+}
+`;
+
+const APP = "app_declared" as const;
+
+/** The screen through the checks floor — the paint gate every author faces. */
+const paint = async (options: { declared: boolean; sampled: boolean }, source: string) =>
+  await runtime(options).floor(ctx).component({ appId: APP, source });
 
 describe("the declaration is the contract the screen is checked against", () => {
   it("refuses a field the declaration does not carry, with no sample in play", async () => {
-    const result = await runtime({ declared: true, sampled: false }).validate({ document: WRONG_FIELD }, ctx);
+    const result = await paint({ declared: true, sampled: false }, WRONG_FIELD);
 
     expect(result.ok).toBe(false);
     // The declaration is the only thing that could know this — and it teaches
-    // the field that IS there. Declarations now feed toolShapes into the wire
-    // compiler, so the block lands one layer ahead of screen-tsc.
-    expect(blocked(result.findings)).toContain('field "total"');
-    expect(blocked(result.findings)).toContain("available: data");
+    // the field that IS there.
+    const blocking = result.ok ? "" : result.blocking.join("\n");
+    expect(blocking).toContain("total");
+    expect(blocking).toContain("data");
   }, 60_000);
 
   it("satisfies an enum-typed prop — the donut case", async () => {
-    const result = await runtime({ declared: true, sampled: true }).validate({ document: DONUT }, ctx);
+    const result = await paint({ declared: true, sampled: true }, DONUT);
 
-    expect(blocked(result.findings)).toBe("");
+    expect(result.ok ? [] : result.blocking).toEqual([]);
     expect(result.ok).toBe(true);
   }, 60_000);
 });

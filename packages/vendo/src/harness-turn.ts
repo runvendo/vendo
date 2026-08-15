@@ -114,10 +114,9 @@ export interface HarnessTurnsConfig {
    *  not on its listing. */
   connectorDiscovery?: boolean;
   /** The render seam's halves composition owns, per turn — like `bridge` below,
-   *  and for the same reason: the app half (`authoredApp`) stores the app row and
-   *  runs the tree's queries as the CALLER, so it needs this turn's ctx. Wired
-   *  into the runtime's generic `wrapWorkspace` slot below — the runtime itself
-   *  no longer knows the seam. */
+   *  and for the same reason: the floor runs the screen's queries as the CALLER,
+   *  so it needs this turn's ctx. Wired into the runtime's generic
+   *  `wrapWorkspace` slot below — the runtime itself no longer knows the seam. */
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The shipped tool-bridge rails composition owns, per turn (`toolOutputCap`,
    *  the connect `preflight`, the capability-miss `onCall`). */

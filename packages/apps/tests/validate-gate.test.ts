@@ -22,8 +22,8 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 import { repairInstruction, validateWrittenApps } from "../src/server/generation/validate-gate.js";
 
-const APP = "/user/apps/app_1/app.vendo";
-const OTHER = "/user/apps/app_2/app.vendo";
+const APP = "/user/apps/app_1/app.tsx";
+const OTHER = "/user/apps/app_2/app.tsx";
 
 const LYING: Finding = {
   severity: "block",
@@ -34,89 +34,70 @@ const LYING: Finding = {
 
 const THIN: Finding = { severity: "warn", where: "document", message: "this app feels thin." };
 
-const answering = (byPath: Record<string, { ok: boolean; findings: Finding[] }>) => {
+const answering = (byAppId: Record<string, { ok: boolean; findings: Finding[] }>) => {
   const calls: Array<{ name: string; args: Json }> = [];
-  const files: Record<string, string> = Object.fromEntries(
-    Object.keys(byPath).map((path) => [path, `<App name="${path}" />`]),
-  );
   const tools = {
     call: async (name: string, args: Json): Promise<ToolResult> => {
       calls.push({ name, args });
-      const document = (args as { document?: string }).document;
-      const path = Object.entries(files).find(([, text]) => text === document)?.[0];
-      const answer = path === undefined ? undefined : byPath[path];
+      const answer = byAppId[String((args as { appId?: string }).appId)];
       return answer === undefined
         ? { status: "error", error: { code: "not-found", message: "no such app" } }
         : { status: "ok", output: answer as unknown as Json };
     },
   };
-  const workspace = { readFile: async (path: string) => files[path] ?? "" };
-  return { calls, tools, workspace, files };
+  return { calls, tools };
 };
 
 describe("validateWrittenApps", () => {
-  it("calls the ONE registered verb, with the wire text it read back", async () => {
-    const { calls, tools, workspace, files } = answering({ [APP]: { ok: true, findings: [] } });
+  it("calls the ONE registered verb, with the app id the path names", async () => {
+    // `{appId}` is the only door: the verb runs the gauntlet on the STORED
+    // screen, so the gate hands over an address and never a document.
+    const { calls, tools } = answering({ app_1: { ok: true, findings: [] } });
 
-    await validateWrittenApps({ tools, workspace, paths: [APP] });
+    await validateWrittenApps({ tools, paths: [APP], review: true });
 
-    expect(calls).toEqual([{ name: "validate", args: { document: files[APP] } }]);
+    expect(calls).toEqual([{ name: "validate", args: { appId: "app_1" } }]);
   });
 
   it("reports nothing when every app passes", async () => {
-    const { tools, workspace } = answering({ [APP]: { ok: true, findings: [] } });
-    expect(await validateWrittenApps({ tools, workspace, paths: [APP] })).toEqual([]);
+    const { tools } = answering({ app_1: { ok: true, findings: [] } });
+    expect(await validateWrittenApps({ tools, paths: [APP], review: true })).toEqual([]);
   });
 
   it("reports the app that did not pass, with its findings", async () => {
-    const { tools, workspace } = answering({ [APP]: { ok: false, findings: [LYING] } });
+    const { tools } = answering({ app_1: { ok: false, findings: [LYING] } });
 
-    const failures = await validateWrittenApps({ tools, workspace, paths: [APP] });
+    const failures = await validateWrittenApps({ tools, paths: [APP], review: true });
 
     expect(failures).toEqual([{ path: APP, appId: "app_1", findings: [LYING] }]);
   });
 
   it("keeps the apps apart when a turn wrote two and only one is broken", async () => {
-    const { tools, workspace } = answering({
-      [APP]: { ok: true, findings: [] },
-      [OTHER]: { ok: false, findings: [LYING] },
+    const { tools } = answering({
+      app_1: { ok: true, findings: [] },
+      app_2: { ok: false, findings: [LYING] },
     });
 
-    const failures = await validateWrittenApps({ tools, workspace, paths: [APP, OTHER] });
+    const failures = await validateWrittenApps({ tools, paths: [APP, OTHER], review: true });
 
     expect(failures.map(({ appId }) => appId)).toEqual(["app_2"]);
   });
 
-  it("gates a component screen through the door that reads a SCREEN, not the wire one", async () => {
-    // `validate({document})` compiles what it is handed as WIRE, so a `.tsx` screen
-    // that compiles, renders and paints was answered "expected a single <App>
-    // element" — and a builder that obeyed rewrote a working screen into markup.
-    const SCREEN = "/user/apps/app_1/app.tsx";
-    const calls: Array<{ name: string; args: Json }> = [];
-    const tools = {
-      call: async (name: string, args: Json): Promise<ToolResult> => {
-        calls.push({ name, args });
-        return { status: "ok", output: { ok: false, findings: [LYING] } as unknown as Json };
-      },
-    };
-    const workspace = { readFile: async () => "export default function Spending() { return null; }" };
+  it("asks nothing at all without `review` — the reviewer is spent once, at the end", async () => {
+    const { calls, tools } = answering({ app_1: { ok: false, findings: [LYING] } });
 
-    const failures = await validateWrittenApps({ tools, workspace, paths: [SCREEN], review: true });
-
-    expect(calls).toEqual([{ name: "validate", args: { appId: "app_1" } }]);
-    // …and what that door says still comes back as this gate's own shape.
-    expect(failures).toEqual([{ path: SCREEN, appId: "app_1", findings: [LYING] }]);
+    expect(await validateWrittenApps({ tools, paths: [APP] })).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
-  it("ignores paths that are not an app document", async () => {
-    const { calls, tools, workspace } = answering({ [APP]: { ok: true, findings: [] } });
+  it("ignores paths that are not a screen", async () => {
+    const { calls, tools } = answering({ app_1: { ok: true, findings: [] } });
 
+    // `app.tsx` is the only file a screen lives in; `notes.md` is not ours at all.
     await validateWrittenApps({
       tools,
-      workspace,
-      // A plan is a skeleton, not an app document — there is nothing to validate
-      // yet. `notes.md` is not ours at all.
-      paths: ["/user/apps/app_1/plan.vendo", "/user/memory/notes.md"],
+      paths: ["/user/apps/app_1/helper.ts", "/user/memory/notes.md"],
+      review: true,
     });
 
     expect(calls).toEqual([]);
@@ -130,30 +111,18 @@ describe("validateWrittenApps", () => {
     const tools = {
       call: async (): Promise<ToolResult> => ({ status: "denied", reason: "the guard is asking" }),
     };
-    const workspace = { readFile: async () => "<App name=\"x\" />" };
 
-    expect(await validateWrittenApps({ tools, workspace, paths: [APP] })).toEqual([]);
+    expect(await validateWrittenApps({ tools, paths: [APP], review: true })).toEqual([]);
     // Loud for the operator, though: a gate that stopped gating must not be quiet.
     expect(logged.mock.calls.map(String).join("")).toContain("app_1");
     logged.mockRestore();
-  });
-
-  it("fails open on a file it cannot read back", async () => {
-    const tools = { call: async (): Promise<ToolResult> => ({ status: "ok", output: null }) };
-    const workspace = {
-      readFile: async (): Promise<string> => {
-        throw new Error("gone");
-      },
-    };
-    expect(await validateWrittenApps({ tools, workspace, paths: [APP] })).toEqual([]);
   });
 
   it("fails open on an answer it cannot read", async () => {
     const tools = {
       call: async (): Promise<ToolResult> => ({ status: "ok", output: "yep" as unknown as Json }),
     };
-    const workspace = { readFile: async () => "<App name=\"x\" />" };
-    expect(await validateWrittenApps({ tools, workspace, paths: [APP] })).toEqual([]);
+    expect(await validateWrittenApps({ tools, paths: [APP], review: true })).toEqual([]);
   });
 });
 

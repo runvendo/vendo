@@ -4,9 +4,9 @@
  * A sandboxed harness gets a real disk, so the workspace has to leave the store
  * and come back. Checkout writes the caller's visible files out; sync-back is
  * **diff-based, per file, never wholesale** — only paths whose content hash
- * changed are committed. Each mount's `scratch/` never syncs. The hot paths
- * (`app.vendo`, `plan.vendo`) sync MID-TURN, which is what puts the skeleton on
- * screen; everything else lands at turn end.
+ * changed are committed. Each mount's `scratch/` never syncs. The hot path
+ * (`app.tsx`) syncs MID-TURN, which is what puts the screen on screen;
+ * everything else lands at turn end.
  *
  * **Permission is the workspace's, never this file's** (§9.3, design §8): every
  * question about who may write what is `workspace.canCommit(path)`, asked

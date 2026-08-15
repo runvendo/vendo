@@ -24,7 +24,6 @@ import {
 } from "@vendoai/core";
 import {
   type AppDocument,
-  type PlanServer,
   stripServerAuthoritativeFields,
 } from "../../contract/index.js";
 import type { Finding } from "../checking/types.js";
@@ -37,12 +36,6 @@ import { planAutomation, type AutomationPlan } from "./plan.js";
 
 /** The two ways an automation runs: fixed steps, or a judgment call per run. */
 export type AutomationMode = "steps" | "agentic";
-
-/** The mode an escalated plan's `<Server>` asks this door for, or `undefined`
- *  when it asked for the box instead. The one place a `<Server kind>` is read
- *  as an automation — the ladder itself no longer knows these two exist. */
-export const automationMode = (server: PlanServer): AutomationMode | undefined =>
-  server.kind === "box" ? undefined : server.kind;
 
 const warn = (where: string, message: string): Finding => ({ severity: "warn", where, message });
 
@@ -218,19 +211,6 @@ export const armAutomationTrigger = async (
     };
   }
 };
-
-/** What the planner is answering when the ask arrived through an escalated
- *  plan: the person's own words first when the caller has them — "another one"
- *  and "move it to 9am" are the same shape of sentence to everything
- *  downstream, and only the request tells them apart — then the plan's `why`,
- *  the brain's sentence about what has to happen away from the browser. */
-export const automationInstruction = (server: PlanServer, request: string | undefined): string => [
-  ...(request === undefined || request.trim() === ""
-    ? []
-    : [`WHAT THEY ASKED FOR, IN THEIR OWN WORDS: ${request}`]),
-  server.why,
-  ...(server.schedule === undefined ? [] : [`WHEN: ${server.schedule}`]),
-].join("\n");
 
 export interface AutomationLaneDeps extends GenerationDependencies {
   /** The stored app's id: the automation's publish step and the results query

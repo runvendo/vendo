@@ -2,8 +2,8 @@
  * `@vendoai/apps/contract` — the app format, browser-safe.
  *
  * Everything a surface needs to SPEAK about a generated app: the document
- * envelope, the two genui dialects and their compilers, the kit vocabulary, the
- * island/jail rules, catalog + theme, the checking contract, remix provenance,
+ * envelope, the tree, the kit vocabulary, the island/jail rules, catalog +
+ * theme, the checking contract, remix provenance,
  * and the wire shapes `/apps/*` returns. No node built-ins, no model, no store —
  * this door is importable from a browser bundle, which is why `@vendoai/ui`
  * reaches app-generation only through it (enforced in `scripts/dependency-guard.mjs`).
@@ -49,36 +49,10 @@ export {
 export type { PathBinding, ReshapeStep, StateBinding, TreeNode, UIPayload } from "@vendoai/core";
 // islands — the seat's rules
 export * from "./island-ambient.js";
-export * from "./island-derived-values.js";
 export * from "./jail-modules.js";
 // genui/tree — the compiled tree
 export * from "./genui/tree.js";
-// genui/wire — the authoring dialect's compiler. Only the entry point, the
-// issue contract, the printer and the shape checker are public; the sibling
-// modules (attributes, scan, limits, state) stay internal.
-export { compileWire, type WireCompileOptions, type WireCompileResult } from "./genui/wire/compile.js";
-export { expandInlineRefs, type InlineRefsResult } from "./genui/wire/inline-refs.js";
-export {
-  isAdvisoryWireIssue,
-  WIRE_ADVISORY_ISSUE_CODES,
-  WIRE_ISSUE_CODES,
-  type WireIssue,
-  type WireIssueCode,
-} from "./genui/wire/expression.js";
-export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
-export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-check.js";
-// genui/plan — the plan dialect written before workers fill anything in
-export { compilePlan, type PlanCompileResult, type PlanFacts } from "./genui/plan/compile.js";
-export {
-  planTabs,
-  PLAN_DISPLAYS,
-  type AppPlan,
-  type PlanDisplay,
-  type PlanGroup,
-  type PlanLeaf,
-  type PlanQuery,
-  type PlanServer,
-} from "./genui/plan/types.js";
+export { checkBindingShapes, type BindingShapeError } from "./genui/shape-check.js";
 // genui/expr — the brace grammar
 export * from "./genui/expr.js";
 export * from "./genui/screen.js";

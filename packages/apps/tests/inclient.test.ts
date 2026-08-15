@@ -12,7 +12,7 @@ import { createInClientApprovals } from "../src/server/remix/inclient.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { SCREEN_FILE, type SeedBaseline } from "../src/contract/index.js";
 import type { InClientApproval } from "../src/server/index.js";
-import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -183,12 +183,23 @@ describe("runtime in-client surface", () => {
       model: basicLanguageModel(),
       // A rename through the ONE engine: the assembler opens the app, rewrites
       // it under the instruction's name and saves the whole thing through the
-      // real `authored` write — which is exactly what makes this a NEW version
-      // and drops the hash-pinned approval.
+      // real `authoredScreen` write — which is exactly what makes this a NEW
+      // version and drops the hash-pinned approval.
       screen: scriptedAssembler(() => runtime, ({ request }) => {
         // An EDIT's brief leads with the app's memory block, so the ask is its last line.
         const said = request.split("\n").map((line) => line.trim()).filter((line) => line !== "").at(-1) ?? "";
-        return `<App name="${said.replaceAll('"', "'")}"><Text text="Renamed"/><Disclaimer reason="Fixture app."/></App>`;
+        const words = said.replace(/[^A-Za-z0-9]+/gu, " ").trim().split(" ");
+        const name = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("") || "Renamed";
+        return `import { Stack, Text } from "@vendo/screen";
+
+export default function ${name}() {
+  return (
+    <Stack gap={12}>
+      <Text text="Renamed" variant="heading" />
+    </Stack>
+  );
+}
+`;
       }),
     });
     return { store, guard, runtime };
@@ -353,13 +364,20 @@ describe("runtime in-client surface", () => {
       tools,
       catalog: [],
       model: basicLanguageModel(),
-      // v2: an author emits wire markup, so it CANNOT express a tree-level
-      // inClient field at all — the compiler owns the tree. The runtime strip
-      // stays as defense in depth; this pins stream + document stay clean.
-      screen: authoringAssembler(
-        () => runtime,
-        '<App name="Forged venue"><Text text="hi"/><Disclaimer reason="Fixture app."/></App>',
-      ),
+      // An author writes a component screen, so it CANNOT express a tree-level
+      // inClient field at all — a screen's tree is what rendering it produces.
+      // The runtime strip stays as defense in depth; this pins stream + document
+      // stay clean.
+      screen: authoringAssembler(() => runtime, `import { Stack, Text } from "@vendo/screen";
+
+export default function ForgedVenue() {
+  return (
+    <Stack gap={12}>
+      <Text text="hi" variant="heading" />
+    </Stack>
+  );
+}
+`),
     });
     const views: unknown[] = [];
     const created = await runtime.create({

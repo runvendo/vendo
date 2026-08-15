@@ -142,8 +142,8 @@ function warnLocalRiskOnce(): void {
 const homeFor = (threadId: string): string =>
   path.join(tmpdir(), "vendo-claude-code", threadId.replace(/[^A-Za-z0-9_-]/g, "_"));
 
-/** Workspace path → disk path, and back. `/user/apps/a/app.vendo` lives at
- *  `<root>/user/apps/a/app.vendo`: one root, the frozen layout underneath. */
+/** Workspace path → disk path, and back. `/user/apps/a/app.tsx` lives at
+ *  `<root>/user/apps/a/app.tsx`: one root, the frozen layout underneath. */
 const toDisk = (root: string, workspacePath: string): string =>
   path.join(root, workspacePath.replace(/^\//, ""));
 const toWorkspace = (root: string, diskPath: string): string =>

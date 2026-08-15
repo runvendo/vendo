@@ -344,14 +344,12 @@ export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
  * legal.
  */
 export function testAppsHooks() {
-  const APP_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/([^/]+)\/(?:app|plan)\.vendo$/;
+  const APP_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/([^/]+)\/app\.tsx$/;
   return {
     hotPaths: {
       watch: [
-        "/user/apps/*/app.vendo",
-        "/user/apps/*/plan.vendo",
-        "/orgs/*/apps/*/app.vendo",
-        "/orgs/*/apps/*/plan.vendo",
+        "/user/apps/*/app.tsx",
+        "/orgs/*/apps/*/app.tsx",
       ] as readonly string[],
       appId: (path: string): string | undefined => APP_PATH.exec(path)?.[1],
     },

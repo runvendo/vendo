@@ -173,6 +173,37 @@ function hostTools(): { tools: ToolRegistry; calls: Array<Record<string, unknown
   };
 }
 
+/**
+ * The AI reviewer's model, and nothing else's: a boxed turn's thinking happens
+ * inside the sandbox, so the ONLY model call a composed `claudeCode()` turn makes
+ * is the mandatory judging pass behind `validate({appId})`. `findings` is asked
+ * once per call, so a test can block the first screen and clear the next.
+ */
+const reviewerModel = (
+  findings: (call: number) => Array<{ severity: string; where: string; message: string }>,
+): LanguageModel => {
+  let calls = 0;
+  return {
+    specificationVersion: "v2",
+    provider: "vendo-cc-reviewer",
+    modelId: "vendo-cc-reviewer-v1",
+    supportedUrls: {},
+    async doGenerate() {
+      calls += 1;
+      return {
+        content: [{
+          type: "tool-call" as const,
+          toolCallId: `call_report_${calls}`,
+          toolName: "report_findings",
+          input: JSON.stringify({ findings: findings(calls) }),
+        }],
+        finishReason: "tool-calls" as const,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    },
+  } as unknown as LanguageModel;
+};
+
 const post = (path: string, body: unknown): Request =>
   new Request(`https://host.test/api/vendo${path}`, {
     method: "POST",
@@ -332,42 +363,42 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
   /**
    * D4 files-first, end to end on the real composition — the highest-priority
    * defect of this wave (live E2E, 2026-08-03): the model built the app by
-   * WRITING `app.vendo`, and the app rendered every value as "—" while the host
-   * data sat one call away, never appeared in the person's list, and answered
-   * `vendo_apps_open` with "couldn't finish".
+   * WRITING the screen file, and the app rendered every value as "—" while the
+   * host data sat one call away, never appeared in the person's list, and
+   * answered `vendo_apps_open` with "couldn't finish".
    *
    * The seam declared a data-fill slot and composition never filled it, and
-   * nothing ever made the file an app. Both halves are `AppsRuntime.authored`,
+   * nothing ever made the file an app. Both halves are the checks floor's paint,
    * wired here — so this drives the whole chain with nothing hand-wired: a box
-   * writes the file, the sync-back commits it, the seam paints it, and the app is
-   * a real app afterwards.
+   * writes `app.tsx`, the sync-back commits it, the gauntlet runs its queries and
+   * paints it, and the app is a real app afterwards.
    */
-  it("a files-first app.vendo renders with REAL data, and is a real app afterwards", async () => {
+  it("a files-first app.tsx renders with REAL data, and is a real app afterwards", async () => {
     const appId = "app_filesfirst";
     const sandbox = fakeSandbox(async (box) => {
-      // Exactly what the building-apps skill teaches: write the app, with a query
-      // for the numbers. No `vendo_make` — the engine is not on this
-      // surface at all (D4).
+      // Exactly what the building-apps skill teaches: write the screen, with a
+      // query for the numbers. No `vendo_make` — the engine is not on this
+      // surface at all (D4). The app's NAME is the default export's own, which is
+      // the only title a `.tsx` file has.
       mkdirSync(join(box.root!, "user", "apps", appId), { recursive: true });
       writeFileSync(
-        join(box.root!, "user", "apps", appId, "app.vendo"),
-        // Binds the ROWS. This fixture used to write `{invoices.invoices[0].id}`,
-        // which the expression grammar rejects outright (`malformed-expression`,
-        // "unexpected trailing content at index 17") — so its binding was silently
-        // DROPPED and this test passed on the resolved `data` blob alone, never on a
-        // binding that resolved. Since the builder loop now runs `validate` before
-        // it reports done, that malformed wire also costs a repair round it should
-        // never have needed. Valid wire fixes both: the binding really resolves.
-        `<App name="Open invoices">
-  <Query id="invoices" tool="maple_invoices_list" />
-  <Stack>
-    <DataTable rows={invoices.invoices} columns={[{key:"id"}]} />
-  </Stack>
-</App>`,
+        join(box.root!, "user", "apps", appId, "app.tsx"),
+        `import { DataTable, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function OpenInvoices() {
+  const invoices = useQuery("maple_invoices_list");
+  return (
+    <Stack gap={12}>
+      <Text text="Open invoices" variant="heading" />
+      <DataTable rows={invoices.invoices} columns={[{ key: "id", label: "Invoice" }]} />
+    </Stack>
+  );
+}
+`,
       );
       box.emit({ type: "text", delta: "Here are your open invoices." });
     });
-    const { vendo, host } = await compose({ sandbox, harness: claudeCode() });
+    const { vendo, host } = await compose({ sandbox, harness: claudeCode(), model: reviewerModel(() => []) });
 
     const turn = await vendo.handler(post("/threads", {
       threadId: "thr_filesfirst",
@@ -417,37 +448,54 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
    * reported success over a broken app, and the only thing that noticed was the
    * paint seam declining to paint — which, from the model's side, is silence.
    *
-   * The whole chain, nothing hand-wired and nothing stubbed but the SDK loop: the
-   * box WRITES a lying binding, the sync-back commits it for real, the real floor
-   * at the real seam refuses to paint it, the gate calls the real `validate` verb
-   * through the real guard, the findings go back to the session as one bounded fix
-   * round, the box writes the honest app, and THAT paints.
+   * The whole chain, nothing hand-wired and nothing stubbed but the SDK loop and
+   * the reviewer's own model: the box WRITES a screen whose headline contradicts
+   * its rows, the sync-back commits it for real, it PAINTS (nothing mechanical is
+   * wrong with it — which is exactly why the judging pass is the only thing that
+   * can catch it), the gate calls the real `validate` verb through the real guard,
+   * the finding goes back to the session as one bounded fix round, the box writes
+   * the honest screen, and THAT is the app afterwards.
    */
-  it("a bad app.vendo comes back as findings, gets one fix round, and then the screen updates", async () => {
+  it("a screen the reviewer blocks comes back as findings, gets one fix round, and then the screen updates", async () => {
     const appId = "app_validategate";
-    /** `invoices` is the field the tool really returns; `references` is not. Both
-     *  are syntactically perfect — the difference is only whether the field EXISTS,
-     *  which is exactly what the floor knows and the compiler alone cannot say. */
-    const app = (field: string): string => `<App name="Open invoices">
-  <Query id="invoices" tool="maple_invoices_list" />
-  <Stack>
-    <DataTable rows={invoices.${field}} columns={[{key:"id"}]} />
-  </Stack>
-</App>`;
+    /** Both rounds compile, type-check, run and paint. The difference is only
+     *  whether the headline TELLS THE TRUTH about the rows underneath it, which
+     *  the gauntlet cannot know and the judging pass can. */
+    const app = (headline: string): string => `import { DataTable, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function OpenInvoices() {
+  const invoices = useQuery("maple_invoices_list");
+  return (
+    <Stack gap={12}>
+      <Text text={${headline}} variant="heading" />
+      <DataTable rows={invoices.invoices} columns={[{ key: "id", label: "Invoice" }]} />
+    </Stack>
+  );
+}
+`;
+    const LIE = "7 open invoices";
+    const FINDING = `the heading says "${LIE}" but the query returned 1 row — show \`invoices.invoices.length\``;
 
     const prompts: string[] = [];
     const sandbox = fakeSandbox(async (box) => {
       prompts.push(box.prompt ?? "");
       mkdirSync(join(box.root!, "user", "apps", appId), { recursive: true });
-      // Round 1 LIES: `reference` is absent from what the tool returns (it returns
-      // `id`). Round 2 is the repair.
+      // Round 1 LIES: a hardcoded count over one real row. Round 2 is the repair.
       writeFileSync(
-        join(box.root!, "user", "apps", appId, "app.vendo"),
-        app(prompts.length === 1 ? "references" : "invoices"),
+        join(box.root!, "user", "apps", appId, "app.tsx"),
+        app(prompts.length === 1 ? `"${LIE}"` : "invoices.invoices.length + \" open invoices\""),
       );
       box.emit({ type: "text", delta: prompts.length === 1 ? "Here are your open invoices." : "Fixed." });
     });
-    const { vendo } = await compose({ sandbox, harness: claudeCode() });
+    const { vendo } = await compose({
+      sandbox,
+      harness: claudeCode(),
+      // Blocks the first screen it is shown and clears the second — the ONE
+      // check that can see a headline contradicting its own rows.
+      model: reviewerModel((call) => (call === 1
+        ? [{ severity: "block", where: "Text", message: FINDING }]
+        : [])),
+    });
 
     const turn = await vendo.handler(post("/threads", {
       threadId: "thr_validategate",
@@ -456,35 +504,22 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     expect(turn.status).toBe(200);
     const body = await turn.text();
 
-    // 1. The gate fired: the turn did not end on the broken file, it asked again.
+    // 1. The gate fired: the turn did not end on the dishonest screen, it asked again.
     expect(prompts).toHaveLength(2);
-    // 2. And it asked with the FINDINGS — the teaching sentence, naming the real
-    //    field. This is the "bad file → findings" half.
+    // 2. And it asked with the FINDING, verbatim — the teaching sentence, naming
+    //    the real alternative. This is the "bad screen → findings" half.
     expect(prompts[1]).toContain("validate");
-    expect(prompts[1]).toContain("app.vendo");
-    // The teaching sentence, naming the field that is missing AND the real one.
-    expect(prompts[1]).toContain("references");
-    expect(prompts[1]).toContain("invoices");
+    expect(prompts[1]).toContain("app.tsx");
+    expect(prompts[1]).toContain(FINDING);
 
-    // 3. "→ screen updates": the honest app is what reached the screen, with the
-    //    query's real row on it. The lying binding never painted — if it had, the
-    //    seam would have put `/invoices/invoices/0/reference` on the wire.
+    // 3. "→ screen updates": the honest screen is what the person is left with,
+    //    with the query's real row on it and the headline the repair wrote.
     expect(body).toContain("data-vendo-view");
     expect(body).toContain(appId);
     expect(body).toContain("inv_1");
-    // Asserted on the VIEW PARTS, not on the whole body: the gate's `validate` call
-    // is mirrored into the stream like every other guarded call, so the broken
-    // document's own text legitimately appears in the activity. What must never
-    // appear is a SCREEN carrying the lie.
-    const views = body
-      .split("\n")
-      .filter((line) => line.startsWith("data:") && line.includes("data-vendo-view"))
-      .join("\n");
-    expect(views).not.toBe("");
-    expect(views).not.toContain("references");
-    expect(views).toContain("/invoices/invoices");
 
-    // 4. And it is a real app afterwards, built from the REPAIRED document.
+    // 4. And it is a real app afterwards, built from the REPAIRED screen — the
+    //    lie is gone from what `open()` renders.
     const ctx = {
       principal,
       venue: "chat" as const,
@@ -492,7 +527,10 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
       sessionId: "s_validategate",
     };
     const surface = await vendo.apps.open(appId, ctx);
-    expect(JSON.stringify((surface as { payload: unknown }).payload)).toContain("inv_1");
+    const painted = JSON.stringify((surface as { payload: unknown }).payload);
+    expect(painted).toContain("inv_1");
+    expect(painted).toContain("1 open invoices");
+    expect(painted).not.toContain(LIE);
   });
 
   it("the credential dies with the turn — the box cannot reach the door after its message ends", async () => {

@@ -20,15 +20,15 @@ export interface VendoVerbFinding {
 }
 
 export interface VendoVerbPorts {
-  /** Check a document against our catalog and the host's schemas. Returns
-   *  findings; it does not throw on a bad document.
+  /** Check a stored app against our catalog and the host's schemas. Returns
+   *  findings; it does not throw on a bad screen.
    *
    *  `ctx` is the CALLER's, handed down from `execute` — never assembled by the
    *  port and never taken from the model's input. Both of the app-touching verbs
    *  are owner-scoped behind it, so a model naming someone else's appId gets a
    *  not-found rather than a look at their app. */
   validate(
-    input: { appId?: string; document?: string },
+    input: { appId?: string },
     ctx: RunContext,
   ): Promise<{ ok: boolean; findings: VendoVerbFinding[] }>;
   /** Search the component catalog. Returns the SHIPPED catalog vocabulary
@@ -46,15 +46,15 @@ const DESCRIPTORS: ToolDescriptor[] = [
     name: "validate",
     title: VENDO_TOOL_TITLES.validate,
     description:
-      "Check an app document against the component catalog and the host's schemas: does it parse, do the "
-      + "tools/components/fields/schedules it references exist, do the types fit. Returns findings to fix. "
+      "Check an app you have saved against the component catalog and the host's schemas: does it compile, do "
+      + "the tools/components/fields/schedules it references exist, do the types fit. Returns findings to fix. "
       + "Use it after every edit — it is faster and surer than re-reading your own work.",
     inputSchema: {
       type: "object",
       properties: {
         appId: { type: "string", minLength: 1 },
-        document: { type: "string" },
       },
+      required: ["appId"],
       additionalProperties: false,
     },
     risk: "read",
@@ -123,17 +123,11 @@ export function vendoVerbsRegistry(ports: VendoVerbPorts): ToolRegistry {
             // empty request told the model its app was fine when nothing had been
             // examined — the worst lie a checker can tell.
             const appId = typeof args["appId"] === "string" ? args["appId"] : undefined;
-            const document = typeof args["document"] === "string" ? args["document"] : undefined;
-            if (appId === undefined && document === undefined) {
-              return fail("validation", "validate needs an appId or a document to check");
-            }
-            // A broken document comes back as FINDINGS, never as a tool error: an
+            if (appId === undefined) return fail("validation", "validate needs an appId to check");
+            // A broken screen comes back as FINDINGS, never as a tool error: an
             // error reads to the model as "the tool is broken", findings read as
-            // "your document is wrong". Only the second one gets fixed.
-            const result = await ports.validate({
-              ...(appId === undefined ? {} : { appId }),
-              ...(document === undefined ? {} : { document }),
-            }, ctx);
+            // "your screen is wrong". Only the second one gets fixed.
+            const result = await ports.validate({ appId }, ctx);
             return { status: "ok", output: { ok: result.ok, findings: result.findings } as unknown as Json };
           }
           case "search_components": {

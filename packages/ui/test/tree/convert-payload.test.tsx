@@ -8,10 +8,7 @@ import {
   type ToolOutcome,
   type UIPayload,
 } from "@vendoai/core";
-import {
-  compileWire,
-  type Tree,
-} from "@vendoai/apps/contract";
+import { type Tree } from "@vendoai/apps/contract";
 import { PayloadView, TreeView } from "../../src/tree/index.js";
 
 afterEach(() => {
@@ -148,12 +145,7 @@ describe("vendo-genui/v2 bindings and data residency", () => {
 });
 
 describe("vendo-genui/v2 actions", () => {
-  it("dispatches compiler-emitted {action} props through onAction with the minted node id", async () => {
-    const wire = '<App name="Actions"><ActionRow label="Run" onRun="fn:submit_report"/></App>';
-    const compiled = compileWire(wire, { hostComponents: ["ActionRow"] });
-    expect(compiled.complete).toBe(true);
-    expect(compiled.issues).toEqual([]);
-
+  it("dispatches an {action} prop through onAction with the node's own id", async () => {
     const ActionRow: ComponentType<{ label?: string; onRun?: () => Promise<ToolOutcome> }> = ({ label, onRun }) => (
       <button type="button" onClick={() => void onRun?.()}>{label}</button>
     );
@@ -161,7 +153,13 @@ describe("vendo-genui/v2 actions", () => {
 
     render(
       <PayloadView
-        payload={compiled.tree as unknown as UIPayload}
+        payload={treePayload([{
+          id: "actionrow-1",
+          component: "ActionRow",
+          source: "host",
+          // The canonical action prop shape a tree carries (`convert-payload.ts`).
+          props: { label: "Run", onRun: { action: "fn:submit_report" } },
+        }])}
         components={{ ActionRow }}
         onAction={onAction}
       />,

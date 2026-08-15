@@ -17,7 +17,7 @@ import {
   createAppData,
 } from "../src/server/persistence/app-data.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
-import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -42,8 +42,8 @@ const ctx: RunContext = {
 const model = basicLanguageModel();
 
 /** The app under test is landed by the ONE engine — the assembler in the `screen`
- *  slot — through the real `authored` write path, so the storage declarations
- *  these cases hang off a real row rather than a hand-built document. The wire is
+ *  slot — through the real `authoredScreen` write path, so the storage declarations
+ *  these cases hang off a real row rather than a hand-built document. The screen is
  *  named after whatever was asked, so an edit is a rename and lands a version. */
 const appsWith = (store: ReturnType<typeof memoryStore>): AppsRuntime => {
   let runtime: AppsRuntime;
@@ -56,8 +56,18 @@ const appsWith = (store: ReturnType<typeof memoryStore>): AppsRuntime => {
     screen: scriptedAssembler(() => runtime, ({ request }) => {
       // An EDIT's brief leads with the app's memory block, so the ask is its last line.
       const line = request.split("\n").map((part) => part.trim()).filter((part) => part !== "").at(-1) ?? "";
-      const name = line.slice(0, 40).replaceAll('"', "'") || "Untitled app";
-      return `<App name="${name}"><Text text="${name}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+      const words = line.replace(/[^A-Za-z0-9]+/gu, " ").trim().split(" ");
+      const name = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("") || "Untitled";
+      return `import { Stack, Text } from "@vendo/screen";
+
+export default function ${name}() {
+  return (
+    <Stack gap={12}>
+      <Text text="Ready" variant="heading" />
+    </Stack>
+  );
+}
+`;
     }),
   });
   return runtime;

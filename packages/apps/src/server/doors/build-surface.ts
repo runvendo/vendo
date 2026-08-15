@@ -20,12 +20,8 @@ import {
   vendoViewPart,
 } from "@vendoai/core";
 import {
-  compilePlan,
-  compileWire,
   componentSources,
   type AppDocument,
-  type AppPlan,
-  type PlanDisplay,
   type ScreenAssembler,
   type Tree,
   stripServerAuthoritativeFields,
@@ -42,26 +38,18 @@ import {
 } from "./build-messages.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
-import {
-  checkComponentScreen,
-  reviewComponentScreenInput,
-  screenCatalog,
-} from "../checking/component-screen.js";
+import { checkComponentScreen, reviewComponentScreenInput } from "../checking/component-screen.js";
+import { screenCatalog } from "../checking/screen-typings.js";
 import { queryEvidence } from "../checking/evidence.js";
 import { createAppFloor, floorChecks } from "../checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
 import { reviewerCheck } from "../checking/reviewer.js";
-import { asPayload } from "../generation/engine.js";
-import { escalatedServer, escalationNeedsMachine } from "../generation/lanes.js";
-import { skeletonFromPlan } from "../generation/skeleton.js";
-import { UNSTORED_APP_ID, validateCompiledCreate } from "../generation/validation/validate.js";
 import { generationDependencies, resolveProvider } from "../runtime/generation-context.js";
 import { createProgressiveQueryResolver } from "../persistence/open.js";
 import type { EngineOps } from "../persistence/engine.js";
 import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, CreateServerWork } from "../runtime/types.js";
-import { wireCompileOptionsFor } from "../runtime/wire-options.js";
 
 /** What `create` is handed, named once so the helpers below can take it. */
 type CreateInput = Parameters<AppsRuntime["create"]>[0];
@@ -75,11 +63,6 @@ export const assembleTree = (source: {
   components?: Record<string, string>;
   /** W4b — the stamped per-island tool manifests ride beside the sources. */
   componentTools?: Record<string, string[]>;
-  /** The plan's arrival posture (redesign spec §5): inline card or opened stage.
-   *  It is assembled HERE rather than at either emitter so the in-process
-   *  generation and the harness render seam cannot disagree about the field.
-   *  Absent stays absent — the client reads that as inline. */
-  display?: PlanDisplay;
 }): Tree => ({
   // The format tag FIRST, so a caller that has only a tree's two structural
   // members — the component screen's flattened paint (`ComponentPaintResult`) is
@@ -89,7 +72,6 @@ export const assembleTree = (source: {
   ...structuredClone(source.tree),
   ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
   ...(source.componentTools === undefined ? {} : { componentTools: structuredClone(source.componentTools) }),
-  ...(source.display === undefined ? {} : { display: source.display }),
 } as Tree);
 
 /**
@@ -166,15 +148,14 @@ const createBuildFailer = (bound: {
 };
 
 /**
- * The BRIEF this build runs on: the escalated plan, or the assembler's answer to
- * the ask.
+ * The ask, through the ONE engine: assembly first, and a build only if assembly
+ * asks for one by name.
  *
- * `input.plan` is the §4.5 hand-off — `vendo_make` already ran the assembler, it
- * escalated, and the plan it wrote is the brief. Every OTHER caller of this door
- * (the HTTP route, a seed script, a host calling `apps.create` directly) starts
- * where `vendo_make` starts, because there is one engine and the seam routes,
- * not the caller: assembly first, and a build only if assembly asks for one by
- * name.
+ * `input.why` is the §4.5 hand-off — `vendo_make` already ran the assembler and
+ * it escalated, so re-routing here would run a second full agent over an answer
+ * this door already has. Every OTHER caller (the HTTP route, a seed script, a
+ * host calling `apps.create` directly) starts where `vendo_make` starts, because
+ * the seam routes, not the caller.
  */
 const routeThroughAssembler = async (
   bound: Pick<AppsRuntimeContext, "config" | "engine"> & {
@@ -185,7 +166,7 @@ const routeThroughAssembler = async (
   },
   input: CreateInput,
   ctx: RunContext,
-): Promise<{ kind: "assembled"; document: AppDocument } | { kind: "plan"; planText: string | undefined }> => {
+): Promise<{ kind: "assembled"; document: AppDocument } | { kind: "escalate"; why: string }> => {
   const { config, engine, appId, createStartedAt, watchdog, failBuild } = bound;
   if (config.screen === undefined) {
     return failBuild(NO_ASSEMBLER, false, [NO_ASSEMBLER], "not-implemented");
@@ -226,16 +207,15 @@ const routeThroughAssembler = async (
   if (routed.kind === "unavailable") {
     return failBuild(routed.why, true, [routed.why]);
   }
-  // `escalate` — the assembler asking for the builder by name. The plan it
-  // wrote is read back through the same slot `vendo_make` reads it with.
-  return { kind: "plan", planText: await config.escalatedPlan?.(appId, ctx).catch(() => undefined) };
+  // `escalate` — the assembler asking for the builder by name. Its one-line
+  // `why` is all it hands over; the person's own ask is the brief.
+  return { kind: "escalate", why: routed.why };
 };
 
 /**
- * The streamed view parts are last-write-wins and the plan's own skeleton is
- * still the last thing painted, so the built app settles the stream. On a
- * resolver failure emit nothing rather than a data-less tree that would blank
- * the screen.
+ * The streamed view parts are last-write-wins, so the built app settles the
+ * stream. On a resolver failure emit nothing rather than a data-less tree that
+ * would blank the screen.
  */
 const paintSettledTree = async (
   caller: AppsRuntimeContext["caller"],
@@ -293,51 +273,37 @@ const createCreateDoor = (
 
     const failBuild = createBuildFailer({ engine, appId, prompt: input.prompt, subject: ctx.principal.subject, watchdog });
 
-    let planText = input.plan;
-    if (planText === undefined) {
+    // The front door has already routed this ask through the screen agent when
+    // it hands over a `why` (`vendo_make`), so re-routing would spend a second
+    // full agent run on an answer it already has.
+    let why = input.why;
+    if (why === undefined) {
       const routed = await routeThroughAssembler(
         { config, engine, appId, createStartedAt, watchdog, failBuild }, input, ctx);
       if (routed.kind === "assembled") return routed.document;
-      planText = routed.planText;
+      why = routed.why;
     }
-    // ── The plan is the brief ───────────────────────────────────────────────
-    // No brain re-plans it: `<Server kind>` is the escalating agent's own
-    // declaration (see `escalatedServer`), the skeleton is the outline already
-    // on the person's screen, and the plan text travels to the box verbatim.
-    const compiled = planText === undefined ? undefined : compilePlan(planText, {
-      tools: (generationDeps.tools ?? []).map(({ name }) => name),
-      components: config.catalog.map(({ name }) => name),
-    });
-    // No plan file, or one the compiler could not read: the ask is the whole
-    // brief and the box is the lane, which is exactly what an escalation with
-    // no `<Server>` gets. Never a lost build.
-    const plan: AppPlan = compiled?.plan
-      ?? { name: fallbackAppName(input.prompt), groups: [], queries: [], cannot: [] };
-    const planned = { ...plan, server: escalatedServer(plan, input.prompt) };
-    // Sandbox-gated, exactly where §4.5 put the gate — and gated on the ONE
-    // expression `edit` reads (`escalationNeedsMachine`), which is the whole
-    // fix: this used to refuse EVERY escalation on a host with no sandbox,
-    // while edit refused only a box, so an automation you could ask for by
-    // editing an app you could not ask for by making one. A build that IS the
-    // box still says so up front rather than spending its latency to arrive at
-    // nothing; the plan compile above costs no model call.
-    if (escalationNeedsMachine(planned.server) && !lifecycle.available()) {
+    // ── The ask is the brief ────────────────────────────────────────────────
+    // Nothing re-plans it and nothing outlines it: the escalation is the claim
+    // that assembly cannot serve this ask, and the box is the only lane that can
+    // find out what can. The person's own words travel to it verbatim, with the
+    // escalation's one-line `why` beside them.
+    //
+    // Sandbox-gated up front rather than after the build spends its latency to
+    // arrive at nothing.
+    if (!lifecycle.available()) {
       return failBuild(NO_MACHINE, false, [NO_MACHINE], "not-implemented");
     }
-    const skeleton = skeletonFromPlan(planned);
+    // No screen yet: the box has not written anything for one to show. The row
+    // is what makes this a real app — it lists, opens and takes an edit — and
+    // the paint below stays silent until there is something to paint.
     let app: AppDocument = {
       format: "vendo/app@1",
       id: appId,
-      name: planned.name,
+      name: fallbackAppName(input.prompt),
       ui: "tree",
-      tree: asPayload(skeleton.tree),
     };
-    if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
 
-    // The outline reaches the screen as the app's own first paint. It is
-    // already there as the plan's skeleton — this is the same tree on the same
-    // stream, which is what makes the outline BECOME the app rather than being
-    // replaced by a second card.
     let unsavedReason: string | undefined;
     try {
       await engine.put(APPS_COLLECTION, appRecordInput(app, ctx.principal.subject, false, "screen-agent"));
@@ -369,22 +335,12 @@ const createCreateDoor = (
     let serverWorkFailed: string[] | undefined;
     try {
       const served = await runServerWork({
-        plan: planned,
-        ...(planText === undefined ? {} : { planText }),
         document: app,
         request: input.prompt,
+        why,
       }, ctx, generationDeps);
       app = served.document;
       if (served.failed !== undefined) serverWorkFailed = served.failed;
-      // A plan that asked to be SERVED and did not get its surface is the same
-      // half-built app: the box ran, but the flip was refused (`issues`), so the
-      // person is looking at a skeleton with nothing behind it. `edit` hands
-      // these back to its caller as `issues`; a create returns a document, so
-      // this callback is its only channel for them. `served` is compiler-gated
-      // to kind="box" (plan/compile.ts), so no automation issue arrives here.
-      else if (planned.server?.served === true && served.issues !== undefined) {
-        serverWorkFailed = served.issues;
-      }
       for (const finding of served.findings) {
         console.info(findingLine(finding));
       }
@@ -395,9 +351,8 @@ const createCreateDoor = (
       const work: CreateServerWork = {
         ...(served.automation === undefined ? {} : { automation: served.automation }),
         ...(served.graduated === undefined ? {} : { graduated: served.graduated }),
-        // Failure sentences — `served.failed`, and the issues a plan-required
-        // serve escalated (both collected into serverWorkFailed above) — are
-        // the outside failure report's to carry, exactly once. The envelope
+        // Failure sentences — `served.failed`, collected into serverWorkFailed
+        // above — are the outside failure report's to carry, exactly once. The envelope
         // carries what the SUCCESS half produced: the automation that raises
         // the thread card, and non-escalated caveat issues.
         ...((served.issues ?? []).length === 0 || serverWorkFailed === served.issues ? {} : { issues: served.issues }),
@@ -496,32 +451,8 @@ const createValidateDoor = (
       ? generated
       : { ...generated, reviewModel: config.reviewModel };
 
-    if (typeof input.document === "string") {
-      // Wire text, not a stored app: compile it in the PRODUCTION dialect (the
-      // one every other compile of model wire uses — a compile that lacked
-      // these options once failed every app built on inline tool references),
-      // then run the shipped create validation. Its issues are already the
-      // sentences a model can act on.
-      const compiled = compileWire(
-        input.document,
-        wireCompileOptionsFor(deps),
-      );
-      const { document, issues } = await validateCompiledCreate(compiled, deps);
-      if (document === undefined) {
-        // Wire that did not compile, or islands that did not pass admission:
-        // the screen text the floor would read does not exist yet, so those
-        // sentences are the whole answer.
-        return { ok: false, findings: issues.map((message) => ({ severity: "block" as const, message })) };
-      }
-      // …and then the SAME floor every other door runs, on the document the
-      // wire assembled to.
-      const findings = await createCheckingLayer({ deps, checks: floorChecks(deps) })
-        .run({ document: { ...document, id: UNSTORED_APP_ID } as AppDocument, request: "" });
-      return { ok: !findings.some(({ severity }) => severity === "block"), findings };
-    }
-
     if (input.appId === undefined) {
-      throw new VendoError("validation", "validate needs an appId or a document to check");
+      throw new VendoError("validation", "validate needs an appId");
     }
     // Editor-scoped, like edit itself: checking the shape of an app you may
     // change is part of changing it, and a mere viewer is masked as ever.

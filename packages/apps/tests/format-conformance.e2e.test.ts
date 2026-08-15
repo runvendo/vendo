@@ -11,8 +11,9 @@
  *
  * The manual is no longer one of those mirrors for the byte budgets: a screen is
  * `app.tsx` now and has no byte budget, so what is asserted of the manual here is
- * that it quotes none. The budgets themselves still bind stored wire documents,
- * so core, the contract and the docs page still have to agree.
+ * that it quotes none. The budgets themselves still bind a stored component map
+ * (`contract/component-map.ts`), so core, the contract and the docs page still
+ * have to agree.
  *
  * This file is the one place a format number or a component name is written by
  * hand. Everything else derives, and this test fails the moment any mirror
@@ -27,13 +28,12 @@ import {
 } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
+  KIT_NON_SCREEN_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   KIT_SPECS,
-  KIT_WIRE_COMPONENT_NAMES,
-  KIT_WIRE_UNSAFE_NAMES,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
-  WIRE_COMPONENT_NAMES,
 } from "../src/contract/index.js";
 import { VENDO_FORMAT_REFERENCE } from "../src/server/skills/format-reference.js";
 
@@ -76,7 +76,7 @@ describe("the three bundle limits have ONE definition", () => {
 
 describe("the manual states no budget, because the artifact it teaches has none", () => {
   it("quotes no KB figure at all", () => {
-    // The three limits above govern the WIRE dialect's islands
+    // The three limits above govern a stored component map
     // (`contract/component-map.ts`), and nothing generates one any more: the
     // artifact a model writes is `app.tsx`, which the save-time gauntlet
     // (`checking/component-screen.ts`) measures for compilation, types and one
@@ -109,12 +109,9 @@ describe("the component vocabulary is ONE list", () => {
     expect(KIT_COMPONENT_NAMES).toEqual(KIT_SPECS.map((spec) => spec.name));
   });
 
-  it("names the wire subset once, under two names", () => {
-    // WIRE_COMPONENT_NAMES is KIT_WIRE_COMPONENT_NAMES re-exported: the same
-    // binding, so the two can never say different things.
-    expect(WIRE_COMPONENT_NAMES).toBe(KIT_WIRE_COMPONENT_NAMES);
-    expect(KIT_WIRE_COMPONENT_NAMES).toEqual(
-      KIT_COMPONENT_NAMES.filter((name) => !KIT_WIRE_UNSAFE_NAMES.includes(name)),
+  it("derives the screen subset by subtraction — nothing lists it by hand", () => {
+    expect(KIT_SCREEN_COMPONENT_NAMES).toEqual(
+      KIT_COMPONENT_NAMES.filter((name) => !KIT_NON_SCREEN_NAMES.includes(name)),
     );
   });
 });

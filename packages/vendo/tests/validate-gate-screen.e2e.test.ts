@@ -3,11 +3,10 @@
  *
  * `validateWrittenApps` is what a `claudeCode()` turn runs over the files the model
  * wrote (`packages/harnesses/src/claude-code/index.ts`, the artifact path). It used
- * to hand EVERY app document to `validate({document})` — the WIRE door, which
- * compiles what it is given as markup — so an `app.tsx` that compiled,
- * type-checked, ran in the sealed VM and PAINTED came back "expected a single
- * <App> element", and a builder that obeyed the feedback rewrote a working screen
- * into wire.
+ * to hand EVERY app document to a door that compiled what it was given as markup,
+ * so an `app.tsx` that compiled, type-checked, ran in the sealed VM and PAINTED
+ * came back "expected a single <App> element", and a builder that obeyed the
+ * feedback rewrote a working screen into markup.
  *
  * So this walks a REAL composed deployment — real store, real guard, real apps
  * pack, the real render seam, the real component gauntlet, the real `validate`
@@ -15,9 +14,10 @@
  * does, and asks the REAL gate what it makes of a screen the seam has just
  * painted. Only the model is scripted, because what is measured is the doors.
  *
- * The one that must be able to fail: send the screen back through
- * `validate({document})` in `packages/apps/src/server/generation/validate-gate.ts`
- * and this goes red with the wire compiler's own sentence about `<App>`.
+ * The one that must be able to fail: stop the gate reaching the ROW-SCOPED
+ * `validate({appId})` in `packages/apps/src/server/generation/validate-gate.ts`
+ * and this goes red — either with a finding about a screen that paints, or with
+ * the silence of a gate that judged nothing at all.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -107,7 +107,6 @@ describe("the validate gate judges a written app by what it IS", () => {
         painted = paintedIn(committed)?.includes(APP_ID) === true;
         failures = await validateWrittenApps({
           tools: turn.tools,
-          workspace: turn.workspace,
           paths: [SCREEN_PATH],
           // What `claudeCode()` passes at the turn boundary.
           review: true,

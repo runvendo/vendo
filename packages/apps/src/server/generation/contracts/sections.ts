@@ -17,7 +17,7 @@
  * for the shipped skill's `references/format.md`.
  */
 import {
-  KIT_WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   kitPrompt,
 } from "../../../contract/index.js";
 
@@ -28,4 +28,4 @@ import {
 let componentsPromptCache: string | undefined;
 export const componentsPromptSection = (): string => componentsPromptCache ??= `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
 
-${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}`;
+${kitPrompt({ only: [...KIT_SCREEN_COMPONENT_NAMES] })}`;

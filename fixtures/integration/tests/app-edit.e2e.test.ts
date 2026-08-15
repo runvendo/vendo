@@ -4,7 +4,7 @@
  * with its own hands), then edit it (POST /apps/:id/edit — the SAME loop, asked
  * to rewrite that app's screen, answering with another whole-file `save_app`).
  * Both saves land through the real render seam, the real component gauntlet and
- * `AppsRuntime.authoredScreen`. The wire returns an EditResult; history surfaces
+ * `AppsRuntime.authoredScreen`. The wire door returns an EditResult; history surfaces
  * the prior version.
  *
  * A component screen keeps NO tree on its document — a screen's tree is what
@@ -110,9 +110,9 @@ describe("J3: app edit + history through the composed wire", () => {
       intent: string;
     }>;
     expect(history).toHaveLength(1);
-    // The version is filed under the PERSON's words, not "Saved app.vendo":
-    // an edit lands through `authored` like any other commit, and the intent is
-    // what makes the trail replayable.
+    // The version is filed under the PERSON's words, not "Saved app.tsx": an
+    // edit lands through the paint like any other commit, and the intent is what
+    // makes the trail replayable.
     expect(history[0]?.intent).toBe("Change the greeting text to Goodbye");
 
     // The recorded snapshot is the pre-edit document.

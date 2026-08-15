@@ -14,9 +14,7 @@
  *   runtime's commit is what makes it real (`claude-code/index.ts:338`,
  *   `skills/building-apps.ts:68`). This agent has no disk and no shell, so its two
  *   writing hands over the same `WorkspaceFs` — the whole screen, or one exact
- *   passage of it — write `app.tsx` and nothing else, through one commit path. A
- *   `plan.vendo` is written on ONE path only — `escalate`, where the plan is the
- *   builder's brief (§4.5) — never as a step on the way to a screen.
+ *   passage of it — write `app.tsx` and nothing else, through one commit path.
  * - **The run's closing words are the receipt.** The loop reports what it built in
  *   its own voice, grounded in what its saves told it: whether the paint happened,
  *   and what each query delivered. `vendo_make` relays those words verbatim
@@ -108,7 +106,7 @@ export const ESCALATE_TOOL = "escalate";
 
 /** The file hand. One document and no path argument — a screen agent has exactly
  *  one app directory, and a tool that takes a path is a tool that can write
- *  outside it. The plan file has no hand of its own: `escalate` writes it. */
+ *  outside it. */
 export const SAVE_APP_TOOL = "save_app";
 
 /** The edit hand — the same document, one passage at a time. A sibling rather
@@ -184,8 +182,8 @@ export interface ScreenSurface {
   /**
    * What this app's LAST PAINT actually delivered, per declared query.
    *
-   * The runtime resolves a view's queries while it paints it (`authoredApp`), so
-   * the painted view is the only place that answer exists — and `emit` belongs to
+   * The gauntlet runs a screen's queries while it paints it, so the painted view
+   * is the only place that answer exists — and `emit` belongs to
    * whoever wrapped the workspace, never to this loop, exactly as `paintedIn`'s
    * verdict does. So the wrapper reads it off the part it emitted and answers
    * here. Absent, or `undefined`, claims NOTHING: an unwrapped workspace has no
@@ -247,22 +245,12 @@ export type ScreenResult = ScreenOutcome & {
 /** The screen artifact, by the name the seam watches and the manual teaches
  *  (`@vendoai/apps` `SCREEN_FILE`) — one spelling, or a save paints nothing. */
 const APP_FILE = SCREEN_FILE;
-const PLAN_FILE = "plan.vendo";
 
 /** §3.1's frozen layout, personal mount. A NEW app is always `/user/**`: a fresh
  *  `/orgs/<org>/apps/<id>/` path has no row to grant on, so the workspace façade
  *  refuses the commit and the file never lands (see `AppsRuntime.authored`). */
 const appDirectory = (appId: AppId): string => `/user/apps/${appId}`;
 
-/**
- * Where an escalating run left its plan (§4.5).
- *
- * Exported because the RECEIVING end has to read it back — the build anchors on
- * the plan the person is already looking at — and the one thing worse than a
- * missing brief is two files spelling the same path. This file owns the
- * convention; composition just asks it where.
- */
-export const escalatedPlanPath = (appId: AppId): string => `${appDirectory(appId)}/${PLAN_FILE}`;
 
 
 /**
@@ -341,7 +329,7 @@ const rowsIn = (output: Json): number | undefined => {
  */
 export const paintedQueries = (payload: UIPayload): readonly QueryOutcome[] => {
   /** A COMPONENT screen's queries live on the paint's interactive half instead: the
-   *  plan names them and the answers the screen rendered on ride beside it. Every
+   *  query plan names them and the answers the screen rendered on ride beside it. Every
    *  one of them delivered by construction — the gauntlet refuses a screen whose
    *  query would not answer, so a painted screen never has a failed one — which is
    *  why this reports rows and never a failure. */
@@ -358,9 +346,8 @@ export const paintedQueries = (payload: UIPayload): readonly QueryOutcome[] => {
   }
   const queries = (payload["queries"] as readonly { name: string }[] | undefined) ?? [];
   const data = payload["data"] as Record<string, Json> | undefined;
-  // A paint whose app half never RAN carries no `data` key at all (the seam sets
-  // it from `authoredApp`, which composition may leave unwired). Every binding on
-  // it renders "—" all the same, but nothing here knows why — and "that call
+  // A paint whose app half never RAN carries no `data` key at all. Every binding
+  // on it renders "—" all the same, but nothing here knows why — and "that call
   // failed" would be a reason this loop invented. Absent is honest; a failed query
   // still lands here, because a resolver that ran answers with a record.
   if (data === undefined && payload["dataUnavailable"] !== true) return [];
@@ -388,7 +375,7 @@ const queryNote = ({ name, delivered, rows }: QueryOutcome): string =>
  * about to keep — which is exactly what the reviewer is for. Its mechanical half
  * already ran as the paint gate, so this spends the model call and nothing else.
  *
- * `validateWrittenApps` is the WIRE gate: it reads `app.vendo` back out of the
+ * `validateWrittenApps` is the gate: it reads `app.tsx` back out of the
  * workspace and checks it as text. A screen is not text a checker can read twice —
  * its data comes from EXECUTING it — so the verb takes the app id, and the answer is
  * relayed in that gate's own shape (`repairInstruction`) so the loop reads one kind
@@ -458,8 +445,7 @@ standard Kit the manual documents. There is nothing else to import.${surfaceNote
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole file. The app is
   \`${input.appId}\`; you never name a path. Every save that parses repaints the person's
-  screen, so save as you go — a save is cheap and silence is not. There is no plan
-  file to write here: write the screen itself, and every save is checked as it
+  screen, so save as you go — a save is cheap and silence is not. Every save is checked as it
   lands — if something is wrong with it, the save tells you exactly what to fix.
   It also tells you what the person's screen actually GOT: whether the save
   painted, and what each of your queries delivered.
@@ -477,13 +463,9 @@ standard Kit the manual documents. There is nothing else to import.${surfaceNote
   server, a file the person uploads, a surface these components cannot express,
   or any part that must run while nobody is watching — a schedule, a product
   event — goes through it. A view you could assemble does not keep an ask here:
-  if part of it runs away from the browser, escalate the WHOLE ask. Write the
-  plan when you escalate — that plan becomes the first thing the person sees
-  while the builder works, AND it is the builder's whole brief. Nothing
-  re-plans it, so say which lane the work runs in with a
-  \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line.
-  Leave it out and the builder reads the escalation itself as the answer:
-  \`kind="box"\`, a machine and real code.
+  if part of it runs away from the browser, escalate the WHOLE ask. The builder
+  gets the person's own ask verbatim and does its own thinking, so all you write
+  is one plain sentence saying what assembly cannot do here.
 - \`${steps}\` steps is this round's whole budget. Escalate rather than run out of it.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
@@ -525,7 +507,7 @@ function screenBrief(input: ScreenInput, wireable: readonly ToolListing[], steps
  *  module state: the hands are built per run and closed over it, so two concurrent
  *  assemblies cannot read each other's verdict. */
 interface RunRecord {
-  /** Did an `app.vendo` save ever reach the store? */
+  /** Did an `app.tsx` save ever reach the store? */
   assembled: boolean;
   /** Did the LAST save reach the person's SCREEN? A landed save is not a finished
    *  screen — bytes the seam declines to paint leave a row-less app the hand
@@ -774,25 +756,23 @@ export async function assembleScreen(
     name: ESCALATE_TOOL,
     description:
       "Hand this ask to the builder, which has real code, a real machine and no step budget. Use it when "
-      + "assembling a document out of this product's components genuinely cannot serve the ask. Write the "
-      + "plan: it becomes the skeleton the person watches while the builder fills it in. This ends your turn.",
+      + "assembling a screen out of this product's components genuinely cannot serve the ask. The person's "
+      + "own ask is the builder's brief — say only why assembly cannot serve it. This ends your turn.",
     inputSchema: {
       type: "object",
       properties: {
-        plan: { type: "string", description: "The plan document, in the .vendo plan format." },
         why: { type: "string", description: "One plain sentence: what assembly cannot do here." },
       },
-      required: ["plan", "why"],
+      required: ["why"],
       additionalProperties: false,
     },
-    execute: async (args, turn) => {
-      const { plan, why } = args as { plan: string; why: string };
-      // §4.5: no consent step and no ceremony. The plan lands, its skeleton
-      // paints in seconds, and the work proceeds — so the only thing this
-      // returns is the fact that it happened.
-      const landed = await save(turn, PLAN_FILE, plan);
+    execute: async (args) => {
+      const { why } = args as { why: string };
+      // §4.5: no consent step and no ceremony. The builder gets the person's
+      // ORIGINAL ask plus this one line and does its own thinking — so the only
+      // thing this returns is the fact that the hand-off happened.
       record.escalated = why;
-      return { handedOver: true, planSaved: landed.status === "ok" };
+      return { handedOver: true };
     },
   };
 
@@ -993,10 +973,9 @@ export interface ScreenAssemblerDeps {
    *  ({@link ScreenSurface.hasComponents}). Composition is the one place that
    *  holds the catalog, so it is the one place that can say. */
   hasComponents?: boolean;
-  /** The seam's optional halves — the checks floor, plan facts, the app half
-   *  (`AppsRuntime.authored`) and source persistence. A screen assembled here
-   *  compiles in the production dialect and passes the same floor, or it does not
-   *  paint. */
+  /** The seam's optional halves — the checks floor and source persistence. A
+   *  screen assembled here passes the same floor every other author's does, or it
+   *  does not paint. */
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /**
    * THE briefing pack (`AppsConfig.briefing`, assembled in

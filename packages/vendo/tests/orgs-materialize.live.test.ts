@@ -54,7 +54,7 @@ const MODEL = process.env["VENDO_LIVE_MODEL"] ?? "claude-sonnet-4-5";
 
 const ORG = "acme";
 const APP = "app_quarterly";
-const APP_PATH = `/orgs/${ORG}/apps/${APP}/app.vendo`;
+const APP_PATH = `/orgs/${ORG}/apps/${APP}/app.tsx`;
 const SEEDED = '<App name="Quarterly Report">\n  <Heading text="Q2 revenue" />\n</App>\n';
 
 const dana: Principal = { kind: "user", subject: "dana" };

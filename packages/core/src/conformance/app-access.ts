@@ -236,7 +236,7 @@ export function appAccessConformance(options: AppAccessConformanceOptions): Conf
       name: "/user/** is the caller's own at every level",
       async run() {
         const dana = ctxFor("dana");
-        assert(await access.it.can(dana, "owner", { path: "/user/apps/app_x/app.vendo" }), "own /user is not owned");
+        assert(await access.it.can(dana, "owner", { path: "/user/apps/app_x/app.tsx" }), "own /user is not owned");
         assert(await access.it.can(dana, "viewer", { path: "/user/memory/notes.md" }), "own /user is not readable");
       },
     },
@@ -258,7 +258,7 @@ export function appAccessConformance(options: AppAccessConformanceOptions): Conf
         const appId = nextId();
         await seedApp(appId, ORG);
         await seedGrant(appId, "user:kim", "viewer");
-        const inside = `/orgs/${ORG}/apps/${appId}/app.vendo`;
+        const inside = `/orgs/${ORG}/apps/${appId}/app.tsx`;
         const root = `/orgs/${ORG}/apps/${appId}`;
         const kim = ctxFor("kim", [{ org: ORG }]);
         assert(await access.it.can(kim, "viewer", { path: inside }), "a viewer cannot read the subtree");

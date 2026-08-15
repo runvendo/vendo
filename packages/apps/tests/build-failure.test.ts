@@ -9,7 +9,7 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason } from "../src/server/doors/build-messages.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
-import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -255,7 +255,12 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
       let runtime!: AppsRuntime;
       const composed = setup(scriptedAssembler(() => runtime, async () => {
         await gate;
-        return `<App name="Late board"><Text text="Late board"/><Disclaimer reason="Fixture app."/></App>`;
+        return `import { Stack, Text } from "@vendo/screen";
+
+export default function LateBoard() {
+  return <Stack gap={12}><Text text="Late board" variant="heading" /></Stack>;
+}
+`;
       }));
       runtime = composed.runtime;
       const store = composed.store;

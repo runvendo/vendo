@@ -234,7 +234,7 @@ describe("two principals, one org, over the real composition", () => {
     // A workspace commit is the other live-rows door (§9.7): a session that
     // already checked out keeps what it read, but cannot land a write.
     const workspace = workspaceStore(store);
-    const path = `/orgs/${ORG}/apps/app_rev/app.vendo`;
+    const path = `/orgs/${ORG}/apps/app_rev/app.tsx`;
     expect(await workspace.canCommit({ principal: kim, memberships: memberships["kim"] }, path)).toBe(false);
     expect(await workspace.canCommit({ principal: dana, memberships: memberships["dana"] }, path)).toBe(true);
   });

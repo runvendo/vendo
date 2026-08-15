@@ -26,7 +26,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  checkoutApp,
   createApps,
   type AppSourceSeam,
   type SandboxAdapter,
@@ -159,9 +158,9 @@ function snapshotHoldingSandbox(): SandboxAdapter & { snapshots: Set<string> } {
   };
 }
 
-/** The checkout half's seam, bound over the REAL row exactly as composition does.
- *  Read (`checkoutApp`) is the assertion side of this test; the WRITE side goes
- *  through `apps.commitSource`, which is the production verb under test. */
+/** The READ half's seam, bound over the REAL row exactly as composition does —
+ *  the assertion side of this test. The WRITE side goes through
+ *  `apps.commitSource`, which is the production verb under test. */
 function readSeam(store: VendoStore, blobs: FilesAdapter): AppSourceSeam {
   const apps = store.records("vendo_apps");
   const row = async (): Promise<{ subject: string; doc: AppDocument }> => {
@@ -260,7 +259,7 @@ async function seedApp(store: VendoStore, owner: string = principal.subject): Pr
   });
 }
 
-describe.sequential("an app rebuilds from its row onto a fresh box, with its snapshot deleted", () => {
+describe.sequential("an app rebuilds from its row alone, with its snapshot deleted", () => {
   /**
    * The app is ORG-OWNED, which is the harder address and the only one that can be
    * SHARED: a personal app refuses a grant outright ("move it into a team first"),
@@ -319,25 +318,22 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
     await expect(sandbox.resume(snapshotRef)).rejects.toThrow(/unknown snapshot/);
     expect(sandbox.snapshots.has(snapshotRef)).toBe(false);
 
-    // ── 4. REBUILD. A FRESH box, and a workspace over an EMPTY store that has
-    // never held these files — the app's ROW is the only thing carried across, plus
-    // the blobs its row points at. Reopening a workspace over the SAME store would
-    // prove nothing: those file rows are the working copy the build left behind, so
-    // the checkout would be a no-op and the read-backs would pass with `doc.source`
-    // completely empty (measured — see the falsification note in the PR). The whole
-    // claim is that the ROW is enough, so the row is all it gets.
-    const fresh = await sandbox.create({ env: { PORT: "8080" } });
-    expect(fresh.id).not.toBe(machine.id);
+    // ── 4. REBUILD. An EMPTY store that has never held these files — the app's
+    // ROW is the only thing carried across, plus the blobs its row points at.
+    // Reading it back out of the SAME store would prove nothing: those file rows
+    // are the working copy the build left behind, so the read-backs would pass
+    // with `doc.source` completely empty (measured — see the falsification note in
+    // the PR). The whole claim is that the ROW is enough, so the row is all it
+    // gets — every file, inline and blob-spilled alike, byte for byte.
     const elsewhere = await freshStore();
     await carryRowAcross(store, elsewhere);
-    const rebuilt = await workspaceStore(elsewhere, { files: blobs })
-      .open(principal, { memberships: [MEMBERSHIP] });
-    // Nothing of this app is in that workspace yet — the disk really is blank.
-    await expect(rebuilt.readFile(`${root}/src/App.tsx`)).rejects.toThrow();
-
-    await checkoutApp(APP, rebuilt, orgCtx, readSeam(elsewhere, blobs));
+    const carried = readSeam(elsewhere, blobs);
+    const rebuilt = await carried.requireOwned(APP, orgCtx);
+    expect(Object.keys(rebuilt.source ?? {}).sort()).toEqual(Object.keys(SOURCE).sort());
     for (const [path, text] of Object.entries(SOURCE)) {
-      expect(await rebuilt.readFile(`${root}/${path}`)).toBe(text);
+      const file = rebuilt.source![path]!;
+      const bytes = file.text ?? new TextDecoder().decode((await blobs.get(file.blobRef!))!.bytes);
+      expect(bytes).toBe(text);
     }
 
     // ── 5. AND THE APP IS STILL THE SAME APP. §2.4: escalation is no longer a

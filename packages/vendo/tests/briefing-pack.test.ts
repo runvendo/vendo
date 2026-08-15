@@ -90,14 +90,6 @@ const TOOLS_FILE = JSON.stringify({
   }],
 });
 
-/** The outline an escalating screen agent leaves behind. No `<Server kind>` line
- *  on purpose: the default rung IS the box, which is the rung measured here. */
-const ESCALATED_PLAN = `<Plan name="Invoice matcher">
-  <Group title="Matches">
-    <Leaf component="Text" purpose="the matched invoices"/>
-  </Group>
-</Plan>`;
-
 // ── the fake box ─────────────────────────────────────────────────────────────
 // The control port 8811 and the `/agent/task` long-poll, and nothing more than
 // this test reads: the TASK it was handed. Same shape as `box-wire.test.ts`'s —
@@ -195,7 +187,7 @@ function scripted(): Scripted {
     type: "tool-call" as const,
     toolCallId: "call_escalate",
     toolName: "escalate",
-    input: JSON.stringify({ plan: ESCALATED_PLAN, why: "this needs real matching code" }),
+    input: JSON.stringify({ why: "this needs real matching code" }),
   };
   const model = {
     specificationVersion: "v2" as const,

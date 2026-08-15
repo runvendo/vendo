@@ -8,15 +8,16 @@
  * end of the ask rather than a quiet hand-off to a second engine. Three
  * properties make that safe rather than merely intended:
  *
- * 1. **One app id, whichever way an escalation lands.** An escalation has already
- *    written `plan.vendo` at the id it was handed and its skeleton is already
- *    painted on `vendoViewStreamId(appId)`. A build that minted its own id would
- *    paint the finished app onto a SECOND stream and leave that skeleton beside it
- *    as a card that builds forever; a failure reported against a different id
- *    would leave the same orphan.
- * 2. **A deployment that cannot build says so.** No sandbox means no machine, so
- *    the receipt fails honestly instead of spending a build's latency on a worse
- *    version of the screen the person was already shown.
+ * 1. **One app id, whichever way an escalation lands.** The screen agent was
+ *    handed an id and the person is already watching that stream. A build that
+ *    minted its own id would paint the finished app onto a SECOND stream and
+ *    leave the first as a card that builds forever; a failure reported against a
+ *    different id would leave the same orphan.
+ * 2. **A deployment that cannot build says so, BEFORE it spends anything.** No
+ *    sandbox means no machine, so the receipt fails honestly rather than
+ *    provisioning nothing and reporting it late. Nothing re-plans the ask on the
+ *    way either: the person's own words and the escalation's one-line `why` are
+ *    the whole brief the box gets.
  * 3. **An unwired or unserving assembler surfaces LOUDLY.** Composition forgetting
  *    the slot, an assembler that threw, an `unavailable`, and an `assembled` that
  *    left no row are four different bugs and four failed receipts — never a
@@ -34,7 +35,7 @@ import type {
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createAgentTools } from "../src/server/doors/agent-tools.js";
-import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -54,7 +55,7 @@ const tools: ToolRegistry = {
 };
 
 /** Every prompt a MODEL was handed. The brain is gone, so on the escalation path
- *  this must stay empty: the plan is the brief and nothing re-plans it. */
+ *  this must stay empty: the ASK is the brief and nothing re-plans it. */
 const briefs: string[] = [];
 
 /** Every task the in-box builder was handed — where the build's brief actually
@@ -65,8 +66,6 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
   /** Configure a sandbox — the ONE thing that decides whether an escalation
    *  becomes a build. Its presence is the opt-in; there is no flag. */
   sandbox?: boolean;
-  /** §4.5's other half: the plan the escalating agent left behind. */
-  escalatedPlan?: string;
 } = {}) => {
   briefs.length = 0;
   boxTasks.length = 0;
@@ -83,9 +82,6 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
       return await (model as unknown as { doGenerate(c: unknown): Promise<unknown> }).doGenerate(call);
     },
   } as typeof model;
-  const escalatedPlan = options.escalatedPlan === undefined
-    ? undefined
-    : async () => options.escalatedPlan;
   const store = memoryStore();
   const runtime = createApps({
     store,
@@ -108,7 +104,6 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
       }
       : {}),
     ...(screen === undefined ? {} : { screen }),
-    ...(escalatedPlan === undefined ? {} : { escalatedPlan }),
   });
   return {
     runtime,
@@ -121,7 +116,6 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
       claimSlot: async () => { throw new Error("unused"); },
       markUnbuilt: async () => { throw new Error("unused"); },
       ...(screen === undefined ? {} : { screen }),
-      ...(escalatedPlan === undefined ? {} : { escalatedPlan }),
     }),
   };
 };
@@ -159,32 +153,40 @@ const make = async (
   request = "Show my spending by category",
 ) => await agentTools.execute({ id: "call_1", tool: "vendo_make", args: { request } }, ctx);
 
-const ESCALATED_PLAN = '<Plan name="Invoice matcher">\n  <Group title="Matches"><Leaf component="Text" purpose="the matches"/></Group>\n</Plan>';
+/** The app's name is its default export's, split on camel case. */
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return <Stack gap={12}><Text text="This month" variant="heading" /></Stack>;
+}
+`;
+const EDITED = SCREEN.replace("This month", "Last month");
 
 describe("an escalation and the build that finishes it share ONE app id", () => {
-  it("the build runs at the id the screen agent was handed, anchored on its plan", async () => {
+  it("the build runs at the id the screen agent was handed, briefed with the ask itself", async () => {
     const { seen, assembler } = recordingAssembler({ kind: "escalate", why: "this needs real code" });
-    const { agentTools, briefs, boxTasks } = runtimeWith(assembler, { sandbox: true, escalatedPlan: ESCALATED_PLAN });
+    const { agentTools, briefs, boxTasks } = runtimeWith(assembler, { sandbox: true });
 
     const outcome = await make(agentTools);
 
     expect(outcome.status).toBe("ok");
     const receipt = (outcome as { output: { id: string; status: string } }).output;
-    // The assembler was consulted first — the seam routes, the caller does not.
+    // The assembler was consulted ONCE, before anything was built — the seam
+    // routes, the caller does not, and an escalation carries its `why` into
+    // `create` so the build never runs a second agent over the same ask.
     expect(seen).toHaveLength(1);
-    // …and the app the build went on to make IS the app whose plan the screen
-    // agent wrote. This is the assertion that stops a stranded skeleton.
-    expect(receipt.id).toBe(seen[0]?.appId);
+    // …and that consultation, plus the app the build went on to make, is at ONE
+    // id. This is the assertion that stops a stranded second stream.
+    expect(seen[0]?.appId).toBe(receipt.id);
     // An escalation with somewhere to build is a BUILD, not a failure.
     expect(receipt.status).toBe("ready");
-    // THE PLAN IS THE BRIEF, and it reached the builder as written — the outline
-    // the person is watching is what gets built rather than a second, unrelated
-    // answer to the same ask.
-    expect(boxTasks.join("\n")).toContain("Invoice matcher");
-    // The ask travels verbatim beside it — the plan is a brief, not a
-    // replacement for what the person said.
+    // THE ASK IS THE BRIEF, and it reached the builder as written — the person's
+    // own words rather than a second, unrelated answer to the same ask.
     expect(boxTasks.join("\n")).toContain("Show my spending by category");
-    // AND NOTHING RE-PLANNED IT. There is no middleman between the plan and the
+    // The escalation's one-line `why` travels beside it: the box hears why this
+    // cannot happen in the browser, and nothing else was decided for it.
+    expect(boxTasks.join("\n")).toContain("this needs real code");
+    // AND NOTHING RE-PLANNED IT. There is no middleman between the ask and the
     // box, so no model was asked what to build.
     expect(briefs).toHaveLength(0);
   });
@@ -201,7 +203,7 @@ describe("an escalation and the build that finishes it share ONE app id", () => 
     expect(outcome.status).toBe("ok");
     const receipt = (outcome as { output: { id: string; status: string; say: string } }).output;
     expect(receipt.status).toBe("failed");
-    // Same id: the failure is ABOUT the app whose skeleton is on screen.
+    // Same id: the failure is ABOUT the app the person's stream is aimed at.
     expect(receipt.id).toBe(seen[0]?.appId);
     // The say names the capability gap in the person's terms, not the flag's.
     expect(receipt.say).toContain("real build");
@@ -211,7 +213,7 @@ describe("an escalation and the build that finishes it share ONE app id", () => 
 
   it("`create` honours a caller-minted id and paints every view on it", async () => {
     let runtime: AppsRuntime;
-    const composed = runtimeWith(authoringAssembler(() => runtime, '<App name="Spending"><Text text="This month"/></App>'));
+    const composed = runtimeWith(authoringAssembler(() => runtime, SCREEN));
     runtime = composed.runtime;
     const appId = "app_caller_minted" as AppId;
     const parts: VendoViewPart[] = [];
@@ -294,12 +296,9 @@ describe("assembly that produces no screen fails honestly", () => {
  * deployment composed nothing that builds screens.
  */
 describe("the public create/edit API runs the one engine", () => {
-  const WIRE = '<App name="Spending"><Stack><Text text="This month"/></Stack></App>';
-  const EDITED = '<App name="Spending"><Stack><Text text="Last month"/></Stack></App>';
-
   it("`create` assembles, and the row that lands is the app it returns", async () => {
     let runtime: AppsRuntime;
-    const composed = runtimeWith(authoringAssembler(() => runtime, WIRE));
+    const composed = runtimeWith(authoringAssembler(() => runtime, SCREEN));
     runtime = composed.runtime;
 
     const app = await runtime.create({ prompt: "Show my spending" }, ctx);
@@ -317,17 +316,17 @@ describe("the public create/edit API runs the one engine", () => {
   it("`create` escalates into the box lane when assembly cannot serve the ask", async () => {
     const composed = runtimeWith(
       { assemble: async () => ({ kind: "escalate" as const, why: "this needs real matching code" }) },
-      { sandbox: true, escalatedPlan: ESCALATED_PLAN },
+      { sandbox: true },
     );
 
     const app = await composed.runtime.create({ prompt: "Match my invoices against payments" }, ctx);
 
-    // The plan's own name is the app's, so what got built is the outline the
-    // person is already looking at.
-    expect(app.name).toBe("Invoice matcher");
-    // A REAL box: provisioned, and briefed with the plan plus the ask verbatim.
+    // Nothing has painted a screen yet, so the row goes down under the ask
+    // itself — the person's own words are the only title that exists.
+    expect(app.name).toBe("Match my invoices against payments");
+    // A REAL box: provisioned, and briefed with the ask and the why verbatim.
     expect(app.machine).toBeDefined();
-    expect(composed.boxTasks.join("\n")).toContain("Invoice matcher");
+    expect(composed.boxTasks.join("\n")).toContain("this needs real matching code");
     expect(composed.boxTasks.join("\n")).toContain("Match my invoices against payments");
     // No middleman between the two: not one model call.
     expect(composed.briefs).toHaveLength(0);
@@ -346,7 +345,7 @@ describe("the public create/edit API runs the one engine", () => {
     let runtime: AppsRuntime;
     const composed = runtimeWith(scriptedAssembler(
       () => runtime,
-      (_request, current) => current === null ? WIRE : EDITED,
+      (_request, current) => current === null ? SCREEN : EDITED,
     ));
     runtime = composed.runtime;
     const app = await runtime.create({ prompt: "Show my spending" }, ctx);
@@ -380,7 +379,7 @@ describe("the public create/edit API runs the one engine", () => {
       tools,
       catalog: [],
       model: basicLanguageModel(),
-      screen: scriptedAssembler(() => runtime, (_request, current) => current === null ? WIRE : EDITED),
+      screen: scriptedAssembler(() => runtime, (_request, current) => current === null ? SCREEN : EDITED),
     });
     const app = await runtime.create({ prompt: "Show my spending" }, ctx);
 
@@ -396,7 +395,7 @@ describe("the public create/edit API runs the one engine", () => {
 
   it("`edit` with no assembler composed refuses, and the stored app is untouched", async () => {
     let runtime: AppsRuntime;
-    const composed = runtimeWith(authoringAssembler(() => runtime, WIRE));
+    const composed = runtimeWith(authoringAssembler(() => runtime, SCREEN));
     runtime = composed.runtime;
     const app = await runtime.create({ prompt: "Show my spending" }, ctx);
     const bare = createApps({

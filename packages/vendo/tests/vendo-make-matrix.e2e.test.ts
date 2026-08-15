@@ -14,15 +14,15 @@
  *
  *  1. new simple screen        → assembled, row real, view painted
  *  2. edit of an existing one  → lands in place, repaints on the SAME stream id
- *  3. escalate WITH a sandbox  → the build runs, and the outline becomes the app
+ *  3. escalate WITH a sandbox  → the build runs, on the person's own words
  *  4. escalate with NO sandbox → a failed receipt that says why, no orphan card
  *  5. assembler unavailable    → a failed receipt that says so, and nothing else runs
  *  6. the MCP door             → an outside agent gets words, and a screen lands
  *
  * There is ONE engine behind all six. The brain that used to sit between an
  * escalation and the box is gone, so case 3's proof is now the absence of a
- * middleman: the escalated plan reaches the in-box builder verbatim, the ask
- * travels beside it, and NOT ONE brain prompt is spent deciding what to build.
+ * middleman: the ask reaches the in-box builder verbatim with the escalation's
+ * one line beside it, and NOT ONE brain prompt is spent deciding what to build.
  * Case 2 is the same engine again — an edit is the screen agent opening the
  * app's own document and saving it back.
  */
@@ -68,12 +68,9 @@ export default function Spending() {
 }
 `;
 
-/** The plan an escalating screen agent writes: the outline the person watches. */
-const ESCALATED_PLAN = `<Plan name="Invoice matcher">
-  <Group title="Matches">
-    <Leaf component="Text" purpose="the matched invoices"/>
-  </Group>
-</Plan>`;
+/** The one sentence an escalating screen agent hands over. There is nothing
+ *  else: the person's own ask is the builder's brief. */
+const ESCALATION_WHY = "this needs real matching code";
 
 /** The same app, after the edit ask — a screen edit is the whole file saved
  *  again, which is the only write path there is. */
@@ -428,7 +425,7 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     // Words only — never the screen itself (§3.1).
     expect(JSON.stringify(receipt)).not.toContain("<App");
 
-    // The ROW: `authored` is what makes a written file an app.
+    // The ROW: the gauntlet's own paint is what makes a written file an app.
     const stored = await walked.vendo.apps.get(receipt.id, ctx);
     expect(stored?.name).toBe("Spending");
     expect((await walked.vendo.apps.list(ctx)).map((app) => app.id)).toContain(receipt.id);
@@ -475,26 +472,32 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
   }, 60_000);
 
-  it("TYPE 3 · an escalation WITH a sandbox builds, and the outline becomes the app", async () => {
+  it("TYPE 3 · an escalation WITH a sandbox builds, on the person's own words", async () => {
+    const ASK = "match my invoices against payments and show me what didn't clear";
     const walked = await walk({
       sandbox: true,
-      asks: [{ request: "match my invoices against payments and show me what didn't clear" }],
-      screenTurns: [call("escalate", { plan: ESCALATED_PLAN, why: "this needs real matching code" }, "c1")],
+      asks: [{ request: ASK }],
+      // TWICE: `vendo_make` routes the ask through assembly, and `create` — the
+      // public door it then calls — routes it through assembly again, because a
+      // caller can no longer tell `create` that assembly already answered. Both
+      // runs reach for the same door.
+      screenTurns: [
+        call("escalate", { why: ESCALATION_WHY }, "c1"),
+        call("escalate", { why: ESCALATION_WHY }, "c2"),
+      ],
     });
 
     const receipt = walked.receipts[0]!;
     // Not a failure and not a fall-through apology: the build ran.
     expect(receipt.status).toBe("ready");
 
-    // THE PLAN IS THE BRIEF, AND NOTHING SITS BETWEEN THEM. The person is
-    // already looking at this outline, so a build that re-planned from the ask
-    // alone would swap the thing they are watching for a different app under the
-    // same card. The plan reaches the in-box builder as its task, the ask travels
-    // verbatim beside it, and the plan's own `<Server>` — absent here, so the
-    // escalation itself says "box" — is what chose this lane.
+    // THE ASK IS THE BRIEF, AND NOTHING SITS BETWEEN THEM. There is no plan to
+    // anchor on any more: the person's own words reach the in-box builder as its
+    // task, with the escalation's one line beside them, and nothing re-planned
+    // either.
     const task = walked.box.tasks.join("\n");
-    expect(task).toContain("Invoice matcher");
-    expect(task).toContain("match my invoices against payments");
+    expect(task).toContain(ASK);
+    expect(task).toContain(ESCALATION_WHY);
     // THE MIDDLEMAN IS GONE. Not one prompt outside the assembly loop, so no
     // brain re-planned this and no fill worker wrote into it.
     expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
@@ -511,22 +514,18 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     expect(stored).not.toBeNull();
     expect(stored?.machine).toBeDefined();
 
-    // ONE STREAM. The plan's skeleton and the finished app paint on the same id,
-    // so the outline the person watched became the app in place. The skeleton is
-    // the FIRST paint and it is streaming; the app is the LAST and it is not.
-    expect(new Set(walked.views.map((view) => view.appId))).toEqual(new Set([receipt.id]));
-    expect(walked.views[0]?.payload["streaming"]).toBe(true);
-    // SETTLED. `streaming` is what `chrome/thread/parts.tsx` keys its
-    // dead-card unmount on, so "not true" is exactly the state that means the
-    // card holds an answer rather than a shimmer.
-    expect(walked.views.at(-1)?.payload["streaming"]).not.toBe(true);
-    expect(walked.views.length).toBeGreaterThan(1);
+    // AND NOTHING WAS PAINTED. There is no instant skeleton to watch: the box
+    // wrote server code, not a screen, so the card holds the receipt's words
+    // rather than a shimmer over an app that does not exist.
+    expect(stored?.tree).toBeUndefined();
+    expect(walked.views).toEqual([]);
   }, 120_000);
 
   it("TYPE 4 · an escalation with NO sandbox fails honestly, and leaves no card building forever", async () => {
+    const ASK = "match my invoices against payments and show me what didn't clear";
     const walked = await walk({
-      asks: [{ request: "match my invoices against payments and show me what didn't clear" }],
-      screenTurns: [call("escalate", { plan: ESCALATED_PLAN, why: "this needs real matching code" }, "c1")],
+      asks: [{ request: ASK }],
+      screenTurns: [call("escalate", { why: ESCALATION_WHY }, "c1")],
     });
 
     const receipt = walked.receipts[0]!;
@@ -535,31 +534,26 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     // adapter name, nothing for the model to relay that a person cannot act on.
     expect(receipt.say).toContain("real build");
     expect(receipt.say).not.toContain("sandbox");
-    // And it names the card the person is looking at, not a label: the title is
-    // the plan's own name, which is also the title on the painted skeleton. That
-    // is only possible because the plan was read back on THIS path too.
-    expect(receipt.title).toBe("Invoice matcher");
+    // And it names the card the person is looking at, not a label: with no plan
+    // to take a name from, the ask's own words are the title.
+    expect(receipt.title).toBe(ASK.slice(0, 60));
 
     // NOTHING RAN BEHIND IT. There is no second engine to spend a whole build's
     // latency arriving at a worse version of the screen the person already saw.
     expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
-    expect(JSON.stringify(walked.views)).not.toContain("This month");
 
-    // NO ORPHAN. The plan's skeleton is the only paint, it is on this app's own
-    // stream, and it is the last word there — so `chrome/thread/parts.tsx`'s
-    // rule ("a still-forming view on a turn that is over is unmounted") has
-    // exactly the shape it keys on. The receipt, not a shimmer, is the answer.
-    expect(new Set(walked.views.map((view) => view.appId))).toEqual(new Set([receipt.id]));
-    expect(walked.views.every((view) => view.payload["streaming"] === true)).toBe(true);
+    // NO ORPHAN. Nothing was ever painted, so there is no still-forming view for
+    // `chrome/thread/parts.tsx` to unmount — the receipt is the whole answer.
+    expect(walked.views).toEqual([]);
     // And the turn is OVER: the walk only returns once the response body is
     // fully drained, which is what makes the card dead rather than pending.
   }, 60_000);
 
   it("TYPE 5 · an assembler that produces nothing renderable fails honestly — nothing rescues it", async () => {
-    // The control case, inverted. The screen agent saved bytes the compiler cannot
-    // render, so the seam painted nothing and `authored` stored no row. There is
-    // no engine left to fall through to, and an unwired or unserving assembler is
-    // a composition bug that has to surface rather than be quietly served.
+    // The control case, inverted. The screen agent saved bytes the gauntlet
+    // refuses, so the seam painted nothing and stored no row. There is no engine
+    // left to fall through to, and an unwired or unserving assembler is a
+    // composition bug that has to surface rather than be quietly served.
     const walked = await walk({
       asks: [{ request: "show me what I spent this month" }],
       screenTurns: [call("save_app", { content: "not a document at all" }, "c1"), speak("saved")],

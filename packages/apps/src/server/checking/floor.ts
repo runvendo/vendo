@@ -24,7 +24,8 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE, type FlatTree } from "../../contract/genui/component/index.js";
-import { checkComponentScreen, screenCatalog, screenName } from "./component-screen.js";
+import { checkComponentScreen, screenName } from "./component-screen.js";
+import { screenCatalog } from "./screen-typings.js";
 import type { FloorDependencies } from "./deps.js";
 import { screenTypesCheck } from "./facts.js";
 import { runChecks } from "./layer.js";

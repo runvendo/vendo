@@ -39,7 +39,7 @@ const decoder = new TextDecoder();
 
 const ORG = "acme";
 const APP = "app_quarterly";
-const APP_PATH = `/orgs/${ORG}/apps/${APP}/app.vendo`;
+const APP_PATH = `/orgs/${ORG}/apps/${APP}/app.tsx`;
 
 const dana: Principal = { kind: "user", subject: "dana" };
 const kim: Principal = { kind: "user", subject: "kim" };

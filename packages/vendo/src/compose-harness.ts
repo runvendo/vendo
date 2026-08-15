@@ -226,20 +226,13 @@ const harnessTurnConfig = (
     // not on its listing.
     connectorDiscovery: serviceCatalog,
     bridge: () => ({ toolOutputCap, preflight: (call, ctx) => connectGate.check(call, ctx) }),
-    // §1.6's app half, and — contract §3.2 — the app's SOURCE half beside it, on
-    // the SAME interception point. Without `authoredApp` a files-first app (D4) is a
-    // PICTURE of an app: no store row, so it never lists and `vendo_apps_open` masks
-    // it as not-found, and no query data, so every value renders "—" with the real
-    // host data one call away. Without `commitSource` the app's CODE has no home but
-    // the sandbox snapshot behind `machine.snapshotRef` — lose the snapshot and the
-    // customer's app is gone, because the store never had it.
-    // §7.1's floor half rides the same seam: the production compile dialect and
-    // the deterministic fact checks, on every commit, for every author. Without it
-    // the seam compiled with NO options — a lying binding was invisible and an
-    // inline tool reference lost its binding silently — and nothing checked a
-    // harness's own writes at all.
+    // §7.1's floor and — contract §3.2 — the app's SOURCE half beside it, on the
+    // SAME interception point. Without the floor nothing checks a harness's own
+    // writes and nothing paints: the gauntlet's own `ok` is what upserts the row
+    // that makes a written file an app. Without `commitSource` the app's CODE has
+    // no home but the sandbox snapshot behind `machine.snapshotRef` — lose the
+    // snapshot and the customer's app is gone, because the store never had it.
     render: (ctx) => ({
-      authoredApp: (input) => composition.apps.authored(input, ctx),
       commitSource: (input) => composition.apps.commitSource(input, ctx),
       floor: composition.apps.floor(ctx),
     }),

@@ -21,7 +21,6 @@ import {
 } from "@vendoai/core";
 import type {
   AppDocument,
-  AppPlan,
   AdmissionOrigin,
 } from "../../contract/index.js";
 import { createAccessChecks } from "../doors/access-checks.js";
@@ -191,7 +190,7 @@ export interface AppsRuntimeContext {
     ctx: RunContext,
   ): Promise<
     | { kind: "assembled"; app: AppDocument }
-    | { kind: "escalate" }
+    | { kind: "escalate"; why: string }
     | { kind: "failed"; issues: string[] }
   >;
 
@@ -210,9 +209,9 @@ export interface AppsRuntimeContext {
     | { ok: true; result: BoxEditResult; doc: AppDocument; servedOk: boolean }
     | { ok: false; result: BoxEditResult }
   >;
-  /** Run the server work a plan declared, on an app that is already STORED. */
+  /** Run the server work an escalation asked for, on an app that is already STORED. */
   runServerWork(
-    input: { plan: AppPlan; planText?: string; document: AppDocument; request: string },
+    input: { document: AppDocument; request: string; why: string; served?: boolean },
     ctx: RunContext,
     deps: GenerationDependencies,
   ): Promise<{
@@ -223,8 +222,7 @@ export interface AppsRuntimeContext {
     issues?: string[];
     failed?: string[];
   }>;
-  /** Author one automation onto a STORED app: plan, land, arm, audit. The ONE
-   *  wiring the public door and the escalated-plan path share. */
+  /** Author one automation onto a STORED app: plan, land, arm, audit. */
   authorAutomation: ReturnType<typeof createAutomationLane>;
   /** Forward ONE already-authorized request into the app's machine. */
   forwardToBox(app: AppDocument, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;

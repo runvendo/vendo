@@ -85,10 +85,7 @@ const receipt = (value: MakeReceipt): ToolOutcome => ({
  * about the same thing. Otherwise the ask, collapsed and capped — the same answer
  * a failed build record's name field gets.
  */
-const nameForUnbuilt = (plan: string | undefined, ask: string): string => {
-  const named = plan === undefined ? null : /<Plan\b[^>]*\bname="([^"]+)"/.exec(plan);
-  const title = named?.[1]?.trim();
-  if (title !== undefined && title !== "") return title;
+const nameForUnbuilt = (ask: string): string => {
   const collapsed = ask.replace(/\s+/g, " ").trim();
   return collapsed === "" ? "Vendo app" : collapsed.slice(0, 60);
 };
@@ -131,15 +128,14 @@ const makeNewApp = async (
   // ── THE SEAM (blueprint §1 point 2) ─────────────────────────────────
   // "No agent chooses 'quick screen' vs 'real build'. Every request
   // starts in the cheap screen agent." The id is minted HERE, before the
-  // route, because both ends have to use the same one: an escalation
-  // leaves `plan.vendo` and its painted skeleton at this id, and a build
-  // that minted its own would strand that skeleton on a second stream as
-  // a card that builds forever.
+  // route, because both ends have to use the same one: a build that
+  // minted its own would paint onto a second stream and strand the
+  // screen agent's own paints beside it.
   //
   // Only `assembled` WITH A ROW ends the call happily. The row is the
-  // check that makes that true instead of merely intended: `authored`
-  // upserts it iff the seam actually compiled and painted the document,
-  // so a screen agent that saved bytes nobody can render leaves no row.
+  // check that makes that true instead of merely intended: the checks
+  // floor upserts it iff the gauntlet actually painted the screen, so a
+  // screen agent that saved bytes nobody can render leaves no row.
   //
   // TWO answers now, and no third. `escalate` is a request for the
   // builder (§4.5's receiving end, below); everything else is assembly
@@ -206,25 +202,20 @@ const makeNewApp = async (
   // picks which:
   //
   //  - A sandbox is configured → the build runs. Same `create` a
-  //    server-needing ask has always taken, at the SAME app id, so the
-  //    plan's skeleton and the finished app share one stream and the
-  //    outline becomes the app. The escalated plan rides in as the
-  //    brief; the ask still travels verbatim.
+  //    server-needing ask has always taken, at the SAME app id, so
+  //    whatever the screen agent painted and the finished app share one
+  //    stream. The ask travels verbatim; the escalation adds one line
+  //    about why assembly could not serve it.
   //  - No sandbox → say so, rather than spending a full build's latency
   //    to arrive at a worse version of the screen the person was already
-  //    shown. The skeleton is left as it is — the UI unmounts a
-  //    still-forming card once the turn is over
-  //    (`chrome/thread/parts.tsx`), so the last word is this receipt.
+  //    shown.
   const escalated = routed?.kind === "escalate";
-  const plan = !escalated
-    ? undefined
-    : await dependencies.escalatedPlan?.(appId, ctx).catch(() => undefined);
   if (!escalated) {
     // Assembly produced no screen. Said plainly, at the id whose stream
     // the person is looking at, instead of quietly restarting the ask in
     // a different engine.
     return await failUnbuilt(
-      nameForUnbuilt(undefined, ask),
+      nameForUnbuilt(ask),
       unbuiltSay(
         dependencies.screen === undefined ? NO_ASSEMBLER
           : threw ?? (routed?.kind === "unavailable" ? routed.why : NOTHING_RENDERABLE),
@@ -232,19 +223,16 @@ const makeNewApp = async (
     );
   }
   if (!runtime.machine.available()) {
-    return await failUnbuilt(
-      // The name on the skeleton they are looking at, so the sentence and
-      // the card are about the same thing.
-      nameForUnbuilt(plan, ask),
-      NO_MACHINE,
-    );
+    return await failUnbuilt(nameForUnbuilt(ask), NO_MACHINE);
   }
   let unsaved: string | undefined;
   let serverWork: CreateServerWork | undefined;
   const created = await runtime.create({
     appId,
     prompt: ask,
-    ...(plan === undefined ? {} : { plan }),
+    // The screen agent already ran, right above: its one line rides along so
+    // this build does not re-route the ask through a second agent.
+    why: routed.why,
     // No `slot`: the claim went down at the mint above, which is the
     // same instant `create` would have made it for an id of its own.
     onUnsaved: (reason) => { unsaved = reason; },

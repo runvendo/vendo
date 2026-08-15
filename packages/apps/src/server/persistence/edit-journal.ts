@@ -227,7 +227,7 @@ const createEditIntents = () => {
    * `authored` is the one write path now — a runtime edit is a screen agent
    * opening the app's document, rewriting it and saving it, which is the same
    * commit any other author makes. Without this the recorded version for every
-   * edit would read "Saved app.vendo" and `pins.rebase` would find a trail of
+   * edit would read "Saved app.tsx" and `pins.rebase` would find a trail of
    * unreplayable `touch` rows where the user's instructions used to be.
    *
    * Set for exactly the duration of one `assembleEdit`, keyed by app so two
@@ -307,7 +307,7 @@ const createEditAssembler = (
   /**
    * ONE instruction through the ONE builder.
    *
-   * There is no second engine: the assembler opens the app's own `app.vendo`,
+   * There is no second engine: the assembler opens the app's own `app.tsx`,
    * rewrites it and saves it, and the save lands through `authored` — the real
    * store write, the real floor, the real paint. So this returns nothing but the
    * row as it stands afterwards, because the row IS the answer.
@@ -323,8 +323,9 @@ const createEditAssembler = (
   ): Promise<
     | { kind: "assembled"; app: AppDocument }
     /** The CHANGE needs the builder — the escalation ladder, from an app that
-     *  already exists. The document is untouched and still serving. */
-    | { kind: "escalate" }
+     *  already exists. `why` is the escalating agent's own one line; the
+     *  document is untouched and still serving. */
+    | { kind: "escalate"; why: string }
     | { kind: "failed"; issues: string[] }
   > => {
     if (config.screen === undefined) {
@@ -357,7 +358,7 @@ const createEditAssembler = (
     } finally {
       editIntents.delete(appId);
     }
-    if (outcome.kind === "escalate") return { kind: "escalate" };
+    if (outcome.kind === "escalate") return { kind: "escalate", why: outcome.why };
     if (outcome.kind === "unavailable") return { kind: "failed", issues: [outcome.why] };
     // The assembler says it saved, and the STORE may have refused that save (see
     // `editRefusals`). The row below would then read back the pre-edit document

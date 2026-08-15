@@ -55,13 +55,13 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
     });
   });
 
-  it("validate reports a broken document as findings, NOT as a tool error", async () => {
+  it("validate reports a broken screen as findings, NOT as a tool error", async () => {
     // A tool error reads to the model as "the tool is broken"; findings read as
-    // "your document is wrong". Only the second one gets fixed.
+    // "your screen is wrong". Only the second one gets fixed.
     const registry = vendoVerbsRegistry(ports({
       validate: async () => ({ ok: false as const, findings: [{ severity: "block", message: "unparseable" }] }),
     }));
-    const outcome = await registry.execute(call("validate", { document: "<<<" }), ctx());
+    const outcome = await registry.execute(call("validate", { appId: "app_broken" }), ctx());
     expect(outcome.status).toBe("ok");
   });
 

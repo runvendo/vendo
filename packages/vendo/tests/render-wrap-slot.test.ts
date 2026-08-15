@@ -11,7 +11,7 @@
  * pin is the SLOT: the wrap sees every commit, and its `emit` reaches the
  * wire's view channel.
  */
-import { wrapWorkspaceForRender } from "@vendoai/apps";
+import { createAppFloor, wrapWorkspaceForRender } from "@vendoai/apps";
 import type { Harness, ThreadId } from "@vendoai/core";
 import {
   createHarnessRuntime,
@@ -35,6 +35,18 @@ import {
 
 const THREAD = "thr_1" as ThreadId;
 
+/** The one screen the gauntlet passes — its component's name is the app's. */
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return (
+    <Stack gap={12}>
+      <Text text="Unpaid" variant="heading" />
+    </Stack>
+  );
+}
+`;
+
 function fixture(options: {
   tools?: Record<string, { descriptor: ReturnType<typeof readTool>; execute: () => unknown }>;
 } = {}) {
@@ -43,6 +55,15 @@ function fixture(options: {
     (options.tools ?? {}) as Parameters<typeof boundRegistry>[0],
     guard,
   );
+  // THE REAL FLOOR — the seam paints an `app.tsx` only through
+  // `AppFloor.component`, so without it nothing would paint and this file would
+  // measure nothing. Kit-only, and the row half is the one double (it needs a
+  // store).
+  const floor = createAppFloor({
+    deps: async () => ({ catalog: [], tools: [] }),
+    runQuery: async () => ({}),
+    delivered: async () => undefined,
+  });
   const runtime = createHarnessRuntime({
     tools: registry,
     guard,
@@ -52,6 +73,7 @@ function fixture(options: {
     // The slot fill under test — verbatim what composition does
     // (`packages/vendo/src/harness-turn.ts`).
     wrapWorkspace: (workspace, opts) => wrapWorkspaceForRender(workspace, {
+      floor,
       turnId: opts.turnId,
       emit: opts.emit,
     }),
@@ -73,16 +95,13 @@ function fixture(options: {
 }
 
 describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
-  it("a harness writing plan.vendo puts the skeleton on screen", async () => {
+  it("a harness writing app.tsx puts the screen on the view channel", async () => {
     const f = fixture();
     const harness = defineHarness({
       name: "builder",
       async *run(turn) {
-        yield { type: "status", label: "Sketching the layout" };
-        await turn.workspace.writeFile(
-          "/user/apps/app_7/plan.vendo",
-          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
-        );
+        yield { type: "status", label: "Writing the screen" };
+        await turn.workspace.writeFile("/user/apps/app_7/app.tsx", SCREEN);
       },
     });
     const parts = await f.run(harness);
@@ -91,12 +110,12 @@ describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
     expect(view).toMatchObject({ id: "vendo-view:app_7", data: { appId: "app_7" } });
   });
 
-  it("an unparseable write puts nothing on screen", async () => {
+  it("a write the floor refuses puts nothing on screen", async () => {
     const f = fixture();
     const harness = defineHarness({
       name: "builder",
       async *run(turn) {
-        await turn.workspace.writeFile("/user/apps/app_7/app.vendo", "half-written garba");
+        await turn.workspace.writeFile("/user/apps/app_7/app.tsx", "half-written garba");
       },
     });
     const parts = await f.run(harness);
@@ -104,7 +123,6 @@ describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
   });
 
   it("a workspace tool edit lands on its own call, not at turn end (§3.5)", async () => {
-    const PLAN = `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`;
     const workspace = testWorkspace();
     // Stands in for lane D's workspace_write: the tool stages, the runtime lands it.
     const f = fixture({
@@ -112,7 +130,7 @@ describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
         workspace_write: {
           descriptor: readTool("workspace_write", "write"),
           execute: () => {
-            void workspace.writeFile("/user/apps/app_9/plan.vendo", PLAN);
+            void workspace.writeFile("/user/apps/app_9/app.tsx", SCREEN);
             return { written: true };
           },
         },
@@ -125,7 +143,7 @@ describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
         // The commit already happened, so the view is on the wire BEFORE the
         // harness says anything.
         expect(workspace.commits).toHaveLength(1);
-        expect(workspace.commits[0]!.changed).toEqual(["/user/apps/app_9/plan.vendo"]);
+        expect(workspace.commits[0]!.changed).toEqual(["/user/apps/app_9/app.tsx"]);
         yield { type: "text", delta: "Done." };
       },
     });

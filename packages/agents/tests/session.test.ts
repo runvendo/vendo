@@ -19,6 +19,13 @@ const memoryStore = () => createStore({ dataDir: `memory://agents-session-${stor
 
 const principal = { kind: "user" as const, subject: "u_42" };
 
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return <Stack gap={12}><Text text="Unpaid" /></Stack>;
+}
+`;
+
 const speaks = (text: string) =>
   defineHarness({
     name: "speaks",
@@ -51,28 +58,32 @@ describe("session", () => {
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
   });
 
-  it("a hot-path commit paints — plan.vendo through turn.workspace emits data-vendo-view (§1.6)", async () => {
+  it("a hot-path commit reaches the store through the wrapped workspace (§1.6)", async () => {
     // Regression pin: the runtime's render seam rides an injected
     // `wrapWorkspace` slot now, and THIS package has to fill it — unfilled, a
-    // harness that writes app files (`claudeCode()` does, mid-turn) paints
-    // nothing, silently. Found by review on the harnesses de-apps refactor.
+    // harness that writes app files (`claudeCode()` does, mid-turn) reaches no
+    // seam at all. Found by review on the harnesses de-apps refactor.
+    //
+    // This runtime's seam is BARE: it composes no apps runtime, so it carries no
+    // screen engine and paints nothing. The file still has to LAND — the wrap is
+    // a proxy over the real façade, and a wrap that swallowed the commit would
+    // lose the app. What the composed path paints is the umbrella's to prove
+    // (`packages/vendo` render-wrap-slot.test.ts, screen-floor-door.e2e.test.ts).
     const store = memoryStore();
     const builder = defineHarness({
       name: "builder",
       async *run(turn) {
-        await turn.workspace.writeFile(
-          "/user/apps/app_pin/plan.vendo",
-          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
-        );
+        await turn.workspace.writeFile("/user/apps/app_pin/app.tsx", SCREEN);
         yield { type: "text" as const, delta: "sketched" };
       },
     });
     const support = agent({ name: "support", harness: builder, store });
     const session = await support.session("u_42");
     const text = await (await session.stream("make me an invoices screen")).text();
-    expect(text).toContain('"data-vendo-view"');
-    // The stable per-app stream id, so successive paints reconcile in place.
-    expect(text).toContain("vendo-view:app_pin");
+    expect(text).toContain("sketched");
+    // No floor, no paint: the view channel stays empty rather than carrying a
+    // screen nothing checked.
+    expect(text).not.toContain('"data-vendo-view"');
   });
 
   it("a second turn hands the harness the whole prior conversation", async () => {

@@ -25,10 +25,10 @@ import {
 import {
   checkComponentScreen,
   reviewComponentScreenInput,
-  screenCatalog,
   screenName,
   type ComponentScreenCheck,
 } from "../../src/server/checking/component-screen.js";
+import { screenCatalog } from "../../src/server/checking/screen-typings.js";
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const pendingSchema: JsonSchema = {

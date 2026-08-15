@@ -158,11 +158,11 @@ describe("a contribution fails at BOOT for anything the /host projection cannot 
   it("rejects a skill companion file that would leave the skill's directory", () => {
     const attempt = (): unknown => merge([{
       from: "reporting",
-      skills: [{ name: "reports", description: "D.", body: "b", files: { "../../user/apps/app_x/app.vendo": "x" } }],
+      skills: [{ name: "reports", description: "D.", body: "b", files: { "../../user/apps/app_x/app.tsx": "x" } }],
     }]);
     expect(attempt).toThrow(VendoError);
     expect(attempt).toThrow(/reporting/);
-    expect(attempt).toThrow(/app\.vendo/);
+    expect(attempt).toThrow(/app\.tsx/);
   });
 
   it("rejects a companion file that would overwrite the skill's own SKILL.md", () => {

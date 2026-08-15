@@ -7,8 +7,7 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
-  KIT_WIRE_COMPONENT_NAMES,
-  WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
@@ -50,9 +49,9 @@ const invoicesSchema: JsonSchema = {
 };
 
 describe("screenTypings", () => {
-  it("declares every wire component name as a JSX value", () => {
+  it("declares every screen component name as a JSX value", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    for (const name of WIRE_COMPONENT_NAMES) {
+    for (const name of KIT_SCREEN_COMPONENT_NAMES) {
       expect(dts, `${name} must be declared`).toContain(`declare const ${name}:`);
     }
   });
@@ -242,10 +241,5 @@ describe("screenTypings", () => {
   it("is deterministic — same input, byte-identical output", () => {
     const input = { catalog, queries: [{ name: "invoices", tool: "maple_invoices_list" }], toolOutputSchemas: { maple_invoices_list: invoicesSchema } };
     expect(screenTypings(input)).toBe(screenTypings(input));
-  });
-
-  it("teaches only the Kit names the wire adopts", () => {
-    const dts = screenTypings({ catalog: [], queries: [] });
-    for (const name of KIT_WIRE_COMPONENT_NAMES) expect(dts).toContain(`declare const ${name}:`);
   });
 });

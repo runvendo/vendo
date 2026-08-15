@@ -16,7 +16,6 @@ import {
 import {
   renderBriefingPack,
   type AppDocument,
-  type AppPlan,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "../persistence/app-memory.js";
 import { engineOf } from "../persistence/engine.js";
@@ -31,7 +30,7 @@ import type { Finding } from "../checking/types.js";
 import { rungFor, withoutId } from "../persistence/edit-journal.js";
 import { boxAllowlist, normalizeEgressDomain } from "./egress-approval.js";
 import type { GenerationDependencies } from "../generation/engine.js";
-import { automationInstruction, automationMode, createAutomationLane } from "../automation/lane.js";
+import { createAutomationLane } from "../automation/lane.js";
 import { runServerLane, type BoxSeam, type ServerFunction } from "../generation/lanes.js";
 import { createMachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
@@ -273,8 +272,8 @@ const createBoxSeams = (
 
 /**
  * The 2→3 surface flip, on the two independent signals `runServerWork` gathers:
- * the PLAN asked to be served, and the host itself fetched `GET /` and got a
- * real page. Its own function only so the runner stays one readable screenful.
+ * the CALLER asked for a served app, and the host itself fetched `GET /` and got
+ * a real page. Its own function only so the runner stays one readable screenful.
  */
 const createSurfaceFlip = (deps: Pick<AppsRuntimeContext, "requireOwned" | "persistEdit">) => {
   const { requireOwned, persistEdit } = deps;
@@ -291,7 +290,7 @@ const createSurfaceFlip = (deps: Pick<AppsRuntimeContext, "requireOwned" | "pers
     const issues: string[] = [];
     if (lane.server !== undefined && (wantsServed || lane.server.servesUi === true)) {
       if (!wantsServed) {
-        issues.push("the box declared a served web app, but this app's plan never asked for one — the surface flip was refused and the tree keeps serving");
+        issues.push("the box declared a served web app, but nothing asked for one — the surface flip was refused and the screen keeps serving");
       } else if (lane.server.servesUi === true && lane.server.servedOk === true) {
         const base = await requireOwned(appId, ctx);
         const flipped = structuredClone(base);
@@ -310,29 +309,33 @@ const createSurfaceFlip = (deps: Pick<AppsRuntimeContext, "requireOwned" | "pers
 };
 
 /**
- * Run the server work a plan declared, on an app that is already STORED.
- *
- * The ONE place an escalated plan is routed: a plan that asked for an
- * automation goes to the automation door (no machine, seconds), and everything
- * else is the box — it provisions a machine and lets the in-box agent write
- * real code against the plan itself.
+ * Run the server work an escalation asked for, on an app that is already STORED:
+ * it provisions a machine and lets the in-box agent write real code against the
+ * person's own words.
  */
 const createServerWorkRunner = (
-  deps: Pick<AppsRuntimeContext, "config" | "requireOwned">
+  deps: Pick<AppsRuntimeContext, "requireOwned">
     & {
       boxSeamFor: ReturnType<typeof createBoxSeams>;
       applySurfaceFlip: ReturnType<typeof createSurfaceFlip>;
-      authorAutomation: ReturnType<typeof createAutomationLane>;
     },
 ) => {
-  const { config, requireOwned, boxSeamFor, applySurfaceFlip, authorAutomation } = deps;
+  const { requireOwned, boxSeamFor, applySurfaceFlip } = deps;
   const runServerWork = async (
     input: {
-      plan: AppPlan;
-      /** The escalated `plan.vendo` verbatim — the box's brief (lanes.ts). */
-      planText?: string;
       document: AppDocument;
+      /** The person's own words, verbatim — the box's whole brief (lanes.ts). */
       request: string;
+      /** The escalation's one-line sentence about why this cannot happen in the
+       *  browser. */
+      why: string;
+      /**
+       * This app is meant to be SERVED by its box (layer 3), which is one of the
+       * two independent signals the surface flip needs. The escalating agent's
+       * plan used to carry it; no door sets it today, and the flip is refused
+       * without it.
+       */
+      served?: boolean;
     },
     ctx: RunContext,
     deps: GenerationDependencies,
@@ -350,39 +353,14 @@ const createServerWorkRunner = (
     failed?: string[];
   }> => {
     const appId = input.document.id;
-    const server = input.plan.server;
-    // The automation DOOR, off the ladder: authoring a trigger never needed a
-    // machine, so it never travelled the rung built for one.
-    const mode = server === undefined ? undefined : automationMode(server);
-    if (server !== undefined && mode !== undefined) {
-      const authored = await authorAutomation({
-        appId,
-        instruction: automationInstruction(server, input.request),
-        mode,
-        request: input.request,
-        document: input.document,
-      }, ctx, deps, config.armAutomation);
-      return {
-        // Either the door wrote the row itself, so the pre-write copy would
-        // report an app without what it just gained.
-        document: authored.automation === undefined
-          ? { ...authored.document, id: appId }
-          : await requireOwned(appId, ctx),
-        findings: authored.findings,
-        ...(authored.automation === undefined ? {} : { automation: authored.automation }),
-        ...(authored.armingIssues === undefined ? {} : { issues: authored.armingIssues }),
-      };
-    }
-    const wantsServed = input.plan.server?.served === true;
-    const lane = await runServerLane(input.plan, withoutId(input.document), {
+    const wantsServed = input.served === true;
+    const lane = await runServerLane(withoutId(input.document), {
       ...deps,
       appId,
       ctx,
-      // The words that started this. The automation planner decides whether the
-      // ask is one MORE automation or a new version of one the app already has,
-      // and the plan's `why` alone cannot tell those apart.
+      // The words that started this, verbatim.
       request: input.request,
-      ...(input.planText === undefined ? {} : { planText: input.planText }),
+      why: input.why,
       box: boxSeamFor(appId, ctx, wantsServed),
     });
     let document: AppDocument = { ...lane.document, id: appId };
@@ -392,16 +370,23 @@ const createServerWorkRunner = (
       // pre-write copy would report an app without what the lane just gave it.
       document = await requireOwned(appId, ctx);
     }
+    // A box that reported no interface did not build the work this escalation
+    // exists for, and there is no screen behind it to fall back on — the
+    // escalating agent wrote none. So the failure is the ANSWER, never a warn
+    // logged under an app the person is told is ready (the 2026-08-11 live
+    // "empty app declared successful"). It used to be reported only for a plan
+    // that REQUIRED a served surface, because back then a layer-2 failure still
+    // left the plan's skeleton standing.
+    const issues: string[] = [];
+    if (lane.server === undefined) {
+      return { document, findings, failed: findings.map(({ message }) => message) };
+    }
     // ── The 2→3 surface flip ────────────────────────────────────────────────
     // The tree kept serving through the whole box build. Only NOW, with the box
     // green, does the surface change — and only on TWO independent signals: the
-    // PLAN asked to be served, and the host itself fetched `GET /` and got a real
-    // page. A box that self-declares a served surface on a layer-2 plan is
-    // refused loudly: it must never replace a tree the person did not ask to lose.
-    const issues: string[] = [];
-    if (wantsServed && lane.server === undefined) {
-      return { document, findings, failed: findings.map(({ message }) => message) };
-    }
+    // CALLER asked to be served, and the host itself fetched `GET /` and got a
+    // real page. A box that self-declares a served surface is refused loudly: it
+    // must never replace a screen the person did not ask to lose.
     const flip = await applySurfaceFlip({ lane, document, appId, ctx, wantsServed, request: input.request });
     document = flip.document;
     issues.push(...flip.issues);
@@ -486,7 +471,7 @@ export const createBoxLane = (
   const boxSeamFor = createBoxSeams({ ...deps, editServerViaBox });
   const applySurfaceFlip = createSurfaceFlip(deps);
   const authorAutomation = createAutomationLane(deps);
-  const runServerWork = createServerWorkRunner({ ...deps, boxSeamFor, applySurfaceFlip, authorAutomation });
+  const runServerWork = createServerWorkRunner({ ...deps, boxSeamFor, applySurfaceFlip });
   const forwardToBox = createBoxForwarder(deps);
   return { editServerViaBox, runServerWork, authorAutomation, forwardToBox };
 };

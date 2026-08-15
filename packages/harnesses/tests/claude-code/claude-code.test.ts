@@ -871,16 +871,16 @@ describe("§1.3 · truncated() — the one bit that replaced the rewind ledger",
 describe("a turn on a real box wire", () => {
   test("the workspace is materialized, the box edits it, and the diff lands in the store", async () => {
     const sandbox = fakeSandbox(async (box) => {
-      expect(box.read("/user/apps/app_1/app.vendo")).toBe("<App/>");
-      box.write("/user/apps/app_1/app.vendo", "<App>edited</App>");
+      expect(box.read("/user/apps/app_1/app.tsx")).toBe("<App/>");
+      box.write("/user/apps/app_1/app.tsx", "<App>edited</App>");
       box.emit({ type: "text", delta: "Done." });
       box.emit({ type: "session", sessionId: "sess_1" });
     });
-    const { turn, workspace, state } = makeTurn({ files: { "/user/apps/app_1/app.vendo": "<App/>" } });
+    const { turn, workspace, state } = makeTurn({ files: { "/user/apps/app_1/app.tsx": "<App/>" } });
     const events = await drain(claudeCode({ sandbox }), turn);
 
     expect(events).toContainEqual({ type: "text", delta: "Done." });
-    expect(await workspace.readFile("/user/apps/app_1/app.vendo")).toBe("<App>edited</App>");
+    expect(await workspace.readFile("/user/apps/app_1/app.tsx")).toBe("<App>edited</App>");
     // The native session ref is carried, opaquely, in turn.state (§1.3).
     expect(JSON.parse(state.pending().value!)).toMatchObject({ sessionId: "sess_1" });
   });
@@ -1070,21 +1070,21 @@ describe("a turn on a real box wire", () => {
     expect(await workspace.readFile("/user/memory/keep.md")).toBe("kept");
   });
 
-  test("a box-side plan write lands MID-TURN, so the skeleton renders before the turn ends", async () => {
+  test("a box-side screen write lands MID-TURN, so it renders before the turn ends", async () => {
     let landed: string[] | undefined;
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => { release = resolve; });
     const sandbox = fakeSandbox(async (box) => {
-      box.write("/user/apps/app_1/plan.vendo", "plan v1");
+      box.write("/user/apps/app_1/app.tsx", "screen v1");
       // Stay inside the turn until the host has committed it — a landing after
-      // the turn ended would prove nothing about the skeleton.
+      // the turn ended would prove nothing about the paint.
       await held;
       box.emit({ type: "text", delta: "done" });
     });
-    const { turn, workspace } = makeTurn({ files: { "/user/apps/app_1/app.vendo": "<App/>" } });
+    const { turn, workspace } = makeTurn({ files: { "/user/apps/app_1/app.tsx": "screen" } });
     const watcher = setInterval(() => {
       const commit = workspace.commits.find((entry) =>
-        entry.changed.includes("/user/apps/app_1/plan.vendo"));
+        entry.changed.includes("/user/apps/app_1/app.tsx"));
       if (commit !== undefined) { landed = commit.changed; release(); }
     }, 20);
     const guard = setTimeout(release, 8_000);
@@ -1095,18 +1095,18 @@ describe("a turn on a real box wire", () => {
     clearInterval(watcher);
     clearTimeout(guard);
     // ONLY the hot path: the mid-turn sync never drags the rest of the tree along.
-    expect(landed).toEqual(["/user/apps/app_1/plan.vendo"]);
+    expect(landed).toEqual(["/user/apps/app_1/app.tsx"]);
   }, 15_000);
 
-  test("D5 · a plan for a BRAND-NEW app lands mid-turn too — the skeleton is what a new app needs most", async () => {
+  test("D5 · a BRAND-NEW app's screen lands mid-turn too — the paint is what a new app needs most", async () => {
     // The measured bug: the hot set was pre-enumerated from files that already
-    // existed, so the one case the skeleton exists for — "make me an app" —
+    // existed, so the one case the mid-turn paint exists for — "make me an app" —
     // watched nothing and the user sat through 52.8s of silence.
     let landed: string[] | undefined;
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => { release = resolve; });
     const sandbox = fakeSandbox(async (box) => {
-      box.write("/user/apps/app_brandnew/plan.vendo", "plan v1");
+      box.write("/user/apps/app_brandnew/app.tsx", "screen v1");
       await held;
       box.emit({ type: "text", delta: "done" });
     });
@@ -1114,34 +1114,34 @@ describe("a turn on a real box wire", () => {
     const { turn, workspace } = makeTurn({ files: { "/user/memory/keep.md": "kept" } });
     const watcher = setInterval(() => {
       const commit = workspace.commits.find((entry) =>
-        entry.changed.includes("/user/apps/app_brandnew/plan.vendo"));
+        entry.changed.includes("/user/apps/app_brandnew/app.tsx"));
       if (commit !== undefined) { landed = commit.changed; release(); }
     }, 20);
     const guard = setTimeout(release, 8_000);
     await drain(claudeCode({ sandbox, ...testAppsHooks() }), turn);
     clearInterval(watcher);
     clearTimeout(guard);
-    expect(landed).toEqual(["/user/apps/app_brandnew/plan.vendo"]);
+    expect(landed).toEqual(["/user/apps/app_brandnew/app.tsx"]);
   }, 15_000);
 
   test("killing the sandbox mid-turn leaves the store untouched, and the next turn recovers", async () => {
     const sandbox = fakeSandbox(async (box) => {
-      box.write("/user/apps/app_1/app.vendo", "<App>half</App>");
+      box.write("/user/apps/app_1/app.tsx", "<App>half</App>");
       // The provider reaps the machine mid-turn: every later request throws
       // not-found, so the half-written app can never be read back.
       box.kill();
     });
-    const { turn, workspace } = makeTurn({ files: { "/user/apps/app_1/app.vendo": "<App/>" } });
+    const { turn, workspace } = makeTurn({ files: { "/user/apps/app_1/app.tsx": "<App/>" } });
     await drain(claudeCode({ sandbox }), turn);
-    expect(await workspace.readFile("/user/apps/app_1/app.vendo")).toBe("<App/>");
+    expect(await workspace.readFile("/user/apps/app_1/app.tsx")).toBe("<App/>");
 
     await disposeSessionMachines();
     const healthy = fakeSandbox(async (box) => {
-      box.write("/user/apps/app_1/app.vendo", "<App>whole</App>");
+      box.write("/user/apps/app_1/app.tsx", "<App>whole</App>");
     });
-    const second = makeTurn({ files: { "/user/apps/app_1/app.vendo": "<App/>" } });
+    const second = makeTurn({ files: { "/user/apps/app_1/app.tsx": "<App/>" } });
     await drain(claudeCode({ sandbox: healthy }), second.turn);
-    expect(await second.workspace.readFile("/user/apps/app_1/app.vendo")).toBe("<App>whole</App>");
+    expect(await second.workspace.readFile("/user/apps/app_1/app.tsx")).toBe("<App>whole</App>");
   });
 
   test("the machine pool keys on Turn.threadId FIRST — a history edit cannot orphan the session", async () => {
@@ -1169,21 +1169,21 @@ describe("a turn on a real box wire", () => {
     const sandbox = fakeSandbox(async (box) => {
       boxTurn += 1;
       if (boxTurn === 1) {
-        box.write("/user/apps/app_1/app.vendo", "<App>half</App>");
+        box.write("/user/apps/app_1/app.tsx", "<App>half</App>");
         box.kill();
         return;
       }
-      box.write("/user/apps/app_1/app.vendo", "<App>whole</App>");
+      box.write("/user/apps/app_1/app.tsx", "<App>whole</App>");
     });
     const harness = claudeCode({ sandbox });
-    const first = makeTurn({ thread: "thr_bricked", files: { "/user/apps/app_1/app.vendo": "<App/>" } });
+    const first = makeTurn({ thread: "thr_bricked", files: { "/user/apps/app_1/app.tsx": "<App/>" } });
     await drain(harness, first.turn);
-    expect(await first.workspace.readFile("/user/apps/app_1/app.vendo")).toBe("<App/>");
+    expect(await first.workspace.readFile("/user/apps/app_1/app.tsx")).toBe("<App/>");
 
     // SAME thread, SAME process, pool NOT disposed.
-    const second = makeTurn({ thread: "thr_bricked", files: { "/user/apps/app_1/app.vendo": "<App/>" } });
+    const second = makeTurn({ thread: "thr_bricked", files: { "/user/apps/app_1/app.tsx": "<App/>" } });
     await drain(harness, second.turn);
-    expect(await second.workspace.readFile("/user/apps/app_1/app.vendo")).toBe("<App>whole</App>");
+    expect(await second.workspace.readFile("/user/apps/app_1/app.tsx")).toBe("<App>whole</App>");
     expect(sandbox.boxes).toHaveLength(2);
   });
 
@@ -1540,7 +1540,7 @@ describe("the builder's references reach the box's disk (§4.4 loadout)", () => 
       // The box's cwd is the workspace root, so these are the resolved paths.
       for (const path of Object.keys(HOST_FILES)) seen[path] = box.read(path);
     });
-    const { turn } = makeTurn({ files: { ...HOST_FILES, "/user/apps/app_1/app.vendo": "<App/>" } });
+    const { turn } = makeTurn({ files: { ...HOST_FILES, "/user/apps/app_1/app.tsx": "<App/>" } });
     await drain(claudeCode({ sandbox }), turn);
 
     expect(seen).toEqual(HOST_FILES);

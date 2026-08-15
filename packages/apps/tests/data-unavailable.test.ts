@@ -25,7 +25,6 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import {
-  compileWire,
   type AppDocument,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
@@ -50,13 +49,6 @@ const descriptor: ToolDescriptor = {
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   risk: "read",
 };
-
-const WIRE = `<App name="Spending">
-  <Query id="spend" tool="maple_spend_summary" />
-  <Stack>
-    <Text text={spend.total} />
-  </Stack>
-</App>`;
 
 const treeApp = (): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -217,26 +209,5 @@ describe("where a resolved query's result lands", () => {
     expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
     expect(Object.getOwnPropertyDescriptor(data, "__proto__")?.value).toEqual({ polluted: true });
     expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
-  });
-});
-
-describe("authored() — the same answer for a files-first save", () => {
-  it("tells the render seam its queries failed, so the painted view says so", async () => {
-    const { runtime } = stand({
-      outcome: { status: "error", error: { code: "upstream", message: "the bank is down" } },
-    });
-
-    // The seam paints what this returns. Before the marker, a failed query and a
-    // genuinely empty account produced the identical answer here — which is how
-    // the "app full of —" bug survived its own fix on this path.
-    await expect(runtime.authored({ appId: APP_ID, compiled: compileWire(WIRE) }, ctx()))
-      .resolves.toEqual({ data: {}, dataUnavailable: true });
-  });
-
-  it("says nothing when they answered", async () => {
-    const { runtime } = stand();
-
-    await expect(runtime.authored({ appId: APP_ID, compiled: compileWire(WIRE) }, ctx()))
-      .resolves.toEqual({ data: { spend: { total: 4210, currency: "USD" } } });
   });
 });

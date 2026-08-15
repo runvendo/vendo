@@ -136,11 +136,9 @@ async function run(request: RunRequest): Promise<RunOutcome> {
     models: { default: meter.model },
     tools: boundTools,
     workspace: async (screenCtx) => await workspaces.open(screenCtx.principal),
-    // Wiring all three halves is what makes the emitted payload carry REAL
-    // resolved query data; unwired, the seam falls back to a bare compile and
-    // paints blank values.
+    // The floor is what paints at all: its gauntlet runs the screen's queries
+    // and upserts the row. Unwired, a save paints nothing.
     render: (screenCtx) => ({
-      authoredApp: (input) => appsRef!.authored(input, screenCtx),
       commitSource: (input) => appsRef!.commitSource(input, screenCtx),
       floor: appsRef!.floor(screenCtx),
     }),
@@ -166,13 +164,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   // has nothing to find.
   const verbs = vendoVerbsRegistry({
     validate: (input, verbCtx) =>
-      apps.validate(
-        {
-          ...(input.appId === undefined ? {} : { appId: input.appId as AppId }),
-          ...(input.document === undefined ? {} : { document: input.document }),
-        },
-        verbCtx,
-      ),
+      apps.validate(input.appId === undefined ? {} : { appId: input.appId as AppId }, verbCtx),
     searchComponents: async () => [],
     schedule: async () => {
       throw new Error("genbench: the screen lane arms no schedules");

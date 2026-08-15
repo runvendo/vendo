@@ -6,10 +6,7 @@ import {
   type ToolOutcome,
   type UIPayload,
 } from "@vendoai/core";
-import {
-  compileWire,
-  type VendoTheme,
-} from "@vendoai/apps/contract";
+import { type VendoTheme } from "@vendoai/apps/contract";
 import {
   VendoProvider,
   createVendoClient,
@@ -1466,40 +1463,42 @@ const storedTree: UIPayload = {
 
 /**
  * WAVE 1 GATE (v2 spec §8, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md):
- * a hand-written JSX wire compiles IN THE PAGE with the real compiler and
- * renders through the same PayloadView dispatch as every stored payload —
- * side-by-side with a stored v1 tree to prove coexistence. Covers queries →
- * `$path` bindings, host-brand-wins resolution, a jailed generated island,
- * and a compiler-emitted action dispatching through onAction.
+ * a vendo-genui/v2 tree renders through the same PayloadView dispatch as every
+ * stored payload — side-by-side with a stored v1 tree to prove coexistence.
+ * Covers queries → `$path` bindings, host-brand-wins resolution, a jailed
+ * generated island, and an action prop dispatching through onAction.
  */
-const TREE_WIRE = `<App name="Cash overview">
-  <Query id="invoice" tool="billing_invoice"/>
-  <Query id="customer" tool="crm_customer"/>
-  <Stack gap={14}>
-    <Text text="Cash overview (compiled from the JSX wire)" variant="heading"/>
-    <HostCard title={customer.name} total={invoice.total}/>
-    <Grid columns={2}>
-      <Card title="Why this renders">
-        <Text text="Wire -> compiler -> vendo-genui/v2 tree -> the shared v1 walk."/>
-      </Card>
-      <RevenueNote/>
-    </Grid>
-    <Button label="Send reminder" onClick="fn:send_reminder"/>
-  </Stack>
-  <Island name="RevenueNote">
-export default function RevenueNote() {
+const TREE_PAYLOAD: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "stack-1",
+  queries: [
+    { name: "invoice", tool: "billing_invoice" },
+    { name: "customer", tool: "crm_customer" },
+  ],
+  nodes: [
+    { id: "stack-1", component: "Stack", props: { gap: 14 }, children: ["text-1", "hostcard-1", "grid-1", "button-1"] },
+    { id: "text-1", component: "Text", props: { text: "Cash overview (a vendo-genui/v2 tree)", variant: "heading" } },
+    {
+      id: "hostcard-1",
+      component: "HostCard",
+      source: "host",
+      props: { title: { $path: "/customer/name" }, total: { $path: "/invoice/total" } },
+    },
+    { id: "grid-1", component: "Grid", props: { columns: 2 }, children: ["card-1", "revenuenote-1"] },
+    { id: "card-1", component: "Card", props: { title: "Why this renders" }, children: ["text-2"] },
+    { id: "text-2", component: "Text", props: { text: "vendo-genui/v2 tree -> the shared v1 walk." } },
+    { id: "revenuenote-1", component: "RevenueNote", source: "generated" },
+    { id: "button-1", component: "Button", props: { label: "Send reminder", onClick: { action: "fn:send_reminder" } } },
+  ],
+  components: {
+    RevenueNote: `export default function RevenueNote() {
   return <p>Generated island: reminder drafts are ready.</p>;
-}
-  </Island>
-</App>`;
+}`,
+  },
+} as unknown as UIPayload;
 
 function TreeWireScenario() {
   const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
-  const compiled = useMemo(() => compileWire(TREE_WIRE, { hostComponents: ["HostCard"] }), []);
-  const payload = useMemo(
-    () => ({ ...compiled.tree, components: compiled.components }) as unknown as UIPayload,
-    [compiled],
-  );
   const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
     setAction(request);
     return { status: "ok", output: { recorded: true } };
@@ -1509,16 +1508,13 @@ function TreeWireScenario() {
     <TreeThemeBoundary>
       <div className="format-drill-grid">
         <section aria-label="wire surface">
-          <h2>vendo-genui/v2 — compiled from the wire</h2>
+          <h2>vendo-genui/v2 — a tree payload</h2>
           <PayloadView
-            payload={payload}
+            payload={TREE_PAYLOAD}
             components={components}
             data={{ invoice: { total: 4200 }, customer: { name: "Ada Lovelace" } }}
             onAction={onAction}
           />
-          <output className="recorder" data-testid="wire-compile-recorder">
-            {`compile: complete=${compiled.complete} issues=${compiled.issues.length}`}
-          </output>
           <output className="recorder" data-testid="wire-action-recorder">
             {action ? JSON.stringify(action) : "No action recorded"}
           </output>
@@ -1545,29 +1541,55 @@ const SHAPE_DATA: Record<string, Json> = {
   },
 };
 
-const SHAPE_WIRE = `<App name="Revenue by month">
-  <Query id="revenue" tool="metrics_revenue"/>
-  <Stack gap={14}>
-    <Text text="Shape-aware binding: reshape calls, no code island" variant="heading"/>
-    <Stat label="Total revenue" value={sum(revenue.rows, "revenue")}/>
-    <DataTable caption="Monthly revenue" rows={rename(revenue.rows, "revenue", "amount")} columns={[{key:"month",label:"Month"},{key:"amount",label:"Revenue",format:"money",align:"end"}]}/>
-  </Stack>
-</App>`;
+const SHAPE_PAYLOAD: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "stack-1",
+  queries: [{ name: "revenue", tool: "metrics_revenue" }],
+  nodes: [
+    { id: "stack-1", component: "Stack", props: { gap: 14 }, children: ["text-1", "stat-1", "datatable-1"] },
+    { id: "text-1", component: "Text", props: { text: "Shape-aware binding: reshape calls, no code island", variant: "heading" } },
+    {
+      id: "stat-1",
+      component: "Stat",
+      props: { label: "Total revenue", value: { $path: "/revenue/rows", $reshape: [{ op: "sum", args: ["revenue"] }] } },
+    },
+    {
+      id: "datatable-1",
+      component: "DataTable",
+      props: {
+        caption: "Monthly revenue",
+        rows: { $path: "/revenue/rows", $reshape: [{ op: "rename", args: ["revenue", "amount"] }] },
+        columns: [{ key: "month", label: "Month" }, { key: "amount", label: "Revenue", format: "money", align: "end" }],
+      },
+    },
+  ],
+} as unknown as UIPayload;
 
 /** The broken-chart class: the model guessed field names ("period"/"amount")
  *  that the tool's rows don't carry. */
-const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
-  <Query id="revenue" tool="metrics_revenue"/>
-  <Stack gap={14}>
-    <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
-    <DataTable caption="Broken binding" rows={asPoints(revenue.rows, "period", "amount")}/>
-  </Stack>
-</App>`;
+const SHAPE_PAYLOAD_BROKEN: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "stack-1",
+  queries: [{ name: "revenue", tool: "metrics_revenue" }],
+  nodes: [
+    { id: "stack-1", component: "Stack", props: { gap: 14 }, children: ["text-1", "datatable-1"] },
+    { id: "text-1", component: "Text", props: { text: "Mis-bound reshape: contained at render", variant: "heading" } },
+    {
+      id: "datatable-1",
+      component: "DataTable",
+      props: {
+        caption: "Broken binding",
+        rows: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["period", "amount"] }] },
+      },
+    },
+  ],
+} as unknown as UIPayload;
 
 function TreeWireShapeScenario() {
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
   // The declared shape, written literally — the same structural form
-  // `shapeFromJsonSchema` produces from a host's own response schema.
+  // `shapeFromJsonSchema` produces from a host's own response schema. It is what
+  // says the mis-bound chain below names fields these rows do not carry.
   const toolShapes = useMemo<Record<string, ShapeType>>(
     () => ({
       metrics_revenue: {
@@ -1582,26 +1604,19 @@ function TreeWireShapeScenario() {
     }),
     [],
   );
-  const happy = useMemo(() => compileWire(SHAPE_WIRE, { toolShapes }), [toolShapes]);
-  const broken = useMemo(() => compileWire(SHAPE_WIRE_BROKEN, { toolShapes }), [toolShapes]);
-  const happyPayload = useMemo(() => happy.tree as unknown as UIPayload, [happy]);
-  const brokenPayload = useMemo(() => broken.tree as unknown as UIPayload, [broken]);
   return (
     <TreeThemeBoundary>
       <div className="format-drill-grid">
         <section aria-label="Reshaped bindings">
           <h2>Reshape pipes against the tool shape — wired, no island</h2>
-          <PayloadView payload={happyPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <PayloadView payload={SHAPE_PAYLOAD} components={components} data={SHAPE_DATA} onAction={noop} />
           <output className="recorder" data-testid="shape-happy-recorder">
-            {`compile: complete=${happy.complete} issues=${happy.issues.length} bindingErrors=${happy.bindingErrors.length}`}
+            {`declared shape: ${JSON.stringify(toolShapes["metrics_revenue"])}`}
           </output>
         </section>
         <section aria-label="Mis-bound reshape">
-          <h2>Mis-bound fields — compile error + contained notice</h2>
-          <PayloadView payload={brokenPayload} components={components} data={SHAPE_DATA} onAction={noop} />
-          <output className="recorder" data-testid="shape-error-recorder">
-            {JSON.stringify(broken.bindingErrors, null, 1)}
-          </output>
+          <h2>Mis-bound fields — contained notice</h2>
+          <PayloadView payload={SHAPE_PAYLOAD_BROKEN} components={components} data={SHAPE_DATA} onAction={noop} />
         </section>
       </div>
     </TreeThemeBoundary>
@@ -2138,7 +2153,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-drift": return { title: "Seed drift (host component updated)", content: <SeedDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
-    case "/tree-wire": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeWireScenario /> };
+    case "/tree-wire": return { title: "vendo-genui/v2 — tree payload + stored render", content: <TreeWireScenario /> };
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };

@@ -11,12 +11,12 @@
  *  SOURCE OF TRUTH: `KIT_SPECS` in `@vendoai/core`. V4 retired the legacy
  *  prewired/branded family, so there is nothing left to hand-write here. */
 import {
-  KIT_WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   kitPropClasses,
 } from "../../contract/index.js";
 
 /** Allowed prop-name set per wire built-in, for validation. */
 export const wirePropNames: ReadonlyMap<string, ReadonlySet<string>> = new Map(
-  KIT_WIRE_COMPONENT_NAMES.map((name) =>
+  KIT_SCREEN_COMPONENT_NAMES.map((name) =>
     [name, new Set(Object.keys(kitPropClasses(name) ?? {}))] as const),
 );

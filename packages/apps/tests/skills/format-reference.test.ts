@@ -16,8 +16,8 @@
  */
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
 import { KIT_COMPONENT_NAMES } from "../../src/contract/index.js";
-import { checkComponentScreen, screenCatalog } from "../../src/server/checking/component-screen.js";
-import { SCREEN_MODULE } from "../../src/server/checking/screen-typings.js";
+import { checkComponentScreen } from "../../src/server/checking/component-screen.js";
+import { SCREEN_MODULE, screenCatalog } from "../../src/server/checking/screen-typings.js";
 import { describe, expect, it } from "vitest";
 import { VENDO_FORMAT_REFERENCE } from "../../src/server/skills/format-reference.js";
 

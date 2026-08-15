@@ -2700,12 +2700,11 @@ describe("09 §2 apps composition", () => {
    *
    * A component screen's tree is a RENDER, not a stored field: `authoredScreen`
    * stores the app's id and name, and the tree only exists as the view the seam
-   * emitted (`render-seam.ts` — the `app.tsx` branch has no `authoredApp` and no
-   * compiled document to keep). So the paint is where "which components did this
-   * deployment let the screen name" is readable, and `onView` is the shipped
-   * channel for it. There is no `source: "host"` marker any more either: that was
-   * the wire compiler tagging a node it recognised, and a rendered tree carries
-   * only what the component was called with.
+   * emitted (`render-seam.ts` keeps no compiled document). So the paint is where
+   * "which components did this deployment let the screen name" is readable, and
+   * `onView` is the shipped channel for it. There is no `source: "host"` marker
+   * any more either: that was the wire compiler tagging a node it recognised, and
+   * a rendered tree carries only what the component was called with.
    */
   const paintedNodes = (views: VendoViewPart[]): Array<Record<string, unknown>> => {
     const settled = views.filter((part) => part.payload["streaming"] !== true).at(-1);

@@ -10,13 +10,11 @@
  * does not throw in the first place).
  */
 import {
-  componentSources,
-  printWire,
   type AppDocument,
-  type AppPlan,
 } from "../../contract/index.js";
+// The screen engine, by its own path: the contract door does not carry it yet.
+import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import type { FloorDependencies } from "./deps.js";
-import { treeOf } from "./facts.js";
 import { REPORT_FINDINGS_DESCRIPTION, REVIEWER_SYSTEM } from "./reviewer-prompt.js";
 import { strictToolCall } from "./strict-tool-call.js";
 import type { Check, Finding } from "./types.js";
@@ -86,41 +84,13 @@ const findingsFrom = (reported: unknown): Finding[] => {
   });
 };
 
-/** The app as the reviewer reads it: id-free wire markup, so it judges what a
- *  person sees rather than compiler bookkeeping. Undefined when the document
- *  carries no valid tree — the `document` fact check reports that, and the
- *  reviewer stays quiet instead of judging rubble. */
-const printedApp = (app: AppDocument): string | undefined => {
-  const tree = treeOf(app);
-  if (tree === undefined) return undefined;
-  return printWire(
-    { tree, components: componentSources(app.components), name: app.name },
-    { includeIds: false },
-  );
-};
-
-/**
- * What the PLAN committed to that the app's markup cannot show.
- *
- * Away-from-the-browser work is the load-bearing case: an automation is armed by
- * the runtime's server lane AFTER this review runs, so a reviewer reading only
- * the tree sees no reminder and concludes the ask was dropped. It was not — it
- * simply does not live in the markup. Telling it what was planned is the
- * difference between a true finding and a false accusation on every scheduled app.
- */
-const planLines = (plan: AppPlan | undefined): string => {
-  if (plan === undefined) return "";
-  const lines: string[] = [];
-  if (plan.server !== undefined) {
-    const { kind, schedule, why, served } = plan.server;
-    lines.push(`- server work IS planned and the runtime arms it after this review: kind="${kind}"${schedule === undefined ? "" : ` schedule="${schedule}"`}${served === true ? " (it serves the whole app surface)" : ""} — ${why}`);
-  }
-  for (const cannot of plan.cannot) {
-    lines.push(`- the host cannot do this, and the person was told so verbatim: ${cannot}`);
-  }
-  return lines.length === 0
-    ? ""
-    : `\nALREADY PLANNED (do NOT report these as missing — they are committed, and some of them land after you read this):\n${lines.join("\n")}`;
+/** The app as the reviewer reads it: the screen's own `app.tsx`, exactly as the
+ *  row stores it. Undefined when the document carries no screen — the `document`
+ *  fact check reports that, and the reviewer stays quiet instead of judging
+ *  rubble. */
+const storedScreen = (app: AppDocument): string | undefined => {
+  const text = app.source?.[SCREEN_FILE]?.text;
+  return typeof text === "string" && text.trim() !== "" ? text : undefined;
 };
 
 /** The resolved data block, exported because the COMPONENT screen's reviewer
@@ -159,11 +129,8 @@ export const reviewerCheck = (
    * The app as the reviewer should READ it, when the caller has a truer rendering
    * than printed wire.
    *
-   * A COMPONENT screen is the case: its app is one `.tsx` file, so there is nothing
-   * to print — the file the model wrote is the file the reviewer reads
-   * (`reviewComponentScreenInput`, which the caller builds because it is the half
-   * that holds the source and the query results). Absent, the document is printed
-   * as wire exactly as it always was.
+   * The caller that holds the source AND the query results builds it
+   * (`reviewComponentScreenInput`). Absent, the STORED screen is read instead.
    */
   app?: string,
 ): Check => ({
@@ -173,14 +140,14 @@ export const reviewerCheck = (
   // `pack.ts`). The reviewer is code, and it is the thing rubric lines are
   // handed to — it can hardly be one of them.
   kind: "fact",
-  run: async ({ document, request, plan }): Promise<Finding[]> => {
-    const printed = app ?? printedApp(document);
-    if (printed === undefined) return [];
+  run: async ({ document, request }): Promise<Finding[]> => {
+    const screen = app ?? storedScreen(document);
+    if (screen === undefined) return [];
     // A caller's own rendering arrives already labelled and with its data already
-    // beside it, so it takes neither the wire header nor a second data block.
+    // beside it, so it takes neither the header nor a second data block.
     const body = app === undefined
-      ? `APP (wire markup):\n${printed}${planLines(plan)}${samples === undefined ? "" : sampleLines(samples)}`
-      : `${app}${planLines(plan)}`;
+      ? `APP (app.tsx):\n${screen}${samples === undefined ? "" : sampleLines(samples)}`
+      : app;
     const reported = await strictToolCall(
       // The one model call the floor spends rides the REVIEW seat when the
       // deployment composed one — spread over `model` rather than read inside

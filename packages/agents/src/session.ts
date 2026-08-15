@@ -170,7 +170,7 @@ export async function createSession(
       transcript,
       harnessState: harnessStateStore(deps.store),
       // §1.6 — the render seam, on the runtime's generic `wrapWorkspace` slot:
-      // a commit that lands `app.vendo`/`plan.vendo` paints, whichever hands
+      // a commit that lands `app.tsx` paints, whichever hands
       // wrote it (`claudeCode()` commits mid-turn through `turn.workspace`).
       // BARE — no floor, no app half — because this standalone runtime composes
       // no apps runtime to fill them; the umbrella's composition does

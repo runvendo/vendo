@@ -13,7 +13,7 @@ import { createAppHistory } from "../src/server/persistence/history.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { SCREEN_FILE, type SeedBaseline } from "../src/contract/index.js";
 import { createReviewLifecycle } from "../src/server/remix/review.js";
-import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -79,6 +79,14 @@ const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument =>
   ...overrides,
 });
 
+/** What every edit below saves — the app's name is its default export's. */
+const EDITED_SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function EditedName() {
+  return <Stack gap={12}><Text text="Edited" variant="heading" /></Stack>;
+}
+`;
+
 /** Round-2 hardening: reviewing takes the composition's explicit assertion —
  *  these tests assert it for exactly the host_reviewer subject. `setup({})`
  *  (no hook) is the unconfigured composition. */
@@ -92,16 +100,12 @@ const setup = (review: { reviewer?(ctx: RunContext): boolean } = { reviewer: (ct
     tools,
     catalog: [],
     seedBaselines: [reviewedBaseline, instantBaseline],
-    // A rename, as the ONE builder does it: the assembler opens the app's own
-    // document, writes it out again under a new name and saves the whole thing.
-    // The remixed island travels with it, because a rewrite that dropped the
-    // person's fork would be a different app, not a renamed one.
-    screen: scriptedAssembler(() => runtime, (_request, current) => {
-      const source = current?.components?.["Fork"];
-      return `<App name="Edited name">${source === undefined
-        ? ""
-        : `<Fork /><Island name="Fork">${source}</Island>`}</App>`;
-    }),
+    // A rename, as the ONE builder does it: the assembler writes the app's
+    // `app.tsx` out again under a new name and saves the whole thing. The
+    // remixed island travels with it — `authoredScreen` carries the rest of the
+    // document through, because a rewrite that dropped the person's fork would
+    // be a different app, not a renamed one.
+    screen: scriptedAssembler(() => runtime, () => EDITED_SCREEN),
     model: basicLanguageModel(),
     review,
   });

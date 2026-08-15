@@ -13,7 +13,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "../src/server/doors/agent-tools.js";
 import { createApps, type AppsRuntime, type PlacementEntry } from "../src/server/index.js";
-import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
 import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -33,7 +33,16 @@ const hostTools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "missing" } }; },
 };
 
-const generated = '<App name="Tool-built dashboard"><Text text="Ready"/><Disclaimer reason="Fixture app."/></App>';
+/** The app's NAME is its default export's, split on camel case — so this screen
+ *  lands as "Tool built dashboard", which is what every aim-by-name case below
+ *  says out loud. */
+const generated = `import { Stack, Text } from "@vendo/screen";
+
+export default function ToolBuiltDashboard() {
+  return <Stack gap={12}><Text text="Ready" variant="heading" /></Stack>;
+}
+`;
+const DASHBOARD = "Tool built dashboard";
 
 describe("apps agent tools", () => {
   it("exposes exactly provider-safe draft-2020-12 descriptors with closed object inputs", async () => {
@@ -187,7 +196,14 @@ describe("apps agent tools", () => {
     // The whole ask died there. The `app` slot already carries the aim, so it
     // takes the name the person says out loud too.
     const store = memoryStore();
-    const updated = '<App name="Tool-built dashboard"><Text text="Updated"/><Disclaimer reason="Fixture app."/></App>';
+    // The same export name, so the change is the words on the screen and not a
+    // rename — the receipt below is asserted against the app's original title.
+    const updated = `import { Stack, Text } from "@vendo/screen";
+
+export default function ToolBuiltDashboard() {
+  return <Stack gap={12}><Text text="Updated" variant="heading" /></Stack>;
+}
+`;
     let runtime: AppsRuntime;
     runtime = createApps({
       store,
@@ -198,13 +214,13 @@ describe("apps agent tools", () => {
       screen: scriptedAssembler(() => runtime, (_request, current) => (current === null ? generated : updated)),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
-    expect(created.name).toBe("Tool-built dashboard");
+    expect(created.name).toBe(DASHBOARD);
 
     const outcome = await runtime.agentTools().execute({
       id: "call_edit_by_name",
       tool: "vendo_make",
       // Said the way a person says it — including the case they used.
-      args: { app: "tool-BUILT dashboard", request: "Say Updated instead" },
+      args: { app: "tool BUILT dashboard", request: "Say Updated instead" },
     }, ctx);
 
     expect(outcome).toMatchObject({
@@ -231,14 +247,14 @@ describe("apps agent tools", () => {
     const outcome = await runtime.agentTools().execute({
       id: "call_edit_ambiguous",
       tool: "vendo_make",
-      args: { app: "Tool-built dashboard", request: "Say Updated instead" },
+      args: { app: DASHBOARD, request: "Say Updated instead" },
     }, ctx);
 
     // Never a guess: the answer names the candidates so the model can ask.
     expect(outcome.status).toBe("error");
     if (outcome.status !== "error") return;
     expect(outcome.error.code).toBe("validation");
-    expect(outcome.error.message).toContain("Tool-built dashboard");
+    expect(outcome.error.message).toContain(DASHBOARD);
     expect(outcome.error.message).toContain(first.id);
     expect(outcome.error.message).toContain(second.id);
   });
@@ -262,9 +278,9 @@ describe("apps agent tools", () => {
     await expect(runtime.agentTools().execute({
       id: "call_open_by_name",
       tool: "vendo_apps_open",
-      args: { appId: "tool-BUILT dashboard" },
+      args: { appId: "tool BUILT dashboard" },
     }, ctx)).resolves.toMatchObject({ status: "ok", output: { kind: "tree" } });
-    expect(created.name).toBe("Tool-built dashboard");
+    expect(created.name).toBe(DASHBOARD);
   });
 
   it("asks which one when the name it was asked to open matches two apps", async () => {
@@ -283,7 +299,7 @@ describe("apps agent tools", () => {
     const outcome = await runtime.agentTools().execute({
       id: "call_open_ambiguous",
       tool: "vendo_apps_open",
-      args: { appId: "Tool-built dashboard" },
+      args: { appId: DASHBOARD },
     }, ctx);
 
     expect(outcome.status).toBe("error");
@@ -337,7 +353,7 @@ describe("apps agent tools", () => {
       status: "ok",
       output: {
         id: expect.stringMatching(/^app_/),
-        title: "Tool-built dashboard",
+        title: DASHBOARD,
         status: "ready",
         say: expect.stringMatching(/on your screen/i),
       },
@@ -590,8 +606,8 @@ describe("vendo_make — the slot a new app lands in", () => {
   };
 
   /** The ASSEMBLY engine — the one that serves most asks. `authoringAssembler`
-   *  compiles with core's own compiler and lands the row through
-   *  `runtime.authored`, which is the shipped write path, not a stub. */
+   *  puts the screen through the real checks floor, whose own `ok` lands the row
+   *  (`runtime.authoredScreen`) — the shipped write path, not a stub. */
   const assembling = (): AppsRuntime =>
     assemblingWith((self) => authoringAssembler(self, generated));
 

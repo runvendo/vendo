@@ -16,32 +16,37 @@ import {
 import {
   screenDescriptionSchema,
   VENDO_SCREEN_FORMAT,
+  warmScreenEngine,
 } from "../src/contract/index.js";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { createAppFloor } from "../src/server/checking/floor.js";
 import { wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
 import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_screen";
-const APP_VENDO = `/user/apps/${APP}/app.vendo`;
-const PLAN_VENDO = `/user/apps/${APP}/plan.vendo`;
+const APP_TSX = `/user/apps/${APP}/app.tsx`;
 const TURN = "trn_0123456789abcdef0123456789abcdef";
 
-const GOOD_APP = `<App name="Spending">
-  <Stack>
-    <Text value="Hello" />
-  </Stack>
-</App>`;
+const GOOD_APP = `import { Stack, Text } from "@vendo/screen";
 
-const GOOD_PLAN = `<Plan name="Spending">
-  <Group title="This month">
-    <Leaf component="DataTable" />
-  </Group>
-</Plan>`;
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="Hello" />
+    </Stack>
+  );
+}
+`;
+
+beforeAll(async () => {
+  await warmScreenEngine();
+});
 
 function seam(options: { turnId?: string } = {}) {
   const emitted: Array<VendoViewPart> = [];
   const workspace = wrapWorkspaceForRender(testWorkspace(), {
     emit: (_id, part) => emitted.push(part),
+    floor: createAppFloor({ deps: async () => ({ catalog: [], tools: [] }), runQuery: async () => ({}) }),
     ...(options.turnId === undefined ? {} : { turnId: options.turnId }),
   });
   const save = async (path: string, content: string): Promise<void> => {
@@ -54,34 +59,23 @@ function seam(options: { turnId?: string } = {}) {
 describe("the emitted description (§3.3)", () => {
   it("parses against the contract — an app's compiled screen", async () => {
     const { emitted, save } = seam();
-    await save(APP_VENDO, GOOD_APP);
+    await save(APP_TSX, GOOD_APP);
     expect(emitted).toHaveLength(1);
     const parsed = screenDescriptionSchema.safeParse(emitted[0]!.payload);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(emitted[0]!.payload.formatVersion).toBe(VENDO_SCREEN_FORMAT);
   });
 
-  it("parses against the contract — a plan's skeleton", async () => {
-    const { emitted, save } = seam();
-    await save(PLAN_VENDO, GOOD_PLAN);
-    expect(emitted).toHaveLength(1);
-    const parsed = screenDescriptionSchema.safeParse(emitted[0]!.payload);
-    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
-    // A plan IS the mid-build state, and the flag is server-authoritative.
-    expect(emitted[0]!.payload["streaming"]).toBe(true);
-  });
-
   it("stamps the turn that painted it", async () => {
     const { emitted, save } = seam({ turnId: TURN });
-    await save(APP_VENDO, GOOD_APP);
+    await save(APP_TSX, GOOD_APP);
     expect(emitted[0]!.turnId).toBe(TURN);
   });
 
-  it("emits nothing at all when the compiled screen is not a description", async () => {
+  it("emits nothing at all when the screen does not pass the gauntlet", async () => {
     const { emitted, save } = seam();
-    // `<App>` with no renderable child: the compiler's degraded floor. The seam's
-    // standing law is that a payload the renderer would reject is not a view.
-    await save(APP_VENDO, `<App name="Empty"></App>`);
+    // The seam's standing law: a payload the renderer would reject is not a view.
+    await save(APP_TSX, `export default function Empty() { return document.title; }\n`);
     expect(emitted).toEqual([]);
   });
 });

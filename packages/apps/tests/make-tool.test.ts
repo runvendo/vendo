@@ -55,7 +55,6 @@ const runtimeWith = (work: CreateServerWork | undefined): AppsRuntime => {
 
 const deps = {
   screen: { assemble: async () => ({ kind: "escalate" as const, why: "away work" }) },
-  escalatedPlan: async () => `<Plan name="Invoice nudges"><Server kind="agentic" why="away work"/></Plan>`,
   claimSlot: async () => {},
   markUnbuilt: async () => {},
 } as unknown as AgentToolsDataDependencies;

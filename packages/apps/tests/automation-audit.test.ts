@@ -1,17 +1,20 @@
 import { engineOverAdapter } from "@vendoai/core";
 /**
- * The automation ladder's two REPORTED facts: the audit row it writes, and the
+ * The automation door's two REPORTED facts: the audit row it writes, and the
  * armed state it hands back.
  *
- * Both were lost once. The `automation-created` guard row and
- * `EditResult.automation.enabled` were collateral of the conductor refactor
+ * Both were lost once. The `automation-created` guard row and the authored
+ * automation's `enabled` flag were collateral of the conductor refactor
  * (55fb61390) — a commit whose message never mentioned either, with no test on
  * either, so nothing went red. `enabled` came back only because main's
  * automation card requires it; the audit row came back only because a merge
  * happened to put the two versions side by side. Neither should depend on that
  * again: an unattended trigger being authored is exactly the kind of event an
- * audit trail exists for, and the thread's card renders the armed state as
- * fact.
+ * audit trail exists for, and the caller renders the armed state as fact.
+ *
+ * The arming SENTENCES are pinned one layer down, on `armAutomationTrigger`:
+ * the door answers `armed: false` and drops the findings, so that function is
+ * the only live place the words exist.
  */
 import {
   VENDO_APP_FORMAT,
@@ -20,9 +23,9 @@ import {
 } from "@vendoai/core";
 import {
   type AppDocument,
-  type ScreenAssembler,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
+import { armAutomationTrigger } from "../src/server/automation/lane.js";
 import { createApps } from "../src/server/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -64,20 +67,7 @@ const seedDoc: AppDocument = {
   },
 };
 
-/** The plan the escalating screen agent left behind: the ask is server-shaped,
- *  so the plan declares one, and the ladder runs exactly what it declared. */
-const ESCALATED_PLAN = `<Plan name="Invoice board">
-  <Group title="Nudges">
-    <Leaf component="Text" purpose="One line saying the nudge automation runs daily"/>
-  </Group>
-  <Server kind="agentic" schedule="every day" why="Each invoice needs a judgment call on how firm the nudge should be."/>
-</Plan>`;
-
-/** The one builder's answer to an ask no arrangement of components can serve:
- *  it asks for the builder, and the plan above is what it left behind. */
-const escalatingScreen: ScreenAssembler = {
-  assemble: async () => ({ kind: "escalate", why: "nudging every day happens while nobody is watching" }),
-};
+const ASK = "nudge everyone with an overdue invoice every day";
 
 /** The automation planner's answer: agentic, so there is no results collection
  *  and therefore no board rewire to script. The planner is the ONE thing on this
@@ -108,30 +98,27 @@ const setup = (armAutomation?: () => Promise<{ enabled: boolean; missing: never[
           : message.content.map((part) => part.text ?? "").join(""))
         .join("\n"),
     )),
-    screen: escalatingScreen,
-    escalatedPlan: async () => ESCALATED_PLAN,
     ...(armAutomation === undefined ? {} : { armAutomation }),
   });
   return { store, guard, runtime };
 };
 
-const rideTheLadder = async (
+const authorOne = async (
   armAutomation?: () => Promise<{ enabled: boolean; missing: never[] }>,
 ) => {
   const { store, guard, runtime } = setup(armAutomation);
   await seedAppRow(engineOverAdapter(store), seedDoc, ctx.principal.subject);
-  const edited = await runtime.edit(APP_ID, "nudge everyone with an overdue invoice every day", ctx);
-  return { guard, edited };
+  const authored = await runtime.automation.author({ appId: APP_ID, instruction: ASK, mode: "agentic" }, ctx);
+  return { guard, authored };
 };
 
-describe("the automation ladder's audit row", () => {
-  it("emits an automation-created lifecycle event when an edit authors an unattended trigger", async () => {
-    const { guard, edited } = await rideTheLadder();
+describe("the automation door's audit row", () => {
+  it("emits an automation-created lifecycle event when the door authors an unattended trigger", async () => {
+    const { guard, authored } = await authorOne();
 
-    // The edit really did ride the ladder — otherwise the assertion below would
-    // pass vacuously against an edit that never authored an automation.
-    expect(edited.failure).toBeUndefined();
-    expect(edited.automation?.mode).toBe("agentic");
+    // The call really did author an automation — otherwise the assertion below
+    // would pass vacuously against a call that authored nothing.
+    expect(authored.ok).toBe(true);
 
     const created = guard.audit.filter((event) =>
       event.kind === "app-lifecycle"
@@ -146,29 +133,48 @@ describe("the automation ladder's audit row", () => {
   });
 });
 
-describe("the automation ladder's armed state", () => {
-  it("reports enabled TRUE when the host's arming seam armed the trigger", async () => {
-    const { edited } = await rideTheLadder(async () => ({ enabled: true, missing: [] }));
+describe("the automation door's armed state", () => {
+  it("reports armed TRUE when the host's arming seam armed the trigger", async () => {
+    const { authored } = await authorOne(async () => ({ enabled: true, missing: [] }));
 
-    expect(edited.automation?.enabled).toBe(true);
+    expect(authored).toMatchObject({ ok: true, armed: true });
   });
 
-  it("reports enabled FALSE when the arming seam leaves the trigger disarmed", async () => {
-    const { edited } = await rideTheLadder(async () => ({ enabled: false, missing: [] }));
+  it("reports armed FALSE when the arming seam leaves the trigger disarmed", async () => {
+    const { authored } = await authorOne(async () => ({ enabled: false, missing: [] }));
 
-    expect(edited.automation?.mode).toBe("agentic");
-    expect(edited.automation?.enabled).toBe(false);
-    // And it says why, rather than leaving a dead trigger to be discovered.
-    expect((edited.issues ?? []).join(" ")).toContain("left it disabled");
+    expect(authored).toMatchObject({ ok: true, armed: false });
   });
 
-  it("reports enabled FALSE when the arming seam throws", async () => {
-    const { edited } = await rideTheLadder(async () => {
+  it("reports armed FALSE when the arming seam throws", async () => {
+    const { authored } = await authorOne(async () => {
       throw new Error("broker unreachable");
     });
 
-    expect(edited.automation?.mode).toBe("agentic");
-    expect(edited.automation?.enabled).toBe(false);
-    expect((edited.issues ?? []).join(" ")).toContain("arming it failed");
+    expect(authored).toMatchObject({ ok: true, armed: false });
+  });
+});
+
+describe("a trigger the host never armed says why", () => {
+  // A trigger sitting silently disarmed is an automation the person believes is
+  // running, so a seam that answers without arming and a seam that throws are
+  // the SAME miss — both come back as a sentence naming the surface that fixes
+  // it.
+  it("names the automations engine when the seam leaves the trigger disabled", async () => {
+    const armed = await armAutomationTrigger(async () => ({ enabled: false, missing: [] }), APP_ID, "main", ctx);
+
+    expect(armed.enabled).toBe(false);
+    expect(armed.issues.join(" ")).toContain("left it disabled");
+    expect(armed.issues.join(" ")).toContain("automations.enable");
+  });
+
+  it("names it the same way when arming throws", async () => {
+    const armed = await armAutomationTrigger(async () => {
+      throw new Error("broker unreachable");
+    }, APP_ID, "main", ctx);
+
+    expect(armed.enabled).toBe(false);
+    expect(armed.issues.join(" ")).toContain("arming it failed");
+    expect(armed.issues.join(" ")).toContain("broker unreachable");
   });
 });

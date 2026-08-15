@@ -9,14 +9,14 @@ import {
   type ShapeType,
 } from "@vendoai/core";
 import {
-  compileWire,
+  SCREEN_FILE,
   type AppDocument,
-  type AppPlan,
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer, judgmentRules } from "../../src/server/checking/layer.js";
 import { reviewerCheck } from "../../src/server/checking/reviewer.js";
+import { inlineSourceFile } from "../../src/server/persistence/app-source.js";
 import type { Check, CheckInput } from "../../src/server/checking/types.js";
 import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/server/testing/scripted-model.js";
@@ -52,16 +52,15 @@ const catalog: NormalizedCatalog = [];
 const deps = (model: FloorDependencies["model"]): FloorDependencies =>
   ({ model, catalog, tools, toolShapes });
 
-const documentFrom = (wire: string): AppDocument => {
-  const compiled = compileWire(wire, { toolShapes });
-  return {
-    format: VENDO_APP_FORMAT,
-    id: "app_reviewer_test",
-    name: compiled.name ?? "Untitled",
-    ui: "tree",
-    tree: compiled.tree as unknown as AppDocument["tree"],
-  } as AppDocument;
-};
+/** The app the reviewer judges: its `app.tsx`, spelled exactly as the row spells
+ *  it. The reviewer reads the STORED screen and nothing else. */
+const documentFrom = (source: string): AppDocument => ({
+  format: VENDO_APP_FORMAT,
+  id: "app_reviewer_test",
+  name: "Invoices",
+  ui: "tree",
+  source: { [SCREEN_FILE]: inlineSourceFile(source) },
+});
 
 /**
  * `reviewerCheck` is declared as the `Check` UNION, and only the fact half has
@@ -75,11 +74,21 @@ const factReviewerCheck = (...args: Parameters<typeof reviewerCheck>): Extract<C
   return check;
 };
 
-const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
-  ({ document: documentFrom(wire), request });
+const inputFor = (source: string, request = "show me my invoices"): CheckInput =>
+  ({ document: documentFrom(source), request });
 
-const invoicesApp =
-  '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Total: $12,480" variant="heading"/><DataTable rows={invoices.data}/></Stack></App>';
+const invoicesApp = `import { DataTable, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Invoices() {
+  const invoices = useQuery("host_listInvoices");
+  return (
+    <Stack gap={12}>
+      <Text text="Total: $12,480" variant="heading" />
+      <DataTable rows={invoices.data} columns={[{ key: "client" }]} />
+    </Stack>
+  );
+}
+`;
 
 const samples = {
   invoices: { data: [{ id: "inv_1", client: "Northwind", amountCents: 990_00 }] },
@@ -87,16 +96,6 @@ const samples = {
 
 const reported = (findings: unknown): { tool: string; input: unknown } =>
   ({ tool: "report_findings", input: { findings } });
-
-/** A plan that commits to a Friday automation. The runtime's server lane arms it
- *  AFTER the review runs, so the tree legitimately carries no reminder. */
-const scheduledPlan = (): AppPlan => ({
-  name: "Invoices",
-  queries: [{ id: "invoices", tool: "host_listInvoices", input: {} }],
-  groups: [{ tab: "Overview", leaves: [{ component: "DataTable", purpose: "open invoices" }] }],
-  server: { kind: "steps", schedule: "every Friday", why: "Chasing overdue invoices happens when nobody has the app open." },
-  cannot: [],
-});
 
 describe("host and pack judgment rules reach the reviewer (F2)", () => {
   const CITE_TOTALS = "Every total on screen has to say which report it came from.";
@@ -132,7 +131,7 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
     const readerApplying = (rule: string) => scriptedLanguageModel((call) => {
       const system = String(call.prompt?.[0]?.content ?? "");
       return system.includes(rule)
-        ? reported([{ severity: "block", where: 'node "n2"', message: "the total does not say which report it came from" }])
+        ? reported([{ severity: "block", where: '<Text> labeled "Total: $12,480"', message: "the total does not say which report it came from" }])
         : reported([]);
     });
 
@@ -143,7 +142,7 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
 
     expect(withRule).toEqual([{
       severity: "block",
-      where: 'node "n2"',
+      where: '<Text> labeled "Total: $12,480"',
       message: "the total does not say which report it came from",
     }]);
     expect(withoutRule).toEqual([]);
@@ -225,7 +224,7 @@ describe("the AI reviewer", () => {
     ]);
   });
 
-  it("sends ONE strict report_findings call carrying the request, the printed app and the sample data", async () => {
+  it("sends ONE strict report_findings call carrying the request, the stored screen and the sample data", async () => {
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => {
       calls.push(call);
@@ -258,12 +257,25 @@ describe("the AI reviewer", () => {
       : message.content.map((part) => part.text ?? "").join("")).join("\n");
     // The ask, verbatim.
     expect(text).toContain("USER_REQUEST: list my overdue invoices");
-    // The app as a person sees it: id-free markup, not compiler bookkeeping.
-    expect(text).toContain('<Text text="Total: $12,480"');
-    expect(text).toContain("<DataTable rows={invoices.data}/>");
-    expect(text).not.toMatch(/id="n\d/);
+    // The app as its author wrote it: the whole `app.tsx`, labelled and verbatim.
+    expect(text).toContain(`APP (${SCREEN_FILE}):\n${invoicesApp}`);
     // The truth the literals are judged against.
     expect(text).toContain('invoices: {"data":[{"id":"inv_1","client":"Northwind","amountCents":99000}]}');
+  });
+
+  it("says nothing at all about an app that carries no screen", async () => {
+    // The `document` fact check reports a document with nothing in it; the
+    // reviewer stays quiet instead of judging rubble.
+    const calls: ScriptedModelCall[] = [];
+    const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
+
+    const findings = await factReviewerCheck(deps(model), samples).run({
+      document: { format: VENDO_APP_FORMAT, id: "app_reviewer_test", name: "Invoices", ui: "tree" },
+      request: "show me my invoices",
+    });
+
+    expect(findings).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
   it("returns no findings when the model says nothing and calls no tool", async () => {
@@ -290,11 +302,11 @@ describe("the AI reviewer", () => {
     }]));
     const layer = createCheckingLayer({ deps: deps(model), checks: [reviewerCheck(deps(model), samples)] });
 
-    // A query naming a tool the host has not got: one fact finding, alongside
-    // whatever the reviewer says.
-    const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_getInvoices"/><Stack><DataTable rows={invoices.data}/></Stack></App>',
-    ));
+    // An app with no title: one fact finding, alongside whatever the reviewer says.
+    const findings = await layer.run({
+      document: { ...documentFrom(invoicesApp), name: "" },
+      request: "show me my invoices",
+    });
 
     expect(layer.checks.map(({ name }) => name)).toContain("reviewer");
     expect(findings).toContainEqual({
@@ -303,39 +315,21 @@ describe("the AI reviewer", () => {
       message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
       check: "reviewer",
     });
-    expect(findings.some(({ where, message }) =>
-      where === 'query "invoices"' && message.includes('unknown tool "host_getInvoices"'))).toBe(true);
+    expect(findings.some(({ check, message }) =>
+      check === "document" && message.includes('non-empty name="..."'))).toBe(true);
   });
 
-  /**
-   * The false-accusation guard. Away work is armed by the runtime AFTER this
-   * review, so a reviewer that only reads the tree would report every scheduled
-   * app as having silently dropped its reminder.
-   */
-  it("is told what the plan already committed to, so away work never reads as dropped", async () => {
+  it("reads a caller's own rendering when it has a truer one than the stored screen", async () => {
+    // `validate` holds the source AND what the queries really returned, so it
+    // builds the block itself (`reviewComponentScreenInput`) — and what it hands
+    // over is what the reviewer reads, with no second header bolted on.
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
 
-    const findings = await factReviewerCheck(deps(model), samples).run({
-      ...inputFor(invoicesApp, "show my invoices and remind me every Friday"),
-      plan: scheduledPlan(),
-    });
+    await factReviewerCheck(deps(model), samples, [], "SCREEN AS THE CALLER RENDERED IT").run(inputFor(invoicesApp));
 
-    expect(findings).toEqual([]);
-    const prompt = JSON.stringify(calls[0]?.prompt ?? "");
-    expect(prompt).toContain("ALREADY PLANNED");
-    expect(prompt).toContain('kind=\\"steps\\"');
-    expect(prompt).toContain("every Friday");
-    // And it is told WHY it cannot see it yet.
-    expect(prompt).toContain("after this review");
-  });
-
-  it("says nothing about a plan when there is no plan to speak of", async () => {
-    const calls: ScriptedModelCall[] = [];
-    const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
-
-    await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
-
-    expect(JSON.stringify(calls[0]?.prompt ?? "")).not.toContain("ALREADY PLANNED");
+    const text = JSON.stringify(calls[0]?.prompt ?? "");
+    expect(text).toContain("SCREEN AS THE CALLER RENDERED IT");
+    expect(text).not.toContain(`APP (${SCREEN_FILE})`);
   });
 });

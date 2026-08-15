@@ -299,7 +299,7 @@ function messageInbox() {
 /**
  * The files a `PostToolUse` hook is worth firing for.
  *
- * `Bash` is here on purpose even though it names no path: `echo … > app.vendo` is
+ * `Bash` is here on purpose even though it names no path: `echo … > app.tsx` is
  * a real way to write a hot file, and reporting the write without the path still
  * lets the host do ONE narrow collect-by-shape. That is strictly better than the
  * 1.2s timer this replaces — sync on write, not sync on tick.

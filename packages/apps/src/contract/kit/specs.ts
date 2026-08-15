@@ -23,9 +23,9 @@ const seriesInput = z.array(z.union([z.string(), z.object({ key: z.string(), lab
  *
  * `z.unknown()` for the same reason `Accordion.items[].content` is: a slot
  * holds an ELEMENT, and no schema describes one. A slot is written in a screen's
- * JSX and cannot be written in a wire attribute, so it is code-only, exactly
- * like `Tabs.tabs[].content` — and, exactly like it, being optional is what
- * keeps its component wire-usable at all (`KIT_WIRE_UNSAFE_NAMES`).
+ * JSX by hand, so it is code-only, exactly like `Tabs.tabs[].content` — and,
+ * exactly like it, being optional is what keeps its component teachable at all
+ * (`KIT_NON_SCREEN_NAMES`).
  *
  * NOT a function. `(row) => <EnumBadge/>` looks like the React answer and is the
  * one thing that cannot work: the screen VM serializes a function prop as a
@@ -633,25 +633,18 @@ export function kitSpec(name: string): KitComponentSpec | undefined {
   return KIT_SPECS.find((s) => s.name === name);
 }
 
-/** Kit components whose props cannot be expressed as wire attribute values
- *  (element-valued `content` slots). They stay renderable and usable inside
- *  islands, but the WIRE prompt must not teach them. Tabs is NOT one of them:
- *  it takes its panels as CHILDREN, which the wire expresses natively. */
-export const KIT_WIRE_UNSAFE_NAMES: readonly string[] = ["Accordion"];
+/** Kit components a SCREEN's prompt must not teach as a plain prewired name:
+ *  their props are element-valued `content` slots, which only hand-written JSX
+ *  can fill. They stay renderable and usable inside islands. Tabs is NOT one of
+ *  them: it takes its panels as CHILDREN. */
+export const KIT_NON_SCREEN_NAMES: readonly string[] = ["Accordion"];
 
 /**
- * The Kit names the WIRE may use: everything the wire can express. These are
- * taught by `kitPrompt`, resolved as prewired by the compiler, and rendered
- * from `KIT_COMPONENTS`.
+ * The Kit names a generated SCREEN may use. These are taught by `kitPrompt`,
+ * typed into the screen's ambient `.d.ts`, and rendered from `KIT_COMPONENTS`.
  */
-export const KIT_WIRE_COMPONENT_NAMES: readonly string[] = KIT_COMPONENT_NAMES.filter((name) =>
-  !KIT_WIRE_UNSAFE_NAMES.includes(name));
-
-/** The full component vocabulary a wire tree may name without a source map.
- *  One family since V4: the Kit is the only built-in set, so this is the same
- *  list under the name the compiler and the fact checks read it by — a
- *  re-export, never a second list to keep in step. */
-export { KIT_WIRE_COMPONENT_NAMES as WIRE_COMPONENT_NAMES };
+export const KIT_SCREEN_COMPONENT_NAMES: readonly string[] = KIT_COMPONENT_NAMES.filter((name) =>
+  !KIT_NON_SCREEN_NAMES.includes(name));
 
 /** Prop name → class for one Kit component (law-1 enforcement handle). */
 export function kitPropClasses(name: string): Readonly<Record<string, PropClass>> | undefined {

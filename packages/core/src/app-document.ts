@@ -279,9 +279,8 @@ export interface AppDocument {
   storage?: Record<string, StorageDecl>;
   /**
    * Contract §3.2 — the app's own code, at rest. Keys are POSIX-relative paths
-   * inside the app directory ("src/App.tsx", "vendo.json"). The wire surface
-   * (`app.vendo`) is NOT here: it stays {@link AppDocument.tree}, which is what
-   * the render seam paints from.
+   * inside the app directory ("src/App.tsx", "vendo.json"), the app's own
+   * screen (`app.tsx`) included.
    *
    * With this present, `machine.snapshotRef` is a CACHE: an app can always be
    * rebuilt from here onto a fresh box, and nothing may read a snapshot to

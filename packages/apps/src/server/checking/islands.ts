@@ -8,16 +8,16 @@
 import { log } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
-  WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   ISLAND_AMBIENT_KIT_NAMES,
   ISLAND_STRIPPED_SPECIFIERS,
-  islandDerivedValueViolations,
   islandNetworkViolations,
   resolveIslandToolName,
   scanIslandTools,
   stripIslandImports,
 } from "../../contract/index.js";
 import { hasDefaultExport } from "../../contract/index.js";
+import { islandDerivedValueViolations } from "../../contract/island-derived-values.js";
 import type { HostToolInfo } from "./deps.js";
 
 /** Models wrap island TSX in a JSX template-literal expression (`{`…`}`)
@@ -199,7 +199,7 @@ export const prepareIslands = async (
   // the built-in vocabulary a subset of the ambient Kit, so the built-ins
   // filter out below and only host names remain host-only.
   const ambientNames = new Set<string>(ISLAND_AMBIENT_KIT_NAMES);
-  const hostOnlyNames = [...new Set([...hostComponents, ...WIRE_COMPONENT_NAMES])]
+  const hostOnlyNames = [...new Set([...hostComponents, ...KIT_SCREEN_COMPONENT_NAMES])]
     .filter((componentName) => !ambientNames.has(componentName));
   // Name resolution is host catalog → built-ins → islands, so an island NAMED
   // after any of those never renders: the built-in wins and the island is

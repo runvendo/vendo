@@ -166,6 +166,6 @@ describe("amended public export surface — the Kit is one component family", ()
     expect(registry.KIT_COMPONENT_NAMES).toEqual((registry.KIT_SPECS as { name: string }[]).map((spec) => spec.name));
     expect(registry.KIT_COMPONENT_NAMES).toContain("DataTable");
     expect(Object.keys(registry).filter((name) => /_COMPONENT_NAMES$/.test(name)).sort())
-      .toEqual(["KIT_COMPONENT_NAMES", "KIT_WIRE_COMPONENT_NAMES", "WIRE_COMPONENT_NAMES"]);
+      .toEqual(["KIT_COMPONENT_NAMES", "KIT_SCREEN_COMPONENT_NAMES"]);
   });
 });

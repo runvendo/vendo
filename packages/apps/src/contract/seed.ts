@@ -197,7 +197,7 @@ export const seedForkSource = (source: string): string => {
  * Is this component name a seeded app's copy of a captured host component? The
  * counterpart of {@link seedComponentName}, for the seams that hold a document's
  * components but not its `seed` — a checkout prints seeded sources into
- * `app.vendo` alongside the model's islands.
+ * the screen alongside the model's islands.
  *
  * The NAME is the signal every one of those seams has to use — a bare source
  * string reads back as `origin: "authored"`, so `bundleOf` cannot tell a printed

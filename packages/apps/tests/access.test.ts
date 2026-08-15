@@ -12,7 +12,7 @@ import {
 import { appAccessConformance } from "@vendoai/core/conformance";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
-import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -38,14 +38,25 @@ const ctx = (subject: string): RunContext => ({
 });
 
 /** The ONE engine, scripted: it answers every ask whole and names the app after
- *  what was said, so a create and an edit both land through the real `authored`
- *  persist path. Same fixture shape as lifecycle.test.ts. */
+ *  what was said — the screen's default export is the app's title — so a create
+ *  and an edit both land through the real `authoredScreen` persist path. Same
+ *  fixture shape as lifecycle.test.ts. */
 const screenFor = (runtime: () => AppsRuntime) =>
   scriptedAssembler(runtime, ({ request }) => {
     // An EDIT's brief leads with the app's memory block, so the ask is its last line.
     const line = request.split("\n").map((part) => part.trim()).filter((part) => part !== "").at(-1) ?? "";
-    const said = line.slice(0, 40).replaceAll('"', "'") || "Untitled app";
-    return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+    const words = line.replace(/[^A-Za-z0-9]+/gu, " ").trim().split(" ");
+    const said = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("") || "Untitled";
+    return `import { Stack, Text } from "@vendo/screen";
+
+export default function ${said}() {
+  return (
+    <Stack gap={12}>
+      <Text text="Ready" variant="heading" />
+    </Stack>
+  );
+}
+`;
   });
 
 const setup = (

@@ -14,7 +14,7 @@ import {
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
-import { createStore, threadMessageStore, threadStore, type VendoStore } from "@vendoai/store";
+import { createStore, threadMessageStore, threadStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
 import { awayRunner } from "../src/away.js";
 
@@ -108,18 +108,20 @@ describe("awayRunner", () => {
     expect(report.summary).toBe("Two invoices are outstanding.");
   });
 
-  it("a hot-path commit paints in an away run too, and the part persists to the run's thread (§1.6)", async () => {
+  it("a hot-path commit reaches the store in an away run too (§1.6)", async () => {
     // Regression pin, same as the session suite's: the render seam rides the
     // runtime's injected `wrapWorkspace` slot, and the away entry has to fill
-    // it — unfilled, an unattended build's screen never paints and the run's
-    // thread holds no view for the sponsor to open.
+    // it — unfilled, an unattended build's screen never reaches the seam at all.
+    // This runtime's seam is BARE (no apps runtime, so no screen engine), so
+    // nothing paints here; what the composed path paints is the umbrella's to
+    // prove. The file still has to LAND through the wrap.
     const store = memoryStore();
     const run = awayRunner(deps(store, defineHarness({
       name: "builder",
       async *run(turn) {
         await turn.workspace.writeFile(
-          "/user/apps/app_digest/plan.vendo",
-          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
+          "/user/apps/app_digest/app.tsx",
+          `import { Stack, Text } from "@vendo/screen";\n\nexport default function Digest() {\n  return <Stack gap={12}><Text text="Unpaid" /></Stack>;\n}\n`,
         );
         yield { type: "text" as const, delta: "**Summary:** sketched the digest screen." };
       },
@@ -138,8 +140,11 @@ describe("awayRunner", () => {
     const view = messages
       .find((message) => message.role === "assistant")
       ?.parts.find((part) => part.type === "data-vendo-view");
-    expect(view).toBeDefined();
-    expect(view?.data?.appId).toBe("app_digest");
+    // No floor, no paint: the thread carries no view rather than one nothing
+    // checked. The file itself landed — the wrap is a proxy, not a swallow.
+    expect(view).toBeUndefined();
+    expect(await workspaceStore(store).open(principal)
+      .then((workspace) => workspace.exists("/user/apps/app_digest/app.tsx"))).toBe(true);
   });
 
   // The run record's `summary` is contracted as a SUMMARY (07 §5 — "agentic:

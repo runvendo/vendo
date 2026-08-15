@@ -5,14 +5,13 @@ import {
   type VendoViewPart,
 } from "@vendoai/core";
 import {
-  compileWire,
   type ScreenAssembler,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createAgentTools } from "../src/server/doors/agent-tools.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { assembleTree } from "../src/server/runtime/runtime.js";
-import { authoringAssembler } from "../src/server/testing/authoring-assembler.js";
+import { authoringAssembler } from "../src/server/testing/screen-assembler.js";
 import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -67,20 +66,34 @@ const storeRefusingAppWrites = (): ReturnType<typeof memoryStore> => {
 const settledParts = (parts: VendoViewPart[]): VendoViewPart[] =>
   parts.filter((part) => (part.payload as { streaming?: boolean }).streaming !== true);
 
-const WIRE = '<App name="Spending"><Text text="This month"/><Disclaimer reason="Fixture app."/></App>';
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="This month" variant="heading" />
+    </Stack>
+  );
+}
+`;
 
 /**
- * An escalating screen agent, painting first — which is what §4.5 says a real one
- * does: it writes `plan.vendo`, paints its skeleton on `vendoViewStreamId(appId)`,
- * and only then asks for the builder. That paint is now UPSTREAM of `create`, so
- * it is the thing a refused store must not be allowed to take away.
+ * An escalating screen agent that painted something on `vendoViewStreamId(appId)`
+ * before it asked for the builder. That paint is UPSTREAM of `create` — the door
+ * itself paints nothing until the box has built something — so it is the one
+ * thing a refused store must not be allowed to take away.
  */
 const escalatingPainter: ScreenAssembler = {
   assemble: async (request) => {
     request.onView?.({
       type: "data-vendo-view",
       appId: request.appId,
-      payload: assembleTree({ tree: compileWire(WIRE).tree }) as unknown as UIPayload,
+      payload: assembleTree({
+        tree: {
+          root: "root",
+          nodes: [{ id: "root", component: "Text", source: "generated", props: { text: "This month" } }],
+        },
+      }) as unknown as UIPayload,
     });
     return { kind: "escalate", why: "this needs a real build" };
   },
@@ -172,7 +185,7 @@ describe("a create the store refuses to persist", () => {
       tools,
       catalog: [],
       model: basicLanguageModel(),
-      screen: authoringAssembler(() => runtime, WIRE),
+      screen: authoringAssembler(() => runtime, SCREEN),
     });
     const parts: VendoViewPart[] = [];
     const unsaved: string[] = [];

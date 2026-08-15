@@ -111,7 +111,7 @@ export interface SessionMachine {
    * hot set; omitted, it is the whole writable tree — which is what makes
    * deletions visible at turn end.
    *
-   * A `paths` entry may name a `*` segment (`/user/apps/&#42;/plan.vendo`), matching
+   * A `paths` entry may name a `*` segment (`/user/apps/&#42;/app.tsx`), matching
    * exactly one segment. That is the only way a file the turn INVENTED — a plan
    * for an app whose id did not exist when the conversation started — reaches the
    * hot sync, and it is matched machine-side so the wire carries the hot files

@@ -27,7 +27,7 @@ import {
 } from "../../src/contract/index.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApps, type AppsRuntime } from "../../src/server/index.js";
-import { authoringAssembler } from "../../src/server/testing/authoring-assembler.js";
+import { authoringAssembler } from "../../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../../src/server/testing/memory-store.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/server/testing/scripted-model.js";
@@ -44,7 +44,12 @@ const tools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "no tools" } }; },
 };
 
-const APP_WIRE = '<App name="Invoices"><Text text="Invoices"/><Disclaimer reason="Scripted fixture app."/></App>';
+const APP_SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return <Stack gap={12}><Text text="Invoices" variant="heading" /></Stack>;
+}
+`;
 
 /** What no lookup can decide: the number on the card was typed, not read. */
 const INVENTED_DATA: Finding = {
@@ -80,7 +85,7 @@ let reviewerRefuses = false;
  *  assembler in the `screen` slot, so every model call this fixture sees is a
  *  `report_findings` call from the door under test. */
 const model = () => scriptedLanguageModel((call: ScriptedModelCall) => {
-  if (call.tools?.some(({ name }) => name === "report_findings") !== true) return APP_WIRE;
+  if (call.tools?.some(({ name }) => name === "report_findings") !== true) return APP_SCREEN;
   reviewerCalls += 1;
   // The system prompt arrives as the `system` role message in the normalized
   // prompt — the rubric the host's judgment rules are appended to.
@@ -105,7 +110,7 @@ const setup = (checks?: readonly Check[]): AppsRuntime => {
     tools,
     catalog: [],
     model: model(),
-    screen: authoringAssembler(() => runtime, APP_WIRE),
+    screen: authoringAssembler(() => runtime, APP_SCREEN),
     ...(checks === undefined ? {} : { checks }),
   });
   return runtime;
@@ -196,18 +201,22 @@ describe("the reviewer can never be the reason a validate fails", () => {
   });
 
   it("still reports the deterministic findings when the reviewer is silent", async () => {
-    const runtime = setup();
-    await storedApp(runtime);
+    // A host's own FACT check: decided by lookup, with no model in the loop at
+    // all. A silent reviewer must not carry it down with it. Armed only after the
+    // create, because the same check on the floor would stop the create itself.
+    let biting = false;
+    const runtime = setup([{
+      name: "maple-house-style",
+      kind: "fact",
+      run: async () => (biting ? [{ severity: "block", message: "the invoice total names no account." }] : []),
+    }]);
+    const appId = await storedApp(runtime);
+    biting = true;
     reviewerRefuses = true;
 
-    // A document whose name is gone: a fact, decided by lookup, with no model in
-    // the loop at all.
-    const result = await runtime.validate(
-      { document: '<App name=""><Text text="hi"/></App>' },
-      ctx,
-    );
+    const result = await runtime.validate({ appId }, ctx);
 
     expect(result.ok).toBe(false);
-    expect(result.findings.some(({ message }) => message.includes("name"))).toBe(true);
+    expect(result.findings.some(({ message }) => message.includes("names no account"))).toBe(true);
   });
 });

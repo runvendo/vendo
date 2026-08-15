@@ -19,7 +19,7 @@
  * survive `createUIMessageStream`'s deferral of `execute`, and a slot that is
  * silently empty is exactly the failure mode this file exists to close.
  */
-import type { AppId, Finding, Harness, TurnTools, WorkspaceFs } from "@vendoai/core";
+import type { AppId, Finding, Harness, TurnTools } from "@vendoai/core";
 
 /**
  * The host's own MCP door, as a harness that runs a MACHINE needs it.
@@ -108,7 +108,6 @@ export interface HarnessAdapters {
    *  at the composition site in both directions. */
   validateApps?: (input: {
     tools: Pick<TurnTools, "call">;
-    workspace: Pick<WorkspaceFs, "readFile">;
     paths: readonly string[];
     review?: boolean;
   }) => Promise<readonly AppValidationFailureLike[]>;

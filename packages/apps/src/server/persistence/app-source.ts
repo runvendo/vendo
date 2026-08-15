@@ -7,10 +7,9 @@
  *
  * Three things this deliberately does NOT do:
  *
- * - It never touches the HOT paths. `app.vendo` and `plan.vendo` keep the render
- *   seam's behaviour exactly — checkout writes `app.vendo` because that is the
- *   projection, and commit leaves both alone because the seam already owns what
- *   happens when they land.
+ * - It never touches the HOT path. `app.tsx` keeps the render seam's behaviour
+ *   exactly: the commit leaves it alone, because the seam already owns what
+ *   happens when it lands.
  * - It never invents a spill. Source past the inline cap goes through the SAME
  *   `FilesAdapter` the workspace rows spill to.
  * - It never reads or writes any field but `source`. `trigger` above all travels
@@ -31,32 +30,24 @@ import {
 } from "@vendoai/core";
 import {
   SCREEN_FILE,
-  componentSources,
-  printWire,
   appSourceFileSchema,
   type AppDocument,
   type AppSourceFile,
 } from "../../contract/index.js";
-import { treeOf } from "../checking/facts.js";
-
-/** The two files that are not `doc.source` KEYS at all. A checkout writes
- *  `app.vendo` as the projection of `doc.tree`, so reading it back would store the
- *  app twice; `plan.vendo` is a skeleton the app never keeps. */
-const HOT_FILES = new Set(["app.vendo", "plan.vendo"]);
 
 /**
- * The files the render seam OWNS, which a commit must never diff back into
- * `source`: the seam has already turned each of them into the app.
+ * The one file the render seam OWNS, which a commit must never diff back into
+ * `source`: the seam has already turned it into the app.
  *
- * `app.tsx` is the third and the different one. It IS the app's stored screen
- * (`open()` reads it before the tree), so it stays a legal source key and a
- * checkout still writes it for the builder to edit — but the component gauntlet is
- * what decides a screen may become the app, so the PAINT stores it
- * (`AppsRuntime.authoredScreen`) and a screen the floor refused stores nothing.
- * Landed by this generic diff instead, a REFUSED save stored its bytes anyway and
- * `open()` served the very screen the floor would not render.
+ * `app.tsx` IS the app's stored screen (`open()` reads it before the tree), so it
+ * stays a legal source key and a checkout still writes it for the builder to edit
+ * — but the component gauntlet is what decides a screen may become the app, so
+ * the PAINT stores it (`AppsRuntime.authoredScreen`) and a screen the floor
+ * refused stores nothing. Landed by this generic diff instead, a REFUSED save
+ * stored its bytes anyway and `open()` served the very screen the floor would not
+ * render.
  */
-const SEAM_OWNED = new Set([...HOT_FILES, SCREEN_FILE]);
+const SEAM_OWNED = new Set([SCREEN_FILE]);
 
 /**
  * What the seam needs from the store, passed in rather than imported: `@vendoai/apps`
@@ -108,8 +99,7 @@ const blobKey = (appId: AppId, path: string): string => `apps/${appId}/${sha256H
 const encoder = new TextEncoder();
 const contentHash = (text: string): string => `sha256:${sha256Hex(text)}`;
 
-/** One file stored INLINE, carrying the identity {@link sourceText} checks it
- *  against on the way back out. The one place that computes a stored entry's hash
+/** One file stored INLINE, carrying its own identity. The one place that computes a stored entry's hash
  *  and byte count, so the paint that stores a screen and the commit that diffs a
  *  file cannot disagree about what "the content stored" means. */
 export const inlineSourceFile = (text: string): AppSourceFile => ({
@@ -130,7 +120,6 @@ export const invalidSourcePath = (path: string): string | null => {
   if (path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
     return `source path "${path}" must not contain empty or dot segments`;
   }
-  if (HOT_FILES.has(path)) return `source path "${path}" is the render seam's, not the source tree's`;
   return null;
 };
 
@@ -160,94 +149,20 @@ const appDirectory = async (
     throw new VendoError("forbidden", `${appId} lives in another person's workspace`);
   }
   const directory = appRootPath(mount, appId);
-  if (!(await workspace.canCommit(`${directory}/app.vendo`))) {
+  if (!(await workspace.canCommit(`${directory}/${SCREEN_FILE}`))) {
     throw new VendoError("forbidden", `this workspace cannot hold ${appId}'s files at ${directory}`);
   }
   return directory;
 };
 
-/**
- * The file's content, PROVEN to be the content the row describes.
- *
- * `hash` is the CAS base — a commit diffs against it to decide what changed — so
- * content that disagrees with it is not a smaller problem than content that is
- * missing: both make a checkout produce a different app than the one stored, and
- * "an app can always be rebuilt from its row" is the promise this contract exists
- * to keep. The document validator cannot catch it (it sees field shapes, and
- * never the blob's bytes at all), so the check belongs here, at the moment the
- * bytes and their claimed identity are both in hand.
- *
- * Fails CLOSED. Hashing every file on checkout costs one pass over bytes we have
- * already read and are about to write.
- */
-const sourceText = async (file: AppSourceFile, seam: AppSourceSeam, path: string): Promise<string> => {
-  const text = await storedText(file, seam, path);
-  const bytes = encoder.encode(text).byteLength;
-  if (bytes !== file.bytes) {
-    throw new VendoError(
-      "conflict",
-      `source file "${path}" is ${bytes} bytes but its row says ${file.bytes} — refusing to check out content that is not the content stored`,
-    );
-  }
-  const hash = contentHash(text);
-  if (hash !== file.hash) {
-    throw new VendoError(
-      "conflict",
-      `source file "${path}" hashes to ${hash} but its row says ${file.hash} — refusing to check out content that is not the content stored`,
-    );
-  }
-  return text;
-};
-
-const storedText = async (file: AppSourceFile, seam: AppSourceSeam, path: string): Promise<string> => {
-  if (file.text !== undefined) return file.text;
-  if (file.blobRef === undefined) {
-    throw new VendoError("validation", `source file "${path}" carries neither text nor a blob reference`);
-  }
-  const blob = await seam.blobs?.get(file.blobRef);
-  if (blob === undefined) {
-    // The row pointed at bytes that are gone. Loud, for the same reason as above.
-    throw new VendoError("not-found", `source file "${path}" is missing its stored bytes`);
-  }
-  return new TextDecoder().decode(blob.bytes);
-};
-
-/**
- * Materialize the app onto the workspace: `doc.tree` as `app.vendo`, and every
- * `doc.source` entry at its path. Staged, like every workspace write — the
- * caller's `commit()` is what lands it, and for a fresh checkout nothing needs to.
- */
-export async function checkoutApp(
-  appId: AppId,
-  workspace: WorkspaceFs,
-  ctx: RunContext,
-  seam: AppSourceSeam,
-): Promise<void> {
-  const doc = await seam.requireOwned(appId, ctx);
-  const directory = await appDirectory(appId, workspace, ctx, seam);
-
-  const tree = treeOf(doc);
-  if (tree !== undefined) {
-    await workspace.writeFile(
-      `${directory}/app.vendo`,
-      printWire({ tree, components: componentSources(doc.components), name: doc.name }, { includeIds: true }),
-    );
-  }
-
-  for (const [path, file] of Object.entries(doc.source ?? {})) {
-    const invalid = invalidSourcePath(path);
-    if (invalid !== null) throw new VendoError("validation", invalid);
-    await workspace.writeFile(`${directory}/${path}`, await sourceText(file, seam, path));
-  }
-}
 
 /**
  * Diff the changed paths of one app's directory back into `doc.source`.
  *
  * `changed` is `CommitResult.changed` verbatim — the paths that actually reached
  * the store, which is why this runs AFTER the workspace commit rather than
- * instead of it. Paths outside this app, and the two hot files, are ignored: they
- * belong to someone else.
+ * instead of it. Paths outside this app, and the seam-owned screen, are ignored:
+ * they belong to someone else.
  *
  * A path in `changed` that no longer EXISTS is a deletion, and drops out of
  * `source`. A path that is still there and merely would not READ is a fault, and

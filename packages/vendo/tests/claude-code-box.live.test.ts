@@ -106,7 +106,9 @@ live("claudeCode() — live, in a real e2b box", () => {
       thread: "m_box_edit",
       say: "The dashboard heading says 'Invoices'. Change it to say 'Bills' and nothing else.",
       files: {
-        "/user/apps/app_box/app.vendo": '<App name="Money">\n  <Heading text="Invoices" />\n</App>\n',
+        "/user/apps/app_box/app.tsx": 'import { Stack, Text } from "@vendo/screen";\n\n'
+          + "export default function Money() {\n"
+          + "  return (\n    <Stack gap={12}>\n      <Text text=\"Invoices\" variant=\"heading\" />\n    </Stack>\n  );\n}\n",
         "/host/skills/refund/SKILL.md": "# refund\nHow refunds work here.\n",
       },
     });
@@ -116,7 +118,7 @@ live("claudeCode() — live, in a real e2b box", () => {
       if (event.type === "text") text += event.delta;
       if (event.type === "error") text += `\n[error] ${event.message}`;
     }
-    const after = await h.workspace.readFile("/user/apps/app_box/app.vendo");
+    const after = await h.workspace.readFile("/user/apps/app_box/app.tsx");
     console.log("[live box edit]", JSON.stringify({ text, after, commits: h.workspace.commits }));
     expect(after).toContain("Bills");
     expect(text).not.toContain("[error]");

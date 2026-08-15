@@ -4,9 +4,8 @@
  * These are SEAM tests, not loop tests: every case writes through the real
  * `WorkspaceFs` staging + `commit()` path and reads back through the real render
  * seam (`wrapWorkspaceForRender` → `viewForWrite` → the floor's real component
- * gauntlet for `app.tsx`, `compilePlan` → `skeletonFromPlan` for a plan), with no
- * stub on either side. A harness that mocked the seam would prove only that this
- * file agrees with itself.
+ * gauntlet), with no stub on either side. A harness that mocked the seam would
+ * prove only that this file agrees with itself.
  *
  * THE ARTIFACT IS `app.tsx` (`SCREEN_FILE`) — one React component, which the seam
  * paints only by way of `AppFloor.component`. That door is the REAL
@@ -17,11 +16,10 @@
  * save would silently vanish and the loop would be measured against nothing.
  *
  * What is deliberately a double: the MODEL (scripted provider chunks, so the loop
- * is what is measured) and the two halves that need a STORE — the app half of an
- * `app.vendo` commit (`AppsRuntime.authored`) and the row a passing screen earns
- * (`AppsRuntime.authoredScreen`, the floor's `delivered`). The real ones — row,
- * queries, receipt — are walked end to end through a composed deployment in
- * `packages/vendo/tests/screen-route.e2e.test.ts`.
+ * is what is measured) and the one half that needs a STORE — the row a passing
+ * screen earns (`AppsRuntime.authoredScreen`, the floor's `delivered`). The real
+ * ones — row, queries, receipt — are walked end to end through a composed
+ * deployment in `packages/vendo/tests/screen-route.e2e.test.ts`.
  */
 import {
   type AppId,
@@ -29,9 +27,6 @@ import {
   type ToolDescriptor,
   type VendoViewPart,
 } from "@vendoai/core";
-import {
-  type WireCompileResult,
-} from "@vendoai/apps/contract";
 import { createAppFloor, SCREEN_FILE, type HostToolInfo } from "@vendoai/apps";
 import { describe, expect, it } from "vitest";
 import { ESCALATE_TOOL, REPAIR_STEPS, SAVE_APP_TOOL, SCREEN_STEPS, screenAssembler } from "../src/screen-agent.js";
@@ -68,12 +63,6 @@ export default function Spending() {
 /** Not a TSX module at all, so the gauntlet's first stage refuses it — which is
  *  exactly what the seam declines to put on screen. */
 const BROKEN_APP = `not a document at all`;
-
-const GOOD_PLAN = `<Plan name="Spending">
-  <Group title="Overview">
-    <Leaf component="Stat" />
-  </Group>
-</Plan>`;
 
 /** A host read tool that DECLARES its result shape. It is EQUIPPED, so that shape
  *  reaches the model as the tool's own JSON Schema and the brief must not restate
@@ -131,7 +120,6 @@ interface Harness {
   workspace: TestWorkspace;
   model: ScriptedModel;
   invocations: Record<string, number>;
-  authoredCalls: Array<{ appId: AppId; compiled: WireCompileResult }>;
   /** The rows a PASSING screen earned — the floor's `delivered`, which is what
    *  `AppsRuntime.authoredScreen` fills in a composed deployment. */
   deliveredCalls: Array<{ appId: AppId; name: string }>;
@@ -147,7 +135,6 @@ function harness(options: {
   tools?: ToolDescriptor[];
   /** Force every commit to answer `conflict`, so nothing lands. */
   conflict?: boolean;
-  authoredApp?: boolean;
   /** Guard verdicts by tool name, so a test can take a verb away from the loop. */
   guardPolicy?: Record<string, "run" | "ask" | "block">;
   /** What a named tool answers, for the verbs whose ANSWER is what the loop acts
@@ -168,7 +155,6 @@ function harness(options: {
   const workspace = testWorkspace();
   const emitted: VendoViewPart[] = [];
   const model = scriptedModel(options.turns);
-  const authoredCalls: Array<{ appId: AppId; compiled: WireCompileResult }> = [];
   const deliveredCalls: Array<{ appId: AppId; name: string }> = [];
 
   // THE REAL FLOOR. `viewForWrite` paints an `app.tsx` only through
@@ -200,8 +186,7 @@ function harness(options: {
       if (outcome.status !== "ok") throw new Error(`${tool} answered ${outcome.status}`);
       return outcome.output;
     },
-    // The row half — the ONE double in the floor, for the same reason
-    // `authoredApp` is one: it needs a store.
+    // The row half — the ONE double in the floor, because it needs a store.
     delivered: async (input) => {
       deliveredCalls.push(input);
     },
@@ -215,16 +200,7 @@ function harness(options: {
       return workspace;
     },
     ...(options.hasComponents === undefined ? {} : { hasComponents: options.hasComponents }),
-    render: () => ({
-      facts: () => ({ tools: descriptors.map((descriptor) => descriptor.name), components: ["Stat", "Text"] }),
-      floor,
-      ...(options.authoredApp === false ? {} : {
-        authoredApp: async (input) => {
-          authoredCalls.push(input);
-          return { data: {} };
-        },
-      }),
-    }),
+    render: () => ({ floor }),
   });
 
   return {
@@ -232,7 +208,6 @@ function harness(options: {
     workspace,
     model,
     invocations: registry.invocations,
-    authoredCalls,
     deliveredCalls,
     assemble: async (request: string) => await assembler.assemble(
       { appId: APP, request, onView: (part) => emitted.push(part) },
@@ -242,7 +217,7 @@ function harness(options: {
 }
 
 const saveApp = (content: string) => toolCallTurn(SAVE_APP_TOOL, { content });
-const escalate = (plan: string, why: string) => toolCallTurn(ESCALATE_TOOL, { plan, why }, "call_esc");
+const escalate = (why: string) => toolCallTurn(ESCALATE_TOOL, { why }, "call_esc");
 
 describe("the loadout (§4.2 — assembly tools only)", () => {
   it("equips the assembly verbs and the host's READ tools, and nothing else", async () => {
@@ -356,9 +331,7 @@ describe("assembly writes through the real path and the seam paints it", () => {
     // The paint carries what the renderer needs to boot the same screen: the
     // compiled source and the answers it rendered on.
     expect(screen.emitted[0]?.payload["interactive"]).toMatchObject({ compiledSource: expect.any(String) });
-    // The row is the GAUNTLET's to grant, not the app half's: `authoredApp` is the
-    // wire artifact's seam and a component screen never reaches it.
-    expect(screen.authoredCalls).toHaveLength(0);
+    // The row is the GAUNTLET's to grant: its own `ok` is what earns one.
     expect(screen.deliveredCalls).toEqual([{ appId: APP, name: "Spending" }]);
   });
 
@@ -379,7 +352,6 @@ describe("assembly writes through the real path and the seam paints it", () => {
     expect(screen.workspace.commits).toHaveLength(1);
     // …and the gauntlet refused to put them on screen, so no view and no row.
     expect(screen.emitted).toHaveLength(0);
-    expect(screen.authoredCalls).toHaveLength(0);
     expect(screen.deliveredCalls).toHaveLength(0);
     // The front door is what turns this into a fall-through: it finds no ROW.
     expect(result.kind).toBe("assembled");
@@ -468,29 +440,24 @@ describe("the repair round the mandatory check triggers", () => {
 });
 
 describe("the escalation seam (§4.5)", () => {
-  it("writes plan.vendo through the real commit path and the seam paints its skeleton", async () => {
+  it("hands over one sentence and writes NOTHING — no file, no paint", async () => {
     const screen = harness({
-      turns: [escalate(GOOD_PLAN, "this needs its own server"), textTurn("handed over")],
+      turns: [escalate("this needs its own server"), textTurn("handed over")],
     });
     const result = await screen.assemble("build me a live trading terminal");
 
     expect(result).toEqual({ kind: "escalate", why: "this needs its own server" });
-    // Real write path.
-    expect(await screen.workspace.readFile(`/user/apps/${APP}/plan.vendo`)).toBe(GOOD_PLAN);
-    expect(screen.workspace.commits.at(-1)?.changed).toEqual([`/user/apps/${APP}/plan.vendo`]);
-    // Real read path: `compilePlan` → `skeletonFromPlan` → the view. NOTHING here
-    // is stubbed — the plan branch of the seam never calls the app half at all.
-    expect(screen.emitted).toHaveLength(1);
-    expect(screen.emitted[0]?.appId).toBe(APP);
-    // A plan IS the mid-build state, so its skeleton stays streaming until the
-    // builder's own app document lands on the same stream id.
-    expect(screen.emitted[0]?.payload.streaming).toBe(true);
-    expect(screen.authoredCalls).toHaveLength(0);
+    // The person's own ask is the builder's brief, so the hand-off has no artifact
+    // of its own: nothing is staged, nothing is committed, and there is nothing to
+    // paint until the box builds something.
+    expect(screen.workspace.commits).toHaveLength(0);
+    expect(screen.emitted).toHaveLength(0);
+    expect(screen.deliveredCalls).toHaveLength(0);
   });
 
   it("escalation wins over a partial paint — 'ready' over a half-built app is the lie §4.5 avoids", async () => {
     const screen = harness({
-      turns: [saveApp(GOOD_APP), escalate(GOOD_PLAN, "it needs real code"), textTurn("handed over")],
+      turns: [saveApp(GOOD_APP), escalate("it needs real code"), textTurn("handed over")],
     });
     const result = await screen.assemble("build me a trading terminal");
     expect(result.kind).toBe("escalate");
@@ -498,14 +465,15 @@ describe("the escalation seam (§4.5)", () => {
 
   it("has no consent step: one plain sentence and the work proceeds", async () => {
     const screen = harness({
-      turns: [escalate(GOOD_PLAN, "this needs its own server"), textTurn("handed over")],
+      turns: [escalate("this needs its own server"), textTurn("handed over")],
     });
     await screen.assemble("build me a live trading terminal");
-    // The escalate tool takes a plan and a reason. Nothing else — no confirmation
-    // argument, no question back to the person, no second call to complete it.
+    // The escalate tool takes ONE reason. Nothing else — no plan to write, no
+    // confirmation argument, no question back to the person, no second call to
+    // complete it. The hand's own answer says only that it happened.
     const offered = screen.model.toolNamesPerCall[0] ?? [];
     expect(offered).toContain(ESCALATE_TOOL);
-    expect(screen.workspace.commits).toHaveLength(1);
+    expect(JSON.stringify(screen.model.prompts[1] ?? "")).toContain("handedOver");
   });
 });
 

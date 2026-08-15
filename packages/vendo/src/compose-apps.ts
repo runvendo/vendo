@@ -11,7 +11,7 @@ import {
   type AppsConfig,
 } from "@vendoai/apps";
 import { unattendedIrreversibilityCheck } from "@vendoai/automations";
-import { escalatedPlanPath, screenAssembler } from "./screen-agent.js";
+import { screenAssembler } from "./screen-agent.js";
 import {
   engineOverAdapter,
   joinUrl,
@@ -189,11 +189,10 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
   };
 };
 
-/** The seams that cross a block line — the automations sponsorship hooks, the
- *  wire's served-app proxy, and §4.5's escalated plan. */
-const appsHostSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
+/** The seams that cross a block line — the automations sponsorship hooks and the
+ *  served-app proxy. */
+const appsHostSeams = (composition: VendoComposition): Partial<AppsConfig> => {
   const { urls } = composition;
-  const { screenWorkspace } = seams;
   return {
     // Build contract §9.9 — sponsorship's two halves, composed HERE because
     // they cross the apps↔automations line and neither block may reach into
@@ -236,23 +235,6 @@ const appsHostSeams = (composition: VendoComposition, seams: AppsSeams): Partial
       servedProxyPath: (appId: AppId) =>
         joinUrl(urls.publicUrl, `${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`).href,
     }),
-    // THE SEAM (blueprint §1 point 2) — the screen agent in front of the
-    // conductor. Filled HERE and nowhere else: the agent is a lean loop in this
-    // package (screen-agent.ts — it needs `vendo()` from harnesses AND the seam
-    // from apps, so only the umbrella can hold it), the front door is in
-    // @vendoai/apps, and apps depends on core alone — so composition, the one
-    // place that already holds the seats, the guard-bound registry, the store
-    // and the seam, is what joins them.
-    escalatedPlan: async (appId, planCtx) => {
-      // §4.5's receiving end reads the plan back through the SAME workspace the
-      // escalating agent wrote it to — no second copy, no cache, no store column
-      // invented to hold it. Best-effort: the front door treats `undefined` as
-      // "build from the ask", which is what it did before this seam existed.
-      const workspace = await screenWorkspace(planCtx).catch(() => undefined);
-      if (workspace === undefined) return undefined;
-      const source = await workspace.readFile(escalatedPlanPath(appId)).catch(() => undefined);
-      return typeof source === "string" && source.trim() !== "" ? source : undefined;
-    },
   };
 };
 
@@ -272,17 +254,10 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
       hasComponents: catalog.length > 0,
       // The SAME seam options the harness turns pass below — every one of them,
       // because a screen assembled here lands on the same store through the same
-      // `commit()`. §1.6's app half (the row that makes a written file an app,
-      // and the queries that put real data behind its bindings), §3.2's source
-      // half, and §7.1's floor.
-      //
-      // The floor was the one that was missing, and its absence was invisible: a
-      // screen assembled through `vendo_make` compiled with a bare `compileWire`
-      // — no fact checks, no binding gate, no tsc — so a lying binding painted
-      // here and was refused one route over. One seam cannot have two answers
-      // about the same bytes.
+      // `commit()`. §3.2's source half and §7.1's floor — the gauntlet's own
+      // `ok` is what upserts the row, so a screen the floor refused is never an
+      // app. One seam cannot have two answers about the same bytes.
       render: (screenCtx) => ({
-        authoredApp: (input) => composition.apps.authored(input, screenCtx),
         commitSource: (input) => composition.apps.commitSource(input, screenCtx),
         floor: composition.apps.floor(screenCtx),
       }),
@@ -422,7 +397,7 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   };
   const apps = createApps({
     ...appsStoreSeams(composition, seams),
-    ...appsHostSeams(composition, seams),
+    ...appsHostSeams(composition),
     screen: appsScreenSeam(composition, seams),
     ...appsTailSeams(composition, seams),
   } as AppsConfig);
@@ -451,10 +426,7 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     // assembled here and never read off the model's input. Both app-touching
     // verbs are owner-scoped behind it.
     validate: (input, ctx) => apps.validate(
-      {
-        ...(input.appId === undefined ? {} : { appId: input.appId as AppId }),
-        ...(input.document === undefined ? {} : { document: input.document }),
-      },
+      input.appId === undefined ? {} : { appId: input.appId as AppId },
       ctx,
     ),
     searchComponents: async (query, limit) =>

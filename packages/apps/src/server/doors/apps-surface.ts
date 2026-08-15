@@ -225,7 +225,6 @@ export const createAppsSurface = (
         claimSlot,
         markUnbuilt,
         ...(config.screen === undefined ? {} : { screen: config.screen }),
-        ...(config.escalatedPlan === undefined ? {} : { escalatedPlan: config.escalatedPlan }),
       });
     },
   };

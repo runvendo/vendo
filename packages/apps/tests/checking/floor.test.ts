@@ -6,14 +6,16 @@
  */
 import {
   VENDO_APP_FORMAT,
+  VENDO_TREE_FORMAT,
   type ShapeType,
+  type TreeNode,
 } from "@vendoai/core";
 import {
-  compileWire,
   type AppDocument,
   type Check,
   type CheckInput,
   type NormalizedCatalog,
+  type TreeQuery,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer } from "../../src/server/checking/layer.js";
@@ -39,39 +41,78 @@ const toolShapes: Record<string, ShapeType> = {
 const catalog: NormalizedCatalog = [];
 
 const deps = (): FloorDependencies => ({
-  model: scriptedLanguageModel(() => '<App name="unused"/>'),
+  model: scriptedLanguageModel(() => "the reviewer is not wired in these cases"),
   catalog,
   tools,
   toolShapes,
 });
 
-const documentFrom = (wire: string): AppDocument => {
-  const compiled = compileWire(wire, { toolShapes });
-  return {
-    format: VENDO_APP_FORMAT,
-    id: "app_floor_test",
-    name: compiled.name ?? "Untitled",
-    ui: "tree",
-    tree: compiled.tree as unknown as AppDocument["tree"],
-  } as AppDocument;
-};
+/** A stored app as the checks read one: the tree a paint left, under the app's
+ *  own id. Hand-built because a tree is a stored structure now — the renderer
+ *  and the checks read exactly this, and there is no dialect in between. */
+const treeDocument = (
+  nodes: TreeNode[],
+  queries: TreeQuery[] = [{ name: "invoices", tool: "host_listInvoices" }],
+): AppDocument => ({
+  format: VENDO_APP_FORMAT,
+  id: "app_floor_test",
+  name: "Invoices",
+  ui: "tree",
+  tree: {
+    formatVersion: VENDO_TREE_FORMAT,
+    root: "root",
+    nodes,
+    queries,
+  } as unknown as AppDocument["tree"],
+});
 
-const GOOD = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><Text text="Invoices" variant="heading"/><DataTable rows={invoices.data}/></Stack></App>';
+const stack = (children: string[], props: Record<string, unknown> = {}): TreeNode =>
+  ({ id: "root", component: "Stack", source: "prewired", props, children } as unknown as TreeNode);
+
+const GOOD = treeDocument([
+  stack(["n1", "n2"], { gap: 12 }),
+  { id: "n1", component: "Text", source: "prewired", props: { text: "Invoices", variant: "heading" } },
+  { id: "n2", component: "DataTable", source: "prewired", props: { rows: { $path: "/invoices/data" } } },
+] as unknown as TreeNode[]);
 
 /** A deliberately bad app: it names a tool the host does not have. */
-const BAD = '<App name="Invoices"><Query id="invoices" tool="host_wireMoney"/><Stack><DataTable rows={invoices.data}/></Stack></App>';
+const BAD = treeDocument(
+  [
+    stack(["n2"]),
+    { id: "n2", component: "DataTable", source: "prewired", props: { rows: { $path: "/invoices/data" } } },
+  ] as unknown as TreeNode[],
+  [{ name: "invoices", tool: "host_wireMoney" }],
+);
 
 /** Nests a node under a chart. The renderer hands `children` to every node, so
  *  the caption inside the chart paints as nothing at all. */
-const NESTED = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack gap={12}><LineChart data={invoices.data} xKey="id" series={["amount"]}><Text text="Legend"/></LineChart></Stack></App>';
+const NESTED = treeDocument([
+  stack(["linechart-1"], { gap: 12 }),
+  {
+    id: "linechart-1",
+    component: "LineChart",
+    source: "prewired",
+    props: { data: { $path: "/invoices/data" }, xKey: "id", series: ["amount"] },
+    children: ["n3"],
+  },
+  { id: "n3", component: "Text", source: "prewired", props: { text: "Legend" } },
+] as unknown as TreeNode[]);
 
 /** A shared adjective on a component that does not read it. `tone` paints
  *  nothing on a table: the prop validates, the renderer drops it, and the model
  *  is told it succeeded — the silent drop the prop-name gate turns into a block. */
-const DEAF = '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><DataTable rows={invoices.data} tone="danger"/></Stack></App>';
+const DEAF = treeDocument([
+  stack(["datatable-1"]),
+  {
+    id: "datatable-1",
+    component: "DataTable",
+    source: "prewired",
+    props: { rows: { $path: "/invoices/data" }, tone: "danger" },
+  },
+] as unknown as TreeNode[]);
 
-const inputFor = (wire: string, request = "show me my invoices"): CheckInput =>
-  ({ document: documentFrom(wire), request });
+const inputFor = (document: AppDocument, request = "show me my invoices"): CheckInput =>
+  ({ document, request });
 
 // `kind` is OPTIONAL on the fact variant, so `Extract<Check, { kind: "fact" }>`
 // is `never` — the fact half is named by the member only IT has (layer.ts).

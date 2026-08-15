@@ -3,16 +3,17 @@
  *
  * `vendo_make` is routed through the screen agent, walked through a REAL composed
  * deployment: real store, real guard, real apps pack, the real render seam, the
- * real `AppsRuntime.authored` app half. Nothing on either side of the seam is
- * stubbed except the MODEL, which is scripted so the routing — not a provider's
- * mood — is what this measures.
+ * real checks floor. Nothing on either side of the seam is stubbed except the
+ * MODEL, which is scripted so the routing — not a provider's mood — is what this
+ * measures.
  *
  * The two things a stub could hide, and why they are asserted here rather than in
  * `packages/harnesses`:
  *
- * 1. **The row.** `authored` is what makes a written file an APP: without it a
- *    screen is a picture of one — absent from the person's list, masked as
- *    `not-found` by `vendo_apps_open`. Only a real store can prove it landed.
+ * 1. **The row.** The gauntlet's own paint is what makes a written file an APP:
+ *    without it a screen is a picture of one — absent from the person's list,
+ *    masked as `not-found` by `vendo_apps_open`. Only a real store can prove it
+ *    landed.
  * 2. **The empty answer.** Assembly that produces nothing renderable ends the ask
  *    with a failed receipt, and "nothing else ran" is not something a
  *    harness-level test can claim: it needs the real front door.
@@ -247,10 +248,10 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // verdict and stays on "Building your view…".
     expect(painted.at(-1)?.payload["streaming"]).toBe(false);
 
-    // ── the row: `authored` made a written file into an APP ───────────────────
+    // ── the row: the paint made a written file into an APP ────────────────────
     const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_screen_route" });
     expect(stored?.name).toBe("Spending");
-    // And it lists, which is the half that was silently missing before `authored`.
+    // And it lists, which is the half that was silently missing before the row.
     const listed = await walked.vendo.apps.list({ principal, venue: "chat", presence: "present", sessionId: "ses_screen_route" });
     expect(listed.map((app) => app.id)).toContain(receipt.id);
 
@@ -262,11 +263,10 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
 
   it("refuses to paint a document the checks floor blocks, and the last good view stays", async () => {
     // THE BUG THIS PINS. The screen slot wired the render seam WITHOUT the floor,
-    // so a screen assembled through `vendo_make` compiled with a bare
-    // `compileWire`: no fact checks, no binding gate, no tsc. A query naming a
-    // tool the host has not got painted anyway — an app promising data it can
-    // never load — while the very same document written on the harness-turn route
-    // was refused. One seam, two answers.
+    // so a screen assembled through `vendo_make` faced no fact checks and no tsc.
+    // A query naming a tool the host has not got painted anyway — an app promising
+    // data it can never load — while the very same document written on the
+    // harness-turn route was refused. One seam, two answers.
     const walked = await walk({
       turns: [
         call("save_app", { content: SPENDING }, "c1"),
@@ -336,10 +336,10 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
   }, 60_000);
 
   it("fails honestly when assembly produces nothing that renders — no second engine behind it", async () => {
-    // The screen agent saves bytes the compiler cannot render. The seam paints
-    // nothing and `authored` stores no row, so there is no app — and that is the
-    // ANSWER. This used to fall through to the conductor, which meant a broken
-    // assembler read as a working deployment.
+    // The screen agent saves bytes the gauntlet refuses. The seam paints nothing
+    // and stores no row, so there is no app — and that is the ANSWER. This used to
+    // fall through to the conductor, which meant a broken assembler read as a
+    // working deployment.
     const walked = await walk({
       turns: [
         call("save_app", { content: "not a document at all" }, "c1"),

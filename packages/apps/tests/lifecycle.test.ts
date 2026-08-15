@@ -5,15 +5,16 @@ import {
   VENDO_APP_FORMAT,
   VendoError,
 } from "@vendoai/core";
-import type {
-  AppDocument,
-  ScreenAssembler,
+import {
+  SCREEN_FILE,
+  type AppDocument,
+  type ScreenAssembler,
 } from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { createAppHistory } from "../src/server/persistence/history.js";
 import { enabledAfterDocumentEdit } from "../src/server/persistence/persistence.js";
-import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -35,23 +36,33 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-/** What the person just said, as a legal display title. An EDIT's brief leads
- *  with the app's memory block, so the ask itself is the last line of it. Capped
- *  at the create validator's display-title length (APP_NAME_MAX_CHARS). */
-const titleFor = (request: string): string => {
+/** What the person just said, as the screen's own component name. A component
+ *  file carries no title but its default export's, which is where the app's name
+ *  comes from (`screenName`), so the ask has to reach it as an identifier. An
+ *  EDIT's brief leads with the app's memory block, so the ask itself is the last
+ *  line of it. */
+const componentNameFor = (request: string): string => {
   const said = request.split("\n").map((line) => line.trim()).filter((line) => line !== "").at(-1) ?? "";
-  return said.slice(0, 40).replaceAll('"', "'") || "Untitled app";
+  const words = said.replace(/[^A-Za-z0-9]+/gu, " ").trim().split(" ");
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("") || "Untitled";
 };
 
 /** The ONE engine, scripted: every ask is tiny, so the assembler writes the whole
- *  app on the spot and names it after what was said — a create and an edit alike.
- *  It lands through the real `AppsRuntime.authored`, so the row, the version, the
- *  audit event and the guard decision are all the shipped ones. */
+ *  screen on the spot and names it after what was said — a create and an edit
+ *  alike. It lands through the real checks floor and the real
+ *  `AppsRuntime.authoredScreen`, so the row, the version, the audit event and the
+ *  guard decision are all the shipped ones. */
 const screenFor = (runtime: () => AppsRuntime): ScreenAssembler =>
-  scriptedAssembler(runtime, ({ request }) => {
-    const said = titleFor(request);
-    return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
-  });
+  scriptedAssembler(runtime, ({ request }) => `import { Stack, Text } from "@vendo/screen";
+
+export default function ${componentNameFor(request)}() {
+  return (
+    <Stack gap={12}>
+      <Text text="Ready" variant="heading" />
+    </Stack>
+  );
+}
+`);
 
 const setup = (withModel = true) => {
   const store = memoryStore();
@@ -104,15 +115,10 @@ describe("apps lifecycle", () => {
 
     expect(first).toMatchObject({ format: VENDO_APP_FORMAT, name: "First app", ui: "tree" });
     expect(first.id).toMatch(/^app_/);
-    expect(first.tree).toMatchObject({
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [
-        { id: "root", component: "Stack" },
-        { id: "text-1", component: "Text" },
-        { id: "disclaimer-1", component: "Disclaimer" },
-      ],
-    });
+    // The screen IS the app: the stored row carries the file, and no tree — a
+    // screen's tree is what RENDERING it produces, never a stored snapshot.
+    expect(first.source?.[SCREEN_FILE]?.text).toContain("export default function FirstApp()");
+    expect(first.tree).toBeUndefined();
     expect(await runtime.get(first.id, ada)).toEqual(first);
     expect((await runtime.list(ada)).map((app) => app.id)).toEqual([second.id, first.id]);
     expect(await runtime.get(first.id, grace)).toBeNull();
@@ -121,27 +127,11 @@ describe("apps lifecycle", () => {
     await expect(runtime.fork(first.id, grace)).rejects.toMatchObject({ code: "not-found" });
   });
 
-  it("requires a model for generation and constrains generated names", async () => {
+  it("requires a model for generation", async () => {
     const withoutModel = setup(false).runtime;
     await expect(withoutModel.create({ prompt: "Unavailable" }, context("user_ada"))).rejects.toEqual(
       new VendoError("not-implemented", "generation requires a model"),
     );
-
-    const { runtime } = setup();
-    const app = await runtime.create({ prompt: `  ${"x".repeat(80)}  ` }, context("user_ada"));
-    // Empty-states batch — the name is a display title, never the ask echoed
-    // back at length.
-    expect(app.name).toHaveLength(40);
-    // …and the cap is the PRODUCT's, not the fixture's: the same document with
-    // the ask echoed back whole is a finding at the `validate` door, which is
-    // where the create validator's APP_NAME_MAX_CHARS now bites.
-    const echoed = "x".repeat(80);
-    const verdict = await runtime.validate(
-      { document: `<App name="${echoed}"><Text text="hi"/><Disclaimer reason="Fixture."/></App>` },
-      context("user_ada"),
-    );
-    expect(verdict.ok).toBe(false);
-    expect(verdict.findings.some(({ message }) => message.includes("at most 40 characters"))).toBe(true);
   });
 
   it("forks a fresh validated document without copying history or app data", async () => {

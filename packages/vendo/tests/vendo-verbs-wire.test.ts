@@ -153,13 +153,18 @@ describe("validate", () => {
     expect(output.findings).toEqual([]);
   });
 
-  it("returns FINDINGS for a broken document, never a tool error", async () => {
+  it("returns FINDINGS for a broken app, never a tool error", async () => {
     // The distinction is the whole point: an error reads to a model as "the tool
-    // is broken", findings read as "your document is wrong". Only the second one
+    // is broken", findings read as "your app is wrong". Only the second one
     // gets fixed.
     const { vendo } = await compose();
+    const broken = app("app_broken");
+    broken.tree!.nodes = [{ id: "root", component: "NoSuchComponent" }];
+    await vendo.apps.importApp(broken, ctx);
+    const stored = (await vendo.apps.list(ctx)).find(({ name }) => name === "Verbs app");
+
     const outcome = await vendo.guardedTools.execute(
-      { id: "c4", tool: "validate", args: { document: '<App name="Broken"><NoSuchComponent /></App>' } },
+      { id: "c4", tool: "validate", args: { appId: stored?.id } },
       ctx,
     );
     expect(outcome.status).toBe("ok");

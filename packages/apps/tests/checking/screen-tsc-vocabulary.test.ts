@@ -3,7 +3,7 @@
  *
  * A check that blocks a GOOD screen is worse than no check: it stops a shipping
  * app on the strength of a hole in the generator. So one broad screen exercises
- * the whole vocabulary at once — every wire component, the aggregate calls, a
+ * the whole vocabulary at once — every screen component, the aggregate calls, a
  * real host component, a real declared tool output schema — and must produce
  * exactly nothing. A component the generator forgot to declare shows up here as
  * "references unknown component", and a prop mistyped from its zod spec shows up
@@ -18,8 +18,7 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
-  KIT_WIRE_COMPONENT_NAMES,
-  WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
@@ -69,7 +68,7 @@ const typings = screenTypings({
   toolOutputSchemas: { host_getCashflowInsights: cashflowOutput },
 });
 
-/** Every wire component, the computed forms a screen really writes (a `{...}`
+/** Every screen component, the computed forms a screen really writes (a `{...}`
  *  gap is a JavaScript expression over the declared queries — reduce/map/length,
  *  no call vocabulary), a real host component. */
 const BROAD_SCREEN = `<App name="Cash flow">
@@ -130,16 +129,11 @@ describe("the vocabulary a good screen may name", () => {
     expect(screenTscFindings({ screen: BROAD_SCREEN, typings })).toEqual([]);
   });
 
-  it("names every wire component in the broad screen, so a missing declaration cannot hide", () => {
+  it("names every screen component in the broad screen, so a missing declaration cannot hide", () => {
     // If this drifts, the screen above stops covering a component and the
     // false-positive gate silently narrows.
     const named = new Set([...BROAD_SCREEN.matchAll(/<([A-Z][A-Za-z0-9]*)/gu)].map((match) => match[1]));
-    const uncovered = WIRE_COMPONENT_NAMES.filter((name) => !named.has(name));
+    const uncovered = KIT_SCREEN_COMPONENT_NAMES.filter((name) => !named.has(name));
     expect(uncovered, "add these to BROAD_SCREEN").toEqual([]);
-  });
-
-  it("covers the one component family — the Kit wire set IS the vocabulary", () => {
-    expect(KIT_WIRE_COMPONENT_NAMES.length).toBeGreaterThan(0);
-    expect([...WIRE_COMPONENT_NAMES].sort()).toEqual([...KIT_WIRE_COMPONENT_NAMES].sort());
   });
 });

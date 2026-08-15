@@ -1,12 +1,12 @@
 import {
-  KIT_WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { wirePropNames } from "../src/server/escalation/prewired-schema.js";
 
-describe("wire built-in prop names", () => {
-  it("covers exactly the wire component names (no drift)", () => {
-    expect([...wirePropNames.keys()].sort()).toEqual([...KIT_WIRE_COMPONENT_NAMES].sort());
+describe("built-in prop names", () => {
+  it("covers exactly the screen component names (no drift)", () => {
+    expect([...wirePropNames.keys()].sort()).toEqual([...KIT_SCREEN_COMPONENT_NAMES].sort());
   });
 
   it("carries the real, bug-prone prop names", () => {
@@ -22,9 +22,9 @@ describe("wire built-in prop names", () => {
     expect(wirePropNames.get("Select")?.has("labelKey")).toBe(false);
   });
 
-  it("carries Card, and the Tabs wire contract the plan skeleton emits", () => {
+  it("carries Card, and the Tabs prop contract", () => {
     expect(wirePropNames.get("Card")?.has("title")).toBe(true);
-    // skeleton.ts writes {tabs, value} on its tab-chrome node; both must be
+    // A tabbed screen names {tabs, value} on its tab chrome; both must be
     // allowed or every tabbed app routes to repair.
     expect(wirePropNames.get("Tabs")?.has("tabs")).toBe(true);
     expect(wirePropNames.get("Tabs")?.has("value")).toBe(true);

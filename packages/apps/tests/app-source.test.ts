@@ -1,17 +1,15 @@
 /**
- * Checkout and commit (contract §3.2) — the app row projected onto a workspace
- * and diffed back.
+ * Commit (contract §3.2) — the app's workspace directory diffed back into its
+ * row, plus the two rules that decide WHICH paths a commit may touch
+ * (`invalidSourcePath`) and WHERE the app's directory is (`appMountFor`).
  *
- * Tested as a ROUND TRIP, not as two halves: `checkoutApp` writes into a
- * workspace and `commitApp` reads back out of that SAME workspace, so the two
- * can genuinely disagree about an address, a path filter, or a hash and the test
- * will say so. The one stand-in is the workspace itself — the shared medium both
- * sides cross — and it is a real staging filesystem (writes land, reads come
- * back, `exists` answers from the index) rather than a recorder of calls.
+ * The one stand-in is the workspace itself — the medium the edits cross — and it
+ * is a real staging filesystem (writes land, reads come back, `exists` answers
+ * from the index) rather than a recorder of calls.
  *
  * The promise all of this exists to keep: an app can always be rebuilt from its
- * row. Every case below is a way that promise gets quietly broken — content that
- * is not the content stored, a projection landing in the wrong mount, a blob
+ * row. Every case below is a way that promise gets quietly broken — an edit
+ * diffed back from the wrong mount, a hash that is not the content's, a blob
  * store having a bad minute read as a deletion.
  */
 import {
@@ -30,7 +28,7 @@ import {
   type AppSourceFile,
 } from "../src/contract/index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appMountFor, checkoutApp, commitApp, invalidSourcePath, type AppSourceSeam } from "../src/server/persistence/app-source.js";
+import { appMountFor, commitApp, invalidSourcePath, type AppSourceSeam } from "../src/server/persistence/app-source.js";
 
 const APP = "app_source" as AppId;
 const ADA = "user_ada";
@@ -133,15 +131,9 @@ describe("invalidSourcePath — a source key is a POSIX-relative path inside the
     expect(invalidSourcePath("/etc/passwd")).toMatch(/must be relative to the app directory/);
   });
 
-  for (const traversal of ["../other-app/app.vendo", "src/../../escape.ts", "..", "./here.ts", "src//double.ts"]) {
-    it(`refuses ${JSON.stringify(traversal)} — the one way a checkout could reach another app's files`, () => {
+  for (const traversal of ["../other-app/app.tsx", "src/../../escape.ts", "..", "./here.ts", "src//double.ts"]) {
+    it(`refuses ${JSON.stringify(traversal)} — the one way a commit could reach another app's files`, () => {
       expect(invalidSourcePath(traversal)).toMatch(/must not contain empty or dot segments/);
-    });
-  }
-
-  for (const hot of ["app.vendo", "plan.vendo"]) {
-    it(`refuses ${hot}, which is the render seam's and not the source tree's`, () => {
-      expect(invalidSourcePath(hot)).toMatch(/render seam's/);
     });
   }
 });
@@ -162,111 +154,9 @@ describe("appMountFor — the address is a fact about the app, never about who i
   });
 });
 
-describe("checkoutApp — the row projected onto the workspace", () => {
-  it("writes app.vendo from the tree and every source file at its path", async () => {
-    const workspace = workspaceFs();
-    const doc = docWith({ "src/chart.tsx": inline("export default () => null;\n") });
-
-    await checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc));
-
-    expect(workspace.files.get(`/user/apps/${APP}/app.vendo`)).toContain("Retention");
-    expect(workspace.files.get(`/user/apps/${APP}/src/chart.tsx`)).toBe("export default () => null;\n");
-  });
-
-  it("projects an ORG-owned app under the org mount, not the caller's own", async () => {
-    // The defect this pins: taking the first WRITABLE candidate put an org app
-    // in /user, commitApp derived that same prefix, and every /orgs edit was
-    // silently filtered out and dropped.
-    const workspace = workspaceFs();
-    const ctx = ctxFor(ADA, [{ org: "org_acme" } as Membership]);
-
-    await checkoutApp(APP, workspace, ctx, seamFor(docWith({ "a.ts": inline("a\n") }), { owner: "org_acme" }));
-
-    expect(workspace.files.has(`/orgs/org_acme/apps/${APP}/a.ts`)).toBe(true);
-    expect(workspace.files.has(`/user/apps/${APP}/a.ts`)).toBe(false);
-  });
-
-  it("refuses an app that lives in another person's workspace", async () => {
-    const workspace = workspaceFs();
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(docWith(), { owner: "user_bob" })))
-      .rejects.toThrow(/lives in another person's workspace/);
-  });
-
-  it("refuses when the workspace cannot hold the app's files", async () => {
-    const workspace = workspaceFs({ writable: () => false });
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(docWith())))
-      .rejects.toThrow(/cannot hold .* files at/);
-  });
-
-  it("writes no app.vendo for a document whose tree is absent or unusable", async () => {
-    const workspace = workspaceFs();
-    const doc = { id: APP, name: "Treeless" } as AppDocument;
-
-    await checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc));
-
-    expect(workspace.files.has(`/user/apps/${APP}/app.vendo`)).toBe(false);
-  });
-
-  it("refuses a stored source key that would escape the app directory", async () => {
-    const workspace = workspaceFs();
-    const doc = docWith({ "../escape.ts": inline("x\n") });
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc)))
-      .rejects.toThrow(/must not contain empty or dot segments/);
-  });
-});
-
-describe("checkoutApp fails CLOSED on content that is not the content stored", () => {
-  it("refuses a file whose byte count disagrees with its row", async () => {
-    const workspace = workspaceFs();
-    const doc = docWith({ "a.ts": { ...inline("hello\n"), bytes: 999 } });
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc)))
-      .rejects.toThrow(/is 6 bytes but its row says 999/);
-  });
-
-  it("refuses a file whose hash disagrees with its row", async () => {
-    const workspace = workspaceFs();
-    const doc = docWith({ "a.ts": { ...inline("hello\n"), hash: `sha256:${"0".repeat(64)}` } });
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc)))
-      .rejects.toThrow(/hashes to sha256:.* but its row says/);
-  });
-
-  it("refuses a file carrying neither text nor a blob reference", async () => {
-    const workspace = workspaceFs();
-    const doc = docWith({ "a.ts": { hash: contentHash("a\n"), bytes: 2 } });
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc)))
-      .rejects.toThrow(/carries neither text nor a blob reference/);
-  });
-
-  it("reads a spilled file back through the blob seam", async () => {
-    const workspace = workspaceFs();
-    const blobs = memoryBlobs();
-    const text = "spilled\n";
-    await blobs.put("apps/blob-key", new TextEncoder().encode(text));
-    const doc = docWith({ "big.ts": { hash: contentHash(text), bytes: 8, blobRef: "apps/blob-key" } });
-
-    await checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc, { blobs }));
-
-    expect(workspace.files.get(`/user/apps/${APP}/big.ts`)).toBe(text);
-  });
-
-  it("refuses loudly when the row points at bytes that are gone", async () => {
-    const workspace = workspaceFs();
-    const doc = docWith({ "big.ts": { hash: contentHash("x"), bytes: 1, blobRef: "apps/missing" } });
-
-    await expect(checkoutApp(APP, workspace, ctxFor(ADA), seamFor(doc, { blobs: memoryBlobs() })))
-      .rejects.toThrow(/is missing its stored bytes/);
-  });
-});
-
 describe("commitApp — the changed paths diffed back into the row", () => {
-  /** Check the app out, edit it in the workspace, commit the paths that moved —
-   *  the real sequence, through the same workspace both ends. */
+  /** The app's directory as its row describes it, edited in the workspace, then
+   *  the paths that moved committed back — the real sequence. */
   const roundTrip = async (
     doc: AppDocument,
     edit: (workspace: ReturnType<typeof workspaceFs>, dir: string) => void | Promise<void>,
@@ -275,8 +165,10 @@ describe("commitApp — the changed paths diffed back into the row", () => {
     const workspace = workspaceFs();
     const seam = seamFor(doc, options);
     const ctx = ctxFor(ADA);
-    await checkoutApp(APP, workspace, ctx, seam);
     const dir = `/user/apps/${APP}`;
+    for (const [path, file] of Object.entries(doc.source ?? {})) {
+      workspace.files.set(`${dir}/${path}`, file.text ?? "");
+    }
     await edit(workspace, dir);
     await commitApp(APP, options.changed ?? [...workspace.files.keys()], workspace, ctx, seam);
     return seam.doc();
@@ -341,21 +233,20 @@ describe("commitApp — the changed paths diffed back into the row", () => {
     expect(Object.keys(after.source ?? {})).toEqual(["a.ts"]);
   });
 
-  it("ignores the two hot files the render seam owns", async () => {
+  it("ignores app.tsx, the hot file the render seam owns", async () => {
     const after = await roundTrip(docWith({ "a.ts": inline("a\n") }), (workspace, dir) => {
-      workspace.files.set(`${dir}/plan.vendo`, "plan\n");
+      workspace.files.set(`${dir}/app.tsx`, "export default function A() { return null; }\n");
     });
 
-    // app.vendo is written by the checkout itself and must not come back as source.
+    // The PAINT stores the screen, and only after the component gauntlet passed
+    // it — a screen the floor refused must not reach `source` through this diff.
     expect(Object.keys(after.source ?? {})).toEqual(["a.ts"]);
   });
 
   it("lands nothing at all when no changed path belongs to this app", async () => {
-    const doc = docWith({ "a.ts": inline("a\n") });
+    const seam = seamFor(docWith({ "a.ts": inline("a\n") }));
     const workspace = workspaceFs();
-    const seam = seamFor(doc);
     const ctx = ctxFor(ADA);
-    await checkoutApp(APP, workspace, ctx, seam);
     const update = vi.spyOn(seam, "update");
 
     await commitApp(APP, ["/user/memory/notes.md"], workspace, ctx, seam);
@@ -364,7 +255,8 @@ describe("commitApp — the changed paths diffed back into the row", () => {
   });
 
   it("does not rewrite a path whose content still matches its stored hash", async () => {
-    // The stored hash IS the checkout base, so an unchanged file is not a write.
+    // The stored hash IS the base a commit diffs against, so an unchanged file
+    // is not a write.
     const original = inline("a\n");
     const after = await roundTrip(docWith({ "a.ts": original }), () => undefined);
 
@@ -399,7 +291,6 @@ describe("commitApp spills past the inline cap", () => {
     const blobs = memoryBlobs();
     const seam = seamFor(docWith({ "a.ts": inline("a\n") }), { blobs });
     const ctx = ctxFor(ADA);
-    await checkoutApp(APP, workspace, ctx, seam);
     workspace.files.set(`/user/apps/${APP}/big.ts`, oversized);
 
     await commitApp(APP, [`/user/apps/${APP}/big.ts`], workspace, ctx, seam);
@@ -415,7 +306,6 @@ describe("commitApp spills past the inline cap", () => {
     const workspace = workspaceFs();
     const seam = seamFor(docWith({ "a.ts": inline("a\n") }));
     const ctx = ctxFor(ADA);
-    await checkoutApp(APP, workspace, ctx, seam);
     workspace.files.set(`/user/apps/${APP}/big.ts`, oversized);
 
     await expect(commitApp(APP, [`/user/apps/${APP}/big.ts`], workspace, ctx, seam))
@@ -426,7 +316,6 @@ describe("commitApp spills past the inline cap", () => {
     const workspace = workspaceFs();
     const seam = seamFor(docWith(), {});
     const ctx = ctxFor(ADA);
-    await checkoutApp(APP, workspace, ctx, seam);
     workspace.files.set(`/user/apps/${APP}/big.ts`, oversized);
 
     await expect(commitApp(APP, [`/user/apps/${APP}/big.ts`], workspace, ctx, seam))
@@ -434,29 +323,7 @@ describe("commitApp spills past the inline cap", () => {
   });
 });
 
-describe("a spilled file survives the whole round trip", () => {
-  it("commits past the cap and checks back out with the same bytes", async () => {
-    // The promise: an app can always be rebuilt from its row. A spill is where
-    // that is easiest to break, because the bytes leave the row entirely.
-    const blobs = memoryBlobs();
-    const seam = seamFor(docWith(), { blobs });
-    const ctx = ctxFor(ADA);
-    const text = `${"y".repeat(WORKSPACE_INLINE_MAX_BYTES + 1)}\n`;
-
-    const writing = workspaceFs();
-    await checkoutApp(APP, writing, ctx, seam);
-    writing.files.set(`/user/apps/${APP}/big.ts`, text);
-    await commitApp(APP, [`/user/apps/${APP}/big.ts`], writing, ctx, seam);
-
-    // A FRESH workspace, so nothing survives except through the row + blobs.
-    const reading = workspaceFs();
-    await checkoutApp(APP, reading, ctx, seam);
-
-    expect(reading.files.get(`/user/apps/${APP}/big.ts`)).toBe(text);
-  });
-});
-
-describe("commitApp refuses the same addresses checkoutApp does", () => {
+describe("commitApp refuses an address it must not write", () => {
   it("refuses an app that lives in another person's workspace", async () => {
     await expect(commitApp(APP, [], workspaceFs(), ctxFor(ADA), seamFor(docWith(), { owner: "user_bob" })))
       .rejects.toThrow(VendoError);

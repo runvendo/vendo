@@ -8,19 +8,9 @@
  * {@link Finding} and {@link Check}, for the same reason those do: both sides
  * already speak the contract.
  *
- * Two methods, because the seam does two distinct things with them and one of
- * them is cheap:
- *
- *  - `compile` puts model wire through the PRODUCTION dialect. The seam used to
- *    call `compileWire(content)` with no options at all, so every files-first
- *    paint spoke a different dialect than the generation path — inline tool
- *    references did not expand and `bindingErrors`, "the engine's unshippable
- *    gate", was `[]` unconditionally. The incident is recorded once, at
- *    `server/runtime/wire-options.ts`; do not re-tell it here.
- *  - `check` is the seven deterministic fact checks (plus whatever the host
- *    plugged in). A `block` means the app must not reach a screen. The AI reviewer
- *    is deliberately NOT part of this: it spends a model call, and the seam runs on
- *    every commit. Judgment belongs to `validate`.
+ * One method: the component-screen gauntlet. The AI reviewer is deliberately NOT
+ * part of it — it spends a model call, and the seam runs on every commit.
+ * Judgment belongs to `validate`.
  */
 import {
   type AppDocument,
@@ -28,28 +18,13 @@ import {
   type Finding,
   type TreeNode,
 } from "@vendoai/core";
-import type { AppPlan } from "./genui/plan/types.js";
-import type { WireCompileResult } from "./genui/wire/compile.js";
 
 export interface AppFloor {
-  /** Compile model wire in the production dialect — the same options every other
-   *  compile of model wire in this codebase uses. */
-  compile(text: string): Promise<WireCompileResult>;
-  /**
-   * Everything the floor has to say about this compiled app. A `block` means it
-   * must not reach a screen.
-   *
-   * `appId` is here for the same reason `authoredApp` takes one: the checks read a
-   * whole `AppDocument`, and a document has an id.
-   */
-  check(input: { appId: AppId; compiled: WireCompileResult }): Promise<Finding[]>;
   /**
    * The component-screen gauntlet (`app.tsx`): compile, scan, typecheck, render
-   * once in the sealed VM, tree-check the output. Optional because a floor
-   * predating the screen engine still satisfies this contract; the seam paints
-   * nothing for `app.tsx` without it.
+   * once in the sealed VM, tree-check the output.
    */
-  component?(input: { appId: AppId; source: string }): Promise<ComponentPaintResult>;
+  component(input: { appId: AppId; source: string }): Promise<ComponentPaintResult>;
 }
 
 /** What the floor's component gauntlet hands the render seam: a refusal with
@@ -70,9 +45,6 @@ export interface CheckInput {
   document: AppDocument;
   /** The user's own words — what the app was asked to be. */
   request: string;
-  /** The plan the app was built from, when the check runs mid-pipeline; absent
-   *  for checks over a finished document. */
-  plan?: AppPlan;
 }
 
 /**

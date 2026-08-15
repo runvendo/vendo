@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 /**
- * The plan-skeleton ↔ Tabs seam.
+ * The screen-paint ↔ Tabs seam.
  *
- * `packages/apps` generation/skeleton.ts emits the app's tab chrome as a TREE
- * node — `{component:"Tabs", props:{tabs:[{value,label}], value}, children:[…panels]}`
- * — and every group of a tabbed app hangs off those panel children. V4 retired
- * the legacy tree primitive that used to serve that shape, so the KIT Tabs
- * carries it now.
+ * The Kit's own contract (`packages/apps` contract/kit/specs.ts) says a screen
+ * NAMES its tabs and nests one child per tab in tab order, so a painted screen
+ * arrives here as `{component:"Tabs", props:{tabs:[{value,label}], value},
+ * children:[…panels]}` and every panel's body hangs off those children. V4
+ * retired the legacy tree primitive that used to serve that shape, so the KIT
+ * Tabs carries it now.
  *
  * A harness that mocked either side would prove nothing (CLAUDE.md), so this
  * builds the producer's EXACT node shape and renders it through the real
@@ -23,39 +24,38 @@ afterEach(cleanup);
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-/** Byte-for-byte the node shape skeletonFromPlan writes for a two-tab plan. */
-const skeletonShapedTree = (): WalkTree => ({
+/** Byte-for-byte the node shape a painted screen carries for two tabs. */
+const tabbedTree = (): WalkTree => ({
   formatVersion: VENDO_TREE_FORMAT,
   root: "app",
   nodes: [
-    { id: "app", component: "Stack", source: "prewired", children: ["tabs"] },
+    { id: "app", component: "Stack", children: ["tabs"] },
     {
       id: "tabs",
       component: "Tabs",
-      source: "prewired",
       props: {
         tabs: [{ value: "Overview", label: "Overview" }, { value: "Overdue", label: "Overdue" }],
         value: "Overview",
       },
       children: ["tab-0", "tab-1"],
     },
-    { id: "tab-0", component: "Stack", source: "prewired", children: ["group-0"] },
-    { id: "tab-1", component: "Stack", source: "prewired", children: ["group-1"] },
-    { id: "group-0", component: "Text", source: "prewired", props: { text: "Overview body" } },
-    { id: "group-1", component: "Text", source: "prewired", props: { text: "Overdue body" } },
+    { id: "tab-0", component: "Stack", children: ["group-0"] },
+    { id: "tab-1", component: "Stack", children: ["group-1"] },
+    { id: "group-0", component: "Text", props: { text: "Overview body" } },
+    { id: "group-1", component: "Text", props: { text: "Overdue body" } },
   ],
 } as WalkTree);
 
-describe("the plan skeleton's tab chrome renders through the real renderer", () => {
+describe("a painted screen's tab chrome renders through the real renderer", () => {
   it("paints both tab labels from {value,label} items", () => {
-    render(<TreeView tree={skeletonShapedTree()} components={{}} onAction={ok} />);
+    render(<TreeView tree={tabbedTree()} components={{}} onAction={ok} />);
 
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Overview", "Overdue"]);
   });
 
   it("shows the panel `value` names — the group body, not an empty bar", () => {
-    render(<TreeView tree={skeletonShapedTree()} components={{}} onAction={ok} />);
+    render(<TreeView tree={tabbedTree()} components={{}} onAction={ok} />);
 
     // The regression this file exists for: a Tabs that ignores children renders
     // the bar and NOTHING else, so the whole app disappears under its own tabs.
@@ -64,7 +64,7 @@ describe("the plan skeleton's tab chrome renders through the real renderer", () 
   });
 
   it("switches panels on click, with no round trip", () => {
-    render(<TreeView tree={skeletonShapedTree()} components={{}} onAction={ok} />);
+    render(<TreeView tree={tabbedTree()} components={{}} onAction={ok} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Overdue" }));
 
@@ -73,7 +73,7 @@ describe("the plan skeleton's tab chrome renders through the real renderer", () 
   });
 
   it("honors `value` when it names a tab other than the first", () => {
-    const tree = skeletonShapedTree();
+    const tree = tabbedTree();
     (tree.nodes[1] as { props: Record<string, unknown> }).props.value = "Overdue";
 
     render(<TreeView tree={tree} components={{}} onAction={ok} />);

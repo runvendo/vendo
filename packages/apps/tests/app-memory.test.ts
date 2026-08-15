@@ -10,7 +10,7 @@ import type { AppId, RunContext } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { APP_MEMORY_DECISIONS_MAX_BYTES, APP_MEMORY_MAX_ASKS } from "../src/server/persistence/app-memory.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
-import { authoringAssembler } from "../src/server/testing/authoring-assembler.js";
+import { authoringAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -22,7 +22,16 @@ const ctx: RunContext = {
   sessionId: "session_memory",
 };
 
-const WIRE = '<App name="Spending"><Text text="Spending"/><Disclaimer reason="Scripted fixture app."/></App>';
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="Spending" variant="heading" />
+    </Stack>
+  );
+}
+`;
 
 const runtimeWithApp = async (): Promise<{
   runtime: AppsRuntime;
@@ -38,9 +47,9 @@ const runtimeWithApp = async (): Promise<{
     },
     catalog: [],
     model: basicLanguageModel(),
-    // The ONE engine: the app under test is landed by the real `authored` write
-    // path, so `remember` writes onto a row a real create produced.
-    screen: authoringAssembler(() => runtime, WIRE),
+    // The ONE engine: the app under test is landed by the real checks floor,
+    // so `remember` writes onto a row a real create produced.
+    screen: authoringAssembler(() => runtime, SCREEN),
   });
   const app = await runtime.create({ prompt: "Show my spending" }, ctx);
   return { runtime, appId: app.id };

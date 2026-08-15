@@ -443,7 +443,7 @@ export function claudeCode(
     // loadout that hides tools behind a search is friction it does not need — the
     // ctx safety projection still decides what may be projected at all. And app
     // generation leaves this surface: the model builds and edits apps by writing
-    // `plan.vendo` / `app.vendo` with its own hands, so the one engine tool is
+    // `app.tsx` with its own hands, so the one engine tool is
     // withheld rather than left as a second, coin-flip path to the same outcome.
     // Lifecycle tools (`vendo_apps_open`, the pin and data verbs) stay.
     toolSurface: { curated: false, withhold: [VENDO_MAKE_TOOL] },
@@ -727,7 +727,6 @@ export function claudeCode(
           await serialize(syncHot).catch(() => undefined);
           const failures = await validateApps({
             tools: turn.tools,
-            workspace: turn.workspace,
             paths: [...landed],
             // …AND the reviewer, on whatever passed the mechanical half. This is
             // the turn boundary, so every app here is finished: the one place a

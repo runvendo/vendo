@@ -38,7 +38,6 @@ import type {
   NormalizedCatalog,
   ScreenAssembler,
   VendoTheme,
-  WireCompileResult,
   AppFloor,
 } from "../../contract/index.js";
 import type { LanguageModel } from "ai";
@@ -247,21 +246,6 @@ export interface AppsConfig {
    * which is exactly what checking did before the slot existed.
    */
   toolchain?: ScreenToolchain;
-  /**
-   * §4.5's other half — the plan an escalating screen agent left behind, read
-   * back so the build ANCHORS on it instead of re-planning from the ask alone.
-   *
-   * The plan is a FILE (`/user/apps/<appId>/plan.vendo`, written through the same
-   * `commit()` that painted its skeleton), and this block holds no workspace
-   * (§3.5 — a sandboxed harness holds a workspace and never a store). So the seam
-   * is the same shape as `screen` above and composition, which already built the
-   * workspace the assembler wrote through, is the one place that reads it back.
-   *
-   * Best-effort by design: `undefined` — unfilled slot, no plan file, an
-   * unreadable workspace — means the build plans from the ask, which is exactly
-   * what it did before this seam existed. A build is never lost to a missing brief.
-   */
-  escalatedPlan?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
 }
 
 /** 06-apps §1 */
@@ -422,25 +406,23 @@ export interface AppsRuntime {
     /**
      * The id this build must use, when the caller already minted one.
      *
-     * The front door mints before it routes to the screen agent (§4.5): an
-     * escalation's `plan.vendo` is already written at `/user/apps/<appId>/` and
-     * its skeleton is already on `vendoViewStreamId(appId)`, so a conductor that
-     * minted its own id would paint the finished app onto a SECOND stream and
-     * leave the plan's skeleton stranded beside it as a permanently-building
-     * card. Absent — every caller but the front door — one is minted here.
+     * The front door mints before it routes to the screen agent (§4.5): the
+     * screen agent's files live at `/user/apps/<appId>/` and its paints ride
+     * `vendoViewStreamId(appId)`, so a conductor that minted its own id would
+     * paint the finished app onto a SECOND stream. Absent — every caller but the
+     * front door — one is minted here.
      */
     appId?: AppId;
     /**
-     * §4.5 — the plan the escalating screen agent already wrote, verbatim.
+     * §4.5 — the escalating screen agent already ran, and this is its one line
+     * about why assembly could not serve the ask.
      *
-     * The build ANCHORS on it: the person is already looking at its skeleton, so
-     * re-planning from the ask alone is how the outline they are watching turns
-     * into a different app. It is a brief for the brain, never a substitute for
-     * one — the ask still travels verbatim, and the brain is free to say the plan
-     * is wrong. Absent — every caller but an escalation — the brain plans from
-     * the ask exactly as it always has.
+     * Its presence is also what says "do not assemble again": the front door
+     * routes through the screen agent before it calls this, so a `create` that
+     * re-routed would run a second full agent — two model bills for one ask.
+     * Absent, this door starts where every other caller does: in the screen agent.
      */
-    plan?: string;
+    why?: string;
     /**
      * The host slot this build is FOR. The placement row is written the moment
      * the id is minted — before a single token is generated — so the slot shows
@@ -470,31 +452,6 @@ export interface AppsRuntime {
     onServerWork?: (work: CreateServerWork) => void;
   }, ctx: RunContext): Promise<AppDocument>;
   /**
-   * Build contract §1.6 / redesign D4 — the files-first counterpart of
-   * {@link AppsRuntime.create}: the app a HARNESS wrote with its own hands, as
-   * `app.vendo` in the workspace.
-   *
-   * Nothing else makes such an app an APP: with no row it never lists and never
-   * opens (`vendo_apps_open` masks it as `not-found`), and with no document its
-   * queries resolve to nothing, so every value renders "—" while the real host
-   * data sits one call away. This closes both halves — it upserts the row through
-   * the writer generation persists with, and resolves the tree's queries through
-   * the guard-bound caller `open()` uses (one guard decision per query, the
-   * person's own authority, the app venue).
-   *
-   * Deliberately NOT generation: no model, no conductor, no checking floor. The
-   * `validate` verb is this loop's review floor (D7's skill law), and a mid-turn
-   * save is partial by design — refusing to store what the person can already see
-   * would be the worse failure.
-   *
-   * The render seam (`@vendoai/harnesses`) is the only caller; it hands over the
-   * compile it already did, so the stored tree is byte-identical to the painted one.
-   */
-  authored(
-    input: { appId: AppId; compiled: WireCompileResult },
-    ctx: RunContext,
-  ): Promise<AuthoredAppResult>;
-  /**
    * The same job for a COMPONENT screen (`app.tsx`): the row that makes a written
    * file an app, and the screen itself as that app's stored source.
    *
@@ -516,7 +473,7 @@ export interface AppsRuntime {
    * reads the row's existence AS (`NOTHING_RENDERABLE`).
    *
    * Every save that paints, not only the first: a re-save lands through the same
-   * versioned write `app.vendo` does, so a component app's edits sit on its history
+   * versioned write every screen does, so a component app's edits sit on its history
    * under the person's own words like any other artifact's.
    */
   authoredScreen(input: { appId: AppId; name: string; source: string }, ctx: RunContext): Promise<void>;
@@ -563,7 +520,7 @@ export interface AppsRuntime {
    * compile dialect, and the deterministic fact checks over what it compiled.
    *
    * The render seam is the caller, for the same reason it is `authored`'s: it is
-   * the one place that sees every write to `app.vendo`, whoever made it. Handing it
+   * the one place that sees every write to `app.tsx`, whoever made it. Handing it
    * the floor is what makes the checks run for EVERY author instead of only for
    * apps our own conductor built — the seam used to compile with no options at
    * all, so a lying binding was invisible and an inline tool reference lost its
@@ -699,12 +656,12 @@ export interface AppsRuntime {
    * without this door the tool had nothing behind it.
    *
    * Findings, never a throw: an error reads to a model as "the tool is broken"
-   * and findings read as "your document is wrong". Only the second one gets
-   * fixed. Give `appId` to check what is stored, or `document` to check wire
-   * text before committing it.
+   * and findings read as "your screen is wrong". Only the second one gets fixed.
+   * `appId` names what is stored — a screen has already passed its paint gate to
+   * BE stored, so there is nothing else to check.
    */
   validate(
-    input: { appId?: AppId; document?: string },
+    input: { appId?: AppId },
     ctx: RunContext,
   ): Promise<{ ok: boolean; findings: Finding[] }>;
   /**

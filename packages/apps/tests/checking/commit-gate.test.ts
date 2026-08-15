@@ -16,7 +16,7 @@ import { engineOverAdapter } from "@vendoai/core";
  *
  * WHERE THE GATE LIVES NOW. There is one engine, and it commits through the
  * paint seam — so the floor is `AppsRuntime.floor(ctx)`, handed to whoever writes
- * `app.vendo` (`checking/floor.ts`; the seam's own refusal is proven end to end in
+ * `app.tsx` (`checking/floor.ts`; the seam's own refusal is proven end to end in
  * the render-seam-floor suite beside this one). This file pins the two halves
  * this block still owns: the floor's own verdict (what blocks, what only warns,
  * and that a HOST's rule is enforceable through it), and what create and edit do
@@ -32,19 +32,17 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import {
-  compileWire,
   type AppDocument,
   type Check,
   type Finding,
 } from "../../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type AppsRuntime } from "../../src/server/index.js";
-import { scriptedAssembler, type AssemblerAnswer } from "../../src/server/testing/authoring-assembler.js";
+import { scriptedAssembler, type AssemblerAnswer } from "../../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../../src/server/testing/scripted-model.js";
 import { seedAppRow } from "../../src/server/testing/seed-app-row.js";
-import { blocks } from "../../src/server/checking/floor.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
@@ -58,11 +56,17 @@ const tools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "no tools" } }; },
 };
 
-const appWire = (name: string): string =>
-  `<App name="${name}"><Text text="${name}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+/** The app's name is its default export's, split on camel case. */
+const appScreen = (component: string, label: string): string =>
+  `import { Stack, Text } from "@vendo/screen";
 
-const FIRST = appWire("Invoices");
-const SECOND = appWire("Invoices renamed");
+export default function ${component}() {
+  return <Stack gap={12}><Text text="${label}" variant="heading" /></Stack>;
+}
+`;
+
+const FIRST = appScreen("Invoices", "Invoices");
+const SECOND = appScreen("InvoicesRenamed", "Invoices renamed");
 
 /**
  * A blocking finding shaped exactly like a real one: `where` is a MACHINE locus
@@ -98,9 +102,10 @@ const HOUSE_STYLE: Check = {
 /**
  * The runtime under test.
  *
- * `answer` is what the ONE engine does with each ask: the wire it saves (through
- * the REAL `authored` write path), or the refusal it comes back with when its own
- * commit did not pass the floor. `null` for `current` is a create.
+ * `answer` is what the ONE engine does with each ask: the `app.tsx` it saves
+ * (through the REAL gauntlet and the REAL write path), or the refusal it comes
+ * back with when its own commit did not pass the floor. `null` for `current` is a
+ * create.
  */
 const setup = (
   answer: (request: string, current: AppDocument | null) => AssemblerAnswer,
@@ -120,13 +125,11 @@ const setup = (
   return { store, runtime };
 };
 
-/** The gate itself, as the paint seam calls it: compile in the production dialect,
- *  then run the checks over what compiled. */
-const floorVerdict = async (runtime: AppsRuntime, wire: string): Promise<Finding[]> => {
-  const floor = runtime.floor(ctx);
-  const compiled = await floor.compile(wire);
-  return await floor.check({ appId: "app_floor", compiled });
-};
+/** The gate itself, as the paint seam calls it: the whole component gauntlet over
+ *  the screen, with the host's plugged checks after it. It has ONE method now, so
+ *  its verdict is the paint result — refused, with the blocking lines, or ok. */
+const floorVerdict = async (runtime: AppsRuntime, screen: string) =>
+  await runtime.floor(ctx).component({ appId: "app_floor", source: screen });
 
 const rowOf = async (store: ReturnType<typeof memoryStore>, appId: string): Promise<string> =>
   JSON.stringify((await store.records("vendo_apps").get(appId))?.data);
@@ -235,12 +238,10 @@ describe("warn never blocks", () => {
   it("keeps a warn out of the gate's verdict", async () => {
     const { runtime } = saving([THIN]);
 
-    const findings = await floorVerdict(runtime, FIRST);
-
-    // Reported — a warn rides along on an app that ships…
-    expect(findings.map(({ message }) => message)).toContain("this app feels thin.");
-    // …and stops nothing.
-    expect(blocks(findings)).toEqual([]);
+    // The host's warn ran at the gate and the paint went through regardless. The
+    // floor answers with what BLOCKS and nothing else, so a warn's entire
+    // footprint is that it changed nothing.
+    expect((await floorVerdict(runtime, FIRST)).ok).toBe(true);
   });
 
   it("persists a create whose only findings are warns", async () => {
@@ -270,14 +271,18 @@ describe("the host's own rules bite", () => {
     // land — no code of ours knows this rule, and the floor enforces it anyway.
     const { runtime } = setup(() => FIRST, [HOUSE_STYLE]);
 
-    const blocking = blocks(await floorVerdict(runtime, FIRST));
+    const verdict = await floorVerdict(runtime, FIRST);
 
+    expect(verdict.ok).toBe(false);
+    const blocking = verdict.ok ? [] : [...verdict.blocking];
     expect(blocking).toHaveLength(1);
-    expect(blocking[0]?.message).toContain("which account it came from");
-    // Its LOCUS is machine-facing and stays off the person's screen; the sentence
-    // is the half that reaches them.
-    expect(blocking[0]?.where).toContain("node");
-    expectConsumerVoice(blocking[0]?.message ?? "");
+    expect(blocking[0]).toContain("which account it came from");
+    // A refusal line names the contributed check and its machine locus ahead of
+    // the sentence, so whoever reads the log knows which rule objected. Keeping
+    // that off the PERSON's screen is create's and edit's job — the two cases
+    // below.
+    expect(blocking[0]).toContain("[maple-house-style]");
+    expect(blocking[0]).toContain("node");
   });
 
   it("stops a create on that finding: no app, and the host's sentence is the reason", async () => {
@@ -304,13 +309,16 @@ describe("the host's own rules bite", () => {
     const { runtime, store } = setup(() => ({ kind: "unavailable", why: rule }), [HOUSE_STYLE]);
     // The host's rule stops the create too, so the app under edit is seeded
     // straight into the store rather than generated.
-    const compiled = compileWire(FIRST, {});
     const seeded = {
       format: VENDO_APP_FORMAT,
       id: "app_seeded",
       name: "Invoices",
       ui: "tree",
-      tree: compiled.tree,
+      tree: {
+        formatVersion: "vendo-genui/v2",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
     } as unknown as AppDocument;
     await seedAppRow(engineOverAdapter(store), seeded, ctx.principal.subject);
     const before = await rowOf(store, seeded.id);

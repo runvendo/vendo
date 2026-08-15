@@ -1,18 +1,13 @@
 /**
  * The hot-path render seam — build contract §1.6.
  *
- * "The skeleton renders the moment the plan file exists, whoever wrote it." The
- * runtime is the one place that knows, so the runtime is the one place that
- * emits: every store write to `app.vendo` or `plan.vendo` is parsed here and, iff
- * it parses, becomes today's `data-vendo-view` part — same payload shape, same
- * stable per-app stream id, same server-authoritative field stripping. An
- * unparseable write emits NOTHING: the last good view stays on screen and the
- * brokenness reaches the harness through `validate`, never the user.
- *
- * A parsing `app.vendo` commit is also the moment a files-first app (D4) BECOMES
- * an app: the compile goes to `AppsRuntime.authored` (the `authoredApp` seam),
- * which stores the row the person's Apps list and `vendo_apps_open` read, and
- * resolves the tree's queries so the paint carries real data instead of "—".
+ * The runtime is the one place that knows a screen landed, so the runtime is the
+ * one place that emits: every store write to `app.tsx` goes through the checks
+ * floor's component gauntlet here and, iff it paints, becomes today's
+ * `data-vendo-view` part — same payload shape, same stable per-app stream id,
+ * same server-authoritative field stripping. A write that does not paint emits
+ * NOTHING: the last good view stays on screen and the brokenness reaches the
+ * harness through `validate`, never the user.
  *
  * `HarnessEvent` stays closed — a harness cannot yield a view, by construction.
  *
@@ -30,33 +25,25 @@
  * snapshot behind `machine.snapshotRef` — lose the snapshot, lose the app.
  */
 import {
-  safeErrorMessage,
   vendoViewPart,
   type AppId,
   type CommitResult,
-  type Json,
   type TurnId,
   type UIPayload,
   type VendoViewPart,
   type WorkspaceFs,
 } from "@vendoai/core";
 import {
-  compilePlan,
-  compileWire,
   screenDescriptionSchema,
-  type Finding,
-  type Tree,
-  type WireCompileResult,
   type AppFloor,
   stripServerAuthoritativeFields,
 } from "../../contract/index.js";
-// In-package since the seam moved home to @vendoai/apps: the plan skeleton,
-// the emitted-payload assembly and the field stripping that goes with it.
-import { skeletonFromPlan } from "./skeleton.js";
+// In-package since the seam moved home to @vendoai/apps: the emitted-payload
+// assembly and the field stripping that goes with it.
 import { assembleTree } from "../runtime/runtime.js";
 
-/** §1.6 — the two files that sync mid-turn. Everything else waits for turn end. */
-export const HOT_PATH_FILES = ["app.vendo", "plan.vendo", "app.tsx"] as const;
+/** §1.6 — the file that syncs mid-turn. Everything else waits for turn end. */
+export const HOT_PATH_FILES = ["app.tsx"] as const;
 
 /** §3.1, frozen: `/user/apps/<appId>/**` and — since wave 3 (§9.7) —
  *  `/orgs/<orgId>/apps/<appId>/**`. `appId` is the store's app id verbatim in
@@ -104,28 +91,15 @@ export function hotPathAppId(path: string): AppId | undefined {
 
 
 /**
- * Did this content parse into something worth putting on screen?
- *
- * `compileWire` is total: unparseable input still yields a synthetic `root`
- * Stack node, so a node count is NOT the test. A childless root is exactly the
- * compiler's degraded floor — nothing to render — and putting it on the wire
- * would blank a working app.
- */
-const renders = (tree: Tree): boolean => {
-  const root = tree.nodes.find((node) => node.id === tree.root);
-  return root !== undefined && (root.children?.length ?? 0) > 0;
-};
-
-/**
  * Which apps a commit put ON SCREEN, for the hand that wrote it.
  *
- * A landed write is not a painted screen: a document that does not compile, does
- * not render, or does not pass the checks floor lands its bytes and paints
- * nothing — and leaves no app row, because `authoredApp` runs only on a paint. A
- * hand that saved one then has no door left: `validate({appId})` is row-scoped
- * and answers "app not found" on exactly the document that needed judging (live
- * 2026-08-06). `emit` belongs to whoever wrapped the workspace, so the verdict has
- * to travel with the commit for the writer to see it at all.
+ * A landed write is not a painted screen: a screen that does not pass the checks
+ * floor lands its bytes and paints nothing — and leaves no app row, because the
+ * gauntlet's own `ok` is what creates it. A hand that saved one then has no door
+ * left: `validate({appId})` is row-scoped and answers "app not found" on exactly
+ * the document that needed judging (live 2026-08-06). `emit` belongs to whoever
+ * wrapped the workspace, so the verdict has to travel with the commit for the
+ * writer to see it at all.
  *
  * BESIDE the result rather than on it: the wrapper passes the store's answer
  * through untouched, and a `CommitResult` is what the store said, not what the
@@ -151,39 +125,10 @@ export interface RenderSeamOptions {
    * Composition builds it — `AppsRuntime.floor(ctx)` — which is the only layer
    * that HAS those things.
    *
-   * Unwired, the seam behaves exactly as it did before this option existed: a bare
-   * `compileWire` and no checks. That is not a mode anyone should ship — it is
-   * what made every files-first paint speak a different dialect than the
-   * conductor, so an inline tool reference silently lost its binding and
-   * `bindingErrors` was `[]` by construction — but a `WorkspaceFs` wrapped
-   * outside composition still has to work.
+   * Unwired, this build carries no screen engine: nothing paints, and a
+   * `WorkspaceFs` wrapped outside composition still has to work.
    */
   floor?: AppFloor;
-  /**
-   * The live tool/component names, for the plan compiler's fact check. Facts only
-   * shape `issues` — never whether a plan parses — so omitting them costs the
-   * seam nothing; composition supplies them when it has them.
-   */
-  facts?: () => { tools: readonly string[]; components: readonly string[] };
-  /**
-   * The app-runtime half of an `app.vendo` commit (§1.6) — what makes a
-   * file-authored app a real app instead of a picture of one.
-   *
-   * Composition injects `AppsRuntime.authored`, which UPSERTS the app's store row
-   * (so a files-first app lists, opens and shares like an engine-built one) and
-   * resolves the tree's queries through the guard-bound registry with this turn's
-   * ctx — the same call path, the same risk and consent rules, as any tool call. Its
-   * answer is this app's `data`, plus `dataUnavailable` when one of those queries
-   * FAILED, which is the same honest marker a thrown app half sets below.
-   *
-   * ASYNC on purpose: it runs real host queries, which is also why the skeleton is
-   * emitted BEFORE it is awaited (below) — §1.6 is a promise about seconds.
-   * Unwired, the view still renders: the skeleton, with no data and no row.
-   */
-  authoredApp?: (input: { appId: AppId; compiled: WireCompileResult }) => Promise<{
-    data: Record<string, Json>;
-    dataUnavailable?: boolean;
-  } | undefined>;
   /**
    * Contract §2.2/§3.2 — persist the app's own SOURCE for a commit that landed.
    *
@@ -221,135 +166,48 @@ export interface RenderSeamOptions {
  *  reject it — a payload it would not render is not a view, and a half-rendered
  *  app is worse than the last good one.
  *
- *  `streaming` is the mid-build flag the shipped emitter stamps on its partial
- *  trees (packages/apps runtime.ts), and it has to FLIP OFF for the last paint.
- *  While it is on, the renderer holds the forming skeleton instead of reaching a
- *  verdict, the card's bar stays on "Building your view…", and its settle-scroll,
- *  stage registration and pin affordance never arm. */
+ *  `streaming: false` because the gauntlet has already run: while that flag is
+ *  on, the renderer holds the forming skeleton instead of reaching a verdict, the
+ *  card's bar stays on "Building your view…", and its settle-scroll, stage
+ *  registration and pin affordance never arm. */
 const viewPart = (
   appId: AppId,
   payload: UIPayload,
-  streaming: boolean,
   turnId?: TurnId,
 ): { streamId: string; part: VendoViewPart } | undefined =>
-  // Spread, never mutated in place: the emitted part must not change under the
-  // consumer when this function's caller fills the data in afterwards.
-  vendoViewPart({ appId, payload: { ...payload, streaming }, ...(turnId === undefined ? {} : { turnId }) });
+  vendoViewPart({ appId, payload: { ...payload, streaming: false }, ...(turnId === undefined ? {} : { turnId }) });
 
-/** The view a parsing hot-path commit produces, or undefined if it does not parse. */
+/** The view a landed hot-path commit produces, or undefined if it does not paint. */
 export async function viewForWrite(
   path: string,
   content: string,
   options: RenderSeamOptions,
 ): Promise<{ streamId: string; part: VendoViewPart } | undefined> {
   const appId = hotPathAppId(path);
-  const file = hotPathFile(path);
-  if (appId === undefined || file === undefined) return undefined;
+  if (appId === undefined || hotPathFile(path) === undefined) return undefined;
 
-  let payload: UIPayload | undefined;
-  /** Set for `app.vendo` only: a plan is a skeleton, not an app document — there
-   *  is nothing to store and no query to run until the app itself is written. */
-  let compiledApp: WireCompileResult | undefined;
-  if (file === "app.tsx") {
-    // The component gauntlet lives behind the floor, like every other check —
-    // the seam never learns how to read TSX. No door means this build carries
-    // no screen engine: nothing paints, the last good view stays.
-    const door = options.floor?.component?.bind(options.floor);
-    if (door === undefined) return undefined;
-    const result = await door({ appId, source: content });
-    if (!result.ok) {
-      console.error(
-        `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
-        + result.blocking.join("; "),
-      );
-      return undefined;
-    }
-    const assembled = stripServerAuthoritativeFields(
-      assembleTree({ tree: { nodes: Object.values(result.nodes), root: result.root } }),
-    ) as unknown as UIPayload;
-    (assembled as { interactive?: unknown }).interactive = result.interactive;
-    payload = assembled;
-  } else if (file === "app.vendo") {
-    // compileWire is TOTAL and valid-while-partial: every prefix of a wire
-    // compiles, which is what makes a mid-generation save renderable. Only a
-    // `compile-failed` issue means it truly did not parse.
-    //
-    // Through the FLOOR, so this compile speaks the production dialect — the same
-    // one every other author speaks. Bare, an inline tool
-    // reference does not expand (its binding is dropped and its query never
-    // minted, and the tree still has children, so the seam paints an app with a
-    // blank value) and `bindingErrors` is `[]` by construction.
-    const compiled = options.floor === undefined
-      ? compileWire(content)
-      : await options.floor.compile(content);
-    // `missing-app` means there was no `<App>` document to read at all, and
-    // `compile-failed` means the compiler itself gave up: both are "unparseable".
-    if (compiled.issues.some((issue) => issue.code === "compile-failed" || issue.code === "missing-app")) {
-      return undefined;
-    }
-    if (!renders(compiled.tree)) return undefined;
-    // The floor, on EVERY commit, for every author — our loop, Claude Code, a
-    // human with an editor (§7.1). A `block` means this must not reach a screen,
-    // and it says so the only way this seam knows how to: it emits nothing, and
-    // the last good view stays. No new failure channel; the brokenness reaches the
-    // author through `validate`, exactly like content that does not compile.
-    if (options.floor !== undefined) {
-      let findings: readonly Finding[] = [];
-      try {
-        findings = await options.floor.check({ appId, compiled });
-      } catch (error) {
-        // A floor that could not RUN is not a finding. The layer already decided
-        // this question for the checks it runs — one that throws degrades to a
-        // `warn` naming it, "so a broken check never takes the app down with it" —
-        // and the same reasoning holds one level up: refusing every paint because
-        // the host's tool probe failed would blank the pane for the whole turn,
-        // which is what §1.6's skeleton exists to prevent. Loud for the operator,
-        // silent for the user.
-        console.error(
-          `[vendo] the checks floor could not run for ${appId}, so this paint was not checked — ${safeErrorMessage(error)}`,
-        );
-      }
-      const blocking = findings.filter((finding) => finding.severity === "block");
-      if (blocking.length > 0) {
-        console.error(
-          `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
-          + blocking.map(({ check, where, message }) => [
-            check === undefined ? undefined : `[${check}]`,
-            where,
-            message,
-          ].filter((part) => part !== undefined).join(" ")).join("; "),
-        );
-        return undefined;
-      }
-    }
-    compiledApp = compiled;
-    payload = stripServerAuthoritativeFields(
-      assembleTree({ tree: compiled.tree, components: compiled.components }),
-    ) as unknown as UIPayload;
-  } else {
-    const facts = options.facts?.() ?? { tools: [], components: [] };
-    const compiled = compilePlan(content, facts);
-    if (compiled.plan === undefined) return undefined;
-    // The plan format IS the render format: its skeleton is the view.
-    const skeleton = skeletonFromPlan(compiled.plan);
-    if (!renders(skeleton.tree)) return undefined;
-    // Redesign spec §5: the plan's arrival posture, forwarded the moment the plan
-    // file parses — which is the whole point of hinting at plan time, since the
-    // stage has to be open while the skeleton is still worth watching. Absent
-    // stays absent: the client reads undefined as inline, so a plan written
-    // before this field existed keeps behaving exactly as it did. Only the plan
-    // carries it; later `app.vendo` saves say nothing about display and must not
-    // be read as a retraction.
-    payload = stripServerAuthoritativeFields(assembleTree({
-      tree: skeleton.tree,
-      ...(compiled.plan.display === undefined ? {} : { display: compiled.plan.display }),
-    })) as unknown as UIPayload;
+  // The component gauntlet lives behind the floor, like every other check —
+  // the seam never learns how to read TSX. No door means this build carries
+  // no screen engine: nothing paints, the last good view stays.
+  const door = options.floor?.component?.bind(options.floor);
+  if (door === undefined) return undefined;
+  const result = await door({ appId, source: content });
+  if (!result.ok) {
+    console.error(
+      `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
+      + result.blocking.join("; "),
+    );
+    return undefined;
   }
+  const payload = stripServerAuthoritativeFields(
+    assembleTree({ tree: { nodes: Object.values(result.nodes), root: result.root } }),
+  ) as unknown as UIPayload;
+  (payload as { interactive?: unknown }).interactive = result.interactive;
 
   // Contract §3.3 — nothing paints that is not a valid `ScreenDescription`. This
   // is where the view channel's shape becomes enforced rather than described: an
   // emission that does not parse emits NOTHING, which is the law this seam
-  // already lives by for content that does not compile.
+  // already lives by for a screen the gauntlet refused.
   const description = screenDescriptionSchema.safeParse(payload);
   if (!description.success) {
     console.error(
@@ -359,57 +217,8 @@ export async function viewForWrite(
     );
     return undefined;
   }
-
-  // A plan IS the mid-build state: its skeleton stays streaming until the app
-  // document itself lands. A component screen has no wire document either, but
-  // its paint is FINAL — the gauntlet already ran.
-  if (compiledApp === undefined) return viewPart(appId, payload, file === "plan.vendo", options.turnId);
-  // "The skeleton renders the moment the plan file exists" is a promise about
-  // SECONDS, and the app half runs real host queries. So the skeleton goes out
-  // first and the same stream id is written again when the data lands — the
-  // engine's own progressive behavior, and the reason successive views reconcile
-  // in place instead of stacking.
-  if (options.authoredApp !== undefined) {
-    const skeleton = viewPart(appId, payload, true, options.turnId);
-    if (skeleton !== undefined) options.emit(skeleton.streamId, skeleton.part);
-  }
-  let data: Record<string, Json> | undefined;
-  /**
-   * The app half FAILED, as opposed to answering with nothing. Settling alone is
-   * honest about the spinner and dishonest about the data: every unresolved binding
-   * renders "—" (packages/ui branded.tsx), so a failed load is indistinguishable
-   * from "you have no spending". The operator gets the log below; without this
-   * marker the user gets a plausible lie. So the failure rides the payload as a
-   * server-written extra, the same channel `inClient` and `pinDrift` ride.
-   */
-  let dataUnavailable = false;
-  try {
-    const authored = await options.authoredApp?.({ appId, compiled: compiledApp });
-    data = authored?.data;
-    // A query that failed is the common case and a throw is the rare one: same
-    // marker, because on screen they are the same failure.
-    if (authored?.dataUnavailable === true) dataUnavailable = true;
-  } catch (error) {
-    // The streaming skeleton is ALREADY on screen, so rethrowing would leave the
-    // card stuck on "Building your view…" forever — the exact symptom the settle
-    // flag exists to prevent. `authored` can genuinely throw: its own store reads
-    // and hold checks run before its internal try.
-    dataUnavailable = true;
-    console.error(
-      `[vendo] the app half of ${appId} failed; the view settles without its data — ${safeErrorMessage(error)}`,
-    );
-  }
-  // The app half has run: this is the finished paint, so it SETTLES.
-  return viewPart(appId, {
-    ...payload,
-    // §3.3's `data` law is about the DESCRIPTION, which was gated above without
-    // it. This resolved data is the shipped first-paint fill, and it rides
-    // BESIDE the description until Track A moves the query path into the slot —
-    // at which point this spread is the thing that gets deleted, and the gate
-    // above is already the wall that stops it coming back.
-    ...(data === undefined ? {} : { data }),
-    ...(dataUnavailable ? { dataUnavailable: true } : {}),
-  }, false, options.turnId);
+  // The gauntlet already ran its queries, so this paint is FINAL.
+  return viewPart(appId, payload, options.turnId);
 }
 
 /**
@@ -417,7 +226,7 @@ export async function viewForWrite(
  * other operation passes straight through, so the result is still a `WorkspaceFs`.
  */
 export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSeamOptions): WorkspaceFs {
-  /** True iff this path put a view on screen — what the plan's yield is keyed on. */
+  /** True iff this path put a view on screen. */
   const emitFor = async (path: string): Promise<boolean> => {
     try {
       // Read back what the store now holds rather than trusting a remembered
@@ -435,10 +244,10 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
 
   /**
    * Land the source of every app this commit touched — AFTER the views, for two
-   * reasons. §1.6 is a promise about seconds, and — the load-bearing one — an
-   * `app.vendo` commit is the moment a files-first app BECOMES an app: the
-   * `authoredApp` seam above is what upserts its row. Running source persistence
-   * first would look for a row that does not exist yet.
+   * reasons. §1.6 is a promise about seconds, and — the load-bearing one — the
+   * paint is the moment a files-first app BECOMES an app: the gauntlet's own
+   * `ok` is what upserts its row (`AppFloor.component` → `authoredScreen`).
+   * Running source persistence first would look for a row that does not exist yet.
    *
    * It can never fail the commit either, for the same reason a view cannot. But
    * unlike a view, a silently dropped source file is a LOST APP — the snapshot
@@ -484,24 +293,10 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
         // A conflict means nothing landed — the harness re-reads and re-applies,
         // and the last good view stays on screen until something actually does.
         if (result.status !== "ok") return result;
-        // Both hot-path files of one app write the SAME stream id, so a commit
-        // carrying both would have the plan's data-less skeleton land as one of the
-        // two views — and `changed` is sorted, so `app.vendo` goes first and the
-        // plan would overwrite the finished app with a picture of it. The app
-        // document is the better view by definition, so plans go LAST — but they
-        // still paint unless their own app actually did, because an `app.vendo` that
-        // does not parse or does not render emits nothing, and yielding to it would
-        // leave the pane blank for the whole turn.
-        const plans: Array<{ path: string; appId: AppId }> = [];
         const painted = new Set<AppId>();
         for (const path of result.changed) {
           const appId = hotPathAppId(path);
-          if (appId === undefined) continue;
-          if (hotPathFile(path) === "plan.vendo") plans.push({ path, appId });
-          else if (await emitFor(path)) painted.add(appId);
-        }
-        for (const { path, appId } of plans) {
-          if (!painted.has(appId) && await emitFor(path)) painted.add(appId);
+          if (appId !== undefined && await emitFor(path)) painted.add(appId);
         }
         await persistSource(result.changed);
         paintedByCommit.set(result, [...painted]);

@@ -222,10 +222,6 @@ export interface AgentToolsDataDependencies {
    *  `vendo_make` handler below. Unfilled, `vendo_make` has nothing to assemble
    *  with and says so. */
   screen?: ScreenAssembler;
-  /** §4.5's other half — the escalated `plan.vendo`, read back out of the app's
-   *  workspace so the build anchors on it. Threaded from
-   *  `AppsConfig.escalatedPlan`; see that slot for why it is composition's. */
-  escalatedPlan?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
 }
 
 /**

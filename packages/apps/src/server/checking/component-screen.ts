@@ -39,10 +39,9 @@
  */
 import { parse } from "acorn";
 import type { Node, Program } from "acorn";
-import { VENDO_TREE_FORMAT, type JsonSchema, type TreeNode } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type TreeNode } from "@vendoai/core";
 import {
   DISPLAY_TAG_NAMES,
-  KIT_COMPONENT_NAMES,
   resolveIslandToolName,
   scanIslandTools,
   validateTree,
@@ -60,6 +59,7 @@ import { catalogIssues, factIssueLine, kitNestingIssues } from "./facts.js";
 import { sampleLines } from "./reviewer.js";
 import { list, QUERY_HOOK } from "./screen-typecheck.js";
 import {
+  COMPONENT_SCREEN_LIB,
   componentScreenTypings,
   screenCatalogNames,
   SCREEN_MODULE,
@@ -76,33 +76,6 @@ import {
 
 // ---- the contract ---------------------------------------------------------
 
-/**
- * What a screen may import from `@vendo/screen`: the WHOLE Kit plus this host's
- * own catalog.
- *
- * The whole Kit, not the wire-safe subset — a screen writes JSX, so the
- * element-valued slots the wire dialect could never express (`Accordion`) are
- * ordinary here.
- *
- * Composed once, and to match the RENDERER exactly (`packages/ui` renderer.tsx
- * boots the VM with `[...KIT_COMPONENT_NAMES, ...host components]`): a name this
- * check admits and the renderer does not is a screen that passes every gate and
- * paints nothing, and a name the renderer has and the check does not is a type
- * error over working code.
- *
- * A host entry brings its derived props schema along, because the type check has
- * no other way to learn a host component's props and a name alone degrades every
- * one of them to `any` — which makes a guessed prop on a host component compile,
- * the one thing the skill promises it will not. The Kit half stays bare NAMES:
- * those are typed from their own zod specs, the stricter source.
- */
-export const screenCatalog = (
-  catalog: readonly { name: string; propsJsonSchema?: JsonSchema }[],
-): ScreenCatalogEntry[] => [
-  ...KIT_COMPONENT_NAMES,
-  ...catalog.map(({ name, propsJsonSchema }) =>
-    (propsJsonSchema === undefined ? name : { name, propsJsonSchema })),
-];
 
 /** One thing wrong with the screen. `code` is the class, for a caller that
  *  routes; `message` is the repair instruction, for the model that reads it. */
@@ -540,9 +513,6 @@ const scanQuery = (
 
 // ---- stage 3: typecheck ---------------------------------------------------
 
-/** `Promise`, and no DOM: a handler awaits a tool call, and `document`/`fetch`
- *  must stay undeclared so reaching for them is an error. */
-const COMPONENT_SCREEN_LIB = ["lib.es2020.d.ts"];
 
 /** Already-announced holes. A construct the printers cannot model degrades to
  *  `any`, which is the right call — a prop typed by guess would reject working

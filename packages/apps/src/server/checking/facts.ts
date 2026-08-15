@@ -5,10 +5,7 @@
  * components the catalog really carries, and its bindings reach fields the
  * tool shapes really expose with types the props really accept.
  *
- * These helpers are the single home for that machinery. The create/edit
- * validator (generation/validation/validate.ts) flattens the same anchored
- * issues into its own issue strings, so there is one implementation and one
- * message per fact for as long as both callers exist.
+ * These helpers are the single home for that machinery.
  *
  * Judgement checks (invented data, dishonest tool use, dead buttons, sections
  * that miss the ask) are NOT here — they belong to the AI reviewer.
@@ -24,12 +21,10 @@ import {
 import {
   KIT_CHILDLESS_NAMES,
   KIT_SLOT_CONTENT_NAMES,
-  KIT_WIRE_COMPONENT_NAMES,
-  WIRE_COMPONENT_NAMES,
+  KIT_SCREEN_COMPONENT_NAMES,
   checkBindingShapes,
   checkExpr,
   kitSpec,
-  printWire,
   isExprBinding,
   validateAppDocument,
   validateTree,
@@ -43,7 +38,7 @@ import type {
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { wirePropNames } from "../escalation/prewired-schema.js";
 import type { FloorDependencies, HostToolInfo } from "./deps.js";
-import { screenTypings } from "./screen-typings.js";
+import { COMPONENT_SCREEN_LIB, componentScreenTypings, screenCatalog } from "./screen-typings.js";
 import { screenTscFindings } from "./screen-tsc.js";
 import type { Check, Finding } from "./types.js";
 
@@ -74,7 +69,7 @@ const atNode = (nodeId: string, message: string): FactIssue => ({ where: `node "
 const atProp = (nodeId: string, prop: string, message: string): FactIssue =>
   ({ where: `node "${nodeId}" prop "${prop}"`, message });
 
-const reserved = new Set<string>(WIRE_COMPONENT_NAMES);
+const reserved = new Set<string>(KIT_SCREEN_COMPONENT_NAMES);
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -211,7 +206,7 @@ const probeFor = (shape: ShapeType): unknown =>
     ? shape.enum[0]
     : KIND_PROBES[shape.kind];
 
-const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
+const KIT_SCREEN_SET: ReadonlySet<string> = new Set(KIT_SCREEN_COMPONENT_NAMES);
 
 export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   if (deps.toolShapes === undefined) return [];
@@ -219,7 +214,7 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
   for (const node of tree.nodes) {
     if (node.source === "host" || node.source === "generated" || node.props === undefined) continue;
-    if (!KIT_WIRE_SET.has(node.component)) continue;
+    if (!KIT_SCREEN_SET.has(node.component)) continue;
     const spec = kitSpec(node.component);
     if (spec === undefined) continue;
     for (const [prop, value] of Object.entries(node.props)) {
@@ -591,44 +586,14 @@ const treeCheck = (
  * The checks floor's static half: the screen's own text, type-checked by `tsc`
  * against the declarations the floor already holds (screen-typings.ts). One
  * compiler answers "does this file name a surface it may, with props that exist,
- * types that fit, and data fields the response really carries" — the question
- * the bespoke component/binding walkers answer by hand. It degrades to silence
- * when no compiler is reachable (screen-tsc.ts), so a missing toolchain never
- * blocks a build.
+ * types that fit, and data fields the response really carries". It degrades to
+ * silence when no compiler is reachable (screen-tsc.ts), so a missing toolchain
+ * never blocks a build.
  *
- * It FULLY replaces the type-mismatch binding walker (`bindingKindIssues` is
- * dropped from the check list here) and OVERLAPS the component-existence, host-
- * prop and field-existence walkers, which stay: the (quarantined) fill fix loop
- * attributes findings by `node "id"` locus and tsc anchors on `<Component>`
- * tags, and a numeric-index path (`data.0.field`) prints as an opaque `$path`
- * literal tsc cannot walk. Those two are the subsumption's real edges; the
- * bespoke walkers cover them until the quarantine sweep reconciles the loci.
- *
- * The screen text is RECONSTRUCTED from the tree with `printWire`: the tree
- * round-trips to wire byte-identically (#808) and the wire is a strict TSX
- * subset, so the reconstruction is exactly what tsc reads. Islands are printed
- * OUT (`components: {}`): their source is React, checked by the smoke-render
- * gate, not screen wire, and feeding it to tsc is a parse error. Their NAMES
- * ride along as schema-less vocabulary — a generated node WITH a source is not
- * misread as an unknown component, and one WITHOUT a source is still flagged,
- * exactly as the `components-exist` generated branch does.
+ * The screen text is the STORED `app.tsx`, verbatim — the same `hash`/`bytes`/
+ * `text` triple `commitApp` lands — so a finding's line numbers are the author's
+ * own. A document with no screen has nothing to type-check.
  */
-const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDependencies): Finding[] => {
-  const queries = (tree.queries ?? []).map((query) => ({ name: query.name, tool: query.tool }));
-  const generated = Object.keys(document.components ?? {}).map((name) => ({ name, description: "generated component" }));
-  const typings = screenTypings({
-    catalog: [...deps.catalog, ...generated],
-    queries,
-    // The host's own declared response shapes — the only source. A declaration
-    // keeps what a sample erased (an enum field samples as a bare `string`, so
-    // a prop declared over that enum could never be satisfied).
-    toolOutputSchemas: Object.fromEntries((deps.tools ?? [])
-      .flatMap((tool) => (tool.outputSchema === undefined ? [] : [[tool.name, tool.outputSchema] as const]))),
-  });
-  const screen = printWire({ tree, components: {}, name: document.name }, { includeIds: false });
-  return screenTscFindings({ screen, typings });
-};
-
 /**
  * The built-in fact checks, bound to the host surface they measure against.
  * Every finding is `block`: a fact is not a matter of taste.
@@ -649,17 +614,24 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
 ];
 
 /**
- * The compiler static half (§7.1 + Track A): a `tsc` program over the printed
+ * The compiler static half (§7.1 + Track A): a `tsc` program over the stored
  * screen + generated typings. It spins a compiler, so it runs ONLY where a bad
- * screen is blocked from a user and the cost is affordable — the paint-seam floor
- * and the validate door — never inside the synchronous scripted-create loop the
- * perf gate guards. Degrades to silence when no compiler is available.
+ * screen is blocked from a user and the cost is affordable — the validate door —
+ * never inside the synchronous scripted-create loop the perf gate guards.
+ * Degrades to silence when no compiler is available.
  */
 export const screenTypesCheck = (deps: FloorDependencies): Check => ({
   name: "screen-types",
   kind: "fact",
   run: async ({ document }) => {
-    const tree = treeOf(document);
-    return tree === undefined ? [] : screenTypeFindings(tree, document, deps);
+    // The screen text VERBATIM, as `commitApp` landed it, so a finding's line
+    // numbers are the author's own. No screen, nothing to type-check.
+    const screen = document.source?.[SCREEN_FILE]?.text;
+    if (screen === undefined || screen.trim() === "") return [];
+    return screenTscFindings({
+      screen,
+      typings: componentScreenTypings({ catalog: screenCatalog(deps.catalog), tools: deps.tools ?? [] }),
+      lib: COMPONENT_SCREEN_LIB,
+    });
   },
 });

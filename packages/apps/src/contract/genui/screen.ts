@@ -27,7 +27,6 @@ import {
   VENDO_TREE_FORMAT,
 } from "@vendoai/core";
 import { treeQuerySchema, type TreeQuery } from "./tree.js";
-import { PLAN_DISPLAYS, type PlanDisplay } from "./plan/types.js";
 
 /**
  * The view channel's version tag — the SAME tag the tree format already carries,
@@ -63,8 +62,10 @@ export interface ScreenDescription {
   /** A query FAILED. Distinct from "empty": every unresolved binding renders "—",
    *  so without this a failed load is indistinguishable from "you have nothing". */
   dataUnavailable?: boolean;
-  /** Inline in the conversation, or on the staging surface. */
-  display?: PlanDisplay;
+  /** Inline in the conversation, or on the staging surface. The STARTING
+   *  posture only — inline keeps Expand, staged keeps Back-to-chat, so a wrong
+   *  hint costs one tap. */
+  display?: "inline" | "stage";
   /** The in-client (unjailed) verdict for this app's forked pins. Shape owned by
    *  `@vendoai/apps` (`InClientVenueState`); the channel promises the verdict and
    *  the version it was reached on. */
@@ -87,7 +88,7 @@ export const screenDescriptionSchema = z.object({
   queries: z.array(treeQuerySchema).optional(),
   streaming: z.boolean().optional(),
   dataUnavailable: z.boolean().optional(),
-  display: z.enum(PLAN_DISPLAYS).optional(),
+  display: z.enum(["inline", "stage"]).optional(),
   inClient: z.object({
     granted: z.boolean(),
     versionHash: z.string().min(1),

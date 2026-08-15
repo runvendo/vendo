@@ -95,13 +95,9 @@ export {
 // HostToolInfo is the tool slice GenerationDependencies (and external
 // harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";
-// The plan→layout function. The exports map closes deep imports, and this is a
-// pure, deterministic function of the public AppPlan — so a demo or harness
-// surface can render a plan's skeleton without booting the engine.
-export { skeletonFromPlan, type Skeleton } from "./generation/skeleton.js";
-// The automation planner, public for the same reason as the skeleton above: one
-// model call over public inputs, so a harness can author (and prove the refusal
-// of) an automation plan without booting the generation pipeline.
+// The automation planner, public because it is one model call over public
+// inputs, so a harness can author (and prove the refusal of) an automation plan
+// without booting the generation pipeline.
 export { planAutomation, type AutomationPlan, type AutomationPlanInput } from "./automation/plan.js";
 // The model-capability rule (model-params.ts): which Claude ids still accept
 // sampling params, and the output cap for ids a sampling-era provider registry
@@ -125,12 +121,11 @@ export { buildingAppsSkill } from "./skills/building-apps.js";
 // never a store, so composition binds the store side once and hands these to
 // whoever is materializing an app.
 export {
-  checkoutApp,
   commitApp,
   type AppSourceSeam,
 } from "./persistence/app-source.js";
 // The hot-path render seam (§1.6) — the commit-intercepting wrap that paints a
-// landing `app.vendo`/`plan.vendo`. Public because the workspace it wraps lives
+// landing `app.tsx`. Public because the workspace it wraps lives
 // outside this package: composition fills the harness runtime's `wrapWorkspace`
 // slot with it, and a host driving a `WorkspaceFs` with its own harness wraps
 // the same way. The hot-path vocabulary (`HOT_PATH_*`, `hotPathAppId`) rides
