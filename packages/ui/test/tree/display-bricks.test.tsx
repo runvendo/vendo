@@ -72,6 +72,19 @@ describe("display bricks", () => {
     // escape through intact — it is the declaration that has to go.
     expect(withoutFetchableUrls({ "--x": "u\\72 l(/pixel)", background: "var(--x)" } as CSSProperties))
       .toEqual({ background: "var(--x)" });
+
+    // Input preprocessing runs BEFORE escapes are read and collapses CRLF to one
+    // newline, so the escape's single trailing whitespace swallows the whole
+    // break and these spell `url(` too.
+    expect(withoutFetchableUrls({
+      background: "\\75\r\nrl(https://evil/x)",
+      maskImage: "\\75\r\nrl(https://evil/z)",
+      cursor: "\\75\r\nrl(https://evil/c), auto",
+      content: "\\75\r\nrl(https://evil/t)",
+      WebkitMaskBoxImage: "u\\72\r\nl(https://evil/b)",
+    })).toEqual({});
+    expect(withoutFetchableUrls({ "--y": "\\75\r\nrl(/pixel)", background: "var(--y)" } as CSSProperties))
+      .toEqual({ background: "var(--y)" });
   });
 
   it("keeps the values that only look like a fetch", () => {
@@ -86,6 +99,19 @@ describe("display bricks", () => {
     // filter's `\s*` takes it. Dropping a value that paints nothing is safe;
     // buying it back would cost a second mechanism.
     expect(withoutFetchableUrls({ background: "url\\9 (https://evil/x)" })).toEqual({});
+
+    // One decode pass is the RIGHT number: the browser decodes once too, so
+    // `\\75 rl(` is a literal backslash followed by text and paints nothing.
+    expect(withoutFetchableUrls({ background: "\\\\75 rl(https://evil/x)" }))
+      .toEqual({ background: "\\\\75 rl(https://evil/x)" });
+
+    // The legitimate CSS the filter must never eat, whatever the property.
+    for (const value of [
+      "blur(4px)", "linear-gradient(red, blue)", "radial-gradient(circle, #123, #456)",
+      "color-mix(in srgb, red 50%, blue)", '"url is a word"', "translateX(4px) blur(0)",
+      "Blurb, Source Sans, sans-serif", "pointer", "none", "linear-gradient(red, blue) 30",
+      '"a \\\\ b"', '"\\201C"', "repeat(auto-fill, minmax(120px, 1fr))",
+    ]) expect(withoutFetchableUrls({ background: value })).toEqual({ background: value });
   });
 
   it("paints the surface inside its own box", () => {

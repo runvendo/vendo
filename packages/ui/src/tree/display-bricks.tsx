@@ -35,6 +35,16 @@ const FETCHES = /\b(?:url|src|image-set)\s*\(/iu;
  */
 const ESCAPE = /\\(?:([0-9a-f]{1,6})[ \t\r\n\f]?|(.))/giu;
 
+/**
+ * CSS input preprocessing (Syntax §3.3), the stage that runs BEFORE any escape
+ * is read: CRLF, a lone CR and a form feed each collapse to ONE newline, and
+ * NUL and lone surrogates become the replacement character. That first stage is
+ * why `\75` + CRLF is `u` + a single newline by the time the escape claims its
+ * one trailing whitespace — leaving `url(`.
+ */
+const preprocessed = (value: string): string =>
+  value.replace(/\r\n?|\f/gu, "\n").replace(/[\0\ud800-\udfff]/gu, "�");
+
 /** The escapes resolved, for the DECISION only — the brick still paints the
  *  original value. Code points past the Unicode range are the tokenizer's
  *  replacement character, not a throw. */
@@ -50,7 +60,9 @@ const unescaped = (value: string): string =>
  *  no parser in it. */
 export function withoutFetchableUrls(style: CSSProperties | undefined): CSSProperties | undefined {
   if (style === undefined) return undefined;
-  return Object.fromEntries(Object.entries(style).filter(([, value]) => !FETCHES.test(unescaped(String(value)))));
+  return Object.fromEntries(
+    Object.entries(style).filter(([, value]) => !FETCHES.test(unescaped(preprocessed(String(value))))),
+  );
 }
 
 export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactNode> = {
