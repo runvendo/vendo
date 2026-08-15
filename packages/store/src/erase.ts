@@ -51,6 +51,7 @@ export const ERASE_TABLES = [
   "vendo_app_grants",
   "vendo_idempotency_ledger",
   "vendo_quarantine",
+  "vendo_usage",
 ] as const;
 
 export type EraseTable = typeof ERASE_TABLES[number];
@@ -219,6 +220,10 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       // the sweep copied their subject into a column of its own precisely so
       // this selector reaches them (01 §12, retention.ts).
       await del(report, "vendo_quarantine", "subject = $1", [subject]);
+      // The meter counts a PERSON, so its rows are that person's data. They go
+      // with them, and the limit they were counted against resets — which is
+      // the honest outcome: there is no one left to hold to it.
+      await del(report, "vendo_usage", "subject = $1", [subject]);
       // An appData file twin carries no refs: its owner is the leading key leg
       // (`<owner>/<key>`) inside the app's own namespace. For the subject's own
       // apps the cascade above already took them with the namespace, but a
