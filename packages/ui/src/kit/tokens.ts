@@ -28,7 +28,11 @@ export const t = {
   success: `var(--vendo-color-success, ${themeDefaults.colors.success})`,
   warning: `var(--vendo-color-warning, ${themeDefaults.colors.warning})`,
   border: `var(--vendo-color-border, ${d.colors.border})`,
-  surfaceRaised: `var(--vendo-color-surface-raised, ${themeDefaults.colors.surfaceRaised})`,
+  // NOT `themeDefaults.colors.surfaceRaised`: that one mixes two `--vendo-*`
+  // variables, which only resolve inside a host theme scope. Unthemed, they make
+  // the whole `color-mix` invalid and the raised surface renders TRANSPARENT, so
+  // the Kit's own fallback states the same one-step-off-surface mix in colors.
+  surfaceRaised: `var(--vendo-color-surface-raised, color-mix(in srgb, ${d.colors.surface} 92%, ${d.colors.text}))`,
   radiusSmall: `var(--vendo-radius-small, ${d.radius.small})`,
   radiusMedium: `var(--vendo-radius-medium, ${d.radius.medium})`,
   radiusLarge: `var(--vendo-radius-large, ${d.radius.large})`,
