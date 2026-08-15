@@ -144,12 +144,14 @@ function useRemixFork(slot: string | null) {
  *  verdict is SERVER-authoritative (lane W1c owns the review lifecycle; this
  *  only renders what the payload reports). */
 function remixStatus(review: boolean, surface: OpenSurface | undefined, failed: boolean): string {
+  // The server said terminally why, so say that rather than the generic
+  // sentence below — on either kind of remix.
+  if (surface?.kind === "failed") return surface.reason;
   // The bounded load gave up (use-app.ts) — the generation outran the build
   // window, or the wire stopped answering. Same sentence either way: the fact,
   // and the reassurance that the host's own component is still what is on screen.
   if (failed) return "The remix didn’t load — nothing changed on the page.";
   if (!review) return "Sandboxed — only you see this";
-  if (surface?.kind === "failed") return surface.reason;
   if (surface?.kind !== "tree") return "Waiting for review";
   const venue = (surface.payload as { inClient?: InClientVenue }).inClient;
   if (venue?.granted === true) {
@@ -254,8 +256,10 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
   const pending = surface === undefined && error === undefined;
   // That wait is bounded, so the pill needs a third state in the slot's own
   // failure voice ("This view didn't load"): claiming work forever is the same
-  // lie "Remixed" was, one step later.
-  const failed = surface === undefined && error !== undefined;
+  // lie "Remixed" was, one step later. A terminal `{kind:"failed"}` surface is
+  // the same dead end arriving as an answer rather than as a timeout — it
+  // mounts no screen, so it must not read "Remixed" either.
+  const failed = surface?.kind === "failed" || (surface === undefined && error !== undefined);
 
   // Until the fork's surface arrives (or if it never does), the original child
   // is the honest content — the wrapper never trades working host markup for

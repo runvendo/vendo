@@ -417,6 +417,23 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     expect(screen.getByRole("status").textContent).toContain("nothing changed on the page");
   });
 
+  it("lands the same way when the build ANSWERS that it failed, and says why", async () => {
+    // The other dead end: the wire does not stop answering, it answers the
+    // terminal {kind:"failed"}. That is a surface like any other to useApp, so
+    // the pill said "Remixed" and the popover "Sandboxed — only you see this"
+    // over a page that never got a screen.
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
+    wire.state.failedApps.set(forked.id, { reason: "the model ran out of quota" });
+    mount();
+    await waitFor(() => expect(managePill().textContent).toContain("Didn’t load"));
+    expect(managePill().getAttribute("aria-busy")).toBeNull();
+    // The host's own markup is still the only thing on the page.
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+    fireEvent.click(managePill());
+    expect(screen.getByRole("status").textContent).toBe("the model ran out of quota");
+  });
+
   it("wraps only a statically importable component: inline JSX gets no affordance, and a dev warning", () => {
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

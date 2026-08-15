@@ -1225,20 +1225,22 @@ export async function createWireServer(options: WireServerOptions = {}) {
           && --state.buildingOpensRemaining <= 0) {
           state.apps.push(app(id, "Trip planner"));
         }
+        // #492 — a terminally failed build resolves open() with its reason
+        // whether or not the poll carried the pending flag (the failure record
+        // exists), so the embed shows the reason promptly. It also wins over the
+        // app row: a ✦ remix's seed row lands FIRST and its build fails after,
+        // so the app is listable and its screen is still a dead end.
+        if (action === "open" && method === "GET" && state.failedApps.has(id)) {
+          const failure = state.failedApps.get(id)!;
+          return json(response, {
+            kind: "failed",
+            reason: failure.reason,
+            ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+            ...(failure.prompt === undefined ? {} : { prompt: failure.prompt }),
+          });
+        }
         const index = state.apps.findIndex(item => item.id === id);
         if (index < 0) {
-          // #492 — a terminally failed build resolves open() with its reason
-          // whether or not the poll carried the pending flag (the failure
-          // record exists), so the embed shows the reason promptly.
-          if (action === "open" && method === "GET" && state.failedApps.has(id)) {
-            const failure = state.failedApps.get(id)!;
-            return json(response, {
-              kind: "failed",
-              reason: failure.reason,
-              ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
-              ...(failure.prompt === undefined ? {} : { prompt: failure.prompt }),
-            });
-          }
           // The real wire's flag-gated build-window answer: a flagged open
           // poll gets a quiet 200 pending envelope instead of the 404.
           if (action === "open" && method === "GET" && url.searchParams.get("pending") === "1") {
