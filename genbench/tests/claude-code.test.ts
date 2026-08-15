@@ -23,7 +23,7 @@ beforeAll(async () => {
   world = await loadWorld(join(root, "worlds", "maple"));
 });
 
-const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show my pending transfers", pass: [] });
+const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show my pending transfers", pass: [], shape: "table" });
 
 /** The run's clock, and nothing else the driver may lean on: this contender is
  *  billed by the SDK's own session, so a meter it actually used would be a lie. */

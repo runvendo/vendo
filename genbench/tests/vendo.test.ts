@@ -80,7 +80,7 @@ beforeAll(async () => {
   world = await loadWorld(join(root, "worlds", "maple"));
 });
 
-const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show this month's spending", pass: [] });
+const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show this month's spending", pass: [], shape: "table" });
 
 describe("the vendo driver reports one revision", () => {
   it("does not report an earlier revision's view beside a final save that never painted", async () => {
