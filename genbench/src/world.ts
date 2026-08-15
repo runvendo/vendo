@@ -81,6 +81,7 @@ export const CASE_SHAPES = [
   "empty-state",
   "tree",
   "gallery",
+  "feed-composer",
 ] as const;
 
 export type CaseShape = (typeof CASE_SHAPES)[number];
