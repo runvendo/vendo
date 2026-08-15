@@ -5,7 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { DISPLAY_TAG_NAMES, VENDO_TREE_FORMAT } from "@vendoai/apps/contract";
 import type { ToolOutcome } from "@vendoai/core";
 import { TreeView, type WalkTree } from "../../src/tree/index.js";
-import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, withoutFetchableUrls } from "../../src/tree/display-bricks.js";
+import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeStyle } from "../../src/tree/display-bricks.js";
 
 afterEach(cleanup);
 
@@ -40,78 +40,52 @@ describe("display bricks", () => {
     expect(box.getAttribute("class")).toBeNull();
   });
 
-  it("drops the style values that would make the browser fetch", () => {
-    expect(withoutFetchableUrls({
-      background: "url(https://evil/x)",
-      borderImage: "image-set('https://evil/y' 1x)",
-      cursor: "-webkit-image-set(url(https://evil/z) 1x)",
-      maskImage: "src(https://evil/w)",
+  it("keeps the allowlisted properties, whatever inert value they hold", () => {
+    expect(safeStyle({
+      padding: "8px",
       color: "var(--vendo-color-accent)",
-      filter: "blur(4px)",
-    })).toEqual({ color: "var(--vendo-color-accent)", filter: "blur(4px)" });
-    expect(withoutFetchableUrls(undefined)).toBeUndefined();
+      background: "linear-gradient(90deg, red, blue)",
+      transform: "translateX(4px)",
+    })).toEqual({
+      padding: "8px",
+      color: "var(--vendo-color-accent)",
+      background: "linear-gradient(90deg, red, blue)",
+      transform: "translateX(4px)",
+    });
+    expect(safeStyle(undefined)).toBeUndefined();
   });
 
-  it("drops them however the escapes spell the function", () => {
-    // The CSS tokenizer unescapes before it decides what a token is, so every
-    // one of these IS `url(` to the browser, whatever the raw string reads.
-    expect(withoutFetchableUrls({
-      background: "\\75 rl(https://evil/x)",
-      borderImage: "\\000075rl(https://evil/y)",
-      maskImage: "u\\72 l(https://evil/z)",
-      WebkitMaskImage: "\\75 \\72 \\6c(https://evil/w)",
-      clipPath: "u\\72 l(#c)",
-      filter: "\\75 rl(#f)",
-      cursor: "u\\72 l(https://evil/c), auto",
-      content: "\\000075rl(https://evil/t)",
-      listStyleImage: "u\\72 l(https://evil/l)",
-      shapeOutside: "\\75 rl(https://evil/s)",
-    })).toEqual({});
-
-    // `var()` substitutes whole tokens, so the custom property carries the
-    // escape through intact — it is the declaration that has to go.
-    expect(withoutFetchableUrls({ "--x": "u\\72 l(/pixel)", background: "var(--x)" } as CSSProperties))
-      .toEqual({ background: "var(--x)" });
-
-    // Input preprocessing runs BEFORE escapes are read and collapses CRLF to one
-    // newline, so the escape's single trailing whitespace swallows the whole
-    // break and these spell `url(` too.
-    expect(withoutFetchableUrls({
-      background: "\\75\r\nrl(https://evil/x)",
-      maskImage: "\\75\r\nrl(https://evil/z)",
-      cursor: "\\75\r\nrl(https://evil/c), auto",
-      content: "\\75\r\nrl(https://evil/t)",
-      WebkitMaskBoxImage: "u\\72\r\nl(https://evil/b)",
-    })).toEqual({});
-    expect(withoutFetchableUrls({ "--y": "\\75\r\nrl(/pixel)", background: "var(--y)" } as CSSProperties))
-      .toEqual({ background: "var(--y)" });
+  it("drops every property the allowlist does not name", () => {
+    expect(safeStyle({
+      WebkitMaskImage: "url(https://evil/x)",
+      content: "url(https://evil/y)",
+      position: "fixed",
+      color: "red",
+    } as CSSProperties)).toEqual({ color: "red" });
+    // `position` keeps only its in-flow values.
+    expect(safeStyle({ position: "relative" })).toEqual({ position: "relative" });
   });
 
-  it("keeps the values that only look like a fetch", () => {
-    expect(withoutFetchableUrls({
-      filter: "blur(4px)",
-      // A comment splits the ident, so this computes to nothing and fetches nothing.
-      background: "ur/**/l(https://evil/x)",
-    })).toEqual({ filter: "blur(4px)", background: "ur/**/l(https://evil/x)" });
+  it("keeps a dual-use property's inert value and drops its fetching one", () => {
+    expect(safeStyle({ background: "url(https://evil/x)" })).toEqual({});
+    expect(safeStyle({ background: "linear-gradient(red, blue)" }))
+      .toEqual({ background: "linear-gradient(red, blue)" });
+    expect(safeStyle({ filter: "blur(4px)" })).toEqual({ filter: "blur(4px)" });
+    expect(safeStyle({ filter: "url(#x)" })).toEqual({});
+    // `image-set()` and a `url()` cursor go the same way — a fetch is a fetch.
+    expect(safeStyle({ backgroundImage: "image-set('https://evil/y' 1x)" })).toEqual({});
+    expect(safeStyle({ cursor: "url(https://evil/z), auto" })).toEqual({});
+    expect(safeStyle({ cursor: "pointer" })).toEqual({ cursor: "pointer" });
+  });
 
-    // `url\9 (` is inert too — whitespace between the ident and `(` is no
-    // function token — but normalizing puts a tab where the escape was and the
-    // filter's `\s*` takes it. Dropping a value that paints nothing is safe;
-    // buying it back would cost a second mechanism.
-    expect(withoutFetchableUrls({ background: "url\\9 (https://evil/x)" })).toEqual({});
-
-    // One decode pass is the RIGHT number: the browser decodes once too, so
-    // `\\75 rl(` is a literal backslash followed by text and paints nothing.
-    expect(withoutFetchableUrls({ background: "\\\\75 rl(https://evil/x)" }))
-      .toEqual({ background: "\\\\75 rl(https://evil/x)" });
-
-    // The legitimate CSS the filter must never eat, whatever the property.
-    for (const value of [
-      "blur(4px)", "linear-gradient(red, blue)", "radial-gradient(circle, #123, #456)",
-      "color-mix(in srgb, red 50%, blue)", '"url is a word"', "translateX(4px) blur(0)",
-      "Blurb, Source Sans, sans-serif", "pointer", "none", "linear-gradient(red, blue) 30",
-      '"a \\\\ b"', '"\\201C"', "repeat(auto-fill, minmax(120px, 1fr))",
-    ]) expect(withoutFetchableUrls({ background: value })).toEqual({ background: value });
+  it("drops a fetch however its escapes spell the function", () => {
+    // The CSS tokenizer unescapes before it decides what a token is, so each of
+    // these IS `url(` to the browser whatever the raw string reads.
+    expect(safeStyle({ background: "\\75 rl(https://evil/x)" })).toEqual({});
+    expect(safeStyle({ background: "u\\72 l(https://evil/y)" })).toEqual({});
+    // A custom property is not on the allowlist, so a `var()` that would smuggle
+    // one in has nothing to resolve to — both declarations go.
+    expect(safeStyle({ "--x": "url(/pixel)", background: "var(--x)" } as CSSProperties)).toEqual({});
   });
 
   it("paints the surface inside its own box", () => {
