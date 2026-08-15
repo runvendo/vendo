@@ -100,6 +100,33 @@
         ]
       }
     },
+    "list_driver_locations": {
+      "does": "Where every driver is standing right now, for the map. The rows are the `data` array. `lat` and `lng` are the driver's current position, `terminal` is the terminal they run out of, and `next_stop_address` is the stop they are driving to and is empty for a driver who is not on a route.",
+      "data": {
+        "data": [
+          { "driver_id": "drv_boateng", "name": "Marcus Boateng", "lat": 36.8408, "lng": -119.7854, "terminal": "Fresno", "next_stop_address": "2701 E Shaw Ave, Fresno, CA", "status": "on_route" },
+          { "driver_id": "drv_cruz", "name": "Lenny Cruz", "lat": 37.9577, "lng": -121.2908, "terminal": "Oakland", "next_stop_address": "1145 Fyffe Ave, Stockton, CA", "status": "on_route" },
+          { "driver_id": "drv_raman", "name": "Priya Raman", "lat": 37.7412, "lng": -122.1907, "terminal": "Oakland", "next_stop_address": "3200 Hegenberger Rd, Oakland, CA", "status": "on_route" },
+          { "driver_id": "drv_okonkwo", "name": "Dee Okonkwo", "lat": 39.5296, "lng": -119.8138, "terminal": "Reno", "next_stop_address": "", "status": "available" },
+          { "driver_id": "drv_ferreira", "name": "Sam Ferreira", "lat": 37.8044, "lng": -122.3201, "terminal": "Oakland", "next_stop_address": "", "status": "available" },
+          { "driver_id": "drv_hollis", "name": "Ruth Hollis", "lat": 39.5296, "lng": -119.8138, "terminal": "Reno", "next_stop_address": "", "status": "off_duty" }
+        ]
+      }
+    },
+    "list_delivery_appointments": {
+      "does": "Every delivery attempt booked for the rest of this week, soonest first. The rows are the `data` array. `date` is an ISO day and `window` is AM or PM.",
+      "data": {
+        "data": [
+          { "date": "2026-08-12", "window": "PM", "shipment_id": "shp_40224", "ref": "PO-88512", "customer": "Calaveras Cold Storage", "terminal": "Fresno" },
+          { "date": "2026-08-13", "window": "AM", "shipment_id": "shp_40236", "ref": "PO-88540", "customer": "Foothill Electric Supply", "terminal": "Oakland" },
+          { "date": "2026-08-13", "window": "AM", "shipment_id": "shp_40188", "ref": "SO-3352", "customer": "Harker Dental Group", "terminal": "Oakland" },
+          { "date": "2026-08-13", "window": "PM", "shipment_id": "shp_40241", "ref": "PO-88566", "customer": "Ridgeline Hardware", "terminal": "Oakland" },
+          { "date": "2026-08-13", "window": "PM", "shipment_id": "shp_40199", "ref": "PO-88377", "customer": "Delta Marine Supply", "terminal": "Oakland" },
+          { "date": "2026-08-14", "window": "AM", "shipment_id": "shp_40205", "ref": "PO-88402", "customer": "Truckee Outfitters", "terminal": "Reno" },
+          { "date": "2026-08-15", "window": "PM", "shipment_id": "shp_40160", "ref": "SO-3318", "customer": "Pacific Glass Co", "terminal": "Reno" }
+        ]
+      }
+    },
     "list_exceptions": {
       "does": "Delivery exceptions raised in the last three days, newest first. The rows are the `data` array. `status` is `open`, `awaiting_customer` or `resolved`. `claim_amount` is the cargo value the customer has claimed, in CENTS — 87400 is $874.00 — and is 0 where nothing is claimed.",
       "data": {
@@ -147,6 +174,16 @@
         ]
       }
     },
+    "get_terminal_performance": {
+      "does": "This week's delivery performance for each of the three terminals. The rows are the `data` array. `late` is the subset of `delivered` that missed its promised window, so on-time is `delivered - late`. `revenue` is in CENTS: 4128900 is $41,289.00.",
+      "data": {
+        "data": [
+          { "terminal": "Oakland", "delivered": 431, "late": 18, "revenue": 4128900 },
+          { "terminal": "Fresno", "delivered": 372, "late": 12, "revenue": 3286400 },
+          { "terminal": "Reno", "delivered": 167, "late": 26, "revenue": 1489400 }
+        ]
+      }
+    },
     "assign_driver": {
       "does": "Assign a shipment sitting at a terminal to a driver. The shipment joins that driver's route as its last stop.",
       "takes": { "shipment_id": "string", "driver_id": "string" }
@@ -162,6 +199,10 @@
     "notify_customer": {
       "does": "Send the shipment's customer contact a status message.",
       "takes": { "shipment_id": "string", "message": "string" }
+    },
+    "create_return": {
+      "does": "Open a return on a shipment and print its return label. `reason` is why the freight is coming back and `item` is which of the shipment's pieces goes on the label.",
+      "takes": { "shipment_id": "string", "reason": "string", "item": "string" }
     }
   }
 }

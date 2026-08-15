@@ -129,5 +129,75 @@
     ],
     "tags": ["action"],
     "shape": "form"
+  },
+  {
+    "id": "driver-map",
+    "lane": "screen",
+    "prompt": "Show me where every driver is on a map right now, so I can see who's close to a terminal and who's falling behind.",
+    "pass": [
+      "draws a map with a marker for each of the six drivers rather than only listing them",
+      "the three drivers on a route show the address of the stop they are heading to; the available and off-duty ones show none",
+      "Dee Okonkwo and Sam Ferreira read as sitting at their own terminals, Reno and Oakland",
+      "sets Marcus Boateng and Lenny Cruz apart as the two who cannot finish their route inside the hours they have left"
+    ],
+    "tags": ["display"],
+    "shape": "map",
+    "source": "project44 — Control Tower / Visibility Dashboard, project44.com/platform/visibility/"
+  },
+  {
+    "id": "delivery-calendar",
+    "lane": "screen",
+    "prompt": "Give me a calendar of every delivery attempt booked for the rest of the week, so I know which days are already full before I book another redelivery.",
+    "pass": [
+      "lays the seven bookings out as days of the week rather than one flat list",
+      "Aug 13 reads as the fullest day with four attempts, two AM and two PM",
+      "Aug 12, Aug 14 and Aug 15 each carry a single attempt",
+      "every booking shows its reference, customer and window — PO-88512 on Aug 12 PM, SO-3318 on Aug 15 PM"
+    ],
+    "tags": ["display"],
+    "shape": "calendar",
+    "source": "project44 — Appointment Manager, Calendar View, support.p-44.com/hc/en-us/articles/21090236644381"
+  },
+  {
+    "id": "start-return",
+    "lane": "screen",
+    "prompt": "Walk me through a return on this order — reason, item, then print the label.",
+    "pass": [
+      "asks one step at a time — the reason, then the item, then the label — never all three at once",
+      "names the shipment it is returning: PO-88431 for Ridgeline Hardware",
+      "the item step offers the six pieces the shipment tool reports and no invented product names",
+      "the last step calls create_return with shp_40218 and the reason and item I picked, and nothing fires until I confirm"
+    ],
+    "tags": ["action"],
+    "shape": "wizard",
+    "source": "ShipStation — Returns Portal, shipstation.com/fulfillment/shipping/"
+  },
+  {
+    "id": "terminal-scorecard",
+    "lane": "screen",
+    "prompt": "Compare this week's on-time performance across our three terminals side by side so I can see which one is dragging us down.",
+    "pass": [
+      "puts Oakland, Fresno and Reno side by side rather than one under the other",
+      "calls out Reno as the one dragging us down — 26 late of 167 delivered, 84.4% on time",
+      "shows Fresno as the strongest at 96.8% and Oakland at 95.8%",
+      "shows each terminal's revenue as $41,289.00 Oakland, $32,864.00 Fresno and $14,894.00 Reno"
+    ],
+    "tags": ["display"],
+    "shape": "comparison",
+    "source": "project44 — Carrier Scorecard, project44.com/blog/achieving-high-carrier-data-quality-with-project44s-carrier-managed-services/"
+  },
+  {
+    "id": "shift-start",
+    "lane": "screen",
+    "prompt": "Give me one screen for the start of my shift: how many shipments are late right now, how many exceptions are still open, and what we've billed today.",
+    "pass": [
+      "shows all three figures as headline numbers on one screen, not one of them buried in a table",
+      "counts 4 late shipments, not the 11 on the board",
+      "counts 4 open exceptions, leaving out the resolved one and the one awaiting the customer",
+      "the billed figure is one the tools returned — $2,305.00 of freight promised today, or the $14,496.50 the service report shows for its latest day — never an invented total"
+    ],
+    "tags": ["display"],
+    "shape": "dashboard",
+    "source": "project44 — Control Tower / Analytics Dashboard, project44.com/platform/visibility/"
   }
 ]
