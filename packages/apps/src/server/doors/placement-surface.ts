@@ -95,9 +95,15 @@ export const createPlacementRows = (
    */
   const settleBuild = async (appId: AppId): Promise<void> => {
     buildsInFlight.delete(appId);
-    await updateAppRow(engine, appId, (doc) => {
-      delete doc.building;
-      return doc;
+    // Read before write: every EDIT runs the assembler too (`assembleEdit`), and
+    // an unconditional rewrite would put this door on top of every edit's own
+    // save. It clears only a mark it made.
+    const record = await engine.get(APPS_COLLECTION, appId).catch(() => null);
+    const doc = (record?.data as { doc?: { building?: unknown } } | null)?.doc;
+    if (doc?.building === undefined) return;
+    await updateAppRow(engine, appId, (next) => {
+      delete next.building;
+      return next;
     }, "screen-agent").catch(() => undefined);
   };
 
