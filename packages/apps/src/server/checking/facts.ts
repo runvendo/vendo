@@ -28,6 +28,7 @@ import {
   isExprBinding,
   validateAppDocument,
   validateTree,
+  type KitSlotSpec,
   type NormalizedCatalog,
   type Tree,
 } from "../../contract/index.js";
@@ -419,9 +420,8 @@ export const catalogIssues = async (
 };
 
 const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
-const SLOT_CONTENT: ReadonlySet<string> = new Set(KIT_SLOT_CONTENT_NAMES);
 
-/** A Kit element sitting in a PROP — what a `cell` slot holds. The screen VM
+/** A Kit element sitting in a PROP — what a slot holds. The screen VM
  *  stamps the SLOT's own element `$element` and leaves the ones nested under it
  *  bare (genui/component/vm-program.ts `emitValue`), and the renderer reifies on
  *  exactly that (`packages/ui` renderer.tsx `reifyElement`) — so this reads the
@@ -450,32 +450,48 @@ const asElement = (value: unknown, sigil: boolean): { component: string; childre
 export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   const issues: FactIssue[] = [];
 
-  /** One `cell` slot: the element it holds, and every element nested in that
-   *  one. */
-  const checkSlot = (nodeId: string, path: string, value: unknown, sigil = true): void => {
+  /** One slot: the element it holds, and every element nested in that one. A
+   *  slot with no declared vocabulary takes the read-only value tier, and a
+   *  per-row one says WHY that tier is the one it takes. */
+  const checkSlot = (nodeId: string, path: string, key: string, slot: KitSlotSpec, value: unknown, sigil = true): void => {
     const element = asElement(value, sigil);
     if (element === undefined) return;
-    if (!SLOT_CONTENT.has(element.component)) {
-      issues.push(atProp(nodeId, path, `holds <${element.component}> in a cell slot — a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`));
+    const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
+    if (!allowed.includes(element.component)) {
+      const why = slot.perRow === true && slot.content === undefined
+        ? `a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${allowed.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`
+        : `this slot may hold: ${allowed.join(", ")}.`;
+      issues.push(atProp(nodeId, path, `holds <${element.component}> in a ${key} slot — ${why}`));
     }
     if (Array.isArray(element.children)) {
-      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, child, false));
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, key, slot, child, false));
     }
   };
 
-  /** The `cell` slots inside one prop — a column/field description carries one,
-   *  and the descriptions are an array. */
-  const findSlots = (nodeId: string, path: string, key: string, value: unknown): void => {
-    if (key === "cell") {
-      checkSlot(nodeId, path, value);
+  /** The slots inside one prop — a slot is the prop itself (`marker`) or a field
+   *  of the description objects a prop holds (`columns[].cell`), so the walk
+   *  matches on the KEY at any depth. An element anywhere else is a place the
+   *  renderer paints nothing. */
+  const findSlots = (node: TreeNode, slots: ReadonlyMap<string, KitSlotSpec>, path: string, key: string, value: unknown): void => {
+    const slot = slots.get(key);
+    if (slot !== undefined) {
+      checkSlot(node.id, path, key, slot, value);
+      return;
+    }
+    const stray = asElement(value, true);
+    if (stray !== undefined) {
+      const has = slots.size === 0
+        ? `<${node.component}> takes no element in its props`
+        : `the slots on <${node.component}> are: ${[...slots.keys()].join(", ")}`;
+      issues.push(atProp(node.id, path, `holds <${stray.component}>, but "${key}" is not a slot — ${has}. An element written anywhere else is dropped at render.`));
       return;
     }
     if (Array.isArray(value)) {
-      value.forEach((item, index) => findSlots(nodeId, `${path}[${index}]`, "", item));
+      value.forEach((item, index) => findSlots(node, slots, `${path}[${index}]`, "", item));
       return;
     }
     if (isRecord(value)) {
-      for (const [name, item] of Object.entries(value)) findSlots(nodeId, `${path}.${name}`, name, item);
+      for (const [name, item] of Object.entries(value)) findSlots(node, slots, `${path}.${name}`, name, item);
     }
   };
 
@@ -485,7 +501,12 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
     if (nested > 0 && CHILDLESS.has(node.component)) {
       issues.push(atNode(node.id, `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${node.component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${node.component}> in a <Stack>, or give <${node.component}> what it showed through its own props.`));
     }
-    for (const [prop, value] of Object.entries(node.props ?? {})) findSlots(node.id, prop, prop, value);
+    const spec = kitSpec(node.component);
+    if (spec === undefined) continue;
+    // A Map, not the record: a prop key is model-written, and `slots["toString"]`
+    // on a plain object answers with Object's own.
+    const slots = new Map(Object.entries(spec.slots ?? {}));
+    for (const [prop, value] of Object.entries(node.props ?? {})) findSlots(node, slots, prop, prop, value);
   }
   return issues;
 };

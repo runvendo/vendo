@@ -43,6 +43,23 @@ export function data(schema: ZodTypeAny, doc: string, options?: PropOptions): Pr
   return make("data", schema, doc, options);
 }
 
+/**
+ * A SLOT — a named place inside a component that holds an ELEMENT instead of a
+ * value (a table column's `cell`, a Card's `header`). The key is the prop the
+ * element sits under, or the field inside the description object a prop holds:
+ * `columns[].cell` and `header` are both the slot named by their last segment.
+ */
+export interface KitSlotSpec {
+  /** 1-line "what goes here". */
+  doc: string;
+  /** Component names the slot may hold; absent means the read-only value tier
+   *  (`KIT_SLOT_CONTENT_NAMES`). */
+  content?: readonly string[];
+  /** Painted once per row/entry rather than once for the component — so what
+   *  is written in it has no row of its own to act on. */
+  perRow?: boolean;
+}
+
 export interface KitComponentSpec {
   /** JSX tag name the model emits. */
   name: string;
@@ -57,6 +74,9 @@ export interface KitComponentSpec {
   /** Does this component RENDER what is nested inside it? Absent means no — most
    *  of the Kit is a leaf, and the renderer hands children to leaves too. */
   takesChildren?: boolean;
+  /** Slot name → spec. Absent means the component takes no elements in its
+   *  props at all, and one written there is refused rather than dropped. */
+  slots?: Record<string, KitSlotSpec>;
 }
 
 /** Build a `z.object` from a spec's props, applying `.optional()` to non-required ones. */

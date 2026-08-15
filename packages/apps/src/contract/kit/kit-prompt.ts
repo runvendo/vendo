@@ -118,6 +118,17 @@ function renderSpec(spec: KitComponentSpec): string {
     }
     lines.push("");
   }
+  // The slots, from the same declaration the nesting check enforces: a place
+  // that takes an ELEMENT is unguessable from a prop list, and one written where
+  // no slot was declared is refused.
+  const slots = Object.entries(spec.slots ?? {});
+  if (slots.length > 0) {
+    lines.push("Slots:");
+    for (const [name, slot] of slots) {
+      lines.push(`- \`${name}\` [slot]${slot.perRow === true ? " (per row)" : ""} — ${slot.doc}`);
+    }
+    lines.push("");
+  }
   const examples = PROMPT_EXAMPLES[spec.name] ?? spec.examples;
   lines.push(examples.length > 1 ? "Examples:" : "Example:");
   for (const ex of examples) lines.push("  " + ex);
