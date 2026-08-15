@@ -133,5 +133,75 @@
       "offers no categorize control"
     ],
     "data": { "list_expenses": { "data": [] } }
+  },
+  {
+    "id": "job-board",
+    "lane": "screen",
+    "prompt": "Lay today's jobs out as a board sorted into columns by where each one's at — scheduled, in progress, awaiting parts, done but unbilled, closed — so I can see the whole shop without scrolling one long list.",
+    "tags": ["display"],
+    "shape": "board",
+    "source": "ServiceTitan — Dispatch Board · https://help.servicetitan.com/how-to/using-dispatch-board",
+    "pass": [
+      "lays the jobs out in columns by status — scheduled, in progress, awaiting parts, done but unbilled, closed — not as one flat list",
+      "all seven jobs are on the board, each under the column its status names: three under in progress, and J-2444, J-2431, J-2395 and J-2377 alone under the other four",
+      "each card names its job as 'J-2418 · Harbor Point Dental' and the foreman running it",
+      "each card shows what is left to invoice, matching the tool's numbers, including $0.00 on J-2440 and J-2377"
+    ]
+  },
+  {
+    "id": "visits-map",
+    "lane": "screen",
+    "prompt": "Show today's visits on a map so I can see which crew is nearest the Harbor Point callback.",
+    "tags": ["display"],
+    "shape": "map",
+    "source": "Jobber — Map View · https://help.getjobber.com/hc/en-us/articles/115009234307-Map-View-Legacy-Schedule",
+    "pass": [
+      "draws a map with a pin per visit rather than listing the visits",
+      "all three of today's visits are pinned, each in its own place, and no fourth visit is invented",
+      "each visit names its job as 'J-2418 · Harbor Point Dental' and the crew on it — Nico Salas, Tasha Byrd, Marco Deleon",
+      "each visit shows its site and its arrival window, with Sutter Street Lofts as the only afternoon one"
+    ]
+  },
+  {
+    "id": "quote-options",
+    "lane": "screen",
+    "prompt": "Lay out the good, better and best packages I'm quoting side by side so the customer can see what the extra money buys.",
+    "tags": ["display"],
+    "shape": "comparison",
+    "source": "Jobber — Quote Options (Beta) · https://help.getjobber.com/hc/en-us/articles/33970469537047-Quotes-Options-Beta",
+    "pass": [
+      "puts Good, Better and Best beside each other as three columns, not one under the other",
+      "shows each package's price — $6,480.00, $9,750.00 and $14,200.00 — matching the tool's numbers",
+      "lists what each package includes, so the three included lists can be read against each other",
+      "invents no fourth package, no total across the three and no discount"
+    ]
+  },
+  {
+    "id": "job-photos",
+    "lane": "screen",
+    "prompt": "Pull up every photo the crew's uploaded from the Harbor Point rooftop job so I can see the before-and-after without digging through texts.",
+    "tags": ["display"],
+    "shape": "gallery",
+    "source": "Jobber — Files and Media Library · https://help.getjobber.com/hc/en-us/articles/39800675084439-Files-and-Media-Library",
+    "pass": [
+      "lays the photos out as a grid of tiles rather than a list of file names",
+      "all six photos from J-2418 · Harbor Point Dental are there, and none from another job",
+      "every tile carries the caption the tool returned for it",
+      "every tile shows who uploaded it and its date, oldest first from Jul 24 through Aug 8"
+    ]
+  },
+  {
+    "id": "price-book",
+    "lane": "screen",
+    "prompt": "Show our price list organized by category and subcategory — plumbing, HVAC, electrical — so I can find an item without scrolling one flat list.",
+    "tags": ["display"],
+    "shape": "tree",
+    "source": "ServiceTitan — Pricebook · https://help.servicetitan.com/docs/pricebook",
+    "pass": [
+      "nests the items under their subcategory and each subcategory under its category, rather than one flat list",
+      "shows the three categories — Plumbing, HVAC, Electrical — and all eight subcategories under them",
+      "all fourteen items sit under the subcategory the tool gives them, with none duplicated or invented",
+      "every item's price matches the tool's number, read as dollars — the spiral duct foot at $42.00, the panel replacement at $3,850.00"
+    ]
   }
 ]

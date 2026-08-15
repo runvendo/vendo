@@ -164,6 +164,62 @@
         ]
       }
     },
+    "list_visit_locations": {
+      "does": "Where today's visits are on the ground, Aug 12, in the order the crews reach them. The rows are the `data` array. `visit_id` is the visit as it sits on the schedule, `lat` and `lng` are the site's coordinates, and `window` is the arrival window promised to the customer.",
+      "data": {
+        "data": [
+          { "visit_id": "sv_6", "date": "2026-08-12", "window": "all day", "job": "J-2418", "customer": "Harbor Point Dental", "site": "Harbor Point Plaza", "crew": ["Nico Salas"], "lat": 47.6021, "lng": -122.3395 },
+          { "visit_id": "sv_7", "date": "2026-08-12", "window": "all day", "job": "J-2402", "customer": "Larkspur Apartments LLC", "site": "Larkspur Way", "crew": ["Tasha Byrd"], "lat": 47.6588, "lng": -122.3121 },
+          { "visit_id": "sv_8", "date": "2026-08-12", "window": "afternoon", "job": "J-2440", "customer": "Sutter Street Lofts HOA", "site": "Sutter Street Lofts", "crew": ["Marco Deleon"], "lat": 47.6142, "lng": -122.3268 }
+        ]
+      }
+    },
+    "list_quote_options": {
+      "does": "The packages quoted on quote Q-1183, the Vance Residence second-floor bathroom, cheapest first. The rows are the `data` array. The options are alternatives the customer picks one of, not lines that add up. `includes` is what that package covers. `price` is in CENTS: 648000 is $6,480.00.",
+      "takes": { "quote_id": "string" },
+      "data": {
+        "data": [
+          { "id": "qo_1", "option": "Good", "scope": "Swap the failing water heater like for like", "includes": ["50-gallon gas water heater", "New shutoff and expansion tank", "One-year workmanship warranty"], "price": 648000 },
+          { "id": "qo_2", "option": "Better", "scope": "Heater swap plus the supply feeding the second floor", "includes": ["50-gallon gas water heater", "Second-floor supply repiped in PEX", "New angle stops at every fixture", "Two-year workmanship warranty"], "price": 975000 },
+          { "id": "qo_3", "option": "Best", "scope": "Tankless conversion with recirculation, whole second floor", "includes": ["Tankless gas heater with recirculation pump", "Second-floor supply repiped in PEX", "New angle stops at every fixture", "Gas line upsized to the heater", "Five-year workmanship warranty and annual descale"], "price": 1420000 }
+        ]
+      }
+    },
+    "list_job_photos": {
+      "does": "Photos the crew uploaded from one job, oldest first. The rows are the `data` array. `caption` is what the tech typed when the photo went up and `url` is where the file is stored.",
+      "takes": { "job_id": "string" },
+      "data": {
+        "data": [
+          { "id": "jp_1", "job": "J-2418", "date": "2026-07-24", "caption": "Old rooftop unit before demo, north curb", "uploaded_by": "Marco Deleon", "url": "files/j-2418/before-north-curb.jpg" },
+          { "id": "jp_2", "job": "J-2418", "date": "2026-07-24", "caption": "Rusted condensate pan under the old unit", "uploaded_by": "Nico Salas", "url": "files/j-2418/before-condensate-pan.jpg" },
+          { "id": "jp_3", "job": "J-2418", "date": "2026-07-29", "caption": "Curb adapter set and levelled", "uploaded_by": "Marco Deleon", "url": "files/j-2418/curb-adapter-set.jpg" },
+          { "id": "jp_4", "job": "J-2418", "date": "2026-08-06", "caption": "New unit landing on the curb, crane pick", "uploaded_by": "Nico Salas", "url": "files/j-2418/crane-pick.jpg" },
+          { "id": "jp_5", "job": "J-2418", "date": "2026-08-08", "caption": "Spiral duct tie-in finished above the ceiling", "uploaded_by": "Marco Deleon", "url": "files/j-2418/duct-tie-in.jpg" },
+          { "id": "jp_6", "job": "J-2418", "date": "2026-08-08", "caption": "New unit in place after startup", "uploaded_by": "Marco Deleon", "url": "files/j-2418/after-unit-startup.jpg" }
+        ]
+      }
+    },
+    "list_price_book": {
+      "does": "Every line item in the price book, in the order it sits in the book — category, then subcategory, then item. The rows are the `data` array. `price` is what the customer is charged for that item, in CENTS: 38900 is $389.00.",
+      "data": {
+        "data": [
+          { "id": "pb_1", "category": "Plumbing", "subcategory": "Water heaters", "item": "50-gallon gas water heater, installed", "price": 248000 },
+          { "id": "pb_2", "category": "Plumbing", "subcategory": "Water heaters", "item": "Tankless conversion, gas", "price": 512500 },
+          { "id": "pb_3", "category": "Plumbing", "subcategory": "Drains", "item": "Main line hydro jet, up to 100 feet", "price": 89500 },
+          { "id": "pb_4", "category": "Plumbing", "subcategory": "Drains", "item": "Grease trap pump-out", "price": 47500 },
+          { "id": "pb_5", "category": "Plumbing", "subcategory": "Fixtures", "item": "Toilet swap, standard", "price": 62500 },
+          { "id": "pb_6", "category": "Plumbing", "subcategory": "Fixtures", "item": "Kitchen faucet replacement", "price": 38900 },
+          { "id": "pb_7", "category": "HVAC", "subcategory": "Rooftop units", "item": "Five ton packaged rooftop unit, installed", "price": 1875000 },
+          { "id": "pb_8", "category": "HVAC", "subcategory": "Rooftop units", "item": "Rooftop unit annual service", "price": 42500 },
+          { "id": "pb_9", "category": "HVAC", "subcategory": "Ductwork", "item": "Spiral duct run, per linear foot", "price": 4200 },
+          { "id": "pb_10", "category": "HVAC", "subcategory": "Ductwork", "item": "Supply register replacement", "price": 12500 },
+          { "id": "pb_11", "category": "HVAC", "subcategory": "Controls", "item": "Programmable thermostat, installed", "price": 58500 },
+          { "id": "pb_12", "category": "Electrical", "subcategory": "Circuits", "item": "Dedicated 20-amp circuit, up to 40 feet", "price": 76500 },
+          { "id": "pb_13", "category": "Electrical", "subcategory": "Circuits", "item": "Disconnect swap at the unit", "price": 41500 },
+          { "id": "pb_14", "category": "Electrical", "subcategory": "Panels", "item": "200-amp panel replacement", "price": 385000 }
+        ]
+      }
+    },
     "send_payment_reminder": {
       "does": "Email the customer a payment reminder for one invoice, with the balance and how many days late it is.",
       "takes": { "invoice_id": "string" }
