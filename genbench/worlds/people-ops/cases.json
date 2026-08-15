@@ -130,5 +130,76 @@
       "shows each person's carried hours and used hours, matching the roster",
       "states the carryover cap it filtered on"
     ]
+  },
+  {
+    "id": "org-chart",
+    "lane": "screen",
+    "prompt": "Draw the reporting lines for the whole company — who manages who, top to bottom.",
+    "tags": ["display"],
+    "shape": "tree",
+    "source": "Gusto — Team directory / org chart, https://support.gusto.com/article/240401180648063/view-your-team-and-company-org-chart-as-a-us-employee-manager-or-contractor",
+    "pass": [
+      "draws the roster as a hierarchy of connected levels rather than a flat list",
+      "puts Rosa Delgado alone at the top, with Nadia Kwan, Marcus Odell, Wren Chen and Sena Nakamura directly under her",
+      "nests Priya Raghunathan, Daniel Okafor and Elin Lindqvist under Nadia Kwan, Yara Haddad, Tomas Bello and Luz Arriaga under Marcus Odell, and Theo Brandt under Wren Chen",
+      "shows each person's title and places all twelve employees, inventing nobody"
+    ]
+  },
+  {
+    "id": "medical-plan-compare",
+    "lane": "screen",
+    "prompt": "Put our medical plans side by side — premium, deductible, who's on each — before open enrollment.",
+    "tags": ["display"],
+    "shape": "comparison",
+    "source": "Gusto — Benefits shopping, https://gusto.com/product/benefits",
+    "pass": [
+      "puts the three plans side by side, one column each, rather than stacking them as three separate blocks",
+      "shows every plan's monthly premium and deductible, matching the tool's numbers, in dollars rather than raw cents",
+      "names who is enrolled in each plan: two on Ridgeline HDHP, three on Cedar HMO and four on Harbor PPO",
+      "enrolls nobody the tool does not list, so Tomas Bello, Theo Brandt and Luz Arriaga appear on no plan"
+    ]
+  },
+  {
+    "id": "leave-policy-settings",
+    "lane": "screen",
+    "prompt": "Pull up our time-off policy — accrual rate, carryover cap, notice period, blackout weeks — so I can check it before I answer a question about it.",
+    "tags": ["display"],
+    "shape": "settings",
+    "source": "Gusto — Time off policy setup, https://support.gusto.com/article/999756591000000/set-up-and-manage-time-off-policies-for-admins",
+    "pass": [
+      "lays the policy out as labelled settings fields rather than a paragraph of prose",
+      "shows 12 hours accrued a month, an 80-hour carryover cap and a 7-day notice period, matching the policy tool",
+      "shows both blackout weeks, dated like 'Nov 23, 2026' rather than ISO",
+      "offers no save or edit control, since no tool changes the policy"
+    ]
+  },
+  {
+    "id": "roster-filter-builder",
+    "lane": "screen",
+    "prompt": "Let me filter the roster myself — department, employment type and status, and pick which columns show — instead of scrolling the whole list.",
+    "tags": ["display"],
+    "shape": "filter-builder",
+    "source": "Rippling — Custom report builder, https://www.rippling.com/blog/unify-and-level-up-your-workforce-analytics-with-ripplings-new-custom-reports",
+    "pass": [
+      "offers a filter for each of department, employment type and status, and a control that picks which columns show",
+      "lists all twelve employees before any filter is set",
+      "filtering to Engineering and full-time narrows the roster to exactly Nadia Kwan, Priya Raghunathan, Daniel Okafor and Elin Lindqvist",
+      "clearing the filters brings all twelve back, and turning a column off drops that column without dropping any row"
+    ]
+  },
+  {
+    "id": "review-stage-board",
+    "lane": "screen",
+    "prompt": "Lay the midyear review out as a board — one column per stage — so I can see who's stuck where, not just a sorted list.",
+    "tags": ["display"],
+    "shape": "board",
+    "source": "Rippling — Performance review stages + calibration, https://www.rippling.com/products/hr/performance-management",
+    "pass": [
+      "draws one labelled column per stage — not started, self review, manager review, calibration, complete — side by side rather than a sorted list",
+      "places all eight people in the cycle and nobody else, so neither person onboarding appears",
+      "puts Tomas Bello under not started, Daniel Okafor, Marcus Odell and Sena Nakamura under self review, Priya Raghunathan and Nadia Kwan under manager review, Wren Chen under calibration and Elin Lindqvist under complete",
+      "shows each person's due date, reading like 'Aug 14' rather than ISO",
+      "flags exactly the four people whose step is late and leaves the four on time unflagged"
+    ]
   }
 ]

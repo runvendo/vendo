@@ -121,6 +121,16 @@
         ]
       }
     },
+    "list_benefit_plans": {
+      "does": "The medical plans the company offers, cheapest premium first. The rows are the `data` array. `premium_cents` is the monthly premium per enrolled employee, in CENTS: 34500 is $345.00; `deductible_cents` is the annual individual deductible. `enrolled` names the employees on that plan — contractors and people still onboarding are not enrolled.",
+      "data": {
+        "data": [
+          { "plan": "Ridgeline HDHP", "premium_cents": 27800, "deductible_cents": 400000, "enrolled": ["Priya Raghunathan", "Marcus Odell"] },
+          { "plan": "Cedar HMO", "premium_cents": 34500, "deductible_cents": 250000, "enrolled": ["Daniel Okafor", "Elin Lindqvist", "Yara Haddad"] },
+          { "plan": "Harbor PPO", "premium_cents": 52400, "deductible_cents": 100000, "enrolled": ["Nadia Kwan", "Rosa Delgado", "Wren Chen", "Sena Nakamura"] }
+        ]
+      }
+    },
     "approve_time_off": {
       "does": "Approve one pending time-off request. The hours come off the employee's balance and the employee is emailed.",
       "takes": { "id": "string" }
