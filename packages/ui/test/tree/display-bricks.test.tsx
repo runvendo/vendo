@@ -125,8 +125,14 @@ describe("display bricks", () => {
 
     // Not a rule about the word "fixed": `contain: paint` makes the wrapper the
     // containing block for every fixed descendant, so the escape has nowhere to go.
-    expect(document.querySelector("[data-vendo-surface]")?.getAttribute("style"))
-      .toBe("contain: layout paint; overflow: clip; position: relative; isolation: isolate;");
+    // Read declaration by declaration, not as the whole style attribute: the
+    // surface is also the theme boundary (surface-theme.test.tsx), so the host's
+    // `--vendo-*` sit on this same element.
+    const surface = document.querySelector<HTMLElement>("[data-vendo-surface]")!;
+    expect(surface.style.contain).toBe("layout paint");
+    expect(surface.style.overflow).toBe("clip");
+    expect(surface.style.position).toBe("relative");
+    expect(surface.style.isolation).toBe("isolate");
     expect(SURFACE_CONTAINMENT.contain).toBe("layout paint");
   });
 });

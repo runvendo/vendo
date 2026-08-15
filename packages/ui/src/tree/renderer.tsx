@@ -29,8 +29,11 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type CSSProperties,
   type ReactNode,
 } from "react";
+import { useVendoThemeOrDefault } from "../context.js";
+import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
@@ -761,6 +764,13 @@ function StatefulTreeView({
   onStateChange,
   interactive,
 }: TreeViewProps) {
+  // The surface is its own theme boundary. A host mounts one wherever it likes
+  // — demo-bank's Apps page is a bare AppFrame on a host page, outside any
+  // ChromeRoot — and the brand tokens the Kit and the display bricks paint with
+  // (`var(--vendo-color-accent)`) resolve to nothing unless an ANCESTOR set
+  // them. Same mapping ChromeRoot applies, off the same provider theme, so a
+  // surface nested in chrome restates identical values and cannot disagree.
+  const theme = useVendoThemeOrDefault();
   useExprRuntime();
   // The keyed `$state` store lives in the Kit bundle, shared with code-land's
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
@@ -967,7 +977,7 @@ function StatefulTreeView({
     : null;
 
   return (
-    <div data-vendo-surface="" style={SURFACE_CONTAINMENT}>
+    <div data-vendo-surface="" style={{ ...themeCssVariables(theme), ...SURFACE_CONTAINMENT } as CSSProperties}>
       <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
         {dataNotice}
         {dropBackNotice}
