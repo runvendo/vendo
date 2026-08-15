@@ -212,13 +212,17 @@ export const DDL = [
   "CREATE INDEX IF NOT EXISTS vendo_app_grants_principal_idx ON vendo_app_grants (principal)",
   // v8 (01 §12): the `Idempotency-Key` replay ledger, in the shape the Vendo
   // Cloud console already runs. `status` + `result` are the answer a repeat
-  // caller is handed back verbatim; `request_hash` is what separates a replay
-  // from the same key carrying a DIFFERENT body, which is a client bug and not a
-  // replay at all. The PK is the whole scope, `tenant` first, so a mount serving
-  // many tenants out of one schema cannot let one tenant's key answer another's.
+  // caller is handed back verbatim. A non-NULL `claim_token` marks a pending
+  // reservation and fences cleanup of a timed-out insert to that exact claim
+  // generation. Older readers ignore the additive column and fail closed on
+  // the stored 503 answer. `request_hash` separates a replay from the
+  // same key carrying a DIFFERENT body, which is a client bug and not a replay
+  // at all. The PK is the whole scope, `tenant` first, so a mount serving many
+  // tenants out of one schema cannot let one tenant's key answer another's.
   `CREATE TABLE IF NOT EXISTS vendo_idempotency_ledger (
     tenant text NOT NULL, op text NOT NULL, key text NOT NULL,
     request_hash text NOT NULL, status int NOT NULL, result jsonb NOT NULL,
+    claim_token text,
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant, op, key)
   )`,
@@ -344,6 +348,10 @@ const ADDITIVE_DDL = [
   // receipt written before the column existed genuinely has no known owner, and
   // every write path has supplied one since.
   "ALTER TABLE vendo_effects ADD COLUMN IF NOT EXISTS subject text NOT NULL DEFAULT ''",
+  // A non-NULL token is the pending discriminator for IdempotencyLedger.claim.
+  // Existing published rows stay NULL, so every previously valid status/result
+  // pair remains an ordinary replay answer after this additive upgrade.
+  "ALTER TABLE vendo_idempotency_ledger ADD COLUMN IF NOT EXISTS claim_token text",
   // Guest sessions are gone, so the v4 registry is an orphan on any database that
   // booted before its CREATE was removed. The version gate would never re-run the
   // DDL loop on those databases, so the drop lives here and runs every boot.

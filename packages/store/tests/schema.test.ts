@@ -26,7 +26,7 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_workspace_files: ["path", "owner", "content", "blob_ref", "bytes", "revision", "created_at", "updated_at"],
   vendo_workspace_history: ["id", "path", "owner", "revision", "content", "blob_ref", "intent", "at"],
   vendo_app_grants: ["id", "app_id", "org_id", "principal", "level", "created_by", "created_at"],
-  vendo_idempotency_ledger: ["tenant", "op", "key", "request_hash", "status", "result", "created_at"],
+  vendo_idempotency_ledger: ["tenant", "op", "key", "request_hash", "status", "result", "claim_token", "created_at"],
   vendo_quarantine: ["collection", "id", "data", "subject", "app_id", "quarantined_at"],
 };
 
@@ -136,6 +136,19 @@ for (const backend of backends()) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);
       }
+    });
+
+    it("adds claim_token to an existing current-version idempotency ledger", async () => {
+      await made.sql("ALTER TABLE vendo_idempotency_ledger DROP COLUMN claim_token");
+
+      await made.store.ensureSchema();
+
+      const rows = await made.sql(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'vendo_idempotency_ledger'
+           AND column_name = 'claim_token'`,
+      );
+      expect(rows).toEqual([{ column_name: "claim_token" }]);
     });
 
     it("stores every contracted JSON column as jsonb", async () => {

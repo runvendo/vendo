@@ -18,6 +18,7 @@ import {
   type RunContext,
   type SecretsProvider,
   type StoreAdapter,
+  type IdempotencyRecord,
   type ToolCall,
   type ToolDescriptor,
   type ToolRegistry,
@@ -130,13 +131,13 @@ type AdapterFactoryResult = { adapter: StoreAdapter; close?(): Promise<void> };
 const adapterCase = (
   opts: { makeAdapter(): Promise<AdapterFactoryResult> },
   name: string,
-  body: (adapter: StoreAdapter) => Promise<void>,
+  body: (adapter: StoreAdapter) => Promise<void | ConformanceOmission>,
 ): ConformanceCase => ({
   name,
-  async run(): Promise<void> {
+  async run(): Promise<void | ConformanceOmission> {
     const made = await opts.makeAdapter();
     try {
-      await body(made.adapter);
+      return await body(made.adapter);
     } finally {
       await made.close?.();
     }
@@ -146,10 +147,10 @@ const adapterCase = (
 const readyAdapterCase = (
   opts: { makeAdapter(): Promise<AdapterFactoryResult> },
   name: string,
-  body: (adapter: StoreAdapter) => Promise<void>,
+  body: (adapter: StoreAdapter) => Promise<void | ConformanceOmission>,
 ): ConformanceCase => adapterCase(opts, name, async (adapter) => {
   await adapter.ensureSchema();
-  await body(adapter);
+  return await body(adapter);
 });
 
 /** Executable StoreAdapter checks from 02-store §4 and 01-core §12. */
@@ -389,10 +390,11 @@ export function storeAdapterConformance(opts: {
         const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_3" };
         await ledger.record(scope, "hash_a", { status: 200, result: { attempt: 1 } });
         await ledger.record(scope, "hash_a", { status: 500, result: { attempt: 2 } });
+        await ledger.record(scope, "hash_b", { status: 409, result: { attempt: 3 } });
         assertDeepEqual(
           await ledger.check(scope, "hash_a"),
           { status: 200, result: { attempt: 1 } },
-          "a second record replaced the answer a replay had already been given",
+          "a later same-hash or different-hash record replaced the first answer",
         );
       }),
 
@@ -412,6 +414,80 @@ export function storeAdapterConformance(opts: {
         assert(
           await ledger.check({ ...held, op: "lifecycle.erase" }, "hash_a") === null,
           "the same key on another op replayed the first op's answer",
+        );
+      }),
+
+      /** 01-core §12: `claim` reserves the key before the mutation. A second
+          caller with a different body is refused HERE, while the owner has not
+          yet published, so the refused request never executes. Optional: an
+          adapter that cannot reserve omits it. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.claim refuses a different body before the owner publishes", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return omitted("adapter has no idempotency ledger");
+        if (ledger.claim === undefined) return omitted("adapter has no idempotency.claim");
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_1" };
+        const writes: string[] = [];
+        assert(await ledger.claim(scope, "hash_a") === "claimed", "a fresh key should claim");
+        writes.push("a");
+        const refusal = await ledger.claim(scope, "hash_b").then(() => null, (error: unknown) => error);
+        assert(
+          (refusal as { code?: unknown } | null)?.code === "conflict",
+          `claim with a different hash while the key is reserved should throw conflict, got ${String(refusal)}`,
+        );
+        await ledger.record(scope, "hash_a", { status: 200, result: { committed: 1 } });
+        assert(writes.length === 1 && writes[0] === "a", "the refused caller executed anyway");
+        assertDeepEqual(
+          await ledger.check(scope, "hash_a"),
+          { status: 200, result: { committed: 1 } },
+          "the owner could not publish after claiming",
+        );
+      }),
+
+      /** 01-core §12: a pending claim is held, not fresh. A mount still using
+          `check` must wait for the answer instead of running a second mutation. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.check waits for a pending same-hash claim", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return omitted("adapter has no idempotency ledger");
+        if (ledger.claim === undefined) return omitted("adapter has no idempotency.claim");
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_check" };
+        assert(await ledger.claim(scope, "hash_a") === "claimed", "a fresh key should claim");
+        const replay = ledger.check(scope, "hash_a");
+        await ledger.record(scope, "hash_a", { status: 200, result: { committed: 1 } });
+        assertDeepEqual(
+          await replay,
+          { status: 200, result: { committed: 1 } },
+          "check treated a pending same-hash reservation as fresh",
+        );
+      }),
+
+      /** 01-core §12: two concurrent `claim`s with the same hash: one owner,
+          the loser waits and replays. The mutation runs once. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.claim lets one same-hash owner run, the other replays", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return omitted("adapter has no idempotency ledger");
+        if (ledger.claim === undefined) return omitted("adapter has no idempotency.claim");
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_2" };
+        const claim = ledger.claim;
+        const writes: number[] = [];
+        const run = async (): Promise<IdempotencyRecord | "claimed"> => {
+          const got = await claim(scope, "hash_a");
+          if (got !== "claimed") return got;
+          writes.push(1);
+          const answer = { status: 200, result: { committed: writes.length } };
+          await ledger.record(scope, "hash_a", answer);
+          return "claimed";
+        };
+        const settled = await Promise.all([run(), run()]);
+        assert(writes.length === 1, `same-hash claim ran the mutation ${writes.length} times`);
+        assert(
+          settled.filter((one) => one === "claimed").length === 1,
+          "exactly one same-hash caller should own the reservation",
+        );
+        const replay = settled.find((one) => one !== "claimed");
+        assertDeepEqual(
+          replay,
+          { status: 200, result: { committed: 1 } },
+          "the loser did not receive the owner's published answer",
         );
       }),
 

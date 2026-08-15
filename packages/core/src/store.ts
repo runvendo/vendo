@@ -119,15 +119,15 @@ export interface IdempotencyRecord {
  * happened. This is why `createStore()` hands one out instead of the ledger
  * being an adapter a host wires up separately.
  *
- * The guarantee is REPLAY protection, not mutual exclusion: two concurrent
- * requests carrying one key can both find the key fresh and both execute. That
- * is what a check-then-do ledger can promise, and saying so here is cheaper
- * than a caller discovering it in production.
+ * `check` then `record` is REPLAY protection, not mutual exclusion: two
+ * concurrent requests can both find the key fresh and both execute. A mount
+ * that needs the refused body never to reach the mutation uses {@link claim}.
  */
 export interface IdempotencyLedger {
   /**
    * What this key already answered, or null when it is fresh and the caller
-   * should go do the work.
+   * should go do the work. If the same hash has a pending {@link claim}, wait
+   * for its answer instead of reporting the key as fresh.
    *
    * `requestHash` is the caller's own digest of the request body. Passing it in
    * — rather than reading it back out and comparing at the call site — is what
@@ -138,8 +138,26 @@ export interface IdempotencyLedger {
   check(scope: IdempotencyScope, requestHash: string): Promise<IdempotencyRecord | null>;
   /** Record what this key answered. First writer wins; a later `record` for a
       key already held is ignored, never an overwrite — the answer a replay
-      already received must not change under it. */
+      already received must not change under it. After {@link claim} this
+      publishes onto the reservation rather than inserting a second row. A
+      claim owner records a terminal answer for both success and a caught
+      mutation failure. */
   record(scope: IdempotencyScope, requestHash: string, answer: IdempotencyRecord): Promise<void>;
+  /**
+   * Atomically reserve `(tenant, op, key)` for this request hash BEFORE the
+   * mutation runs.
+   * Optional on {@link RecordStore.claim}'s rule: an adapter that cannot
+   * reserve omits it, and a mount falls back to today's check-then-do.
+   *
+   * `"claimed"` means this caller owns the reservation and may run the
+   * mutation, then {@link record}. An `IdempotencyRecord` is a prior owner's
+   * published answer — replay it, do not mutate. A differing hash throws
+   * `conflict` here so a refused request never reaches the mutation. Equal-hash
+   * contenders wait for the owner's answer rather than executing. Waiting is
+   * bounded: if an owner disappears without publishing, callers
+   * fail closed with `unavailable` instead of executing or polling forever.
+   */
+  claim?(scope: IdempotencyScope, requestHash: string): Promise<IdempotencyRecord | "claimed">;
 }
 
 /** 01-core §12 */

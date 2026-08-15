@@ -353,9 +353,38 @@ export function memoryStoreAdapter(
 
   /** The three fields together ARE the key — spelled through JSON so a tenant
       or op containing the separator cannot forge another key's slot. */
-  const ledger = new Map<string, { requestHash: string; answer: IdempotencyRecord }>();
+  type LedgerHeld = {
+    requestHash: string;
+    answer?: IdempotencyRecord;
+    waiters: Array<(answer: IdempotencyRecord | null) => void>;
+  };
+  const ledger = new Map<string, LedgerHeld>();
   const ledgerKey = (scope: IdempotencyScope): string =>
     JSON.stringify([scope.tenant, scope.op, scope.key]);
+  const hashConflict = (scope: IdempotencyScope): VendoError => new VendoError(
+    "conflict",
+    `idempotency key ${scope.key} was already used with a different request body`,
+  );
+  const waitForAnswer = (scope: IdempotencyScope, held: LedgerHeld): Promise<IdempotencyRecord | null> => new Promise((resolve, reject) => {
+    if (held.answer !== undefined) {
+      resolve({ status: held.answer.status, result: jsonCopy(held.answer.result) });
+      return;
+    }
+    let timeout: ReturnType<typeof setTimeout>;
+    const wake = (answer: IdempotencyRecord | null): void => {
+      clearTimeout(timeout);
+      resolve(answer === null ? null : { status: answer.status, result: jsonCopy(answer.result) });
+    };
+    timeout = setTimeout(() => {
+      const index = held.waiters.indexOf(wake);
+      if (index !== -1) held.waiters.splice(index, 1);
+      reject(new VendoError(
+        "unavailable",
+        `idempotency key ${scope.key} is still being processed; retry later`,
+      ));
+    }, 30_000);
+    held.waiters.push(wake);
+  });
 
   const blobMap = (namespace: string): Map<string, { bytes: Uint8Array; contentType?: string }> => {
     let blobs = namespaces.get(namespace);
@@ -503,20 +532,43 @@ export function memoryStoreAdapter(
       async check(scope, requestHash) {
         const held = ledger.get(ledgerKey(scope));
         if (held === undefined) return null;
-        if (held.requestHash !== requestHash) {
-          throw new VendoError(
-            "conflict",
-            `idempotency key ${scope.key} was already used with a different request body`,
-          );
-        }
+        if (held.requestHash !== requestHash) throw hashConflict(scope);
+        if (held.answer === undefined) return waitForAnswer(scope, held);
         return { status: held.answer.status, result: jsonCopy(held.answer.result) };
       },
       async record(scope, requestHash, answer) {
         const key = ledgerKey(scope);
-        // First writer wins: the answer a replay has already been handed must
-        // not change under it.
-        if (ledger.has(key)) return;
-        ledger.set(key, { requestHash, answer: { status: answer.status, result: jsonCopy(answer.result) } });
+        const held = ledger.get(key);
+        if (held === undefined) {
+          ledger.set(key, {
+            requestHash,
+            answer: { status: answer.status, result: jsonCopy(answer.result) },
+            waiters: [],
+          });
+          return;
+        }
+        // First writer wins: a published answer must not change under a replay.
+        // A reservation (`claim`) is not yet an answer, so the owner may fill it.
+        if (held.answer !== undefined || held.requestHash !== requestHash) return;
+        held.answer = { status: answer.status, result: jsonCopy(answer.result) };
+        const waiters = held.waiters.splice(0);
+        for (const wake of waiters) wake(held.answer);
+      },
+      async claim(scope, requestHash) {
+        const key = ledgerKey(scope);
+        for (;;) {
+          const held = ledger.get(key);
+          if (held === undefined) {
+            ledger.set(key, { requestHash, waiters: [] });
+            return "claimed";
+          }
+          if (held.requestHash !== requestHash) throw hashConflict(scope);
+          if (held.answer !== undefined) {
+            return { status: held.answer.status, result: jsonCopy(held.answer.result) };
+          }
+          const answer = await waitForAnswer(scope, held);
+          if (answer !== null) return answer;
+        }
       },
     },
     blobs(namespace: string) {
