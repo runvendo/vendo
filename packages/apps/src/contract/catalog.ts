@@ -49,6 +49,17 @@ export interface NormalizedCatalogEntry extends RegisteredComponent {
 /** The normalized internal catalog the composition hands to the apps block. */
 export type NormalizedCatalog = ReadonlyArray<NormalizedCatalogEntry>;
 
+/** One face `vendo sync` resolved to a real file and inlined into
+ * `.vendo/fonts.css`. Metadata ONLY — never the bytes: theme.json is a bundle
+ * import and rides the `?vendoTheme=` query string, so a base64 face here
+ * would blow past every proxy's request-line limit. */
+export interface VendoThemeFont {
+  family: string;
+  weight: string;
+  style: string;
+  source: "next/font" | "public" | "google";
+}
+
 /** 01-core §14. The shape only: `./theme.js` owns the defaults, the merge, and
  * the one mapping onto `--vendo-*` CSS variables that every surface renders
  * through. */
@@ -76,6 +87,9 @@ export interface VendoTheme {
     letterSpacing?: string;
     lineHeightBody?: string;
     lineHeightHeading?: string;
+    /** What `.vendo/fonts.css` holds, for a reader that has the theme but not
+     * the sheet. Emitted by sync; nothing renders off it. */
+    fonts?: VendoThemeFont[];
   };
   radius: { small: string; medium: string; large: string };
   shadow?: { small: string; medium: string; large: string };
@@ -116,6 +130,12 @@ export const vendoThemeSchema = z.object({
     letterSpacing: z.string().optional(),
     lineHeightBody: z.string().optional(),
     lineHeightHeading: z.string().optional(),
+    fonts: z.array(z.object({
+      family: z.string(),
+      weight: z.string(),
+      style: z.string(),
+      source: z.enum(["next/font", "public", "google"]),
+    }).passthrough()).optional(),
   }).passthrough(),
   radius: z.object({
     small: z.string(),

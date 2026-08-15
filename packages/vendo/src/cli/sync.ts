@@ -158,7 +158,7 @@ async function writeThemeDraft(root: string, flow: SyncFlowResult, output: Outpu
   // tokens bought.
   const filled = Object.keys(summary.matched).filter((slot) => summary.matched[slot] === "(model)");
   if (filled.length === 0) return;
-  await writeText(join(root, ".vendo", "theme.json"), `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+  await writeText(join(root, ".vendo", "theme.json"), `${JSON.stringify(toVendoTheme(summary.slots, summary.fonts), null, 2)}\n`);
   output.log(`theme: ${filled.length} slot${filled.length === 1 ? "" : "s"} filled by the AI pass (${filled.join(", ")}) → .vendo/theme.json`);
 }
 

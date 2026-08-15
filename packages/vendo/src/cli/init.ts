@@ -574,9 +574,12 @@ async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit
   const { file: entry, children } = await clientRoot(root);
   const entryDir = dirname(entry);
   const specifier = await themeImportSpecifier(root, entryDir);
+  const fontsPath = join(root, ".vendo", "fonts.css");
+  const fonts = await exists(fontsPath) ? relative(entryDir, fontsPath).split(sep).join("/") : null;
   return {
     file: relative(root, entry),
     lines: [
+      ...(fonts === null ? [] : [`import ${JSON.stringify(fonts)};`]),
       `import { VendoProvider } from "@vendoai/vendo/react";`,
       ...(specifier === null
         ? []
@@ -586,7 +589,8 @@ async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit
           ]),
       `… then wrap: <VendoProvider baseUrl="/api/vendo"${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}</VendoProvider>`,
     ],
-    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it.",
+    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it."
+      + (fonts === null ? "" : " fonts.css carries your brand font as inlined @font-face rules, so generated screens render it wherever your own stylesheet doesn't reach."),
   };
 }
 
@@ -1199,6 +1203,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/brief.md",
     ".vendo/theme.json",
     ".vendo/theme.extracted.json",
+    ".vendo/fonts.css",
     ".vendo/data/.gitignore",
   ];
   const mount = await mountStep(root, layout);
@@ -1324,7 +1329,7 @@ async function finalizeTheme(input: {
     }
   }
   if (Object.keys(answers).length > 0) applyThemeAnswers(summary, answers, output);
-  await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+  await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots, summary.fonts), null, 2)}\n`);
   printThemeSummary(summary, output);
 }
 

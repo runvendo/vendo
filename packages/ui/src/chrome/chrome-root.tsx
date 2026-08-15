@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, type CSSProperties, type ReactNode } from "react";
-import { useVendoTheme } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useVendoStatus } from "../hooks/use-vendo-status.js";
 import { themeCssVariables } from "../theme.js";
 import { PolicyNoticeBody } from "./policy-notice-body.js";
+import { ensureThemeFontStyles } from "./theme-fonts.js";
 
 import { CHROME_CSS } from "./chrome-css.js";
 
@@ -50,8 +51,9 @@ function ChromeBoundary({
   className?: string;
   automaticPolicyNotice: boolean;
 }) {
-  const theme = useVendoTheme();
+  const { theme, fonts } = useVendoProvider();
   useEffect(ensureChromeStyles, []);
+  useEffect(() => ensureThemeFontStyles(fonts ?? ""), [fonts]);
   return (
     <ChromeRootContext.Provider value>
       <div

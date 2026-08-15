@@ -61,6 +61,7 @@ const SLOT_PATHS: ReadonlyArray<[keyof ThemeSlotValues, readonly string[]]> = [
   ["radius", ["radius", "medium"]],
   ["fontFamily", ["typography", "fontFamily"]],
   ["headingFamily", ["typography", "headingFamily"]],
+  ["monoFamily", ["typography", "monoFamily"]],
   ["baseSize", ["typography", "baseSize"]],
   ["density", ["density"]],
   ["motion", ["motion"]],
@@ -101,8 +102,11 @@ export function baseFrom(summary: ThemeSummary): ExtractedThemeBase {
   const defaulted = new Set(summary.defaulted);
   const slots: Partial<Record<keyof ThemeSlotValues, string>> = {};
   for (const [slot] of SLOT_PATHS) {
-    if (defaulted.has(slot)) continue;
-    slots[slot] = String(summary.slots[slot]);
+    // `monoFamily` is optional, so absent means "nothing derived" — the same
+    // no-evidence state `defaulted` records for every other slot.
+    const value = summary.slots[slot];
+    if (defaulted.has(slot) || value === undefined) continue;
+    slots[slot] = value;
   }
   return { format: FORMAT, slots };
 }
@@ -181,8 +185,8 @@ export function mergeExtraction(args: {
   let radiusWas: string | undefined;
 
   for (const [slot, path] of SLOT_PATHS) {
-    if (defaulted.has(slot)) continue; // no host evidence — nothing to say
-    const extracted = String(summary.slots[slot]);
+    const extracted = summary.slots[slot];
+    if (defaulted.has(slot) || extracted === undefined) continue; // no host evidence
     const current = readPath(args.theme, path);
     if (current === undefined || sameValue(current, extracted)) continue;
     // A derived slot is only as movable as the slot it derives from. Its

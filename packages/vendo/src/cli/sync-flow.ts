@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { z } from "zod";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
+import type { VendoThemeFont } from "@vendoai/apps/contract";
 import type { ToolImpact } from "../sync-impact.js";
 import {
   pushHostComponents,
@@ -15,6 +16,7 @@ import { runProseStages } from "./init-judgment.js";
 import { selectJudgmentEngines, type AvailableEngine } from "./judge/engine.js";
 import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
 import { plainSelect, type PrettyOutput, type SelectOption } from "./pretty.js";
+import { embedHostFonts } from "./theme/embed-fonts.js";
 import {
   extractTheme,
   toVendoTheme,
@@ -239,6 +241,13 @@ async function reconcileTheme(
   if (merge.theme !== null) {
     await writeText(join(vendoDir, "theme.json"), `${JSON.stringify(merge.theme, null, 2)}\n`);
   }
+  // The brand moved, or this host predates fonts.css — either way the sheet is
+  // (re)built. An unchanged brand with the sheet already on disk touches
+  // nothing: resolving a face can reach the network, and sync runs from
+  // `predev`.
+  if (merge.theme !== null || !(await exists(join(vendoDir, "fonts.css")))) {
+    await writeFonts(root, vendoDir, summary.slots, note);
+  }
   // The base advances whenever this run is unambiguous — everything agreed, or
   // every disagreement was resolved. While disagreements remain unresolved it
   // stays put, so the warning repeats every sync instead of quietly baking the
@@ -424,6 +433,31 @@ interface FlowNotes {
   noteError: (message: string) => void;
 }
 
+/**
+ * `.vendo/fonts.css` — the theme's families resolved to real files and inlined,
+ * so the surfaces the host's own stylesheet never reaches can still render the
+ * brand font (embed-fonts.ts).
+ *
+ * Built at install, on any sync where the brand actually moved, and on the
+ * first sync of a host that predates the file. Never on an unchanged run:
+ * resolving a face can reach the network, and `sync` runs from `predev`, so
+ * rebuilding it every `npm run dev` would buy a request per run and a
+ * committed artifact that churns.
+ */
+async function writeFonts(
+  root: string,
+  vendoDir: string,
+  slots: ThemeSlotValues,
+  note: (message: string) => void,
+): Promise<VendoThemeFont[]> {
+  const embedded = await embedHostFonts(root, slots);
+  for (const line of embedded.notes) note(`fonts: ${line}`);
+  if (embedded.css === "") return [];
+  await writeText(join(vendoDir, "fonts.css"), embedded.css);
+  note(`fonts: ${embedded.fonts.length} face${embedded.fonts.length === 1 ? "" : "s"} inlined (${Math.round(embedded.bytes / 1024)} KB) → .vendo/fonts.css`);
+  return embedded.fonts;
+}
+
 /** Theme, ONE path: init's install creates the file (it is the editable source
  *  of truth from then on), and every later run reconciles it — a rebrand
  *  reaches Vendo, a hand edit is never clobbered. */
@@ -440,7 +474,8 @@ async function resolveTheme(input: {
     const themeStarted = Date.now();
     const themeSummary = await extractTheme(root);
     const themeMs = Date.now() - themeStarted;
-    await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
+    themeSummary.fonts = await writeFonts(root, vendoDir, themeSummary.slots, note);
+    await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots, themeSummary.fonts), null, 2)}\n`);
     // The merge base for every later re-scan: what the DETERMINISTIC pass read,
     // before any model fill or --theme answer — those are decisions, and the
     // reconcile must pin them (theme/provenance.ts).
