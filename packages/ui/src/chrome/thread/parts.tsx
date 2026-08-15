@@ -183,15 +183,19 @@ function ThreadFormingCard() {
         stays visible either way (spec §15: the ✕ stays in the record);
       · D1 — an app-building call renders no beat, from the moment the build
         starts, because its card IS that step (the summary still counts it). */
-function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnPending, sendMessage, siblingParts }: {
+function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnLive, restored, sendMessage, siblingParts }: {
   part: ToolUIPart | DynamicToolUIPart;
   risks: Map<string, RiskLabel>;
   count: number;
   connectLive: boolean;
   hideBeats: boolean;
   /** Spec §8 — a turn that is over is never still forming: an abandoned build
-      must not leave the empty card sweeping forever. */
-  turnPending: boolean;
+      must not leave the empty card sweeping forever. This is the turn RUNNING,
+      not the turn pending: `stop()` never reconciles the aborted call, so a
+      stopped build sits in `input-available` — and reads as pending — for good. */
+  turnLive: boolean;
+  /** Whether this turn was already in the transcript when the surface arrived. */
+  restored: boolean;
   sendMessage?: ((message: { text: string }) => unknown) | undefined;
   siblingParts?: UIMessage["parts"] | undefined;
 }) {
@@ -215,7 +219,12 @@ function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnPending,
     // and the first view bytes rendered nothing at all. The card arrives EMPTY
     // instead, in the place the view will fill, and ThreadAppCard replaces it
     // the moment the first partial lands.
-    const forming = turnPending
+    // …and only while the build can still be running. The turn we WATCHED end
+    // is the only one we can rule out: the parts cannot tell an abandoned build
+    // from one still running on the server, and a reader who reloads mid-build
+    // restores exactly this shape. `restored` is already the chrome's word for
+    // "we did not watch this" (see the turn clock in message.tsx).
+    const forming = (turnLive || restored)
       && toolName(part) === VENDO_MAKE_TOOL
       && (part.state === "input-streaming" || part.state === "input-available")
       && !(siblingParts ?? []).some(sibling => sibling.type === "data-vendo-view");
@@ -228,7 +237,7 @@ function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnPending,
 /** One stream part in a turn: text (user verbatim / assistant markdown with the
     ENG-217 caret choreography), assistant files, tool build beats, and the
     jailed generated-view app card (06-apps §§8–9). */
-export function ThreadPart({ part, partKey, role, restored, count = 1, risks, connectLive = false, hideBeats = false, turnPending = true, sendMessage, siblingParts, respond }: {
+export function ThreadPart({ part, partKey, role, restored, count = 1, risks, connectLive = false, hideBeats = false, turnPending = true, turnLive = turnPending, sendMessage, siblingParts, respond }: {
   part: UIMessage["parts"][number];
   partKey: string;
   role: UIMessage["role"];
@@ -243,6 +252,11 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
       will ever flip it to ready. Defaults to pending so a part rendered on its
       own (or by a host composing its own list) keeps today's behavior. */
   turnPending?: boolean;
+  /** Spec §8 — whether this turn is RUNNING, which is not the same question:
+      `stop()` leaves the aborted call in `input-available`, so a stopped build
+      reads as pending forever and its empty card would sweep forever with it.
+      Defaults to `turnPending` for a part rendered on its own. */
+  turnLive?: boolean;
   /** Whether a connect-required outcome in this turn is still the actionable
       ask (this is the LATEST assistant turn). Stale turns render the quiet
       Connected record instead — see ConnectCard's `live`. */
@@ -282,7 +296,8 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
         count={count}
         connectLive={connectLive}
         hideBeats={hideBeats}
-        turnPending={turnPending}
+        turnLive={turnLive}
+        restored={restored}
         sendMessage={sendMessage}
         siblingParts={siblingParts}
       />

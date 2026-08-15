@@ -151,6 +151,10 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
                 connectLive={message.role === "assistant" && message.id === lastAssistantId}
                 hideBeats={folded}
                 turnPending={pending}
+                // …and the narrower question the forming card asks: `pending`
+                // survives a stop (see the note above it), `streamingTurn` does
+                // not, so an abandoned build's empty card stands down.
+                turnLive={streamingTurn}
                 sendMessage={sendMessage}
                 siblingParts={message.parts}
                 respond={respond}
