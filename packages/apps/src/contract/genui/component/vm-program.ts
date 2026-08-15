@@ -392,7 +392,7 @@ const ENGINE = `(function () {
       measure(nodes[0], 1);
       var json = stringify(nodes[0]);
       if (json.length > ${MAX_TREE_BYTES}) {
-        throw new Error("this paint is too large to hand over at " + json.length + " bytes (max ${MAX_TREE_BYTES}) — paint a page of rows and let an event ask for the next");
+        throw new Error("this paint is too large to hand over at " + json.length + " code units (max ${MAX_TREE_BYTES}) — paint a page of rows and let an event ask for the next");
       }
       return json;
     },
