@@ -138,7 +138,10 @@ for (const backend of backends()) {
         // body — the loser's mutation never touched the workspace.
         const rows = await made.sql(
           "SELECT data FROM vendo_records WHERE collection = $1 AND id = $2",
-          ["vendo_workspace_commits", "wsc_key_idem_race"],
+          // The ledger id carries the OWNER as well as the key — two owners
+          // pick the same key routinely, and a key-only id answers one owner's
+          // commit out of the other's row (see `commitId` in ops.ts).
+          ["vendo_workspace_commits", `wsc_key_${JSON.stringify(["user_local", "idem_race"])}`],
         );
         expect(rows.length).toBe(1);
         const winner = results[0]!.status === "fulfilled" ? { v: "first" } : { v: "second" };

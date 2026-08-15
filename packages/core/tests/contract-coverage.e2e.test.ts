@@ -493,6 +493,9 @@ describe("amended public export surface — root utilities and /conformance inve
       "memoryKnowledgeAdapter",
       "memoryStoreAdapter",
       "memoryStoreOps",
+      // How a case says the OPTIONAL member it covers is absent, so the report
+      // counts the omission instead of the case passing on an empty body.
+      "omitted",
       "runConformance",
       "secretsProviderConformance",
       "storeAdapterConformance",

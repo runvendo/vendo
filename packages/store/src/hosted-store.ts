@@ -522,8 +522,6 @@ function storeWireClient(
   const reportOf = (payload: unknown): unknown =>
     field(payload, "report", "invalid report", (value) => value !== undefined);
 
-  const cursorQuery = (query?: { cursor?: string; limit?: number }): Record<string, unknown> => ({ ...query });
-
   /** The one file-read posture, shared by `blobs.get` and `appData.getFile` so
       the two can never drift: a missing file is null at the seam (01-core §12),
       whether the service answers `{blob: null}` or an ENVELOPED not-found. A
@@ -691,8 +689,12 @@ function storeWireClient(
       async putThread(thread) {
         return recordOf(await mutate("transcripts.putThread", P["transcripts.putThread"], { thread }));
       },
-      async getThread(id, opts) {
-        return nullableRecordOf(await post("transcripts.getThread", P["transcripts.getThread"], { id, ...cursorQuery(opts) }));
+      /** The id and nothing else. This used to marshal a `{cursor, limit}` pair
+          the answer had no room to page with — see `getThread` in core's
+          store.ts — so the client was the only one of the three implementations
+          that sent them, and no mount ever honored them. */
+      async getThread(id) {
+        return nullableRecordOf(await post("transcripts.getThread", P["transcripts.getThread"], { id }));
       },
       async listThreads(query) {
         return listOf(await post("transcripts.listThreads", P["transcripts.listThreads"], { ...query }));

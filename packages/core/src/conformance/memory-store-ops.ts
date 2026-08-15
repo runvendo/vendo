@@ -1,8 +1,8 @@
 import type { AuditEvent } from "../audit.js";
-import { assertEngineCollection, assertIndexedField, collectionKind } from "../engine-collections.js";
+import { assertEngineCollection, assertIndexedField, collectionKind, engineAppHistory } from "../engine-collections.js";
 import { VendoError } from "../errors.js";
 import type { IsoDateTime } from "../ids.js";
-import { VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
+import { STORE_WIRE_PATHS, VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
 import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
@@ -449,7 +449,7 @@ export function memoryStoreOps(): StoreOps {
       threads.set(thread.id, { record: rec, thread: t });
       return copyRecord(rec);
     },
-    async getThread(id, _opts) {
+    async getThread(id) {
       const entry = threads.get(id);
       return entry ? copyRecord(entry.record) : null;
     },
@@ -494,6 +494,62 @@ export function memoryStoreOps(): StoreOps {
       const rec = threadRecord(threadId, entry.thread, entry.record);
       threads.set(threadId, { record: rec, thread: entry.thread });
       return copyRecord(rec);
+    },
+    /** The batch append, and the three things that make it more than a loop
+        over putMessage: the SUBJECT is named by the caller (so ownership is
+        decided without downloading the thread), an id the thread already holds
+        is an EDIT that keeps its decided position (moving it would reorder the
+        conversation the next turn reads), and a thread that does not exist yet
+        is CREATED under the named subject — the local backend's upsert, which
+        is what lets a harness land turn one without a separate putThread. */
+    async appendMessages(threadId, subject, messages, opts) {
+      if (messages.length === 0) {
+        throw new VendoError(
+          "validation",
+          `transcripts.appendMessages needs at least one message; the batch for thread ${threadId} was empty`,
+        );
+      }
+      // Two messages under one id cannot BOTH land, and a backend that upserts
+      // them in one statement loses the whole write to a duplicate-key error —
+      // so the offender is named here instead.
+      const idOf = (message: unknown): string => {
+        const given = (message as { id?: unknown } | null)?.id;
+        return typeof given === "string" && given !== "" ? given : `msg_${String(sequence += 1)}`;
+      };
+      const ids = messages.map(idOf);
+      const seen = new Set<string>();
+      for (const id of ids) {
+        if (seen.has(id)) {
+          throw new VendoError(
+            "validation",
+            `thread ${threadId} carries two messages with the id ${JSON.stringify(id)}; message ids must be unique within a thread`,
+          );
+        }
+        seen.add(id);
+      }
+      const existing = threads.get(threadId);
+      if (existing !== undefined && existing.thread.subject !== subject) {
+        throw new VendoError("conflict", `thread ${threadId} belongs to another subject`);
+      }
+      const thread: Thread = existing?.thread ?? {
+        id: threadId,
+        subject,
+        messages: [],
+        answers: new Set(),
+      };
+      if (opts?.title !== undefined) thread.title = opts.title;
+      for (const [index, id] of ids.entries()) {
+        // The message is stored VERBATIM, exactly as putMessage stores it: the
+        // row id a backend invents for an id-less message is the row's, not the
+        // message's, so injecting it here would invent a field no other
+        // implementation has.
+        const at = thread.messages.findIndex((held) => (held as { id?: unknown } | null)?.id === id);
+        if (at === -1) thread.messages.push(jsonCopy(messages[index]));
+        else thread.messages[at] = jsonCopy(messages[index]);
+      }
+      const record = threadRecord(threadId, thread, existing?.record);
+      threads.set(threadId, { record, thread });
+      return { revision: record.revision!, count: messages.length };
     },
     async recordAnswer(threadId, answer) {
       const entry = threads.get(threadId);
@@ -568,6 +624,9 @@ export function memoryStoreOps(): StoreOps {
       // One commit, one mutation per path: two entries for the same path leave
       // the commit with no single before-image, so the path's trail could not
       // say which revision this commit replaced.
+      if (entries.length === 0) {
+        throw new VendoError("validation", "a workspace commit must carry at least one entry");
+      }
       const paths = new Set<string>();
       for (const entry of entries as WsEntry[]) {
         if (paths.has(entry.path)) {
@@ -578,12 +637,17 @@ export function memoryStoreOps(): StoreOps {
       const key = opts?.idempotencyKey;
       if (key !== undefined) {
         const body = JSON.stringify(entries);
-        const recorded = wsIdempotencyKeys.get(key);
+        // The OWNER is part of the ledger key, exactly as `IdempotencyScope`'s
+        // `tenant` is (store.ts): clients pick their own keys and two owners
+        // will pick the same one, and a ledger keyed on the key alone answers
+        // the second owner's commit out of the first owner's record.
+        const scope = JSON.stringify([owner, key]);
+        const recorded = wsIdempotencyKeys.get(scope);
         if (recorded === body) return; // a replay: hand back the recorded result
         if (recorded !== undefined) {
           throw new VendoError("conflict", `idempotency key ${key} was already used for different entries`);
         }
-        wsIdempotencyKeys.set(key, body);
+        wsIdempotencyKeys.set(scope, body);
       }
       const files = drawer(owner);
       // Strict compare-and-swap is checked for the WHOLE set first: a commit
@@ -595,9 +659,13 @@ export function memoryStoreOps(): StoreOps {
           && (files.get(e.path)?.revision ?? null) !== e.expectedRevision)
         .map((e) => e.path);
       if (conflicts.length > 0) {
+        // The paths ride the DETAIL as well as the message: a caller that has
+        // to re-read and retry needs the list, and parsing it back out of a
+        // sentence is not a contract anyone can hold.
         throw new VendoError(
           "conflict",
           `the workspace moved on under ${conflicts.sort().join(", ")}; nothing was committed`,
+          { conflicts: conflicts.sort() },
         );
       }
       wsCommitSeq += 1;
@@ -668,11 +736,38 @@ export function memoryStoreOps(): StoreOps {
         for (const k of harnessState.keys()) {
           if (k.endsWith(`:${target.subject}`)) harnessState.delete(k);
         }
+        // A quarantined row is STILL this person's data. Sweeping it here is
+        // what stops a retention lift from becoming a way to outlive an
+        // erasure — the same hole the local backend closes by matching the
+        // subject it copies onto every lifted row (store/src/erase.ts).
+        for (const [collection, held] of quarantined) {
+          quarantined.set(collection, held.filter((row) => row.record.refs?.["subject"] !== target.subject));
+        }
       }
       if (target.appId) {
+        // Everything the app owns, and nothing beside it: its own drawers
+        // (`app:<id>:<collection>`, rows and files alike), its version history,
+        // its harness state, and the app record itself. NOT the user's threads
+        // — uninstalling an app is not erasing the person who installed it.
+        const prefix = `app:${target.appId}:`;
+        for (const name of [...collections.keys()]) {
+          if (name.startsWith(prefix) || name === engineAppHistory(target.appId)) collections.delete(name);
+        }
+        for (const name of [...blobStore.keys()]) {
+          if (name.startsWith(prefix)) blobStore.delete(name);
+        }
         for (const k of harnessState.keys()) {
           if (k.startsWith(`${target.appId}:`)) harnessState.delete(k);
         }
+        // The app's lifted rows too, by the same rule as the subject leg — and
+        // on both selectors the live rows needed: the app's own drawers, and
+        // its version log, whose rows name their app only in the collection.
+        for (const [collection] of quarantined) {
+          if (collection.startsWith(prefix) || collection === engineAppHistory(target.appId)) {
+            quarantined.delete(collection);
+          }
+        }
+        col("vendo_apps").delete(target.appId);
       }
       return { erased: true };
     },
@@ -833,12 +928,16 @@ export function memoryStoreOps(): StoreOps {
       return measured.sort((a, b) => (a.collection < b.collection ? -1 : 1));
     },
     async status(): Promise<StoreWireStatus> {
-      // Still 35: `ops` is a LEVEL over STORE_WIRE_PATHS' order, and this
-      // reference has no batch append (op 36), so it cannot claim anything past
-      // 35 — whatever it serves further down the list. That is the level's known
-      // coarseness, not a bug in it: the only thing any client reads it for is
-      // STORE_WIRE_APPEND_MESSAGES_OPS, and 35 is the right answer there.
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
+      // The whole list. `ops` is a LEVEL over STORE_WIRE_PATHS' declared order,
+      // so it may only run as far as the unbroken PREFIX this reference serves
+      // — and the last two gaps in that prefix have now closed: the batch
+      // append (op 36) is served above, and so is the retention family the list
+      // used to end on. Derived from the manifest rather than typed as a
+      // literal, because the number that matters is "everything declared" and a
+      // hand-written one goes stale the day op 46 is added.
+      // A level this reference cannot back with an op is the one thing it must
+      // never report, so this moves WITH the object and never ahead of it.
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: Object.keys(STORE_WIRE_PATHS).length };
     },
   };
 }

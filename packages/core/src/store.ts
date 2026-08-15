@@ -417,7 +417,16 @@ export interface StoreOps {
   };
   transcripts: {
     putThread(thread: { id: string; subject: string; messages: unknown[]; title?: string }): Promise<VendoRecord>;
-    getThread(id: string, opts?: { cursor?: string; limit?: number }): Promise<VendoRecord | null>;
+    /** The WHOLE thread. There is deliberately no `cursor`/`limit` here: the
+        answer is a single `VendoRecord`, which has nowhere to carry a next-page
+        cursor, so a windowed read could never tell a caller there is more. The
+        pair shipped on this signature by pattern-cloning the list ops (#784),
+        was implemented by nobody, and was marshalled blind by the cloud client
+        — a caller that passed `{ limit: 50 }` got the entire transcript and no
+        way to notice. Windowing a transcript is the reader's job (the harness
+        slices its own context window); paging one needs an op whose answer has
+        room for a cursor. */
+    getThread(id: string): Promise<VendoRecord | null>;
     listThreads(query?: { subject?: string; cursor?: string; limit?: number }): Promise<{ records: VendoRecord[]; cursor?: string }>;
     deleteThread(id: string): Promise<void>;
     putMessage(threadId: string, message: unknown): Promise<VendoRecord>;

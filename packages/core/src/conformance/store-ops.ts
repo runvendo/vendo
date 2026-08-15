@@ -5,7 +5,7 @@ import { isoDateTimeSchema, type IsoDateTime } from "../ids.js";
 import { STORE_WIRE_APPEND_MESSAGES_OPS, STORE_WIRE_PATHS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
 import type { AuditQuery, CollectionFootprint, StoreOps } from "../store.js";
 import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
-import type { ConformanceCase, ConformanceSuite } from "./index.js";
+import { omitted, type ConformanceCase, type ConformanceOmission, type ConformanceSuite } from "./index.js";
 
 /** Refusals are checked by VendoError CODE, not by message text: "threw" is not
     "refused for the right reason". Duck-typed rather than `instanceof`, because
@@ -99,6 +99,49 @@ const seedAudit = async (ops: StoreOps, events: AuditEvent[]): Promise<void> => 
   for (const event of events) await ops.engine.put("vendo_audit", { id: event.id, data: event });
 };
 
+// ---------------------------------------------------------------------------
+// racing
+//
+// Everything else in this file is a SEQUENCE, and a sequence cannot see the
+// window a concurrent caller lands in: a read-then-write with no atomicity
+// underneath passes every sequential case ever written and loses one of two
+// simultaneous writers in production. These helpers are how a case fires two
+// callers at ONE instant and then asserts what has to be true of BOTH orders —
+// never which one won, because either winning is correct and pinning one would
+// fail an honest implementation on scheduling alone.
+// ---------------------------------------------------------------------------
+
+/** Fires one call `count` times at once and hands back how each settled. */
+const race = async <T>(
+  count: number,
+  call: (attempt: number) => Promise<T>,
+): Promise<Array<PromiseSettledResult<T>>> =>
+  await Promise.allSettled(Array.from({ length: count }, (_, attempt) => call(attempt)));
+
+/** The VendoError code a settled call was refused with, or undefined when it
+    resolved. A raced loser is refused for a NAMED reason or not at all: a
+    TypeError or a driver's own deadlock message escaping as the answer is a
+    different bug wearing the right shape. */
+const refusalCode = (settled: PromiseSettledResult<unknown>): unknown =>
+  settled.status === "rejected" ? (settled.reason as { code?: unknown } | null)?.code : undefined;
+
+/** The values of the calls that resolved. */
+const won = <T>(settled: Array<PromiseSettledResult<T>>): T[] =>
+  settled.flatMap((one) => (one.status === "fulfilled" ? [one.value] : []));
+
+/** Why a case over an OPTIONAL member answered `omitted` instead of running.
+    `transcripts.appendMessages` is optional by the same rule `RecordStore.claim`
+    is (store.ts): an implementation that cannot serve it says so by leaving it
+    off. What it may NOT do is leave it off invisibly, which is what these cases
+    used to allow — an early `return` made "absent" and "correct" one green
+    line, so a mount could drop the whole batch-append family and every case
+    over it still passed. */
+const APPEND_ABSENT =
+  "this mount omits transcripts.appendMessages (optional — callers fall back to getThread + putMessage)";
+
+/** {@link APPEND_ABSENT}'s twin for the other optional family. */
+const RETENTION_ABSENT = "this mount omits the retention family (optional — an engine with nowhere to quarantine to leaves it off)";
+
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
     seeds one first, with the shape the typed `vendo_apps` door accepts. */
@@ -120,18 +163,32 @@ const seedApp = async (ops: StoreOps, appId: string): Promise<void> => {
 
 export interface StoreOpsConformanceOptions {
   makeOps(): Promise<{ ops: StoreOps; close?(): Promise<void> }>;
+  /**
+   * A SECOND handle on the same physical store, bound to a different tenant.
+   *
+   * Supply it and the kit proves the one thing a single handle cannot: that a
+   * mount serving many tenants out of one database keeps them apart. Leave it
+   * off — as a single-tenant store must, having no second tenant to hand out —
+   * and those cases report as OMITTED rather than passing, so "this store has
+   * no tenants" and "this store's tenants are isolated" never read alike.
+   *
+   * The two handles must share their backing store. Two independent stores
+   * are trivially isolated and prove nothing, which is why this is a separate
+   * option and not a second `makeOps()` call.
+   */
+  makeNeighbour?(ops: StoreOps): Promise<{ ops: StoreOps; close?(): Promise<void> }>;
 }
 
 const opsCase = (
   opts: StoreOpsConformanceOptions,
   name: string,
-  body: (ops: StoreOps) => Promise<void>,
+  body: (ops: StoreOps) => Promise<void | ConformanceOmission>,
 ): ConformanceCase => ({
   name,
   async run() {
     const made = await opts.makeOps();
     try {
-      await body(made.ops);
+      return await body(made.ops);
     } finally {
       await made.close?.();
     }
@@ -189,6 +246,28 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           const page = await ops.engine.list(collection, { limit: PAGE, cursor });
           return { ids: page.records.map((r) => r.id), cursor: page.cursor };
         });
+      }),
+
+      /** The ref filter, which is how every caller that is not walking a whole
+          drawer finds its rows: exact key/value CONTAINMENT, ANDed, and blind
+          to refs the row carries beyond the ones asked for. A filter that
+          matched on the key alone, or that required the row's refs to equal the
+          query, reads as "no results" at one call site and "everybody's rows"
+          at another — and neither says which. */
+      opsCase(opts, "engine.list narrows by refs, exactly and ANDed", async (ops) => {
+        const collection = engineAppHistory("conf_refs");
+        await ops.engine.put(collection, { id: "both", data: {}, refs: { subject: "u1", kind: "invoice" } });
+        await ops.engine.put(collection, { id: "other_value", data: {}, refs: { subject: "u2", kind: "invoice" } });
+        await ops.engine.put(collection, { id: "one_key", data: {}, refs: { subject: "u1" } });
+        // A row carrying MORE refs than the filter names still matches: this is
+        // containment, not equality.
+        await ops.engine.put(collection, { id: "extra", data: {}, refs: { subject: "u1", kind: "invoice", box: "in" } });
+
+        const idsOf = async (refs: Record<string, string>): Promise<string[]> =>
+          (await ops.engine.list(collection, { refs })).records.map((record) => record.id).sort();
+        assertDeepEqual(await idsOf({ subject: "u1" }), ["both", "extra", "one_key"], "a one-key ref filter returned the wrong rows");
+        assertDeepEqual(await idsOf({ subject: "u1", kind: "invoice" }), ["both", "extra"], "two ref keys did not AND");
+        assertDeepEqual(await idsOf({ subject: "nobody" }), [], "a ref value nothing carries matched rows anyway");
       }),
 
       /** The forward walk — the one read a newest-first page cannot serve. A
@@ -323,6 +402,27 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assertDeepEqual(got?.data, { n: 1 }, "engine.insertIfAbsent overwrote the recorded delivery");
       }),
 
+      /** The same insert, RACED — which is the shape a redelivered webhook
+          actually arrives in. Sequentially, a `has()`-then-`set()` written in
+          application code passes the case above and still admits every one of
+          four simultaneous callers, because the check and the write are two
+          statements with a window between them. The winner is whichever one the
+          scheduler picked, so nothing here names it: what is asserted is that
+          there is exactly ONE, and that the row the drawer kept is the row that
+          winner was handed — a backend that returns one delivery and stores
+          another has told two callers two different truths. */
+      opsCase(opts, "engine.insertIfAbsent admits exactly one of four simultaneous writers", async (ops) => {
+        const settled = await race(4, (attempt) =>
+          ops.engine.insertIfAbsent("automations:deliveries", { id: "dlv_race", data: { attempt } }));
+        for (const one of settled) {
+          assert(one.status === "fulfilled", `a raced insert failed instead of losing: ${String(refusalCode(one))}`);
+        }
+        const admitted = won(settled).filter((record) => record !== null);
+        assert(admitted.length === 1, `exactly one of four simultaneous inserts may be admitted, ${admitted.length} were`);
+        const held = await ops.engine.get("automations:deliveries", "dlv_race");
+        assertDeepEqual(held?.data, admitted[0]!.data, "the drawer kept a delivery no admitted insert wrote");
+      }),
+
       /** The schedule cursor claim: a runner holding a revision the schedule has
           moved past may not write its stale cursor back over the live one. */
       opsCase(opts, "engine.compareAndSwap succeeds on matching revision, null on stale", async (ops) => {
@@ -333,6 +433,27 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assertDeepEqual(swapped!.data, { cursor: 2 }, "engine.compareAndSwap did not update data");
         const stale = await ops.engine.compareAndSwap("automations:schedule", { id: "sch_1", data: { cursor: 3 } }, created.revision!);
         assert(stale === null, "engine.compareAndSwap should return null on stale revision");
+      }),
+
+      /** The same swap, RACED — two runners that read the schedule at the same
+          instant and both try to advance it. Both hold a revision that WAS live
+          when they read it, so a backend that compares against what it read a
+          statement ago (rather than inside the write itself) lets both land and
+          the schedule skips a window. Exactly one may be told it swapped, and
+          the row must hold that one's cursor: a row holding the loser's value
+          means the loser's write landed after being told it had not. */
+      opsCase(opts, "engine.compareAndSwap lands exactly one of two swaps off one revision", async (ops) => {
+        const created = await ops.engine.put("automations:schedule", { id: "sch_race", data: { cursor: 0 } });
+        assert(created.revision !== undefined, "engine.put must return a revision for CAS");
+        const settled = await race(2, (attempt) =>
+          ops.engine.compareAndSwap("automations:schedule", { id: "sch_race", data: { cursor: attempt + 1 } }, created.revision!));
+        for (const one of settled) {
+          assert(one.status === "fulfilled", `a raced swap failed instead of losing: ${String(refusalCode(one))}`);
+        }
+        const landed = won(settled).filter((record) => record !== null);
+        assert(landed.length === 1, `exactly one swap off one revision may land, ${landed.length} did`);
+        const held = await ops.engine.get("automations:schedule", "sch_race");
+        assertDeepEqual(held?.data, landed[0]!.data, "the row holds a cursor the losing swap wrote");
       }),
 
       /** Sequential, not concurrent: two callers read the same slot and both try
@@ -347,6 +468,48 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(second === false, "the second claim on the same stale expectation should lose");
         const after = await ops.engine.get("vendo_placement_slots", "slot_1");
         assertDeepEqual(after?.data, { holder: "run_1" }, "the winner's replacement did not land");
+      }),
+
+      /** `claim`'s OTHER form: no replacement is a compare-and-DELETE, and it is
+          how a holder releases a slot without a second caller's stale write
+          landing in the gap between a read and a delete. Untested until now,
+          which meant an implementation could serve the replace form perfectly
+          and treat the delete form as a no-op that answers `true` — a released
+          slot nobody can take again, with a success code on it. */
+      opsCase(opts, "engine.claim with no replacement deletes exactly the row it matched", async (ops) => {
+        const expected = { id: "slot_rel", data: { holder: "run_1" }, refs: { o: "a" } };
+        await ops.engine.put("vendo_placement_slots", expected);
+        await ops.engine.put("vendo_placement_slots", { id: "slot_other", data: { holder: "run_1" }, refs: { o: "a" } });
+
+        assert(await ops.engine.claim("vendo_placement_slots", expected) === true, "a compare-and-delete on a matching row should win");
+        assert(await ops.engine.get("vendo_placement_slots", "slot_rel") === null, "the claimed row was not deleted");
+        assert(await ops.engine.get("vendo_placement_slots", "slot_other") !== null, "the delete took a row it was not aimed at");
+        // The row is gone, so the same claim can no longer match — a `true` here
+        // is a delete that reports success without looking.
+        assert(await ops.engine.claim("vendo_placement_slots", expected) === false, "a compare-and-delete matched a row that no longer exists");
+      }),
+
+      /** The claim, RACED — the shape it exists for. Two runners read one free
+          slot at the same instant and both move to take it; the loser must be
+          told the row moved rather than stamping its own holder over the
+          winner's. Which one wins is the scheduler's business, so the assertion
+          is that exactly one is told it won AND that the holder the slot ended
+          up with is that same one — the failure this catches is a backend where
+          both writes land and the answer disagrees with the row. */
+      opsCase(opts, "engine.claim under a real race lets exactly one caller win", async (ops) => {
+        const expected = { id: "slot_race", data: { holder: null }, refs: { o: "a" } };
+        await ops.engine.put("vendo_placement_slots", expected);
+        const holders = ["run_a", "run_b"];
+        const settled = await race(holders.length, (attempt) =>
+          ops.engine.claim("vendo_placement_slots", expected, { data: { holder: holders[attempt] }, refs: { o: "a" } }));
+        for (const one of settled) {
+          assert(one.status === "fulfilled", `a raced claim failed instead of losing: ${String(refusalCode(one))}`);
+        }
+        const winners = settled.flatMap((one, attempt) =>
+          (one.status === "fulfilled" && one.value === true ? [holders[attempt]!] : []));
+        assert(winners.length === 1, `exactly one of two simultaneous claims may win, ${winners.length} did`);
+        const after = await ops.engine.get("vendo_placement_slots", "slot_race");
+        assertDeepEqual(after?.data, { holder: winners[0] }, "the slot is held by a caller that was told it lost");
       }),
 
       opsCase(opts, "engine refuses a collection outside the allowlist on every verb", async (ops) => {
@@ -476,6 +639,49 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** The namespace is the blob store's ONLY partition, and every appData
+          file, every workspace object and every host upload is separated by
+          nothing else. An implementation that composes its physical key by
+          joining the namespace and the key with a delimiter — the obvious way
+          to build one on a flat object store — aliases namespace `a` + key
+          `b/c` onto namespace `a/b` + key `c`, and the read that crosses is
+          silent. Every verb, because every verb composes the key. */
+      opsCase(opts, "blobs keep two namespaces apart on every verb", async (ops) => {
+        const key = "shared.bin";
+        await ops.blobs.put("conf_ns_a", key, new Uint8Array([1]));
+        await ops.blobs.put("conf_ns_b", key, new Uint8Array([2]));
+        // A key each namespace holds ALONE, so a listing that forgot its
+        // partition is caught here rather than three assertions later — with
+        // only the shared key, a namespace-blind list returns the right answer
+        // by coincidence.
+        await ops.blobs.put("conf_ns_a", "only_a.bin", new Uint8Array([3]));
+        await ops.blobs.put("conf_ns_b", "only_b.bin", new Uint8Array([4]));
+
+        assertBytesEqual((await ops.blobs.get("conf_ns_a", key))!.bytes, new Uint8Array([1]), "one namespace read another's bytes");
+        assertBytesEqual((await ops.blobs.get("conf_ns_b", key))!.bytes, new Uint8Array([2]), "one namespace read another's bytes");
+        assert(await ops.blobs.get("conf_ns_a", "only_b.bin") === null, "one namespace read a key only its neighbour holds");
+        assertDeepEqual((await ops.blobs.list("conf_ns_a")).sort(), ["only_a.bin", key], "a namespace listed a neighbour's keys");
+        assert(await ops.blobs.get("conf_ns_c", key) === null, "an empty namespace read a neighbour's blob");
+
+        await ops.blobs.delete("conf_ns_a", key);
+        assert(await ops.blobs.get("conf_ns_a", key) === null, "the delete left its own namespace's blob behind");
+        assert(await ops.blobs.get("conf_ns_b", key) !== null, "a delete in one namespace destroyed another's blob");
+        assertDeepEqual(await ops.blobs.list("conf_ns_a"), ["only_a.bin"], "a deleted key stayed in its namespace's listing");
+      }),
+
+      /** Zero bytes is CONTENT, not absence: an empty file a user uploaded, a
+          truncated log, a placeholder an app wrote. `get` answering null for it
+          would make an existing key indistinguishable from one nobody ever
+          wrote, and the caller's next move — write it again — is the one thing
+          that must not follow from a successful put. */
+      opsCase(opts, "blobs round-trip a zero-byte payload as content, not absence", async (ops) => {
+        await ops.blobs.put("conf_bempty", "empty.bin", new Uint8Array([]), { contentType: "text/plain" });
+        const got = await ops.blobs.get("conf_bempty", "empty.bin");
+        assert(got !== null, "a stored zero-byte blob read back as absent");
+        assertBytesEqual(got!.bytes, new Uint8Array([]), "a zero-byte blob did not round-trip");
+        assertDeepEqual(await ops.blobs.list("conf_bempty"), ["empty.bin"], "a zero-byte blob is missing from its namespace's listing");
+      }),
+
       // =====================================================================
       // appData
       // =====================================================================
@@ -580,6 +786,50 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(still !== null, "the refused put destroyed the holder's row");
         assertDeepEqual(still!.data, { v: 1 }, "the refused put overwrote the holder's row");
         assert(await ops.appData.get(other, "taken") === null, "the refused put re-stamped the row");
+      }),
+
+      /** The owner scope has to survive the WALK, not just the first page. A
+          backend that stamps the scope onto the initial query and then follows
+          its own cursor without re-applying it hands page two of everybody's
+          rows to whoever paged first — and every case above passes, because
+          none of them asks for a second page. */
+      opsCase(opts, "appData.list paginates one owner's drawer without loss, duplicates, or a neighbour's rows", async (ops) => {
+        await seedApp(ops, "app_pager");
+        const owner = { appId: "app_pager", collection: "notes", owner: "own_a" };
+        const other = { appId: "app_pager", collection: "notes", owner: "own_b" };
+        const expected = ["ap_a", "ap_b", "ap_c", "ap_d", "ap_e"];
+        for (const id of expected) await ops.appData.put(owner, { id, data: { id } });
+        for (const id of ["their_1", "their_2", "their_3"]) await ops.appData.put(other, { id, data: { id } });
+        await assertPaginates("appData.list", expected, async (cursor) => {
+          const page = await ops.appData.list(owner, { limit: PAGE, cursor });
+          return { ids: page.records.map((record) => record.id), cursor: page.cursor };
+        });
+      }),
+
+      /** The appId is the second half of the scope, and it is the half nothing
+          proves: every isolation case above moves the OWNER. Two apps holding
+          one collection name is the ordinary case (every generated app invents
+          `notes`), and an implementation that scopes on the owner alone puts
+          both apps' rows in one drawer for the user who installed both. */
+      opsCase(opts, "appData keeps two apps' drawers apart", async (ops) => {
+        await seedApp(ops, "app_one");
+        await seedApp(ops, "app_two");
+        const one = { appId: "app_one", collection: "notes", owner: "own_a" };
+        const two = { appId: "app_two", collection: "notes", owner: "own_a" };
+        await ops.appData.put(one, { id: "same", data: { whose: "one" } });
+        await ops.appData.put(two, { id: "same", data: { whose: "two" } });
+
+        assertDeepEqual((await ops.appData.get(one, "same"))?.data, { whose: "one" }, "one app read another app's row");
+        assertDeepEqual((await ops.appData.get(two, "same"))?.data, { whose: "two" }, "one app read another app's row");
+        assertDeepEqual((await ops.appData.list(one)).records.map((record) => record.id), ["same"], "an app listed another app's rows");
+
+        await ops.appData.putFile(one, "f.bin", new Uint8Array([1]));
+        await ops.appData.putFile(two, "f.bin", new Uint8Array([2]));
+        assertBytesEqual((await ops.appData.getFile(one, "f.bin"))!.bytes, new Uint8Array([1]), "one app read another app's file");
+        await ops.appData.delete(one, "same");
+        await ops.appData.deleteFile(one, "f.bin");
+        assert(await ops.appData.get(two, "same") !== null, "deleting in one app destroyed another app's row");
+        assert(await ops.appData.getFile(two, "f.bin") !== null, "deleting in one app destroyed another app's file");
       }),
 
       opsCase(opts, "appData.list honors caller refs alongside the owner scope", async (ops) => {
@@ -847,6 +1097,45 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(!("missing.json" in result), "workspace read returned a missing path");
       }),
 
+      /** Reading NO paths has exactly one possible answer, and every caller that
+          builds its path list from a filter eventually asks for it. A refusal
+          here forces a `paths.length === 0` guard at every call site, and the
+          one that forgets it turns an empty result set into a thrown error —
+          which is why the empty answer is contract rather than each caller's
+          problem. */
+      opsCase(opts, "workspace.read of no paths is an empty answer, not a refusal", async (ops) => {
+        await ops.workspace.commit([{ path: "present.json", data: { v: 1 } }]);
+        assertDeepEqual(await ops.workspace.read([]), {}, "reading no paths did not answer with an empty result");
+      }),
+
+      /** Binary content rides `{"$vendoWorkspaceBytes": base64, contentType}`
+          (store.ts) — an ENVELOPE, not a type the store knows: the workspace
+          rows adapter above these ops encodes and decodes it, and to the store
+          it is ordinary JSON that must come back exactly as it went in. An
+          implementation that recognises the sentinel and helpfully re-encodes
+          it, or that normalises the base64 padding, hands the adapter above
+          bytes that are not the bytes it stored — and the corruption is
+          invisible until someone opens the file. */
+      opsCase(opts, "workspace round-trips the $vendoWorkspaceBytes envelope untouched", async (ops) => {
+        // Deliberately padded, and deliberately not valid UTF-8 once decoded:
+        // the bytes are 0x00 0xFF 0x10, which is what a store that decodes and
+        // re-encodes through a string will mangle.
+        const envelope = { $vendoWorkspaceBytes: "AP8Q", contentType: "application/octet-stream" };
+        await ops.workspace.commit([{ path: "binary.bin", data: envelope }]);
+        assertDeepEqual(
+          (await ops.workspace.read(["binary.bin"]))["binary.bin"],
+          envelope,
+          "the binary envelope did not round-trip byte-for-byte",
+        );
+        // And it is an ordinary entry in the index: the envelope is content, not
+        // a second kind of file.
+        assertDeepEqual(
+          (await ops.workspace.index()).entries.map((entry) => stringField(entry, "path", "workspace.index")),
+          ["binary.bin"],
+          "the binary entry is missing from the index",
+        );
+      }),
+
       opsCase(opts, "workspace.index paginates without loss or duplicates", async (ops) => {
         const expected = ["xa.json", "xb.json", "xc.json", "xd.json", "xe.json"];
         await ops.workspace.commit(expected.map((path) => ({ path, data: { path } })));
@@ -889,6 +1178,79 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
         const after = (await ops.workspace.history()).entries.length;
         assert(after === before, `the replay added ${after - before} history entries`);
+      }),
+
+      /** The key DOUBLE-FIRED: one logical commit, two requests in flight,
+          which is what a client retry on a timeout actually looks like.
+          The contract promises REPLAY protection, not mutual exclusion
+          (IdempotencyLedger, store.ts) — two concurrent requests carrying one
+          key MAY both find it fresh and both execute — so nothing here asserts
+          that one of them lost. What it asserts is the promise that IS made:
+          once the key has an answer, a later request carrying it applies
+          NOTHING further. An implementation whose ledger is written after the
+          mutation, or in a different transaction from it, fails here and passes
+          the sequential replay case above. */
+      opsCase(opts, "workspace.commit replays a double-fired idempotency key once it has an answer", async (ops) => {
+        const entries = [{ path: "idem_race.json", data: { v: 1 } }];
+        const settled = await race(2, () => ops.workspace.commit(entries, { idempotencyKey: "idem_race" }));
+        // A raced request either executes or is told it lost the key. Anything
+        // else — a TypeError, a driver's deadlock, a bare 500 — is not an answer.
+        for (const one of settled) {
+          const code = refusalCode(one);
+          assert(
+            one.status === "fulfilled" || code === "conflict",
+            `a raced keyed commit failed for a reason other than losing its key: ${String(code ?? one)}`,
+          );
+        }
+        assert(won(settled).length >= 1, "both raced requests carrying one key failed");
+
+        const history = (await ops.workspace.history()).entries.length;
+        const content = (await ops.workspace.read(["idem_race.json"]))["idem_race.json"];
+        assertDeepEqual(content, { v: 1 }, "the raced commit did not land its entries");
+
+        // The replay, sequentially, after the race has settled — the moment the
+        // contract does make a promise about.
+        await ops.workspace.commit(entries, { idempotencyKey: "idem_race" });
+        assert(
+          (await ops.workspace.history()).entries.length === history,
+          "a replay after the key already had an answer committed again",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read(["idem_race.json"]))["idem_race.json"],
+          content,
+          "a replay after the key already had an answer changed the file",
+        );
+      }),
+
+      /** An idempotency key belongs to the OWNER that sent it. Clients pick
+          their own keys and two of them will pick the same one — `IdempotencyScope`
+          says so in as many words (store.ts: the tenant is part of the key
+          "because a mount that serves many tenants out of one schema would
+          otherwise let one tenant's key collide with another's"). A ledger keyed
+          on the key alone answers the second owner's commit with the first
+          owner's result, or refuses it as a body mismatch: either way one
+          tenant's write is decided by another tenant's traffic. */
+      opsCase(opts, "workspace.commit's idempotency key is scoped to its owner", async (ops) => {
+        const key = "shared_key";
+        await ops.workspace.commit([{ path: "keyed.json", data: { whose: "a" } }], { idempotencyKey: key, owner: "kown_a" });
+        await ops.workspace.commit([{ path: "keyed.json", data: { whose: "b" } }], { idempotencyKey: key, owner: "kown_b" });
+        assertDeepEqual(
+          (await ops.workspace.read(["keyed.json"], { owner: "kown_b" }))["keyed.json"],
+          { whose: "b" },
+          "one owner's commit was answered out of another owner's idempotency ledger",
+        );
+        assertDeepEqual(
+          (await ops.workspace.read(["keyed.json"], { owner: "kown_a" }))["keyed.json"],
+          { whose: "a" },
+          "the second owner's commit landed in the first owner's drawer",
+        );
+        // And within one owner the key still replays, rather than the scope
+        // simply having been widened until nothing collides.
+        await ops.workspace.commit([{ path: "keyed.json", data: { whose: "a" } }], { idempotencyKey: key, owner: "kown_a" });
+        assert(
+          (await ops.workspace.history({ owner: "kown_a" })).entries.length === 1,
+          "the key stopped replaying for the owner that first used it",
+        );
       }),
 
       opsCase(opts, "workspace.commit refuses a replayed idempotency key with a different body", async (ops) => {
@@ -1084,6 +1446,108 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** The commit-conflict's DETAIL. The message names the paths in prose,
+          which is enough for a human and useless to the caller that has to act:
+          `workspaceOpsRows.commitAll` re-reads the index and re-derives the
+          conflicting paths by hand precisely because it cannot get them out of
+          the refusal. `detail.conflicts` is that list, structured — and it is
+          named here rather than left to each implementation because a refusal
+          whose payload has no shape is a refusal nobody can program against. */
+      opsCase(opts, "workspace.commit's conflict names the paths it refused on", async (ops) => {
+        await ops.workspace.commit([{ path: "d-one.json", data: { v: 1 } }, { path: "d-two.json", data: { v: 1 } }]);
+        const revisionOf = async (path: string): Promise<number> => numberField(
+          (await ops.workspace.index()).entries.find((entry) => (entry as { path?: unknown }).path === path),
+          "revision",
+          "workspace.index",
+        );
+        const stale = { one: await revisionOf("d-one.json"), two: await revisionOf("d-two.json") };
+        // Both heads move under the caller, so BOTH guarded entries conflict.
+        await ops.workspace.commit([{ path: "d-one.json", data: { v: 2 } }, { path: "d-two.json", data: { v: 2 } }]);
+
+        const refusal = await ops.workspace.commit([
+          { path: "d-one.json", data: { v: 3 }, expectedRevision: stale.one },
+          { path: "d-two.json", data: { v: 3 }, expectedRevision: stale.two },
+        ]).then(() => null, (error: unknown) => error);
+        assert((refusal as { code?: unknown } | null)?.code === "conflict", `a stale commit should refuse with conflict, got ${String(refusal)}`);
+        const detail = (refusal as { detail?: unknown } | null)?.detail as { conflicts?: unknown } | undefined;
+        assert(detail !== undefined, "the refusal carried no detail, so the caller cannot learn which paths moved");
+        assert(Array.isArray(detail.conflicts), `the refusal's detail.conflicts is not an array: ${JSON.stringify(detail)}`);
+        assertDeepEqual(
+          [...detail.conflicts as string[]].sort(),
+          ["d-one.json", "d-two.json"],
+          "detail.conflicts did not name exactly the paths that moved",
+        );
+      }),
+
+      /** The commit CAS, raced — two colleagues who read one org file at the
+          same instant and both write it back. Sequentially the loser holds a
+          revision that has visibly moved; here NEITHER has, at the moment they
+          check, and only an atomic compare inside the write itself can tell
+          them apart. A backend that reads the head, compares in application
+          code, and then writes lets both land, and the first colleague's edit
+          is gone with no error anywhere. Either may win; exactly one must. */
+      opsCase(opts, "workspace.commit lands exactly one of two simultaneous compare-and-swaps", async (ops) => {
+        await ops.workspace.commit([{ path: "cas-race.json", data: { by: "seed" } }]);
+        const revision = numberField(
+          (await ops.workspace.index()).entries.find((entry) => (entry as { path?: unknown }).path === "cas-race.json"),
+          "revision",
+          "workspace.index",
+        );
+        const before = (await ops.workspace.history()).entries.length;
+
+        const writers = ["colleague_a", "colleague_b"];
+        const settled = await race(writers.length, (attempt) =>
+          ops.workspace.commit([{ path: "cas-race.json", data: { by: writers[attempt] }, expectedRevision: revision }]));
+        const landed = settled.filter((one) => one.status === "fulfilled");
+        assert(landed.length === 1, `exactly one commit off one revision may land, ${landed.length} did`);
+        for (const one of settled) {
+          if (one.status === "fulfilled") continue;
+          assert(refusalCode(one) === "conflict", `the losing commit was refused as ${String(refusalCode(one))}, not conflict`);
+        }
+        const held = (await ops.workspace.read(["cas-race.json"]))["cas-race.json"] as { by?: string };
+        assert(writers.includes(held.by ?? ""), `the file holds ${JSON.stringify(held)}, which neither writer wrote`);
+        assert(
+          (await ops.workspace.history()).entries.length === before + 1,
+          "the refused commit left a commit in the trail",
+        );
+      }),
+
+      /** The owner a workspace verb falls back to when the caller names none is
+          the mount's own (store.ts): the local backend and the memory reference
+          resolve it to a bound single-player constant, and a hosted mount
+          resolves it server-side, where OSS cannot see the value. What every
+          mount owes regardless is COHERENCE — the same default drawer on all
+          four verbs. Two of the hosted client's four verbs spread the query
+          straight onto the body rather than going through its owner helper, so
+          a mount whose index and history default differently from its read and
+          commit is the shape this pins, not a hypothetical.
+          It cannot pin that the hosted default EQUALS the local one; nothing in
+          OSS can, and this comment is where that ends. */
+      opsCase(opts, "the workspace's default owner is one drawer on every verb", async (ops) => {
+        await ops.workspace.commit([{ path: "default.json", data: { v: 1 } }]);
+        assertDeepEqual(
+          (await ops.workspace.read(["default.json"]))["default.json"],
+          { v: 1 },
+          "a read with no owner missed a commit with no owner",
+        );
+        assertDeepEqual(
+          (await ops.workspace.index()).entries.map((entry) => stringField(entry, "path", "workspace.index")),
+          ["default.json"],
+          "an index with no owner did not see a commit with no owner",
+        );
+        assert(
+          (await ops.workspace.history({ path: "default.json" })).entries.length === 1,
+          "a history with no owner did not see a commit with no owner",
+        );
+        // And the default drawer is A drawer, not everyone's: an explicitly
+        // named owner that has committed nothing sees nothing.
+        assertDeepEqual(
+          await ops.workspace.read(["default.json"], { owner: "own_elsewhere" }),
+          {},
+          "a named owner read the default drawer's file",
+        );
+      }),
+
       /** A DELETE is a commit against a revision too. Without this, a turn that
           checked out an org file, lost the head to a colleague, and then removed
           the path erased content it had never seen — the one mutation strict
@@ -1135,7 +1599,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           so the path's trail would name two superseded revisions under one
           commit id and neither would be THE one it replaced. Refused at the
           door instead. */
-      opsCase(opts, "workspace.commit refuses the same path twice in one commit", async (ops) => {
+      opsCase(opts, "workspace.commit refuses the same path twice in one commit, and an empty commit", async (ops) => {
         await assertThrowsCode(
           () => ops.workspace.commit([
             { path: "dup.json", data: { v: 1 } },
@@ -1143,6 +1607,15 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           ]),
           "validation",
           "committing one path twice",
+        );
+        // An empty commit has no single right answer — a commit id and a trail
+        // entry for a change nobody made, or silence — so it is refused rather
+        // than each implementation picking one. (`read([])` is the opposite
+        // case, and answers `{}`: reading nothing has exactly one answer.)
+        await assertThrowsCode(
+          () => ops.workspace.commit([]),
+          "validation",
+          "committing no entries at all",
         );
         assertDeepEqual(
           await ops.workspace.read(["dup.json"]),
@@ -1208,6 +1681,44 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(await ops.harness.get("app_erase", "erase_me") === null, "erase left the subject's harness state behind");
       }),
 
+      /** The erase target's OTHER half. `EraseTarget` is a union of exactly two
+          scopes (store.ts) and only the subject one was ever proven, so an
+          implementation could serve `{subject}` faithfully and treat `{appId}`
+          as a no-op that answers with a report — an uninstalled app whose data
+          is all still there, and a deletion request answered with a receipt.
+          Scoped to the app and nothing else: the user who installed it keeps
+          their conversations, and the app NEXT to it keeps everything. */
+      opsCase(opts, "lifecycle.erase removes one app's data, and only that app's", async (ops) => {
+        await seedApp(ops, "app_gone");
+        await seedApp(ops, "app_stays");
+        const gone = { appId: "app_gone", collection: "notes", owner: "user_1" };
+        const stays = { appId: "app_stays", collection: "notes", owner: "user_1" };
+        await ops.appData.put(gone, { id: "row", data: { v: 1 } });
+        await ops.appData.put(stays, { id: "row", data: { v: 1 } });
+        await ops.appData.putFile(gone, "f.bin", new Uint8Array([1]));
+        await ops.appData.putFile(stays, "f.bin", new Uint8Array([1]));
+        await ops.engine.put(engineAppHistory("app_gone"), { id: "ver_1", data: { version: 1 } });
+        await ops.harness.set("app_gone", "user_1", { v: 1 });
+        await ops.harness.set("app_stays", "user_1", { v: 1 });
+        await ops.transcripts.putThread({ id: "thr_app_erase", subject: "user_1", messages: [] });
+
+        const report = await ops.lifecycle.erase({ appId: "app_gone" });
+        assert(report !== null && report !== undefined, "erase must return a report");
+
+        assert(await ops.appData.get(gone, "row") === null, "erase left the app's rows behind");
+        assert(await ops.appData.getFile(gone, "f.bin") === null, "erase left the app's files behind");
+        assert(await ops.harness.get("app_gone", "user_1") === null, "erase left the app's harness state behind");
+        assert(await ops.engine.get(engineAppHistory("app_gone"), "ver_1") === null, "erase left the app's history behind");
+        assert(await ops.engine.get("vendo_apps", "app_gone") === null, "erase left the app record itself behind");
+
+        assert(await ops.appData.get(stays, "row") !== null, "erase took the neighbouring app's rows");
+        assert(await ops.appData.getFile(stays, "f.bin") !== null, "erase took the neighbouring app's files");
+        assert(await ops.harness.get("app_stays", "user_1") !== null, "erase took the neighbouring app's harness state");
+        assert(await ops.engine.get("vendo_apps", "app_stays") !== null, "erase took the neighbouring app record");
+        // The person is not the app: uninstalling one keeps their conversations.
+        assert(await ops.transcripts.getThread("thr_app_erase") !== null, "an app-scoped erase took the user's threads");
+      }),
+
       /** Promote hands the app to an org: the app record's owning subject
           BECOMES the org id (02-store §9.5), which is the move's only
           observable through the ops surface. */
@@ -1234,11 +1745,12 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
 
       /** The batch append: ownership is the caller's `subject`, so the mount
           checks it in its own statement and the client never downloads the
-          thread to check it first. Optional — a mount that omits it is served
-          by putMessage, and this case says so instead of failing it. */
+          thread to check it first. OPTIONAL — a mount that omits it is served
+          by putMessage — so this case reports the omission rather than failing
+          it, and rather than passing, which is what an early `return` did. */
       opsCase(opts, "transcripts.appendMessages lands a batch under the named subject", async (ops) => {
         const append = ops.transcripts.appendMessages;
-        if (append === undefined) return;
+        if (append === undefined) return omitted(APPEND_ABSENT);
         await ops.transcripts.putThread({ id: "thr_am1", subject: "u", messages: [] });
         const landed = await append("thr_am1", "u", [
           { id: "msg_a", role: "user", text: "one" },
@@ -1261,6 +1773,132 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           "conflict",
           "appending to another subject's thread",
         );
+      }),
+
+      /** ORDER is the whole of what a transcript is: the same messages in a
+          different order are a different conversation, and the next turn reads
+          them back as its own context. A batch lands AFTER what the thread
+          already holds, in the order the caller wrote it — not sorted by id,
+          not by arrival, and not interleaved with the tail. */
+      opsCase(opts, "transcripts.appendMessages lands a batch after the tail, in the caller's order", async (ops) => {
+        const append = ops.transcripts.appendMessages;
+        if (append === undefined) return omitted(APPEND_ABSENT);
+        await ops.transcripts.putThread({ id: "thr_order", subject: "u", messages: [] });
+        // Ids that sort the OPPOSITE way to the order they are written in, so an
+        // implementation ordering by id cannot pass by coincidence.
+        await append("thr_order", "u", [{ id: "m_9", role: "user", text: "one" }, { id: "m_7", role: "assistant", text: "two" }]);
+        await append("thr_order", "u", [{ id: "m_5", role: "user", text: "three" }, { id: "m_3", role: "assistant", text: "four" }]);
+        const got = await ops.transcripts.getThread("thr_order");
+        assertDeepEqual(
+          ((got!.data as Record<string, unknown>)["messages"] as Array<Record<string, unknown>>).map((message) => message["text"]),
+          ["one", "two", "three", "four"],
+          "the batches did not land after the tail in the order they were written",
+        );
+      }),
+
+      /** An id the thread already holds is an EDIT, in place — the same rule
+          putMessage follows, and for the same reason: an approval flips from
+          pending to answered by re-sending its own message, and a thread
+          carrying two messages under one id is a thread no engine will store.
+          The edited message keeps its DECIDED position: moving it to the tail
+          would reorder the conversation every time a turn re-sent anything. */
+      opsCase(opts, "transcripts.appendMessages edits an id the thread already holds, without moving it", async (ops) => {
+        const append = ops.transcripts.appendMessages;
+        if (append === undefined) return omitted(APPEND_ABSENT);
+        await ops.transcripts.putThread({ id: "thr_dedupe", subject: "u", messages: [] });
+        await append("thr_dedupe", "u", [
+          { id: "m_a", role: "user", text: "ask" },
+          { id: "m_b", role: "assistant", text: "answer" },
+        ]);
+        await append("thr_dedupe", "u", [
+          { id: "m_a", role: "user", text: "ask (edited)" },
+          { id: "m_c", role: "user", text: "next" },
+        ]);
+        const got = await ops.transcripts.getThread("thr_dedupe");
+        assertDeepEqual(
+          ((got!.data as Record<string, unknown>)["messages"] as Array<Record<string, unknown>>)
+            .map((message) => [message["id"], message["text"]]),
+          [["m_a", "ask (edited)"], ["m_b", "answer"], ["m_c", "next"]],
+          "the re-sent message was appended again, or moved, instead of edited in place",
+        );
+      }),
+
+      /** Two refusals the batch shape makes possible and the single-message verb
+          never could. Both are `validation` because both are the CALLER's
+          mistake, caught before a row is written: an empty batch has nothing to
+          land (and must not touch the thread on its way to doing nothing), and
+          two messages sharing one id cannot both be stored — an implementation
+          that upserts a batch in one statement loses the WHOLE write to a
+          duplicate-key error, so the offender is named instead. */
+      opsCase(opts, "transcripts.appendMessages refuses an empty batch and two messages under one id", async (ops) => {
+        const append = ops.transcripts.appendMessages;
+        if (append === undefined) return omitted(APPEND_ABSENT);
+        await ops.transcripts.putThread({ id: "thr_refuse", subject: "u", messages: [] });
+        const before = await ops.transcripts.getThread("thr_refuse");
+
+        await assertThrowsCode(() => append("thr_refuse", "u", []), "validation", "an empty batch");
+        await assertThrowsCode(
+          () => append("thr_refuse", "u", [{ id: "m_dup", role: "user", text: "one" }, { id: "m_dup", role: "user", text: "two" }]),
+          "validation",
+          "two messages sharing one id",
+        );
+        const after = await ops.transcripts.getThread("thr_refuse");
+        assertDeepEqual(
+          (after!.data as Record<string, unknown>)["messages"],
+          (before!.data as Record<string, unknown>)["messages"],
+          "a refused batch changed the thread anyway",
+        );
+      }),
+
+      /** A thread the store has never seen is CREATED, under the subject the
+          batch names — the upsert that lets a harness land turn one without a
+          separate putThread, and the reason the op takes a subject rather than
+          reading one. It is also the branch where getting ownership wrong costs
+          the most: a create that ignored the named subject would hand the new
+          thread to nobody, and every later append to it would then conflict. */
+      opsCase(opts, "transcripts.appendMessages creates a thread that does not exist yet, under the named subject", async (ops) => {
+        const append = ops.transcripts.appendMessages;
+        if (append === undefined) return omitted(APPEND_ABSENT);
+        const landed = await append("thr_new", "owner_1", [{ id: "m_1", role: "user", text: "first" }], { title: "First" });
+        assert(landed.count === 1, `the creating append should report 1 row, got ${landed.count}`);
+
+        const created = await ops.transcripts.getThread("thr_new");
+        assert(created !== null, "the append did not create the thread it named");
+        assert((created!.data as Record<string, unknown>)["subject"] === "owner_1", "the created thread was not handed to the named subject");
+        assertDeepEqual(
+          (await ops.transcripts.listThreads({ subject: "owner_1" })).records.map((record) => record.id),
+          ["thr_new"],
+          "the created thread is missing from its subject's listing",
+        );
+        // And the ownership it was created with holds against everyone else.
+        await assertThrowsCode(
+          () => append("thr_new", "someone_else", [{ id: "m_2", role: "user", text: "mine now" }]),
+          "conflict",
+          "appending to a thread another subject created",
+        );
+      }),
+
+      /** The revision is the ONLY thing a batch append hands back about the
+          thread, and a client caches it to decide whether its copy is stale. A
+          constant — or a value that repeats across two appends — tells every
+          holder of the old one that nothing changed, so the transcript they
+          keep serving is the one from before the turn. Nothing here reads the
+          revision's SPELLING: it is contractually an opaque string, and the two
+          shipped engines number and stamp theirs differently. */
+      opsCase(opts, "transcripts.appendMessages reports a revision that moves with every batch", async (ops) => {
+        const append = ops.transcripts.appendMessages;
+        if (append === undefined) return omitted(APPEND_ABSENT);
+        await ops.transcripts.putThread({ id: "thr_rev", subject: "u", messages: [] });
+        const seen: string[] = [];
+        for (const index of [0, 1, 2]) {
+          const landed = await append("thr_rev", "u", [{ id: `m_${index}`, role: "user", text: String(index) }]);
+          assert(typeof landed.revision === "string" && landed.revision.length > 0, "an append reported no revision");
+          assert(!seen.includes(landed.revision), `append ${index} reported a revision an earlier one already used: ${landed.revision}`);
+          seen.push(landed.revision);
+        }
+        // An EDIT is a change too — the thread a client holds is stale after it.
+        const edited = await append("thr_rev", "u", [{ id: "m_0", role: "user", text: "edited" }]);
+        assert(!seen.includes(edited.revision), `an edit reported a revision an earlier append already used: ${edited.revision}`);
       }),
 
       // =====================================================================
@@ -1500,10 +2138,12 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       }),
 
       // =====================================================================
-      // retention — OPTIONAL (01 §12), so both cases return early on a mount
-      // that omits the family rather than failing it. That is what lets every
-      // mount carry them; an implementation that HAS the family is held to all
-      // of it.
+      // retention — OPTIONAL (01 §12), so both cases report the OMISSION on a
+      // mount that leaves the family off rather than failing it. That is what
+      // lets every mount carry them; an implementation that HAS the family is
+      // held to all of it. Reported rather than returned silently, because an
+      // early `return` counted as a pass — and "this engine has nowhere to
+      // quarantine to" then read exactly like "this engine's sweep is correct".
       // =====================================================================
 
       /** The sweep is a cron, so the two things that matter are the count it
@@ -1513,7 +2153,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           must move nothing. */
       opsCase(opts, "retention.quarantine lifts rows past the cutoff out of the live collection, and re-running it moves nothing", async (ops) => {
         const retention = ops.retention;
-        if (retention === undefined) return;
+        if (retention === undefined) return omitted(RETENTION_ABSENT);
         const collection = engineAppHistory("conf_ret");
         const ids = ["ret_1", "ret_2", "ret_3"];
         for (const id of ids) await ops.engine.put(collection, { id, data: { id } });
@@ -1546,7 +2186,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           the row's age — the grace a purge honors runs from the lift. */
       opsCase(opts, "retention.purge destroys only quarantined rows lifted before its cutoff", async (ops) => {
         const retention = ops.retention;
-        if (retention === undefined) return;
+        if (retention === undefined) return omitted(RETENTION_ABSENT);
         const collection = engineAppHistory("conf_purge");
         const ids = ["purge_1", "purge_2"];
         for (const id of ids) await ops.engine.put(collection, { id, data: { id } });
@@ -1564,6 +2204,89 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       }),
 
       // =====================================================================
+      // tenancy — OMITTED unless the mount hands out a second tenant, because
+      // a single-tenant store has no second tenant to hand out. Everything
+      // above proves one store keeps its OWNERS, apps and namespaces apart;
+      // this is the line above those, and it is the only one a store serving
+      // many customers out of one database can get catastrophically wrong.
+      // =====================================================================
+
+      /** Every drawer at once, in both directions. One case rather than six,
+          because the failure is never "threads leak but blobs do not" — it is
+          one missing predicate on a shared query path, and it shows up in
+          whichever drawer is asked first. The reverse direction is asserted
+          too: a leak that only runs one way is still a leak, and a store that
+          scopes its reads but not its writes lands one tenant's row in
+          another's drawer where the first tenant will never see it again. */
+      {
+        name: "a neighbouring tenant shares no drawer with this one",
+        async run(): Promise<void | ConformanceOmission> {
+          const makeNeighbour = opts.makeNeighbour;
+          if (makeNeighbour === undefined) {
+            return omitted("this mount serves one tenant, so it hands out no neighbour to be isolated from");
+          }
+          const made = await opts.makeOps();
+          const neighbour = await makeNeighbour(made.ops);
+          const [mine, theirs] = [made.ops, neighbour.ops];
+          try {
+            const target = { appId: "app_tenant", collection: "notes", owner: "user_1" };
+            await seedApp(mine, "app_tenant");
+            await seedApp(theirs, "app_tenant");
+            for (const [ops, whose] of [[mine, "mine"], [theirs, "theirs"]] as const) {
+              await ops.engine.put("vendo_placement_slots", { id: "slot_1", data: { whose } });
+              await ops.blobs.put("conf_tenant", "file.bin", new TextEncoder().encode(whose));
+              await ops.appData.put(target, { id: "row_1", data: { whose } });
+              await ops.transcripts.putThread({ id: "thr_1", subject: "user_1", messages: [{ whose }] });
+              await ops.secrets.set("conf_token", whose);
+              await ops.workspace.commit([{ path: "w.json", data: { whose } }], { owner: "user_1" });
+            }
+
+            for (const [ops, whose] of [[mine, "mine"], [theirs, "theirs"]] as const) {
+              assertDeepEqual((await ops.engine.get("vendo_placement_slots", "slot_1"))?.data, { whose }, "a record crossed the tenant line");
+              assertDeepEqual(
+                (await ops.engine.list("vendo_placement_slots")).records.map((record) => record.data),
+                [{ whose }],
+                "a record listing crossed the tenant line",
+              );
+              assertBytesEqual(
+                (await ops.blobs.get("conf_tenant", "file.bin"))!.bytes,
+                new TextEncoder().encode(whose),
+                "a blob crossed the tenant line",
+              );
+              assertDeepEqual((await ops.appData.get(target, "row_1"))?.data, { whose }, "an app row crossed the tenant line");
+              assertDeepEqual(
+                ((await ops.transcripts.getThread("thr_1"))!.data as Record<string, unknown>)["messages"],
+                [{ whose }],
+                "a thread crossed the tenant line",
+              );
+              assertDeepEqual(
+                (await ops.transcripts.listThreads({ subject: "user_1" })).records.map((record) => record.id),
+                ["thr_1"],
+                "a thread listing crossed the tenant line",
+              );
+              assert(await ops.secrets.get("conf_token") === whose, "a secret crossed the tenant line");
+              assertDeepEqual(await ops.secrets.list(), ["conf_token"], "the vault inventory crossed the tenant line");
+              assertDeepEqual(
+                (await ops.workspace.read(["w.json"], { owner: "user_1" }))["w.json"],
+                { whose },
+                "a workspace file crossed the tenant line",
+              );
+            }
+
+            // A destructive verb is the loudest way to cross: an erase that
+            // reaches the neighbour is unrecoverable, and it is the one call
+            // where a missing tenant predicate is worst.
+            await mine.lifecycle.erase({ subject: "user_1" });
+            assert(await theirs.transcripts.getThread("thr_1") !== null, "one tenant's erase took the neighbour's thread");
+            assert(await theirs.appData.get(target, "row_1") !== null, "one tenant's erase took the neighbour's app row");
+          } finally {
+            await neighbour.close?.();
+            await made.close?.();
+          }
+        },
+      },
+
+      // =====================================================================
       // status
       // =====================================================================
 
@@ -1572,13 +2295,12 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
         // `ops` is a LEVEL over STORE_WIRE_PATHS' declared order, not an
-        // inventory, so there is no single right number to assert: three honest
-        // implementations report three (the local engine stops short of the two
-        // retention ops, the memory reference has no batch append). This case
-        // used to pin the count exactly, which only held while every mount was
-        // the same vintage — it would now fail two implementations that are
-        // telling the truth. What IS contract is the ceiling and the one
-        // question a client asks the level.
+        // inventory, so there is no single right number to assert: two mounts
+        // of different vintages both tell the truth with different numbers, and
+        // a mount that legitimately omits an optional family reports the prefix
+        // BEFORE it. This case used to pin the count exactly, which only held
+        // while every mount was the same vintage. What IS contract is the
+        // ceiling and the one question a client asks the level.
         const declared = Object.keys(STORE_WIRE_PATHS).length;
         assert(status.ops <= declared, `a mount cannot serve more than the ${declared} declared ops, got ${status.ops}`);
         // The level's ONE contract use, and the only way it breaks a client: a

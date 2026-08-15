@@ -180,6 +180,19 @@ export async function appendThreadMessages(
   },
   now = new Date().toISOString(),
 ): Promise<{ revision: string; count: number }> {
+  // An empty batch has nothing to land, and it must not touch the thread on its
+  // way to doing nothing: statement 1 below is an UPSERT, so an empty append
+  // would bump the revision of a thread it changed nothing in — and CREATE one
+  // that did not exist. The wire has always refused it
+  // (`storeWireTranscriptsAppendMessagesRequestSchema`, `messages.min(1)`), so
+  // this is the SQL half catching up rather than a new rule; the one caller,
+  // `upsertMany`, already returns early on an empty list.
+  if (input.messages.length === 0) {
+    throw new VendoError(
+      "validation",
+      `transcripts.appendMessages needs at least one message; the batch for thread ${input.threadId} was empty`,
+    );
+  }
   // ON CONFLICT cannot be given the same key twice in one statement (a bare
   // 21000 that loses the whole write), so the same guard putThreadRow applies
   // to a transcript applies to a batch — with the offender named.
@@ -211,7 +224,6 @@ export async function appendThreadMessages(
   if (row === undefined) {
     throw new VendoError("conflict", `thread ${input.threadId} belongs to another subject`);
   }
-  if (input.messages.length === 0) return { revision: String(row["revision"]), count: 0 };
   const landed = await db.query(
     `INSERT INTO vendo_thread_messages (thread_id, id, seq, message, created_at, updated_at)
      SELECT $1, m.id, tail.next + m.n - 1, a.elem, $4, $4

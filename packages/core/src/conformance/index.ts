@@ -35,6 +35,24 @@ export { memoryAppAccess, type MemoryAppAccess } from "./memory-app-access.js";
  * One executable seam assertion. Cases throw on failure and can be mounted in any
  * test framework, for example: `for (const c of suite.cases) it(c.name, c.run)`.
  */
+/**
+ * What a case answers when the mount does not serve the OPTIONAL member the
+ * case covers (`transcripts.appendMessages`, `retention`, a second tenant).
+ *
+ * RETURNED, never thrown: omitting an optional member is legal, so it is not a
+ * failure. It is not a PASS either, and that is the whole point — a case that
+ * simply `return`ed on an absent member made "this mount does not serve the op"
+ * and "this mount serves the op correctly" the same green line, so an
+ * implementation could drop a whole family and never appear to. An omission is
+ * counted in its own bucket instead, named and reasoned, so it has to be read.
+ */
+export interface ConformanceOmission {
+  omitted: string;
+}
+
+/** Spells {@link ConformanceOmission} at a case's return site. */
+export const omitted = (reason: string): ConformanceOmission => ({ omitted: reason });
+
 export interface ConformanceCase {
   name: string;
   /**
@@ -54,7 +72,10 @@ export interface ConformanceCase {
    * deleting this one field.
    */
   pending?: string;
-  run(): Promise<void>;
+  /** Throws on failure. Resolves to a {@link ConformanceOmission} when the
+      mount does not serve the optional member this case covers, and to nothing
+      when it ran. */
+  run(): Promise<void | ConformanceOmission>;
 }
 
 /** A framework-agnostic collection of executable assertions for one core seam. */
@@ -64,13 +85,17 @@ export interface ConformanceSuite {
 }
 
 /** The serializable result of executing every case in a conformance suite.
-    `pending` names the cases that were carried but not run; `ok` is keyed off
-    failures alone, because a pending case is a promise nobody has made yet, not
-    a broken one. */
+    `pending` names the cases that were carried but not run; `omitted` names the
+    ones that ran and found the optional member they cover absent. `ok` is keyed
+    off failures alone, because neither a promise nobody has made yet nor a
+    legally unserved family is a broken one.
+    Every case lands in exactly one bucket: `passed + pending.length +
+    omitted.length + failures.length === cases.length`. */
 export interface ConformanceReport {
   seam: string;
   passed: number;
   pending: string[];
+  omitted: Array<{ name: string; reason: string }>;
   failures: Array<{ name: string; error: string }>;
   ok: boolean;
 }
@@ -78,6 +103,7 @@ export interface ConformanceReport {
 /** Executes all cases without stopping at the first failure. */
 export async function runConformance(suite: ConformanceSuite): Promise<ConformanceReport> {
   const failures: ConformanceReport["failures"] = [];
+  const omissions: ConformanceReport["omitted"] = [];
   const pending: string[] = [];
   let passed = 0;
   for (const conformanceCase of suite.cases) {
@@ -86,8 +112,9 @@ export async function runConformance(suite: ConformanceSuite): Promise<Conforman
       continue;
     }
     try {
-      await conformanceCase.run();
-      passed += 1;
+      const answer = await conformanceCase.run();
+      if (answer === undefined) passed += 1;
+      else omissions.push({ name: conformanceCase.name, reason: answer.omitted });
     } catch (error) {
       failures.push({
         name: conformanceCase.name,
@@ -95,7 +122,7 @@ export async function runConformance(suite: ConformanceSuite): Promise<Conforman
       });
     }
   }
-  return { seam: suite.seam, passed, pending, failures, ok: failures.length === 0 };
+  return { seam: suite.seam, passed, pending, omitted: omissions, failures, ok: failures.length === 0 };
 }
 
 type AdapterFactoryResult = { adapter: StoreAdapter; close?(): Promise<void> };

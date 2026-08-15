@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode } from "./errors.js";
-import { isoDateTimeSchema } from "./ids.js";
+import { isoDateTimeSchema, type Json } from "./ids.js";
 import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
@@ -185,11 +185,18 @@ export const storeWireCollectionCompareAndSwapRequestSchema = z.object({
 // blobs
 // ---------------------------------------------------------------------------
 
-/** Blob bytes are base64-encoded on the wire. */
+/** Blob bytes are base64-encoded on the wire. `bytes` carries no `.min(1)`:
+    base64 of a ZERO-BYTE payload is the empty string, and an empty file is
+    content — an empty upload, a truncated log, a placeholder an app wrote.
+    Refusing it here made the one thing a store must never do (lose a
+    successful write) into the client's default: the put failed, and the
+    caller's `get` then answered null exactly as it would for a key nobody had
+    ever written. Both local implementations always accepted it; this line is
+    where the wire stopped disagreeing with them. */
 export const storeWireBlobsPutRequestSchema = z.object({
   namespace: z.string().min(1),
   key: z.string().min(1),
-  bytes: z.string().min(1), // base64
+  bytes: z.string(), // base64
   contentType: z.string().optional(),
 }).passthrough();
 
@@ -278,10 +285,16 @@ export const storeWireTranscriptsPutThreadRequestSchema = z.object({
   }).passthrough(),
 }).passthrough();
 
+/** An id, and nothing else. `getThread` answers with ONE record and the wire's
+    read answer has no field a next-page cursor could ride, so the `cursor` and
+    `limit` this schema used to declare were a windowing request no mount could
+    complete — the client sent them, every implementation ignored them, and the
+    caller got the whole transcript back with no way to tell. Retired rather
+    than implemented: paging a transcript needs an answer shaped to say "there
+    is more", which is a different op. `.passthrough()` means a client that
+    still sends them is read, not refused. */
 export const storeWireTranscriptsGetThreadRequestSchema = z.object({
   id: z.string().min(1),
-  cursor: z.string().optional(),
-  limit: z.number().int().min(1).max(1000).optional(),
 }).passthrough();
 
 export const storeWireTranscriptsListThreadsRequestSchema = z.object({
@@ -559,10 +572,18 @@ export const storeWireStatusSchema = z.object({
 // Error envelope (identical shape to knowledge-wire / umbrella wire)
 // ---------------------------------------------------------------------------
 
+/** `detail` is `VendoError.detail`, and it crosses. Without it a refusal
+    arrived over the wire as a code and a sentence, so every structured payload
+    a refusal carried was readable by a local caller and lost to a hosted one:
+    `workspace.commit`'s conflict names the paths that moved in `detail.conflicts`,
+    and the hosted path had to re-read the whole index and re-derive them by
+    hand (`workspace-ops-rows.ts`). Optional, and passed through untouched — a
+    mount that sends none and a client that ignores one both stay legal. */
 export interface StoreWireError {
   error: {
     code: VendoErrorCode;
     message: string;
+    detail?: unknown;
   };
 }
 
@@ -570,6 +591,7 @@ export const storeWireErrorSchema = z.object({
   error: z.object({
     code: vendoErrorCodeSchema,
     message: z.string(),
+    detail: z.unknown().optional(),
   }).passthrough(),
 }).passthrough() satisfies z.ZodType<StoreWireError>;
 
@@ -613,7 +635,13 @@ const STATUS_TO_CODE: Record<number, VendoErrorCode> = {
 export function storeWireErrorBody(error: VendoError): { status: number; body: StoreWireError } {
   return {
     status: STORE_WIRE_STATUS_BY_CODE[error.code],
-    body: { error: { code: error.code, message: safeErrorMessage(error) } },
+    body: {
+      error: {
+        code: error.code,
+        message: safeErrorMessage(error),
+        ...(error.detail === undefined ? {} : { detail: error.detail }),
+      },
+    },
   };
 }
 
@@ -624,7 +652,7 @@ export function storeWireErrorBody(error: VendoError): { status: number; body: S
 export function parseStoreWireError(status: number, body: unknown): VendoError {
   const parsed = storeWireErrorSchema.safeParse(body);
   if (parsed.success) {
-    return new VendoError(parsed.data.error.code, parsed.data.error.message);
+    return new VendoError(parsed.data.error.code, parsed.data.error.message, parsed.data.error.detail as Json);
   }
   const code = STATUS_TO_CODE[status];
   if (code !== undefined) {

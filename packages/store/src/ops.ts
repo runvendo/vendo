@@ -60,6 +60,12 @@ interface WorkspaceEntry {
 }
 
 function parseWorkspaceEntries(entries: unknown[]): WorkspaceEntry[] {
+  // An empty commit is caller nonsense with no single right answer — a commit
+  // id and a history entry for a change nobody made, or silence — and the wire
+  // has always refused it (`storeWireWorkspaceCommitRequestSchema`,
+  // `entries.min(1)`), so the local half was answering a question the hosted
+  // half rejected.
+  if (entries.length === 0) invalid("a workspace commit must carry at least one entry");
   const seen = new Set<string>();
   return entries.map((entry) => {
     const path = (entry as { path?: unknown } | null)?.path;
@@ -622,10 +628,17 @@ export function createStoreOps(
         const parsed = parseWorkspaceEntries(entries);
         const body = JSON.stringify(parsed);
         const key = opts?.idempotencyKey;
-        // The ledger row id derives from the key, so the key IS the claim.
+        // The ledger row id derives from the key, so the key IS the claim — and
+        // the OWNER is part of it for the reason `IdempotencyScope`'s `tenant`
+        // is (core's store.ts): clients pick their own keys, two owners will
+        // pick the same one, and an id built from the key alone answers the
+        // second owner's commit out of the first owner's ledger row (as a
+        // replay when the bodies match, as a `conflict` when they do not).
+        // JSON, because an owner is the host's own user id in the host's own
+        // spelling and any delimiter is a character some host uses.
         const commitId = key === undefined
           ? `wsc_${globalThis.crypto.randomUUID()}`
-          : `wsc_key_${key}`;
+          : `wsc_key_${JSON.stringify([owner, key])}`;
         const rows = workspaceRows(db, files);
         // Stage: place every entry's content (inline decided, blob uploaded)
         // before any row is touched — the saga's only non-transactional leg.

@@ -1002,8 +1002,11 @@ describe("hostedStoreOps — the 45-op wire client", () => {
     expect(await ops.transcripts.putThread(thread)).toMatchObject({ id: "inv_1" });
     expect(calls[0]!.body).toEqual({ thread });
 
-    expect(await ops.transcripts.getThread("thr_1", { cursor: "cur_1", limit: 50 })).toMatchObject({ id: "inv_1" });
-    expect(calls[1]!.body).toEqual({ id: "thr_1", cursor: "cur_1", limit: 50 });
+    // An id and nothing else: the `{cursor, limit}` this used to send was a
+    // windowing request the answer has no room to page with, so no mount ever
+    // honored it (core's store.ts, `getThread`).
+    expect(await ops.transcripts.getThread("thr_1")).toMatchObject({ id: "inv_1" });
+    expect(calls[1]!.body).toEqual({ id: "thr_1" });
 
     expect(await ops.transcripts.listThreads({ subject: "sub_1", limit: 25 })).toEqual({
       records: [expect.objectContaining({ id: "inv_1" })],
