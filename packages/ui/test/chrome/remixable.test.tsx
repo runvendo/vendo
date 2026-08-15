@@ -358,9 +358,9 @@ describe("Remixable — the wrapper fork gesture + in-place mount", () => {
     wire.state.pendingScreens.set(forked.id, 3);
     mount();
     await waitFor(() => expect(managePill().textContent).toContain("Remixing…"));
-    expect(forkIframe()).toBeNull();
+    expect(forkSurface()).toBeNull();
     // No remount, no reload — the same mounted wrapper picks the screen up.
-    await waitFor(() => expect(forkIframe()).toBeTruthy(), { timeout: 30_000 });
+    await waitFor(() => expect(forkSurface()).toBeTruthy(), { timeout: 30_000 });
     expect(managePill().textContent).toContain("Remixed");
     expect(managePill().getAttribute("aria-busy")).toBeNull();
   }, 30_000);
