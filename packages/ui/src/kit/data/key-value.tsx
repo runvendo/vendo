@@ -2,7 +2,7 @@
 import { Fragment, type ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { densityVars, font, t, type KitDensity } from "../tokens.js";
+import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface KeyValueItem {
@@ -25,11 +25,9 @@ export interface KeyValueProps {
   items: KeyValueItem[];
   /** Hairline rule between rows. */
   dividers?: boolean;
-  /** Spacing scale for this list's subtree. */
-  density?: KitDensity;
 }
 
-export function KeyValue({ record, items = [], dividers = false, density }: KeyValueProps) {
+export function KeyValue({ record, items = [], dividers = false }: KeyValueProps) {
   return (
     // One provider for the whole list — a row's slot reads its field off it.
     <RowContext.Provider value={record}>
@@ -37,7 +35,6 @@ export function KeyValue({ record, items = [], dividers = false, density }: KeyV
         data-kit="KeyValue"
         style={{
           ...font,
-          ...densityVars(density),
           display: "grid",
           gridTemplateColumns: "minmax(0, auto) minmax(0, 1fr)",
           alignItems: "baseline",

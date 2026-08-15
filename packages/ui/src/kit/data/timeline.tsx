@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { applyFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { densityVars, font, t, type KitDensity } from "../tokens.js";
+import { font, t } from "../tokens.js";
 
 export interface TimelineProps {
   /** Entries from a tool call, in the order they should read. */
@@ -21,8 +21,6 @@ export interface TimelineProps {
   marker?: ReactNode;
   /** Text shown when there are no entries. */
   emptyState?: string;
-  /** Spacing scale for this timeline's subtree. */
-  density?: KitDensity;
 }
 
 /** A timestamp field is a date most of the time and a plain label the rest of
@@ -39,7 +37,6 @@ export function Timeline({
   cell,
   marker,
   emptyState = "No activity",
-  density,
 }: TimelineProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const entries = Array.isArray(rawEntries) ? rawEntries : [];
@@ -63,7 +60,7 @@ export function Timeline({
   return (
     <ol
       data-kit="Timeline"
-      style={{ ...font, ...densityVars(density), display: "flex", flexDirection: "column", listStyle: "none", margin: 0, padding: 0 }}
+      style={{ ...font, display: "flex", flexDirection: "column", listStyle: "none", margin: 0, padding: 0 }}
     >
       {entries.map((entry, index) => {
         const time = timeField === undefined ? "" : timeText(readField(entry, timeField));
