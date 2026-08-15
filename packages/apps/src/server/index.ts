@@ -68,9 +68,6 @@ export {
   seedBaselineSchema,
   seedComponentName,
   seedDrift,
-  seedForkSource,
-  isSeedComponentName,
-  hasDefaultExport,
   type SeedBaseline,
   type SeedDrift,
 } from "../contract/index.js";
