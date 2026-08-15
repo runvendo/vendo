@@ -36,6 +36,9 @@ import {
   storeWireSecretsGetRequestSchema,
   storeWireSecretsListRequestSchema,
   storeWireSecretsSetRequestSchema,
+  storeWireUsageCountRequestSchema,
+  storeWireUsageRecordRequestSchema,
+  storeWireUsageTallyRequestSchema,
   type StoreAdapter,
 } from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
@@ -702,6 +705,11 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   // Last, because the manifest declares it last — appending is the only edit to
   // that order which cannot re-date a level a mount already reports.
   "audit.tally": { method: "POST", path: P["audit.tally"] },
+  // ...and the meter behind it, appended on the same rule. The write carries a
+  // key: a retried record that counted twice is a limit the user hits early.
+  "usage.record": { method: "POST", path: P["usage.record"], keyed: true },
+  "usage.count": { method: "POST", path: P["usage.count"] },
+  "usage.tally": { method: "POST", path: P["usage.tally"] },
 };
 
 const door = (op: string): string => `${DOORS[op]!.method} ${DOORS[op]!.path}`;
@@ -783,6 +791,9 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("audit.tally")]: {
     rows: [{ bucket: "2026-08-14T09:00:00.000Z", outcome: "ok", decidedBy: "grant", count: 4 }],
   },
+  [door("usage.record")]: { ok: true },
+  [door("usage.count")]: { count: 7 },
+  [door("usage.tally")]: { rows: [{ subject: "sub_1", action: "message", count: 7 }] },
 };
 
 /** Where an appData op lands: the app, the collection it invented, and the
@@ -841,28 +852,34 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.retention!.purge("vendo_runs", "2026-01-01T00:00:00.000Z");
   await ops.status();
   await ops.audit.tally({ from: "2026-01-01T00:00:00.000Z" });
+  // The meter, implemented here for retention's reason: this is the protocol's
+  // client, and a mount without these paths answers the enveloped 501.
+  const metered = { subject: "sub_1", action: "message", since: new Date(0), at: new Date(0) } as const;
+  await ops.usage!.record({ subject: metered.subject, action: metered.action, at: metered.at });
+  await ops.usage!.count({ subject: metered.subject, action: metered.action, since: metered.since });
+  await ops.usage!.tally({ since: metered.since });
 };
 
-describe("hostedStoreOps — the 45-op wire client", () => {
-  it("routes 44 of the 45 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 48-op wire client", () => {
+  it("routes 47 of the 48 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(44);
+    expect(calls).toHaveLength(47);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 24 mutations, 20 reads — and the /status handshake is the one GET with
+    // 25 mutations, 22 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(24);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(25);
     expect(calls.filter((call) => call.method === "GET")).toEqual([
       expect.objectContaining({ path: P.status, method: "GET", body: undefined }),
     ]);
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(24);
+    expect(new Set(keys).size).toBe(25);
   });
 
   it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
@@ -1084,6 +1101,43 @@ describe("hostedStoreOps — the 45-op wire client", () => {
 
     await ops.lifecycle.promote("app_1", "org_1");
     expect(calls[2]).toMatchObject({ path: P["lifecycle.promote"], body: { appId: "app_1", orgId: "org_1" } });
+  });
+
+  it("usage: instants cross as ISO datetimes, and each read comes back on its own field", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    const at = new Date("2026-08-14T09:30:00.000Z");
+
+    await ops.usage!.record({ subject: "sub_1", action: "message", at, poolKeys: ["team_1"] });
+    // A Date is not a wire type: every instant crosses as the ISO string the
+    // request schema validates, which is what a mount can actually parse.
+    expect(calls[0]!.body).toEqual({
+      subject: "sub_1",
+      action: "message",
+      at: "2026-08-14T09:30:00.000Z",
+      poolKeys: ["team_1"],
+    });
+    // Keyed: a retried write that counted twice is a limit the user hits early.
+    expect(calls[0]!.idempotencyKey).not.toBeNull();
+
+    expect(await ops.usage!.count({ poolKey: "team_1", action: "message", since: at })).toBe(7);
+    expect(calls[1]!.body).toEqual({ poolKey: "team_1", action: "message", since: "2026-08-14T09:30:00.000Z" });
+    expect(calls[1]!.idempotencyKey).toBeNull();
+
+    expect(await ops.usage!.tally({ since: at, action: "message" }))
+      .toEqual([{ subject: "sub_1", action: "message", count: 7 }]);
+    expect(calls[2]!.body).toEqual({ since: "2026-08-14T09:30:00.000Z", action: "message" });
+
+    const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
+      ["usage.record", storeWireUsageRecordRequestSchema],
+      ["usage.count", storeWireUsageCountRequestSchema],
+      ["usage.tally", storeWireUsageTallyRequestSchema],
+    ];
+    expect(calls).toHaveLength(CONTRACT.length);
+    for (const [index, [op, schema]] of CONTRACT.entries()) {
+      const call = calls[index]!;
+      expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
+      expect(schema.safeParse(call.body).success, op).toBe(true);
+    }
   });
 
   it("audit, secrets, footprint and retention: bodies flat on the contract, answers read off their own field", async () => {
@@ -1430,7 +1484,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     // mount has.
     expect(Object.keys(store.ops).sort()).toEqual([
       "appData", "audit", "blobs", "engine", "footprint", "harness", "lifecycle",
-      "retention", "secrets", "status", "transcripts", "workspace",
+      "retention", "secrets", "status", "transcripts", "usage", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the
