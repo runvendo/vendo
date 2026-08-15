@@ -169,7 +169,8 @@
       "shows one form to file a new issue, with a field each for title, team, priority, assignee and estimate",
       "priority offers urgent, high, medium and low, and assignee offers the five teammates by name",
       "invents no issue key for the bug before it is filed",
-      "one control files the bug, and it stays unavailable until the form carries a title"
+      "one control files the bug, and it stays unavailable until the form carries a title",
+      "filing calls create_issue with exactly the title, team, priority, assignee and estimate the form carries"
     ],
     "tags": ["action"],
     "shape": "form",

@@ -154,7 +154,8 @@
       "lists all four staff with the role each one holds",
       "shows for every person whether they can open orders, inventory, discounts and payouts",
       "Rosa Delgado's four areas all read as off to start",
-      "each of Rosa's four areas ticks on its own, so orders and inventory can be opened without touching discounts or payouts"
+      "each of Rosa's four areas ticks on its own, so orders and inventory can be opened without touching discounts or payouts",
+      "ticking Rosa's orders on fires set_staff_permission with stf_rosa, orders and true"
     ],
     "source": "Shopify — Settings > Users > Roles, https://help.shopify.com/en/manual/your-account/users/roles/manage-roles"
   },
