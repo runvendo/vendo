@@ -200,7 +200,6 @@ describe("the user the policy decides about", () => {
       kind: "user",
       subject: "mia",
       display: "Mia",
-      email: "mia@maple.test",
       facts: { email: "mia@maple.test", plan: "free" },
       pools: ["workspace"],
     });

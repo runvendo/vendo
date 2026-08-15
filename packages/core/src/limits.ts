@@ -50,13 +50,11 @@ export const limitDecisionSchema = z.union([
     and naming one in a {@link LimitWindow} is how a policy counts a team's
     usage rather than a person's. */
 export interface LimitUser extends Principal {
-  email?: string;
   facts?: Record<string, Json>;
   pools?: string[];
 }
 
 export const limitUserSchema = principalSchema.extend({
-  email: z.string().optional(),
   facts: z.record(z.unknown()).optional(),
   pools: z.array(z.string()).optional(),
 }) satisfies z.ZodType<LimitUser>;

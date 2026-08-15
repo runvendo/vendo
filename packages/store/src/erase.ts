@@ -222,7 +222,10 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       await del(report, "vendo_quarantine", "subject = $1", [subject]);
       // The meter counts a PERSON, so its rows are that person's data. They go
       // with them, and the limit they were counted against resets — which is
-      // the honest outcome: there is no one left to hold to it.
+      // the honest outcome: there is no one left to hold to it. That includes
+      // their contribution to any SHARED pool meter, so pooled usage is
+      // credited back on erase — accepted: erase is a host-admin operation, and
+      // deleting a person's data wins over pool accounting.
       await del(report, "vendo_usage", "subject = $1", [subject]);
       // An appData file twin carries no refs: its owner is the leading key leg
       // (`<owner>/<key>`) inside the app's own namespace. For the subject's own

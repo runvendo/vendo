@@ -1,6 +1,7 @@
 ---
 "@vendoai/core": minor
 "@vendoai/harnesses": minor
+"@vendoai/store": minor
 "@vendoai/ui": minor
 "@vendoai/vendo": minor
 ---

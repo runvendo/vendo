@@ -12,7 +12,6 @@ const user: LimitUser = {
   kind: "user",
   subject: "user_ada",
   display: "Ada",
-  email: "ada@example.com",
   facts: { plan: "free" },
   pools: ["org_acme"],
 };

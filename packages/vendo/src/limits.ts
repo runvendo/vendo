@@ -57,7 +57,6 @@ export function createLimiter({ callback, ops }: {
       const pools = ctx.pools ?? {};
       const user: LimitUser = {
         ...ctx.principal,
-        ...(typeof ctx.user?.["email"] === "string" ? { email: ctx.user["email"] } : {}),
         ...(ctx.user === undefined ? {} : { facts: ctx.user }),
         ...(ctx.pools === undefined ? {} : { pools: Object.keys(pools) }),
       };
