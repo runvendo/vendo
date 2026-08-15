@@ -53,9 +53,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
      font-size. The .933 ratio preserves the historical 14px-on-15px-base size. */
   --vendo-base-size: var(--vendo-font-size, 15px);
   --vendo-text-body: calc(var(--vendo-base-size) * 0.933);
-  /* System mono stack (no unshipped brand font): the chrome has no contract
-     mono token, so this is the single themeable source referenced everywhere. */
-  --vendo-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* The host's mono face when its theme declares one, else the system stack:
+     this is the single source every mono rule in the sheet references. */
+  --vendo-font-mono: var(--vendo-mono-family, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
   /* derived aesthetics */
   --vendo-accent-soft: color-mix(in srgb, var(--vendo-accent) 8%, transparent);
   --vendo-border-strong: color-mix(in srgb, var(--vendo-fg) 14%, transparent);
