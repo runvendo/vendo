@@ -283,6 +283,58 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: { label: copy(z.string(), "badge text") },
     examples: ['<Badge label="Beta" tone="accent"/>'],
   },
+  {
+    name: "KeyValue",
+    group: "data",
+    summary: "ONE record's fields as label/value rows — the detail a table row expands into. A field takes a `cell` slot, exactly as a table column does.",
+    props: {
+      record: data(z.record(z.string(), z.unknown()), "the record from a tool call", { required: true }),
+      items: config(z.array(cardField), "the fields to show; key supports dot-paths; format is a value tier token; cell is a slot", { required: true }),
+      dividers: config(z.boolean(), "hairline rule between rows"),
+    },
+    examples: [
+      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"},{key:"status",cell:<EnumBadge field="status"/>}]} dividers/>',
+    ],
+  },
+  {
+    name: "Timeline",
+    group: "data",
+    summary: "A history down a spine: one dot-marked entry per record, in the order the tool returned them. `cell` renders Kit components for each entry instead of a title field.",
+    props: {
+      entries: data(rows, "entries from a tool call", { required: true }),
+      titleField: config(z.string(), "field for each entry's title"),
+      timeField: config(z.string(), "field holding each entry's timestamp"),
+      timeAlign: config(z.enum(["start", "end"]), "where the timestamp sits: start (default) or end"),
+      cell: config(slot, "Kit elements rendered as each entry's body; the components inside name their field"),
+      marker: config(slot, "a Kit element drawn in place of the dot"),
+      emptyState: copy(z.string(), "text when there are no entries"),
+    },
+    examples: [
+      '<Timeline entries={payments.list({}).data} titleField="description" timeField="paidAt" timeAlign="end"/>',
+    ],
+  },
+  {
+    name: "Avatar",
+    group: "data",
+    summary: "Initials in a tint derived from the name, so one person is one color everywhere. No image — the Kit fetches nothing. Adjacent avatars in a Row stack.",
+    props: {
+      name: data(z.string(), "the person or account name", { required: true }),
+      size: config(z.enum(["sm", "md", "lg"]), "disc size, default md"),
+    },
+    examples: [
+      '<Row gap={6} align="center"><Avatar name={client.name}/><Text field="name"/></Row>',
+    ],
+  },
+  {
+    name: "CodeBlock",
+    group: "data",
+    summary: "Monospaced code or a raw payload with a language chip. Shows the text exactly as it came — no highlighting, no copy button.",
+    props: {
+      code: data(z.string(), "the code or payload to show", { required: true }),
+      language: config(z.string(), "language label for the chip, e.g. json"),
+    },
+    examples: ['<CodeBlock language="json" code={webhooks.get({id}).data.payload}/>'],
+  },
 
   // Charts (recharts internals; data props only; $NaN is unrenderable)
   {
@@ -502,6 +554,31 @@ const BASE_SPECS: KitComponentSpec[] = [
       multiple: config(z.boolean(), "allow several open at once"),
     },
     examples: ["<Accordion items={[{label:\"Terms\",content:<Text .../>}]}/>"],
+  },
+  {
+    name: "EmptyState",
+    takesChildren: true,
+    group: "feedback",
+    summary: "The designed nothing-here for a whole region, with the action that fixes it nested inside. A component with its own emptyState prop (DataTable, CardList) already has one.",
+    props: {
+      icon: config(z.string(), "lucide icon name in kebab-case"),
+      title: copy(z.string(), "the headline", { required: true }),
+      description: copy(z.string(), "one line of why it is empty, or what to do"),
+    },
+    examples: [
+      '<EmptyState icon="inbox" title="No invoices yet" description="They show up here the moment one is issued."><Button label="New invoice" onClick="invoices.create"/></EmptyState>',
+    ],
+  },
+  {
+    name: "Steps",
+    group: "feedback",
+    summary: "A progress trail. `active` is the current step's index; everything before it reads as done, everything after as still to come.",
+    props: {
+      items: config(z.array(z.object({ label: z.string(), description: z.string().optional() })), "the steps in order", { required: true }),
+      active: config(z.number().int().nonnegative(), "index of the current step, default 0"),
+      orientation: config(z.enum(["horizontal", "vertical"]), "layout, default horizontal"),
+    },
+    examples: ['<Steps items={[{label:"Details"},{label:"Review"},{label:"Done"}]} active={1}/>'],
   },
 ];
 

@@ -1,0 +1,135 @@
+/** Timeline — a record history down a spine, dot-marked (W2 §The Kit). */
+import type { ReactNode } from "react";
+import { applyFormat } from "../format.js";
+import { readField, RowContext } from "../row.js";
+import { densityVars, font, t, type KitDensity } from "../tokens.js";
+
+export interface TimelineProps {
+  /** Entries from a tool call, in the order they should read. */
+  entries: Array<Record<string, unknown>>;
+  /** Field for each entry's title. */
+  titleField?: string;
+  /** Field holding each entry's timestamp. */
+  timeField?: string;
+  /** Where the timestamp sits: leading the title, or right-aligned. */
+  timeAlign?: "start" | "end";
+  /** Kit elements rendered as each entry's BODY instead of the title, with that
+   *  entry published on `RowContext` so the components inside name their field
+   *  — the DataTable cell contract, once per entry. */
+  cell?: ReactNode;
+  /** Kit element drawn in place of the dot. */
+  marker?: ReactNode;
+  /** Text shown when there are no entries. */
+  emptyState?: string;
+  /** Spacing scale for this timeline's subtree. */
+  density?: KitDensity;
+}
+
+/** A timestamp field is a date most of the time and a plain label the rest of
+ *  it; an unformattable value reads as itself rather than disappearing. */
+function timeText(value: unknown): string {
+  return applyFormat(value, "datetime") ?? (value === undefined || value === null ? "" : String(value));
+}
+
+export function Timeline({
+  entries: rawEntries,
+  titleField,
+  timeField,
+  timeAlign = "start",
+  cell,
+  marker,
+  emptyState = "No activity",
+  density,
+}: TimelineProps) {
+  // W3 — fail SOFT on missing data (a failed query resolves to undefined).
+  const entries = Array.isArray(rawEntries) ? rawEntries : [];
+  if (entries.length === 0) {
+    return (
+      <div
+        data-kit="Timeline"
+        style={{
+          ...font,
+          color: t.muted,
+          textAlign: "center",
+          border: `var(--vendo-border-width, 1px) dashed ${t.border}`,
+          borderRadius: t.radiusMedium,
+          padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
+        }}
+      >
+        {emptyState}
+      </div>
+    );
+  }
+  return (
+    <ol
+      data-kit="Timeline"
+      style={{ ...font, ...densityVars(density), display: "flex", flexDirection: "column", listStyle: "none", margin: 0, padding: 0 }}
+    >
+      {entries.map((entry, index) => {
+        const time = timeField === undefined ? "" : timeText(readField(entry, timeField));
+        const title = titleField === undefined ? null : String(readField(entry, titleField) ?? "—");
+        return (
+          <RowContext.Provider key={String(readField(entry, "id") ?? index)} value={entry}>
+            <li style={{ display: "flex", gap: "var(--vendo-density-content-gap, 10px)", minWidth: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+                {marker ?? (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 9,
+                      height: 9,
+                      marginTop: "0.45em",
+                      borderRadius: "50%",
+                      background: t.accent,
+                      boxShadow: `0 0 0 calc(var(--vendo-border-width, 1px) * 3) color-mix(in srgb, ${t.accent} 14%, transparent)`,
+                    }}
+                  />
+                )}
+                {/* The spine joins this entry to the next, so the last one ends
+                    at its dot instead of trailing a stub. */}
+                {index < entries.length - 1 ? (
+                  <span style={{ flex: 1, marginTop: 5, borderLeft: `var(--vendo-border-width, 1px) solid ${t.border}` }} />
+                ) : null}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: timeAlign === "end" ? "row" : "column",
+                  justifyContent: "space-between",
+                  alignItems: timeAlign === "end" ? "baseline" : "stretch",
+                  gap: timeAlign === "end" ? "var(--vendo-density-content-gap, 10px)" : 2,
+                  flex: 1,
+                  minWidth: 0,
+                  paddingBottom: index === entries.length - 1 ? 0 : "var(--vendo-density-content-gap, 10px)",
+                }}
+              >
+                {timeAlign === "start" && time ? <TimeText time={time} /> : null}
+                <div style={{ minWidth: 0, fontWeight: 600, lineHeight: 1.4 }}>{cell ?? title}</div>
+                {timeAlign === "end" && time ? <TimeText time={time} /> : null}
+              </div>
+            </li>
+          </RowContext.Provider>
+        );
+      })}
+    </ol>
+  );
+}
+
+function TimeText({ time }: { time: string }) {
+  return (
+    <span
+      style={{
+        color: t.muted,
+        flexShrink: 0,
+        fontSize: "0.72em",
+        fontWeight: 650,
+        letterSpacing: "0.07em",
+        textTransform: "uppercase",
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {time}
+    </span>
+  );
+}

@@ -27,6 +27,12 @@ import {
   fmt, setKitIntl, type KitIntl,
 } from "../../kit/index.js";
 import { Icon } from "../../kit/icon.js";
+import { KeyValue } from "../../kit/data/key-value.js";
+import { Timeline } from "../../kit/data/timeline.js";
+import { Avatar } from "../../kit/data/avatar.js";
+import { CodeBlock } from "../../kit/data/code-block.js";
+import { EmptyState } from "../../kit/feedback/empty-state.js";
+import { Steps } from "../../kit/feedback/steps.js";
 
 declare global {
   // These globals are visible only inside the opaque-origin jail realm.
@@ -196,10 +202,10 @@ const AMBIENT_SCOPE: Record<(typeof ISLAND_AMBIENT_NAMES)[number], unknown> = {
   useSyncExternalStore: React.useSyncExternalStore,
   Stack, Row, Grid, Surface, Card, Divider,
   Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
-  DataTable, CardList, Stat, Badge,
+  DataTable, CardList, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
   Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,
-  Tabs, Callout, Accordion,
+  Tabs, Callout, Accordion, EmptyState, Steps,
   fmt,
   tools: makeToolsAmbient([]),
 };

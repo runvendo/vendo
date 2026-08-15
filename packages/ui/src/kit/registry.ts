@@ -14,6 +14,10 @@ import { DataTable } from "./data/data-table.js";
 import { CardList } from "./data/card-list.js";
 import { Stat } from "./data/stat.js";
 import { Badge } from "./data/badge.js";
+import { KeyValue } from "./data/key-value.js";
+import { Timeline } from "./data/timeline.js";
+import { Avatar } from "./data/avatar.js";
+import { CodeBlock } from "./data/code-block.js";
 import { LineChart } from "./charts/line.js";
 import { BarChart } from "./charts/bar.js";
 import { DonutChart } from "./charts/donut.js";
@@ -30,6 +34,8 @@ import { Disclaimer } from "./forms/disclaimer.js";
 import { Tabs } from "./feedback/tabs.js";
 import { Callout } from "./feedback/callout.js";
 import { Accordion } from "./feedback/accordion.js";
+import { EmptyState } from "./feedback/empty-state.js";
+import { Steps } from "./feedback/steps.js";
 
 export {
   KIT_SPECS,
@@ -41,8 +47,8 @@ export {
 export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string, never>>>> = {
   Stack, Row, Grid, Surface, Card, Divider,
   Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
-  DataTable, CardList, Stat, Badge,
+  DataTable, CardList, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
   Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,
-  Tabs, Callout, Accordion,
+  Tabs, Callout, Accordion, EmptyState, Steps,
 } as unknown as Record<string, ComponentType<Record<string, never>>>;

@@ -42,10 +42,10 @@ export const ISLAND_AMBIENT_REACT_NAMES = [
 export const ISLAND_AMBIENT_KIT_NAMES = [
   "Stack", "Row", "Grid", "Surface", "Card", "Divider",
   "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Icon",
-  "DataTable", "CardList", "Stat", "Badge",
+  "DataTable", "CardList", "Stat", "Badge", "KeyValue", "Timeline", "Avatar", "CodeBlock",
   "LineChart", "BarChart", "DonutChart", "Sparkline", "Progress",
   "Input", "Select", "DatePicker", "Textarea", "Checkbox", "Button", "Form", "Disclaimer",
-  "Tabs", "Callout", "Accordion",
+  "Tabs", "Callout", "Accordion", "EmptyState", "Steps",
 ] as const;
 
 /** `fmt` (Kit semantics formatters) and `tools` (the guarded host-tool pipe). */
