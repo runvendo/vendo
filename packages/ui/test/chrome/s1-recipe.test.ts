@@ -9,9 +9,9 @@ describe("S1 recipe", () => {
     expect(CHROME_CSS).not.toMatch(/--vendo-glass/);
   });
 
-  it("derives the hairline border from the host's text color", () => {
+  it("takes the host's border color, defaulting to a mix of its text color", () => {
     expect(CHROME_CSS).toContain(
-      "--vendo-border: color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent)",
+      "--vendo-border: var(--vendo-color-border, color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent))",
     );
   });
 
@@ -64,9 +64,10 @@ describe("S1 recipe", () => {
     expect(CHROME_CSS).not.toMatch(/var\(--vendo-shadow\)/);
   });
 
-  it("uses the M2 duration and easing", () => {
-    expect(CHROME_CSS).toContain("--vendo-duration: 380ms");
-    expect(CHROME_CSS).toContain("--vendo-ease: cubic-bezier(0.32, 0.72, 0, 1)");
+  it("derives the M2 duration and easing from the theme's motion knobs", () => {
+    // The multiplier keeps the chrome's slower feel: 160ms * 2.375 is the M2 380ms.
+    expect(CHROME_CSS).toContain("--vendo-duration: calc(var(--vendo-motion-duration, 160ms) * 2.375)");
+    expect(CHROME_CSS).toContain("--vendo-ease: var(--vendo-motion-easing, cubic-bezier(0.32, 0.72, 0, 1))");
   });
 
   it("every moving thing the chrome added respects prefers-reduced-motion (M29)", () => {
