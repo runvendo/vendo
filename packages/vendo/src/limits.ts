@@ -1,0 +1,100 @@
+/**
+ * Per-user limits: Vendo counts, the host decides.
+ *
+ * The host's `limits` callback is asked once before each metered action and its
+ * verdict is honored. Everything else about a limit lives HERE — reading the
+ * meter, invoking the policy, recording what an allow spent, and the fail mode —
+ * so a choke point is one `gate` call and can never grow its own half of the
+ * rule.
+ *
+ * The fail mode is the load-bearing decision: a policy that throws DENIES. A
+ * limits system that fails open stops limiting silently, so the host keeps
+ * believing they have a cap while every user is unlimited — strictly worse than
+ * a turn that was refused and said so.
+ */
+import {
+  VendoError,
+  log,
+  type LimitAction,
+  type LimitWindow,
+  type LimitUser,
+  type LimitsCallback,
+  type RunContext,
+  type StoreOps,
+} from "@vendoai/core";
+
+/** The decision a choke point acts on — `LimitDecision`'s two forms collapsed to
+    one, so no caller re-derives the boolean/object grammar. */
+export type LimitVerdict = { allow: true } | { allow: false; message?: string };
+
+export interface Limiter {
+  gate(action: LimitAction, ctx: RunContext): Promise<LimitVerdict>;
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+/** `UsageCountQuery.since` is required, so "all time" is the epoch. */
+const ALL_TIME = new Date(0);
+
+/** The host's policy, bound to the meter it decides on.
+ *
+ *  `ops` is the usage family and not the whole `StoreOps` because a limiter
+ *  against a store with no meter would read every user as zero — composition
+ *  refuses that outright (`composeLimits`), so it cannot arrive here. */
+export function createLimiter({ callback, ops }: {
+  callback: LimitsCallback;
+  ops: NonNullable<StoreOps["usage"]>;
+}): Limiter {
+  return {
+    async gate(action, ctx) {
+      const { subject } = ctx.principal;
+      const pools = ctx.pools ?? {};
+      const user: LimitUser = {
+        ...ctx.principal,
+        ...(typeof ctx.user?.["email"] === "string" ? { email: ctx.user["email"] } : {}),
+        ...(ctx.user === undefined ? {} : { facts: ctx.user }),
+        ...(ctx.pools === undefined ? {} : { pools: Object.keys(pools) }),
+      };
+      // Pre-bound to THIS subject: a policy never names one, so it can never
+      // read another person's usage by accident.
+      const count = (counted: LimitAction, window?: LimitWindow): Promise<number> => {
+        const lookback = (window?.days ?? 0) * DAY + (window?.hours ?? 0) * HOUR
+          + (window?.minutes ?? 0) * MINUTE;
+        const since = lookback > 0 ? new Date(Date.now() - lookback) : window?.since ?? ALL_TIME;
+        if (window?.pool === undefined) return ops.count({ action: counted, since, subject });
+        const poolKey = pools[window.pool];
+        // A pool this user is not in is an ERROR, never a zero: answering 0 for
+        // a meter that was never resolved silently under-counts every limit
+        // written against it, and the deny below is the only safe answer.
+        if (poolKey === undefined) {
+          throw new VendoError(
+            "validation",
+            `The limits policy counted the \`${window.pool}\` pool, which this user is not in `
+            + `(their pools: ${Object.keys(pools).map((name) => `\`${name}\``).join(", ") || "none"}). `
+            + "Pools come from the auth preset's `pools` seam — assert the pool there, or count a pool the user is in.",
+          );
+        }
+        return ops.count({ action: counted, since, poolKey });
+      };
+
+      let decision;
+      try {
+        decision = await callback({ user, action, count });
+      } catch (error) {
+        log({
+          code: "limits.callback_error",
+          level: "error",
+          message: `[vendo] the limits policy failed for ${subject}; DENYING the ${action} (a limits policy that fails open stops limiting):`,
+          data: { error },
+        });
+        return { allow: false };
+      }
+      if (decision !== true) return decision === false ? { allow: false } : decision;
+      // Awaited, not fire-and-forget: the next action's count has to see this
+      // one, and a dropped write is a limit that never arrives.
+      await ops.record({ subject, action, at: new Date(), poolKeys: Object.values(pools) });
+      return { allow: true };
+    },
+  };
+}
