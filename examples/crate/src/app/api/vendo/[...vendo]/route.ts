@@ -55,7 +55,7 @@ const vendo = createVendo({
   // whole wire — which is the state `vendo init --auth clerk` leaves you in
   // before you have pasted your keys. Unverifiable tokens return null two lines
   // below it in the same preset; a missing key ought to do the same. Until it
-  // does, this is the host's half of the workaround. See ENG-414.
+  // does, this is the host's half of the workaround. See ENG-415.
   ...(clerkEnabled ? { auth: crateAuth } : {}),
   // .vendo/policy.json: destructive asks, reads run. The grades themselves are
   // authored in .vendo/overrides.json — refunds and cancellations are

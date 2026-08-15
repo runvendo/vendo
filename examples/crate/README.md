@@ -144,7 +144,7 @@ support agent gets a 403 telling them to ask. It is said out loud in the agent's
 
 ## Known rough edges
 
-Found while wiring this up; all three are in Linear.
+Found while wiring this up. All three are in Linear: ENG-415, ENG-416, ENG-417.
 
 1. **`clerk()` 501s the whole wire when its keys are missing.** Any request
    carrying `Authorization: Bearer …` throws instead of resolving to an
