@@ -26,6 +26,30 @@ const isoNow = (): IsoDateTime => {
   return new Date(monotonicMs).toISOString() as IsoDateTime;
 };
 
+/** The forward walk's echoed bound: a resume token naming the last row a page
+    ended on, its indexed VALUE and its ID together. The value alone cannot say
+    where inside a group of rows sharing it the page stopped, and those groups
+    are routine — `vendo_runs.started_at` is caller-supplied at millisecond
+    precision. Prefixed because a caller's first bound is a plain field value,
+    and anything that does not decode as a token is read as one. The encoding is
+    this reference's own: the token is opaque contract and only ever travels
+    back to the implementation that minted it. */
+const WATERMARK_TOKEN = "wm1_";
+
+const encodeWatermark = (value: string, id: string): string =>
+  `${WATERMARK_TOKEN}${JSON.stringify([value, id])}`;
+
+const decodeWatermark = (after: string): { value: string; id: string } | undefined => {
+  if (!after.startsWith(WATERMARK_TOKEN)) return undefined;
+  try {
+    const parsed = JSON.parse(after.slice(WATERMARK_TOKEN.length)) as unknown;
+    if (!Array.isArray(parsed) || typeof parsed[0] !== "string" || typeof parsed[1] !== "string") return undefined;
+    return { value: parsed[0], id: parsed[1] };
+  } catch {
+    return undefined;
+  }
+};
+
 /** The synthetic harness appId a thread's state rides under (the store's
     `harnessStateKey`), so deleting the thread can sweep it. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
@@ -229,19 +253,36 @@ export function memoryStoreOps(): StoreOps {
           "engine.list takes a watermark or a cursor, never both — they page in opposite directions",
         );
       }
-      // Every indexed field declared today is the row's own creation instant,
-      // which is exactly what this reference stores as `createdAt`
-      // (`vendo_runs.started_at` IS the run record's createdAt in the real
-      // backend). Ascending, because a forward walk resumes where it stopped.
+      // The bound is on the row's own INDEXED FIELD, which for the one
+      // collection that declares one is CALLER-SUPPLIED: a host writes
+      // `startedAt: new Date().toISOString()`, so a burst of runs shares one
+      // millisecond. This reference stamps its own arrival clock on `createdAt`
+      // and that clock is monotonic, so walking it could never tie — and the
+      // tie is the case the walk has to survive. Read what the caller wrote.
+      const valueOf = (r: VendoRecord): string => {
+        const supplied = (r.data as { startedAt?: unknown }).startedAt;
+        return collection === "vendo_runs" && typeof supplied === "string" ? supplied : r.createdAt;
+      };
+      // A bare bound keeps its strictly-after-the-instant meaning; a token
+      // resumes exactly after the row it names, on the same (value, id) key the
+      // page is ordered by. Ascending, because a forward walk resumes where it
+      // stopped, and tie-broken on the id the token carries — an order that
+      // disagreed with the bound would skip rows at every page boundary.
+      const resume = decodeWatermark(after);
       const forward = [...col(collection).values()]
-        .filter((r) => r.createdAt > after)
-        .sort((a, b) => (a.createdAt === b.createdAt ? a.seq - b.seq : (a.createdAt < b.createdAt ? -1 : 1)));
+        .filter((r) => (resume === undefined
+          ? valueOf(r) > after
+          : valueOf(r) > resume.value || (valueOf(r) === resume.value && r.id > resume.id)))
+        .sort((a, b) => (valueOf(a) === valueOf(b)
+          ? (a.id < b.id ? -1 : 1)
+          : (valueOf(a) < valueOf(b) ? -1 : 1)));
       const page = forward.slice(0, pageLimit(query.limit));
+      const last = page.at(-1);
       return {
         records: page.map(copyRecord),
-        // The bound to send next time: where this page ended, or the caller's
-        // own bound back unchanged when nothing was there to move it.
-        watermark: page.at(-1)?.createdAt ?? after,
+        // The bound to send next time: the row this page ended on, or the
+        // caller's own bound back unchanged when nothing was there to move it.
+        watermark: last === undefined ? after : encodeWatermark(valueOf(last), last.id),
       };
     },
     async claim(collection, expected, replacement) {

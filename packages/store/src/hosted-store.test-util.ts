@@ -126,16 +126,41 @@ async function recordsOp(records: RecordStore, op: string, body: Body, miss: Mis
   }
 }
 
+/** The bound this fake echoes: a resume token naming the row the page ended on,
+ *  value and id together, because rows sharing one `started_at` are routine (it
+ *  is caller-supplied at millisecond precision) and a bound that is only the
+ *  value cannot resume inside such a group — the rest of it is skipped forever.
+ *  Its own encoding, like every implementation's: the token is opaque and never
+ *  crosses into another one. */
+const WATERMARK_TOKEN = "wm1_";
+
+const encodeResume = (value: string, id: string): string =>
+  WATERMARK_TOKEN + Buffer.from(JSON.stringify([value, id]), "utf8").toString("base64url");
+
+const decodeResume = (after: string): { value: string; id: string } | undefined => {
+  if (!after.startsWith(WATERMARK_TOKEN)) return undefined;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(after.slice(WATERMARK_TOKEN.length), "base64url").toString("utf8"),
+    ) as unknown;
+    if (!Array.isArray(parsed) || typeof parsed[0] !== "string" || typeof parsed[1] !== "string") return undefined;
+    return { value: parsed[0], id: parsed[1] };
+  } catch {
+    return undefined;
+  }
+};
+
 /** `engine.list`'s forward walk: oldest-first from the bound, with the bound to
- *  send next time echoed back — the last row's value, or the caller's own bound
- *  unchanged when the page was empty. The echo is not decoration and this fake
- *  must not skip it: it is the only thing that tells a mount which APPLIED the
- *  bound from one that parsed the query and ignored it, which is the exact
+ *  send next time echoed back — the row this page ended on, or the caller's own
+ *  bound unchanged when the page was empty. The echo is not decoration and this
+ *  fake must not skip it: it is the only thing that tells a mount which APPLIED
+ *  the bound from one that parsed the query and ignored it, which is the exact
  *  answer the client refuses (EngineListPage, core/src/store.ts).
- *  `createdAt` stands in for the indexed field, as the reference engine does —
- *  and for `vendo_runs`, the one collection with an indexed field today, they
- *  are the same value: the reference adapter projects a run's `startedAt` onto
- *  `createdAt`, which is the `started_at` column. The field name still goes through
+ *  `createdAt` IS the indexed field here: for `vendo_runs`, the one collection
+ *  with an indexed field today, the reference adapter projects a run's
+ *  `startedAt` onto `createdAt`, which is the `started_at` column — ties
+ *  included, so a burst of runs collides here exactly as it does in Postgres.
+ *  The field name still goes through
  *  `assertIndexedField`, because a bound on an unindexed field is refused by
  *  the live door rather than served slowly. */
 async function forwardWalk(
@@ -146,10 +171,24 @@ async function forwardWalk(
 ): Promise<{ records: VendoRecord[]; watermark: string }> {
   assertIndexedField(collection, watermark.field);
   const held = await records.list(query.refs === undefined ? {} : { refs: query.refs });
-  // The adapter answers newest-first; a forward walk reads the other way.
-  const forward = held.records.filter((record) => record.createdAt > watermark.after).reverse();
+  // A bare bound is strictly after the instant; a token resumes after the row it
+  // names. The adapter answers newest-first, so a forward walk re-orders — on
+  // the same (value, id) key the bound resumes from, or a page boundary inside
+  // a group sharing one value would step over the rest of it.
+  const resume = decodeResume(watermark.after);
+  const forward = held.records
+    .filter((record) => (resume === undefined
+      ? record.createdAt > watermark.after
+      : record.createdAt > resume.value || (record.createdAt === resume.value && record.id > resume.id)))
+    .sort((a, b) => (a.createdAt === b.createdAt
+      ? (a.id < b.id ? -1 : 1)
+      : (a.createdAt < b.createdAt ? -1 : 1)));
   const page = forward.slice(0, query.limit ?? forward.length);
-  return { records: page, watermark: page.at(-1)?.createdAt ?? watermark.after };
+  const last = page.at(-1);
+  return {
+    records: page,
+    watermark: last === undefined ? watermark.after : encodeResume(last.createdAt, last.id),
+  };
 }
 
 /** The audit drawer's typed read, over the SAME rows `engine.list("vendo_audit")`

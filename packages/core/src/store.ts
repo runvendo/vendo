@@ -199,11 +199,15 @@ export interface AppDataTarget {
 
     `field` must be one the collection registry declares indexed
     (`assertIndexedField`) — `vendo_runs.started_at` is the only one today.
-    `after` is EXCLUSIVE, and it is an opaque string echoed back from a previous
-    page, never a timestamp to do arithmetic on: the stored value can carry more
-    precision than a JS `Date` keeps, and a bound that has been round-tripped
-    through one moves BACKWARDS, which re-reads a window that was already
-    counted. */
+
+    `after` is EXCLUSIVE and takes either of two forms. A caller's FIRST bound is
+    a plain field VALUE ("everything since 9am"), which means strictly after that
+    instant. Every bound after it is the previous page's echo
+    ({@link EngineListPage}), an opaque token naming the exact row that page
+    ended on: send it back VERBATIM, never parsed, never compared, never a
+    timestamp to do arithmetic on. The stored value can carry more precision than
+    a JS `Date` keeps, and a bound that has been round-tripped through one moves
+    BACKWARDS, which re-reads a window that was already counted. */
 export interface Watermark {
   field: string;
   after: string;
@@ -221,8 +225,19 @@ export interface EngineListQuery extends RecordQuery {
 /** `engine.list`'s page.
 
     `watermark` is present EXACTLY when a watermark bound was applied, and its
-    value is the bound to send next time — the field's value on the last row of
-    this page, or the requested `after` unchanged when the page was empty.
+    value is the bound to send next time — an opaque RESUME TOKEN naming the last
+    row of this page, or the requested `after` unchanged when the page was empty.
+    A walk driven by this echo visits every row EXACTLY ONCE and terminates,
+    INCLUDING rows that share the indexed field's value.
+
+    A token rather than that value, because the value alone cannot say WHERE
+    INSIDE a group of rows sharing it a page stopped, and those groups are
+    routine: `vendo_runs.started_at` is caller-supplied and callers write
+    `new Date().toISOString()`, so a burst of runs shares one millisecond. Asking
+    for "strictly after that instant" then drops whatever was left of the group,
+    silently and permanently — uncounted usage for the meter this walk exists
+    for. Each implementation spells its token its own way; hand it back as
+    {@link Watermark}.`after` unchanged and never parse or compare one.
 
     That is deliberately doing two jobs at once, and the second one is why it
     exists. Wire request bodies pass unknown keys through, so a mount older than

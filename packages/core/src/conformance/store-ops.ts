@@ -252,6 +252,42 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assertDeepEqual(seen, ids, "the forward walk did not visit every row exactly once, oldest first");
       }),
 
+      /** The tie the walk has to survive. `vendo_runs.started_at` is
+          CALLER-SUPPLIED, and callers write `new Date().toISOString()` — one
+          millisecond of resolution — so a burst of runs routinely shares one
+          value. A bound that is nothing but that value cannot say where INSIDE
+          such a group a page stopped: the next call asks for everything
+          strictly after the instant, and whatever was left of the group is
+          skipped, silently and permanently. For the meter this walk exists for
+          that is usage nobody ever bills. The group is seeded larger than the
+          page deliberately, so a page boundary MUST land inside it. */
+      opsCase(opts, "engine.list's forward walk crosses a page boundary inside rows sharing one indexed value", async (ops) => {
+        const tied = "2026-03-04T05:06:07.000Z"; // one millisecond, five runs
+        const ids = ["run_t1", "run_t2", "run_t3", "run_t4", "run_t5"];
+        for (const id of ids) {
+          await ops.engine.put("vendo_runs", {
+            id,
+            data: { appId: "app_meter", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt: tied },
+          });
+        }
+        // A meter's FIRST bound is a plain field value it authored; every later
+        // one is the page's own echo, sent back verbatim and never read.
+        await assertPaginates("engine.list watermark", ids, async (after) => {
+          const page = await ops.engine.list("vendo_runs", {
+            limit: PAGE,
+            watermark: { field: "started_at", after: after ?? new Date(0).toISOString() },
+          });
+          assert(page.watermark !== undefined, "a page that was given a watermark bound must echo the next bound back");
+          // The echo never falls away — its absence means the mount ignored the
+          // bound — so it is the empty page, not a missing echo, that ends the
+          // walk.
+          return {
+            ids: page.records.map((record) => record.id),
+            ...(page.records.length === 0 ? {} : { cursor: page.watermark }),
+          };
+        });
+      }),
+
       /** Two refusals, both of them cliffs a caller would otherwise fall off
           quietly: an unindexed bound is a full table scan wearing a filter's
           clothes, and a cursor beside a watermark is two walks in opposite

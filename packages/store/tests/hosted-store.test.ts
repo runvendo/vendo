@@ -1469,14 +1469,29 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
       watermark: { field: "started_at", after: started[0]! },
       limit: 1,
     });
-    expect(first).toMatchObject({ watermark: started[1] });
+    // The echo is a resume token, spelled however the mount likes — asserted
+    // present and sent back verbatim, never read.
+    expect(first.watermark).toEqual(expect.any(String));
     expect(first.records.map((record) => record.id)).toEqual(["run_2"]);
     const next = await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: first.watermark! } });
     expect(next.records.map((record) => record.id)).toEqual(["run_3"]);
     // Nothing new to read echoes the caller's own bound back, so the mark holds
     // where it was instead of falling back to the newest row.
     expect(await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: next.watermark! } }))
-      .toEqual({ records: [], watermark: started[2] });
+      .toEqual({ records: [], watermark: next.watermark });
+
+    // Runs that share one `startedAt` — the millisecond a burst of callers all
+    // stamp. The page boundary lands INSIDE the group, so a bound that were only
+    // the instant would step over run_5 and never count it.
+    for (const id of ["run_4", "run_5"]) {
+      await ops.engine.put("vendo_runs", {
+        id,
+        data: { appId: "app_1", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt: "2026-02-04T00:00:00.000Z" },
+      });
+    }
+    const tiedFirst = await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: started[2]! }, limit: 1 });
+    const tiedNext = await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: tiedFirst.watermark! }, limit: 1 });
+    expect([...tiedFirst.records, ...tiedNext.records].map((record) => record.id).sort()).toEqual(["run_4", "run_5"]);
     // A field the collection does not keep indexed is refused, not scanned.
     await expect(ops.engine.list("vendo_apps", { watermark: { field: "started_at", after: started[0]! } }))
       .rejects.toMatchObject({ code: "validation" });
