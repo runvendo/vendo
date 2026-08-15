@@ -222,6 +222,36 @@ describe("seed.reseed — the recorded instruction, replayed on the new baseline
     expect(versions.some(({ intent }) => /Update .* to the host's current version/.test(intent))).toBe(true);
   });
 
+  it("leaves the baseline where it was when the replay does not land", async () => {
+    const store = memoryStore();
+    const app = await buildingRuntime(store).runtime.seed.from(
+      { component: SLOT, instruction: "add a sparkline" },
+      owner,
+    );
+
+    // The host shipped a new version and the replay REFUSES. The edit door
+    // reports that in `failure` rather than throwing, so rebasing the baseline
+    // ahead of the replay left the OLD screen reading as the host's current
+    // version — silently, with a 200 and no drift warning.
+    const resynced = runtimeWith(store, {
+      model: basicLanguageModel(),
+      seedBaselines: [baseline("sha256:maple-NEW")],
+      screen: { assemble: async () => ({ kind: "unavailable", why: "I could not write that change" }) },
+    });
+
+    const answer = await resynced.seed.reseed({ appId: app.id }, owner);
+
+    expect(answer.seed?.baseline).toBe("sha256:maple-base");
+    const stored = await resynced.get(app.id, owner);
+    expect(stored?.seed?.baseline).toBe("sha256:maple-base");
+    expect(stored?.source?.[SCREEN_FILE]?.text).toContain("add a sparkline");
+    // So the warning still stands — and the retry is not refused as a conflict
+    // against a baseline this remix never actually reached.
+    expect(await resynced.seed.drift(app.id, owner)).toMatchObject({ reason: "baseline-changed" });
+    const versions = await resynced.history(app.id, owner).list();
+    expect(versions.some(({ intent }) => /host's current version/.test(intent))).toBe(false);
+  });
+
   it("refuses a re-seed that would change nothing, and one on an unseeded app", async () => {
     const store = memoryStore();
     const { runtime } = buildingRuntime(store);

@@ -118,10 +118,27 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
     // open, and the wrapper keeps the host component it was going to replace.
     expect(app.seed?.instruction).toBe("make the number blue");
     expect(screenOf(app)).toBeUndefined();
-    // "Not ready yet" is not "broken": the door answers the same not-found an
-    // app gives before its build lands, which the wire's build window turns
-    // into {kind:"pending"} — so a surface keeps asking instead of giving up.
-    await expect(runtime.open(app.id, ctx)).rejects.toMatchObject({ code: "not-found" });
+  });
+
+  it("marks a first edit that could not be written as FAILED, and lets the next tap retry", async () => {
+    const store = memoryStore();
+    const runtime = runtimeWith(store, {
+      model: basicLanguageModel(),
+      screen: { assemble: async () => ({ kind: "unavailable", why: "I could not write that change" }) },
+    });
+
+    const app = await runtime.seed.from({ component: SLOT, instruction: "make the number blue" }, ctx);
+
+    // The edit door RETURNS its common failure instead of throwing, so a
+    // gesture that only caught throws left a screenless app that polled as
+    // pending forever. The terminal marker is the same one a failed build
+    // leaves, and it is what the ✦ pill renders as "didn't load".
+    expect(await runtime.open(app.id, ctx)).toMatchObject({ kind: "failed", retryable: true });
+    // …and a failed build is not a remix the chrome can find, so the next tap
+    // mints a fresh app rather than deduping onto this dead one forever.
+    expect((await runtime.list(ctx)).map(({ id }) => id)).not.toContain(app.id);
+    const retried = await runtime.seed.from({ component: SLOT, instruction: "make the number blue" }, ctx);
+    expect(retried.id).not.toBe(app.id);
   });
 
   it("does not surface as a thrown gesture when the edit itself THROWS", async () => {
@@ -156,7 +173,8 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
 describe("06-apps §8 — gesture idempotency (one remix per component, per person)", () => {
   it("returns the existing app on a second gesture instead of minting a duplicate", async () => {
     const store = memoryStore();
-    const runtime = runtimeWith(store);
+    let runtime: AppsRuntime;
+    runtime = runtimeWith(store, { model: basicLanguageModel(), screen: colourScreen(() => runtime) });
 
     const first = await runtime.seed.from({ component: SLOT, instruction: "make it blue" }, ctx);
     const second = await runtime.seed.from({ component: SLOT, instruction: "make it green" }, ctx);
@@ -187,7 +205,8 @@ describe("06-apps §8 — gesture idempotency (one remix per component, per pers
 
   it("converges to ONE app when two gestures race past the pre-mint check", async () => {
     const store = memoryStore();
-    const runtime = runtimeWith(store);
+    let runtime: AppsRuntime;
+    runtime = runtimeWith(store, { model: basicLanguageModel(), screen: colourScreen(() => runtime) });
 
     const [left, right] = await Promise.all([
       runtime.seed.from({ component: SLOT, instruction: "make it blue" }, ctx),

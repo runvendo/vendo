@@ -15,6 +15,7 @@
  */
 import {
   VendoError,
+  safeErrorMessage,
   type AppId,
   type RunContext,
 } from "@vendoai/core";
@@ -123,14 +124,26 @@ const seedFrom = async (
   // Re-read the stored row: the edit below builds on the store's own JSON round
   // trip, never on the in-memory original.
   const stored = await deps.requireOwned(minted.id, ctx);
+  // A failed instruction never hands the caller an error over an app that
+  // already exists — it leaves the terminal marker every other failed build
+  // leaves. `open()` then answers `failed` instead of pending forever, and
+  // `list()` skips the row, so the next ✦ tap mints a fresh app instead of
+  // deduping onto this screenless one. `edit()` THROWS only when no model is
+  // wired and RETURNS its common failure, hence both arms.
+  let reason: string;
   try {
-    return (await deps.runtime().edit(stored.id, input.instruction, ctx)).app;
-  } catch {
-    // A failed instruction never hands the caller an error over an app that
-    // already exists: the provenance is stored, the host's original is still on
-    // the page, and the person can ask again.
-    return stored;
+    const edited = await deps.runtime().edit(stored.id, input.instruction, ctx);
+    if (edited.failure === undefined) return edited.app;
+    reason = (edited.issues ?? []).join("; ") || edited.failure.message;
+  } catch (error) {
+    reason = safeErrorMessage(error);
   }
+  const failed: AppDocument = {
+    ...stored,
+    buildFailed: { reason, retryable: true, at: new Date().toISOString(), prompt: input.instruction },
+  };
+  await deps.engine.put(APPS_COLLECTION, appRecordInput(failed, ctx.principal.subject, false, "seed"));
+  return failed;
 };
 
 /**
@@ -153,21 +166,25 @@ const reseed = async (
   if (baseline.hash === app.seed.baseline) {
     throw new VendoError("conflict", `${app.seed.component} has not changed since this app was created`);
   }
-  // The provenance moves FIRST, so the replay below is an edit on an app that
-  // already reads as being at the host's current version.
-  const rebased = { ...app, seed: { ...app.seed, baseline: baseline.hash } };
+  // The replay goes FIRST and the provenance moves only once it has landed:
+  // `edit()` reports the common failure in `failure` rather than throwing, so
+  // rebasing ahead of it left the OLD screen claiming the host's current
+  // version — no drift warning, and every retry refused as a conflict above.
+  const replayed = await deps.runtime().edit(app.id, app.seed.instruction, ctx);
+  if (replayed.failure !== undefined) return replayed.app;
+  const rebased = { ...replayed.app, seed: { ...app.seed, baseline: baseline.hash } };
   const version: VersionEntry = {
     at: new Date().toISOString(),
     intent: `Update ${app.seed.component} to the host's current version`,
     rung: deps.rungFor(rebased),
   };
-  await deps.persistEdit(app, rebased, version, ctx.principal.subject, { origin: "seed" });
+  const landed = await deps.persistEdit(replayed.app, rebased, version, ctx.principal.subject, { origin: "seed" });
   await deps.reportLifecycle("reseed", app.id, ctx, {
     component: app.seed.component,
     fromBaseline: app.seed.baseline,
     toBaseline: baseline.hash,
   });
-  return (await deps.runtime().edit(app.id, app.seed.instruction, ctx)).app;
+  return landed;
 };
 
 export const createSeedSurface = (deps: SeedSurfaceDeps): AppsRuntime["seed"] => ({

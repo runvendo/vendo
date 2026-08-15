@@ -71,12 +71,12 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
     expect(JSON.stringify(app)).not.toContain(source.trim());
 
     // The screen is what the first edit generates, tens of seconds after the
-    // row lands (here, never — no model). "Not ready yet" is not "broken", so
-    // the flagged open answers the build window's pending and the ✦ surface
-    // keeps asking, instead of a failure it can only give up on.
+    // row lands — here never, because there is no model. A build that cannot
+    // happen is TERMINAL, not pending: the flagged open answers with the
+    // reason, so the ✦ surface says "didn't load" instead of polling forever.
     const notReady = await vendo.handler(request("GET", `/apps/${app.id}/open?pending=1`));
     expect(notReady.status).toBe(200);
-    expect(await notReady.json()).toEqual({ kind: "pending" });
+    expect(await notReady.json()).toMatchObject({ kind: "failed", retryable: true });
 
     // The slot is a PLACEMENT row, readable on the slots' own route.
     const placements = await (await vendo.handler(request("GET", "/apps/placements?slots=dashboard"))).json();

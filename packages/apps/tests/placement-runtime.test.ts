@@ -16,6 +16,7 @@ import {
 } from "../src/server/persistence/placements.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -563,11 +564,18 @@ describe("a slot-targeted create claims its slot at mint (B1)", () => {
 describe("the empty-slot Remix gesture places its mint", () => {
   it("writes a placement row instead of a document placement", async () => {
     const store = memoryStore();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    // The gesture's first edit has to LAND: a remix whose build never happened
+    // carries the same terminal marker any other failed build does, and the
+    // slot reads it as "failed" rather than "ready".
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog: [],
+      model: basicLanguageModel(),
+      screen: scriptedScreenAssembler(() => runtime, () =>
+        "export default function Screen() {\n  return <strong>$1.2M</strong>;\n}\n"),
       seedBaselines: [{
         slot: "net-worth-card",
         source: "export default function NetWorthCard() { return <strong>$1.2M</strong>; }",

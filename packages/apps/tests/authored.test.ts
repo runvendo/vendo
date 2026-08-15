@@ -23,6 +23,7 @@ import {
 import {
   compileWire,
   type AppDocument,
+  type ScreenAssembler,
 } from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
 import { inMemoryBoxFiles } from "../src/server/testing/box-files.js";
@@ -145,6 +146,10 @@ const stand = (options: {
    *  replay does, this answer makes the rebase FAIL loudly rather than quietly
    *  reset the remix. */
   model?: boolean;
+  /** The edit door's builder. A `reseed` replays its recorded instruction
+   *  BEFORE it rebases, so the persistEdit window the two tests below race is
+   *  only reachable through a replay that lands. */
+  screen?: ScreenAssembler;
 } = {}): Stand => {
   const store = options.store ?? memoryStore();
   const guard = guardFixture(options.rules === undefined ? {} : { rules: options.rules });
@@ -203,6 +208,7 @@ const stand = (options: {
     ...(options.box === true ? { machine: { sandbox: fnBox(seen) } } : {}),
     ...(options.seedBaselines === undefined ? {} : { seedBaselines: [...options.seedBaselines] }),
     ...(options.model === true ? { model: scriptedLanguageModel("<Cannot>the model was never asked anything.</Cannot>") } : {}),
+    ...(options.screen === undefined ? {} : { screen: options.screen }),
   });
   return {
     runtime,
@@ -518,6 +524,20 @@ describe("the version a files-first save leaves", () => {
 });
 
 /**
+ * A replay that LANDS and writes nothing — what a `reseed` needs before it may
+ * rebase, and all it needs, since the two tests below are about the write the
+ * rebase itself makes. A builder that saved a screen would append that save's
+ * own version and the ledgers they assert would be measuring it.
+ */
+const REPLAYS_NOTHING: ScreenAssembler = { assemble: async () => ({ kind: "assembled" }) };
+
+/** The `vendo_apps` reads a re-seed makes before persistEdit's first concurrency
+ *  check: its own row read, the edit door's, the assembler brief's, and the one
+ *  the assembled edit reads back through, then persistEdit's row-subject read.
+ *  Skipping exactly these lands the concurrent write inside the append. */
+const READS_BEFORE_RESEED_PERSISTS = 5;
+
+/**
  * The cap is 50, and every append is speculative until the write it was appended
  * FOR lands (a refusal discards it). Pruning inside the append therefore charged
  * the app's OLDEST real version for a write that never happened: at the cap, one
@@ -583,11 +603,13 @@ describe("a refused write at the history cap", () => {
         exportable: false,
         capturedAt: "2026-08-03T00:00:00.000Z",
       }],
+      model: true,
+      screen: REPLAYS_NOTHING,
     });
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     // A seeded app sitting on the OLD baseline, so the re-seed below has real
-    // work to do. `reseed` is the deterministic, model-less persistEdit path
-    // the fork gesture used to be.
+    // work to do. `reseed` is the persistEdit path a stand can drive without a
+    // box or an armed automation.
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:host-old", instruction: "make it mine" },
@@ -597,7 +619,7 @@ describe("a refused write at the history cap", () => {
     const before = await fillToCap(store);
     arm(async () => {
       await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
-    }, 2);
+    }, READS_BEFORE_RESEED_PERSISTS);
 
     await expect(runtime.seed.reseed({ appId: APP_ID }, ctx())).rejects.toMatchObject({
       code: "conflict",
@@ -711,8 +733,8 @@ describe("a save computed over a row that changed under it", () => {
    * The same append-then-check bracket on the path that has a CALLER: every
    * `persistEdit` write. A refusal there threw before and left its version
    * behind too, and a version whose write never landed describes a state that
-   * never existed. The fork gesture is the one persistEdit path a model-less
-   * stand can drive (it is deterministic by design).
+   * never existed. The re-seed is the one persistEdit path a stand can drive
+   * without a box or an armed automation.
    */
   it("leaves no version behind when a RE-SEED is refused mid-write", async () => {
     const slot = "dashboard.header";
@@ -724,23 +746,24 @@ describe("a save computed over a row that changed under it", () => {
         exportable: false,
         capturedAt: "2026-08-03T00:00:00.000Z",
       }],
+      model: true,
+      screen: REPLAYS_NOTHING,
     });
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     // A seeded app sitting on the OLD baseline, so the re-seed below has real
-    // work to do. `reseed` is the deterministic, model-less persistEdit path
-    // the fork gesture used to be.
+    // work to do.
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:host-old", instruction: "make it mine" },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
     const stored = (await rowOf(store))!.doc!;
-    // Two reads pass (the gesture's own read and persistEdit's row-subject read),
-    // then the edit lands right after the first concurrency check — so the append
-    // runs and the second check refuses the write.
+    // The reads before persistEdit's own pass, then the edit lands right after
+    // its first concurrency check — so the append runs and the second check
+    // refuses the write.
     arm(async () => {
       await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
-    }, 2);
+    }, READS_BEFORE_RESEED_PERSISTS);
 
     await expect(runtime.seed.reseed({ appId: APP_ID }, ctx())).rejects.toMatchObject({
       code: "conflict",
