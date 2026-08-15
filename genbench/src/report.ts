@@ -278,6 +278,44 @@ const spendLine = (
     `<span>not counted in any contender's cost</span></p>`;
 };
 
+/**
+ * The run's floor score by shape — the only place on this page a contender's
+ * screens are added up at all. Every column below is a single screen, so a
+ * contender that holds the floor everywhere except charts says so here and
+ * nowhere else.
+ *
+ * The cells are the columns' OWN checks, summed: `checks` is the same function
+ * `column` scores with, so a cell can never disagree with the columns beneath it
+ * except by being their total. A shape nobody ran a case for is muted rather
+ * than scored, for the reason a vacuous `honestData` pass is — 0/0 painted green
+ * is a claim about a contender that was never put to the test.
+ */
+const shapeTable = (results: readonly CaseResult[]): string => {
+  if (results.length === 0) return "";
+  const shapes = [...new Set(results.map((result) => result.shape))].sort();
+  // First-seen, so the cells read left to right in the column order below.
+  const contenders = [...new Set(results.map((result) => result.contender))];
+  const cell = (rows: readonly CaseResult[]): string => {
+    const scored = rows.flatMap((row) => checks(row.floor));
+    if (scored.length === 0) return `<td class="muted">—</td>`;
+    const passed = scored.filter((check) => check.pass).length;
+    return `<td class="${passed === scored.length ? "ok" : "no"}">${passed}/${scored.length}</td>`;
+  };
+  return `<table class="shapes">
+  <thead><tr><th>shape</th><th>cases</th>${contenders
+    .map((contender) => `<th>${escape(contender)}</th>`)
+    .join("")}</tr></thead>
+  <tbody>${shapes
+    .map((shape) => {
+      const rows = results.filter((result) => result.shape === shape);
+      return `<tr><th>${escape(shape)}</th><td>${new Set(rows.map((row) => row.case)).size}</td>${contenders
+        .map((contender) => cell(rows.filter((row) => row.contender === contender)))
+        .join("")}</tr>`;
+    })
+    .join("")}</tbody>
+</table>`;
+};
+
 const spent = <T,>(results: readonly CaseResult[], of: (result: CaseResult) => T | undefined): T[] =>
   results.flatMap((result) => {
     const cost = of(result);
@@ -331,6 +369,16 @@ h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 /* The run's own overhead, tucked under the run line it belongs to rather than
    given a panel: it is a fact about the benchmark, not a result. */
 .meta.spend{margin-top:6px}
+/* ---- the run's scoreboard by shape: the columns' own checks, added up ---- */
+.shapes{width:100%;margin:20px 0 0;border-collapse:collapse;overflow:hidden;background:var(--card);
+  border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05)}
+.shapes th,.shapes td{padding:9px 16px;text-align:right;border-bottom:1px solid var(--line);
+  font:450 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+.shapes th:first-child{text-align:left}
+.shapes thead th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
+.shapes tbody th{font-weight:600;color:var(--ink)}
+.shapes tbody tr:last-child th,.shapes tbody tr:last-child td{border-bottom:0}
+.shapes .muted{color:var(--ter)}
 /* The prompt is the heading a person reads; the case id is a filename. */
 .case{margin-top:48px}
 .case-id{margin:0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -539,6 +587,7 @@ export async function writePreview(input: {
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
 ${spendLine("judge", "graded", spent(input.results, (result) => result.judged.cost))}
 ${spendLine("honesty check", "sorted and audited", spent(input.results, (result) => result.floor.honestData.cost))}
+${shapeTable(input.results)}
 ${sections.join("")}
 </div>
 <aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>
