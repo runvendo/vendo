@@ -20,6 +20,7 @@ export {
   useVendoDiscoverability,
   useVendoGreeting,
   useVendoTheme,
+  useVendoThemeOrDefault,
   useVendoTools,
   type ConnectorOption,
   type HostComponentsInput,

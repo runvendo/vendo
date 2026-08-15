@@ -298,9 +298,8 @@ export interface ComposerProps {
   errorMessage?: string;
   onStop: () => void;
   onVoice?: (() => void) | undefined;
-  /** The thread's jump-to-latest bar (.fl-newbar). Rendered inside the dock
-   * anchor so it seats flush on the bar's top border, tray-style — the bar
-   * and the banner read as one piece. */
+  /** The thread's jump-to-latest pill (.fl-newbar). Rendered inside the dock
+   * anchor, which is the box it floats above. */
   jumpBar?: import("react").ReactNode;
 }
 
@@ -341,9 +340,7 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           }}
         />
       ) : null}
-    {/* The jump-to-latest bar docks onto the bar edge here, BEFORE the form in
-        DOM order: both are positioned with auto z-index, so its entrance rises
-        from BEHIND the composer instead of sliding over its face. */}
+    {/* The jump-to-latest pill floats over the bar's top edge from here. */}
     {jumpBar}
     {/* Drag-drop lives on the whole thread surface (see
         VendoThread): the bar itself no longer owns enter/leave/drop. */}

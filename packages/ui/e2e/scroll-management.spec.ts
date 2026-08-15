@@ -8,9 +8,9 @@ import { openScenario } from "./helpers.js";
  * server's paced `[stream-long]` turn so every behavior is observed MID-stream
  * in a real browser: the list follows streamed content while the reader is at
  * the bottom, releases the moment they scroll up (no yanking), surfaces the
- * new-replies bar (lane pick 3A — count + snippet docked on the composer edge,
- * replacing the old .fl-jump circle) when unseen content lands, and re-sticks
- * when the bar is activated.
+ * new-replies pill (lane pick 3A — count + snippet, floating above the
+ * composer) when unseen content lands, and re-sticks when the pill is
+ * activated.
  */
 
 const msglist = (page: Page) => page.locator(".fl-msglist");

@@ -31,7 +31,7 @@ for (const scenario of chromeScenarios) {
       // Audit all three Surface-2 trust states, popover expanded.
       await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
       await page.locator(".fl-cite-btn").first().click();
-      await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
+      await expect(page.locator(".fl-cite-pop--open")).toBeVisible();
     }
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();

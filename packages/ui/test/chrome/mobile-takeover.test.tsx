@@ -223,10 +223,17 @@ describe("mobile takeover (ENG-228)", () => {
 
     it("raises icon buttons to the 44px touch-target floor on mobile/coarse pointers", () => {
       const block = mobileBlock();
-      for (const selector of [".fl-icon-btn", ".fl-jump", ".fl-overlay-close"]) {
+      for (const selector of [".fl-icon-btn", ".fl-overlay-close"]) {
         const rule = new RegExp(`${selector.replace(/[.$*+?()[\]{}|^\\]/g, "\\$&")}[^{]*\\{[^}]*width: 44px; height: 44px`);
         expect(block, `${selector} gets 44px targets`).toMatch(rule);
       }
+      // Repointed from `.fl-jump`, which this list named until the 3A pill
+      // replaced that circle: the class stopped being rendered, so the rule it
+      // asserted was a ghost and the floor it promised had quietly stopped
+      // existing. The pill is the live jump-to-latest affordance and inherits
+      // the obligation — as a TAP target only, since its rendered height is a
+      // deliberate design choice (see the pseudo-element in the sheet).
+      expect(block, ".fl-newbar gets a 44px tap target").toMatch(/\.fl-newbar::after[^{]*\{[^}]*height: 44px/);
     });
 
     it("floors the thread width so squeezed host columns stay readable", () => {

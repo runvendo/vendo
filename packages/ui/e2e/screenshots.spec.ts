@@ -32,7 +32,7 @@ for (const shot of shots) {
       await expect(page.locator("[data-vendo-knowledge-searched]")).toBeVisible();
       await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
       await page.locator(".fl-cite-btn").first().click();
-      await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
+      await expect(page.locator(".fl-cite-pop--open")).toBeVisible();
     }
     if (shot.scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
     if (shot.scenario === "appframe") await expect(page.frameLocator('section[aria-label="HTTP app frame same-origin"] iframe').getByText("Local HTTP app")).toBeVisible();

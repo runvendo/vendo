@@ -314,10 +314,9 @@ export function VendoThread({
     </div>
   ) : null;
 
-  // The jump affordance is a bar with a COUNT and a snippet ("2 new replies ·
-  // …") docked flush onto the composer's top edge (rendered inside its
-  // .fl-dock-anchor, tray-style, so the two read as one piece); at mobile
-  // widths the same element re-clothes as a bottom-center pill, in CSS alone.
+  // The jump affordance is a pill with a COUNT and a snippet ("2 new replies ·
+  // …") floating just above the composer (rendered inside its .fl-dock-anchor,
+  // which is what positions it there); pressing it travels to the latest turn.
   const jumpBar = scroll.showJump ? (
     <button
       type="button"

@@ -137,15 +137,18 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    than the floor never get horizontal overflow from us. */
 .fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0;
   min-width: min(280px, 100vw); }
-/* Positioned wrapper so the "jump to latest" button stays fixed to the viewport
-   of the list instead of scrolling away with the content. */
+/* Positioned wrapper so the drag-drop overlay covers the list's viewport
+   instead of scrolling away with the content. */
 .fl-msglist-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
   animation: fl-fade-in .18s ease; }
 .fl-msglist { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 10px; scrollbar-width: none;
-  /* Faint top fade hints at scrollable history above (the scrollbar is hidden). */
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px);
-  mask-image: linear-gradient(180deg, transparent 0, #000 14px); }
+  display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 26px; scrollbar-width: none;
+  /* Faint fades at both ends hint at content past the edge (the scrollbar is
+     hidden). The bottom cushion is deeper than its fade on purpose: the newest
+     streamed line rests 26px clear of the composer, so it is never clipped and
+     never dimmed — only the padding under it passes through the gradient. */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 16px), transparent 100%); }
 /* A single short turn rests just above the composer (auto collapses to 0 once the
    thread overflows, so long threads scroll normally) — no dead gap at the bottom. */
 .fl-msglist > :first-child { margin-top: auto; }
@@ -185,13 +188,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* Visually-hidden live region — announces only the settled assistant turn. */
 .fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-/* Jump to latest — appears only when scrolled up from the bottom. */
-.fl-jump { position: absolute; right: 14px; bottom: 12px; width: 34px; height: 34px; border-radius: 50%;
-  display: grid; place-items: center; cursor: pointer; color: var(--vendo-fg);
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-surface);
-  box-shadow: var(--vendo-shadow-float); animation: fl-fade-in .15s ease; transition: border-color .12s; }
-.fl-jump:hover { border-color: var(--vendo-accent); }
-.fl-jump:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 /* Connect dock (ENG-205): the in-bar connect-tools entry. The .fl-dock
    wrapper hosts the ripple; the anchor positions the liquid tray over the bar. */
 .fl-dock { position: relative; display: inline-flex; }
@@ -469,15 +465,21 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-beat { animation: fl-fade-in .24s ease both; }
 }
 .fl-beat-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Static (spec §8 build calm): the trailing "…" on the label carries the
-   working state; the orb is a position marker, not a heartbeat. */
+/* The live step's mark: a hairline ring at the tick's 12px, so a step settling
+   swaps one glyph for another without nudging the label. Gray — the work is
+   ours and unremarkable; only a step waiting on the READER takes the accent
+   (.fl-beat-ring below). \`fl-spin\` is defined with the tool chip further down. */
+.fl-beat-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  border: 1.5px solid var(--vendo-border); border-top-color: var(--vendo-fg-muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beat-spin { animation: fl-spin .7s linear infinite; }
+}
 .fl-beat-orb { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
   background: radial-gradient(circle at 35% 35%,
     color-mix(in srgb, var(--vendo-accent) 55%, var(--vendo-surface) 45%), var(--vendo-accent)); }
-/* …with ONE exception: a beat parked on the USER. Nothing on our side is moving
-   there, so the marker itself carries the progress — the launcher's
-   indeterminate arc (\`fl-ring-turn\`, defined with it), on the same element at
-   the orb's size. Waiting only; every other beat keeps its dot. */
+/* A beat parked on the USER. Nothing on our side is moving there, so the marker
+   itself carries the wait — the launcher's indeterminate arc (\`fl-ring-turn\`,
+   defined with it), on the orb at the orb's size. Waiting only. */
 .fl-beat-ring { background: conic-gradient(var(--vendo-accent) 0 22%, var(--vendo-border-strong) 22% 100%);
   mask: radial-gradient(closest-side, transparent 54%, #000 57%);
   -webkit-mask: radial-gradient(closest-side, transparent 54%, #000 57%); }
@@ -1076,7 +1078,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-typing span, .fl-skeleton-bar,
   .fl-act-pulse, .fl-connect-spin { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
-  .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
+  .fl-msglist-wrap, .fl-md--streaming > * { animation: none; opacity: 1; }
   /* The panel resize snaps. */
   .fl-overlay-panel { transition: none; }
 }
@@ -1127,11 +1129,17 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-composer textarea { font-size: 16px; }
   .fl-picker-search { font-size: 16px; }
   .fl-icon-btn { width: 44px; height: 44px; }
-  .fl-jump { width: 44px; height: 44px; }
   .fl-overlay-close { width: 44px; height: 44px; }
   .fl-overlay-new { right: 62px; }
   .fl-overlay-expand { right: 112px; }
   .fl-overlay-history { right: 162px; }
+  /* The new-replies pill keeps its designed height — a 44px-TALL pill would be
+     a different object in the corner of the eye. Only the tap target grows: a
+     centred pseudo-element claims the missing height, so the finger gets the
+     HIG floor and not a rendered pixel moves. It reaches up into the list's
+     bottom cushion and down to the composer's top border, both dead space. */
+  .fl-newbar::after { content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: 44px; transform: translateY(-50%); }
   .fl-invite-chip { width: 100%; min-height: 44px; justify-content: center; display: inline-flex; align-items: center; }
   .fl-invite-chips { align-self: stretch; align-items: stretch; max-width: none; padding: 0 8px; }
   /* The grown close button keeps its visual position under the notch. */
@@ -1465,54 +1473,32 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-att-retry { border: 0; background: none; padding: 0; cursor: pointer; font: inherit;
   color: var(--vendo-danger); text-decoration: underline; text-underline-offset: 2px; }
 
-/* 3A — the new-replies bar docks FLUSH onto the composer (replaces .fl-jump).
-   Rendered inside .fl-dock-anchor with the tray's geometry: the anchor's top
-   is always exactly 10px above the bar's border edge, so bottom:
-   calc(100% - 10px) seats the banner's bottom directly ON the composer's top
-   border and left/right 16px matches the bar's margins — same width, no gap.
-   The composer's top border is the ONE seam line (the banner keeps
-   border-bottom: 0), its bottom corners square into it, and the shadow is
-   flipped upward so nothing casts a second edge onto the bar below. */
-.fl-newbar { position: absolute; left: 16px; right: 16px; bottom: calc(100% - 10px); display: flex;
-  align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; cursor: pointer;
-  border: 1px solid var(--vendo-border); border-radius: 14px 14px 0 0; border-bottom: 0;
-  background: var(--vendo-surface);
-  font: 600 12px/1 var(--vendo-font); color: var(--vendo-fg);
-  box-shadow: 0 -1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
-    0 -10px 28px color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
-/* While the banner shows, the bar squares its top corners so the two read as
-   one card — same choreography as the connect tray above. */
-.fl-dock-anchor:has(.fl-newbar) .fl-composer { border-top-left-radius: 0; border-top-right-radius: 0; }
+/* 3A — the new-replies PILL: it floats a thumb's width above the composer
+   instead of docking onto it. The docked bar had to square the composer's top
+   corners to hide the seam, which read as a second, permanent bar growing out
+   of the input; a shadowed pill is plainly a transient notice over the thread,
+   and the composer keeps its own shape. One form at every width (this is the
+   phone/takeover clothing the bar already fell back to — now the only one).
+   Centered with auto margins, NOT translateX: the entrance animates transform
+   with fill:both and would overwrite a transform-based centering. z-index
+   lifts the pill and its shadow over the composer it is stacked behind. */
+.fl-newbar { position: absolute; left: 0; right: 0; bottom: calc(100% - 2px); z-index: 1;
+  margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 7px 14px; cursor: pointer; border: 1px solid var(--vendo-border); border-radius: 999px;
+  background: var(--vendo-surface); box-shadow: var(--vendo-shadow-float);
+  font: 600 11.5px/1 var(--vendo-font); color: var(--vendo-fg); }
 @media (prefers-reduced-motion: no-preference) {
-  .fl-newbar { animation: fl-newbar-rise .22s cubic-bezier(.22, 1, .36, 1) both; }
+  .fl-newbar { animation: fl-newbar-rise .2s cubic-bezier(.22, 1, .36, 1) both; }
 }
-@keyframes fl-newbar-rise { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes fl-newbar-rise { from { opacity: 0; transform: translateY(6px); } }
 .fl-newbar:hover { border-color: var(--vendo-accent); }
 .fl-newbar:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 .fl-newbar small { color: var(--vendo-fg-muted); font-weight: 500; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
-/* 6B — at phone widths (and in the takeover) the same affordance re-clothes as
-   a bottom-center thumb pill floating just above the bar (which un-squares its
-   corners: the :not(:has(.fl-tray)) guard keeps the tray's own squaring rule
-   intact); the snippet yields to the count. Centered via
-   auto margins, NOT translateX — the fl-newbar-rise entrance animates the
-   transform property with fill:both, which would overwrite a transform-based centering
-   and land the pill half off-center (AI-review catch). The two pill blocks
-   below are intentionally identical — keep them in lockstep (a media query and
-   a class selector can't share one declaration block in this sheet). */
-@media (max-width: 480px) {
-  .fl-newbar { left: 0; right: 0; bottom: calc(100% - 2px); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
-    border-radius: 999px; border-bottom: 1px solid var(--vendo-border);
-    padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow-float); }
-  .fl-newbar small { display: none; }
-  .fl-dock-anchor:has(.fl-newbar):not(:has(.fl-tray)) .fl-composer { border-top-left-radius: 14px; border-top-right-radius: 14px; }
-}
-/* mirror of the 480px pill block above — keep identical */
-.fl-takeover .fl-newbar { left: 0; right: 0; bottom: calc(100% - 2px); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
-  border-radius: 999px; border-bottom: 1px solid var(--vendo-border);
-  padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow-float); }
-.fl-takeover .fl-newbar small { display: none; }
-.fl-takeover .fl-dock-anchor:has(.fl-newbar):not(:has(.fl-tray)) .fl-composer { border-top-left-radius: 14px; border-top-right-radius: 14px; }
+  text-overflow: ellipsis; white-space: nowrap; max-width: 34ch; }
+/* On a phone the count is the whole message; the snippet would take the width
+   the pill is trying not to claim. */
+@media (max-width: 480px) { .fl-newbar small { display: none; } }
 
 /* 3D — fold-with-fade for restored huge bodies (user paste + markdown). */
 .fl-fold { position: relative; }
@@ -1759,7 +1745,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-cites-label { font-size: 10.5px; font-weight: 600; color: var(--vendo-fg-muted);
   text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .fl-cites-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.fl-cite { position: relative; display: inline-flex; }
+.fl-cite { display: inline-flex; }
 .fl-cite-btn { display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--vendo-border); background: var(--vendo-surface);
   border-radius: var(--vendo-radius-sm); padding: 4.5px 10px; font-family: inherit;
@@ -1769,15 +1755,20 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-cite-btn:hover, .fl-cite--open .fl-cite-btn { border-color: var(--vendo-border-strong); }
 /* The snippet popover. Open state is the ONE source of truth (turn-citations.tsx
    drives it from hover intent, click-to-pin, Escape and outside-click): the card
-   sits 8px below its chip, and a :hover rule cannot survive that gap — nor could
-   an open card be dismissed under a pointer still resting on the chip. The left
-   below is only the resting anchor: a chip near a narrow surface's right edge
-   gets an inline left from the same component, so nothing here may shorthand it. */
-.fl-cite-pop { position: absolute; left: 0; top: calc(100% + 8px); width: 292px; z-index: 5;
+   sits 8px from its chip, and a :hover rule cannot survive that gap — nor could
+   an open card be dismissed under a pointer still resting on the chip.
+   It is portaled to <body>, so top/left are written by that component against
+   the chip's live rect (and flipped above it near the bottom of the viewport) —
+   nothing here may shorthand either. The rung is above every panel and embed
+   layer and below every approval surface: the card is chrome ON the thread, and
+   an approval always outranks it. Its own box-sizing, because the portal root
+   is the one element the .vendo-root descendant reset cannot reach. */
+.fl-cite-pop { position: fixed; top: 0; left: 0; width: 292px; max-width: calc(100vw - 16px);
+  box-sizing: border-box; z-index: 2147483003;
   background: var(--vendo-surface); border: 1px solid var(--vendo-border); border-radius: 10px;
   box-shadow: var(--vendo-shadow-float); padding: 12px 14px; text-align: left; cursor: default;
   display: none; }
-.fl-cite--open .fl-cite-pop { display: block; }
+.fl-cite-pop--open { display: block; }
 .fl-cite-ptitle { font-size: 12.5px; font-weight: 600; color: var(--vendo-fg);
   display: flex; align-items: center; gap: 6px; }
 .fl-cite-ptitle svg { color: var(--vendo-fg-muted); }
@@ -1939,15 +1930,10 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
 /* The caption is the point of the rail: watching is optional. */
 .fl-beatrail-cap { margin: 12px 0 0; max-width: 42ch;
   font: 400 11.5px/1.45 var(--vendo-font); color: var(--vendo-fg-muted); }
-/* The rail's own register — the mockup's 6px pip. In the TRANSCRIPT the orb is
-   a static position marker (§8 build calm, where the card is the step and the
-   boot hairline is the one moving thing); a rail with no card and no hairline
-   has nothing else to say "still going", so here the pip carries the pulse. */
-.fl-beatrail .fl-beat-orb { width: 6px; height: 6px; background: var(--vendo-accent); }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-beatrail .fl-beat-working .fl-beat-orb { animation: fl-beat-pip 1.5s var(--vendo-ease) infinite; }
-}
-@keyframes fl-beat-pip { 50% { opacity: .35; transform: scale(.82); } }
+/* The rail had its own register — a 6px pip that pulsed, because the transcript
+   beat was a static dot and the rail needed something to say "still going".
+   The live beat is now the ring spinner everywhere, which is that sentence in
+   one vocabulary, so the rail keeps no mark of its own. */
 
 /* ================== card-shell surfaces (spec §16, §4) ==================
    Nothing here dresses or undresses a card: it sizes the shell inside each

@@ -56,6 +56,11 @@ export function useMessageWindow(messages: UIMessage[], listRef: React.RefObject
     entrance easing) never breaks the stick. */
 const BOTTOM_SLACK_PX = 32;
 
+/** How long the pill's smooth scroll owns the list. Comfortably longer than the
+    browser's own smooth-scroll animation, short enough that a reader who
+    changes their mind is back in charge before they notice. */
+const JUMP_MS = 600;
+
 /** Scroll management for the message list.
 
     Stick-to-bottom: while the reader is at the end, every content change
@@ -63,13 +68,18 @@ const BOTTOM_SLACK_PX = 32;
     content in view. The moment the reader scrolls up, the stick releases —
     streaming must never yank them — and it re-arms when they return to the
     bottom on their own. Jump-to-latest: when new content lands while the
-    reader is scrolled up, the stylesheet's .fl-jump affordance appears;
-    activating it scrolls to the latest turn and re-sticks. */
+    reader is scrolled up, the .fl-newbar pill appears; activating it scrolls
+    smoothly to the latest turn and re-sticks. */
 export function useStickToBottom(messages: UIMessage[], threadKey?: string, contentRevision?: unknown) {
   const listRef = useRef<HTMLDivElement>(null);
   // The stick is a ref, not state: it flips inside scroll/effect timing and
   // must be readable synchronously without re-render races.
   const stuckRef = useRef(true);
+  // Deadline, not a flag: a smooth scroll can be cancelled by the reader's own
+  // wheel and would then never report landing, so the window in which we
+  // ignore our own scrolling expires on its own instead of waiting on an event.
+  const jumpUntilRef = useRef(0);
+  const jumping = () => Date.now() < jumpUntilRef.current;
   const lastScrollHeightRef = useRef(0);
   const [unseen, setUnseen] = useState(false);
   // The jump affordance is a bar with a COUNT of turns that landed while
@@ -119,6 +129,10 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   const onScroll = () => {
     const node = listRef.current;
     if (!node) return;
+    // A smooth jump scrolls the list itself, one event per frame the whole way
+    // down. Those frames are not the reader moving: reading them as a scroll-up
+    // would release the stick before the jump ever landed.
+    if (jumping() && !atBottom(node)) return;
     // Both user scrolls and our own programmatic sticks land here; either way
     // the reader's actual position is the single source of truth.
     stuckRef.current = atBottom(node);
@@ -136,14 +150,22 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     setUnseen(false);
     setUnseenCount(0);
     seenLengthRef.current = messages.length;
-    node.scrollTop = node.scrollHeight;
+    // The one scroll a PERSON asked for, so it travels rather than teleports.
+    // (jsdom leaves scrollTo undefined; browsers always have it. Same guard the
+    // chrome's scrollIntoView call sites keep.)
+    jumpUntilRef.current = Date.now() + JUMP_MS;
+    if (typeof node.scrollTo === "function") node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    else node.scrollTop = node.scrollHeight;
   };
 
   // After every content change: stick if the reader is at the bottom, or flag
-  // the new content if they've scrolled away. Layout effects would run before
-  // paint, but streamed markdown re-renders arrive in bursts — post-paint is
-  // indistinguishable here and cheaper.
-  useEffect(() => {
+  // the new content if they've scrolled away. Pre-paint (a LAYOUT effect): the
+  // growth and the scroll that answers it then land in the same frame, so
+  // streamed text grows upward from a fixed baseline. Post-paint, the browser
+  // first painted every burst with the old scrollTop — one frame of the newest
+  // wrapped line below the fold, per chunk, which is the flicker that read as
+  // the thread jumping while it followed.
+  useLayoutEffect(() => {
     const node = listRef.current;
     if (!node) return;
     const previousHeight = lastScrollHeightRef.current;
@@ -162,7 +184,10 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     // taller bottom, and the previous-height test alone misreads the reader as
     // scrolled-up — releasing the stick and leaking a new-replies bar on the
     // next turn even though they never moved. At-current-bottom is at bottom.
-    if (stuckRef.current && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
+    // …and not while the pill's scroll is still travelling: mid-flight it is
+    // at neither bottom, and content landing then would release a stick the
+    // reader just asked for.
+    if (stuckRef.current && !jumping() && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
     if (stuckRef.current) {
       node.scrollTop = node.scrollHeight;
       seenLengthRef.current = messages.length;
@@ -190,7 +215,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
       const atPreviousBottom = previousHeight === 0
         || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
       lastScrollHeightRef.current = node.scrollHeight;
-      if (stuckRef.current && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
+      if (stuckRef.current && !jumping() && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
       if (stuckRef.current) node.scrollTop = node.scrollHeight;
     });
     for (const child of Array.from(node.children)) observer.observe(child);

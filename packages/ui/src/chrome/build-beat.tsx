@@ -420,10 +420,11 @@ function BeatLine({ mark, label }: { mark: BeatMark; label: string }) {
       ) : mark === "done" ? (
         <BeatTick />
       ) : (
-        // The orb is a static position marker (§8 build calm). A beat PARKED on
-        // the user is the one exception: nothing on our side moves, so the
-        // marker turns instead — the launcher's indeterminate arc, at orb size.
-        <span className={`fl-beat-orb${mark === "waiting" ? " fl-beat-ring" : ""}`} aria-hidden="true" />
+        // A step in flight turns: the hairline ring spinner, gray, sized to the
+        // tick it becomes so the swap costs no movement. A beat PARKED on the
+        // user keeps the accent arc at orb size — the same "still going" idea in
+        // the colour that means the wait is on their side, not ours.
+        <span className={mark === "waiting" ? "fl-beat-orb fl-beat-ring" : "fl-beat-spin"} aria-hidden="true" />
       )}
       <span className="fl-beat-label">{label}</span>
     </>

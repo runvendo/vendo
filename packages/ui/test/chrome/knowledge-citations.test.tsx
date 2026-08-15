@@ -86,9 +86,11 @@ describe("knowledge citations in the thread (Knowledge K1)", () => {
     expect(chip.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(chip);
     expect(chip.getAttribute("aria-expanded")).toBe("true");
-    const open = document.querySelector(".fl-cite--open");
-    expect(open).toBeTruthy();
-    const pop = open!.querySelector(".fl-cite-pop")!;
+    expect(document.querySelector(".fl-cite--open")).toBeTruthy();
+    // The card portals to <body>, so it is a sibling of the thread, not a
+    // descendant of its chip: its own --open class is what "shown" means.
+    const pop = document.querySelector(".fl-cite-pop--open")!;
+    expect(pop).toBeTruthy();
     expect(pop.querySelector(".fl-cite-psnippet")?.textContent).toContain("If you cancel mid-cycle we do not charge again.");
     expect(pop.querySelector(".fl-cite-porigin")?.textContent).toContain("docs/refunds.md");
     expect(pop.querySelector(".fl-cite-porigin")?.textContent).toContain("Product docs");

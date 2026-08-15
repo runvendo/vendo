@@ -87,8 +87,8 @@ export function MessageList({
         {quietLabel !== undefined ? <WorkingBeat label={quietLabel} /> : null}
       </div>
       {/* The jump affordance ("N new replies · …") renders inside the
-          composer's .fl-dock-anchor (see VendoThread), so it docks flush onto
-          the bar and the two read as one piece. */}
+          composer's .fl-dock-anchor (see VendoThread), which floats it just
+          above the bar. */}
     </div>
   );
 }

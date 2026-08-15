@@ -1,6 +1,9 @@
 import type { VendoKnowledgeCitation } from "@vendoai/core";
 import type { UIMessage } from "ai";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
+import { useVendoThemeOrDefault } from "../../context.js";
+import { themeCssVariables } from "../../theme.js";
 import { sourcesFor } from "./message-data.js";
 
 /** The popover opens 8px below its chip, and that gap belongs to neither: a pure
@@ -14,6 +17,9 @@ const GRACE_MS = 260;
 
 /** Room left between a clamped popover and the edge it was clamped against. */
 const EDGE_GUTTER = 8;
+
+/** The gap between a chip and its card, on whichever side the card lands. */
+const CARD_GAP = 8;
 
 /** Exactly one card is open at a time: whoever opens dismisses the incumbent,
     so travelling along a chip row never stacks two 292px cards on each other. */
@@ -34,14 +40,25 @@ const DocIcon = () => (
 
 /** One citation chip: the bordered pill that expands into the snippet popover
     with the origin byline. Hover opens it and a grace timer closes it (the card
-    lives inside .fl-cite, so arriving on it cancels the close whatever path the
-    pointer took); a click pins it, so it also survives the pointer leaving. */
+    carries the same enter/leave handlers as the chip, so arriving on it cancels
+    the close whatever path the pointer took); a click pins it, so it also
+    survives the pointer leaving.
+
+    The card is the one floating surface in the chrome that used to live INSIDE
+    the scrolling transcript, where an `overflow: auto` ancestor cropped it and
+    a turn's own entrance animation (which leaves a `filter` behind) made it a
+    containing block. It portals to <body> like every other floating surface
+    here, carrying its own theme boundary. */
 function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const card = useRef<HTMLSpanElement>(null);
   const grace = useRef<number | undefined>(undefined);
   const pinned = useRef(false);
+  // The card portals out of the ChromeRoot that themes it, so it carries the
+  // theme variables itself. The stylesheet is already injected — a citation
+  // only ever renders inside a thread, which is inside that same root.
+  const theme = useVendoThemeOrDefault();
 
   // Stale copies of this closer are harmless — closing a closed chip is a no-op,
   // which is why nothing has to track whose closer is parked in the module slot.
@@ -66,51 +83,65 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
     if (!pinned.current) grace.current = window.setTimeout(close, GRACE_MS);
   };
 
+  // The card is fixed to the viewport now, so it is placed against the chip's
+  // live rect: below it by default, flipped above when it would run off the
+  // bottom (the last turn's chips sit right above the composer, so that is the
+  // common case), and slid back inside whichever side edge it would cross.
+  const place = useCallback(() => {
+    if (card.current === null || wrap.current === null) return;
+    const chip = wrap.current.getBoundingClientRect();
+    const { offsetWidth: width, offsetHeight: height } = card.current;
+    const below = chip.bottom + CARD_GAP + height <= window.innerHeight - EDGE_GUTTER;
+    card.current.style.top =
+      `${below ? chip.bottom + CARD_GAP : Math.max(EDGE_GUTTER, chip.top - CARD_GAP - height)}px`;
+    card.current.style.left =
+      `${Math.max(EDGE_GUTTER, Math.min(chip.left, window.innerWidth - EDGE_GUTTER - width))}px`;
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (!(event.target instanceof Node) || !wrap.current?.contains(event.target)) close();
+      if (!(event.target instanceof Node)
+        || !(wrap.current?.contains(event.target) || card.current?.contains(event.target))) close();
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown);
+    // Capture, so the TRANSCRIPT's own scrolling reaches this too: a pinned
+    // card would otherwise sit where its chip used to be.
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
     };
-  }, [open, close]);
+  }, [open, close, place]);
 
   // A chip unmounted mid-hover must not fire its grace timer into a dead tree.
   useEffect(() => () => window.clearTimeout(grace.current), []);
 
-  // The card is anchored to its chip (left: 0) at a fixed width, so a chip near
-  // the right edge of a wrapped row pushes it outside a narrow surface. Measure
-  // on open and slide it back inside whatever is doing the clipping.
+  // Pre-paint, so the card is never seen at the previous chip's position.
   useLayoutEffect(() => {
-    if (!open || card.current === null || wrap.current === null) return;
-    const edge = (wrap.current.closest(".fl-msglist") ?? document.documentElement).getBoundingClientRect();
-    if (edge.width === 0) return;
-    const anchored = wrap.current.getBoundingClientRect().left;
-    const rightmost = edge.right - EDGE_GUTTER - card.current.offsetWidth;
-    const clamped = Math.max(edge.left + EDGE_GUTTER, Math.min(anchored, rightmost));
-    card.current.style.left = `${clamped - anchored}px`;
-  }, [open]);
+    if (open) place();
+  }, [open, place]);
+
+  // Touch has no hover to intend with, and a tap fires pointerenter before
+  // click — it would open the card and then immediately pin it.
+  const hover = {
+    onPointerEnter: (event: ReactPointerEvent) => {
+      if (event.pointerType !== "touch") show();
+    },
+    onPointerLeave: (event: ReactPointerEvent) => {
+      if (event.pointerType !== "touch") release();
+    },
+  };
 
   return (
-    <span
-      className={`fl-cite${open ? " fl-cite--open" : ""}`}
-      ref={wrap}
-      // Touch has no hover to intend with, and a tap fires pointerenter before
-      // click — it would open the card and then immediately pin it.
-      onPointerEnter={event => {
-        if (event.pointerType !== "touch") show();
-      }}
-      onPointerLeave={event => {
-        if (event.pointerType !== "touch") release();
-      }}
-    >
+    <span className={`fl-cite${open ? " fl-cite--open" : ""}`} ref={wrap} {...hover}>
       <button
         type="button"
         className="fl-cite-btn"
@@ -127,21 +158,31 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
         <DocIcon />
         {citation.title}
       </button>
-      <span className="fl-cite-pop" role="note" ref={card}>
-        <span className="fl-cite-ptitle"><DocIcon />{citation.title}</span>
-        <span className="fl-cite-psnippet">&ldquo;{citation.snippet}&rdquo;</span>
-        <span className="fl-cite-porigin">
-          {typeof citation.source === "string" && citation.source.length > 0 ? (
-            <>
-              <span className="fl-cite-psource">{citation.source}</span>
-              <span className="fl-cite-sep" aria-hidden="true">·</span>
-            </>
-          ) : null}
-          {kindLabel(citation.kind)}
-          <span className="fl-cite-sep" aria-hidden="true">·</span>
-          {citation.visibility}
-        </span>
-      </span>
+      {typeof document === "undefined" ? null : createPortal(
+        <span
+          className={`vendo-root fl-cite-pop${open ? " fl-cite-pop--open" : ""}`}
+          role="note"
+          ref={card}
+          data-vendo-ignore=""
+          style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)" } as CSSProperties}
+          {...hover}
+        >
+          <span className="fl-cite-ptitle"><DocIcon />{citation.title}</span>
+          <span className="fl-cite-psnippet">&ldquo;{citation.snippet}&rdquo;</span>
+          <span className="fl-cite-porigin">
+            {typeof citation.source === "string" && citation.source.length > 0 ? (
+              <>
+                <span className="fl-cite-psource">{citation.source}</span>
+                <span className="fl-cite-sep" aria-hidden="true">·</span>
+              </>
+            ) : null}
+            {kindLabel(citation.kind)}
+            <span className="fl-cite-sep" aria-hidden="true">·</span>
+            {citation.visibility}
+          </span>
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }
