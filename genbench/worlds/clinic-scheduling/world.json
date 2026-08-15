@@ -65,7 +65,7 @@
       "data": {
         "data": [
           { "id": "prv_okafor", "name": "Dr. Nia Okafor", "specialty": "Family Medicine", "room_id": "room_302", "appointments_today": 4, "booked_minutes": 115, "open_minutes": 50, "accepting_new": true },
-          { "id": "prv_lindqvist", "name": "Dr. Sven Lindqvist", "specialty": "Dermatology", "room_id": "room_305", "appointments_today": 3, "booked_minutes": 80, "open_minutes": 30, "accepting_new": false },
+          { "id": "prv_lindqvist", "name": "Dr. Sven Lindqvist", "specialty": "Dermatology", "room_id": "room_305", "appointments_today": 3, "booked_minutes": 80, "open_minutes": 30, "accepting_new": true },
           { "id": "prv_raman", "name": "Dr. Priya Raman", "specialty": "Pediatrics", "room_id": "room_307", "appointments_today": 2, "booked_minutes": 45, "open_minutes": 50, "accepting_new": true },
           { "id": "prv_tam", "name": "Alice Tam, NP", "specialty": "Walk-in Care", "room_id": "room_309", "appointments_today": 2, "booked_minutes": 40, "open_minutes": 60, "accepting_new": true }
         ]
@@ -133,6 +133,43 @@
         ]
       }
     },
+    "get_provider_settings": {
+      "does": "One provider's booking settings, one row per provider. The rows are the `data` array. `accepting_new` says whether the provider takes new patients at all, `default_visit_minutes` is the length a new booking gets unless it is changed, and `buffer_minutes` is the gap held after every visit.",
+      "takes": { "provider_id": "string" },
+      "data": {
+        "data": [
+          { "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "accepting_new": true, "default_visit_minutes": 20, "buffer_minutes": 5 },
+          { "provider_id": "prv_lindqvist", "provider": "Dr. Sven Lindqvist", "accepting_new": true, "default_visit_minutes": 30, "buffer_minutes": 10 },
+          { "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "accepting_new": true, "default_visit_minutes": 25, "buffer_minutes": 5 },
+          { "provider_id": "prv_tam", "provider": "Alice Tam, NP", "accepting_new": true, "default_visit_minutes": 20, "buffer_minutes": 0 }
+        ]
+      }
+    },
+    "get_patient_history": {
+      "does": "Every visit one patient has had at the clinic, most recent first. The rows are the `data` array. `status` is one of completed, no-show, cancelled. Today is 2026-08-12, so every visit listed has already happened.",
+      "takes": { "patient_id": "string" },
+      "data": {
+        "data": [
+          { "patient_id": "pt_ozawa", "date": "2026-04-28", "provider": "Dr. Nia Okafor", "visit_type": "medication review", "status": "completed" },
+          { "patient_id": "pt_ozawa", "date": "2026-02-17", "provider": "Dr. Nia Okafor", "visit_type": "annual physical", "status": "completed" },
+          { "patient_id": "pt_ozawa", "date": "2025-12-09", "provider": "Dr. Sven Lindqvist", "visit_type": "skin check", "status": "no-show" },
+          { "patient_id": "pt_ozawa", "date": "2025-11-25", "provider": "Dr. Nia Okafor", "visit_type": "blood pressure follow-up", "status": "completed" },
+          { "patient_id": "pt_ozawa", "date": "2025-09-30", "provider": "Dr. Nia Okafor", "visit_type": "new patient", "status": "completed" }
+        ]
+      }
+    },
+    "list_messages": {
+      "does": "The clinic's secure message threads with patients, most recently updated first. The rows are the `data` array. `last_message` is the newest message in the thread and `last_sender` is who wrote it, 'patient' or 'clinic'. `unread` is true exactly when the patient wrote last and nobody has answered.",
+      "data": {
+        "data": [
+          { "id": "thr_301", "patient_id": "pt_ndiaye", "patient": "Aisha Ndiaye", "last_message": "The rash has spread to my other arm since Monday — should I come in sooner?", "last_sender": "patient", "unread": true, "updated_at": "2026-08-12T10:52:00" },
+          { "id": "thr_302", "patient_id": "pt_bragg", "patient": "Owen Bragg", "last_message": "Any chance of moving my 1:40 to later in the week?", "last_sender": "patient", "unread": true, "updated_at": "2026-08-12T10:20:00" },
+          { "id": "thr_303", "patient_id": "pt_kowalski", "patient": "Tomas Kowalski", "last_message": "Still hoping for a morning with Dr. Okafor if anything opens up.", "last_sender": "patient", "unread": true, "updated_at": "2026-08-12T09:38:00" },
+          { "id": "thr_304", "patient_id": "pt_osei", "patient": "Amara Osei", "last_message": "Your physical is at 11:25 today — please arrive ten minutes early.", "last_sender": "clinic", "unread": false, "updated_at": "2026-08-12T08:47:00" },
+          { "id": "thr_305", "patient_id": "pt_iyer", "patient": "Sam Iyer", "last_message": "We sent your lab order over to Northbay this morning.", "last_sender": "clinic", "unread": false, "updated_at": "2026-08-12T08:05:00" }
+        ]
+      }
+    },
     "check_in_patient": {
       "does": "Check an arrived patient in. The appointment moves to checked-in and the patient joins the waiting-room queue.",
       "takes": { "appointment_id": "string" }
@@ -152,6 +189,14 @@
     "send_reminder": {
       "does": "Send one appointment reminder to the patient, by 'sms', 'email' or 'call'. Replying confirms the appointment.",
       "takes": { "appointment_id": "string", "channel": "string" }
+    },
+    "update_provider_settings": {
+      "does": "Change one provider's booking settings. It applies to appointments booked from now on; nothing already on the schedule moves.",
+      "takes": { "provider_id": "string", "accepting_new": "boolean", "default_visit_minutes": "number" }
+    },
+    "send_message": {
+      "does": "Reply to a patient on one of the clinic's secure message threads. The patient is notified and the thread stops being unread.",
+      "takes": { "thread_id": "string", "body": "string" }
     }
   }
 }
