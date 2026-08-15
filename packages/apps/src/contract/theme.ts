@@ -35,6 +35,76 @@ export const defaultVendoTheme: VendoTheme = {
   motion: "full",
 };
 
+/**
+ * The value the mapping fills in for each field the contract marks OPTIONAL, so
+ * one fixed set of variable names is emitted whatever vintage a host's theme
+ * file is — the door, the shim and the chrome compare that set against each
+ * other, and the shim's reverse read throws on a name outside it.
+ *
+ * Deliberately NOT folded into `defaultVendoTheme`: that object is the shape the
+ * MCP Apps shim reconstructs a theme back INTO, and a field the reader cannot
+ * recover would make a theme round-trip into a different theme. The Kit reads
+ * its own unthemed fallbacks off here, so there is still one copy of each value.
+ */
+export const themeDefaults = {
+  colors: {
+    success: "#1e7f53",
+    warning: "#d4a017",
+    // One step off the host's OWN surface rather than a literal, so a raised
+    // card sits the same distance from the page in any brand and either scheme.
+    surfaceRaised: "color-mix(in srgb, var(--vendo-color-surface) 92%, var(--vendo-color-text))",
+  },
+  typography: {
+    // System mono stack — no brand mono font ships.
+    monoFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+    weightNormal: "400",
+    weightEmphasis: "600",
+    letterSpacing: "-0.011em",
+    lineHeightBody: "1.5",
+    lineHeightHeading: "1.3",
+  },
+  // The chrome sheet's three elevations, lifted verbatim — its `--vendo-fg` is
+  // `var(--vendo-color-text, #14151a)`: the hover lift, the float every element
+  // resting above a surface paints, and the overlay panel.
+  shadow: {
+    small: "0 2px 10px color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent)",
+    medium: "0 1px 2px color-mix(in srgb, var(--vendo-color-text, #14151a) 5%, transparent), "
+      + "0 10px 28px color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent)",
+    large: "0 30px 80px color-mix(in srgb, var(--vendo-color-text, #14151a) 24%, transparent)",
+  },
+  borderWidth: "1px",
+  motionDuration: "160ms",
+  motionEasing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+};
+
+/**
+ * Series lightness ladder, as `[lightness, chroma scale]` in OKLCH. Absolute
+ * lightness rather than `calc(l ± n)` because relative steps collapse for a
+ * near-black or near-white accent (the default accent is #111111), and chroma
+ * eases off as lightness rises so the pale steps stay in sRGB gamut. Ordered so
+ * neighbouring series sit far apart on the ladder.
+ */
+const chartRamp: ReadonlyArray<readonly [number, number]> = [
+  [0.7, 0.9],
+  [0.46, 1],
+  [0.86, 0.5],
+  [0.54, 1],
+  [0.78, 0.65],
+  [0.38, 1],
+  [0.62, 0.95],
+];
+
+/**
+ * The categorical chart palette an accent implies: the accent itself, then
+ * shades and tints that keep its hue (`h`) exactly — so a chart is brand-native
+ * on any host and never invents a color. `chartPalette` replaces the first six
+ * entry by entry (`--vendo-chart-1..6`); the Kit derives its own fallbacks from
+ * this same function, so the two sides cannot drift.
+ */
+export function chartPaletteFor(accent: string): string[] {
+  return [accent, ...chartRamp.map(([l, c]) => `oklch(from ${accent} ${l} calc(c * ${c}) h)`)];
+}
+
 /** Deep-merge a partial theme over a base (one level per contract group). */
 export function resolveTheme(base: VendoTheme, override?: Partial<VendoTheme>): VendoTheme {
   if (!override) return base;
@@ -42,8 +112,13 @@ export function resolveTheme(base: VendoTheme, override?: Partial<VendoTheme>): 
     colors: { ...base.colors, ...override.colors },
     typography: { ...base.typography, ...override.typography },
     radius: { ...base.radius, ...override.radius },
+    shadow: override.shadow ?? base.shadow,
     density: override.density ?? base.density,
     motion: override.motion ?? base.motion,
+    borderWidth: override.borderWidth ?? base.borderWidth,
+    chartPalette: override.chartPalette ?? base.chartPalette,
+    motionDuration: override.motionDuration ?? base.motionDuration,
+    motionEasing: override.motionEasing ?? base.motionEasing,
   };
 }
 
@@ -101,29 +176,51 @@ export function densityCssVariables(density: VendoTheme["density"]): Record<stri
   };
 }
 
-/** Flatten a theme into `--vendo-*` CSS custom properties. */
+/** Flatten a theme into `--vendo-*` CSS custom properties. Each optional field
+ * resolves against `themeDefaults`, so the NAMES emitted are one fixed set whatever
+ * vintage the host's theme file is — the door, the shim and the chrome compare
+ * that set, and the shim's reverse read rejects a name outside it. */
 export function themeCssVariables(theme: VendoTheme): Record<string, string> {
   const vars: Record<string, string> = {};
-  for (const [key, value] of Object.entries(theme.colors)) vars[`--vendo-color-${kebab(key)}`] = value;
+  const type = { ...themeDefaults.typography, ...theme.typography };
+  for (const [key, value] of Object.entries({ ...themeDefaults.colors, ...theme.colors })) {
+    vars[`--vendo-color-${kebab(key)}`] = value;
+  }
   vars["--vendo-color-scheme"] = colorSchemeForBackground(theme.colors.background);
-  vars["--vendo-font-family"] = theme.typography.fontFamily;
-  if (theme.typography.headingFamily) vars["--vendo-heading-family"] = theme.typography.headingFamily;
-  vars["--vendo-font-size"] = theme.typography.baseSize;
+  vars["--vendo-font-family"] = type.fontFamily;
+  if (type.headingFamily) vars["--vendo-heading-family"] = type.headingFamily;
+  vars["--vendo-mono-family"] = type.monoFamily;
+  vars["--vendo-font-size"] = type.baseSize;
   // baseSize is the anchor of the chrome type scale: the sheet derives every
   // text size (and a couple of spacing steps) from --vendo-base-size via calc,
   // so a host's baseSize scales the whole surface instead of only the root font.
-  vars["--vendo-base-size"] = theme.typography.baseSize;
+  vars["--vendo-base-size"] = type.baseSize;
+  vars["--vendo-font-weight-normal"] = type.weightNormal;
+  vars["--vendo-font-weight-emphasis"] = type.weightEmphasis;
+  vars["--vendo-letter-spacing"] = type.letterSpacing;
+  vars["--vendo-line-height"] = type.lineHeightBody;
+  vars["--vendo-line-height-heading"] = type.lineHeightHeading;
   for (const [key, value] of Object.entries(theme.radius)) vars[`--vendo-radius-${kebab(key)}`] = value;
+  for (const [key, value] of Object.entries(theme.shadow ?? themeDefaults.shadow)) {
+    vars[`--vendo-shadow-${kebab(key)}`] = value;
+  }
+  vars["--vendo-border-width"] = theme.borderWidth ?? themeDefaults.borderWidth;
+  for (const [i, color] of chartPaletteFor(theme.colors.accent).slice(0, 6).entries()) {
+    vars[`--vendo-chart-${i + 1}`] = theme.chartPalette?.[i] ?? color;
+  }
   Object.assign(vars, densityCssVariables(theme.density));
   vars["--vendo-motion"] = theme.motion;
-  vars["--vendo-motion-duration"] = theme.motion === "reduced" ? "0ms" : "160ms";
-  vars["--vendo-motion-easing"] = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+  vars["--vendo-motion-duration"] = theme.motion === "reduced"
+    ? "0ms"
+    : theme.motionDuration ?? themeDefaults.motionDuration;
+  vars["--vendo-motion-easing"] = theme.motionEasing ?? themeDefaults.motionEasing;
   return vars;
 }
 
 /**
  * Every variable name the mapping can emit — READ OFF the mapping (a probe
- * theme that sets the one optional field), never hand-listed, so a consumer
+ * theme that sets headingFamily, the one field emitted only when a host declares
+ * it; the rest resolve against the defaults), never hand-listed, so a consumer
  * that teaches or reads these names cannot fall behind a rename. Two do:
  * the generation prompt's brand-token line and the MCP Apps shim's reverse
  * read.

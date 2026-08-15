@@ -62,14 +62,36 @@ export interface VendoTheme {
     accentText: string;
     danger: string;
     border: string;
+    success?: string;
+    warning?: string;
+    surfaceRaised?: string;
   };
-  typography: { fontFamily: string; headingFamily?: string; baseSize: string };
+  typography: {
+    fontFamily: string;
+    headingFamily?: string;
+    monoFamily?: string;
+    baseSize: string;
+    weightNormal?: string;
+    weightEmphasis?: string;
+    letterSpacing?: string;
+    lineHeightBody?: string;
+    lineHeightHeading?: string;
+  };
   radius: { small: string; medium: string; large: string };
+  shadow?: { small: string; medium: string; large: string };
   density: "compact" | "comfortable";
   motion: "full" | "reduced";
+  borderWidth?: string;
+  /** Categorical chart series, in order; beyond six a chart reads the ramp
+   * `chartPaletteFor` derives from the accent. */
+  chartPalette?: string[];
+  motionDuration?: string;
+  motionEasing?: string;
 }
 
-/** 01-core §14 */
+/** 01-core §14. Every field added after the original eight-color shape is
+ * OPTIONAL: a failed parse discards the WHOLE theme file, so a required addition
+ * would blank the brand of every host whose theme predates it. */
 export const vendoThemeSchema = z.object({
   colors: z.object({
     background: z.string(),
@@ -80,19 +102,37 @@ export const vendoThemeSchema = z.object({
     accentText: z.string(),
     danger: z.string(),
     border: z.string(),
+    success: z.string().optional(),
+    warning: z.string().optional(),
+    surfaceRaised: z.string().optional(),
   }).passthrough(),
   typography: z.object({
     fontFamily: z.string(),
     headingFamily: z.string().optional(),
+    monoFamily: z.string().optional(),
     baseSize: z.string(),
+    weightNormal: z.string().optional(),
+    weightEmphasis: z.string().optional(),
+    letterSpacing: z.string().optional(),
+    lineHeightBody: z.string().optional(),
+    lineHeightHeading: z.string().optional(),
   }).passthrough(),
   radius: z.object({
     small: z.string(),
     medium: z.string(),
     large: z.string(),
   }).passthrough(),
+  shadow: z.object({
+    small: z.string(),
+    medium: z.string(),
+    large: z.string(),
+  }).passthrough().optional(),
   density: z.enum(["compact", "comfortable"]),
   motion: z.enum(["full", "reduced"]),
+  borderWidth: z.string().optional(),
+  chartPalette: z.array(z.string()).max(6).optional(),
+  motionDuration: z.string().optional(),
+  motionEasing: z.string().optional(),
 }).passthrough() satisfies z.ZodType<VendoTheme>;
 
 /** AGENT-1 — 03 §3 item (4): the model-facing summary of the host components a

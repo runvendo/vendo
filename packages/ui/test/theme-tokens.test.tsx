@@ -12,8 +12,9 @@ import { describe, expect, it } from "vitest";
 import type {
   VendoTheme,
 } from "@vendoai/apps/contract";
+import { chartPaletteFor, themeDefaults } from "@vendoai/apps/contract";
 import { defaultVendoTheme, themeCssVariables } from "../src/theme.js";
-import { t } from "../src/kit/tokens.js";
+import { chartSeries, control, t } from "../src/kit/tokens.js";
 import { VendoProvider, createVendoClient } from "../src/index.js";
 import { ChromeRoot } from "../src/chrome/chrome-root.js";
 import { CHROME_CSS } from "../src/chrome/chrome-css.js";
@@ -159,6 +160,51 @@ describe("Kit token fallbacks — an unthemed Kit is the default theme, exactly"
     expect(t.radiusSmall).toBe(`var(--vendo-radius-small, ${defaultVendoTheme.radius.small})`);
     expect(t.radiusMedium).toBe(`var(--vendo-radius-medium, ${defaultVendoTheme.radius.medium})`);
     expect(t.radiusLarge).toBe(`var(--vendo-radius-large, ${defaultVendoTheme.radius.large})`);
+  });
+});
+
+describe("theme v2 — the Kit and the chrome read the new contract tokens", () => {
+  // success/warning were Kit-only literals: the contract now carries them, so
+  // the fallback is read off the default theme like every other color.
+  it("success and warning fall back to the contract's own defaults", () => {
+    expect(t.success).toBe(`var(--vendo-color-success, ${themeDefaults.colors.success})`);
+    expect(t.warning).toBe(`var(--vendo-color-warning, ${themeDefaults.colors.warning})`);
+  });
+
+  it("a Kit control's edge is one host-set border width", () => {
+    expect(control.border).toBe(`var(--vendo-border-width, 1px) solid ${t.border}`);
+  });
+
+  it("chartSeries reads the host's --vendo-chart-N, falling back to the ramp unchanged", () => {
+    const ramp = chartPaletteFor(t.accent);
+    // The six a host's chartPalette can replace…
+    expect(chartSeries.slice(0, 6)).toEqual(
+      ramp.slice(0, 6).map((color, i) => `var(--vendo-chart-${i + 1}, ${color})`),
+    );
+    // …and the tail, which is the ramp and nothing else.
+    expect(chartSeries.slice(6)).toEqual(ramp.slice(6));
+    // The ramp is the one it always was: the accent token, then hue-locked steps.
+    expect(ramp[0]).toBe(t.accent);
+    expect(ramp[1]).toBe(`oklch(from ${t.accent} 0.7 calc(c * 0.9) h)`);
+    expect(chartSeries).toHaveLength(8);
+  });
+
+  it("an explicit host border color now beats the derived hairline", () => {
+    expect(CHROME_CSS).toContain("--vendo-border: var(--vendo-color-border, color-mix(");
+  });
+
+  it("the ok/warn family is anchored on the contract's success/warning", () => {
+    expect(CHROME_CSS).toContain("--vendo-ok: var(--vendo-color-success,");
+    for (const token of ["--vendo-warn", "--vendo-warn-text", "--vendo-warn-edge", "--vendo-warn-tint"]) {
+      expect(CHROME_CSS).toContain(`${token}: var(--vendo-color-warning,`);
+    }
+  });
+
+  it("the chrome's motion derives from the theme's motion pair, one knob for both", () => {
+    expect(CHROME_CSS).toContain("--vendo-duration: calc(var(--vendo-motion-duration, 160ms) *");
+    expect(CHROME_CSS).toContain("--vendo-ease: var(--vendo-motion-easing,");
+    // reduced motion emits 0ms, so the chrome's own timings collapse with it.
+    expect(themeCssVariables({ ...defaultVendoTheme, motion: "reduced" })["--vendo-motion-duration"]).toBe("0ms");
   });
 });
 

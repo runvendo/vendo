@@ -28,11 +28,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   --vendo-surface: var(--vendo-color-surface, #fffdf9);
   --vendo-accent: var(--vendo-color-accent, #1b1c22);
   --vendo-accent-fg: var(--vendo-color-accent-text, #ffffff);
-  /* S1 hairline: felt, not seen. Derived as ~8% of the foreground rather than
-     read from colors.border, so the edge always sits the same distance from the
-     text in ANY brand and in both schemes (a host's literal border color could
-     not do that). colors.border is consequently unread by the chrome. */
-  --vendo-border: color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent);
+  /* S1 hairline: felt, not seen. The DEFAULT is ~8% of the foreground rather
+     than a fixed value, so an unstated edge sits the same distance from the
+     text in ANY brand and in both schemes — but a host that states
+     colors.border now wins, instead of having it silently ignored. */
+  --vendo-border: var(--vendo-color-border, color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent));
   --vendo-radius: var(--vendo-radius-medium, 12px);
   /* radius.small / radius.large were emitted by the theme but never read — only
      medium drove the whole sheet. Bridge them so small chrome (chips, badges,
@@ -72,30 +72,34 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
      launcher pill and the overlay panel. Every resting surface is flat. */
   --vendo-shadow-float: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
     0 10px 28px color-mix(in srgb, var(--vendo-fg) 8%, transparent);
-  /* M2 motion (spec §6): one unhurried duration + one iOS-sheet easing. Named
-     apart from the theme's --vendo-motion-* pair, which themeCssVariables emits
-     INLINE on the root (an inline custom property beats this rule) and which
-     drives the generated-view layer's 160ms hover transitions. */
-  --vendo-duration: 380ms;
-  --vendo-ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --vendo-ok: #2e9e6b;
+  /* M2 motion (spec §6): one unhurried duration + one iOS-sheet easing, both
+     DERIVED from the theme's --vendo-motion-* pair so a host turns one knob and
+     the chrome and the generated-view layer move together. The chrome keeps its
+     slower feel through the multiplier (380ms at the default 160ms), and
+     motion: "reduced" — which emits 0ms — collapses it to nothing. */
+  --vendo-duration: calc(var(--vendo-motion-duration, 160ms) * 2.375);
+  --vendo-ease: var(--vendo-motion-easing, cubic-bezier(0.32, 0.72, 0, 1));
+  --vendo-ok: var(--vendo-color-success, #2e9e6b);
   --vendo-danger: var(--vendo-color-danger, #b0392b);
   --vendo-danger-bg: color-mix(in srgb, var(--vendo-danger) 8%, var(--vendo-surface));
   --vendo-danger-border: color-mix(in srgb, var(--vendo-danger) 32%, var(--vendo-border));
-  /* Warn / ceremony amber family — single source. The amber was scattered as
-     raw literals across ceremony buttons, voice consent and the a11y hardening
-     block; collapsed here so it is themeable from one place. Every dark-side
-     value and the AA-safe on-fill text (ENG-226) are preserved exactly. */
-  --vendo-warn: light-dark(#7a5000, #d9a94e);
-  --vendo-warn-text: light-dark(#8a6a2e, #d9a94e);
-  --vendo-warn-edge: #b3822f;
+  /* Warn / ceremony amber family — single source, now anchored on the contract's
+     colors.warning: every member that IS the tone reads it, and the two
+     contrast-tuned pairs below (on-fill, fill-critical) stay put. The amber was
+     scattered as raw literals across ceremony buttons, voice consent and the
+     a11y hardening block; collapsed here so it is themeable from one place.
+     Every dark-side value and the AA-safe on-fill text (ENG-226) are preserved
+     exactly as the fallbacks. */
+  --vendo-warn: var(--vendo-color-warning, light-dark(#7a5000, #d9a94e));
+  --vendo-warn-text: var(--vendo-color-warning, light-dark(#8a6a2e, #d9a94e));
+  --vendo-warn-edge: var(--vendo-color-warning, #b3822f);
   /* DEAD: the .fl-btn-critical alias it existed for is gone
      (critical IS ceremony now) and nothing reads this token. It survives only
      because test/theme-tokens.test.tsx pins its amber literal to exactly one
      definition — retire that pin and this token together. */
   --vendo-warn-fill-critical: light-dark(#a97e2f, #b3822f);
   --vendo-warn-on-fill: light-dark(#fff, #14151a);
-  --vendo-warn-tint: #f0b429;
+  --vendo-warn-tint: var(--vendo-color-warning, #f0b429);
   --vendo-warn-bg: color-mix(in srgb, var(--vendo-warn-tint) 12%, var(--vendo-surface));
   --vendo-warn-border: color-mix(in srgb, var(--vendo-warn-tint) 32%, var(--vendo-border));
   /* Neutral user bubble (ENG-227): raw accent painting the whole user turn read

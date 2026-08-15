@@ -4,8 +4,10 @@
  * on any host and never hardcodes Vendo's own brand (W2 §The Kit, axis 1).
  */
 import {
+  chartPaletteFor,
   defaultVendoTheme,
   densityCssVariables,
+  themeDefaults,
 } from "@vendoai/apps/contract";
 import type { CSSProperties } from "react";
 
@@ -23,12 +25,8 @@ export const t = {
   accent: `var(--vendo-color-accent, ${d.colors.accent})`,
   accentText: `var(--vendo-color-accent-text, ${d.colors.accentText})`,
   danger: `var(--vendo-color-danger, ${d.colors.danger})`,
-  // Two tones the host contract does not carry a color for. They are still
-  // TOKENS — a host that wants its own green and amber sets these two variables
-  // — and the fallback is the green/amber the pill palette already used as a
-  // literal, so nothing changes for a host that sets nothing.
-  success: "var(--vendo-color-success, #1e7f53)",
-  warning: "var(--vendo-color-warning, #d4a017)",
+  success: `var(--vendo-color-success, ${themeDefaults.colors.success})`,
+  warning: `var(--vendo-color-warning, ${themeDefaults.colors.warning})`,
   border: `var(--vendo-color-border, ${d.colors.border})`,
   radiusSmall: `var(--vendo-radius-small, ${d.radius.small})`,
   radiusMedium: `var(--vendo-radius-medium, ${d.radius.medium})`,
@@ -58,7 +56,7 @@ export const control: CSSProperties = {
   boxSizing: "border-box",
   minWidth: 0,
   minHeight: "var(--vendo-density-control-height, 38px)",
-  border: `1px solid ${t.border}`,
+  border: `var(--vendo-border-width, ${themeDefaults.borderWidth}) solid ${t.border}`,
   borderRadius: t.radiusSmall,
   background: t.surface,
   padding: "var(--vendo-density-control-padding, 9px 12px)",
@@ -139,33 +137,15 @@ export function densityVars(density: KitDensity | undefined): CSSProperties {
 }
 
 /**
- * Series lightness ladder, as `[lightness, chroma scale]` in OKLCH. Absolute
- * lightness rather than `calc(l ± n)` because relative steps collapse for a
- * near-black or near-white accent (the default accent is #111111), and chroma
- * eases off as lightness rises so the pale steps stay in sRGB gamut. Ordered so
- * neighbouring series sit far apart on the ladder.
- */
-const seriesRamp: ReadonlyArray<readonly [number, number]> = [
-  [0.7, 0.9],
-  [0.46, 1],
-  [0.86, 0.5],
-  [0.54, 1],
-  [0.78, 0.65],
-  [0.38, 1],
-  [0.62, 0.95],
-];
-
-/**
- * Recharts-friendly categorical palette: the host accent, then shades and tints
- * of it that keep its hue (`h`) exactly — so a chart is brand-native on any host
- * and never invents a color. The old cycle reached for `muted` and a
+ * Recharts-friendly categorical palette: the host's own `chartPalette`, which
+ * the theme emits as `--vendo-chart-1..6`, falling back entry by entry to the
+ * accent-derived ramp `chartPaletteFor` builds — so a chart is brand-native on
+ * any host and never invents a color. The old cycle reached for `muted` and a
  * danger×accent mix, which read as slate-purple and rust wedges on a green
  * brand.
  */
-export const chartSeries = [
-  t.accent,
-  ...seriesRamp.map(([l, c]) => `oklch(from ${t.accent} ${l} calc(c * ${c}) h)`),
-] as const;
+export const chartSeries: readonly string[] = chartPaletteFor(t.accent)
+  .map((color, i) => (i < 6 ? `var(--vendo-chart-${i + 1}, ${color})` : color));
 
 /** Nth series color, wrapping. */
 export function seriesColor(index: number): string {
