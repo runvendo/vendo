@@ -392,7 +392,7 @@ describe("Remixable — the wrapper fork gesture + in-place mount", () => {
     expect(managePill().getAttribute("aria-busy")).toBeNull();
     // The host's own markup is still the only thing on the page.
     expect(screen.getByText("Blue Bottle")).toBeTruthy();
-    expect(forkIframe()).toBeNull();
+    expect(forkSurface()).toBeNull();
     fireEvent.click(managePill());
     expect(screen.getByRole("status").textContent).toBe("the model ran out of quota");
   });
