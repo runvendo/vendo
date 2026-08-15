@@ -14,11 +14,11 @@ const SIZES = { sm: 24, md: 32, lg: 44 } as const;
 
 /** Adjacent avatars in a Row overlap into a stack. It is a SIBLING relation, so
  *  no inline style can say it; React hoists and de-duplicates this one rule by
- *  `href`, however many avatars ask for it. The pull cancels the Row's own
- *  default gap first, then bites into the disc. */
+ *  `href`, however many avatars ask for it. The pull cancels the gap the Row
+ *  resolved — default or explicit — first, then bites into the disc. */
 const STACK_CSS =
   '[data-kit="Row"] > [data-kit="Avatar"] + [data-kit="Avatar"]' +
-  "{margin-inline-start:calc(var(--vendo-density-content-gap, 10px) * -1 - var(--vendo-kit-avatar-size) * 0.32)}";
+  "{margin-inline-start:calc(var(--vendo-kit-row-gap, 10px) * -1 - var(--vendo-kit-avatar-size) * 0.32)}";
 
 /** First letter of each of the first two words — "Ada Lovelace" → "AL". */
 function initials(name: string): string {

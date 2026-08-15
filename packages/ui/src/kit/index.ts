@@ -36,6 +36,10 @@ export { DataTable, type DataTableColumn, type DataTableProps } from "./data/dat
 export { CardList, type CardField, type CardListProps } from "./data/card-list.js";
 export { Stat, type StatProps } from "./data/stat.js";
 export { Badge, type BadgeProps } from "./data/badge.js";
+export { KeyValue, type KeyValueItem, type KeyValueProps } from "./data/key-value.js";
+export { Timeline, type TimelineProps } from "./data/timeline.js";
+export { Avatar, type AvatarProps } from "./data/avatar.js";
+export { CodeBlock, type CodeBlockProps } from "./data/code-block.js";
 export { LineChart, type LineChartProps, type SeriesInput } from "./charts/line.js";
 export { BarChart, type BarChartProps } from "./charts/bar.js";
 export { DonutChart, type DonutChartProps } from "./charts/donut.js";
@@ -59,6 +63,8 @@ export { Disclaimer, type DisclaimerProps } from "./forms/disclaimer.js";
 export { Tabs, type TabsProps, type TabItem } from "./feedback/tabs.js";
 export { Callout, type CalloutProps, type CalloutTone } from "./feedback/callout.js";
 export { Accordion, type AccordionProps, type AccordionItem } from "./feedback/accordion.js";
+export { EmptyState, type EmptyStateProps } from "./feedback/empty-state.js";
+export { Steps, type StepsProps, type StepItem } from "./feedback/steps.js";
 
 // The theme the Kit's tokens read, and the embedded-surface runtime that applies
 // it — reachable from a generated app's box, where `@vendoai/ui`'s root barrel

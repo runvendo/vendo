@@ -52,18 +52,23 @@ const justifyMap: Record<string, CSSProperties["justifyContent"]> = {
 
 /** Horizontal flow. */
 export function Row({ gap, align = "center", justify = "start", wrap = true, density, children }: PropsWithChildren<RowProps>) {
+  // Avatar's stack rule pulls its sibling back by the row's gap, and a numeric
+  // `gap` never reaches the density variable — so the row publishes whichever
+  // gap it resolved.
+  const resolved = gapVar(gap);
   return (
     <div
       data-kit="Row"
       style={{
         ...densityVars(density),
+        "--vendo-kit-row-gap": resolved,
         display: "flex",
         flexDirection: "row",
         flexWrap: wrap ? "wrap" : "nowrap",
         alignItems: alignMap[align],
         justifyContent: justifyMap[justify],
-        gap: gapVar(gap),
-      }}
+        gap: resolved,
+      } as CSSProperties}
     >
       {children}
     </div>
