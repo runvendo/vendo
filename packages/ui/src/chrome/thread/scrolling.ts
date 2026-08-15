@@ -167,13 +167,15 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   };
 
   // After every content change: stick if the reader is at the bottom, or flag
-  // the new content if they've scrolled away. Pre-paint (a LAYOUT effect): the
-  // growth and the scroll that answers it then land in the same frame, so
-  // streamed text grows upward from a fixed baseline. Post-paint, the browser
-  // first painted every burst with the old scrollTop — one frame of the newest
-  // wrapped line below the fold, per chunk, which is the flicker that read as
-  // the thread jumping while it followed.
-  useLayoutEffect(() => {
+  // the new content if they've scrolled away.
+  //
+  // ONE function for both callers below, because they share a growth baseline:
+  // whichever of them sees a growth first CONSUMES it. With the flagging here
+  // alone, mid-stream growth always reached the size observer first — streamed
+  // text is revealed between deltas, changing no message identity — so by the
+  // time this ran the baseline was already current, `grew` was false, and a
+  // reader who scrolled away mid-reply got no pill at all.
+  const follow = () => {
     const node = listRef.current;
     if (!node) return;
     const previousHeight = lastScrollHeightRef.current;
@@ -203,10 +205,21 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
       setUnseen(true);
       setUnseenCount(Math.max(1, messages.length - seenLengthRef.current));
     }
-    // contentRevision — turn-actions (Edit/Regenerate) mount below the
-    // last turn the instant a stream settles (busy→false), adding height AFTER
-    // the message-driven stick already ran. Re-run so the reader stays pinned.
-  }, [messages, contentRevision]);
+  };
+  // The observer below outlives the render that built it, so it must call the
+  // LATEST follow — an older closure counts turns against a stale length.
+  const followRef = useRef(follow);
+  followRef.current = follow;
+
+  // Pre-paint (a LAYOUT effect): the growth and the scroll that answers it land
+  // in the same frame, so streamed text grows upward from a fixed baseline.
+  // Post-paint, the browser first painted every burst with the old scrollTop —
+  // one frame of the newest wrapped line below the fold, per chunk, which is
+  // the flicker that read as the thread jumping while it followed.
+  // contentRevision — turn-actions (Edit/Regenerate) mount below the last turn
+  // the instant a stream settles (busy→false), adding height AFTER the
+  // message-driven stick already ran. Re-run so the reader stays pinned.
+  useLayoutEffect(follow, [messages, contentRevision]);
 
   // A generated view mounts and grows AFTER the messages effect runs (the jail
   // renders async; logos/images load late), and streamed text is REVEALED at
@@ -224,16 +237,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   useEffect(() => {
     const node = listRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      // Same async-scroll-event guard as the messages effect: only re-stick a
-      // reader who was actually at the bottom of the previous content.
-      const previousHeight = lastScrollHeightRef.current;
-      const atPreviousBottom = previousHeight === 0
-        || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
-      lastScrollHeightRef.current = node.scrollHeight;
-      if (stuckRef.current && !jumping() && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
-      if (stuckRef.current) node.scrollTop = node.scrollHeight;
-    });
+    const observer = new ResizeObserver(() => followRef.current());
     for (const child of Array.from(node.children)) observer.observe(child);
     const mutation = new MutationObserver(() => {
       for (const child of Array.from(node.children)) observer.observe(child);

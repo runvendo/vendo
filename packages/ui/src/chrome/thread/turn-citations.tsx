@@ -164,6 +164,12 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
           role="note"
           ref={card}
           data-vendo-ignore=""
+          // A body child is in `inertBehind`'s blast radius: the overlay panel
+          // and the approval modal inert everything that is not theirs, and an
+          // inert card keeps its pixels but leaves the hit stack entirely — no
+          // wheel, and no pointerenter to cancel the dismiss grace. This says
+          // the card belongs above the modal layer, as the toast region does.
+          data-vendo-portal="citation"
           style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)" } as CSSProperties}
           {...hover}
         >
