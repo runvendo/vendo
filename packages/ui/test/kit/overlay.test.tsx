@@ -78,6 +78,18 @@ describe("the Kit stylesheet", () => {
     for (const declaration of declarations) expect(declaration, declaration).toContain("var(--vendo-");
   });
 
+  it("marks every state declaration that has to beat an inline style", () => {
+    // A brick paints its resting look in a `style` attribute, and an inline
+    // declaration outranks every stylesheet rule for that property no matter
+    // its specificity. Browser-checked: the first cut of this sheet changed
+    // NOTHING on hover, and only the focus ring worked, because `outline` is
+    // the one property no brick sets inline. jsdom resolves no cascade, so
+    // this is the closest a unit test gets to that lesson.
+    for (const declaration of KIT_CSS.match(/(background|border-color|color):[^;}]+/gu) ?? []) {
+      expect(declaration, declaration).toContain("!important");
+    }
+  });
+
   it("stands down the press movement under reduced motion", () => {
     expect(KIT_CSS).toContain('[data-vendo-motion="reduced"] [data-kit="Button"]:active { transform: none; }');
   });

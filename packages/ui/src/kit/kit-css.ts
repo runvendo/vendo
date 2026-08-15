@@ -21,15 +21,27 @@ const FIELDS = ['[data-kit="Input"]', '[data-kit="Textarea"]', '[data-kit="Selec
 const hover = FIELDS.map((f) => `${f}:hover:not(:disabled)`).join(", ");
 const focus = FIELDS.map((f) => `${f}:focus-visible`).join(", ");
 
+/**
+ * `!important` is not a shortcut here, it is the only thing that works.
+ *
+ * A brick paints its resting look in a `style` attribute, and an inline
+ * declaration outranks every rule in every stylesheet for that same property —
+ * specificity never enters into it. So a hover rule that sets `background` the
+ * normal way loses to the inline `background` 100% of the time; browser-checked,
+ * the first cut of this file changed nothing at all on hover while the focus
+ * ring worked, because `outline` is the one property no brick sets inline.
+ * Marking only the STATE declarations is what lets the resting style stay where
+ * it has to be — inline, where the jail can see it.
+ */
 export const KIT_CSS = `
-[data-kit="Button"][data-variant="primary"]:not([disabled]):hover { background: color-mix(in srgb, ${t.accent} 88%, ${t.text}); }
-[data-kit="Button"][data-variant="danger"]:not([disabled]):hover { background: color-mix(in srgb, ${t.danger} 88%, ${t.text}); }
-[data-kit="Button"][data-variant="secondary"]:not([disabled]):hover { background: ${t.surfaceRaised}; border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}); }
+[data-kit="Button"][data-variant="primary"]:not([disabled]):hover { background: color-mix(in srgb, ${t.accent} 88%, ${t.text}) !important; }
+[data-kit="Button"][data-variant="danger"]:not([disabled]):hover { background: color-mix(in srgb, ${t.danger} 88%, ${t.text}) !important; }
+[data-kit="Button"][data-variant="secondary"]:not([disabled]):hover { background: ${t.surfaceRaised} !important; border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}) !important; }
 [data-kit="Button"]:not([disabled]):active { transform: translateY(0.5px); }
-${hover} { border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}); }
-[data-kit-close]:hover { background: ${t.surfaceRaised}; color: ${t.text}; }
+${hover} { border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}) !important; }
+[data-kit-close]:hover { background: ${t.surfaceRaised} !important; color: ${t.text} !important; }
 [data-kit]:focus-visible, [data-kit-close]:focus-visible { outline: 2px solid ${t.accent}; outline-offset: 2px; }
-${focus} { border-color: ${t.accent}; outline-offset: 0; }
+${focus} { border-color: ${t.accent} !important; outline-offset: 0; }
 [data-vendo-motion="reduced"] [data-kit="Button"]:active { transform: none; }
 `.trim();
 
