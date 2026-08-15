@@ -128,5 +128,75 @@
     ],
     "tags": ["action"],
     "shape": "detail"
+  },
+  {
+    "id": "portal-self-serve",
+    "lane": "screen",
+    "prompt": "Turn on self-serve so subscribers can cancel and switch plans themselves without emailing us, and pick which parts of that are open.",
+    "pass": [
+      "shows all five portal switches — cancel, plan switch, payment method, promo codes, invoice history — each with its current state",
+      "shows cancel, plan switch and promo codes as currently off, and payment method and invoice history as currently on",
+      "each switch can be flipped on this screen and there is one control that saves them together",
+      "saving calls update_portal_settings with allow_cancel and allow_plan_switch on"
+    ],
+    "tags": ["action"],
+    "shape": "settings",
+    "source": "Stripe Billing — Customer portal config, docs.stripe.com/customer-management/configure-portal"
+  },
+  {
+    "id": "plan-side-by-side",
+    "lane": "screen",
+    "prompt": "Lay our plans side by side so I can see what each one costs and includes before I pitch Northwind Labs an upgrade.",
+    "pass": [
+      "puts the plans beside each other as columns to compare, not stacked as one row per plan",
+      "the prices read $29.00, $99.00 and $299.00 a month and $3,228.00 a year",
+      "shows each plan's included API calls, from 25,000 on Starter to 500,000 on Scale",
+      "does not offer the archived Pro (legacy) plan as something to pitch"
+    ],
+    "tags": ["display"],
+    "shape": "comparison",
+    "source": "Chargebee — No-code pricing table, chargebee.com/docs/billing/2.0/hosted-capabilities/pricing-table"
+  },
+  {
+    "id": "new-subscription-wizard",
+    "lane": "screen",
+    "prompt": "Walk me through putting a brand-new customer on a plan — pick the plan, add a coupon if they've earned one, and confirm before it goes live.",
+    "pass": [
+      "asks one step at a time — the plan, then the coupon, then a confirmation — rather than one long form",
+      "the plan step offers the four active plans with their prices and not the archived Pro (legacy)",
+      "the coupon step can be left empty and does not offer the expired LAUNCH50",
+      "the last step restates the chosen plan before anything runs, and confirming calls create_subscription with the customer, the chosen plan id and the coupon code"
+    ],
+    "tags": ["action"],
+    "shape": "wizard",
+    "source": "Chargebee — Hosted checkout page, chargebee.com/subscription-management"
+  },
+  {
+    "id": "dunning-email-log",
+    "lane": "screen",
+    "prompt": "Show me every payment-failure email we've sent this month, most recent first, so I know who's already been nagged.",
+    "pass": [
+      "lists each email as its own dated entry rather than one row per invoice",
+      "the newest entry is Tessellate Studio's fourth attempt on Aug 11 and the oldest is its first on Aug 1",
+      "every entry shows who it went to, the invoice number and which attempt it followed",
+      "shows four emails to Tessellate Studio and two to Ovid & Sons"
+    ],
+    "tags": ["display"],
+    "shape": "list-feed",
+    "source": "Stripe Billing — Dunning email log, stripe.com/billing/features"
+  },
+  {
+    "id": "team-permissions",
+    "lane": "screen",
+    "prompt": "Show me who on the team can void invoices or cancel subscriptions, and let me change what each person is allowed to touch.",
+    "pass": [
+      "shows all four team members with their role and, for each, whether they can void invoices, cancel subscriptions and apply coupons",
+      "shows Ines Barlowe as the only one who can cancel subscriptions and Tobias Renn as able to do none of the three",
+      "offers a way to move a person to another role from this screen",
+      "changing someone's role calls update_team_role with that person's member id and the new role"
+    ],
+    "tags": ["action"],
+    "shape": "permissions",
+    "source": "Chargebee — Users & roles, chargebee.com/docs/billing/2.0/site-configuration/account_settings"
   }
 ]

@@ -159,6 +159,42 @@
         ]
       }
     },
+    "list_dunning_emails": {
+      "does": "Every payment-failure email the account has sent, newest first. The rows are the `data` array. `attempt` is which dunning retry the email followed, and `invoice_number` is the invoice it was about.",
+      "data": {
+        "data": [
+          { "id": "dem_408", "sent_on": "2026-08-11", "customer": "Tessellate Studio", "invoice_number": "INV-2044", "attempt": 4, "subject": "Final notice — we still cannot charge your card" },
+          { "id": "dem_407", "sent_on": "2026-08-10", "customer": "Ovid & Sons", "invoice_number": "INV-2050", "attempt": 2, "subject": "Second attempt on INV-2050 failed" },
+          { "id": "dem_406", "sent_on": "2026-08-08", "customer": "Tessellate Studio", "invoice_number": "INV-2044", "attempt": 3, "subject": "Third attempt on INV-2044 failed" },
+          { "id": "dem_405", "sent_on": "2026-08-07", "customer": "Ovid & Sons", "invoice_number": "INV-2050", "attempt": 1, "subject": "We could not charge your card for INV-2050" },
+          { "id": "dem_404", "sent_on": "2026-08-04", "customer": "Tessellate Studio", "invoice_number": "INV-2044", "attempt": 2, "subject": "Second attempt on INV-2044 failed" },
+          { "id": "dem_403", "sent_on": "2026-08-01", "customer": "Tessellate Studio", "invoice_number": "INV-2044", "attempt": 1, "subject": "We could not charge your card for INV-2044" }
+        ]
+      }
+    },
+    "get_portal_settings": {
+      "does": "What subscribers may do for themselves in the billing portal, as the single row of the `data` array. Every field is a switch that is on or off: `allow_cancel` lets a subscriber cancel without emailing us, `allow_plan_switch` lets them move between plans, `allow_payment_method_update` lets them replace the card on file, `allow_promo_codes` lets them redeem a coupon, and `show_invoice_history` lets them read past invoices.",
+      "data": {
+        "data": [{
+          "allow_cancel": false,
+          "allow_plan_switch": false,
+          "allow_payment_method_update": true,
+          "allow_promo_codes": false,
+          "show_invoice_history": true
+        }]
+      }
+    },
+    "list_team_members": {
+      "does": "Everyone with access to the account, most powerful first. The rows are the `data` array. `role` is one of admin, billing, support or viewer, and the three `can_` fields are what that person's role currently allows.",
+      "data": {
+        "data": [
+          { "id": "mem_01", "name": "Ines Barlowe", "email": "ines@cadenza.example", "role": "admin", "can_void_invoices": true, "can_cancel_subscriptions": true, "can_apply_coupons": true },
+          { "id": "mem_02", "name": "Devraj Oyelaran", "email": "devraj@cadenza.example", "role": "billing", "can_void_invoices": true, "can_cancel_subscriptions": false, "can_apply_coupons": true },
+          { "id": "mem_03", "name": "Marta Kestrel", "email": "marta@cadenza.example", "role": "support", "can_void_invoices": false, "can_cancel_subscriptions": false, "can_apply_coupons": true },
+          { "id": "mem_04", "name": "Tobias Renn", "email": "tobias@cadenza.example", "role": "viewer", "can_void_invoices": false, "can_cancel_subscriptions": false, "can_apply_coupons": false }
+        ]
+      }
+    },
     "retry_payment": {
       "does": "Charge an invoice's card on file again right now, outside the dunning retry schedule. It does not consume one of the scheduled attempts.",
       "takes": { "invoice_id": "string" }
@@ -174,6 +210,24 @@
     "apply_coupon": {
       "does": "Attach an active coupon to a subscription. It discounts every invoice from the next one onwards.",
       "takes": { "subscription_id": "string", "coupon_code": "string" }
+    },
+    "create_subscription": {
+      "does": "Put a new customer on a plan, billing from today. `coupon_code` is \"\" when no coupon is being applied, and only an active coupon can be used.",
+      "takes": { "customer": "string", "plan_id": "string", "coupon_code": "string" }
+    },
+    "update_portal_settings": {
+      "does": "Save the portal's self-serve switches. Every switch is sent, on or off, so what is saved is exactly what the screen shows.",
+      "takes": {
+        "allow_cancel": "boolean",
+        "allow_plan_switch": "boolean",
+        "allow_payment_method_update": "boolean",
+        "allow_promo_codes": "boolean",
+        "show_invoice_history": "boolean"
+      }
+    },
+    "update_team_role": {
+      "does": "Move a team member to another role, which resets what they may do to that role's defaults. `role` is one of admin, billing, support or viewer.",
+      "takes": { "member_id": "string", "role": "string" }
     }
   }
 }
