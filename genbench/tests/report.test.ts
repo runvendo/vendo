@@ -53,6 +53,7 @@ const resultFor = (contender: string, testCase: string, prompt: string, judged: 
   case: testCase,
   prompt,
   lane: "screen",
+  shape: "table",
   floor: PASSING,
   timing: { firstRenderMs: 1_000, settledMs: 2_000 },
   cost: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 }, usd: 0.01 },

@@ -15,7 +15,7 @@ import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./r
 import { tally, writePreview } from "./report.js";
 import { TriageContract } from "./triage.js";
 import { vendoDriver } from "./vendo.js";
-import { caseHash, loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
+import { caseHash, loadCases, loadWorld, worldForCase, type Case, type CaseShape, type Lane, type World } from "./world.js";
 
 export type HarnessId = "vendo" | "diy" | "claude-code";
 
@@ -72,6 +72,7 @@ export interface CaseResult {
   readonly case: string;
   readonly prompt: string;
   readonly lane: Lane;
+  readonly shape: CaseShape;
   readonly floor: FloorResult;
   readonly timing: { firstRenderMs?: number; settledMs: number };
   readonly cost: { usage: UsageTotals; usd: number };
@@ -374,6 +375,7 @@ async function main(argv: readonly string[]): Promise<number> {
       case: testCase.id,
       prompt: testCase.prompt,
       lane: testCase.lane,
+      shape: testCase.shape,
       floor,
       timing: {
         ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),

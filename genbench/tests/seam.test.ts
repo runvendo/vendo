@@ -194,6 +194,7 @@ const resultFor = (contender: string): CaseResult => ({
   case: "pending-transfers",
   prompt: "Show my pending transfers.",
   lane: "screen",
+  shape: "table",
   floor: PASSING,
   timing: { settledMs: 1 },
   cost: { usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }, usd: 0 },
