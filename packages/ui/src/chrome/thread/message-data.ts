@@ -275,12 +275,22 @@ export function toolCallParked(part: UIMessage["parts"][number]): boolean {
   return isToolUIPart(part) && part.state === "approval-requested";
 }
 
-/** A failed or declined call is CONTENT, not progress: its beat stays visible
-    after the turn folds, and it never counts as a thing the agent did.
+/** A call the HOST's OWN RULES refused — a policy block, a usage limit — which
+    settles carrying the `blocked` outcome (harnesses/src/wire.ts). Distinct from
+    `output-denied`, which the ai-SDK reserves for an approval the PERSON turned
+    down: nobody asked them about this one, so the beat must not say they said
+    no. */
+export function toolCallRefused(part: UIMessage["parts"][number]): boolean {
+  return isToolUIPart(part) && part.state === "output-available"
+    && (part.output as { status?: unknown } | null | undefined)?.status === "blocked";
+}
+
+/** A failed, refused or declined call is CONTENT, not progress: its beat stays
+    visible after the turn folds, and it never counts as a thing the agent did.
     Everything else is progress, and progress folds into the summary. */
 export function toolCallIsContent(part: UIMessage["parts"][number]): boolean {
   return isToolUIPart(part)
-    && (part.state === "output-error" || part.state === "output-denied");
+    && (part.state === "output-error" || part.state === "output-denied" || toolCallRefused(part));
 }
 
 /** The app-building call this turn's app card is narrating. The card bar

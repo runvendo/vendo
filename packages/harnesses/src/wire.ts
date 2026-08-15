@@ -182,11 +182,20 @@ export function writeMirror(writer: Writer, event: MirrorEvent): void {
 }
 
 function writeToolResult(writer: Writer, toolCallId: string, result: ToolResult, outcome?: ToolOutcome): void {
-  // `connect-required` is a typed outcome the SCREEN acts on, not a failure: the
-  // shipped ConnectCard reads it off the native part (the ai-SDK path puts it
-  // there too). Collapsing it into the model-facing `denied` leaves the user a
-  // silent dead end with nothing to click.
-  if (outcome?.status === "connect-required") {
+  // A typed outcome the SCREEN acts on, not a failure: the shipped ConnectCard
+  // reads `connect-required` off the native part (the ai-SDK path puts it there
+  // too). Collapsing it into the model-facing `denied` leaves the user a silent
+  // dead end with nothing to click.
+  //
+  // A `blocked` refusal — a guard rule, a limit, an unattended tool — rides the
+  // same shape, because `output-denied` below is not ours to borrow for it: the
+  // ai-SDK means "the person answered no to an approval" by that state, so its
+  // provider conversion takes the refusal's words off the part's `approval` and
+  // the `tool-output-denied` chunk carries no room for any. A refusal nobody was
+  // asked about has no approval, so every turn AFTER one in the thread died
+  // rebuilding that history, and the chrome told the person they had declined
+  // something they were never shown. The typed outcome keeps the reason instead.
+  if (outcome?.status === "connect-required" || outcome?.status === "blocked") {
     writer.write({ type: "tool-output-available", toolCallId, output: outcome, dynamic: true });
     return;
   }
@@ -195,8 +204,10 @@ function writeToolResult(writer: Writer, toolCallId: string, result: ToolResult,
     return;
   }
   if (result.status === "denied") {
-    // `denied` is its own affordance: a refusal is not a failure, and rendering it
-    // as one would tell the user something went wrong when nothing did.
+    // What is left is the APPROVAL flow's own no (§1.4) — the state the ai-SDK
+    // reserves for it, on a part whose approval was raised beside it. A refusal
+    // is not a failure, and rendering it as one would tell the user something
+    // went wrong when nothing did.
     writer.write({ type: "tool-output-denied", toolCallId });
     return;
   }
