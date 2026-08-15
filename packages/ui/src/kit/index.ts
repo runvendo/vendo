@@ -58,6 +58,13 @@ export { Select, type SelectProps, type SelectOption } from "./forms/select.js";
 export { DatePicker, type DatePickerProps } from "./forms/date-picker.js";
 export { Textarea, type TextareaProps } from "./forms/textarea.js";
 export { Checkbox, type CheckboxProps } from "./forms/checkbox.js";
+export { Switch, type SwitchProps } from "./forms/switch.js";
+export { Radio, type RadioProps } from "./forms/radio.js";
+export { Slider, type SliderProps } from "./forms/slider.js";
+export { SegmentedControl, type SegmentedControlProps, type SegmentItem } from "./forms/segmented-control.js";
+export { Combobox, type ComboboxProps } from "./forms/combobox.js";
+export { DateRange, type DateRangeProps } from "./forms/date-range.js";
+export { choices, type KitChoice, type KitOption } from "./forms/options.js";
 export { Form, type FormProps } from "./forms/form.js";
 export { Disclaimer, type DisclaimerProps } from "./forms/disclaimer.js";
 export { Tabs, type TabsProps, type TabItem } from "./feedback/tabs.js";
@@ -65,6 +72,8 @@ export { Callout, type CalloutProps, type CalloutTone } from "./feedback/callout
 export { Accordion, type AccordionProps, type AccordionItem } from "./feedback/accordion.js";
 export { EmptyState, type EmptyStateProps } from "./feedback/empty-state.js";
 export { Steps, type StepsProps, type StepItem } from "./feedback/steps.js";
+export { Menu, type MenuProps, type MenuItem } from "./feedback/menu.js";
+export { Tooltip, type TooltipProps } from "./feedback/tooltip.js";
 
 // The theme the Kit's tokens read, and the embedded-surface runtime that applies
 // it — reachable from a generated app's box, where `@vendoai/ui`'s root barrel

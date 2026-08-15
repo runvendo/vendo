@@ -1,4 +1,5 @@
 /** Progress — a themed progress bar; ratio or value/max (W2 §The Kit). */
+import { Progress as Base } from "@base-ui/react/progress";
 import { isRenderableNumber } from "../format.js";
 import { useFieldValue } from "../row.js";
 import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitTone } from "../tokens.js";
@@ -36,11 +37,12 @@ export function Progress({ value, max, label, showValue = false, tone, field }: 
           {showValue ? <span style={{ ...numeric, fontWeight: t.weightEmphasis }}>{pct}</span> : null}
         </div>
       )}
-      <div
-        role="progressbar"
-        aria-valuenow={Math.round(clamped * 100)}
-        aria-valuemin={0}
-        aria-valuemax={100}
+      {/* Base UI's Root IS the bar — it carries `role="progressbar"`, the aria
+          value triple and the `data-complete`/`data-indeterminate` state — and
+          its Indicator is the fill. The Track part is skipped because it would
+          only add a wrapper between the two. */}
+      <Base.Root
+        value={Math.round(clamped * 100)}
         // The ratio is `ChartFrame`'s intrinsic-width trick (charts/sanitize.tsx)
         // at a meter's proportion: an unlabelled bar has no content, so a parent
         // that sizes to what is inside it (the Kit's `Row`) resolved this
@@ -48,16 +50,15 @@ export function Progress({ value, max, label, showValue = false, tone, field }: 
         // still wins.
         style={{ width: "100%", aspectRatio: "16 / 1", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
       >
-        <div
+        <Base.Indicator
           style={{
-            width: pct,
             height: "100%",
             borderRadius: 999,
             background: toneColor(resolveTone(tone, "accent")),
             transition: transitionFor("width"),
           }}
         />
-      </div>
+      </Base.Root>
     </div>
   );
 }

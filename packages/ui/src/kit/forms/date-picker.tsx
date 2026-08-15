@@ -1,4 +1,5 @@
 /** DatePicker — themed native date control (W2 §The Kit). */
+import { Input as Base } from "@base-ui/react/input";
 import { control } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
@@ -20,7 +21,9 @@ export function DatePicker({ label, value, min, max, hint, disabled, required, o
   const screen = controlledHandler(value !== undefined, onChange);
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
-      <input
+      {/* The same Base UI Input the text field uses — one date, natively. Two
+          dates from one calendar is DateRange. */}
+      <Base
         id={fieldId}
         data-kit="DatePicker"
         type="date"
@@ -30,9 +33,9 @@ export function DatePicker({ label, value, min, max, hint, disabled, required, o
         disabled={disabled}
         required={required}
         aria-describedby={hint ? helpId : undefined}
-        onChange={(e) => screen === null
-          ? onChange?.(e.target.value)
-          : screen({ target: { value: e.target.value } })}
+        onValueChange={(next) => screen === null
+          ? onChange?.(next)
+          : screen({ target: { value: next } })}
         style={{ ...control, opacity: disabled ? 0.55 : 1 }}
       />
     </FieldShell>

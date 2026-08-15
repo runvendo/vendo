@@ -50,9 +50,10 @@ const LIMITS = {
 /** The component vocabulary a generated app may name without a source map. */
 const VOCABULARY = [
   "Accordion", "Avatar", "Badge", "BarChart", "Button", "Callout", "Card", "CardList", "Checkbox", "CodeBlock",
-  "DataTable", "DatePicker", "DateTime", "Disclaimer", "Divider", "DonutChart", "EmptyState", "EnumBadge", "Form",
-  "Grid", "Icon", "Input", "KeyValue", "LineChart", "Money", "Num", "Percent", "Progress", "Row", "Select",
-  "Sparkline", "Stack", "Stat", "Steps", "Surface", "Tabs", "Text", "Textarea", "Timeline",
+  "Combobox", "DataTable", "DatePicker", "DateRange", "DateTime", "Disclaimer", "Divider", "DonutChart",
+  "EmptyState", "EnumBadge", "Form", "Grid", "Icon", "Input", "KeyValue", "LineChart", "Menu", "Money", "Num",
+  "Percent", "Progress", "Radio", "Row", "SegmentedControl", "Select", "Slider", "Sparkline", "Stack", "Stat",
+  "Steps", "Surface", "Switch", "Tabs", "Text", "Textarea", "Timeline", "Tooltip",
 ];
 
 const DOCS_FORMAT_PAGE = readFileSync(

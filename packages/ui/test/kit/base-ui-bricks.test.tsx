@@ -1,0 +1,323 @@
+// @vitest-environment jsdom
+/**
+ * The eight bricks Base UI brought in, and the four the Kit handed over to it.
+ *
+ * Each one is asserted through the REAL control, on the two things a headless
+ * library can silently take away: the value it reports back (a migrated control
+ * that freezes reports the first change and then nothing), and the roles and
+ * aria a consumer queries by. Where the answer is a keyboard's, it is a
+ * keyboard that asks — with one exception, stated at the bottom: Base UI drives
+ * roving focus off TRUSTED focus events, which jsdom's synthetic ones cannot
+ * stand in for, so the arrow WALK is proven in the headed run instead of faked
+ * here.
+ */
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
+import { markHandlerCallback } from "../../src/kit/handler.js";
+import { Accordion } from "../../src/kit/feedback/accordion.js";
+import { Menu } from "../../src/kit/feedback/menu.js";
+import { Tooltip } from "../../src/kit/feedback/tooltip.js";
+import { Combobox } from "../../src/kit/forms/combobox.js";
+import { DateRange } from "../../src/kit/forms/date-range.js";
+import { Radio } from "../../src/kit/forms/radio.js";
+import { SegmentedControl } from "../../src/kit/forms/segmented-control.js";
+import { Slider } from "../../src/kit/forms/slider.js";
+import { Switch } from "../../src/kit/forms/switch.js";
+import { Progress } from "../../src/kit/charts/progress.js";
+
+/**
+ * jsdom 25 ships no `PointerEvent`, and Base UI's Switch and Radio forward a
+ * click to their hidden input by CONSTRUCTING one. Without this the roots throw
+ * "PointerEvent is not a constructor" and the control never moves — an artifact
+ * of the environment, not of the component, which the headed run then proves.
+ */
+if (typeof window.PointerEvent !== "function") {
+  window.PointerEvent = class extends MouseEvent {} as unknown as typeof PointerEvent;
+}
+
+afterEach(cleanup);
+
+const clients = [
+  { id: "c1", name: "Hartwell" },
+  { id: "c2", name: "Acme" },
+];
+
+/** A live screen: the `{$handler}` callback owns the value and re-renders it. */
+function Screen<T>({ initial, render: renderControl }: {
+  initial: T;
+  render: (value: T, fire: (event?: unknown) => void) => React.ReactNode;
+}) {
+  const [value, setValue] = useState(initial);
+  const [fire] = useState(() =>
+    markHandlerCallback((event?: unknown) => {
+      const target = (event as { target?: { value?: T; checked?: T } }).target ?? {};
+      setValue((target.checked ?? target.value) as T);
+    }));
+  return <>{renderControl(value, fire)}</>;
+}
+
+describe("Switch", () => {
+  it("is a switch by role, and a screen-bound one keeps flipping", () => {
+    render(<Screen initial={false} render={(on, fire) => <Switch label="Notify" checked={on} onChange={fire} />} />);
+    const box = () => screen.getByRole("switch", { name: "Notify" });
+
+    fireEvent.click(box());
+    expect(box().getAttribute("aria-checked")).toBe("true");
+    // The flip BACK is the freeze detector.
+    fireEvent.click(box());
+    expect(box().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("reports the new state to a plain handler", () => {
+    const onChange = vi.fn();
+    render(<Switch label="Notify" onChange={onChange} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Notify" }));
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("Radio", () => {
+  it("maps raw tool output through labelField/valueField and reports the value", () => {
+    const onChange = vi.fn();
+    render(<Radio label="Client" options={clients} labelField="name" valueField="id" onChange={onChange} />);
+
+    expect(screen.getAllByRole("radio").length).toBe(2);
+    fireEvent.click(screen.getByRole("radio", { name: "Acme" }));
+    expect(onChange).toHaveBeenCalledWith("c2");
+  });
+
+  it("keeps moving on a screen", () => {
+    render(
+      <Screen initial="c1" render={(value, fire) => (
+        <Radio label="Client" options={clients} labelField="name" valueField="id" value={value} onChange={fire} />
+      )} />,
+    );
+    const at = (name: string) => screen.getByRole("radio", { name });
+
+    fireEvent.click(at("Acme"));
+    expect(at("Acme").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(at("Hartwell"));
+    expect(at("Hartwell").getAttribute("aria-checked")).toBe("true");
+  });
+});
+
+describe("Slider", () => {
+  it("carries the aria a range owes, and prints its value when asked", () => {
+    const { container } = render(<Slider label="Budget" value={40} min={0} max={200} step={5} showValue />);
+    expect(screen.getByRole("slider", { name: "Budget" }).getAttribute("aria-valuenow")).toBe("40");
+    // The ends live on the nested range input Base UI hides behind the thumb.
+    const input = container.querySelector("input[type=range]") as HTMLInputElement;
+    expect([input.min, input.max, input.step]).toEqual(["0", "200", "5"]);
+    expect(screen.getByText("40")).toBeTruthy();
+  });
+
+  it("steps on an arrow key and reports the new number", () => {
+    const onChange = vi.fn();
+    render(<Slider label="Budget" value={40} min={0} max={200} step={5} onChange={onChange} />);
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Budget" }), { key: "ArrowRight" });
+    expect(onChange).toHaveBeenCalledWith(45);
+  });
+});
+
+describe("SegmentedControl", () => {
+  it("presses one segment at a time and reports its value", () => {
+    render(<Screen initial="Week" render={(value, fire) => (
+      <SegmentedControl items={["Week", "Month", "Year"]} value={value} onChange={fire} />
+    )} />);
+    const at = (name: string) => screen.getByRole("button", { name });
+
+    fireEvent.click(at("Month"));
+    expect(at("Month").getAttribute("aria-pressed")).toBe("true");
+    expect(at("Week").getAttribute("aria-pressed")).toBe("false");
+    // The second press is the freeze detector.
+    fireEvent.click(at("Year"));
+    expect(at("Year").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("takes {value,label} items and refuses a disabled segment", () => {
+    const onChange = vi.fn();
+    render(
+      <SegmentedControl
+        items={[{ value: "w", label: "Week" }, { value: "m", label: "Month", disabled: true }]}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    expect(onChange).toHaveBeenCalledWith("w");
+
+    onChange.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("Combobox", () => {
+  it("is a text box over raw tool output, and typing narrows the list", async () => {
+    render(<Combobox label="Client" options={clients} labelField="name" valueField="id" placeholder="Search" />);
+    const box = screen.getByLabelText("Client") as HTMLInputElement;
+
+    // `inputType` is what tells Base UI a human typed rather than a password
+    // manager filling the box, and it is the difference between the list
+    // opening and staying shut. Both names carry an "a"; only one carries "acm".
+    fireEvent.input(box, { target: { value: "a" }, inputType: "insertText" });
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Hartwell", "Acme"]);
+
+    fireEvent.input(box, { target: { value: "acm" }, inputType: "insertText" });
+    await waitFor(() => {
+      expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Acme"]);
+    });
+  });
+
+  it("reports the chosen item's value, not its label", async () => {
+    const onChange = vi.fn();
+    render(<Combobox label="Client" options={clients} labelField="name" valueField="id" onChange={onChange} />);
+
+    fireEvent.input(screen.getByLabelText("Client"), { target: { value: "acm" }, inputType: "insertText" });
+    fireEvent.click(await screen.findByRole("option", { name: "Acme" }));
+    expect(onChange).toHaveBeenCalledWith("c2");
+  });
+});
+
+describe("DateRange", () => {
+  /** The trigger prints the range in the host's locale, so it is addressed by
+   *  its Kit mark rather than by text this test would have to guess. */
+  const open = async (container: HTMLElement) => {
+    fireEvent.click(container.querySelector('[data-kit="DateRange"]') as HTMLElement);
+    return screen.findByRole("grid");
+  };
+
+  it("reports a start and an end once both are picked", async () => {
+    const onChange = vi.fn();
+    const { container } = render(<DateRange label="Period" start="2026-03-01" onChange={onChange} />);
+    await open(container);
+
+    fireEvent.click(screen.getByRole("button", { name: "4" }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "12" }));
+    expect(onChange).toHaveBeenCalledWith({ start: "2026-03-04", end: "2026-03-12" });
+  });
+
+  it("orders the pair, so picking the later day first still reads forwards", async () => {
+    const onChange = vi.fn();
+    const { container } = render(<DateRange label="Period" start="2026-03-01" onChange={onChange} />);
+    await open(container);
+
+    fireEvent.click(screen.getByRole("button", { name: "12" }));
+    fireEvent.click(screen.getByRole("button", { name: "4" }));
+    expect(onChange).toHaveBeenCalledWith({ start: "2026-03-04", end: "2026-03-12" });
+  });
+
+  it("refuses a day outside min/max", async () => {
+    const onChange = vi.fn();
+    const { container } = render(<DateRange label="Period" start="2026-03-01" min="2026-03-10" onChange={onChange} />);
+    await open(container);
+
+    expect((screen.getByRole("button", { name: "4" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "4" }));
+    fireEvent.click(screen.getByRole("button", { name: "12" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("Menu", () => {
+  const items = [{ label: "Send reminder", value: "remind" }, { label: "Void", value: "void", disabled: true }];
+
+  it("opens on its trigger and reports the chosen entry's value", async () => {
+    const onSelect = vi.fn();
+    render(<Menu label="Actions" items={items} onSelect={onSelect} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Send reminder" }));
+    expect(onSelect).toHaveBeenCalledWith("remind");
+  });
+
+  it("closes on Esc without choosing anything", async () => {
+    const onSelect = vi.fn();
+    render(<Menu label="Actions" items={items} onSelect={onSelect} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions/ }));
+    const menu = await screen.findByRole("menu");
+    fireEvent.keyDown(menu, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("lets children win over items — the dual API's rule", async () => {
+    render(
+      <Menu label="Actions" items={items}>
+        <span>Export CSV</span>
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Actions/ }));
+
+    const entries = await screen.findAllByRole("menuitem");
+    expect(entries.map((entry) => entry.textContent)).toEqual(["Export CSV"]);
+  });
+});
+
+/** Base UI opens a tooltip off a NATIVE `mouseenter` on the trigger — not the
+ *  delegated one React synthesizes — and then waits out the hover delay. */
+const hover = (trigger: HTMLElement) => {
+  trigger.dispatchEvent(new window.MouseEvent("mouseenter"));
+  fireEvent.mouseMove(trigger);
+};
+
+describe("Tooltip", () => {
+  it("shows its label on hover", async () => {
+    render(<Tooltip label="Sent 3 days ago"><span>clock</span></Tooltip>);
+
+    const trigger = screen.getByText("clock").parentElement as HTMLElement;
+    hover(trigger);
+    expect((await screen.findByRole("tooltip", {}, { timeout: 3000 })).textContent).toBe("Sent 3 days ago");
+  });
+
+  it("lets the content slot win over the label shorthand", async () => {
+    render(
+      <Tooltip label="short" content={<strong>the long form</strong>}>
+        <span>clock</span>
+      </Tooltip>,
+    );
+
+    const trigger = screen.getByText("clock").parentElement as HTMLElement;
+    hover(trigger);
+    expect((await screen.findByRole("tooltip", {}, { timeout: 3000 })).textContent).toBe("the long form");
+  });
+});
+
+describe("the migrated bricks keep what the swap could have taken", () => {
+  it("Accordion points its trigger at its panel, and honours multiple", () => {
+    render(
+      <Accordion
+        multiple
+        items={[{ label: "Terms", content: <p>the terms</p> }, { label: "FAQ", content: <p>the faq</p> }]}
+      />,
+    );
+    const trigger = (name: string) => screen.getByRole("button", { name });
+
+    expect(trigger("Terms").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger("Terms"));
+    fireEvent.click(trigger("FAQ"));
+    // Without `multiple` the first would have closed; both open is the proof.
+    expect(screen.getByText("the terms")).toBeTruthy();
+    expect(screen.getByText("the faq")).toBeTruthy();
+    expect(trigger("Terms").getAttribute("aria-controls")).toBe(screen.getByText("the terms").parentElement?.id);
+  });
+
+  it("Progress states the value triple a screen reader reads", () => {
+    render(<Progress value={30} max={60} label="Savings" showValue />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("50");
+    expect(bar.getAttribute("aria-valuemin")).toBe("0");
+    expect(bar.getAttribute("aria-valuemax")).toBe("100");
+  });
+});
+
+/**
+ * NOT asserted here, on purpose: the arrow-key WALK through Menu's items,
+ * SegmentedControl's segments and Select's options. Base UI moves that roving
+ * focus off trusted focus events, which `fireEvent` cannot produce, so a jsdom
+ * assertion would either fail against working code or pass against broken code.
+ * The walk is proven in the headed browser run instead.
+ */

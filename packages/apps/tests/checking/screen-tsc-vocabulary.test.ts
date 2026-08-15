@@ -112,7 +112,14 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Select label="Period" options={cashflow.data} labelField="label" valueField="label" multiple={false}/>
     <Input label="Search" type="search" onChange="host_search"/>
     <DatePicker label="From" min="2026-01-01"/>
-    <Form onSubmit="host_note" submitLabel="Save"><Textarea label="Note" rows={3}/><Checkbox label="Pin"/></Form>
+    <DateRange label="Period" start="2026-01-01" end="2026-03-01" min="2025-01-01" max="2026-12-31" placeholder="Pick a range" onChange="host_period"/>
+    <Combobox label="Client" options={cashflow.data} labelField="label" valueField="label" value="Jan" placeholder="Search" onChange="host_client"/>
+    <Radio label="Plan" options={cashflow.data} labelField="label" valueField="label" value="Jan" onChange="host_plan"/>
+    <SegmentedControl items={["Week", "Month"]} value="Week" onChange="host_range"/>
+    <Slider label="Budget" value={40} min={0} max={100} step={5} showValue={true} onChange="host_budget"/>
+    <Menu label="Actions" items={[{ label: "Send reminder", value: "remind", icon: "send" }, { label: "Void", disabled: true }]} onSelect="host_action"/>
+    <Tooltip label="Sent 3 days ago"><Icon name="clock"/></Tooltip>
+    <Form onSubmit="host_note" submitLabel="Save"><Textarea label="Note" rows={3}/><Checkbox label="Pin"/><Switch label="Notify" checked={true} onChange="host_notify"/></Form>
     <Button label="Refresh" onClick="host_getCashflowInsights" variant="primary"/>
     <Tabs tabs={["In", "Out"]} value="In"><Text text="Money in"/><Text text="Money out"/></Tabs>
     <Disclaimer reason="No tool exposes forecasts." title="Not shown"/>

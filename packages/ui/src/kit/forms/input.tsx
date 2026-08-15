@@ -1,4 +1,5 @@
 /** Input — themed text field; onChange reports the value (W2 §The Kit). */
+import { Input as Base } from "@base-ui/react/input";
 import { control, t } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
@@ -23,7 +24,9 @@ export function Input({ label, value, placeholder, type = "text", hint, error, d
   const screen = controlledHandler(value !== undefined, onChange);
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} error={error}>
-      <input
+      {/* Base UI's Input is a real `<input>` that registers itself with a Form,
+          so a submit can validate it and focus the first field that failed. */}
+      <Base
         id={fieldId}
         data-kit="Input"
         type={type}
@@ -33,9 +36,9 @@ export function Input({ label, value, placeholder, type = "text", hint, error, d
         required={required}
         aria-invalid={error ? true : undefined}
         aria-describedby={error || hint ? helpId : undefined}
-        onChange={(e) => screen === null
-          ? onChange?.(e.target.value)
-          : screen({ target: { value: e.target.value } })}
+        onValueChange={(next) => screen === null
+          ? onChange?.(next)
+          : screen({ target: { value: next } })}
         style={{ ...control, borderColor: error ? t.danger : t.border, opacity: disabled ? 0.55 : 1 }}
       />
     </FieldShell>
