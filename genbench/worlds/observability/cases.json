@@ -136,7 +136,7 @@
     "lane": "screen",
     "tags": ["display"],
     "shape": "dashboard",
-    "source": "Datadog — Dashboards (https://docs.datadoghq.com/dashboards/)",
+    "source": "Datadog — Dashboards, https://docs.datadoghq.com/dashboards/",
     "prompt": "I want one screen for when I open my laptop in the morning — which services are down, what's firing, and how much error budget we've burned, all at a glance.",
     "pass": [
       "answers all three questions on one screen, in separate panels rather than a single table",
@@ -151,7 +151,7 @@
     "lane": "screen",
     "tags": ["action"],
     "shape": "board",
-    "source": "Datadog — Case Management, Board view (https://docs.datadoghq.com/incident_response/case_management/view_and_manage/)",
+    "source": "Datadog — Case Management, Board view, https://docs.datadoghq.com/incident_response/case_management/view_and_manage/",
     "prompt": "Show me every open incident as a board I can move between mitigating, monitoring and resolved, instead of a flat list.",
     "pass": [
       "lays the incidents out in mitigating, monitoring and resolved columns rather than one flat list",
@@ -165,7 +165,7 @@
     "lane": "screen",
     "tags": ["action"],
     "shape": "wizard",
-    "source": "Grafana — New alert rule (https://grafana.com/docs/grafana/latest/alerting/alerting-rules/create-grafana-managed-rule/)",
+    "source": "Grafana — New alert rule, https://grafana.com/docs/grafana/latest/alerting/alerting-rules/create-grafana-managed-rule/",
     "prompt": "Walk me through setting up a new alert on search-indexer's tail latency — the condition, the threshold, and who it pages.",
     "pass": [
       "asks for the condition, the threshold and who to notify as separate steps, one at a time",
@@ -180,7 +180,7 @@
     "lane": "screen",
     "tags": ["action"],
     "shape": "settings",
-    "source": "Grafana — Notification policies (https://grafana.com/docs/grafana/latest/alerting/configure-notifications/create-notification-policy/)",
+    "source": "Grafana — Notification policies, https://grafana.com/docs/grafana/latest/alerting/configure-notifications/create-notification-policy/",
     "prompt": "I need a place to set how each team's alerts get routed — quiet hours, and who they escalate to if nobody acks.",
     "pass": [
       "shows a routing block for each of the five teams the tool returns",
@@ -194,7 +194,7 @@
     "lane": "screen",
     "tags": ["display"],
     "shape": "map",
-    "source": "Datadog — Service Map (https://docs.datadoghq.com/tracing/services/services_map/)",
+    "source": "Datadog — Service Map, https://docs.datadoghq.com/tracing/services/services_map/",
     "prompt": "Draw the service map around checkout-api so I can see what it calls and what's failing downstream.",
     "pass": [
       "draws checkout-api linked to the services on either side of it, not a table of pairs",

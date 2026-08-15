@@ -141,7 +141,7 @@
     ],
     "tags": ["action"],
     "shape": "settings",
-    "source": "Stripe Billing — Customer portal config, docs.stripe.com/customer-management/configure-portal"
+    "source": "Stripe Billing — Customer portal config, https://docs.stripe.com/customer-management/configure-portal"
   },
   {
     "id": "plan-side-by-side",
@@ -155,7 +155,7 @@
     ],
     "tags": ["display"],
     "shape": "comparison",
-    "source": "Chargebee — No-code pricing table, chargebee.com/docs/billing/2.0/hosted-capabilities/pricing-table"
+    "source": "Chargebee — No-code pricing table, https://chargebee.com/docs/billing/2.0/hosted-capabilities/pricing-table"
   },
   {
     "id": "new-subscription-wizard",
@@ -169,7 +169,7 @@
     ],
     "tags": ["action"],
     "shape": "wizard",
-    "source": "Chargebee — Hosted checkout page, chargebee.com/subscription-management"
+    "source": "Chargebee — Hosted checkout page, https://chargebee.com/subscription-management"
   },
   {
     "id": "dunning-email-log",
@@ -183,7 +183,7 @@
     ],
     "tags": ["display"],
     "shape": "list-feed",
-    "source": "Stripe Billing — Dunning email log, stripe.com/billing/features"
+    "source": "Stripe Billing — Dunning email log, https://stripe.com/billing/features"
   },
   {
     "id": "team-permissions",
@@ -197,6 +197,6 @@
     ],
     "tags": ["action"],
     "shape": "permissions",
-    "source": "Chargebee — Users & roles, chargebee.com/docs/billing/2.0/site-configuration/account_settings"
+    "source": "Chargebee — Users & roles, https://chargebee.com/docs/billing/2.0/site-configuration/account_settings"
   }
 ]

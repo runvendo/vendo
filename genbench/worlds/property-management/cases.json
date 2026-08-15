@@ -141,7 +141,7 @@
     ],
     "tags": ["display"],
     "shape": "dashboard",
-    "source": "AppFolio — Owner Portal Dashboard (appfolio.com/property-management-owner-experience)"
+    "source": "AppFolio — Owner Portal Dashboard, https://appfolio.com/property-management-owner-experience"
   },
   {
     "id": "portal-announcement",
@@ -183,7 +183,7 @@
     ],
     "tags": ["display"],
     "shape": "split-inbox",
-    "source": "AppFolio — Realm-X centralized inbox (appfolio.com/property-manager/communication-service)"
+    "source": "AppFolio — Realm-X centralized inbox, https://appfolio.com/property-manager/communication-service"
   },
   {
     "id": "vacant-unit-photos",
@@ -197,6 +197,6 @@
     ],
     "tags": ["display"],
     "shape": "gallery",
-    "source": "AppFolio — Marketing/Floorplan Photos (help.propertymeld.com/hc/en-us/articles/45793810226323)"
+    "source": "AppFolio — Marketing/Floorplan Photos, https://help.propertymeld.com/hc/en-us/articles/45793810226323"
   }
 ]

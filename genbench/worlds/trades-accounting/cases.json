@@ -140,7 +140,7 @@
     "prompt": "Lay today's jobs out as a board sorted into columns by where each one's at — scheduled, in progress, awaiting parts, done but unbilled, closed — so I can see the whole shop without scrolling one long list.",
     "tags": ["display"],
     "shape": "board",
-    "source": "ServiceTitan — Dispatch Board · https://help.servicetitan.com/how-to/using-dispatch-board",
+    "source": "ServiceTitan — Dispatch Board, https://help.servicetitan.com/how-to/using-dispatch-board",
     "pass": [
       "lays the jobs out in columns by status — scheduled, in progress, awaiting parts, done but unbilled, closed — not as one flat list",
       "all seven jobs are on the board, each under the column its status names: three under in progress, and J-2444, J-2431, J-2395 and J-2377 alone under the other four",
@@ -154,7 +154,7 @@
     "prompt": "Show today's visits on a map so I can see which crew is nearest the Harbor Point callback.",
     "tags": ["display"],
     "shape": "map",
-    "source": "Jobber — Map View · https://help.getjobber.com/hc/en-us/articles/115009234307-Map-View-Legacy-Schedule",
+    "source": "Jobber — Map View, https://help.getjobber.com/hc/en-us/articles/115009234307-Map-View-Legacy-Schedule",
     "pass": [
       "draws a map with a pin per visit rather than listing the visits",
       "all three of today's visits are pinned, each in its own place, and no fourth visit is invented",
@@ -168,7 +168,7 @@
     "prompt": "Lay out the good, better and best packages I'm quoting side by side so the customer can see what the extra money buys.",
     "tags": ["display"],
     "shape": "comparison",
-    "source": "Jobber — Quote Options (Beta) · https://help.getjobber.com/hc/en-us/articles/33970469537047-Quotes-Options-Beta",
+    "source": "Jobber — Quote Options (Beta), https://help.getjobber.com/hc/en-us/articles/33970469537047-Quotes-Options-Beta",
     "pass": [
       "puts Good, Better and Best beside each other as three columns, not one under the other",
       "shows each package's price — $6,480.00, $9,750.00 and $14,200.00 — matching the tool's numbers",
@@ -182,7 +182,7 @@
     "prompt": "Pull up every photo the crew's uploaded from the Harbor Point rooftop job so I can see the before-and-after without digging through texts.",
     "tags": ["display"],
     "shape": "gallery",
-    "source": "Jobber — Files and Media Library · https://help.getjobber.com/hc/en-us/articles/39800675084439-Files-and-Media-Library",
+    "source": "Jobber — Files and Media Library, https://help.getjobber.com/hc/en-us/articles/39800675084439-Files-and-Media-Library",
     "pass": [
       "lays the photos out as a grid of tiles rather than a list of file names",
       "all six photos from J-2418 · Harbor Point Dental are there, and none from another job",
@@ -196,7 +196,7 @@
     "prompt": "Show our price list organized by category and subcategory — plumbing, HVAC, electrical — so I can find an item without scrolling one flat list.",
     "tags": ["display"],
     "shape": "tree",
-    "source": "ServiceTitan — Pricebook · https://help.servicetitan.com/docs/pricebook",
+    "source": "ServiceTitan — Pricebook, https://help.servicetitan.com/docs/pricebook",
     "pass": [
       "nests the items under their subcategory and each subcategory under its category, rather than one flat list",
       "shows the three categories — Plumbing, HVAC, Electrical — and all eight subcategories under them",

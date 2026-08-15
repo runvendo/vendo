@@ -143,7 +143,7 @@
     ],
     "tags": ["action"],
     "shape": "wizard",
-    "source": "Jane — Online booking (patient-facing) — jane.app/features/online-booking"
+    "source": "Jane — Online booking (patient-facing), https://jane.app/features/online-booking"
   },
   {
     "id": "provider-availability",
@@ -157,7 +157,7 @@
     ],
     "tags": ["action"],
     "shape": "settings",
-    "source": "SimplePractice — Managing your availability — support.simplepractice.com/hc/en-us/articles/208483776-Managing-your-availability"
+    "source": "SimplePractice — Managing your availability, https://support.simplepractice.com/hc/en-us/articles/208483776-Managing-your-availability"
   },
   {
     "id": "visit-history",
@@ -171,7 +171,7 @@
     ],
     "tags": ["display"],
     "shape": "timeline",
-    "source": "Jane — a patient's past and upcoming appointments — jane.app/guide/how-to-view-and-print-appointments-for-a-patient-past-or-upcoming-appointments"
+    "source": "Jane — a patient's past and upcoming appointments, https://jane.app/guide/how-to-view-and-print-appointments-for-a-patient-past-or-upcoming-appointments"
   },
   {
     "id": "patient-messages",
@@ -186,7 +186,7 @@
     ],
     "tags": ["action"],
     "shape": "split-inbox",
-    "source": "Jane — Secure Messaging — jane.app/features/secure-messaging"
+    "source": "Jane — Secure Messaging, https://jane.app/features/secure-messaging"
   },
   {
     "id": "waitlist-filter",
@@ -201,6 +201,6 @@
     ],
     "tags": ["display"],
     "shape": "filter-builder",
-    "source": "Jane — Using the Wait List — jane.app/guide/using-the-wait-list"
+    "source": "Jane — Using the Wait List, https://jane.app/guide/using-the-wait-list"
   }
 ]

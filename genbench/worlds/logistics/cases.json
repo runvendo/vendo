@@ -142,7 +142,7 @@
     ],
     "tags": ["display"],
     "shape": "map",
-    "source": "project44 — Control Tower / Visibility Dashboard, project44.com/platform/visibility/"
+    "source": "project44 — Control Tower / Visibility Dashboard, https://project44.com/platform/visibility/"
   },
   {
     "id": "delivery-calendar",
@@ -156,7 +156,7 @@
     ],
     "tags": ["display"],
     "shape": "calendar",
-    "source": "project44 — Appointment Manager, Calendar View, support.p-44.com/hc/en-us/articles/21090236644381"
+    "source": "project44 — Appointment Manager, Calendar View, https://support.p-44.com/hc/en-us/articles/21090236644381"
   },
   {
     "id": "start-return",
@@ -170,7 +170,7 @@
     ],
     "tags": ["action"],
     "shape": "wizard",
-    "source": "ShipStation — Returns Portal, shipstation.com/fulfillment/shipping/"
+    "source": "ShipStation — Returns Portal, https://shipstation.com/fulfillment/shipping/"
   },
   {
     "id": "terminal-scorecard",
@@ -184,7 +184,7 @@
     ],
     "tags": ["display"],
     "shape": "comparison",
-    "source": "project44 — Carrier Scorecard, project44.com/blog/achieving-high-carrier-data-quality-with-project44s-carrier-managed-services/"
+    "source": "project44 — Carrier Scorecard, https://project44.com/blog/achieving-high-carrier-data-quality-with-project44s-carrier-managed-services/"
   },
   {
     "id": "shift-start",
@@ -198,6 +198,6 @@
     ],
     "tags": ["display"],
     "shape": "dashboard",
-    "source": "project44 — Control Tower / Analytics Dashboard, project44.com/platform/visibility/"
+    "source": "project44 — Control Tower / Analytics Dashboard, https://project44.com/platform/visibility/"
   }
 ]

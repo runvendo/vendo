@@ -142,7 +142,7 @@
       "marks Fernbrook Classic as the live theme, and marks no other tile live",
       "names no theme the tool did not return"
     ],
-    "source": "Shopify, Online Store > Themes — help.shopify.com/en/manual/online-store/themes/managing-themes"
+    "source": "Shopify — Online Store > Themes, https://help.shopify.com/en/manual/online-store/themes/managing-themes"
   },
   {
     "id": "packer-access",
@@ -156,7 +156,7 @@
       "Rosa Delgado's four areas all read as off to start",
       "ticking orders on for Rosa calls set_staff_permission with her staff id, the orders area and enabled true"
     ],
-    "source": "Shopify, Settings > Users > Roles — help.shopify.com/en/manual/your-account/users/roles/manage-roles"
+    "source": "Shopify — Settings > Users > Roles, https://help.shopify.com/en/manual/your-account/users/roles/manage-roles"
   },
   {
     "id": "selling-regions",
@@ -170,7 +170,7 @@
       "the three regions with no orders read as not sold into yet, distinct from the four active ones",
       "flagging one of those three calls activate_region with that region"
     ],
-    "source": "Shopify, Markets — help.shopify.com/en/manual/markets/getting-started/managing-markets"
+    "source": "Shopify — Markets, https://help.shopify.com/en/manual/markets/getting-started/managing-markets"
   },
   {
     "id": "order-inbox",
@@ -184,7 +184,7 @@
       "the opened conversation shows every message in it in order, saying who sent each",
       "the reply box calls send_message with that conversation's id and the typed text"
     ],
-    "source": "Shopify, Inbox — help.shopify.com/en/manual/inbox/conversations"
+    "source": "Shopify — Inbox, https://help.shopify.com/en/manual/inbox/conversations"
   },
   {
     "id": "shipping-settings",
@@ -198,6 +198,6 @@
       "one save control commits all three settings together, rather than each saving on its own",
       "saving calls update_shipping_settings with all three values"
     ],
-    "source": "Shopify, Settings > Shipping and delivery — help.shopify.com/en/manual/fulfillment/setup"
+    "source": "Shopify — Settings > Shipping and delivery, https://help.shopify.com/en/manual/fulfillment/setup"
   }
 ]

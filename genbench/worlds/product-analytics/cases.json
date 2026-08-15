@@ -145,7 +145,7 @@
     ],
     "tags": ["action"],
     "shape": "filter-builder",
-    "source": "Amplitude Create/Modify Segment (amplitude.com/docs/analytics/charts/build-charts-modify-user-segment); PostHog Cohorts (posthog.com/docs/data/cohorts)"
+    "source": "Amplitude — Create/Modify Segment, https://amplitude.com/docs/analytics/charts/build-charts-modify-user-segment; PostHog — Cohorts, https://posthog.com/docs/data/cohorts"
   },
   {
     "id": "workspace-roles",
@@ -159,7 +159,7 @@
     ],
     "tags": ["action"],
     "shape": "permissions",
-    "source": "Amplitude Roles & Permissions (amplitude.com/docs/admin/account-management/role-based-access-controls-rbac); PostHog Access control (posthog.com/docs/settings/access-control)"
+    "source": "Amplitude — Roles & Permissions, https://amplitude.com/docs/admin/account-management/role-based-access-controls-rbac; PostHog — Access control, https://posthog.com/docs/settings/access-control"
   },
   {
     "id": "post-open-paths",
@@ -173,7 +173,7 @@
     ],
     "tags": ["display"],
     "shape": "tree",
-    "source": "Amplitude Pathfinder (amplitude.com/docs/analytics/charts/legacy-charts/legacy-charts-pathfinder); PostHog Paths (posthog.com/docs/product-analytics/insights)"
+    "source": "Amplitude — Pathfinder, https://amplitude.com/docs/analytics/charts/legacy-charts/legacy-charts-pathfinder; PostHog — Paths, https://posthog.com/docs/product-analytics/insights"
   },
   {
     "id": "pricing-experiment",
@@ -187,7 +187,7 @@
     ],
     "tags": ["display"],
     "shape": "comparison",
-    "source": "Amplitude Experiment Analysis view (amplitude.com/docs/feature-experiment/analysis-view); PostHog Experiments (posthog.com/docs/experiments/analyzing-results)"
+    "source": "Amplitude — Experiment Analysis view, https://amplitude.com/docs/feature-experiment/analysis-view; PostHog — Experiments, https://posthog.com/docs/experiments/analyzing-results"
   },
   {
     "id": "active-users-map",
@@ -202,6 +202,6 @@
     ],
     "tags": ["display"],
     "shape": "map",
-    "source": "Amplitude Event Segmentation Map view (amplitude.com/docs/analytics/charts/event-segmentation/event-segmentation-build); PostHog World Map (posthog.com/docs/product-analytics/trends/charts)"
+    "source": "Amplitude — Event Segmentation Map view, https://amplitude.com/docs/analytics/charts/event-segmentation/event-segmentation-build; PostHog — World Map, https://posthog.com/docs/product-analytics/trends/charts"
   }
 ]

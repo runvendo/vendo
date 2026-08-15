@@ -155,7 +155,7 @@
     ],
     "tags": ["display"],
     "shape": "calendar",
-    "source": "Monarch — Recurring bills calendar · https://help.monarch.com/hc/en-us/articles/4890751141908-Tracking-Recurring-Expenses-and-Bills"
+    "source": "Monarch — Recurring bills calendar, https://help.monarch.com/hc/en-us/articles/4890751141908-Tracking-Recurring-Expenses-and-Bills"
   },
   {
     "id": "money-dashboard",
@@ -169,7 +169,7 @@
     ],
     "tags": ["display"],
     "shape": "dashboard",
-    "source": "Monarch — Main dashboard · https://screensdesign.com/showcase/monarch-budget-track-money"
+    "source": "Monarch — Main dashboard, https://screensdesign.com/showcase/monarch-budget-track-money"
   },
   {
     "id": "dining-budget-cap",
@@ -183,7 +183,7 @@
     ],
     "tags": ["action"],
     "shape": "form",
-    "source": "Monarch — Budget creation · https://screensdesign.com/showcase/monarch-budget-track-money"
+    "source": "Monarch — Budget creation, https://screensdesign.com/showcase/monarch-budget-track-money"
   },
   {
     "id": "category-groups",
@@ -197,7 +197,7 @@
     ],
     "tags": ["display"],
     "shape": "tree",
-    "source": "Monarch — Categories & groups · https://help.monarch.com/hc/en-us/articles/360048883771-Creating-Custom-Categories-and-Groups"
+    "source": "Monarch — Categories & groups, https://help.monarch.com/hc/en-us/articles/360048883771-Creating-Custom-Categories-and-Groups"
   },
   {
     "id": "savings-goals",
@@ -211,6 +211,6 @@
     ],
     "tags": ["display"],
     "shape": "board",
-    "source": "Monarch — Goals / Revolut — Pockets · https://screensdesign.com/showcase/monarch-budget-track-money"
+    "source": "Monarch — Goals / Revolut — Pockets, https://screensdesign.com/showcase/monarch-budget-track-money"
   }
 ]

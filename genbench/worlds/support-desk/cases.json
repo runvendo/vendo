@@ -175,7 +175,7 @@
     ],
     "tags": ["action"],
     "shape": "wizard",
-    "source": "Zendesk — Bulk merge tickets — https://www.eesel.ai/blog/zendesk-merge-tickets-duplicate-conversations",
+    "source": "Zendesk — Bulk merge tickets, https://www.eesel.ai/blog/zendesk-merge-tickets-duplicate-conversations",
     "data": {
       "list_tickets": {
         "data": [
@@ -199,7 +199,7 @@
     ],
     "tags": ["display"],
     "shape": "calendar",
-    "source": "Zendesk — WFM schedule — https://support.zendesk.com/hc/en-us/articles/6443348256794-Accessing-and-understanding-your-WFM-Schedule-page"
+    "source": "Zendesk — WFM schedule, https://support.zendesk.com/hc/en-us/articles/6443348256794-Accessing-and-understanding-your-WFM-Schedule-page"
   },
   {
     "id": "queue-split",
@@ -214,7 +214,7 @@
     ],
     "tags": ["action"],
     "shape": "split-inbox",
-    "source": "Intercom — Inbox split view — https://www.intercom.com/help/en/articles/6258745-the-inbox-explained"
+    "source": "Intercom — Inbox split view, https://www.intercom.com/help/en/articles/6258745-the-inbox-explained"
   },
   {
     "id": "ticket-history",
@@ -229,7 +229,7 @@
     ],
     "tags": ["display"],
     "shape": "timeline",
-    "source": "Intercom — Conversation events — https://www.intercom.com/help/en/articles/13334840-conversation-events-in-the-inbox"
+    "source": "Intercom — Conversation events, https://www.intercom.com/help/en/articles/13334840-conversation-events-in-the-inbox"
   },
   {
     "id": "trainee-limits",
@@ -243,6 +243,6 @@
     ],
     "tags": ["action"],
     "shape": "permissions",
-    "source": "Zendesk — Roles & permissions — https://support.zendesk.com/hc/en-us/articles/4408824375450-Setting-roles-and-access-in-Zendesk-Admin-Center"
+    "source": "Zendesk — Roles & permissions, https://support.zendesk.com/hc/en-us/articles/4408824375450-Setting-roles-and-access-in-Zendesk-Admin-Center"
   }
 ]
