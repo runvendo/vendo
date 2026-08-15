@@ -35,13 +35,13 @@ const routes: VendoRouteMap = {
   account: { path: "/accounts/:id", description: "One account by id, and its transactions." },
 };
 
-const screen = (to: string) => `import { Link, Stack, Text } from "@vendo/screen";
+const screen = (to: string, params = "") => `import { Link, Stack, Text } from "@vendo/screen";
 
 export default function Wayfinding() {
   return (
     <Stack>
       <Text text="Your balance moved." />
-      <Link to="${to}" label="Take me there" />
+      <Link to="${to}"${params} label="Take me there" />
     </Stack>
   );
 }
@@ -105,6 +105,38 @@ describe("the floor refuses a route the host never registered", () => {
 
   it("stays silent for a host that registered no registry at all, exactly as `tools` does", async () => {
     expect(blocking(await paint(screen("accounts")))).toBe("");
+  }, 60_000);
+
+  it("refuses a REGISTERED route whose :params the link left unfilled, naming which", async () => {
+    // The second way a link dies quietly, and the reason it lives in this check
+    // rather than its own: `resolveVendoRoute` answers undefined here too, and
+    // the brick renders the identical dead text.
+    const painted = await paint(screen("account"), routes);
+
+    expect(painted.ok, "a link with no value for :id reached a screen").toBe(false);
+    const said = blocking(painted);
+    expect(said).toContain('names route "account" on <Link> but leaves "id" unfilled');
+    expect(said).toContain("that route's path takes :id");
+    // Someone reading it knows what to type next.
+    expect(said).toContain('Write params={{ id: … }} beside to="account"');
+  }, 60_000);
+
+  it("names ONLY the params that are missing, not every one the path takes", async () => {
+    const twoParams: VendoRouteMap = {
+      entry: { path: "/accounts/:id/entries/:entryId", description: "One ledger entry." },
+    };
+    const painted = await paint(screen("entry", ' params={{ id: "acc_1" }}'), twoParams);
+
+    expect(painted.ok).toBe(false);
+    const said = blocking(painted);
+    expect(said).toContain('leaves "entryId" unfilled');
+    expect(said).not.toContain('"id", "entryId"');
+    // The full shape of the path still gets stated, so the repair has context.
+    expect(said).toContain("takes :id, :entryId");
+  }, 60_000);
+
+  it("lets a link through once every :param has a value", async () => {
+    expect(blocking(await paint(screen("account", ' params={{ id: "acc_1" }}'), routes))).toBe("");
   }, 60_000);
 
   it("keeps the checker pinned to the brick that takes a route", () => {
