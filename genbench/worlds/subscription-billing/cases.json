@@ -9,7 +9,8 @@
       "shows the amount still outstanding and the MRR at risk from past-due subscriptions",
       "presents MRR as the headline figure rather than burying it in a table"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "dashboard"
   },
   {
     "id": "dunning-queue",
@@ -21,7 +22,8 @@
       "offers a retry control on each row",
       "pressing a row's retry control calls retry_payment for that row's invoice"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "plan-mix-chart",
@@ -33,7 +35,8 @@
       "the subscriber counts read 3 Starter, 3 Growth, 2 Scale, 1 Scale (annual) and 1 Pro (legacy)",
       "the plans read biggest first"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "account-detail-ovid",
@@ -45,7 +48,8 @@
       "shows the unpaid invoice INV-2050 with its amount",
       "shows the account's event history, newest event first"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "detail"
   },
   {
     "id": "renewal-schedule",
@@ -57,7 +61,8 @@
       "does not present the canceled subscription as an upcoming renewal",
       "shows an amount beside each renewal, $89.10 beside Halden Freight and $29.00 beside Quarry Road Coffee"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "timeline"
   },
   {
     "id": "coupon-apply-form",
@@ -69,7 +74,8 @@
       "does not offer the expired LAUNCH50 coupon as a usable choice",
       "submitting calls apply_coupon with Steepgrove Bakery's subscription id and the chosen coupon code"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "form"
   },
   {
     "id": "write-off-unpayable",
@@ -81,7 +87,8 @@
       "asks for confirmation and takes a reason before anything is voided",
       "confirming calls void_invoice with a ticked invoice's id and a reason"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "dunning-queue-empty",
@@ -93,6 +100,7 @@
       "offers no retry control"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_dunning_queue": { "data": [] } }
   },
   {
@@ -105,7 +113,8 @@
       "shows Halden Freight as nearly at its allowance with no overage owed",
       "says which overage has already been invoiced and which has not"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "dunning-last-stand",
@@ -117,6 +126,7 @@
       "each choice calls its own tool for Tessellate Studio — retry_payment and void_invoice on the invoice, cancel_subscription on the subscription with period_end",
       "the void and the cancel ask for confirmation before they run"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "detail"
   }
 ]

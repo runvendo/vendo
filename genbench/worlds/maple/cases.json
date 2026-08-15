@@ -9,7 +9,8 @@
       "shows groceries $612.45, dining $438.20, subscriptions $184.41 and transport $96.75",
       "shows a total for the month of $4,243.11"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "spend-chart",
@@ -21,7 +22,8 @@
       "orders them largest first, housing down to coffee",
       "shows housing's amount as $2,850.00 and the chart's largest category"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "pending-transfers",
@@ -33,7 +35,8 @@
       "offers a cancel control on each pending transfer",
       "the cancel control targets the transfer it sits on"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "account-balances",
@@ -44,7 +47,8 @@
       "shows the credit account's balance as negative",
       "shows a total equal to the sum of the three balances"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "no-pending-transfers",
@@ -56,6 +60,7 @@
       "offers no cancel control"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_transfers": { "data": [] } }
   },
   {
@@ -68,7 +73,8 @@
       "offers exactly one cancel control on the screen",
       "pressing cancel fires cancel_transfer with id tr_1"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "detail"
   },
   {
     "id": "cancel-both-pending",
@@ -80,7 +86,8 @@
       "asks for confirmation before cancelling and says it will cancel 2 transfers",
       "confirming fires cancel_transfer twice, once with id tr_1 and once with id tr_2"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "transfer-activity-feed",
@@ -93,6 +100,7 @@
       "marks the two pending entries as pending and the other seven as completed"
     ],
     "tags": ["display"],
+    "shape": "timeline",
     "data": {
       "list_transfers": {
         "data": [
@@ -119,7 +127,8 @@
       "shows $9,102.20 as what checking holds once they clear",
       "answers plainly that there is room for the $125.50"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "detail"
   },
   {
     "id": "rent-check",
@@ -131,6 +140,7 @@
       "presents the two as one comparison block and says the amounts match",
       "stays on that comparison rather than becoming a full spending breakdown or a full transfer list"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "comparison"
   }
 ]

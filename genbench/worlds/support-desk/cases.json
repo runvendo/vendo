@@ -9,7 +9,8 @@
       "TK-1040 and TK-1047 read as overdue and sit above the two that still have time",
       "the four rows name their customers — Dominic Reyes, Alina Petrova, Rosa Delgado and Sam Okonkwo"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "inbox-zero",
@@ -21,6 +22,7 @@
       "offers no per-ticket controls, since there are no tickets"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": {
       "list_tickets": { "data": [] },
       "get_ticket": { "data": [] },
@@ -64,7 +66,8 @@
       "lists the canned replies the tool returned, by title",
       "picking a canned reply fires send_canned_reply with TK-1040 and that reply's id"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "detail"
   },
   {
     "id": "assign-backlog",
@@ -76,7 +79,8 @@
       "the only agents offered are the three the tool reports online: Nadia Okafor, Theo Lindqvist, June Hollis",
       "assigning fires assign_ticket with that row's ticket id and the chosen agent's id"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "refund-approvals",
@@ -89,7 +93,8 @@
       "the amount can be changed before approving",
       "approving fires approve_refund with that request's id and an amount in cents"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "bulk-close",
@@ -101,7 +106,8 @@
       "asks for confirmation before closing anything",
       "confirming fires close_tickets once, with the selected ticket ids"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "team-pulse",
@@ -114,7 +120,8 @@
       "shows that 4 tickets are overdue right now",
       "Nadia Okafor's CSAT reads 92% and Marco Duarte's 71%"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "dashboard"
   },
   {
     "id": "volume-trend",
@@ -126,7 +133,8 @@
       "all 14 days the tool returned are plotted, and no invented day",
       "the newest day's backlog reads 13"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "holiday-handoff",
@@ -138,7 +146,8 @@
       "shows who is on shift Thursday with their hours — Theo, Priya, June, Marco — and Nadia is not among them",
       "each ticket has a handover control, and it fires assign_ticket with that ticket's id and an agent who is on shift Thursday"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "duplicate-merge",
@@ -150,6 +159,7 @@
       "no customer who only wrote once is presented as a duplicate",
       "merging fires merge_tickets with the newer ticket's id and the older ticket it merges into"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   }
 ]

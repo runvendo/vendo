@@ -3,6 +3,7 @@
     "id": "alert-triage-queue",
     "lane": "screen",
     "tags": ["action"],
+    "shape": "table",
     "prompt": "Give me a triage queue of everything firing right now, worst severity first, with an acknowledge button on every row.",
     "pass": [
       "shows all five firing alerts and neither acknowledged one",
@@ -15,6 +16,7 @@
     "id": "all-clear",
     "lane": "screen",
     "tags": ["display"],
+    "shape": "empty-state",
     "prompt": "Show me what's firing right now, worst first, with a way to acknowledge anything that is.",
     "pass": [
       "says nothing is firing rather than showing an empty table",
@@ -27,6 +29,7 @@
     "id": "service-catalog",
     "lane": "screen",
     "tags": ["display"],
+    "shape": "table",
     "prompt": "Table of every service we monitor with its owning team, tier and tail latency. Put the unhealthy ones at the top.",
     "pass": [
       "lists all eight services with owning team, tier and tail latency",
@@ -39,6 +42,7 @@
     "id": "deploy-blast-radius",
     "lane": "screen",
     "tags": ["action"],
+    "shape": "comparison",
     "prompt": "Checkout started failing this afternoon and I think the last checkout-api deploy did it. Put the open incident and that deploy side by side — when each one started, who shipped it, who's running the incident, how many customers are hit — and give me a rollback button for that build.",
     "pass": [
       "names the open checkout incident and the checkout-api deploy that landed before it",
@@ -52,6 +56,7 @@
     "id": "oncall-week",
     "lane": "screen",
     "tags": ["display"],
+    "shape": "calendar",
     "prompt": "Who's on call this week? Lay out every team's shifts with primary and secondary, and make it obvious who is holding the pager right now.",
     "pass": [
       "shows every team's shifts from the tool with each engineer's role",
@@ -64,6 +69,7 @@
     "id": "error-budget-board",
     "lane": "screen",
     "tags": ["display"],
+    "shape": "table",
     "prompt": "Build me an SLO board: for every service with a budget, its target, how much error budget it has burned and how much is left, worst first.",
     "pass": [
       "shows all five services that have an SLO, each with its target percentage",
@@ -76,6 +82,7 @@
     "id": "ingest-spend-chart",
     "lane": "screen",
     "tags": ["display"],
+    "shape": "chart",
     "prompt": "Chart what each service cost us in ingest this month, biggest spender first, and give me the total bill.",
     "pass": [
       "draws a chart of the services' ingest cost rather than only listing them",
@@ -88,6 +95,7 @@
     "id": "last-day-timeline",
     "lane": "screen",
     "tags": ["display"],
+    "shape": "timeline",
     "prompt": "Walk me through the last 24 hours as a timeline — deploys, alerts, pages, who did what — oldest first.",
     "pass": [
       "shows the activity entries from the tool in time order, oldest first",
@@ -100,6 +108,7 @@
     "id": "alert-fatigue-audit",
     "lane": "screen",
     "tags": ["action"],
+    "shape": "table",
     "prompt": "My phone will not stop. Rank the alerts by how often they fired this week against how often anyone actually acked them, call out the ones nobody ever acts on, and let me pick several and silence them for the rest of the day in one action.",
     "pass": [
       "ranks the alerts by how often they fired, most-fired first, using the tool's counts",
@@ -113,6 +122,7 @@
     "id": "page-the-oncall",
     "lane": "screen",
     "tags": ["action"],
+    "shape": "form",
     "prompt": "Checkout is on fire and I need a human. Give me a form that shows who is on call for checkout-api right now and sends them a page with a message I type.",
     "pass": [
       "names the Payments primary and secondary who are on call now, because Payments owns checkout-api",

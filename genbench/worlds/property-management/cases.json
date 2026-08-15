@@ -9,7 +9,8 @@
       "shows a portfolio total still outstanding of $6,970.00",
       "marks each row as paid in full, partly paid, or unpaid"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "collections-chart",
@@ -21,7 +22,8 @@
       "the months run oldest to newest, March 2026 through August 2026",
       "August's collected figure of $12,075.00 reads far below its billed figure of $19,045.00"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "maintenance-board",
@@ -33,7 +35,8 @@
       "each request shows its unit and title, and the two urgent ones are visibly flagged",
       "no request appears in more than one column"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "board"
   },
   {
     "id": "no-maintenance-requests",
@@ -45,6 +48,7 @@
       "still names what the screen is for, so the empty state is not a blank page"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_maintenance_requests": { "data": [] } }
   },
   {
@@ -57,7 +61,8 @@
       "offers a vendor choice on each row drawn from the five vendors the tool returned",
       "assigning fires assign_vendor with that row's request id and the chosen vendor's id"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "record-payment",
@@ -69,7 +74,8 @@
       "asks for a payment method as well as an amount",
       "submitting fires record_payment with that charge's id, the amount in cents (120000, not 1200), and a method"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "form"
   },
   {
     "id": "late-notice-blast",
@@ -81,7 +87,8 @@
       "several can be ticked at once and sent with one control",
       "asks for confirmation first, then fires one send_late_notice per ticked tenant"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "showings-week",
@@ -93,7 +100,8 @@
       "the two requested showings read as not yet confirmed",
       "no day is filled with appointments the tool did not return"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "calendar"
   },
   {
     "id": "moveout-closeout",
@@ -105,7 +113,8 @@
       "lists both open work orders on that unit, at $185.00 and $225.00, and no work order from another unit",
       "ends on $685.00 left of the deposit — the deposit less the rent owed and both estimates"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "detail"
   },
   {
     "id": "lease-renewals",
@@ -117,6 +126,7 @@
       "the tenant who has already given notice is not offered a renewal",
       "renewing fires renew_lease with that lease's id, a new end date, and the new rent in cents"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   }
 ]

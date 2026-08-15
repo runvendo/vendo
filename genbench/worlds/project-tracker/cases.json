@@ -9,7 +9,8 @@
       "shows exactly the nine Sprint 20 issues as cards — CAI-156, CAI-157 and CAI-158 of Sprint 21 and the backlog's CAI-159, CAI-160 and CAI-161 are nowhere on the board",
       "each card offers a control that moves that issue, and pressing it calls move_issue for the issue on that card"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "board"
   },
   {
     "id": "sprint-health",
@@ -21,7 +22,8 @@
       "shows the work left as 24 points, the difference between those two",
       "breaks the sprint's issues down by status, including the one blocked issue"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "dashboard"
   },
   {
     "id": "burndown-chart",
@@ -33,7 +35,8 @@
       "the remaining series starts at 42 and ends at 24",
       "the remaining series sits above the ideal line at the end, so the sprint reads as behind plan"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "open-issues",
@@ -46,7 +49,8 @@
       "the four issues with nobody on them read as unassigned rather than borrowing a teammate's name",
       "rows run newest first by the update date each row shows — the three Aug 12 issues at the top, CAI-161 of Aug 3 last"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "estimate-backlog",
@@ -58,7 +62,8 @@
       "offers each of them the scale 2, 3, 5, 8 and 13 as one-click choices",
       "picking a value calls set_estimate with that row's issue and the number of points that was picked"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "release-readiness",
@@ -71,7 +76,8 @@
       "surfaces that CAI-147's checks are failing and its review has been waiting four days",
       "invents no issue and no release the tools did not return"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "detail"
   },
   {
     "id": "cut-release",
@@ -83,7 +89,8 @@
       "asks for confirmation before the cut fires, rather than firing on the first press",
       "confirming is what calls cut_release, and it calls it for 2026.8"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "detail"
   },
   {
     "id": "capacity-rebalance",
@@ -96,7 +103,8 @@
       "names CAI-151, Theo's unfinished issue, and offers a control that hands it to another teammate",
       "handing one over calls assign_issue with one of Theo's issues and the teammate that was picked"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "dashboard"
   },
   {
     "id": "review-queue",
@@ -108,7 +116,8 @@
       "the review whose checks are failing is visibly marked as failing",
       "each row offers a control that sends the issue back, and pressing it calls move_issue for that row's issue"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "quiet-review-queue",
@@ -120,6 +129,7 @@
       "offers no control that acts on a review"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_reviews": { "data": [] } }
   }
 ]

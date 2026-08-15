@@ -10,7 +10,8 @@
       "pressing check-in calls the check-in tool with that row's own appointment",
       "marking a no-show asks for confirmation before it goes through"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "table"
   },
   {
     "id": "day-by-provider",
@@ -22,7 +23,8 @@
       "shows the open slots the tool returned as open time, in the right provider's lane",
       "invents no appointment and no opening the tools did not return"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "calendar"
   },
   {
     "id": "patient-record",
@@ -34,7 +36,8 @@
       "shows today's appointment for her: the time, the provider and the visit type",
       "shows no other patient's details on the screen"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "detail"
   },
   {
     "id": "book-visit",
@@ -46,7 +49,8 @@
       "the slot choices are the open slots the tool returned, shown as times",
       "submitting calls the booking tool with all four values filled in"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "form"
   },
   {
     "id": "front-desk-now",
@@ -58,7 +62,8 @@
       "shows every room the tool returned with its status, so a person can see which are free",
       "every count on the screen matches the rows the tools returned"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "dashboard"
   },
   {
     "id": "no-show-trend",
@@ -70,7 +75,8 @@
       "labels each week so a person can tell which one it is",
       "the week of Jul 27 reads as the worst week for no-shows"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "fill-cancellation",
@@ -82,7 +88,8 @@
       "shows how long each of those patients has been waiting",
       "offering the slot calls the waitlist tool with that patient's waitlist entry and that slot"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "lobby-board",
@@ -94,7 +101,8 @@
       "nothing on the screen says why anyone is here: no visit type, no reason, no insurer",
       "each person reads as waiting or in a room, matching the tool's rows"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "list-feed"
   },
   {
     "id": "confirm-sweep",
@@ -106,7 +114,8 @@
       "asks for confirmation before anything sends, saying how many people will be texted",
       "confirming calls the reminder tool once for each of those appointments"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "empty-waitlist",
@@ -118,6 +127,7 @@
       "offers no control that would act on a patient who is not there"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_waitlist": { "data": [] } }
   }
 ]

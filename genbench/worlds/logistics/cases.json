@@ -9,7 +9,8 @@
       "the four late shipments — PO-88377, SO-3352, PO-88402 and SO-3318 — are marked late and sit above the on-time rows",
       "PO-88540 and PO-88566 are the only two rows with no driver on them"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "shipment-detail",
@@ -22,7 +23,8 @@
       "lists the four scans newest first with the time and terminal of each",
       "shows the destination as 2701 E Shaw Ave, Fresno, CA and the three charges as $487.50 freight, $75.00 liftgate and $42.50 residential"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "detail"
   },
   {
     "id": "driver-route",
@@ -34,7 +36,8 @@
       "says how much of the route is finished — 2 of 5 stops",
       "shows Kestrel Coffee Roasters delivered at 9:12 AM, Bloom & Vine Nursery at 10:41 AM, and Ridgeline Hardware due at 1:35 PM"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "timeline"
   },
   {
     "id": "exception-queue",
@@ -46,7 +49,8 @@
       "each row shows its shipment, customer, the kind of exception and the day it opened",
       "each row's close control calls resolve_exception with that row's exception id, passing whatever note the field holds"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "no-open-exceptions",
@@ -58,6 +62,7 @@
       "offers no close control"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_exceptions": { "data": [] } }
   },
   {
@@ -70,7 +75,8 @@
       "shows each candidate driver's terminal and hours left so I can tell them apart",
       "submitting calls assign_driver with the chosen shipment id and driver id"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "form"
   },
   {
     "id": "on-time-week",
@@ -82,7 +88,8 @@
       "Aug 7 reads as the worst day of the week, with 14 late of 138 delivered",
       "states the week's on-time rate from the tool's own counts — 914 of 970 deliveries, 94.2%"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "late-notify-all",
@@ -94,7 +101,8 @@
       "asks me to confirm before sending",
       "confirming calls notify_customer with a shipment id and a message once per row that is selected when I confirm"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "hours-vs-route",
@@ -106,7 +114,8 @@
       "does not put Priya Raman in the at-risk group — her 190-minute route is inside the 200 minutes she has left",
       "keeps the available and off-duty drivers out of the at-risk group"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "refused-redelivery",
@@ -118,6 +127,7 @@
       "a row's button calls reschedule_delivery with that shipment's id, the chosen date and the chosen window",
       "the same row also calls notify_customer for that shipment, and nothing fires until I confirm"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "form"
   }
 ]

@@ -10,7 +10,8 @@
       "flags the three events with zero fires in the last 7 days: csv_import_finished, old_pricing_toggle and legacy_signup_v1",
       "app_opened is presented as the busiest event"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "event-detail",
@@ -22,7 +23,8 @@
       "shows a deprecate control and a field for the reason on the same screen",
       "pressing deprecate calls the write tool with name \"checkout_started\" and the reason that was typed"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "detail"
   },
   {
     "id": "onboarding-funnel",
@@ -34,7 +36,8 @@
       "names 'Created a workspace' as the step with the biggest drop-off",
       "shows the funnel's end-to-end conversion as 7.4%"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "retention-grid",
@@ -46,7 +49,8 @@
       "cells the tool returned as null are blank rather than 0%",
       "the Jul 27 cohort's 52.6% week-1 retention reads as the strongest of the six cohorts"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "table"
   },
   {
     "id": "activity-with-alert-marks",
@@ -58,7 +62,8 @@
       "the four weekend days (Aug 1, Aug 2, Aug 8, Aug 9) read as the lowest points",
       "names the busiest day, Aug 10, in the screen's own copy rather than only on an axis"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "chart"
   },
   {
     "id": "morning-dashboard",
@@ -71,7 +76,8 @@
       "the firing-alert count is 3, not 5",
       "names Paid teams as the biggest segment by revenue at $63,180.00"
     ],
-    "tags": ["display"]
+    "tags": ["display"],
+    "shape": "dashboard"
   },
   {
     "id": "alert-triage",
@@ -83,7 +89,8 @@
       "the two high-severity alerts sit above the medium one",
       "an acknowledge control takes a note and calls the write tool with the id of the alert it sits on"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   },
   {
     "id": "quiet-alert-board",
@@ -95,6 +102,7 @@
       "offers no acknowledge control"
     ],
     "tags": ["display"],
+    "shape": "empty-state",
     "data": { "list_alerts": { "data": [] } }
   },
   {
@@ -107,7 +115,8 @@
       "submitting calls the create tool with exactly the name and definition that were typed",
       "invents no segment that the tool did not return"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "form"
   },
   {
     "id": "retire-unused-events",
@@ -120,6 +129,7 @@
       "one control deprecates all three, and it asks for confirmation before any call fires",
       "confirming fires one deprecate call per listed event"
     ],
-    "tags": ["action"]
+    "tags": ["action"],
+    "shape": "list-feed"
   }
 ]

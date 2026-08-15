@@ -4,6 +4,7 @@
     "lane": "screen",
     "prompt": "Show me my ten most recent orders in one table: order number, customer, when it was placed, whether it's paid, whether it's shipped, and the total.",
     "tags": ["display"],
+    "shape": "table",
     "pass": [
       "shows all ten orders the tool returned, newest first",
       "each row shows the order number, customer name, date placed and total",
@@ -16,6 +17,7 @@
     "lane": "screen",
     "prompt": "I work refunds every morning. Show me the refund requests that are still open — order, customer, reason and amount — and let me approve or deny each one right there.",
     "tags": ["action"],
+    "shape": "list-feed",
     "pass": [
       "lists the three open requests and neither approved nor denied one",
       "each request shows its order number, customer, reason and amount",
@@ -28,6 +30,7 @@
     "lane": "screen",
     "prompt": "Pull up order PDL-1042: every line item with quantity and price, the subtotal, shipping, tax and total, where it shipped, its timeline, and who the customer is — how many orders they've placed and what they've spent with us all time.",
     "tags": ["display"],
+    "shape": "detail",
     "pass": [
       "shows all four line items with quantity and unit price",
       "shows subtotal, shipping, tax and a total of $156.30",
@@ -40,6 +43,7 @@
     "lane": "screen",
     "prompt": "Give me this week at a glance: orders taken, gross sales, refunds paid out and average order value across the last seven days.",
     "tags": ["display"],
+    "shape": "dashboard",
     "pass": [
       "shows 9 orders for the seven days",
       "shows gross sales of $927.00",
@@ -52,6 +56,7 @@
     "lane": "screen",
     "prompt": "Chart gross sales day by day for the last seven days, with refunds plotted against them.",
     "tags": ["display"],
+    "shape": "chart",
     "pass": [
       "draws a chart with a bar or point per day rather than only a table",
       "all seven days are on the chart",
@@ -64,6 +69,7 @@
     "lane": "screen",
     "prompt": "SUMMERPOT ends at the end of the month and I want to run the same deal into autumn under a new code. Show me my discount codes with how far each is through its usage limit, then give me a form to create AUTUMNPOT — prefilled with SUMMERPOT's kind, value and usage limit — that creates the code when I submit it.",
     "tags": ["action"],
+    "shape": "form",
     "pass": [
       "lists every code with its uses against that code's usage limit",
       "shows each code's status, so the paused, scheduled and expired ones read differently from the active ones",
@@ -76,6 +82,7 @@
     "lane": "screen",
     "prompt": "Everything waiting to ship goes out this afternoon. Show me the orders that haven't shipped yet and let me mark them all fulfilled in one press, with a confirmation before it fires.",
     "tags": ["action"],
+    "shape": "list-feed",
     "pass": [
       "lists the four unfulfilled orders and neither the shipped, delivered nor cancelled ones",
       "flags PDL-1044 as still awaiting payment",
@@ -88,6 +95,7 @@
     "lane": "screen",
     "prompt": "Print me a packing slip for PDL-1042 that I can drop in the box: the ship-to address, the shipping method, and every line item with its SKU and quantity. No prices anywhere — whoever packs it doesn't need to see what the customer paid.",
     "tags": ["display"],
+    "shape": "detail",
     "pass": [
       "shows the ship-to address exactly as the tool returned it, plus the shipping method",
       "lists all four line items with SKU and quantity",
@@ -100,6 +108,7 @@
     "lane": "screen",
     "prompt": "Friday restock run. Build me the list I send to suppliers: every SKU at or below its reorder point, grouped by supplier, how many units to order to get each back to its target level from the units it has on hand, what that costs at unit cost, and a button on each line that places the order.",
     "tags": ["action"],
+    "shape": "table",
     "pass": [
       "lists exactly the five SKUs at or below their reorder point and no well-stocked one",
       "groups the lines by supplier",
@@ -113,6 +122,7 @@
     "lane": "screen",
     "prompt": "I work refunds every morning. Show me the refund requests that are still open — order, customer, reason and amount — and let me approve or deny each one right there.",
     "tags": ["display"],
+    "shape": "empty-state",
     "pass": [
       "says the refund queue is empty rather than showing an empty table",
       "invents no refund requests",
