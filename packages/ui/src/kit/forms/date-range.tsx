@@ -53,7 +53,10 @@ const WEEKDAYS = Array.from({ length: 7 }, (_, i) => label(new Date(Date.UTC(202
 export function DateRange({ label: fieldLabel, start, end, min, max, placeholder = "Pick a range", hint, disabled, onChange }: DateRangeProps) {
   const { fieldId, helpId } = useFieldIds("date-range");
   const [month, setMonth] = useState(() => parse(start) ?? new Date());
-  // The half-made range: set on the first click, cleared by the second.
+  // The half-made range: set on the first click, cleared by the second — or by
+  // walking away. A pending anchor that survived dismissal made the NEXT click,
+  // in a reopened calendar, the endpoint of a range the person had abandoned,
+  // and fired it as a real answer.
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
 
   const pick = (day: string) => {
@@ -71,7 +74,7 @@ export function DateRange({ label: fieldLabel, start, end, min, max, placeholder
 
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={fieldLabel} hint={hint}>
-      <Popover.Root>
+      <Popover.Root onOpenChange={(next) => { if (!next) setAnchor(undefined); }}>
         <Popover.Trigger
           id={fieldId}
           data-kit="DateRange"

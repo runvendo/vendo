@@ -208,6 +208,27 @@ describe("DateRange", () => {
     expect(onChange).toHaveBeenCalledWith({ start: "2026-03-04", end: "2026-03-12" });
   });
 
+  it("forgets a half-made range when the calendar is dismissed", async () => {
+    // The abandoned-endpoint bug: the pending first pick used to survive
+    // dismissal, so the next click in a REOPENED calendar completed a range the
+    // person had walked away from, and fired it as a real answer.
+    const onChange = vi.fn();
+    const { container } = render(<DateRange label="Period" start="2026-03-01" onChange={onChange} />);
+    await open(container);
+    fireEvent.click(screen.getByRole("button", { name: "10" }));
+
+    fireEvent.keyDown(await screen.findByRole("grid"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("grid")).toBeNull());
+
+    await open(container);
+    fireEvent.click(screen.getByRole("button", { name: "15" }));
+    expect(onChange).not.toHaveBeenCalled();
+
+    // …and the reopened calendar is taking a FRESH range, not repairing the old.
+    fireEvent.click(screen.getByRole("button", { name: "20" }));
+    expect(onChange).toHaveBeenCalledWith({ start: "2026-03-15", end: "2026-03-20" });
+  });
+
   it("refuses a day outside min/max", async () => {
     const onChange = vi.fn();
     const { container } = render(<DateRange label="Period" start="2026-03-01" min="2026-03-10" onChange={onChange} />);
@@ -271,6 +292,37 @@ describe("Tooltip", () => {
     const trigger = screen.getByText("clock").parentElement as HTMLElement;
     hover(trigger);
     expect((await screen.findByRole("tooltip", {}, { timeout: 3000 })).textContent).toBe("Sent 3 days ago");
+  });
+
+  it("describes the control itself, and adds no second tab stop around it", () => {
+    // The wrapper used to be focusable unconditionally and to wear the
+    // description itself, so a wrapped button cost two stops and the one that
+    // mattered — the button — arrived undescribed.
+    const { container } = render(<Tooltip label="Sent 3 days ago"><button type="button">Resend</button></Tooltip>);
+    const trigger = container.querySelector('[data-kit="Tooltip"]') as HTMLElement;
+    const button = screen.getByRole("button", { name: "Resend" });
+
+    expect(trigger.getAttribute("tabindex")).toBeNull();
+    expect(trigger.getAttribute("aria-describedby")).toBeNull();
+    expect(button.getAttribute("aria-describedby")).not.toBeNull();
+  });
+
+  it("keeps a description the control already had, rather than replacing it", () => {
+    const { container } = render(
+      <Tooltip label="Sent 3 days ago"><button type="button" aria-describedby="its-own">Resend</button></Tooltip>,
+    );
+    const described = screen.getByRole("button", { name: "Resend" }).getAttribute("aria-describedby");
+    expect(described?.split(" ")).toContain("its-own");
+    expect(described?.split(" ").length).toBe(2);
+    expect(container.querySelector('[data-kit="Tooltip"]')?.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("still stands in for a child that could not be reached at all", () => {
+    // A bare glyph is not focusable, so the wrapper IS the only way to the hint.
+    const { container } = render(<Tooltip label="Sent 3 days ago"><span>clock</span></Tooltip>);
+    const trigger = container.querySelector('[data-kit="Tooltip"]') as HTMLElement;
+    expect(trigger.getAttribute("tabindex")).toBe("0");
+    expect(trigger.getAttribute("aria-describedby")).not.toBeNull();
   });
 
   it("lets the content slot win over the label shorthand", async () => {
