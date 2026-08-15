@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { JsonSchema } from "@vendoai/core";
+import { log, type JsonSchema } from "@vendoai/core";
 
 /** 01-core §14 */
 export interface StandardSchema {
@@ -130,7 +130,18 @@ export const vendoThemeSchema = z.object({
   density: z.enum(["compact", "comfortable"]),
   motion: z.enum(["full", "reduced"]),
   borderWidth: z.string().optional(),
-  chartPalette: z.array(z.string()).max(6).optional(),
+  // Truncate rather than reject: a failed parse discards the WHOLE theme file,
+  // so a seventh color would cost the host its fonts, colors and radius too.
+  chartPalette: z.array(z.string()).transform((palette) => {
+    if (palette.length > 6) {
+      log({
+        code: "apps.theme-palette-truncated",
+        level: "warn",
+        message: `[vendo] theme chartPalette has ${palette.length} colors; only the first 6 are used`,
+      });
+    }
+    return palette.slice(0, 6);
+  }).optional(),
   motionDuration: z.string().optional(),
   motionEasing: z.string().optional(),
 }).passthrough() satisfies z.ZodType<VendoTheme>;

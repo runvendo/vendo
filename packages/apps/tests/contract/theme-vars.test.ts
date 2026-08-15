@@ -62,12 +62,6 @@ describe("theme v2 — the additions never break an older theme", () => {
     }).success).toBe(true);
   });
 
-  it("rejects a chartPalette longer than the six variables the mapping emits", () => {
-    const seven = ["#1", "#2", "#3", "#4", "#5", "#6", "#7"];
-    expect(vendoThemeSchema.safeParse({ ...preV2, chartPalette: seven }).success).toBe(false);
-    expect(vendoThemeSchema.safeParse({ ...preV2, chartPalette: seven.slice(0, 6) }).success).toBe(true);
-  });
-
   it("emits the same variable NAMES for a pre-v2 theme as for a full one", () => {
     const full = { ...preV2, borderWidth: "2px", chartPalette: ["#111"], motionEasing: "linear" };
     expect(Object.keys(themeCssVariables(preV2))).toEqual(Object.keys(themeCssVariables(full)));
@@ -127,6 +121,22 @@ describe("chartPalette — the host's series, else the accent ramp", () => {
     expect(vars["--vendo-chart-2"]).toBe("#1e1");
     expect(vars["--vendo-chart-3"]).toBe("#11e");
     expect(vars["--vendo-chart-4"]).toBe(chartPaletteFor(preV2.colors.accent)[3]);
+  });
+
+  it("a palette longer than six truncates, and the rest of the theme survives", () => {
+    const parsed = vendoThemeSchema.safeParse({
+      ...preV2,
+      chartPalette: ["#1", "#2", "#3", "#4", "#5", "#6", "#7"],
+    });
+    expect(parsed.success && parsed.data.chartPalette).toEqual(["#1", "#2", "#3", "#4", "#5", "#6"]);
+    expect(parsed.success && parsed.data.typography.fontFamily).toBe("Inter");
+    expect(parsed.success && parsed.data.colors).toEqual(preV2.colors);
+  });
+
+  it("a palette of six or fewer is passed through untouched", () => {
+    const six = ["#1", "#2", "#3", "#4", "#5", "#6"];
+    const parsed = vendoThemeSchema.safeParse({ ...preV2, chartPalette: six });
+    expect(parsed.success && parsed.data.chartPalette).toEqual(six);
   });
 
   it("no palette is the accent ramp, unchanged", () => {
