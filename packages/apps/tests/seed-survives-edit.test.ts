@@ -51,7 +51,7 @@ const runtime = (store = memoryStore()) => {
     model: basicLanguageModel(),
     screen: scriptedScreenAssembler(
       () => built,
-      () => "export default function Screen() {\n  return <b>a sparkline</b>;\n}\n",
+      () => "export default function Screen() {\n  return <strong>a sparkline</strong>;\n}\n",
     ),
   });
   return built;

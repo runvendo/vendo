@@ -324,7 +324,7 @@ describe("§9 — app document plane values and sub-schemas", () => {
   it("storageDecl defaults kind to records and pin base must be a hash ref", () => {
     expect(storageDeclSchema.safeParse({ about: "x" }).success).toBe(true);
     expect(storageDeclSchema.safeParse({ about: "x", kind: "blobs" }).success).toBe(false);
-    expect(appSeedSchema.safeParse({ component: "card", baseline: "sha256:abc" }).success).toBe(true);
+    expect(appSeedSchema.safeParse({ component: "card", baseline: "sha256:abc", instruction: "make it blue" }).success).toBe(true);
   });
 });
 
