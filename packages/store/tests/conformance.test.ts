@@ -21,7 +21,12 @@ for (const backend of backends()) {
           return { adapter: made.store, close: made.cleanup };
         },
       });
-      for (const c of suite.cases) it(c.name, c.run);
+      for (const c of suite.cases) {
+        it(c.name, async () => {
+          const result = await c.run();
+          expect(result, result === undefined ? undefined : result.omitted).toBeUndefined();
+        });
+      }
     });
 
     describe("environment SecretsProvider conformance", () => {

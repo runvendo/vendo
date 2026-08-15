@@ -156,6 +156,10 @@ export interface IdempotencyLedger {
    * contenders wait for the owner's answer rather than executing. Waiting is
    * bounded: if an owner disappears without publishing, callers
    * fail closed with `unavailable` instead of executing or polling forever.
+   * A pending claim is never expired automatically because its mutation may
+   * have committed before the owner disappeared. Transactional callers keep
+   * `claim`, the mutation, and {@link record} on one transaction-scoped store
+   * handle so rollback removes an unpublished reservation.
    */
   claim?(scope: IdempotencyScope, requestHash: string): Promise<IdempotencyRecord | "claimed">;
 }

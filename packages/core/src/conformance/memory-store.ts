@@ -326,12 +326,18 @@ const projectMemoryRecord = (
 export interface MemoryStoreAdapterOptions {
   /** Deterministic clock for test assertions. */
   timestamp?: () => string;
+  /** Bound for a pending idempotency claim before waiters fail closed. */
+  idempotencyWaitTimeoutMs?: number;
 }
 
 export function memoryStoreAdapter(
   options: MemoryStoreAdapterOptions = {},
 ): StoreAdapter & { ensureSchema(): Promise<void> } {
   const collections = new Map<string, Map<string, VendoRecord & { seq: number }>>();
+  const idempotencyWaitTimeoutMs = options.idempotencyWaitTimeoutMs ?? 30_000;
+  if (!Number.isFinite(idempotencyWaitTimeoutMs) || idempotencyWaitTimeoutMs <= 0) {
+    throw new VendoError("validation", "idempotencyWaitTimeoutMs must be positive");
+  }
   let sequence = 0;
   let lastTimestamp = 0;
   const namespaces = new Map<string, Map<string, { bytes: Uint8Array; contentType?: string }>>();
@@ -382,7 +388,7 @@ export function memoryStoreAdapter(
         "unavailable",
         `idempotency key ${scope.key} is still being processed; retry later`,
       ));
-    }, 30_000);
+    }, idempotencyWaitTimeoutMs);
     held.waiters.push(wake);
   });
 

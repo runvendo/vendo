@@ -121,6 +121,14 @@ describe("StoreAdapter conformance", () => {
     expect(report.passed).toBeGreaterThan(0);
   });
 
+  it("memoryStoreAdapter honors the configured idempotency wait timeout", async () => {
+    const adapter = memoryStoreAdapter({ idempotencyWaitTimeoutMs: 5 });
+    const ledger = adapter.idempotency!;
+    const scope = { tenant: "tenant_a", op: "workspace.commit", key: "memory_timeout" };
+    expect(await ledger.claim!(scope, "hash_a")).toBe("claimed");
+    await expect(ledger.check(scope, "hash_a")).rejects.toMatchObject({ code: "unavailable" });
+  });
+
   it("rejects a broken store and reports failing case names", async () => {
     const report = await runConformance(storeAdapterConformance({
       async makeAdapter() {

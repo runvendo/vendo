@@ -108,6 +108,20 @@ for (const backend of backends()) {
       });
     });
 
+    it("lets a retry claim after the owner's transaction rolls back", async () => {
+      const db = maybeDbFor(made.store);
+      if (db === undefined) throw new Error("createStore must expose its database handle");
+      const raced = { tenant: "tenant_a", op: "workspace.commit", key: "key_claim_rollback" };
+      await expect(db.transaction(async (query) => {
+        const txLedger = createIdempotencyLedger({ ...db, query });
+        expect(await txLedger.claim!(raced, "hash_a")).toBe("claimed");
+        throw new Error("roll back the owner");
+      })).rejects.toThrow("roll back the owner");
+
+      expect(await ledger.claim!(raced, "hash_a")).toBe("claimed");
+      await ledger.record(raced, "hash_a", { status: 200, result: { committed: true } });
+    });
+
     it("bounds claim acquisition behind an uncommitted owner", async () => {
       const db = maybeDbFor(made.store);
       if (db === undefined) throw new Error("createStore must expose its database handle");
