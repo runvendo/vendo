@@ -153,9 +153,9 @@ export default function NetWorth() {
       // Any content change after approval — must invalidate the approval.
       prompt.includes("Rename the app")
         ? screen("Net worth (renamed)")
-        // The person's remix. The ship-diff below reads the SEEDED SEAT, so this
-        // is the edit whose delta an approver has to be shown before the app
-        // ships into the host page.
+        // The person's remix. The ship-diff below reads THE SCREEN, so this is
+        // the code whose delta an approver has to be shown before the app ships
+        // into the host page.
         : screen("Net worth $1.2M — remixed"));
 
     const store = createStore({ dataDir: join(root, ".data") });
@@ -169,13 +169,16 @@ export default function NetWorth() {
       development: true,
     });
 
-    // The seed is the user's Remix GESTURE, executed deterministically by the
-    // engine (the captured source is copied, the seed recorded, no model call).
-    const seeded = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
-    expect(seeded.components?.[componentName]).toBeDefined();
-    const appId = seeded.id;
-    const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
-    expect(remixed.failure).toBeUndefined();
+    // The seed IS the user's Remix gesture, instruction and all: the fork and
+    // the first edit are one operation, and what it answers with is the
+    // person's own screen carrying the remix's provenance.
+    const remixed = await vendo.apps.seed.from(
+      { component: "MapleNetWorthCard", instruction: "Call out that it is remixed" },
+      ctx,
+    );
+    const appId = remixed.id;
+    expect(remixed.components?.[componentName]).toBeUndefined();
+    expect(remixed.source?.["app.tsx"]?.text).toContain("Net worth $1.2M — remixed");
 
     // 1. The ship-diff is visible over the wire and shows exactly the net change.
     const shipDiffResponse = await vendo.handler(request("GET", `/apps/${appId}/ship-diff`));
@@ -183,7 +186,7 @@ export default function NetWorth() {
     const shipDiff = await shipDiffResponse.json();
     expect(shipDiff).toMatchObject({
       appId,
-      versionHash: appVersionHash(remixed.app),
+      versionHash: appVersionHash(remixed),
       pins: [{
         slot: "MapleNetWorthCard",
         component: componentName,

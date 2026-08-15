@@ -65,7 +65,7 @@ const invoiceChaser = () => ({
   }],
   egress: ["api.stripe.com", "api.resend.com"],
   secrets: ["RESEND_API_KEY"],
-  seed: { component: "invoice-card", baseline: "sha256:abc123" },
+  seed: { component: "invoice-card", baseline: "sha256:abc123", instruction: "chase the late ones" },
   forkedFrom: "app_invoice_template",
   futureCapability: { version: 2, retained: true },
 });
@@ -175,7 +175,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
   });
 
   it("rejects bad pin bases and host refs", () => {
-    expectValidation({ ...minimal(), seed: { component: "card", baseline: "md5:abc" } });
+    expectValidation({ ...minimal(), seed: { component: "card", baseline: "md5:abc", instruction: "make it mine" } });
     expectValidation({
       ...minimal(),
       storage: { invoices: { about: "Invoices", refs: { invoice: "stripe.invoice" } } },
@@ -185,7 +185,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
   it("rejects empty names, storage descriptions, and pin slots", () => {
     expectValidation({ ...minimal(), name: "" });
     expectValidation({ ...minimal(), storage: { invoices: { about: "" } } });
-    expectValidation({ ...minimal(), seed: { component: "", baseline: "sha256:abc" } });
+    expectValidation({ ...minimal(), seed: { component: "", baseline: "sha256:abc", instruction: "make it mine" } });
   });
 
   it("enforces component limits even without a v1 tree", () => {

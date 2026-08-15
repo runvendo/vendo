@@ -113,17 +113,17 @@ export interface VendoClient {
     fork(id: AppId): Promise<AppDocument>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
-    /** POST /apps/:id/reseed — swap the seeded component for the host's current
-     *  version (06 §8). It REPLACES that component, so whatever the person
-     *  changed about it is gone; the surface that offers it says so. */
+    /** POST /apps/:id/reseed — rebuild the remix against the host's current
+     *  version of the component (06 §8) by replaying the instruction it was made
+     *  with. Whatever the person changed since is gone; the surface says so. */
     reseed(id: AppId): Promise<AppDocument>;
     /**
-     * POST /apps/seed — the ✦ gesture's DETERMINISTIC path (06 §8): the engine
-     * copies the captured baseline into a new app's seeded seat with no model
-     * call, and the model never decides to seed. An `instruction` then runs as
-     * an ordinary edit on the new app.
+     * POST /apps/seed — the ✦ gesture (06 §8). There are no bare forks: the
+     * gesture collects the `instruction` first, and the fork plus that first edit
+     * are ONE operation whose answer is an ordinary screen app carrying the
+     * remix's provenance.
      */
-    seedFrom(input: { component: string; slot?: string; instruction?: string }): Promise<AppDocument>;
+    seedFrom(input: { component: string; slot?: string; instruction: string }): Promise<AppDocument>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive:
      * user activity on an embedded served app rides one host-proxied HEAD

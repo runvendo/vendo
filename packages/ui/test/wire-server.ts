@@ -1071,7 +1071,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
       // (W0) so a raced double-tap can never mint two. It answers with the app
       // document itself; there is no fork result envelope.
       if (method === "POST" && url.pathname === "/apps/seed") {
-        const { component, slot } = parsedBody as { component: string; slot?: string; instruction?: string };
+        const { component, slot, instruction } = parsedBody as { component: string; slot?: string; instruction: string };
         const componentName = seedComponentName(component);
         const deduped = state.apps.find(item => item.seed?.component === component);
         if (deduped) return json(response, deduped);
@@ -1093,7 +1093,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
           ],
           components: { [componentName]: `export default function Fork() { return <p>${component} fork</p>; }` },
         } as AppDocument["tree"];
-        minted.seed = { component, baseline: "sha256:fixture" };
+        minted.seed = { component, baseline: "sha256:fixture", instruction };
         state.apps.push(minted);
         return json(response, minted);
       }

@@ -21,7 +21,6 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import {
-  bundleOf,
   compileWire,
   type AppDocument,
 } from "../src/contract/index.js";
@@ -441,22 +440,19 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   });
 });
 
-describe("a save whose text left a seeded component out", () => {
+describe("a save whose text left a component out", () => {
   const slot = "dashboard.header";
   const name = seedComponentName(slot);
 
-  it("keeps the seeded source — a seat whose source is gone is not a seat", async () => {
+  it("drops it — a remix's provenance is its seed, never a copy the save has to carry", async () => {
     const { runtime, store } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    // A remixed host component: `seed` names it, `components` holds the captured
-    // host source as a seeded bundle. `Extra` is the model's own island, beside it.
+    // A remixed host component: `seed` names where it came from, and the app's
+    // code is its own. Nothing holds a copy of the host's source.
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:hostsource" },
-      components: {
-        [name]: { source: "export default () => null;", origin: "seeded" as const },
-        Extra: "export default () => 1;",
-      },
+      seed: { component: slot, baseline: "sha256:hostsource", instruction: "make it mine" },
+      components: { Extra: "export default () => 1;" },
     }, "u1");
 
     // The compile carries NO islands at all (a rewrite from scratch, or a save
@@ -464,36 +460,18 @@ describe("a save whose text left a seeded component out", () => {
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
 
     const doc = (await rowOf(store))?.doc;
-    expect(doc?.seed).toEqual({ component: slot, baseline: "sha256:hostsource" });
-    expect(bundleOf(doc!.components![name]!).source).toBe("export default () => null;");
-    // The model's island is the model's to drop; only the seeded seat is the
-    // app's own provenance.
-    expect(doc?.components?.Extra).toBeUndefined();
+    // The seed rides through: it is the app's own history, not the model's.
+    expect(doc?.seed).toEqual({ component: slot, baseline: "sha256:hostsource", instruction: "make it mine" });
+    // The components are exactly what the compile named, and it named none.
+    expect(doc?.components).toBeUndefined();
   });
 
-  it("keeps a LEGACY remix's bare-string source — the shape every older fork is stored in", async () => {
-    const { runtime, store } = stand();
-    await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    // `componentEntrySchema` still accepts a bare source string, and that is how
-    // every remix forked before the seeded bundle existed sits in the store.
-    // `bundleOf` reads it as `authored`, so a carry keyed on the origin drops it.
-    await seedAppRow(engineOverAdapter(store), {
-      ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:hostsource" },
-      components: { [name]: "export default () => null;" },
-    }, "u1");
-
-    await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-
-    expect(bundleOf((await rowOf(store))!.doc!.components![name]!).source).toBe("export default () => null;");
-  });
-
-  it("still lets the file EDIT a seeded component, exactly as an engine edit may", async () => {
+  it("writes the island it DOES name, on a seeded app like any other", async () => {
     const { runtime, store } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:hostsource" },
+      seed: { component: slot, baseline: "sha256:hostsource", instruction: "make it mine" },
       components: { [name]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
 
@@ -612,7 +590,7 @@ describe("a refused write at the history cap", () => {
     // the fork gesture used to be.
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:host-old" },
+      seed: { component: slot, baseline: "sha256:host-old", instruction: "make it mine" },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
     const stored = (await rowOf(store))!.doc!;
@@ -753,7 +731,7 @@ describe("a save computed over a row that changed under it", () => {
     // the fork gesture used to be.
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:host-old" },
+      seed: { component: slot, baseline: "sha256:host-old", instruction: "make it mine" },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
     const stored = (await rowOf(store))!.doc!;

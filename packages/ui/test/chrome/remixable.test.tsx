@@ -54,6 +54,15 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   const forkCalls = () => wire.requests.filter(r => r.method === "POST" && r.path === "/apps/seed");
   const forkIframe = () => screen.queryByTitle(`Generated component: ${FORK_COMPONENT}`) as HTMLIFrameElement | null;
 
+  /** The whole gesture: the pill opens the ask, and the remix is what the person
+   *  wrote in it. There are no bare forks, so every fork below goes through here. */
+  const remix = (instruction = "make it a chart") => {
+    fireEvent.click(forkPill());
+    const ask = screen.getByRole("textbox", { name: `What should your ${SLOT} do?` });
+    fireEvent.change(ask, { target: { value: instruction } });
+    fireEvent.click(screen.getByRole("button", { name: "Remix it" }));
+  };
+
   function mount(node = <Remixable><TopMerchants title="Top merchants" /></Remixable>, strict = false) {
     const inner = (
       <VendoProvider client={client}>
@@ -103,20 +112,20 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
         />
       </Remixable>,
     );
-    fireEvent.click(forkPill());
+    remix("make it a chart");
     await waitFor(() => expect(forkCalls()).toHaveLength(1));
-    // A remix is an ordinary create that starts from something: the call names
-    // the host component and carries no snapshot — call-site props are LIVE,
-    // streamed into the mounted remix on every render (below), never frozen
-    // into the document at mint time.
-    expect(forkCalls()[0]?.body).toEqual({ component: SLOT });
+    // A remix is an ordinary create that starts from something AND the first
+    // edit on it: the call names the host component and the person's own words,
+    // and carries no snapshot — call-site props are LIVE, streamed into the
+    // mounted remix on every render (below), never frozen in at mint time.
+    expect(forkCalls()[0]?.body).toEqual({ component: SLOT, instruction: "make it a chart" });
     // No model turn: the model lost the remix decision entirely.
     expect(wire.requests.filter(r => r.method === "POST" && r.path === "/threads")).toHaveLength(0);
   });
 
   it("mounts the fork JAILED, IN PLACE of the wrapped child", async () => {
     mount();
-    fireEvent.click(forkPill());
+    remix();
     // The fork's island mounts inside the wrapper boundary, in the sandboxed
     // iframe jail — and the original child yields the spot.
     await waitFor(() => expect(forkIframe()).toBeTruthy());
@@ -144,7 +153,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
       </VendoProvider>
     );
     const { rerender } = render(view("July"));
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     const posted = vi.spyOn(forkIframe()!.contentWindow!, "postMessage");
     rerender(view("August"));
@@ -164,7 +173,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
 
   it("revert unmounts the fork and restores the original child", async () => {
     mount();
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     const appId = wire.state.apps.at(-1)!.id;
     fireEvent.click(managePill());
@@ -181,7 +190,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
 
   it("StrictMode double-invoke does not double-fork", async () => {
     mount(<Remixable><TopMerchants title="Top merchants" /></Remixable>, true);
-    fireEvent.click(screen.getByRole("button", { name: `Remix ${SLOT} with Vendo` }));
+    remix();
     await waitFor(() => expect(forkCalls()).toHaveLength(1));
     await waitFor(() => expect(screen.queryByTitle(`Generated component: ${FORK_COMPONENT}`)).toBeTruthy());
     // Flush any trailing effects — still exactly one fork, one minted app.
@@ -192,10 +201,11 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
 
   it("latches the pill while the fork is in flight (no second tap, cosmetic — the server dedupes anyway)", async () => {
     mount();
-    const pill = forkPill() as HTMLButtonElement;
-    fireEvent.click(pill);
-    fireEvent.click(pill);
-    fireEvent.click(pill);
+    // The ask closes on submit, so the second and third taps land on a pill that
+    // is already latched and carries no instruction to send.
+    remix();
+    fireEvent.click(forkPill());
+    fireEvent.click(forkPill());
     await waitFor(() => expect(forkCalls()).toHaveLength(1));
     await new Promise(resolve => setTimeout(resolve, 60));
     expect(forkCalls()).toHaveLength(1);
@@ -203,7 +213,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
 
   it("the ✦ popover reports an instant-kind remix as sandboxed and personal", async () => {
     mount();
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     fireEvent.click(managePill());
     const menu = screen.getByRole("group", { name: `Remix of ${SLOT}` });
@@ -216,7 +226,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   // remix, which was the WRONG behavior.
   it("keeps the ORIGINAL rendered for a review-kind remix awaiting review — no fork mount, status in the ✦ popover only", async () => {
     mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(managePill()).toBeTruthy());
     // Wait past the fork surface actually arriving: STILL the original.
     await waitFor(() => expect(wire.requests.some(r => r.method === "GET" && /\/apps\/.+\/open/.test(r.path))).toBe(true));
@@ -231,7 +241,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("keeps the ORIGINAL rendered for a REJECTED review-kind remix, with the note in the ✦ popover", async () => {
-    const forked = await client.apps.seedFrom({ component: SLOT });
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
     const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: false,
@@ -250,7 +260,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("reports BOTH states when an older approved version serves while the current one is pending review", async () => {
-    const forked = await client.apps.seedFrom({ component: SLOT });
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
     const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: true,
@@ -267,7 +277,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("reports BOTH states when an older approved version serves and the current one was rejected", async () => {
-    const forked = await client.apps.seedFrom({ component: SLOT });
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
     const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: true,
@@ -286,7 +296,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   it("the ✦ popover surfaces a server-granted venue verdict verbatim", async () => {
     // Seed a fork whose open payload carries the SERVER-authoritative venue
     // verdict (lane W1c owns minting it; the popover only renders it).
-    const forked = await client.apps.seedFrom({ component: SLOT });
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
     const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: true, versionHash: "sha256:v1", approvedBy: "host-admin", at: "2026-08-02T00:00:00.000Z",
@@ -301,7 +311,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
 
   it("\"Open in panel\" opens the conversation scoped to the remix — prefilled, never sent", async () => {
     mount();
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     // The prefill NAMES THE THING and carries no id: this used to read
     // "…remix (app app_…): ", and an app id is our plumbing, not something a
@@ -321,7 +331,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
 
   it("hands the agent its grounding out of sight — the app id reaches the turn, never the screen", async () => {
     mount();
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     const appId = wire.state.apps.find(app => app.seed?.component === SLOT)!.id;
     fireEvent.click(managePill());
@@ -349,7 +359,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("discovers an existing fork on mount, so a remix survives a reload", async () => {
-    await client.apps.seedFrom({ component: SLOT });
+    await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
     mount();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     expect(screen.getByRole("button", { name: `Manage the ${SLOT} remix` })).toBeTruthy();
@@ -373,7 +383,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     wire.state.failures.push({ method: "POST", path: "/apps/seed", code: "not-found", message: "no captured baseline", status: 404 });
     mount();
-    fireEvent.click(forkPill());
+    remix();
     await waitFor(() => expect(warn.mock.calls.some(([first]) => String(first).includes("no captured baseline"))).toBe(true));
     expect((forkPill() as HTMLButtonElement).disabled).toBe(false);
   });

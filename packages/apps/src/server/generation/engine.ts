@@ -10,7 +10,6 @@
  */
 import {
   type ToolSemantics,
-  type TreeNode,
 } from "@vendoai/core";
 import {
   type AppDocument,
@@ -19,8 +18,6 @@ import {
 import type { LanguageModel, ModelMessage } from "ai";
 import type { FloorDependencies } from "../checking/deps.js";
 import { modelCallParams } from "../runtime/model-params.js";
-import { seedComponentName } from "@vendoai/core";
-import { hasDefaultExport, seedForkSource, type ComponentBundle, type SeedBaseline } from "../../contract/index.js";
 
 /** The floor owns the tool slice now (`../checking/deps.ts`) so it can outlive
  *  this pipeline; re-exported here because every generation module already
@@ -37,7 +34,6 @@ export interface GenerationDependencies extends FloorDependencies {
   /** Narrowed to REQUIRED: the floor can run its deterministic half without a
    *  model, but a generation cannot happen without one. */
   model: LanguageModel;
-  seedBaselines?: readonly SeedBaseline[];
   /** Per-tool field semantics from `.vendo/semantics.json`: annotated shape
    *  cards and Kit format defaults. Keyed by tool name. */
   semantics?: Readonly<Record<string, ToolSemantics>>;
@@ -56,9 +52,6 @@ export const asTree = (tree: GeneratedAppDocument["tree"]): Tree => tree as unkn
 
 export const asPayload = (tree: Tree): NonNullable<GeneratedAppDocument["tree"]> =>
   tree as unknown as NonNullable<GeneratedAppDocument["tree"]>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 // Anthropic prompt-caching breakpoint (mirrors packages/agent/src/agent.ts's
 // CACHE_BREAKPOINT). providerOptions.anthropic is ignored by every other
@@ -125,85 +118,3 @@ export const askModel = async (
 export const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
 ];
-
-const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => {
-  const children = parent.children ?? [];
-  const position = typeof index === "number" && Number.isInteger(index)
-    ? Math.max(0, Math.min(index, children.length))
-    : children.length;
-  children.splice(position, 0, nodeId);
-  parent.children = children;
-};
-
-/**
- * What a seeded seat holds: the captured source, plus every furnishing the jail
- * needs to run it. It travels IN the document, which is what makes a seeded app
- * independent of whatever the host's baseline does next — the open path reads
- * this and never matches a hash. Shared by the first seed and every re-seed, so
- * the two can never furnish a seat differently.
- */
-export const seededBundle = (baseline: SeedBaseline): ComponentBundle => ({
-  // A named-export capture seeds with a synthesized default export.
-  source: seedForkSource(baseline.source),
-  origin: "seeded",
-  ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
-  ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
-  ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
-  ...(baseline.styles === undefined ? {} : { styleSheets: structuredClone(baseline.styles) }),
-});
-
-/** The deterministic seed core (06-apps §8): copies the TRUSTED captured
- *  baseline into the named generated component AS A BUNDLE — source plus every
- *  furnishing the jail needs to run it — mints and attaches the node, and
- *  records the seed. No model involvement, source is never retyped. The
- *  runtime's `seed.from` surface (the ✦ gesture) is the only caller. */
-export const applySeedFork = (
-  app: AppDocument,
-  props: Record<string, unknown>,
-  seedBaselines: readonly SeedBaseline[] | undefined,
-): string[] => {
-  const fail = (message: string): string[] => [`seed failed: ${message}`];
-  if (app.tree === undefined) return fail("this app has no tree to seed a component into");
-  const slot = props.slot;
-  if (typeof slot !== "string" || slot.length === 0) return fail("requires a non-empty slot attribute");
-  const baseline = seedBaselines?.find((candidate) => candidate.slot === slot);
-  if (baseline === undefined) return fail(`seed baseline "${slot}" is unavailable`);
-  if (app.seed !== undefined) return fail(`this app is already seeded from "${app.seed.component}"`);
-  // A named-export capture forks with a synthesized default export.
-  const forkSource = seedForkSource(baseline.source);
-  if (!hasDefaultExport(forkSource)) {
-    return fail(`seed baseline "${slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
-  }
-  const componentName = seedComponentName(baseline.slot);
-  if (app.components?.[componentName] !== undefined) return fail(`generated component "${componentName}" already exists`);
-  const tree = asTree(app.tree);
-  const parentId = props.into === undefined ? tree.root : props.into;
-  if (typeof parentId !== "string") return fail("into must be a string node id when present");
-  const parent = tree.nodes.find(({ id }) => id === parentId);
-  if (parent === undefined) return fail(`parent "${parentId}" does not exist`);
-  if (props.at !== undefined && (typeof props.at !== "number" || !Number.isInteger(props.at) || props.at < 0)) {
-    return fail("at must be a non-negative integer when present");
-  }
-  // Compiler-owned id discipline: mint past the existing ordinals.
-  const key = componentName.toLowerCase();
-  let ordinal = 0;
-  for (const { id } of tree.nodes) {
-    const match = /^([a-z][a-z0-9]*)-([1-9]\d*)$/.exec(id);
-    if (match !== null && match[1] === key) ordinal = Math.max(ordinal, Number(match[2]));
-  }
-  const node: TreeNode = {
-    id: `${key}-${ordinal + 1}`,
-    component: componentName,
-    source: "generated",
-    ...(isRecord(props.props) ? { props: structuredClone(props.props) as TreeNode["props"] } : {}),
-  };
-  tree.nodes.push(node);
-  insertChild(parent, node.id, props.at);
-  app.components = { ...(app.components ?? {}), [componentName]: seededBundle(baseline) };
-  app.seed = {
-    component: baseline.slot,
-    baseline: baseline.hash,
-    ...(baseline.review === undefined ? {} : { review: baseline.review }),
-  };
-  return [];
-};

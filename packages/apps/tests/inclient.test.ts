@@ -10,13 +10,14 @@ import {
 import { describe, expect, it } from "vitest";
 import { createInClientApprovals } from "../src/server/remix/inclient.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
-import { seedComponentName, type SeedBaseline } from "../src/contract/index.js";
+import { SCREEN_FILE, type SeedBaseline } from "../src/contract/index.js";
 import type { InClientApproval } from "../src/server/index.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import { inlineSourceFile } from "../src/server/persistence/app-source.js";
 import { appVersionHash } from "../src/server/remix/version-hash.js";
 
 const tools: ToolRegistry = {
@@ -194,13 +195,7 @@ describe("runtime in-client surface", () => {
   };
 
   const seeded = async (store: ReturnType<typeof memoryStore>, subject = "user_ada") => {
-    const app = doc({
-      seed: { component: "hero-card", baseline: "sha256:hero-base" },
-      components: {
-        Widget: "export default function Widget() { return null; }",
-        [seedComponentName("hero-card")]: "export default function Hero() { return <b>fork</b>; }",
-      },
-    });
+    const app = doc({ seed: { component: "hero-card", baseline: "sha256:hero-base", instruction: "make it mine" } });
     await seedAppRow(engineOverAdapter(store), app, subject);
     return app;
   };
@@ -219,7 +214,13 @@ describe("runtime in-client surface", () => {
 
   it("computes the ship-diff against the configured baselines", async () => {
     const { store, runtime } = setup();
-    const app = await seeded(store);
+    // A remix as it really is: its own screen, standing in for the host
+    // component the seed names.
+    const app = doc({
+      seed: { component: "hero-card", baseline: "sha256:hero-base", instruction: "make it mine" },
+      source: { [SCREEN_FILE]: inlineSourceFile("export default function Hero() { return <b>fork</b>; }") },
+    });
+    await seedAppRow(engineOverAdapter(store), app, "user_ada");
     const shipDiff = await runtime.inClient.shipDiff(app.id, context("user_ada"));
     expect(shipDiff.versionHash).toBe(appVersionHash(app));
     expect(shipDiff.pins[0]).toMatchObject({ slot: "hero-card", drifted: false });

@@ -190,10 +190,15 @@ export const appMemorySchema = z.object({
  * `slot` is the placement the ✦ gesture came from (a convenience for the chrome,
  * never the location of record — that is a placement ROW), and `review` carries
  * the captured baseline's review kind.
+ *
+ * `instruction` is what the person asked for when they made the remix, VERBATIM.
+ * There are no bare forks — the ✦ gesture collects it before it fires — and it is
+ * what a re-seed replays against the host's new baseline.
  */
 export interface AppSeed {
   component: string;
   baseline: string;
+  instruction: string;
   slot?: string;
   review?: boolean;
 }
@@ -202,6 +207,7 @@ export interface AppSeed {
 export const appSeedSchema = z.object({
   component: z.string(),
   baseline: z.string(),
+  instruction: z.string(),
   slot: z.string().optional(),
   review: z.boolean().optional(),
 }).passthrough() satisfies z.ZodType<AppSeed>;

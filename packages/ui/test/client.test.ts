@@ -61,12 +61,11 @@ describe("createVendoClient", () => {
     expect(imported.id).toBe("app_imported");
     expect((await client.apps.fork("app_1")).forkedFrom).toBe("app_1");
     // The ✦ gesture: one seed per app, answered with the app document itself.
-    // The seeded seat ships under the runtime's REAL seedComponentName —
-    // hash-suffixed — and a `slot` also places the mint there.
+    // There are no bare forks — the instruction rides with it and lands in the
+    // provenance — and a `slot` also places the mint there.
     const seeded = await client.apps.seedFrom({ component: "hero", instruction: "make it blue" });
-    expect(seeded.seed).toEqual({ component: "hero", baseline: "sha256:fixture" });
-    expect(Object.keys(seeded.tree?.components ?? {})).toEqual([expect.stringMatching(/^PinnedHero[0-9a-f]{8}$/)]);
-    expect((await client.apps.seedFrom({ component: "hero2", slot: "hero2" })).seed?.component).toBe("hero2");
+    expect(seeded.seed).toEqual({ component: "hero", baseline: "sha256:fixture", instruction: "make it blue" });
+    expect((await client.apps.seedFrom({ component: "hero2", slot: "hero2", instruction: "make it blue" })).seed?.component).toBe("hero2");
     // Re-seeding moves the app onto the host's current version of that component.
     expect((await client.apps.reseed(seeded.id)).seed?.baseline).toBe("sha256:fixture-NEW");
     expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
@@ -128,7 +127,7 @@ describe("createVendoClient", () => {
     exact("POST", "/apps/import", [4, 5, 6]);
     exact("POST", "/apps/app_1/fork", {});
     exact("POST", "/apps/seed", { component: "hero", instruction: "make it blue" });
-    exact("POST", "/apps/seed", { component: "hero2", slot: "hero2" });
+    exact("POST", "/apps/seed", { component: "hero2", slot: "hero2", instruction: "make it blue" });
     exact("POST", `/apps/${seeded.id}/reseed`, {});
     exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);

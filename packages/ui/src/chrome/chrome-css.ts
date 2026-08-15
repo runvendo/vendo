@@ -1355,6 +1355,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-remix-menu button:hover { background: var(--vendo-accent-soft); }
 .fl-remix-menu button:disabled { color: var(--vendo-fg-muted); cursor: default; }
 .fl-remix-menu button.is-danger { color: var(--vendo-danger); }
+/* The ✦ gesture's own popover: the instruction it collects before it fires. */
+.fl-remix-ask { width: 220px; margin: 1px 0 4px; padding: 7px 9px;
+  border: 1px solid var(--vendo-border); border-radius: 8px;
+  background: var(--vendo-surface); color: var(--vendo-fg);
+  font: 500 12.5px/1.2 var(--vendo-font-family); }
+.fl-remix-ask:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
 
 /* ---- filled state ---- */
 .fl-slot-filled { position: relative; flex: 1; }

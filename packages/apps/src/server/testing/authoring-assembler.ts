@@ -69,3 +69,29 @@ export const authoringAssembler = (
   runtime: () => AppsRuntime,
   wire: string,
 ): ScreenAssembler => scriptedAssembler(runtime, () => wire);
+
+/**
+ * The same fixture for the COMPONENT screen: `answer` returns the `app.tsx` a
+ * screen agent would have written, and it lands through `authoredScreen` — the
+ * door the shipped floor's paint half calls, versioning and all. The only thing
+ * standing in for a live agent is the choice of source.
+ */
+export const scriptedScreenAssembler = (
+  runtime: () => AppsRuntime,
+  answer: (
+    request: ScreenRequest,
+    current: AppDocument | null,
+  ) => AssemblerAnswer | Promise<AssemblerAnswer>,
+): ScreenAssembler => ({
+  async assemble(request, ctx) {
+    const current = await runtime().get(request.appId, ctx).catch(() => null);
+    const answered = await answer(request, current);
+    if (typeof answered !== "string") return answered;
+    await runtime().authoredScreen({
+      appId: request.appId,
+      name: current?.name ?? "Untitled app",
+      source: answered,
+    }, ctx);
+    return { kind: "assembled" };
+  },
+});

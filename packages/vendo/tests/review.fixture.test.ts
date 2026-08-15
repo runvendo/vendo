@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash } from "@vendoai/apps";
 import {
-  seedComponentName,
   type AppDocument,
   type Principal,
 } from "@vendoai/core";
@@ -156,7 +155,7 @@ export default function Page() {
     const user = "user_ada";
     const reviewer = "host_reviewer";
     const vendo = createVendo({
-      model: screenModel(["Transfer remix v2", "Transfer remix v3"]),
+      model: screenModel(["Transfer remix v1", "Transfer remix v2", "Transfer remix v3"]),
       // Host-resolved principal from the fixture header; absent = no identity,
       // which the wire refuses with `forbidden`.
       principal: async (req): Promise<Principal | null> => {
@@ -170,8 +169,12 @@ export default function Page() {
       apps: { review: { reviewer: (ctx) => ctx.principal.subject === reviewer } },
     });
 
-    // 1. The user's Remix gesture seeds an app from the review-kind component.
-    const seedResponse = await vendo.handler(request("POST", "/apps/seed", { as: user, body: { component: "TransferPanel" } }));
+    // 1. The user's Remix gesture: the instruction rides with it, and the fork
+    // and its first edit land as ONE operation.
+    const seedResponse = await vendo.handler(request("POST", "/apps/seed", {
+      as: user,
+      body: { component: "TransferPanel", instruction: "Rename it" },
+    }));
     expect(seedResponse.status).toBe(200);
     const seeded = await seedResponse.json() as AppDocument;
     const appId = seeded.id;
@@ -305,11 +308,9 @@ export default function Page() {
       approvedBy: "host-security-review",
     });
     expect(granted.payload.inClient.review).toBeUndefined();
-    const componentName = seedComponentName("TransferPanel");
-    // The seat ships the person's own screen, so the assertion names the version:
-    // an edit writes `app.tsx` and the save puts it in the seat, which is what the
-    // ship-diff a reviewer reads is a diff OF.
-    expect(granted.components?.[componentName]).toContain("Transfer remix v2");
+    // The remix IS its screen, so what ships is what that screen paints — and
+    // the assertion names the version, because the version is the whole claim.
+    expect(JSON.stringify(granted.payload.nodes)).toContain("Transfer remix v2");
 
     // 7. Another edit: the LAST approved version keeps rendering natively
     // while the new one is pending — never a gap, never unreviewed code.
@@ -324,7 +325,8 @@ export default function Page() {
     // v2's screen, NOT v3's — naming the version is the whole claim here: the last
     // APPROVED source keeps rendering while the new one waits, so unreviewed code
     // never ships.
-    expect(during.components?.[componentName]).toContain("Transfer remix v2");
+    expect(JSON.stringify(during.payload.nodes)).toContain("Transfer remix v2");
+    expect(JSON.stringify(during.payload.nodes)).not.toContain("Transfer remix v3");
     // ...and the pending version is back in the reviewer's queue.
     const pendingAgain = await (await vendo.handler(request("GET", "/apps/review-queue", { as: reviewer }))).json();
     expect(pendingAgain[0]).toMatchObject({ appId, versionHash: v3Hash, resubmissions: 1 });

@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash, seedBaselineSchema } from "@vendoai/apps";
 import {
-  bundleOf,
   seedComponentName,
   type AppDocument,
   type Principal,
@@ -28,28 +27,30 @@ const SCREEN_BRIEF_MARKER = "# In this loop";
 const SAVED_MARKER = "That save landed.";
 
 /**
- * The screen agent, scripted, for the ONE model-driven step in this journey —
- * the user's edit. It writes the app's whole `app.tsx` with the remix note on it
- * and saves it; a seeded app has no screen file until an edit writes one, so
- * there is no document to open first.
- *
- * The re-seed below never comes through here: it is deterministic (d6 — a plain
- * swap for the pristine new component, with no replay).
+ * The screen agent, scripted. It runs TWICE in this journey and writes a
+ * different heading each time — first for the ✦ gesture's own instruction, then
+ * for the re-seed, which replays that same instruction against the host's new
+ * baseline. The second heading is how the replay is visible at all.
  */
-const screenModel = (): LanguageModel => {
+const screenModel = (headings: string[]): LanguageModel => {
   const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+  let saves = 0;
   const saving = (prompt: string): boolean =>
     prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
-  const rewrite = (): string => `import { Stack, Text } from "@vendo/screen";
+  const rewrite = (): string => {
+    const heading = headings[Math.min(saves, headings.length - 1)];
+    saves += 1;
+    return `import { Stack, Text } from "@vendo/screen";
 
 export default function MapleNetWorth() {
   return (
     <Stack>
-      <Text text="Net worth $1.2M — remixed" />
+      <Text text="${heading}" />
     </Stack>
   );
 }
 `;
+  };
   return {
     specificationVersion: "v2",
     provider: "vendo-drift-fixture",
@@ -144,36 +145,39 @@ export default function Page() {
     cleanups.push(async () => store.close());
     await store.ensureSchema();
     process.chdir(root);
-    const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_drift" };
 
-    // ONE host process lifetime: seed the app (gesture, no model) and edit it.
+    // ONE host process lifetime: the ✦ gesture, instruction and all.
     const vendo = createVendo({
-      model: screenModel(),
+      model: screenModel(["Net worth $1.2M — remixed"]),
       principal: async () => principal,
       store,
       development: true,
     });
-    // Gesture-owned seeding: the seed rides its own wire route, executed
-    // deterministically by the engine — the model never sees it.
-    const seedResponse = await vendo.handler(request("POST", "/apps/seed", { component: slot }));
+    // Gesture-owned seeding: the seed rides its own wire route, and the
+    // instruction it carries runs through the ordinary edit door in the same
+    // operation.
+    const seedResponse = await vendo.handler(request("POST", "/apps/seed", {
+      component: slot,
+      instruction: "Call out that it is remixed",
+    }));
     expect(seedResponse.status).toBe(200);
-    const seeded = await seedResponse.json() as AppDocument;
-    const appId = seeded.id;
-    expect(seeded.seed).toEqual({ component: slot, baseline: oldHash });
-    expect(bundleOf(seeded.components![componentName]!).source).toContain("$1.2M");
-    const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
-    expect(remixed.failure).toBeUndefined();
-    expect(remixed.app.seed).toEqual({ component: slot, baseline: oldHash });
-    // The person's own change really is in the seat — otherwise "the re-seed
-    // replaces it" below would prove nothing.
-    expect(bundleOf(remixed.app.components![componentName]!).source).toContain("— remixed");
+    const remixed = await seedResponse.json() as AppDocument;
+    const appId = remixed.id;
+    expect(remixed.seed).toEqual({
+      component: slot,
+      baseline: oldHash,
+      instruction: "Call out that it is remixed",
+    });
+    // The remix IS its screen, and none of the capture came with it.
+    expect(remixed.source?.["app.tsx"]?.text).toContain("— remixed");
+    expect(remixed.components?.[componentName]).toBeUndefined();
 
     // The pre-drift version gets an in-client approval (dev injection seam).
     const approval = await (await vendo.handler(request("POST", "/dev/inclient-approval", {
       appId,
       approvedBy: "maple-security-review",
     }))).json();
-    expect(approval.versionHash).toBe(appVersionHash(remixed.app));
+    expect(approval.versionHash).toBe(appVersionHash(remixed));
 
     // The HOST changes the component and resyncs: the sync report says drifted.
     await writeFile(componentFile, hostSource.replace(
@@ -188,7 +192,7 @@ export default function Page() {
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      model: screenModel(),
+      model: screenModel(["Total net worth $1.2M — remixed"]),
       principal: async () => principal,
       store,
       development: true,
@@ -212,15 +216,19 @@ export default function Page() {
     const shipDiff = await (await redeployed.handler(request("GET", `/apps/${appId}/ship-diff`))).json();
     expect(shipDiff.pins).toEqual([expect.objectContaining({ slot, drifted: true })]);
 
-    // 3. The re-seed swaps in the PRISTINE new component. That is the whole
-    //    trade: it replaces what the person made, and nothing is replayed.
+    // 3. The re-seed REPLAYS the recorded instruction against the host's new
+    //    baseline. That is the whole trade: it rebuilds, so whatever the person
+    //    changed since the first edit is gone.
     const reseedResponse = await redeployed.handler(request("POST", `/apps/${appId}/reseed`));
     expect(reseedResponse.status).toBe(200);
     const reseeded = await reseedResponse.json() as AppDocument;
-    expect(reseeded.seed).toEqual({ component: slot, baseline: newBaseline.hash });
-    const reseededSource = bundleOf(reseeded.components![componentName]!).source;
-    expect(reseededSource).toContain("Total net worth");
-    expect(reseededSource).not.toContain("— remixed");
+    expect(reseeded.seed).toEqual({
+      component: slot,
+      baseline: newBaseline.hash,
+      instruction: "Call out that it is remixed",
+    });
+    // A NEW screen: the instruction really ran again.
+    expect(reseeded.source?.["app.tsx"]?.text).toContain("Total net worth");
 
     // 4. Drift is gone — and the re-seed minted a NEW version, so the old
     //    in-client approval no longer grants: back to the sandbox, loudly.
@@ -233,8 +241,11 @@ export default function Page() {
     });
     expect(afterReseed.payload.inClient.versionHash).not.toBe(approval.versionHash);
 
-    // 5. The re-seed version sits on the public history like any edit.
+    // 5. The re-seed sits on the public history like any edit — the version that
+    //    moved the provenance, and the replay of the person's own words.
     const history = await (await redeployed.handler(request("GET", `/apps/${appId}/history`))).json();
-    expect(history[0].intent).toContain(`Update ${slot} to the host's current version`);
+    const intents = (history as Array<{ intent: string }>).map(({ intent }) => intent);
+    expect(intents).toContain(`Update ${slot} to the host's current version`);
+    expect(intents).toContain("Call out that it is remixed");
   }, 120_000);
 });

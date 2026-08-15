@@ -17,7 +17,6 @@ import {
 import {
   SCREEN_FILE,
   bundleOf,
-  isSeedComponentName,
   type AppDocument,
   type WireCompileResult,
 } from "../../contract/index.js";
@@ -74,24 +73,13 @@ const authoredDocument = (
     ui: "tree",
     tree: asPayload(structuredClone(compiled.tree)),
   };
-  // documentFromEdit's seeded/model split: a SEEDED seat holds host source
-  // captured on the furnishing trust path, and it is the app's own provenance —
-  // not a file save's to drop. The compile still wins for a name it does carry
-  // (a seeded island IS editable through the wire); a save whose text omits it
-  // keeps the stored bundle, furnishings and all.
-  //
-  // By NAME, never by `origin`: `componentEntrySchema` still accepts a bare
-  // source string, which is how every remix forked before the seed rewrite is
-  // stored, and `bundleOf` reads those as `authored`. Keyed on the origin, the
-  // carry never fires for them and a save that omits the component deletes the
-  // remix outright.
-  const carried = Object.entries(previous?.components ?? {})
-    .filter(([name]) => isSeedComponentName(name) && compiled.components[name] === undefined);
-  const components = { ...Object.fromEntries(carried), ...compiled.components };
-  if (Object.keys(components).length === 0) {
+  // Nothing is carried forward: a remix holds no captured seat any more (its
+  // provenance is `seed`, and its code is its own screen), so what the compile
+  // names is the whole components map.
+  if (Object.keys(compiled.components).length === 0) {
     delete document.components;
   } else {
-    document.components = structuredClone(components);
+    document.components = structuredClone(compiled.components);
   }
   delete document.componentTools;
   // The same rule at rest as at serve time (create's own line): a model-forged

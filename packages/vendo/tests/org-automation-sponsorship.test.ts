@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
   DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
-  seedComponentName,
   type AppDocument,
   type Membership,
   type Principal,
@@ -50,12 +49,7 @@ const BASELINE = {
   sampleProps: { valueCents: 120_000_000 },
 };
 
-const SEED_COMPONENT = seedComponentName(SLOT);
-const SEED_NODE = `${SEED_COMPONENT.toLowerCase()}-1`;
-
-/** An automation app: a v2 tree to open AND a schedule to fire — seeded from a
- *  STALE capture of the host slot, so a re-seed is the smallest model-free write
- *  that reaches the apps runtime's persist choke point. */
+/** An automation app: a v2 tree to open AND a schedule to fire. */
 const automationApp = (id: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
@@ -65,12 +59,11 @@ const automationApp = (id: string): AppDocument => ({
     formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: [SEED_NODE] },
-      { id: SEED_NODE, component: SEED_COMPONENT, source: "generated" },
+      { id: "root", component: "Stack", source: "prewired", children: ["digest"] },
+      { id: "digest", component: "Digest", source: "generated" },
     ],
   },
-  components: { [SEED_COMPONENT]: { source: BASELINE.source, origin: "seeded" } },
-  seed: { component: SLOT, baseline: "sha256:maple-stale" },
+  components: { Digest: "export default function Digest() { return null; }" },
   triggers: [{
     id: DEFAULT_TRIGGER_ID,
     on: { kind: "schedule", every: "1h" },
@@ -204,10 +197,13 @@ describe("a third party's edit through the real apps path invalidates the sponso
     expect(await sponsorship()).toMatchObject({ sponsor: dana.subject, status: "active" });
 
     // The smallest MODEL-FREE write that reaches the apps runtime's persist choke
-    // point: the deterministic re-seed onto the host's current capture.
+    // point: an editor who is not the sponsor saving the app's own screen.
     acting = kim;
-    const reseeded = await booted.vendo.apps.seed.reseed({ appId: app.id }, ctxOf(kim));
-    expect(reseeded.seed?.baseline).toBe(BASELINE.hash);
+    await booted.vendo.apps.authoredScreen({
+      appId: app.id,
+      name: app.name,
+      source: "export default function Screen() { return null; }\n",
+    }, ctxOf(kim));
 
     expect(await sponsorship()).toMatchObject({ status: "invalidated", reason: "edit" });
   });

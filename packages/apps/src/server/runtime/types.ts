@@ -378,15 +378,15 @@ export interface BoxResponse {
 }
 
 /**
- * The ✦ gesture's input. The seed itself is DETERMINISTIC — the engine copies
- * the captured baseline into the seeded seat with no model call — so `component`
- * names the captured host component and `slot` is the placement the gesture came
- * from. An `instruction` then rides the ORDINARY edit path on the new app.
+ * The ✦ gesture's input. There are no bare forks: `component` names the captured
+ * host component and `instruction` is what the person asked for, which the
+ * gesture collects BEFORE it fires. `slot` is the placement the gesture came
+ * from.
  */
 export interface SeedFromInput {
   component: string;
   slot?: string;
-  instruction?: string;
+  instruction: string;
 }
 
 /**
@@ -793,14 +793,15 @@ export interface AppsRuntime {
    * 06-apps §8 — additive remix surface (same additive precedent as `inClient`,
    * not part of the frozen §1 method table).
    *
-   * `from` is the ✦ gesture: capture → bundle → an ordinary `create` carrying a
-   * `seed`. `drift` reports that the host component this app was seeded from has
-   * moved on — a WARNING, nothing more. `reseed` acts on it by swapping in the
-   * pristine new component and minting a version.
+   * `from` is the ✦ gesture: fork and first edit as ONE operation, producing an
+   * ordinary screen app that carries a `seed`. `drift` reports that the host
+   * component this app was seeded from has moved on — a WARNING, nothing more.
+   * `reseed` acts on it by replaying the recorded instruction against the host's
+   * new baseline.
    *
-   * A re-seed REPLACES the seeded component, including whatever the person has
-   * changed about it. That is why it is never automatic and why the surface that
-   * offers it has to say what it costs.
+   * A re-seed REBUILDS the remix, so whatever the person has changed since is
+   * gone. That is why it is never automatic and why the surface that offers it
+   * has to say what it costs.
    */
   seed: {
     drift(appId: AppId, ctx: RunContext): Promise<SeedDrift | null>;

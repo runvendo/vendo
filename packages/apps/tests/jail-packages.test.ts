@@ -68,7 +68,7 @@ const doc = (): AppDocument => ({
       { id: "fork", component: seedComponentName(slot), source: "generated" },
     ],
   },
-  seed: { component: slot, baseline: "sha256:donut-base" },
+  seed: { component: slot, baseline: "sha256:donut-base", instruction: "make it mine" },
   components: {
     [seedComponentName(slot)]: {
       source: "export default function Fork() { return <b>fork</b>; }",

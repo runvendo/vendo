@@ -249,7 +249,7 @@ describe("apps lifecycle", () => {
       format: VENDO_APP_FORMAT,
       id: "app_pin_intent_history",
       name: "Pinned app",
-      seed: { component: "net-worth-card", baseline: "sha256:base" },
+      seed: { component: "net-worth-card", baseline: "sha256:base", instruction: "make it mine" },
     };
     await seedAppRow(engineOverAdapter(store), app, "user_ada");
     for (let index = 1; index <= 51; index += 1) {

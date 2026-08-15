@@ -577,7 +577,10 @@ describe("the empty-slot Remix gesture places its mint", () => {
       }],
     });
 
-    const forked = await runtime.seed.from({ component: "net-worth-card", slot: "net-worth-card" }, ctx);
+    const forked = await runtime.seed.from(
+      { component: "net-worth-card", slot: "net-worth-card", instruction: "show it as a chart" },
+      ctx,
+    );
     expect(await runtime.placements({}, ctx)).toEqual([
       { slot: "net-worth-card", app: forked.id, title: forked.name, status: "ready" },
     ]);

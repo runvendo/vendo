@@ -2,12 +2,13 @@ import type {
   AppId,
 } from "@vendoai/core";
 import {
+  SCREEN_FILE,
   bundleOf,
   type AppDocument,
 } from "../../contract/index.js";
 import { appVersionHash } from "./version-hash.js";
 import { seedComponentName } from "@vendoai/core";
-import { seedForkSource, type SeedBaseline } from "../../contract/index.js";
+import { type SeedBaseline } from "../../contract/index.js";
 import { unifiedDiff } from "../persistence/unified-diff.js";
 
 /**
@@ -64,17 +65,20 @@ export const computeShipDiff = (
   const pins: ShipDiffPin[] = seed === undefined ? [] : [(() => {
     const component = seedComponentName(seed.component);
     const baseline = baselines.find((candidate) => candidate.slot === seed.component);
-    const shipped = bundleOf(doc.components?.[component] ?? "").source;
     return {
       slot: seed.component,
       component,
       baseHash: seed.baseline,
       ...(baseline === undefined ? {} : { baselineHash: baseline.hash }),
       drifted: baseline?.hash !== seed.baseline,
-      // Diff from the source the seat actually started as (`seedForkSource`):
-      // the synthesized default-export alias on a named-export capture is seed
-      // plumbing, not a host edit, so an unedited seat reads as an empty diff.
-      diff: unifiedDiff(`${seed.component}/${component}.tsx`, baseline === undefined ? "" : seedForkSource(baseline.source), shipped),
+      // The remix IS its screen, so the shipped side is `app.tsx` and the base
+      // side is the host's LIVE capture — an approver reads what the person's
+      // code does against the component it stands in for, not against a hash.
+      diff: unifiedDiff(
+        `${seed.component}/${SCREEN_FILE}`,
+        baseline?.source ?? "",
+        doc.source?.[SCREEN_FILE]?.text ?? "",
+      ),
     };
   })()];
   const pinnedComponents = new Set(pins.map((pin) => pin.component));

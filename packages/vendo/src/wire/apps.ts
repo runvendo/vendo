@@ -153,10 +153,10 @@ export const appRoutes: RouteEntry[] = [
     }
     return undefined;
   }),
-  // 06-apps §8 — the ✦ gesture (2026-07-21): the deterministic seed the user's
-  // Remix gesture invokes. The engine mints an ordinary app whose seeded seat
-  // holds the captured baseline — no model call, and the model never decides to
-  // seed. An optional instruction then rides the ordinary edit path on it.
+  // 06-apps §8 — the ✦ gesture: the remix the user's Remix gesture invokes.
+  // There are no bare forks — the gesture collects the instruction first, and
+  // the runtime mints an app carrying the remix's provenance and then runs that
+  // instruction through the ordinary edit door, as ONE operation.
   // ORDER IS LOAD-BEARING: this entry (and /apps/import below) must stay
   // ahead of the "/apps/:appId/*" catch-all, whose rest pattern would
   // otherwise capture appId="seed".
@@ -165,8 +165,8 @@ export const appRoutes: RouteEntry[] = [
     const body = await requestJson(request);
     return json(await deps.apps.seed.from({
       component: string(body["component"], "component"),
+      instruction: string(body["instruction"], "instruction"),
       ...(body["slot"] === undefined ? {} : { slot: string(body["slot"], "slot") }),
-      ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
     }, ctx));
   }),
   // Remix final shape (2026-08-02) — the review seam for the host's console:

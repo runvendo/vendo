@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { seedBaselineSchema } from "@vendoai/apps";
-import { bundleOf, seedComponentName, type RunContext } from "@vendoai/core";
+import { seedComponentName, type RunContext } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -131,43 +131,27 @@ export default function Page() {
       store,
     });
 
-    // The ✦ gesture is a CREATE that starts from something: the engine copies
-    // the captured baseline into a new app's seeded seat with NO model call.
-    const app = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
+    // The ✦ gesture is a CREATE that starts from something: it records where the
+    // remix came from and runs the person's instruction through the ordinary
+    // edit door. Nothing copies the captured source into the app.
+    const app = await vendo.apps.seed.from(
+      { component: "MapleNetWorthCard", instruction: "call out the trend" },
+      ctx,
+    );
 
-    expect(modelCalls).toBe(0);
+    // The instruction really reached the builder — the gesture is not a bare fork.
+    expect(modelCalls).toBeGreaterThan(0);
     expect(app.seed).toEqual({
       component: "MapleNetWorthCard",
       baseline: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      instruction: "call out the trend",
     });
-    const componentName = seedComponentName("MapleNetWorthCard");
-    // The seat holds its own contents: the captured source verbatim, tagged
-    // seeded, with every furnishing the jail needs to run it.
-    expect(app.components?.[componentName]).toMatchObject({
-      source: componentSource,
-      origin: "seeded",
-      sourceImports: { "./MapleTrendBadge": "src/MapleTrendBadge.tsx" },
-      subSources: { "src/MapleTrendBadge.tsx": { source: badgeSource, imports: {} } },
-      styleSheets: [{ path: "src/app/globals.css", css: rootCss }],
-    });
-    expect(app.tree).toMatchObject({
-      nodes: expect.arrayContaining([expect.objectContaining({
-        id: `${componentName.toLowerCase()}-1`,
-        component: componentName,
-        source: "generated",
-      })]),
-    });
-    const surface = await vendo.apps.open(app.id, ctx);
-    if (surface.kind !== "tree") throw new Error("Expected tree surface");
-    expect(surface.payload).toMatchObject({
-      furnishings: {
-        [componentName]: {
-          sourceImports: { "./MapleTrendBadge": "src/MapleTrendBadge.tsx" },
-          subSources: { "src/MapleTrendBadge.tsx": { source: badgeSource, imports: {} } },
-          styles: [{ path: "src/app/globals.css", css: rootCss }],
-        },
-      },
-    });
+    // Not one byte of the capture — no seat, no sub-modules, no host stylesheet.
+    const stored = JSON.stringify(app);
+    expect(app.components?.[seedComponentName("MapleNetWorthCard")]).toBeUndefined();
+    expect(stored).not.toContain(badgeSource.trim());
+    expect(stored).not.toContain(componentSource.trim());
+    expect(stored).not.toContain(rootCss.trim());
     await expect(vendo.apps.exportApp(app.id, ctx)).rejects.toMatchObject({
       code: "blocked",
       detail: { reason: "baseline-forbids-export" },
@@ -210,17 +194,20 @@ export default function Page() {
       store,
     });
 
-    const app = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
+    const app = await vendo.apps.seed.from(
+      { component: "MapleNetWorthCard", instruction: "call out the trend" },
+      ctx,
+    );
     const archive = await vendo.apps.exportApp(app.id, ctx);
     const exported = await vendo.apps.importApp(archive, ctx);
 
     expect(app.seed).toEqual({
       component: "MapleNetWorthCard",
       baseline: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      instruction: "call out the trend",
     });
+    // The provenance — including the instruction a re-seed replays — survives
+    // the round trip. There is no captured seat to survive.
     expect(exported.seed).toEqual(app.seed);
-    // The seeded seat survives the round trip with its source intact.
-    expect(bundleOf(exported.components![seedComponentName("MapleNetWorthCard")]!).source)
-      .toBe(componentSource);
   }, 120_000);
 });

@@ -1,7 +1,8 @@
-// The wire leg of the ✦ gesture: POST /apps/seed { component, slot?, instruction? }
-// mints an ordinary app whose seeded seat holds the captured baseline, records
-// the optional `slot` as a PLACEMENT row (the seed on the document is
-// provenance, never location), and validates the body shape loudly.
+// The wire leg of the ✦ gesture: POST /apps/seed { component, instruction, slot? }
+// mints an ordinary app carrying the remix's provenance and runs the
+// instruction through the ordinary edit door, records the optional `slot` as a
+// PLACEMENT row (the seed on the document is provenance, never location), and
+// validates the body shape loudly.
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,32 +47,46 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
     await store.ensureSchema();
     process.chdir(root);
 
-    // No model configured: the gesture is deterministic and must not need one.
+    // No model configured: the mint still lands, and the edit it rides on fails
+    // without stranding the caller with an error over an app that exists.
     const vendo = createVendo({ principal: async () => principal, store, development: true });
 
-    const seedResponse = await vendo.handler(request("POST", "/apps/seed", { component, slot: "dashboard" }));
+    const seedResponse = await vendo.handler(request("POST", "/apps/seed", {
+      component,
+      instruction: "rank them by amount",
+      slot: "dashboard",
+    }));
     expect(seedResponse.status).toBe(200);
     const app = await seedResponse.json() as AppDocument;
-    // Provenance is ONE record on the document, and it carries the slot asked for.
-    expect(app.seed).toEqual({ component, baseline: "sha256:seed-wire-baseline", slot: "dashboard" });
-    const componentName = seedComponentName(component);
-    expect(app.components?.[componentName]).toMatchObject({ source, origin: "seeded" });
-    expect(app.tree?.nodes).toContainEqual(expect.objectContaining({
-      component: componentName,
-      source: "generated",
-    }));
+    // Provenance is ONE record on the document: where it came from, what was
+    // asked for, and the slot the gesture came from.
+    expect(app.seed).toEqual({
+      component,
+      baseline: "sha256:seed-wire-baseline",
+      instruction: "rank them by amount",
+      slot: "dashboard",
+    });
+    // Nothing copies the captured host source into the remix.
+    expect(app.components?.[seedComponentName(component)]).toBeUndefined();
+    expect(JSON.stringify(app)).not.toContain(source.trim());
 
     // The slot is a PLACEMENT row, readable on the slots' own route.
     const placements = await (await vendo.handler(request("GET", "/apps/placements?slots=dashboard"))).json();
     expect(placements).toContainEqual(expect.objectContaining({ slot: "dashboard", app: app.id }));
 
-    // A non-string component is a loud validation error, not a silent drop.
-    const malformed = await vendo.handler(request("POST", "/apps/seed", { component: 7 }));
-    expect(malformed.status).toBe(400);
-    expect((await malformed.json()).error.code).toBe("validation");
+    // A non-string component is a loud validation error, not a silent drop —
+    // and so is a gesture with no instruction, because there are no bare forks.
+    for (const body of [{ component: 7, instruction: "x" }, { component }]) {
+      const malformed = await vendo.handler(request("POST", "/apps/seed", body));
+      expect(malformed.status).toBe(400);
+      expect((await malformed.json()).error.code).toBe("validation");
+    }
 
     // A component the host never captured is a loud not-found.
-    const uncaptured = await vendo.handler(request("POST", "/apps/seed", { component: "NeverSynced" }));
+    const uncaptured = await vendo.handler(request("POST", "/apps/seed", {
+      component: "NeverSynced",
+      instruction: "rank them by amount",
+    }));
     expect(uncaptured.status).toBe(404);
   });
 });
