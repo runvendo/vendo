@@ -621,12 +621,15 @@ export function memoryStoreOps(): StoreOps {
     },
     async commit(entries, opts) {
       const owner = opts?.owner ?? BOUND_OWNER;
-      // One commit, one mutation per path: two entries for the same path leave
-      // the commit with no single before-image, so the path's trail could not
-      // say which revision this commit replaced.
+      // An empty commit has no single right answer — a commit id and a trail
+      // entry for a change nobody made, or silence — and the wire has always
+      // refused it, so it is refused here too.
       if (entries.length === 0) {
         throw new VendoError("validation", "a workspace commit must carry at least one entry");
       }
+      // One commit, one mutation per path: two entries for the same path leave
+      // the commit with no single before-image, so the path's trail could not
+      // say which revision this commit replaced.
       const paths = new Set<string>();
       for (const entry of entries as WsEntry[]) {
         if (paths.has(entry.path)) {
