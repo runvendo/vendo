@@ -15,6 +15,7 @@ import {
 } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
+  KIT_OVERLAY_SPECS,
   SCREEN_TEXT_NODE,
   evaluateExpr,
   isExprBinding,
@@ -44,6 +45,7 @@ import { InClientMount, type InClientFurnishing } from "./host-mount.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
+import { ensureKitStyles } from "../kit/kit-css.js";
 import { markHandlerCallback, screenEvent } from "../kit/handler.js";
 import { useKeyedState } from "../kit/state.js";
 import { useParkedApprovals } from "./parked-approvals.js";
@@ -713,7 +715,12 @@ function NodeRenderer(props: NodeRendererProps) {
   const notice = (firedId: string, settled: ToolOutcome | undefined): ReactNode =>
     outcomeNotice(settled, review === undefined ? undefined : (approvalId) => review(firedId, approvalId));
   return (
-    <NodeShell nodeId={node.id} outcome={outcome} mark={props.marks.get(node.id)}>
+    <NodeShell
+      nodeId={node.id}
+      outcome={outcome}
+      mark={props.marks.get(node.id)}
+      overlay={KIT_OVERLAY_SPECS[node.component] !== undefined}
+    >
       {content}
       {notice(node.id, outcome)}
       {props.orphans.get(node.id)?.map(([firedId, orphan]) => (
@@ -728,10 +735,14 @@ function NodeRenderer(props: NodeRendererProps) {
  * the render that carries the change and never on a first paint, so the effect
  * plays exactly one beat per node per repaint (repaint-motion.ts).
  */
-function NodeShell({ nodeId, outcome, mark, children }: {
+function NodeShell({ nodeId, outcome, mark, overlay, children }: {
   nodeId: string;
   outcome: ToolOutcome | undefined;
   mark: NodeMark | undefined;
+  /** An overlay brick paints on the body-level host (overlay-portal.tsx), so its
+   *  shell must generate NO box: an empty div left where the overlay was written
+   *  is still a flex item, and takes a whole gap out of the Stack around it. */
+  overlay: boolean;
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -742,6 +753,7 @@ function NodeShell({ nodeId, outcome, mark, children }: {
     <div
       ref={box}
       data-vendo-node-id={nodeId}
+      {...(overlay ? { style: { display: "contents" } } : {})}
       data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
       {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
     >
@@ -774,6 +786,10 @@ function StatefulTreeView({
   // surface nested in chrome restates identical values and cannot disagree.
   const theme = useVendoThemeOrDefault();
   useExprRuntime();
+  // The surface is also the only place every Kit brick passes through, so the
+  // Kit's pseudo-class sheet is injected here rather than from the overlay host
+  // alone — a screen with a Button and no Modal has hover and focus states too.
+  useEffect(ensureKitStyles, []);
   // The keyed `$state` store lives in the Kit bundle, shared with code-land's
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
   const [viewState, updateState] = useKeyedState(onStateChange);

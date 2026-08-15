@@ -1,11 +1,10 @@
 /**
  * The Kit's ONE stylesheet, and it carries nothing but pseudo-class state.
  *
- * Every themable pixel stays in each brick's inline `style`, because inline is
- * what survives the jail: an island paints inside a sandboxed `srcdoc` iframe
- * whose only inherited styling is the `--vendo-*` custom properties the host
- * posts in (`embedded-runtime.ts` `applyThemeVars`). That is also why `:hover`,
- * `:focus-visible` and `:active` were unreachable until this file — a style
+ * Every themable pixel stays in each brick's inline `style` — that is how the
+ * Kit is written (tokens.ts), so a brick carries its whole resting look with it
+ * and needs no sheet to be complete. Which is exactly why `:hover`,
+ * `:focus-visible` and `:active` were unreachable until this file: a style
  * attribute cannot express a pseudo-class, and there was no sheet to put one in.
  *
  * So the rule for what belongs here is exact: a STATE the inline style cannot
@@ -31,7 +30,7 @@ const focus = FIELDS.map((f) => `${f}:focus-visible`).join(", ");
  * the first cut of this file changed nothing at all on hover while the focus
  * ring worked, because `outline` is the one property no brick sets inline.
  * Marking only the STATE declarations is what lets the resting style stay where
- * it has to be — inline, where the jail can see it.
+ * it belongs — inline, on the brick, where the theme owns it.
  */
 export const KIT_CSS = `
 [data-kit="Button"][data-variant="primary"]:not([disabled]):hover { background: color-mix(in srgb, ${t.accent} 88%, ${t.text}) !important; }
@@ -46,9 +45,9 @@ ${focus} { border-color: ${t.accent} !important; outline-offset: 0; }
 `.trim();
 
 /** Inject the Kit stylesheet once, guarded exactly like `ensureChromeStyles`.
- *  Called on both surfaces the Kit paints on, and `document` means a different
- *  document on each: the host page's, and — from the jail runtime, which runs
- *  inside the frame — the island's own. */
+ *  There is ONE document now — a generated screen renders in the host page, in
+ *  the tree surface (renderer.tsx) — so both callers, that surface and the
+ *  body-level overlay host, land in the same `<head>` and the guard settles it. */
 export function ensureKitStyles(): void {
   if (typeof document === "undefined" || document.querySelector("style[data-vendo-kit]")) return;
   const style = document.createElement("style");
