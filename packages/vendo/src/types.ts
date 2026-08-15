@@ -31,6 +31,8 @@ import type {
   Skill,
   ToolDefinition,
   ToolRegistry,
+  UsageTallyQuery,
+  UsageTallyRow,
   VendoLogger,
 } from "@vendoai/core";
 import type {
@@ -73,6 +75,17 @@ export interface Vendo {
       keep neither the transcript nor the workspace raises the not-implemented
       refusal on the turn rather than degrading to a lesser engine. */
   harness: HarnessTurns;
+  /** What the meter recorded, per subject and action, over one window — the
+      read a host's own backend job does (an overage sweep, a usage table).
+      The window's `since` is required for the same reason the store's is: it
+      is the only bound that keeps a call off a drawer that only ever grows.
+
+      This is the OPERATOR's read; a policy asks its own bound `count` instead
+      (`limits`), and never names a subject. A deployment whose store has no
+      meter is refused here rather than answered with an empty tally: nothing
+      was recorded and nothing ever will be, and a billing sweep reading "no
+      usage" would bill nobody. */
+  usage(query: UsageTallyQuery): Promise<UsageTallyRow[]>;
 }
 
 export interface CreateVendoConfig {

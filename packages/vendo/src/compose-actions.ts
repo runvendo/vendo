@@ -24,8 +24,8 @@ import type { CloudConfigResult } from "./cloud-config.js";
 import type { VendoActionsConfig, VendoComposition } from "./compose-context.js";
 import { selectConnectors } from "./compose-selection.js";
 import { selectHostTools } from "./dot-vendo.js";
-import { limitGenerations } from "./limits.js";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
+import { limitGenerations } from "./limits.js";
 import {
   DOCTOR_ACT_AS_APP_ID,
   DOCTOR_ACT_AS_PRINCIPAL,
@@ -255,9 +255,10 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   // fires the instant the descriptor set first resolves, which is the earliest
   // this is knowable (createVendo is synchronous; descriptors are not).
   const guardedTools = withUniqueToolTitles(connectGate.bind(guard.bind(actions)));
-  // The generation choke (limits.ts), OUTSIDE the guard binding for the connect
-  // gate's reason: a build the host's policy refused must not mint an approval
-  // on any door. Only a deployment that set `limits` wraps at all.
+  // The generation choke (limits.ts): ONE wrap on THE registry, so every door
+  // that can build — chat, the MCP door, automations — rides the same check.
+  // Only a deployment that set `limits` wraps at all; the rest execute the
+  // registry they always executed.
   const boundTools = limiter === undefined ? guardedTools : limitGenerations(guardedTools, limiter);
   // 04 §6: compound steps route through the guard binding — grants, approvals,
   // breakers, and audit see every real call; there is no second

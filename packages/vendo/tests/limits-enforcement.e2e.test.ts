@@ -17,7 +17,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VENDO_MAKE_TOOL, vendoLimitPartSchema, type LimitsCallback, type Principal } from "@vendoai/core";
+import {
+  VENDO_MAKE_TOOL,
+  vendoLimitPartSchema,
+  type LimitsCallback,
+  type Principal,
+  type StoreOps,
+} from "@vendoai/core";
+import { memoryStoreOps } from "@vendoai/core/conformance";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -141,5 +148,32 @@ describe("the generation choke — the agent is told, and the turn goes on", () 
 
     expect(limitCards(await chat("just talk to me"))).toEqual([]);
     expect(model.calls).toBe(1);
+  });
+});
+
+describe("vendo.usage() — the tally a host's own overage job reads", () => {
+  it("answers what the meter really recorded", async () => {
+    const { vendo, chat } = await compose({
+      limits: () => true,
+      turns: [textTurn("one"), textTurn("two")],
+    });
+
+    await chat("first");
+    await chat("second");
+
+    await expect(vendo.usage({ since: new Date(0) })).resolves.toEqual([
+      { subject: principal.subject, action: "message", count: 2 },
+    ]);
+  });
+
+  it("REFUSES on a store with no meter, rather than answering an empty tally", async () => {
+    const { usage: _absent, ...meterless } = memoryStoreOps();
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: Object.assign(await tempStore(), { ops: meterless as StoreOps }),
+    } as CreateVendoConfig);
+
+    await expect(vendo.usage({ since: new Date(0) })).rejects.toThrow(/no usage meter/);
   });
 });
