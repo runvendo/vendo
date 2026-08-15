@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { CSSProperties } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { DISPLAY_TAG_NAMES, VENDO_TREE_FORMAT } from "@vendoai/apps/contract";
@@ -49,6 +50,42 @@ describe("display bricks", () => {
       filter: "blur(4px)",
     })).toEqual({ color: "var(--vendo-color-accent)", filter: "blur(4px)" });
     expect(withoutFetchableUrls(undefined)).toBeUndefined();
+  });
+
+  it("drops them however the escapes spell the function", () => {
+    // The CSS tokenizer unescapes before it decides what a token is, so every
+    // one of these IS `url(` to the browser, whatever the raw string reads.
+    expect(withoutFetchableUrls({
+      background: "\\75 rl(https://evil/x)",
+      borderImage: "\\000075rl(https://evil/y)",
+      maskImage: "u\\72 l(https://evil/z)",
+      WebkitMaskImage: "\\75 \\72 \\6c(https://evil/w)",
+      clipPath: "u\\72 l(#c)",
+      filter: "\\75 rl(#f)",
+      cursor: "u\\72 l(https://evil/c), auto",
+      content: "\\000075rl(https://evil/t)",
+      listStyleImage: "u\\72 l(https://evil/l)",
+      shapeOutside: "\\75 rl(https://evil/s)",
+    })).toEqual({});
+
+    // `var()` substitutes whole tokens, so the custom property carries the
+    // escape through intact — it is the declaration that has to go.
+    expect(withoutFetchableUrls({ "--x": "u\\72 l(/pixel)", background: "var(--x)" } as CSSProperties))
+      .toEqual({ background: "var(--x)" });
+  });
+
+  it("keeps the values that only look like a fetch", () => {
+    expect(withoutFetchableUrls({
+      filter: "blur(4px)",
+      // A comment splits the ident, so this computes to nothing and fetches nothing.
+      background: "ur/**/l(https://evil/x)",
+    })).toEqual({ filter: "blur(4px)", background: "ur/**/l(https://evil/x)" });
+
+    // `url\9 (` is inert too — whitespace between the ident and `(` is no
+    // function token — but normalizing puts a tab where the escape was and the
+    // filter's `\s*` takes it. Dropping a value that paints nothing is safe;
+    // buying it back would cost a second mechanism.
+    expect(withoutFetchableUrls({ background: "url\\9 (https://evil/x)" })).toEqual({});
   });
 
   it("paints the surface inside its own box", () => {

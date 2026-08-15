@@ -26,12 +26,31 @@ export interface DisplayBrickProps {
  */
 const FETCHES = /\b(?:url|src|image-set)\s*\(/iu;
 
+/**
+ * A CSS escape: `\` then 1–6 hex digits with one trailing whitespace consumed,
+ * or `\` then a literal character. The tokenizer unescapes BEFORE it decides
+ * what a token is, so `\75 rl(` is the function `url(` however the raw string
+ * reads — and `var()` substitutes whole tokens, so a custom property carries the
+ * spelling through intact.
+ */
+const ESCAPE = /\\(?:([0-9a-f]{1,6})[ \t\r\n\f]?|(.))/giu;
+
+/** The escapes resolved, for the DECISION only — the brick still paints the
+ *  original value. Code points past the Unicode range are the tokenizer's
+ *  replacement character, not a throw. */
+const unescaped = (value: string): string =>
+  value.replace(ESCAPE, (_, hex: string | undefined, literal: string) =>
+    hex === undefined ? literal
+      : Number.parseInt(hex, 16) > 0x10ffff ? "�"
+        : String.fromCodePoint(Number.parseInt(hex, 16)));
+
 /** The style a brick actually paints with: the model's, minus any declaration
- *  that would fetch. Dropping the DECLARATION (not rewriting the value) keeps
- *  this a filter with no parser in it. */
+ *  that would fetch once its escapes read the way the browser reads them.
+ *  Dropping the DECLARATION (not rewriting the value) keeps this a filter with
+ *  no parser in it. */
 export function withoutFetchableUrls(style: CSSProperties | undefined): CSSProperties | undefined {
   if (style === undefined) return undefined;
-  return Object.fromEntries(Object.entries(style).filter(([, value]) => !FETCHES.test(String(value))));
+  return Object.fromEntries(Object.entries(style).filter(([, value]) => !FETCHES.test(unescaped(String(value)))));
 }
 
 export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactNode> = {
