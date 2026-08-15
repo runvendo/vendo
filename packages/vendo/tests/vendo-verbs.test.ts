@@ -14,7 +14,6 @@ const call = (tool: string, args: unknown) => ({ id: "call_1", tool, args: args 
 
 const ports = (overrides = {}) => ({
   validate: async () => ({ ok: true as const, findings: [] }),
-  searchComponents: async () => [{ component: "Chart", description: "A chart" }],
   schedule: async () => ({ scheduled: true as const, cron: "0 8 * * *" }),
   ...overrides,
 });
@@ -25,11 +24,10 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
     expect(descriptors.map((d) => d.name).sort()).toEqual([...VENDO_VERB_TOOLS].sort());
   });
 
-  it("labels validate and search_components as reads, and schedule as a write", async () => {
+  it("labels validate as a read, and schedule as a write", async () => {
     const descriptors = await vendoVerbsRegistry(ports()).descriptors();
     const risk = new Map(descriptors.map((d) => [d.name, d.risk]));
     expect(risk.get("validate")).toBe("read");
-    expect(risk.get("search_components")).toBe("read");
     // Arming a schedule changes what runs later, so it is not a read.
     expect(risk.get("schedule")).toBe("write");
   });
@@ -63,19 +61,6 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
     }));
     const outcome = await registry.execute(call("validate", { appId: "app_broken" }), ctx());
     expect(outcome.status).toBe("ok");
-  });
-
-  it("search_components returns catalog entries in the shipped vocabulary", async () => {
-    const outcome = await vendoVerbsRegistry(ports()).execute(
-      call("search_components", { query: "chart" }),
-      ctx(),
-    );
-    expect(outcome).toEqual({ status: "ok", output: { components: [{ component: "Chart", description: "A chart" }] } });
-  });
-
-  it("rejects a blank search rather than dumping the whole catalog", async () => {
-    const outcome = await vendoVerbsRegistry(ports()).execute(call("search_components", { query: " " }), ctx());
-    expect(outcome.status).toBe("error");
   });
 
   it("schedule passes the cron through and reports what was armed", async () => {
@@ -165,15 +150,13 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
 });
 
 describe("§3 consumer voice — the verbs' titles are the shared table's", () => {
-  // A live browser proof caught the residual: `search_components` narrated
-  // "Search components…" (its identifier prettified) because the CLIENT has no
-  // descriptor, while the descriptor itself said "Look up available components".
-  // One table, so the two surfaces cannot disagree.
+  // A live browser proof caught the residual: a verb narrated its identifier
+  // prettified because the CLIENT has no descriptor, while the descriptor itself
+  // carried a real title. One table, so the two surfaces cannot disagree.
   it("reads each title from core, and none of them is an identifier", async () => {
     const descriptors = await vendoVerbsRegistry(ports()).descriptors();
     expect(descriptors.map((d) => d.title)).toEqual([
       VENDO_TOOL_TITLES.validate,
-      VENDO_TOOL_TITLES.search_components,
       VENDO_TOOL_TITLES.schedule,
     ]);
     for (const descriptor of descriptors) {

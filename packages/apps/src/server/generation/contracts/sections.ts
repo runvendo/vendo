@@ -18,14 +18,15 @@
  */
 import {
   KIT_SCREEN_COMPONENT_NAMES,
-  kitPrompt,
+  catalogPrompt,
 } from "../../../contract/index.js";
 
-/** The COMPONENTS section is GENERATED from the Kit specs (kitPrompt); no
- *  hand-written component list survives here. V4 retired the legacy primitive
- *  block — one family, one generated section. Deps-independent, so it is
- *  rendered once per process (perf budget: gen-scripted:create). */
+/** The COMPONENTS section is GENERATED from the Kit specs (catalogPrompt); no
+ *  hand-written component list survives here. One line per component rather than
+ *  a section apiece — the whole catalog plus the icon vocabulary for less than
+ *  the sections cost without icons. Deps-independent, so it is rendered once per
+ *  process (perf budget: gen-scripted:create). */
 let componentsPromptCache: string | undefined;
 export const componentsPromptSection = (): string => componentsPromptCache ??= `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
 
-${kitPrompt({ only: [...KIT_SCREEN_COMPONENT_NAMES] })}`;
+${catalogPrompt({ only: [...KIT_SCREEN_COMPONENT_NAMES] })}`;

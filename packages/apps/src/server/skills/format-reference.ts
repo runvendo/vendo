@@ -124,9 +124,9 @@ straight from the press — the product does the asking.
 ## Components
 
 Host components come first when one fits: they are this product's own, already
-branded. One file each, with the full props schema and examples:
-\`host/components/<Name>.md\`, relative to the directory you are working in.
-\`search_components\` finds one by intent when you do not know the name.
+branded. Every one of them is named in this product's own brief; open
+\`host/components/<Name>.md\`, relative to the directory you are working in, for
+its full props schema and examples.
 
 Everything below ships with the format and is available in every screen. The prop
 names and types are exact — an unknown prop fails the checks.

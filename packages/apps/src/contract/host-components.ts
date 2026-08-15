@@ -1,6 +1,6 @@
 /**
- * The component reference: the other half of the read-only `/host` mount.
- * `search_components` answers "what could show this?" in a few lines; this answers
+ * The component reference: the other half of the read-only `/host` mount. The
+ * briefing pack names every host component in one line apiece; this answers
  * "exactly how do I write it?" — one file per catalog entry with the whole
  * description, the props schema and the entry's own examples.
  *

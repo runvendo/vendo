@@ -105,10 +105,9 @@ const sendMoney: ToolDescriptor = {
  *  excluded it anyway and the exclusion test proved nothing. */
 const validate: ToolDescriptor = { ...readTool("validate") };
 
-/** The assembly verb that is graded `write` on purpose (design §12's mechanical
- *  vote fail-closes a noun-ending name). It is the whole reason the loadout is a
- *  name list unioned with a risk filter rather than a risk filter. */
-const searchComponents: ToolDescriptor = { ...readTool("search_components", "write") };
+/** An assembly verb graded `write` on purpose. It is the whole reason the loadout
+ *  is a name list unioned with a risk filter rather than a risk filter. */
+const askUser: ToolDescriptor = { ...readTool("ask_user", "write") };
 
 /** `vendo_make` is graded `read`, so a risk filter alone would equip the very
  *  tool that called this loop. */
@@ -140,11 +139,9 @@ function harness(options: {
   /** What a named tool answers, for the verbs whose ANSWER is what the loop acts
    *  on (`validate`). Everything else says `{ ok: true }`. */
   answers?: Record<string, Json>;
-  /** What composition knows about the component catalog. Unset = it did not say. */
-  hasComponents?: boolean;
 }): Harness {
   const guard = testGuard(options.guardPolicy);
-  const descriptors = options.tools ?? [spendSummary, sendMoney, validate, searchComponents, vendoMake];
+  const descriptors = options.tools ?? [spendSummary, sendMoney, validate, askUser, vendoMake];
   const registry = boundRegistry(
     Object.fromEntries(descriptors.map((descriptor) => [
       descriptor.name,
@@ -199,7 +196,6 @@ function harness(options: {
       if (options.conflict === true) workspace.conflictOn = ["*"];
       return workspace;
     },
-    ...(options.hasComponents === undefined ? {} : { hasComponents: options.hasComponents }),
     render: () => ({ floor }),
   });
 
@@ -225,7 +221,7 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     await screen.assemble("show me my spending");
 
     const offered = screen.model.toolNamesPerCall[0] ?? [];
-    expect(offered).toContain("search_components");
+    expect(offered).toContain("ask_user");
     expect(offered).toContain("maple_spend_summary");
     expect(offered).toContain(SAVE_APP_TOOL);
     expect(offered).toContain(ESCALATE_TOOL);
@@ -264,18 +260,6 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     });
     await screen.assemble("show me my spending");
     expect(screen.model.calls).toBe(SCREEN_STEPS);
-  });
-
-  it("does not equip search_components when the product has no components", async () => {
-    // A catalog with nothing in it turns every search into a step spent learning
-    // that, and the budget is the definition of cheap. The rest of the loadout is
-    // untouched — this is one name dropping out, not a different filter.
-    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")], hasComponents: false });
-    await screen.assemble("show me my spending");
-    const offered = screen.model.toolNamesPerCall[0] ?? [];
-    expect(offered).not.toContain("search_components");
-    expect(offered).toContain("maple_spend_summary");
-    expect(offered).toContain(SAVE_APP_TOOL);
   });
 
   it("offers no hiring and no discovery — a closed list is total", async () => {

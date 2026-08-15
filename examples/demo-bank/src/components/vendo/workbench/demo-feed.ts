@@ -112,7 +112,7 @@ const DECLINES: Beat[] = [
 /** The screen agent's closed loadout — `vendo({ tools })`, the drive `vendo_make`
  *  starts inside the resident's own step. It searches nothing in and withholds
  *  nothing, which is what makes the tools tab's closed reading an answer. */
-const SCREEN_TOOLS = ["search_components", "validate", "save_app", "escalate", "host_getSpendingInsights"];
+const SCREEN_TOOLS = ["validate", "save_app", "escalate", "host_getSpendingInsights"];
 
 /** A turn under real window pressure that ends by painting a screen. */
 const SPEND: Beat[] = [
@@ -129,7 +129,7 @@ const SPEND: Beat[] = [
   ["screen", 4_800, { kind: "loadout", active: SCREEN_TOOLS, searchedIn: [], alwaysActive: [], withheldCount: 0 }],
   ["screen", 4_900, { kind: "context", estTokens: 38_900, windowTokens: 200_000, triggerTokens: 162_000 }],
   ["screen", 5_000, { kind: "step-start", step: 0, maxSteps: 10, activeTools: SCREEN_TOOLS }],
-  ["screen", 5_640, { kind: "tool", step: 0, toolCallId: "s1", name: "search_components", argsPreview: '{ query: "stat tile, category bar list" }', status: "ok", guard: "run", approval: "auto", durationMs: 640 }],
+  ["screen", 5_640, { kind: "tool", step: 0, toolCallId: "s1", name: "host_getSpendingInsights", argsPreview: '{ window: "90d", groupBy: "category" }', status: "ok", guard: "run", approval: "auto", durationMs: 640 }],
   ["screen", 7_100, { kind: "step-end", step: 0, stopReason: "tool-calls", durationMs: 2_100, usage: { inputTokens: 6_040, outputTokens: 188 } }],
   ["screen", 7_400, { kind: "step-start", step: 1, maxSteps: 10, activeTools: SCREEN_TOOLS }],
   ["screen", 8_120, { kind: "tool", step: 1, toolCallId: "s2", name: "validate", argsPreview: '{ appId: "app_spend" }', status: "error", guard: "run", approval: "auto", durationMs: 420 }],

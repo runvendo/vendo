@@ -1,14 +1,17 @@
 /**
  * What the ONE thinker is told, and how it finds the rest.
  *
- * The system-prompt inputs (03 §3's one prose story, the catalog+theme summary,
- * the knowledge index) and the two discovery rails were written twice — once for
- * a `createAgent` that no longer exists, once for the harness runtime. They are
- * defined ONCE here and handed to the runtime below.
+ * The system-prompt inputs (03 §3's one prose story, the knowledge index) and the
+ * two discovery rails were written twice — once for a `createAgent` that no longer
+ * exists, once for the harness runtime. They are defined ONCE here and handed to
+ * the runtime below.
+ *
+ * The catalog+theme summary is NOT one of them any more: this thinker renders
+ * nothing, and what a writer is told about the host's components is the briefing
+ * pack (`contract/briefing.ts`), which is the only rendering of them there is.
  */
 import type { CapabilityMissConfig } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
-import { catalogThemeSummary } from "@vendoai/apps/contract";
 import type { CloudConfig } from "./cloud-config.js";
 import type { VendoComposition } from "./compose-context.js";
 import { selectConfigSurface } from "./config-surface.js";
@@ -17,13 +20,12 @@ import { selectConfigSurface } from "./config-surface.js";
 export const composePrompt = (composition: VendoComposition): Pick<VendoComposition,
   "system" | "capabilityMiss" | "toolSearch"> => {
   const { config, composed, configCloud, readSurfaceFile } = composition;
-  const { catalog, theme, knowledgeIndex, missSurface, missCapture, actions } = composition;
+  const { knowledgeIndex, missSurface, missCapture, actions } = composition;
   // AGENT-1/2 — 03 §3: ONE prose story. `instructions` and the
   // `.vendo/brief.md` surface behind it are the deployment's own words about
-  // what this product is and how to speak about it; prompt.ts places them (the
-  // Product section) beside the catalog+theme summary (only where trees
-  // render). `brief:` and `agent.instructions` were two names for this and are
-  // gone.
+  // what this product is and how to speak about it; prompt.ts places them as the
+  // Product section. `brief:` and `agent.instructions` were two names for this
+  // and are gone.
   // cse lane 3 — a prompt-family surface, so it resolves LIVE: with a key
   // present, product is a RESOLVER (file → cloud) re-read per turn by
   // assembleSystemPrompt, so a console publish applies to the next turn with no
@@ -46,11 +48,9 @@ export const composePrompt = (composition: VendoComposition): Pick<VendoComposit
   const product: string | (() => string | undefined) | undefined = configCloud === undefined
     ? resolveInstructions()
     : () => resolveInstructions(configCloud);
-  const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = product !== undefined || promptCatalog !== undefined || knowledgeIndex !== undefined
+  const system = product !== undefined || knowledgeIndex !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
-        ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
         ...(knowledgeIndex === undefined ? {} : { knowledge: knowledgeIndex }),
       }
     : undefined;

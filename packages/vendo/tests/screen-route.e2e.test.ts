@@ -158,9 +158,6 @@ async function walk(options: {
   /** Skip `vendo_make` entirely and write the documents with the harness's own
    *  hands — the OTHER route into the same seam. */
   writes?: string[];
-  /** What this deployment registered as its components. Absent — the default
-   *  below — is a deployment with an EMPTY catalog. */
-  catalog?: Array<{ name: string; description: string }>;
 }): Promise<Walked> {
   const store = await tempStore();
   const model = scripted(options.turns);
@@ -187,7 +184,6 @@ async function walk(options: {
     principal: async () => principal,
     store,
     harness: harness as never,
-    ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
   } as Parameters<typeof createVendo>[0]);
   const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
     method: "POST",
@@ -318,21 +314,12 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     expect(receipt.title).toBe("Spending");
   }, 60_000);
 
-  it("equips search_components only when this deployment HAS components", async () => {
-    // Composition holds the catalog, so composition is what answers the question —
-    // and a deployment with nothing to find must not spend a step finding that out.
-    const empty = await walk({ turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")] });
-    expect(empty.model.toolNamesPerCall[0] ?? []).not.toContain("search_components");
-
-    const stocked = await walk({
-      turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")],
-      catalog: [{ name: "SpendChart", description: "A chart of spending over time." }],
-    });
-    expect(stocked.model.toolNamesPerCall[0] ?? []).toContain("search_components");
-    // The rest of the loadout is the same either way: one name drops out, not a
-    // different filter.
-    expect(empty.model.toolNamesPerCall[0] ?? []).toContain("vendo_apps_open");
-    expect(empty.model.toolNamesPerCall[0] ?? []).toContain("save_app");
+  it("equips the assembly loadout on the real route", async () => {
+    // The loadout is resolved where the listings are, so the real composed
+    // registry — not the unit fixture's — is what has to produce these names.
+    const walked = await walk({ turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")] });
+    expect(walked.model.toolNamesPerCall[0] ?? []).toContain("vendo_apps_open");
+    expect(walked.model.toolNamesPerCall[0] ?? []).toContain("save_app");
   }, 60_000);
 
   it("fails honestly when assembly produces nothing that renders — no second engine behind it", async () => {

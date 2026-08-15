@@ -116,18 +116,11 @@ export const SAVE_APP_TOOL = "save_app";
  *  shape. Both land through the same commit and hear the same checks. */
 export const EDIT_APP_TOOL = "edit_app";
 
-/** Named apart from the list below because a product with no components to search
- *  takes it back OFF the loadout (`ScreenSurface.hasComponents`). */
-const SEARCH_COMPONENTS_TOOL = "search_components";
-
 /**
  * The assembly verbs, by NAME rather than by risk.
  *
- * Names, because a grade is not this file's to lean on: `search_components` is
- * graded `read` today (`vendo-verbs.ts`'s `DESCRIPTORS`), so the risk half would
- * carry it anyway — but a regrade of the verb the whole loop searches with must
- * not quietly take it off the list. Host read tools come in by risk below; these
- * come in by name, and stay.
+ * Names, because a grade is not this file's to lean on: host read tools come in
+ * by risk below; these come in by name, and stay.
  *
  * `validate` comes OFF by name, for the mirror reason: it is graded `read` too, so
  * the risk half re-equips it unless something says not to (`callable` below).
@@ -137,7 +130,6 @@ const SEARCH_COMPONENTS_TOOL = "search_components";
  * buys nothing but steps off a ten-step budget.
  */
 const ASSEMBLY_TOOLS: readonly string[] = [
-  SEARCH_COMPONENTS_TOOL,
   "vendo_apps_data_list",
   "vendo_apps_open",
   "ask_user",
@@ -156,7 +148,7 @@ const ASSEMBLY_TOOLS: readonly string[] = [
  * The `vendo_apps_*` verbs are deliberately NOT here: opening or pinning an app is
  * a real thing a person can want a button for.
  */
-const NEVER_WIRED: readonly string[] = [SEARCH_COMPONENTS_TOOL, "validate", "schedule"];
+const NEVER_WIRED: readonly string[] = ["validate", "schedule"];
 
 /**
  * What the lean loop needs, and nothing else.
@@ -174,11 +166,6 @@ export interface ScreenSurface {
   readonly signal: AbortSignal;
   readonly threadId?: string;
   readonly turnId?: TurnId;
-  /** Does this product have any components to search? `false` takes
-   *  `search_components` off the loadout — a catalog with nothing in it turns
-   *  every search into a step spent learning that. Absent claims nothing, so a
-   *  caller that cannot say keeps the verb. */
-  readonly hasComponents?: boolean;
   /**
    * What this app's LAST PAINT actually delivered, per declared query.
    *
@@ -782,12 +769,7 @@ export async function assembleScreen(
   // this loop — and a mutating host tool is not an assembly tool. Names, not a
   // risk filter passed downward: the closed list stays a list, and the one place
   // that can decide "is this an assembly tool" is the one holding the listing.
-  // `search_components` is the one name that can drop back out: a product with no
-  // components has nothing for it to find, and a step spent finding that out is a
-  // step off the budget.
-  const offered = listings
-    .filter((listing) => listing.name !== VENDO_MAKE_TOOL)
-    .filter((listing) => !(listing.name === SEARCH_COMPONENTS_TOOL && surface.hasComponents === false));
+  const offered = listings.filter((listing) => listing.name !== VENDO_MAKE_TOOL);
   // `validate` is refused by name before the grade is ever consulted: the registry
   // grades it `read` (`vendo-verbs.ts`'s `DESCRIPTORS`), so the risk half below is
   // exactly how it kept coming back. See `ASSEMBLY_TOOLS` for why this loop does
@@ -969,10 +951,6 @@ export interface ScreenAssemblerDeps {
   /** This principal's workspace, unwrapped. The assembler wraps it with the
    *  render seam itself, so composition never has to know that it must. */
   workspace: (ctx: RunContext) => Promise<WorkspaceFs>;
-  /** Whether the composed component catalog has anything in it
-   *  ({@link ScreenSurface.hasComponents}). Composition is the one place that
-   *  holds the catalog, so it is the one place that can say. */
-  hasComponents?: boolean;
   /** The seam's optional halves — the checks floor and source persistence. A
    *  screen assembled here passes the same floor every other author's does, or it
    *  does not paint. */
@@ -1069,7 +1047,6 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           queryOutcomes: () => painted === undefined ? undefined : paintedQueries(painted.payload),
           screenIssues: () => refused,
           ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
-          ...(deps.hasComponents === undefined ? {} : { hasComponents: deps.hasComponents }),
         },
         {
           appId: request.appId,
