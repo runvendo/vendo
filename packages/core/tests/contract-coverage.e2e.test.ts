@@ -401,10 +401,14 @@ describe("§12/§13/§14 — store, host-seam, and theme schemas", () => {
 });
 
 describe("§15 — VendoErrorCode taxonomy is a closed enum", () => {
-  it("vendoErrorCodeSchema accepts exactly the seven codes and rejects cut/unknown ones", () => {
+  it("vendoErrorCodeSchema accepts exactly the nine codes and rejects cut/unknown ones", () => {
     for (const code of [
       "validation", "blocked", "not-implemented", "sandbox-unavailable",
-      "cloud-required", "not-found", "conflict",
+      "cloud-required", "not-found", "conflict", "forbidden",
+      // 2026-08-14: the retryable/transient-failure code (a dropped store
+      // connection, an upstream 5xx/429) — see store-wire.test.ts for its
+      // STATUS_TO_CODE pin.
+      "unavailable",
     ]) {
       expect(vendoErrorCodeSchema.safeParse(code).success).toBe(true);
     }

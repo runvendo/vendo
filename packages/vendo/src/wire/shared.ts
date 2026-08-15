@@ -49,6 +49,11 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   "cloud-required": 402,
   "sandbox-unavailable": 501,
   "not-implemented": 501,
+  // Table entry only, for the same reason knowledge-wire.ts's copy carries
+  // one: this umbrella wire builds its OWN VendoError responses and never
+  // parses a status code back into one, so there is no STATUS_TO_CODE here
+  // to extend.
+  unavailable: 503,
 };
 
 export interface WireDeps {

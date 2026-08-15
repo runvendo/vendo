@@ -284,8 +284,38 @@ describe("vendo/store-wire@1", () => {
   it("parseStoreWireError: enveloped code wins, bare statuses map, junk degrades honestly", () => {
     expect(parseStoreWireError(400, { error: { code: "conflict", message: "id taken" } }).code).toBe("conflict");
     expect(parseStoreWireError(402, undefined).code).toBe("cloud-required");
-    expect(parseStoreWireError(500, { error: { code: "not-a-real-code", message: "?" } }).code).toBe("not-implemented");
-    expect(parseStoreWireError(503, null).code).toBe("not-implemented");
+    // A junk/unenveloped code at a mapped status now reads as the status's
+    // own classification (`unavailable` at 500/503), not "not-implemented" —
+    // see the next case for why that distinction is the whole point.
+    expect(parseStoreWireError(500, { error: { code: "not-a-real-code", message: "?" } }).code).toBe("unavailable");
+    expect(parseStoreWireError(503, null).code).toBe("unavailable");
+  });
+
+  it("parseStoreWireError: 429/5xx are unavailable (retryable), never not-implemented", () => {
+    // Field 2026-08-14: a dropped Postgres connection under load answered a
+    // bare 503, no envelope — and every one of these used to degrade to
+    // "not-implemented", which told the operator Cloud store did not support
+    // an op it shipped with. Each status here is independently pinned so a
+    // future edit cannot drop one silently.
+    for (const status of [429, 500, 502, 503, 504]) {
+      expect(parseStoreWireError(status, undefined).code).toBe("unavailable");
+      expect(parseStoreWireError(status, null).code).toBe("unavailable");
+    }
+    // 400/402/403/409 are untouched by this slice — still their own codes,
+    // never folded into "unavailable".
+    expect(parseStoreWireError(400, undefined).code).toBe("validation");
+    expect(parseStoreWireError(402, undefined).code).toBe("cloud-required");
+    expect(parseStoreWireError(403, undefined).code).toBe("blocked");
+    expect(parseStoreWireError(409, undefined).code).toBe("conflict");
+    // 501 keeps its own, older meaning (a real not-implemented/sandbox-unavailable
+    // status) — it is not folded into the new 5xx bucket.
+    expect(parseStoreWireError(501, undefined).code).toBe("not-implemented");
+    // The console's own envelope for this failure (lib/api/respond.ts's
+    // apiServerError) round-trips as itself now, rather than being discarded
+    // by schema validation for carrying a code the old enum didn't know.
+    expect(
+      parseStoreWireError(503, { error: { code: "unavailable", message: "Store request failed." } }).code,
+    ).toBe("unavailable");
   });
 
   it("only an enveloped not-found reads as record absence — a bare 404 surfaces as failure", () => {

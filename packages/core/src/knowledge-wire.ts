@@ -143,6 +143,11 @@ export const KNOWLEDGE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   "cloud-required": 402,
   "sandbox-unavailable": 501,
   "not-implemented": 501,
+  // Table entry only: `unavailable` is a store-wire concern (a transient
+  // dependency failure server-side). This wire's own STATUS_TO_CODE is
+  // untouched — a bare 5xx/429 here still degrades to "not-implemented",
+  // unchanged by this slice.
+  unavailable: 503,
 };
 
 /** 404 is deliberately absent: only an ENVELOPED `not-found` may become the

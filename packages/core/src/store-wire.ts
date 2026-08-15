@@ -426,16 +426,29 @@ export const STORE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   "cloud-required": 402,
   "sandbox-unavailable": 501,
   "not-implemented": 501,
+  unavailable: 503,
 };
 
 /** 404 is deliberately absent: only an ENVELOPED `not-found` may become the
     record-absence code. A bare 404 is a mount/deployment failure and degrades
-    to "not-implemented" so it surfaces as an error. */
+    to "not-implemented" so it surfaces as an error.
+    429/500/502/503/504 map to `unavailable` — a transient failure on the
+    server's own dependency, never "this op does not exist". Field 2026-08-14:
+    a dropped Postgres connection under load answered 503, and BEFORE this
+    entry existed that fell all the way through to "not-implemented", which
+    told the operator the Cloud store did not support a batch-append op it
+    shipped with — sending the first look at the incident at the version-skew
+    path instead of the real one. */
 const STATUS_TO_CODE: Record<number, VendoErrorCode> = {
   400: "validation",
   402: "cloud-required",
   403: "blocked",
   409: "conflict",
+  429: "unavailable",
+  500: "unavailable",
+  502: "unavailable",
+  503: "unavailable",
+  504: "unavailable",
 };
 
 /** Server half: one VendoError → the enveloped body + HTTP status. */
@@ -448,7 +461,8 @@ export function storeWireErrorBody(error: VendoError): { status: number; body: S
 
 /** Client half: a non-2xx response → VendoError. An enveloped wire-legal
     code wins over the bare status; recognized statuses map through
-    STATUS_TO_CODE; anything else degrades to "not-implemented". */
+    STATUS_TO_CODE (429/5xx → "unavailable", retryable); anything else
+    degrades to "not-implemented". */
 export function parseStoreWireError(status: number, body: unknown): VendoError {
   const parsed = storeWireErrorSchema.safeParse(body);
   if (parsed.success) {
