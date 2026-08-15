@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { appFixture, persistentPrincipal } from "../src/fixtures.test-util.js";
 import { appStore, createStore } from "../src/index.js";
+import { SCHEMA_VERSION } from "../src/schema.js";
 
 for (const backend of backends()) {
   describe(`${backend.name} vendo_state routing`, () => {
@@ -293,7 +294,12 @@ for (const backend of backends()) {
 
       // The v1 -> v3 upgrade performs the (v2) backfill on the way through.
       await made.store.ensureSchema();
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(7);
+      // Against the CONSTANT, not a literal: what this case is about is that a
+      // v1 store is carried all the way to current and the v2 backfill runs once
+      // on the way through. A hardcoded number makes every later schema bump
+      // look like a migration regression (v8, the idempotency ledger, did).
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value)
+        .toBe(SCHEMA_VERSION);
 
       expect(await made.sql(
         "SELECT app_id, subject, data FROM vendo_state WHERE app_id = 'app_legacy'",
