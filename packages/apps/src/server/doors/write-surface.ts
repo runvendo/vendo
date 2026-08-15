@@ -216,15 +216,21 @@ const screenDocument = (
   building: boolean,
 ): AppDocument => {
   const document = withScreenInSeat({
-    // A build's FIRST paint, which is not a finished build: the reviewer pass and
-    // its repair round run after it (`assemble`, screen-agent.ts). `building`
-    // holds the row back from mounting until the assembler returns and settles
-    // it. Every later save of the same build clones it forward; a harness writing
-    // `app.tsx` straight through the workspace never sets it, because there is no
-    // build behind that save to be unfinished.
-    ...(previous === undefined
-      ? { format: VENDO_APP_FORMAT, ...(building ? { building: new Date().toISOString() } : {}) }
-      : structuredClone(previous)),
+    ...(previous === undefined ? { format: VENDO_APP_FORMAT } : structuredClone(previous)),
+    // The window a build paints inside, which is not over when it first paints:
+    // the reviewer pass and its repair round run after (`assemble`,
+    // screen-agent.ts). `building` holds the row back from mounting until the
+    // assembler returns and settles it.
+    //
+    // Keyed on the BUILD, never on the row being new: a ✦ remix's row is written
+    // by the gesture before its screen exists, and an edit's row always
+    // pre-exists, so "no previous document" gated the create path alone and left
+    // the number-changing repair the person actually watches — the remix — mounting
+    // its draft (live, 2026-08-15). `??` is what makes the stamp the build's
+    // first paint rather than its latest. A harness writing `app.tsx` straight
+    // through the workspace is untouched: no build behind that save to be
+    // unfinished.
+    ...(building ? { building: previous?.building ?? new Date().toISOString() } : {}),
     id: input.appId,
     name: input.name,
     ui: "tree",

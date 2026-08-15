@@ -401,9 +401,9 @@ const createDoors = (
  * `AppDocument.building`, wired ONCE around the assembler rather than at each
  * door that runs one.
  *
- * A build is in flight for exactly as long as `assemble` is, so the two doors
- * that call it (`create`'s own route and the `vendo_make` front door) cannot
- * disagree about when one ends — and the `finally` means an assembler that
+ * A build is in flight for exactly as long as `assemble` is, so the three doors
+ * that call one (`create`'s route, the `vendo_make` front door, and an edit)
+ * cannot disagree about when it ends — and the `finally` means an assembler that
  * threw, escalated or came back empty settles the row just as a finished one
  * does. What the window is FOR is the screen agent's saves, which land
  * mid-`assemble`: only those mark their row unmountable, so a harness writing
@@ -418,7 +418,6 @@ const withBuildTracking = (
   return {
     ...config,
     screen: {
-      ...screen,
       assemble: async (input, ctx) => {
         beginBuild(input.appId);
         try {

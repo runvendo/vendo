@@ -15,10 +15,16 @@
  * painted and the repair has not run. Only the model is scripted; both sides of
  * the seam are the shipped ones.
  *
- * The one that must be able to fail: drop the `buildInFlight(app.building)` gate
- * from `openSurface` (packages/apps/src/server/persistence/open.ts) and the
- * mid-build assertions go red — `open()` serves the double-counted draft and the
- * wire hands it to the embed, which is the incident.
+ * The two that must be able to fail:
+ * - drop the `buildInFlight(app.building)` gate from `openSurface`
+ *   (packages/apps/src/server/persistence/open.ts) and BOTH mid-build reads go
+ *   red — `open()` serves the double-counted draft and the wire hands it to the
+ *   embed, which is the incident.
+ * - stamp `building` only when the row is new (`previous === undefined` in
+ *   `screenDocument`, packages/apps/src/server/doors/write-surface.ts) and the
+ *   EDIT's read goes red on its own. That was the shipped gap: a ✦ remix and an
+ *   edit both build onto a row that already exists, so a create-only gate left
+ *   the number-changing repair the person actually watches unguarded.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -61,10 +67,13 @@ const BILLS = [
 ] as const;
 const SUBSCRIPTIONS = BILLS.filter(({ id }) => ["bill_netflix", "bill_adobe", "bill_aws"].includes(id));
 
-/** The two headlines, as they reach the payload: the draft double counts the
- *  three shared bills, the repair sums the bills alone. */
+/** The headlines, as they reach the payload: a draft double counts the three
+ *  shared bills; the create's repair sums the bills alone, and the edit's sums
+ *  the subscriptions alone. Three distinct numbers, so which one a mount is
+ *  showing is never ambiguous. */
 const DRAFT_TOTAL = 2295.96;
 const REPAIRED_TOTAL = 2095.98;
+const EDITED_TOTAL = 199.98;
 
 const hostTools: ToolDefinition[] = [
   {
@@ -101,8 +110,12 @@ export default function UpcomingBills() {
 
 /** Every mechanical check passes this: a double count is not a shape error. */
 const DOUBLE_COUNT = screen('[...bills.data, ...subs.data].reduce((sum, row) => sum + row.amount_cents, 0)');
-/** The same screen, honest — what the repair round saves. */
+/** The same screen, honest — what the create's repair round saves. */
 const HONEST = screen('bills.data.reduce((sum, row) => sum + row.amount_cents, 0) + subs.data.length * 0');
+/** What the EDIT's repair round saves — a different screen again, so the save
+ *  really lands (an identical source is not a save) and the number it paints
+ *  cannot be confused with either of the other two. */
+const SUBS_ONLY = screen('subs.data.reduce((sum, row) => sum + row.amount_cents, 0) + bills.data.length * 0');
 
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
@@ -211,42 +224,51 @@ const headline = (surface: { kind: string }): string => {
 };
 
 describe("a screen mounts only once its build is terminal", () => {
-  it("serves the REPAIRED version, and refuses to serve the draft the repair replaced", async () => {
+  /** What one mid-build read saw, taken from inside the reviewer call — the
+   *  instant the draft has painted and its repair has not run. */
+  interface MidBuild {
+    listed: number;
+    open: string;
+    wireStatus: number;
+    wireBody: string;
+  }
+
+  it("gates a CREATE and an EDIT alike, and serves the version each repair left", async () => {
     const store = await tempStore();
-    /** What the mid-build read saw, recorded from inside the reviewer call. */
-    const midBuild: {
-      listed?: number;
-      open?: string;
-      wireStatus?: number;
-      wireBody?: string;
-    } = {};
+    const seen: MidBuild[] = [];
     let vendo: ReturnType<typeof createVendo>;
 
-    // The draft has painted and the repair has NOT run. Everything below is the
-    // shipped read path, with nothing stubbed on either side of the seam.
+    // Everything below is the shipped read path, with nothing stubbed on either
+    // side of the seam.
     const onReview = async (): Promise<void> => {
       const listed = await vendo.apps.list(ctx);
-      midBuild.listed = listed.length;
       const appId = listed[0]?.id;
-      if (appId === undefined) return;
-      // The runtime door.
-      midBuild.open = await vendo.apps.open(appId, ctx)
+      if (appId === undefined) throw new Error("the build left no row to read");
+      // The runtime door…
+      const open = await vendo.apps.open(appId, ctx)
         .then((surface) => headline(surface))
         .catch((error: unknown) => (error instanceof VendoError ? error.code : String(error)));
       // …and the wire the browser actually polls, under the embed's own flag.
       const response = await vendo.handler(
         new Request(`https://host.test/api/vendo/apps/${appId}/open?pending=1`),
       );
-      midBuild.wireStatus = response.status;
-      midBuild.wireBody = await response.text();
+      seen.push({ listed: listed.length, open, wireStatus: response.status, wireBody: await response.text() });
     };
 
     const { model, state } = scripted([
+      // THE CREATE, on no row at all: draft, then the repair the reviewer's
+      // finding asks for.
       call("save_app", { content: DOUBLE_COUNT }, "c1"),
       speak("Your upcoming bills are on your screen."),
-      // The repair round, once the reviewer's finding lands.
       call("save_app", { content: HONEST }, "c2"),
       speak("Fixed the double count."),
+      // THE EDIT, on the row the create just left — the shape a ✦ remix's build
+      // also takes, because a remix is `runtime.edit` over a row its gesture
+      // already wrote (`seed-surface.ts`). Same draft-then-repair.
+      call("save_app", { content: DOUBLE_COUNT }, "c3"),
+      speak("Updated."),
+      call("save_app", { content: SUBS_ONLY }, "c4"),
+      speak("Fixed it again."),
     ], onReview);
 
     const harness = defineHarness({
@@ -254,6 +276,11 @@ describe("a screen mounts only once its build is terminal", () => {
       async *run(turn) {
         await turn.tools.call(VENDO_MAKE_TOOL, {
           request: "make me a dashboard for my upcoming bills and subscriptions",
+        });
+        const built = (await vendo.apps.list(ctx))[0];
+        await turn.tools.call(VENDO_MAKE_TOOL, {
+          request: "just the subscriptions, please",
+          app: built?.id,
         });
         yield { type: "text", delta: "ok" };
       },
@@ -277,24 +304,31 @@ describe("a screen mounts only once its build is terminal", () => {
     expect(response.status).toBe(200);
     await response.text();
 
-    // The mid-build read happened, once, inside the one reviewer call.
-    expect(state.reviews).toBe(1);
-    // The premise: the ROW really did land mid-build, so this is a gate rather
-    // than an app that simply did not exist yet.
-    expect(midBuild.listed).toBe(1);
-    // THE MOUNT GATE. Not the draft's headline — the same not-found the app gave
-    // a moment earlier with no row at all…
-    expect(midBuild.open).toBe("not-found");
-    // …which the wire turns into the `{kind:"pending"}` every embed already keeps
-    // polling on (`use-app.ts`, `chrome/embeds.tsx`).
-    expect(midBuild.wireStatus).toBe(200);
-    expect(JSON.parse(midBuild.wireBody ?? "{}")).toEqual({ kind: "pending" });
+    // TWO builds, two reviewer passes, two mid-build reads: the create's, on no
+    // row, and the edit's, on a row that already exists and already mounts. The
+    // second is the one a create-only gate got wrong.
+    expect(state.reviews).toBe(2);
+    expect(seen).toHaveLength(2);
+    for (const [index, midBuild] of seen.entries()) {
+      // The premise: the ROW really is there mid-build, so this is a gate rather
+      // than an app that simply did not exist yet.
+      expect(midBuild.listed, `build ${index}`).toBe(1);
+      // THE MOUNT GATE. Not the draft's headline — the same not-found the app
+      // gave before it had a screen at all…
+      expect(midBuild.open, `build ${index}`).toBe("not-found");
+      // …which the wire turns into the `{kind:"pending"}` every embed already
+      // keeps polling on (`use-app.ts`, `chrome/embeds.tsx`).
+      expect(midBuild.wireStatus, `build ${index}`).toBe(200);
+      expect(JSON.parse(midBuild.wireBody), `build ${index}`).toEqual({ kind: "pending" });
+    }
 
-    // And once the build is terminal, what mounts is the CORRECTED version.
+    // And once both builds are terminal, what mounts is the LAST repair — never
+    // a draft, and never the version the edit replaced.
     const apps = await vendo.apps.list(ctx);
     expect(apps).toHaveLength(1);
     const painted = headline(await vendo.apps.open(apps[0]!.id, ctx));
-    expect(painted).toContain(String(REPAIRED_TOTAL));
+    expect(painted).toContain(String(EDITED_TOTAL));
     expect(painted).not.toContain(String(DRAFT_TOTAL));
-  }, 120_000);
+    expect(painted).not.toContain(String(REPAIRED_TOTAL));
+  }, 180_000);
 });

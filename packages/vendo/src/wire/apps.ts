@@ -67,7 +67,8 @@ function decodeSlot(slot: string): string {
     lands at its FIRST painting save and carries `building` until the assembler
     returns, so open() (and the meta route alike) answers not-found for the whole
     build either way — no row at first, then a row still being written — and
-    every 1.2s poll logged a browser console 404. Under the additive ?pending=1 flag, ONLY that expected
+    every 1.2s poll logged a browser console 404. Under the additive
+    ?pending=1 flag, ONLY that expected
     pre-servable miss becomes a quiet 200 {kind:"pending"}; unflagged
     callers keep the contracted 404, and every other failure keeps its
     envelope and status either way. A record that DOES exist — just not
