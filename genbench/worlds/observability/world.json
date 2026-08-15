@@ -141,6 +141,31 @@
         ]
       }
     },
+    "get_notification_policies": {
+      "does": "How each team's alerts are routed. The rows are the `data` array. `team` matches a list_services `owner`. Alerts that fire inside the quiet-hours window wait instead of paging, `escalate_after_minutes` is how long an unacknowledged page waits in MINUTES, and `escalate_to_team` is who it goes to next.",
+      "data": {
+        "data": [
+          { "team": "Payments", "quiet_hours_start": "22:00", "quiet_hours_end": "07:00", "escalate_after_minutes": 10, "escalate_to_team": "Platform" },
+          { "team": "Identity", "quiet_hours_start": "23:00", "quiet_hours_end": "08:00", "escalate_after_minutes": 15, "escalate_to_team": "Platform" },
+          { "team": "Discovery", "quiet_hours_start": "20:00", "quiet_hours_end": "09:00", "escalate_after_minutes": 20, "escalate_to_team": "Payments" },
+          { "team": "Messaging", "quiet_hours_start": "21:00", "quiet_hours_end": "06:00", "escalate_after_minutes": 5, "escalate_to_team": "Platform" },
+          { "team": "Platform", "quiet_hours_start": "00:00", "quiet_hours_end": "06:00", "escalate_after_minutes": 30, "escalate_to_team": "Identity" }
+        ]
+      }
+    },
+    "get_service_map": {
+      "does": "Which service calls which, over the last hour. The rows are the `data` array. `from_service` and `to_service` are list_services names, `calls` is how many requests crossed that link in the window, and `error_pct` is the share of them that failed.",
+      "data": {
+        "data": [
+          { "from_service": "edge-router", "to_service": "checkout-api", "calls": 184200, "error_pct": 2.4 },
+          { "from_service": "checkout-api", "to_service": "auth-gateway", "calls": 92400, "error_pct": 0.1 },
+          { "from_service": "checkout-api", "to_service": "ledger-worker", "calls": 88100, "error_pct": 0.3 },
+          { "from_service": "checkout-api", "to_service": "notify-fanout", "calls": 41300, "error_pct": 18.6 },
+          { "from_service": "checkout-api", "to_service": "billing-sync", "calls": 12750, "error_pct": 0.0 },
+          { "from_service": "ledger-worker", "to_service": "billing-sync", "calls": 30500, "error_pct": 0.2 }
+        ]
+      }
+    },
     "acknowledge_alert": {
       "does": "Acknowledge a firing alert. Escalation stops and the alert is recorded against whoever took it.",
       "takes": { "alert_id": "string" }
@@ -156,6 +181,18 @@
     "page_oncall": {
       "does": "Page the on-call primary for a service. Their phone rings, wherever they are.",
       "takes": { "service_id": "string", "message": "string" }
+    },
+    "update_incident_status": {
+      "does": "Move an incident to another status — mitigating, monitoring or resolved. Everyone watching the incident sees it move.",
+      "takes": { "incident_id": "string", "status": "string" }
+    },
+    "create_alert_rule": {
+      "does": "Create an alert rule on a service's metric. It starts evaluating straight away and pages the team named. `threshold_ms` is in MILLISECONDS.",
+      "takes": { "service_id": "string", "metric": "string", "threshold_ms": "number", "notify_team": "string" }
+    },
+    "update_notification_policy": {
+      "does": "Replace a team's routing policy. Quiet hours are 24-hour 'HH:MM' times and the change applies to the next alert that fires.",
+      "takes": { "team": "string", "quiet_hours_start": "string", "quiet_hours_end": "string", "escalate_after_minutes": "number", "escalate_to_team": "string" }
     }
   }
 }
