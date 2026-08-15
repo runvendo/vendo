@@ -22,6 +22,7 @@ import {
   type RunContext,
   type StoreOps,
 } from "@vendoai/core";
+import type { VendoComposition } from "./compose-context.js";
 
 /** The decision a choke point acts on — `LimitDecision`'s two forms collapsed to
     one, so no caller re-derives the boolean/object grammar. */
@@ -98,3 +99,24 @@ export function createLimiter({ callback, ops }: {
     },
   };
 }
+
+/** The `limits` key, composed ONLY when the host set one — unset leaves no
+ *  limiter, and every choke point then costs a single undefined check.
+ *
+ *  `StoreOps.usage` is optional (`store.ts`: a store with nowhere to meter says
+ *  so by omitting the family), so a policy against a meterless store is refused
+ *  HERE rather than enforced against counts that are all zero. */
+export const composeLimits = (composition: VendoComposition): Pick<VendoComposition, "limiter"> => {
+  const { config, ops } = composition;
+  if (config.limits === undefined) return { limiter: undefined };
+  if (ops?.usage === undefined) {
+    throw new VendoError(
+      "validation",
+      "createVendo({ limits }) needs a store that can count, and this deployment's store has no usage meter: "
+      + "every count would read 0, so no limit would ever be reached and every user would be unlimited. "
+      + "Use the default store (or any store on schema v10+ — Vendo Cloud, your own Postgres via createStore), "
+      + "or drop `limits`.",
+    );
+  }
+  return { limiter: createLimiter({ callback: config.limits, ops: ops.usage }) };
+};

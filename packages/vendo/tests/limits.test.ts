@@ -12,12 +12,22 @@
  */
 import { setLogger, type LimitUser, type RunContext, type StoreOps, type VendoLogEvent } from "@vendoai/core";
 import { memoryStoreOps } from "@vendoai/core/conformance";
+import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
+import { createComposition } from "../src/compose-context.js";
 import { createLimiter } from "../src/limits.js";
+import { createVendo } from "../src/server.js";
 
 type Meter = NonNullable<StoreOps["usage"]>;
 
 const meter = (): Meter => memoryStoreOps().usage as Meter;
+
+/** The same reference ops with the OPTIONAL family genuinely absent — a store
+    with nowhere to meter, which is what composition has to refuse. */
+const meterlessOps = (): StoreOps => {
+  const { usage: _absent, ...rest } = memoryStoreOps();
+  return rest as StoreOps;
+};
 
 const ALL_TIME = new Date(0);
 const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 3_600_000);
@@ -30,8 +40,19 @@ const ctxFor = (over: Partial<RunContext> = {}): RunContext => ({
   ...over,
 });
 
-afterEach(() => {
+const stores: VendoStore[] = [];
+const openStore = (ops: StoreOps): VendoStore => {
+  // The real store, with the ops surface under test bound over it: `selectStoreOps`
+  // takes `store.ops` when it carries one, so this is the composed seam and not a
+  // shortcut around it.
+  const store = Object.assign(createStore(), { ops });
+  stores.push(store);
+  return store;
+};
+
+afterEach(async () => {
   setLogger(undefined);
+  for (const store of stores.splice(0)) await store.close();
 });
 
 describe("the limiter's verdict", () => {
@@ -183,5 +204,29 @@ describe("the user the policy decides about", () => {
       facts: { email: "mia@maple.test", plan: "free" },
       pools: ["workspace"],
     });
+  });
+});
+
+describe("the `limits` config key", () => {
+  const base = { principal: async () => null };
+
+  it("wires NOTHING when the host sets no policy", () => {
+    const composition = createComposition({ ...base, store: openStore(memoryStoreOps()) });
+    expect(composition.limiter).toBeUndefined();
+  });
+
+  it("REFUSES at composition against a store with no meter", () => {
+    const store = openStore(meterlessOps());
+    expect(() => createVendo({ ...base, store, limits: () => true }))
+      .toThrow(/no usage meter/);
+  });
+
+  it("composes the limiter when the store carries a meter", () => {
+    const composition = createComposition({
+      ...base,
+      store: openStore(memoryStoreOps()),
+      limits: () => true,
+    });
+    expect(composition.limiter).toBeDefined();
   });
 });

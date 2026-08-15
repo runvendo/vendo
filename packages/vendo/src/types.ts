@@ -23,6 +23,7 @@ import type {
   Harness,
   Json,
   KnowledgeAdapter,
+  LimitsCallback,
   Principal,
   RunContext,
   RunId,
@@ -222,6 +223,20 @@ export interface CreateVendoConfig {
       not an instance. Unset composes the same unconfigured-posture guard it
       always did. */
   guard?: VendoGuard | GuardRules;
+  /** Per-user limits, in the host's own logic: Vendo counts, this decides.
+
+      Called once before each metered action (a user message, an app
+      generation) with the resolved user, the action, and a `count` reader
+      already bound to that user. Answer `false` — or `{ allow: false, message }`
+      to say why in your own words — and the action is refused and never
+      counted; anything else allows it and the meter records it.
+
+      The counting is Vendo's: it needs a store with a `usage` meter, so a
+      policy against a store that has none is REFUSED at composition rather
+      than enforced against counts that are all zero. A policy that throws
+      DENIES (and logs `limits.callback_error`) — a limits system that fails
+      open stops limiting silently. Unset wires nothing at all. */
+  limits?: LimitsCallback;
   secrets?: SecretsProvider;
   /** Where everything Vendo says out loud goes (core's `log.ts`): one structured
       event per line Vendo would have written to the console, so a host can route
