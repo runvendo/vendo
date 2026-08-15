@@ -68,6 +68,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "3.0.30",
+    "@base-ui/react": "1.7.0",
     "@tanstack/react-table": "^8.20.0",
     "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",

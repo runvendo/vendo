@@ -8,7 +8,8 @@
  *  The code-only `{label, content}` item still works; children win when both
  *  are present.
  */
-import { Children, useId, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Tabs as Base } from "@base-ui/react/tabs";
+import { Children, type ReactNode } from "react";
 import { font, hairline, t, transitionFor } from "../tokens.js";
 
 export type TabItem = string | number | {
@@ -54,38 +55,24 @@ const normalize = (item: TabItem): NormalTab => {
 export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
   const panels = Children.toArray(children);
   const items = (tabs ?? []).map(normalize);
-  const panelIdBase = useId().replace(/:/g, "");
+  // Tabs are addressed by INDEX, because two items may carry the same `value`
+  // (or none at all) and Base UI keys its panels off the tab's value.
   // `value` names a tab; otherwise fall back to defaultIndex. Either way a
   // disabled starting tab hands off to the first enabled one.
   const named = value === undefined ? -1 : items.findIndex((item) => item.value === text(value));
   const requested = named === -1 ? defaultIndex : named;
   const firstEnabled = items.findIndex((item) => !item.disabled);
-  const [active, setActive] = useState(
-    items[requested] !== undefined && !items[requested].disabled ? requested : Math.max(0, firstEnabled),
-  );
-
-  const focusTab = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    const offsets: Partial<Record<string, number>> = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
-    const offset = offsets[event.key];
-    if (offset === undefined && event.key !== "Home" && event.key !== "End") return;
-    const buttons = Array.from(
-      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)') ?? [],
-    );
-    if (buttons.length === 0) return;
-    event.preventDefault();
-    const current = Math.max(0, buttons.indexOf(event.currentTarget));
-    const target = event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? buttons.length - 1
-        : (current + (offset ?? 0) + buttons.length) % buttons.length;
-    buttons[target]?.focus();
-  };
+  const start = items[requested] !== undefined && !items[requested].disabled
+    ? requested
+    : Math.max(0, firstEnabled);
 
   return (
-    <div data-kit="Tabs" style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
-      <div
-        role="tablist"
+    <Base.Root
+      data-kit="Tabs"
+      defaultValue={start}
+      style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
+    >
+      <Base.List
         style={{
           display: "flex",
           gap: "var(--vendo-density-inline-gap, 7px)",
@@ -98,51 +85,41 @@ export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
           padding: "var(--vendo-density-tabs-padding, 4px)",
         }}
       >
-        {items.map((tab, i) => {
-          const selected = i === active;
-          return (
-            <button
-              key={`${tab.value}-${i}`}
-              id={`${panelIdBase}-tab-${i}`}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls={`${panelIdBase}-panel-${i}`}
-              tabIndex={selected ? 0 : -1}
-              disabled={tab.disabled}
-              onClick={() => setActive(i)}
-              onKeyDown={focusTab}
-              style={{
-                ...font,
-                minHeight: "var(--vendo-density-tab-height, 30px)",
-                border: selected ? hairline : `${t.borderWidth} solid transparent`,
-                borderRadius: t.radiusSmall,
-                // Accent marks the ACTIVE state — the tablist's one brand pixel.
-                color: selected ? t.accent : t.muted,
-                background: selected ? t.surface : "transparent",
-                cursor: tab.disabled ? "not-allowed" : "pointer",
-                fontSize: "0.88em",
-                fontWeight: selected ? t.weightEmphasis : t.weightNormal,
-                opacity: tab.disabled ? 0.5 : 1,
-                padding: "var(--vendo-density-tab-padding, 6px 10px)",
-                whiteSpace: "nowrap",
-                // The indicator glide: the fill and the rule travel to the tab
-                // that was pressed instead of jumping.
-                transition: transitionFor("background-color", "border-color", "color"),
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-      <div
-        role="tabpanel"
-        id={`${panelIdBase}-panel-${active}`}
-        aria-labelledby={`${panelIdBase}-tab-${active}`}
-      >
-        {panels.length > 0 ? panels[active] : items[active]?.content}
-      </div>
-    </div>
+        {items.map((tab, i) => (
+          <Base.Tab
+            key={`${tab.value}-${i}`}
+            value={i}
+            disabled={tab.disabled}
+            // Base UI hands the state to `style`, so the selected look is
+            // painted with no stylesheet to select `[data-active]` on.
+            style={({ active }) => ({
+              ...font,
+              minHeight: "var(--vendo-density-tab-height, 30px)",
+              border: active ? hairline : `${t.borderWidth} solid transparent`,
+              borderRadius: t.radiusSmall,
+              // Accent marks the ACTIVE state — the tablist's one brand pixel.
+              color: active ? t.accent : t.muted,
+              background: active ? t.surface : "transparent",
+              cursor: tab.disabled ? "not-allowed" : "pointer",
+              fontSize: "0.88em",
+              fontWeight: active ? t.weightEmphasis : t.weightNormal,
+              opacity: tab.disabled ? 0.5 : 1,
+              padding: "var(--vendo-density-tab-padding, 6px 10px)",
+              whiteSpace: "nowrap",
+              // The indicator glide: the fill and the rule travel to the tab
+              // that was pressed instead of jumping.
+              transition: transitionFor("background-color", "border-color", "color"),
+            })}
+          >
+            {tab.label}
+          </Base.Tab>
+        ))}
+      </Base.List>
+      {items.map((tab, i) => (
+        <Base.Panel key={`${tab.value}-${i}`} value={i}>
+          {panels.length > 0 ? panels[i] : tab.content}
+        </Base.Panel>
+      ))}
+    </Base.Root>
   );
 }
