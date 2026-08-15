@@ -428,13 +428,14 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 45 store operations across 12 families.
+/** The typed contract for all 48 store operations across 13 families.
     Lean by design — this is the CONTRACT interface, not the implementation.
 
-    Two members are OPTIONAL, and both mean the same thing: an implementation
-    that cannot serve the family says so by OMITTING it, never by accepting the
-    call and doing something else (`transcripts.appendMessages` and `retention`,
-    following `RecordStore.claim`/`atomic`). Everything else is required. */
+    Three members are OPTIONAL, and all three mean the same thing: an
+    implementation that cannot serve the family says so by OMITTING it, never by
+    accepting the call and doing something else (`transcripts.appendMessages`,
+    `retention` and `usage`, following `RecordStore.claim`/`atomic`). Everything
+    else is required. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
       effects, and the automations and guard drawers — reached through seven

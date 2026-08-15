@@ -84,18 +84,19 @@ for (const backend of backends()) {
       }
     });
 
-    it("status() reports the 45 ops this wire serves", async () => {
+    it("status() reports the 48 ops this wire serves", async () => {
       const { made, ops } = await makeOps();
       try {
         const status = await ops.status();
-        // All 45, against the manifest rather than a literal: `ops` is a LEVEL
+        // All 48, against the manifest rather than a literal: `ops` is a LEVEL
         // over STORE_WIRE_PATHS' declared order, and this engine now serves
         // every op on it — including audit.tally, declared past `status`, which
         // no level could reach while retention was missing from the middle.
         expect(status.ops).toBe(Object.keys(STORE_WIRE_PATHS).length);
-        // The family is what the level is claiming, so assert both together or
-        // the number can drift ahead of the object it describes.
+        // The families are what the level is claiming, so assert them together
+        // or the number can drift ahead of the objects it describes.
         expect(ops.retention).toBeDefined();
+        expect(ops.usage).toBeDefined();
         // Nothing left to announce: the handshake carries the format and the
         // count, and the retired generic family is not advertised as anything.
         expect(Object.keys(status).sort()).toEqual(["format", "ops"]);

@@ -13,6 +13,8 @@ import {
   type RecordInput,
   type RecordQuery,
   type StoreOps,
+  type UsageEvent,
+  type UsageTallyRow,
   type VendoRecord,
 } from "../store.js";
 
@@ -902,6 +904,46 @@ export function memoryStoreOps(): StoreOps {
   };
 
   // ---------------------------------------------------------------------------
+  // usage — a LIST of events and not a per-window counter, for the reason the
+  // real table is one: a policy authors its own window, down to the minute, and
+  // a pre-bucketed count can only answer the periods whoever bucketed it picked.
+  // ---------------------------------------------------------------------------
+
+  const metered: UsageEvent[] = [];
+  const inWindow = (event: UsageEvent, window: { since: Date; until?: Date }): boolean =>
+    event.at >= window.since && (window.until === undefined || event.at < window.until);
+
+  const usage: NonNullable<StoreOps["usage"]> = {
+    async record(event) {
+      metered.push({ ...event, poolKeys: [...event.poolKeys ?? []] });
+    },
+    async count(query) {
+      return metered.filter((event) =>
+        event.action === query.action
+        && inWindow(event, query)
+        && (query.subject === undefined
+          ? (event.poolKeys ?? []).includes(query.poolKey)
+          : event.subject === query.subject)).length;
+    },
+    async tally(query) {
+      const groups = new Map<string, UsageTallyRow>();
+      for (const event of metered) {
+        if (!inWindow(event, query)) continue;
+        if (query.action !== undefined && event.action !== query.action) continue;
+        if (query.subject !== undefined && event.subject !== query.subject) continue;
+        const key = `${event.subject} ${event.action}`;
+        const row = groups.get(key) ?? { subject: event.subject, action: event.action, count: 0 };
+        row.count += 1;
+        groups.set(key, row);
+      }
+      // Sorted, because "the order the events happened to arrive in" is not an
+      // answer any two implementations would agree on.
+      return [...groups.values()].sort((a, b) =>
+        a.subject === b.subject ? a.action.localeCompare(b.action) : a.subject.localeCompare(b.subject));
+    },
+  };
+
+  // ---------------------------------------------------------------------------
   // status
   // ---------------------------------------------------------------------------
 
@@ -913,6 +955,7 @@ export function memoryStoreOps(): StoreOps {
     harness,
     workspace,
     audit,
+    usage,
     secrets,
     retention,
     lifecycle,

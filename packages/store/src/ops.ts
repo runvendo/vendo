@@ -12,6 +12,9 @@ import {
   type Json,
   type RecordStore,
   type StoreOps,
+  type UsageCountQuery,
+  type UsageTallyQuery,
+  type UsageTallyRow,
   type VendoRecord,
 } from "@vendoai/core";
 import { appDataFiles, appDataRows } from "./app-data-rows.js";
@@ -206,12 +209,67 @@ async function auditTally(db: Db, query: AuditTallyQuery): Promise<AuditTallyRow
   }));
 }
 
+/** The meter's window, shared by both reads (`auditWhere`'s rule): `since` is
+ *  the inclusive floor `audit.tally` already reads its own by, and `until` is
+ *  the exclusive ceiling a closed period needs. Two doors onto one drawer that
+ *  spell an edge differently disagree about a limit, and the person on the
+ *  wrong side of it cannot tell why. */
+function usageWindow(query: { since: Date; until?: Date }): { params: unknown[]; clauses: string[] } {
+  const params: unknown[] = [query.since.toISOString()];
+  const clauses = ["at >= $1::timestamptz"];
+  if (query.until !== undefined) {
+    params.push(query.until.toISOString());
+    clauses.push(`at < $${params.length}::timestamptz`);
+  }
+  return { params, clauses };
+}
+
+/** `usage.count`'s statement (01 §12 `UsageCountQuery`): the window, the action,
+ *  and EITHER the one person or the one pool — never both, because a count
+ *  carrying both is two different numbers with one name. The pool leg is a
+ *  containment test against the keys the row was written with, which is what
+ *  makes a departed member's usage stay counted against the team it was spent
+ *  in. */
+async function usageCount(db: Db, query: UsageCountQuery): Promise<number> {
+  const { params, clauses } = usageWindow(query);
+  params.push(query.action);
+  clauses.push(`action = $${params.length}`);
+  params.push(query.subject ?? query.poolKey);
+  clauses.push(query.subject === undefined ? `$${params.length} = ANY(pool_keys)` : `subject = $${params.length}`);
+  const result = await db.query(`SELECT count(*) AS count FROM vendo_usage WHERE ${clauses.join(" AND ")}`, params);
+  return Number(result.rows[0]?.["count"]);
+}
+
+/** `usage.tally`'s statement (01 §12 `UsageTallyQuery`) — `auditTally`'s shape
+ *  over the meter: the same window grouped instead of counted once, so an
+ *  operator's "who is using this" table is one call and not a count per user.
+ *  Subjects with nothing in the window are never rows, because a GROUP BY
+ *  answers with the groups that exist. */
+async function usageTally(db: Db, query: UsageTallyQuery): Promise<UsageTallyRow[]> {
+  const { params, clauses } = usageWindow(query);
+  for (const [column, value] of [["action", query.action], ["subject", query.subject]] as const) {
+    if (value === undefined) continue;
+    params.push(value);
+    clauses.push(`${column} = $${params.length}`);
+  }
+  const result = await db.query(
+    `SELECT subject, action, count(*) AS count FROM vendo_usage
+      WHERE ${clauses.join(" AND ")} GROUP BY 1, 2 ORDER BY 1, 2`,
+    params,
+  );
+  return result.rows.map((row) => ({
+    subject: text(row["subject"]),
+    action: row["action"] as UsageTallyRow["action"],
+    count: Number(row["count"]),
+  }));
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 44 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 48 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -796,6 +854,29 @@ export function createStoreOps(
     },
 
     // -----------------------------------------------------------------------
+    // usage — the meter a host's LimitsCallback decides on. A write and the two
+    // reads it exists to serve, over `vendo_usage` (schema.ts v10). The write is
+    // here and not on `engine` because the drawer has no door: a meter row is
+    // only ever counted, so nothing lists it and nothing may name the table as a
+    // collection. Ids are minted here — the contract's event is what HAPPENED,
+    // and nothing outside this row ever refers to it.
+    // -----------------------------------------------------------------------
+    usage: {
+      async record(event) {
+        await db.query(
+          "INSERT INTO vendo_usage (id, subject, action, at, pool_keys) VALUES ($1, $2, $3, $4::timestamptz, $5)",
+          [`usg_${globalThis.crypto.randomUUID()}`, event.subject, event.action, event.at.toISOString(), event.poolKeys ?? null],
+        );
+      },
+      async count(query) {
+        return await usageCount(db, query);
+      },
+      async tally(query) {
+        return await usageTally(db, query);
+      },
+    },
+
+    // -----------------------------------------------------------------------
     // secrets — the vault door (secrets.ts) as-is. The one seam this layer
     // owns: the provider answers `undefined` for a name it does not hold, and
     // the op's contract is `null`.
@@ -895,14 +976,12 @@ export function createStoreOps(
     },
 
     async status() {
-      // All 45 of STORE_WIRE_PATHS: `ops` is a LEVEL over that list's declared
-      // order, and the two that used to stop it short — retention.quarantine
-      // and retention.purge — are served above, so the prefix now runs to the
-      // end of the list and audit.tally, declared past `status`, is inside it
-      // for the first time. A number this engine cannot back with an op is the
-      // one thing the level must never report, so it moves WITH the object and
-      // never ahead of it.
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 45 };
+      // All 48 of STORE_WIRE_PATHS: `ops` is a LEVEL over that list's declared
+      // order, and this engine serves the whole of it — retention, the audit
+      // tally, and now the usage family that rides the tail behind them. A
+      // number this engine cannot back with an op is the one thing the level
+      // must never report, so it moves WITH the object and never ahead of it.
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 48 };
     },
   };
 }

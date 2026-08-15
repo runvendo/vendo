@@ -44,17 +44,18 @@ import {
   storeWireLifecycleEraseRequestSchema,
   storeWireLifecyclePromoteRequestSchema,
   storeWireAuditTallyRequestSchema,
+  storeWireUsageCountRequestSchema,
   type EraseTarget,
   type StoreWireStatus,
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 45 mount-relative paths", () => {
+  it("exposes the format constant and 48 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 12 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
+    // 13 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
     // + workspace(4) + lifecycle(2) + audit(2) + secrets(4) + footprint(1)
-    // + retention(2) + status(1) = 45
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(45);
+    // + retention(2) + status(1) + usage(3) = 48
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(48);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
@@ -69,12 +70,19 @@ describe("vendo/store-wire@1", () => {
 
   // `ops` on /status is a LEVEL over this order, so an implementation that
   // stops short of the newest ops can only report an honest number when those
-  // ops are the tail. retention is the family nothing serves yet, and the audit
-  // tally is the newest op no mount answers — both sit behind everything a
-  // shipped mount already serves.
+  // ops are the tail. The usage family is the newest one no mount answers yet,
+  // and it sits behind everything a shipped mount already serves — as retention
+  // and the audit tally did before it.
   it("declares the ops nothing serves yet LAST, so the /status level can stay honest", () => {
     const ops = Object.keys(STORE_WIRE_PATHS).filter((op) => op !== "status");
-    expect(ops.slice(-3)).toEqual(["retention.quarantine", "retention.purge", "audit.tally"]);
+    expect(ops.slice(-6)).toEqual([
+      "retention.quarantine",
+      "retention.purge",
+      "audit.tally",
+      "usage.record",
+      "usage.count",
+      "usage.tally",
+    ]);
   });
 
   // The rule the tail exists for, stated as the thing that would break: a new op
@@ -104,6 +112,25 @@ describe("vendo/store-wire@1", () => {
     // The same four enums as the feed, refused the same way — one copy of them
     // on the wire, so the two doors cannot come to narrow differently.
     expect(tally({ from: "2026-08-14T00:00:00.000Z", outcome: "allowed" })).toBe(false);
+  });
+
+  // The meter's count is either a person's or a pool's, and a body carrying
+  // both is two different numbers under one name — the same rule `lifecycle.erase`
+  // is refused by, and for the same reason: there is no sensible precedence a
+  // caller could have guessed.
+  it("usage.count's body names exactly one of subject or poolKey, over a required floor", () => {
+    const count = (body: unknown): boolean => storeWireUsageCountRequestSchema.safeParse(body).success;
+    const window = { action: "message", since: "2026-08-14T00:00:00.000Z" };
+    expect(count({ ...window, subject: "user_1" })).toBe(true);
+    expect(count({ ...window, poolKey: "team_1", until: "2026-08-15T00:00:00.000Z" })).toBe(true);
+    expect(count({ ...window, subject: "user_1", poolKey: "team_1" })).toBe(false);
+    expect(count(window)).toBe(false);
+    // `since` is the only bound on a drawer that only ever grows, so a body
+    // without one is refused rather than answered from the beginning of time.
+    expect(count({ action: "message", subject: "user_1" })).toBe(false);
+    // The action is the unit a host sells in, and an unknown one is a caller
+    // bug this build cannot silently widen to.
+    expect(count({ ...window, action: "tokens", subject: "user_1" })).toBe(false);
   });
 
   describe("engine.list's watermark bound", () => {

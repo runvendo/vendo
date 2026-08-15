@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode } from "./errors.js";
 import { isoDateTimeSchema, type Json } from "./ids.js";
+import { limitActionSchema } from "./limits.js";
 import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
@@ -95,6 +96,13 @@ export const STORE_WIRE_PATHS = {
   // is fine, because a missing op is read off its own 501 and never off the
   // level.
   "audit.tally": "/audit/tally",
+  // usage (3) — the meter behind per-user limits, appended for the same reason
+  // `audit.tally` was: the level may only ever grow, so a new family goes on
+  // the end and a mount that stops short of it keeps reporting the number it
+  // always did.
+  "usage.record": "/usage/record",
+  "usage.count": "/usage/count",
+  "usage.tally": "/usage/tally",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -491,6 +499,45 @@ export const storeWireAuditListRequestSchema = cursorQuerySchema.extend(auditFil
 export const storeWireAuditTallyRequestSchema = z.object({
   ...auditFilterFields,
   from: isoDateTimeSchema,
+}).passthrough();
+
+// ---------------------------------------------------------------------------
+// usage
+// ---------------------------------------------------------------------------
+
+/** One metered action, as it happened. `at` is a real datetime the caller
+    authored, and `poolKeys` are the shared buckets this action ALSO drew down,
+    sent WITH the write rather than looked up at read time: a member who leaves
+    a team must not retroactively drain its quota. */
+export const storeWireUsageRecordRequestSchema = z.object({
+  subject: z.string().min(1),
+  action: limitActionSchema,
+  at: isoDateTimeSchema,
+  poolKeys: z.array(z.string().min(1)).optional(),
+}).passthrough();
+
+/** Exactly ONE of subject/poolKey (`lifecycle.erase`'s rule): a count is either
+    a person's or a pool's, and a body carrying both — or neither — asks for two
+    numbers under one name. `since` is required and inclusive for
+    `audit.tally`'s reason: it is the only bound on a drawer that only grows. */
+export const storeWireUsageCountRequestSchema = z.object({
+  action: limitActionSchema,
+  since: isoDateTimeSchema,
+  until: isoDateTimeSchema.optional(),
+  subject: z.string().min(1).optional(),
+  poolKey: z.string().min(1).optional(),
+}).passthrough().refine(
+  (query) => (query.subject === undefined) !== (query.poolKey === undefined),
+  { message: "usage count must set exactly one of subject or poolKey" },
+);
+
+/** The same window counted per subject instead of for one. Both narrowings are
+    optional here precisely because the answer names both. */
+export const storeWireUsageTallyRequestSchema = z.object({
+  since: isoDateTimeSchema,
+  until: isoDateTimeSchema.optional(),
+  action: limitActionSchema.optional(),
+  subject: z.string().min(1).optional(),
 }).passthrough();
 
 // ---------------------------------------------------------------------------
