@@ -28,7 +28,7 @@ import {
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
-import { scriptedScreenAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";

@@ -18,7 +18,7 @@ import type { FloorDependencies } from "../src/server/checking/deps.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
-import { scriptedScreenAssembler } from "../src/server/testing/authoring-assembler.js";
+import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
 
 const owner: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
