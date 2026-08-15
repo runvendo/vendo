@@ -1767,8 +1767,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    nothing here may shorthand either. The rung is above every panel and embed
    layer and below every approval surface: the card is chrome ON the thread, and
    an approval always outranks it. Its own box-sizing, because the portal root
-   is the one element the .vendo-root descendant reset cannot reach. */
+   is the one element the .vendo-root descendant reset cannot reach.
+   The height is bounded the way the width is (both spend EDGE_GUTTER on each
+   side): a long enough snippet outgrows a short viewport, and a fixed card has
+   no page scroll to reach the overflow with — the flip clamps its top edge to
+   the gutter and the tail simply falls off the bottom. Capped, it carries its
+   own scrollbar and the height the flip measures stays honest. */
 .fl-cite-pop { position: fixed; top: 0; left: 0; width: 292px; max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px); overflow-y: auto;
   box-sizing: border-box; z-index: 2147483003;
   background: var(--vendo-surface); border: 1px solid var(--vendo-border); border-radius: 10px;
   box-shadow: var(--vendo-shadow-float); padding: 12px 14px; text-align: left; cursor: default;

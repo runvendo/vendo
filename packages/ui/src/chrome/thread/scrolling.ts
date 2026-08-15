@@ -143,6 +143,14 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     }
   };
 
+  // A wheel or a touch drag is unambiguously the READER: the pill's own smooth
+  // scroll emits scroll events the whole way down but never these. Either one
+  // ends the jump's ownership on the spot, so the scroll handler and the size
+  // observer read the reader's real position again instead of holding the
+  // stick for the rest of the window — without this, a reader who changes
+  // their mind mid-jump is pulled back down by the next streamed growth.
+  const endJump = () => { jumpUntilRef.current = 0; };
+
   const jumpToLatest = () => {
     const node = listRef.current;
     if (!node) return;
@@ -252,5 +260,5 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
         .slice(0, 120)
     : "";
 
-  return { listRef, onScroll, jumpToLatest, showJump: unseen, unseenCount, snippet };
+  return { listRef, onScroll, endJump, jumpToLatest, showJump: unseen, unseenCount, snippet };
 }

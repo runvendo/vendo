@@ -49,6 +49,8 @@ export function MessageList({
         aria-busy={busy}
         ref={scroll.listRef}
         onScroll={() => { scroll.onScroll(); messageWindow.onNearTop(); }}
+        onWheel={scroll.endJump}
+        onTouchMove={scroll.endJump}
       >
         {messageWindow.hasOlder ? (
           <button
