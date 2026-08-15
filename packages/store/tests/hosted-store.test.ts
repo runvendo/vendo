@@ -178,11 +178,13 @@ describe("hostedStore wire", () => {
 
     // The capability mirror is UNCHANGED by the move onto the engine door:
     // claim is absent on routed reserved collections, atomic rides generic
-    // collections and vendo_threads' revision counter only. mcp and knowledge
-    // feature-detect on exactly this shape.
+    // collections and the routed doors backed by a revision counter. mcp and
+    // knowledge feature-detect on exactly this shape. The whole mirror is held
+    // to the local engine's real doors in hosted-store.atomic-parity.test.ts.
     expect(store.records("vendo_apps").claim).toBeUndefined();
     expect(store.records("vendo_threads").atomic).toBeDefined();
-    expect(store.records("vendo_apps").atomic).toBeUndefined();
+    expect(store.records("vendo_apps").atomic).toBeDefined();
+    expect(store.records("vendo_effects").atomic).toBeDefined();
     expect(store.records("vendo_mcp_clients").atomic).toBeUndefined();
     expect(store.records("vendo_mcp_clients").claim).toBeDefined();
 

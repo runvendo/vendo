@@ -69,6 +69,17 @@ export const DEDICATED_RECORD_COLLECTIONS = [
   "vendo_knowledge_chunks",
 ] as const;
 
+/** The routed collections whose table carries a revision counter, so their door
+ *  offers guarded writes (01 §12). A LITERAL because `atomic` is defined inline
+ *  per case in `configFor` below and there is nothing to read it off of without
+ *  a Db; the hosted client mirrors it for feature detection, and
+ *  tests/hosted-store.atomic-parity.test.ts holds both to the real doors. */
+export const ATOMIC_RESERVED_COLLECTIONS = [
+  "vendo_threads",
+  "vendo_apps",
+  "vendo_effects",
+] as const;
+
 export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 
 interface RoutedConfig {

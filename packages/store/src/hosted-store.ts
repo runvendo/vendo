@@ -18,7 +18,11 @@ import {
   vendoRecordSchema,
 } from "@vendoai/core";
 import type { EraseReport } from "./erase.js";
-import { DEDICATED_RECORD_COLLECTIONS, RESERVED_COLLECTIONS } from "./routing.js";
+import {
+  ATOMIC_RESERVED_COLLECTIONS,
+  DEDICATED_RECORD_COLLECTIONS,
+  RESERVED_COLLECTIONS,
+} from "./routing.js";
 import type { VendoStore } from "./store.js";
 
 /** The console mounts the hosted-store surface here
@@ -195,16 +199,19 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 
     // Capability mirror of the store engine's routing (02-store §2): routed
     // reserved collections expose no claim; atomic rides generic collections
-    // and vendo_threads' revision counter only. Mirroring the shape here keeps
-    // feature detection (`records.atomic !== undefined`) identical on both
-    // sides of the wire.
+    // and the routed doors backed by a revision counter. Mirroring the shape
+    // here keeps feature detection (`records.atomic !== undefined`) identical
+    // on both sides of the wire.
     const reserved = (RESERVED_COLLECTIONS as readonly string[]).includes(collection);
     const dedicated = (DEDICATED_RECORD_COLLECTIONS as readonly string[]).includes(collection);
     if (!reserved) {
       store.claim = (expected: RecordInput, replacement?: Pick<VendoRecord, "data" | "refs">) =>
         facade.engine.claim(collection, expected, replacement);
     }
-    if ((!reserved && !dedicated) || collection === "vendo_threads") {
+    if (
+      (!reserved && !dedicated)
+      || (ATOMIC_RESERVED_COLLECTIONS as readonly string[]).includes(collection)
+    ) {
       store.atomic = {
         insertIfAbsent: (record) => facade.engine.insertIfAbsent(collection, record),
         compareAndSwap: (record, expectedRevision) => facade.engine.compareAndSwap(collection, record, expectedRevision),
