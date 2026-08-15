@@ -59,6 +59,32 @@ export type Lane = "screen" | "build";
  *  (`display`), or one that also has to act through a write tool (`action`). */
 export type CaseTag = "display" | "action";
 
+/** The UI shapes the real-software sweep found, as ONE list: trimming the
+ *  taxonomy is a one-line edit here, and the lint reads the same list. */
+export const CASE_SHAPES = [
+  "table",
+  "chart",
+  "form",
+  "detail",
+  "dashboard",
+  "board",
+  "calendar",
+  "wizard",
+  "settings",
+  "filter-builder",
+  "permissions",
+  "list-feed",
+  "timeline",
+  "map",
+  "split-inbox",
+  "comparison",
+  "empty-state",
+  "tree",
+  "gallery",
+] as const;
+
+export type CaseShape = (typeof CASE_SHAPES)[number];
+
 export interface Case {
   readonly id: string;
   readonly lane: Lane;
@@ -67,6 +93,14 @@ export interface Case {
   /** Absent from `caseHash` on purpose: tagging a case does not change the
    *  question it asks, so it must not declare every recorded run incomparable. */
   readonly tags?: readonly CaseTag[];
+  /** Absent from `caseHash` for the reason `tags` is: filing a case under the
+   *  shape it asks for does not change the question it asks, so it must not
+   *  declare every recorded run incomparable. */
+  readonly shape: CaseShape;
+  /** The real screen this case was mined from — product and screen, with the URL
+   *  when one exists. Out of `caseHash` too: where a question was found is not
+   *  the question. */
+  readonly source?: string;
   /** Per-case tool-data override, e.g. an empty state. Replaces `data` for the
    *  named tools only; every other tool keeps the world's data. */
   readonly data?: Readonly<Record<string, unknown>>;

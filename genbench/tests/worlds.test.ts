@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { vendoThemeSchema } from "@vendoai/apps/contract";
 import { TOOL_NAME_PATTERN } from "@vendoai/core";
 import { beforeAll, describe, expect, it } from "vitest";
-import { loadCases, loadWorld, type Case, type CaseTag, type World } from "../src/world.js";
+import { CASE_SHAPES, loadCases, loadWorld, type Case, type CaseTag, type World } from "../src/world.js";
 
 const worldsDir = join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds");
 
@@ -219,6 +219,17 @@ for (const name of folders) {
 
       const actions = cases.filter((entry) => (entry.tags ?? []).includes("action"));
       expect(actions.length, "a world whose cases never act grades no write tool").toBeGreaterThanOrEqual(3);
+    });
+
+    it("gives every case one shape, and any source it names a real one", () => {
+      const shapeless = cases.filter((entry) => !CASE_SHAPES.includes(entry.shape)).map((entry) => entry.id);
+      expect(shapeless, `each case carries one shape of ${CASE_SHAPES.join(" | ")}`).toEqual([]);
+
+      // `source` stays optional — a case authored before the sweep names no screen.
+      const blank = cases
+        .filter((entry) => entry.source !== undefined && (typeof entry.source !== "string" || entry.source.trim() === ""))
+        .map((entry) => entry.id);
+      expect(blank, "a case that declares a source names one").toEqual([]);
     });
 
     it("carries at least ten cases", () => {
