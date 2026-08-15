@@ -82,9 +82,9 @@ describe("the writers' design brief", () => {
     await screen.assemble();
     const brief = screen.model.systemPrompts[0] ?? "";
 
-    // The law, in COMPONENT terms rather than CSS: hierarchy, density, chart
-    // choice by data shape, the honest hole, and the one styling rule — a screen
-    // picks parts, it never styles them.
+    // The law: hierarchy, density, chart choice by data shape, the honest hole,
+    // and the one styling rule — a screen styles freely, but off the host's own
+    // CSS variables, because a hard-coded color is not the product's.
     expect(brief).toContain("What a good screen looks like");
     expect(brief).toContain("Lead with the answer.");
     expect(brief).toContain("Never chart two data points");
