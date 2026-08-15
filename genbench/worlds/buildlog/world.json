@@ -1,0 +1,85 @@
+{
+  "app": "Buildlog, the CI console a platform team watches its pipelines from",
+  "theme": {
+    "colors": {
+      "background": "#0A0C10",
+      "surface": "#12161D",
+      "text": "#E8EDF5",
+      "muted": "#8492A6",
+      "accent": "#3D7BFD",
+      "accentText": "#FFFFFF",
+      "danger": "#F0533F",
+      "border": "#1E2530"
+    },
+    "typography": {
+      "fontFamily": "Inter, sans-serif",
+      "monoFamily": "ui-monospace, SFMono-Regular, monospace",
+      "baseSize": "13px",
+      "weightNormal": "400",
+      "weightEmphasis": "600"
+    },
+    "radius": { "small": "4px", "medium": "6px", "large": "10px" },
+    "shadow": {
+      "small": "0 1px 2px rgba(0, 0, 0, 0.40)",
+      "medium": "0 6px 16px rgba(0, 0, 0, 0.45)",
+      "large": "0 18px 40px rgba(0, 0, 0, 0.55)"
+    },
+    "chartPalette": ["#3D7BFD", "#3FB950", "#D29922", "#F0533F", "#A371F7", "#39C5CF"],
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "dark console: near-black #0A0C10 page, #12161D panels, hairline #1E2530 borders — never a light background",
+    "uses the theme exactly: the blue accent, Inter for prose and the theme's mono family for shas, branches and log output — no invented colors or fonts",
+    "build status reads as a labelled word or pill — passed, failed, running, cancelled — never color alone",
+    "durations read as '4m 28s', never a raw count of seconds",
+    "money shows a $ symbol and 2 decimals, converted from the tools' cents",
+    "a commit shows as its 7-character short sha beside the message, never as a bare id"
+  ],
+  "tools": {
+    "list_builds": {
+      "does": "The most recent pipeline runs, newest first. The rows are the `data` array. `duration_seconds` is how long the run took, and is how far a running build has got so far. `compute_cost` is in CENTS: 1870 is $18.70.",
+      "data": {
+        "data": [
+          { "id": "bld_4192", "number": 4192, "branch": "feat/timeline-brick", "commit": "5ba9e70", "message": "ui: the Timeline brick", "author": "Theo Lindqvist", "status": "running", "started": "2026-08-15 09:58", "duration_seconds": 133, "compute_cost": 620 },
+          { "id": "bld_4191", "number": 4191, "branch": "main", "commit": "9f3c1ad", "message": "store: retention engine", "author": "Priya Raman", "status": "failed", "started": "2026-08-15 09:41", "duration_seconds": 412, "compute_cost": 1870 },
+          { "id": "bld_4190", "number": 4190, "branch": "release/2026-08", "commit": "c07be52", "message": "ui: pass the kit tokens through", "author": "Nadia Okafor", "status": "passed", "started": "2026-08-15 09:12", "duration_seconds": 388, "compute_cost": 1740 },
+          { "id": "bld_4189", "number": 4189, "branch": "main", "commit": "3ac8811", "message": "core: tally the guard's decisions", "author": "Priya Raman", "status": "passed", "started": "2026-08-15 08:30", "duration_seconds": 401, "compute_cost": 1810 },
+          { "id": "bld_4188", "number": 4188, "branch": "feat/steps-brick", "commit": "e412d0f", "message": "ui: the Steps brick", "author": "Theo Lindqvist", "status": "failed", "started": "2026-08-15 07:55", "duration_seconds": 268, "compute_cost": 1210 },
+          { "id": "bld_4187", "number": 4187, "branch": "main", "commit": "77d9b34", "message": "docs: kit overhaul notes", "author": "Nadia Okafor", "status": "cancelled", "started": "2026-08-15 07:20", "duration_seconds": 46, "compute_cost": 210 }
+        ]
+      }
+    },
+    "get_build_stages": {
+      "does": "The stages of one pipeline run, in the order they run. The rows are the `data` array and are build 4188's stages. `status` is one of passed, failed, running, skipped.",
+      "takes": { "build_id": "string" },
+      "data": {
+        "data": [
+          { "name": "install", "status": "passed", "seconds": 38 },
+          { "name": "typecheck", "status": "passed", "seconds": 44 },
+          { "name": "lint", "status": "passed", "seconds": 29 },
+          { "name": "test", "status": "failed", "seconds": 157 },
+          { "name": "publish", "status": "skipped", "seconds": 0 }
+        ]
+      }
+    },
+    "get_build_log": {
+      "does": "The raw output of one stage of one run, line by line. The rows are the `data` array and are build 4188's test stage. `stream` is stdout or stderr.",
+      "takes": { "build_id": "string", "stage": "string" },
+      "data": {
+        "data": [
+          { "line": 1, "stream": "stdout", "text": "FAIL packages/ui/tests/steps.test.tsx" },
+          { "line": 2, "stream": "stderr", "text": "AssertionError: expected 3 steps, got 2" },
+          { "line": 3, "stream": "stderr", "text": "  at Object.<anonymous> (tests/steps.test.tsx:41:18)" },
+          { "line": 4, "stream": "stdout", "text": "Tests  1 failed | 84 passed (85)" },
+          { "line": 5, "stream": "stdout", "text": "Duration  157.02s" },
+          { "line": 6, "stream": "stderr", "text": "ELIFECYCLE  Command failed with exit code 1" }
+        ]
+      }
+    },
+    "retry_build": {
+      "does": "Run a pipeline again from the top, on the same commit. The old run stays in the history.",
+      "takes": { "build_id": "string" }
+    }
+  }
+}

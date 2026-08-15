@@ -1,0 +1,132 @@
+[
+  {
+    "id": "recent-builds",
+    "lane": "screen",
+    "prompt": "Show me the last few pipeline runs in one table, newest first.",
+    "pass": [
+      "lists all six runs newest first, 4192 down to 4187",
+      "each row shows the branch, the short sha, the commit message, who pushed it and the status",
+      "marks 4191 and 4188 as failed, 4192 as running, 4190 and 4189 as passed, and 4187 as cancelled",
+      "shows 4191's duration as 6m 52s and 4187's as 46s rather than raw second counts"
+    ],
+    "tags": ["display"],
+    "shape": "table"
+  },
+  {
+    "id": "build-detail",
+    "lane": "screen",
+    "prompt": "Open build 4188 on its own page with everything about it, and let me run it again from there.",
+    "pass": [
+      "shows build 4188 on its own rather than a list of runs",
+      "lays out its details as labelled fields — branch feat/steps-brick, commit e412d0f, 'ui: the Steps brick', Theo Lindqvist, failed, 4m 28s, $12.10",
+      "offers exactly one control to run it again",
+      "pressing it fires retry_build with build_id bld_4188"
+    ],
+    "tags": ["action"],
+    "shape": "detail"
+  },
+  {
+    "id": "stage-breakdown",
+    "lane": "screen",
+    "prompt": "How far did build 4188 get? Show me its stages and where it stopped.",
+    "pass": [
+      "shows all five stages in order — install, typecheck, lint, test, publish",
+      "reads as a progression through the stages, not as an unordered list",
+      "marks install, typecheck and lint as passed, test as the one that failed, and publish as skipped",
+      "shows each stage's time, with test at 2m 37s, and no stage the tool did not return"
+    ],
+    "tags": ["display"],
+    "shape": "detail"
+  },
+  {
+    "id": "failure-log",
+    "lane": "screen",
+    "prompt": "Show me build 4188's stages down one side and the failing stage's output beside them.",
+    "pass": [
+      "lists the five stages on one side and the output on the other, on one screen",
+      "shows all six log lines in order, as fixed-width output rather than wrapped prose",
+      "the assertion line — expected 3 steps, got 2 — is visible and reads as an error",
+      "the log belongs to the test stage, which is the one marked failed in the list beside it"
+    ],
+    "tags": ["display"],
+    "shape": "split-inbox"
+  },
+  {
+    "id": "nothing-failing",
+    "lane": "screen",
+    "prompt": "Which builds are red? Show me those and give me a way to run each one again.",
+    "pass": [
+      "says nothing is failing rather than drawing an empty table",
+      "invents no builds",
+      "offers no retry control, since there is nothing to retry"
+    ],
+    "tags": ["display"],
+    "shape": "empty-state",
+    "data": { "list_builds": { "data": [] } }
+  },
+  {
+    "id": "retry-failed",
+    "lane": "screen",
+    "prompt": "Which builds are red? Show me those and give me a way to run each one again.",
+    "pass": [
+      "lists exactly the two failed runs, 4191 and 4188, and no passed, running or cancelled one",
+      "each row shows its branch and short sha — main / 9f3c1ad and feat/steps-brick / e412d0f",
+      "offers a retry control on each of the two rows",
+      "the retry control targets the run it sits on, firing retry_build with bld_4191 or bld_4188"
+    ],
+    "tags": ["action"],
+    "shape": "table"
+  },
+  {
+    "id": "build-history",
+    "lane": "screen",
+    "prompt": "Give me the morning's runs as a feed, newest at the top, with the time each one kicked off.",
+    "pass": [
+      "shows all six runs newest first, from 4192 at 9:58 AM down to 4187 at 7:20 AM",
+      "reads as a running history down the page rather than a plain table",
+      "each entry shows its commit message and who pushed it",
+      "each entry carries its outcome, so the two failures at 9:41 AM and 7:55 AM stand out"
+    ],
+    "tags": ["display"],
+    "shape": "timeline"
+  },
+  {
+    "id": "duration-chart",
+    "lane": "screen",
+    "prompt": "Chart how long each of these runs took.",
+    "pass": [
+      "draws a chart with a bar for each of the six runs rather than only listing them",
+      "shows 4191 as the longest at 6m 52s and 4187 as the shortest at 46s",
+      "labels each bar with its build number",
+      "invents no run the tool did not return"
+    ],
+    "tags": ["display"],
+    "shape": "chart"
+  },
+  {
+    "id": "compute-spend",
+    "lane": "screen",
+    "prompt": "What did this morning's CI cost us, and where did it go?",
+    "pass": [
+      "shows the total compute spend as $74.60",
+      "breaks it down by branch, with main at $38.90, release/2026-08 at $17.40, feat/steps-brick at $12.10 and feat/timeline-brick at $6.20",
+      "says the two failed runs cost $30.80 between them",
+      "every figure carries a $ and 2 decimals"
+    ],
+    "tags": ["display"],
+    "shape": "dashboard"
+  },
+  {
+    "id": "rerun-by-number",
+    "lane": "screen",
+    "prompt": "Give me a small form where I pick a run and re-trigger it.",
+    "pass": [
+      "offers one field to choose the run, listing the six by number and commit message",
+      "shows the chosen run's branch and status before anything fires",
+      "has exactly one submit control, which is disabled or refuses until a run is chosen",
+      "submitting fires retry_build once, with the chosen run's id"
+    ],
+    "tags": ["action"],
+    "shape": "form"
+  }
+]

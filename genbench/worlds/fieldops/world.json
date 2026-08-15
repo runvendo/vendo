@@ -1,0 +1,82 @@
+{
+  "app": "Northline Field Ops, the dispatch desk a broadband and HVAC service company runs its day out of",
+  "theme": {
+    "colors": {
+      "background": "#EEF1F5",
+      "surface": "#FFFFFF",
+      "text": "#111820",
+      "muted": "#5A6675",
+      "accent": "#1D4FD8",
+      "accentText": "#FFFFFF",
+      "danger": "#C02B2B",
+      "border": "#D6DBE3"
+    },
+    "typography": {
+      "fontFamily": "Inter, sans-serif",
+      "monoFamily": "ui-monospace, SFMono-Regular, monospace",
+      "baseSize": "14px",
+      "weightNormal": "400",
+      "weightEmphasis": "600"
+    },
+    "radius": { "small": "4px", "medium": "8px", "large": "12px" },
+    "shadow": {
+      "small": "0 1px 2px rgba(17, 24, 32, 0.08)",
+      "medium": "0 4px 12px rgba(17, 24, 32, 0.10)",
+      "large": "0 12px 32px rgba(17, 24, 32, 0.14)"
+    },
+    "chartPalette": ["#1D4FD8", "#0E9F6E", "#F2A93B", "#8B5CF6", "#EF5DA8", "#0EA5E9"],
+    "density": "comfortable",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: the blue accent, Inter, 4-12px corners on a cool grey canvas with white cards — no invented colors or fonts",
+    "job status and priority read as small labelled chips — urgent is never signalled by color alone",
+    "red is reserved for a job that is blocked or past its window; nothing else on the screen is red",
+    "every job is named by its number and its customer together — 'JOB-4471 · Bayside Dental' — never a bare id",
+    "money always shows 2 decimals with a $ symbol, converted from the tools' cents",
+    "dates read as 'Aug 15' and arrival windows as '8:00–10:00 AM' — never ISO"
+  ],
+  "tools": {
+    "list_jobs": {
+      "does": "Every job on the board this week. The rows are the `data` array. `technician_id` is null when nobody is assigned yet. `status` is one of scheduled, en_route, on_site, blocked, done. `quoted_amount` is in CENTS: 48500 is $485.00.",
+      "data": {
+        "data": [
+          { "id": "JOB-4471", "customer": "Bayside Dental", "trade": "hvac", "summary": "Rooftop unit short-cycling", "status": "on_site", "priority": "urgent", "technician_id": "tech_ari", "scheduled": "2026-08-15", "window": "08:00-10:00", "quoted_amount": 48500 },
+          { "id": "JOB-4472", "customer": "Harborview Apartments", "trade": "fiber", "summary": "Fiber drop for units 3A-3F", "status": "en_route", "priority": "normal", "technician_id": "tech_lena", "scheduled": "2026-08-15", "window": "10:00-12:00", "quoted_amount": 129000 },
+          { "id": "JOB-4473", "customer": "Cedar Lane Bakery", "trade": "plumbing", "summary": "Prep sink leaking at the trap", "status": "scheduled", "priority": "urgent", "technician_id": "tech_moses", "scheduled": "2026-08-15", "window": "13:00-15:00", "quoted_amount": 32000 },
+          { "id": "JOB-4474", "customer": "Fulton Street Gym", "trade": "hvac", "summary": "Quarterly service, two split units", "status": "scheduled", "priority": "normal", "technician_id": null, "scheduled": "2026-08-15", "window": "15:00-17:00", "quoted_amount": 61000 },
+          { "id": "JOB-4475", "customer": "Orchard Point Clinic", "trade": "fiber", "summary": "Cut line at the street vault", "status": "done", "priority": "normal", "technician_id": "tech_lena", "scheduled": "2026-08-14", "window": "14:00-16:00", "quoted_amount": 76500 },
+          { "id": "JOB-4476", "customer": "Miller & Sons Hardware", "trade": "hvac", "summary": "New rooftop unit install", "status": "scheduled", "priority": "low", "technician_id": null, "scheduled": "2026-08-16", "window": "09:00-11:00", "quoted_amount": 210000 }
+        ]
+      }
+    },
+    "list_technicians": {
+      "does": "The crew and where each of them stands right now. The rows are the `data` array. `initials` is what a photo-less avatar shows. `status` is one of on_job, available, off.",
+      "data": {
+        "data": [
+          { "id": "tech_ari", "name": "Ari Vance", "initials": "AV", "trade": "hvac", "status": "on_job", "jobs_today": 1 },
+          { "id": "tech_lena", "name": "Lena Brandt", "initials": "LB", "trade": "fiber", "status": "available", "jobs_today": 1 },
+          { "id": "tech_moses", "name": "Moses Adeyemi", "initials": "MA", "trade": "plumbing", "status": "available", "jobs_today": 1 },
+          { "id": "tech_dana", "name": "Dana Kowalski", "initials": "DK", "trade": "fiber", "status": "off", "jobs_today": 0 }
+        ]
+      }
+    },
+    "get_job_events": {
+      "does": "What has happened on a job so far, oldest first. The rows are the `data` array and are JOB-4471's visit history.",
+      "takes": { "job_id": "string" },
+      "data": {
+        "data": [
+          { "at": "2026-08-15 07:42", "actor": "Dispatch", "event": "scheduled", "note": "Booked into the 8:00-10:00 window" },
+          { "at": "2026-08-15 08:03", "actor": "Ari Vance", "event": "en_route", "note": "Left the yard" },
+          { "at": "2026-08-15 08:21", "actor": "Ari Vance", "event": "arrived", "note": "On the roof" },
+          { "at": "2026-08-15 09:05", "actor": "Ari Vance", "event": "parts_needed", "note": "Compressor contactor burnt out, ordered from Fulton supply" },
+          { "at": "2026-08-15 09:40", "actor": "Dispatch", "event": "window_missed", "note": "Customer told the visit runs past 10:00" }
+        ]
+      }
+    },
+    "dispatch_job": {
+      "does": "Send a job to a technician. Assigns it if it is unassigned and reassigns it if it is not; the technician is notified on their van tablet.",
+      "takes": { "job_id": "string", "technician_id": "string" }
+    }
+  }
+}

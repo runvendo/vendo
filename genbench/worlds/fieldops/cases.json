@@ -1,0 +1,132 @@
+[
+  {
+    "id": "todays-board",
+    "lane": "screen",
+    "prompt": "Put today's jobs on a board, one column per status, so I can see the day at a glance.",
+    "pass": [
+      "shows only the four jobs scheduled for Aug 15 — JOB-4471, JOB-4472, JOB-4473, JOB-4474 — and neither JOB-4475 nor JOB-4476",
+      "groups them by status, so on_site, en_route and the two scheduled jobs sit in separate columns",
+      "each card names its job number and its customer, and marks JOB-4471 and JOB-4473 as urgent",
+      "shows JOB-4474 as having nobody assigned rather than inventing a technician for it"
+    ],
+    "tags": ["display"],
+    "shape": "board"
+  },
+  {
+    "id": "job-detail",
+    "lane": "screen",
+    "prompt": "Open JOB-4471 on its own page with everything about it laid out, and let me hand it to someone else from there.",
+    "pass": [
+      "shows JOB-4471 for Bayside Dental on its own rather than a list of jobs",
+      "lays out its details as labelled fields — trade hvac, urgent, on site, Ari Vance, the 8:00–10:00 AM window on Aug 15, quoted $485.00",
+      "offers a way to pick another technician and send the job to them",
+      "sending it fires dispatch_job with job_id JOB-4471"
+    ],
+    "tags": ["action"],
+    "shape": "detail"
+  },
+  {
+    "id": "visit-history",
+    "lane": "screen",
+    "prompt": "Walk me through everything that has happened on JOB-4471 today, in order.",
+    "pass": [
+      "shows all five events oldest first, from scheduled at 7:42 AM to the missed window at 9:40 AM",
+      "reads as one running history rather than a plain table of rows",
+      "each entry shows who did it — Dispatch or Ari Vance — and what happened",
+      "carries the parts note about the burnt-out compressor contactor on its 9:05 AM entry"
+    ],
+    "tags": ["display"],
+    "shape": "timeline"
+  },
+  {
+    "id": "crew-roster",
+    "lane": "screen",
+    "prompt": "Show me the crew and who is free right now.",
+    "pass": [
+      "lists all four technicians with their names and initials",
+      "shows Lena Brandt and Moses Adeyemi as available, Ari Vance as on a job, and Dana Kowalski as off",
+      "shows each technician's trade and how many jobs they have today",
+      "sorts or marks the two available technicians so they are the ones a dispatcher reaches first"
+    ],
+    "tags": ["display"],
+    "shape": "list-feed"
+  },
+  {
+    "id": "nothing-on-the-board",
+    "lane": "screen",
+    "prompt": "Put today's jobs on a board, one column per status, so I can see the day at a glance.",
+    "pass": [
+      "says the board is clear rather than drawing empty columns",
+      "invents no jobs",
+      "offers no per-job controls, since there are no jobs"
+    ],
+    "tags": ["display"],
+    "shape": "empty-state",
+    "data": { "list_jobs": { "data": [] } }
+  },
+  {
+    "id": "assign-open-jobs",
+    "lane": "screen",
+    "prompt": "Which jobs still have nobody on them? Show me those and let me assign each one.",
+    "pass": [
+      "lists exactly JOB-4474 for Fulton Street Gym and JOB-4476 for Miller & Sons Hardware, and no assigned job",
+      "each row shows its date and arrival window — Aug 15, 3:00–5:00 PM and Aug 16, 9:00–11:00 AM",
+      "offers a technician picker on each row that lists the crew by name",
+      "assigning fires dispatch_job with that row's job id and the chosen technician's id"
+    ],
+    "tags": ["action"],
+    "shape": "table"
+  },
+  {
+    "id": "dispatch-wizard",
+    "lane": "screen",
+    "prompt": "Take me through sending JOB-4474 to a technician one step at a time — pick the person, check the window, then confirm.",
+    "pass": [
+      "moves through numbered steps and shows which step is current and which are done",
+      "the first step lists the crew to choose from and the second shows JOB-4474's Aug 15, 3:00–5:00 PM window",
+      "the last step asks for confirmation and names both JOB-4474 and the chosen technician before firing",
+      "confirming fires dispatch_job once, with job_id JOB-4474"
+    ],
+    "tags": ["action"],
+    "shape": "wizard"
+  },
+  {
+    "id": "day-schedule",
+    "lane": "screen",
+    "prompt": "Lay today's jobs out on a schedule by their arrival windows.",
+    "pass": [
+      "places the four Aug 15 jobs in time order — JOB-4471 at 8:00 AM, JOB-4472 at 10:00 AM, JOB-4473 at 1:00 PM, JOB-4474 at 3:00 PM",
+      "shows each job's window rather than only its start",
+      "reads as a schedule laid out against the day, not as a plain list",
+      "leaves JOB-4476 off the day entirely, since it is Aug 16"
+    ],
+    "tags": ["display"],
+    "shape": "calendar"
+  },
+  {
+    "id": "quoted-by-trade",
+    "lane": "screen",
+    "prompt": "Chart how much quoted work we have on the board by trade, biggest first.",
+    "pass": [
+      "draws a chart of the three trades rather than only listing them",
+      "shows hvac largest at $3,195.00, then fiber at $2,055.00, then plumbing at $320.00",
+      "orders them biggest first",
+      "invents no fourth trade"
+    ],
+    "tags": ["display"],
+    "shape": "chart"
+  },
+  {
+    "id": "dispatch-summary",
+    "lane": "screen",
+    "prompt": "Give me a one-screen summary of today: how the jobs are going, what is at risk, and what it is all worth.",
+    "pass": [
+      "counts the four Aug 15 jobs and says one is on site, one en route and two still scheduled",
+      "calls out the two urgent jobs, JOB-4471 and JOB-4473, as what to watch",
+      "shows today's quoted work as $2,705.00",
+      "says one of today's jobs, JOB-4474, still has nobody assigned"
+    ],
+    "tags": ["display"],
+    "shape": "dashboard"
+  }
+]

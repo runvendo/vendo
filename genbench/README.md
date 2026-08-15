@@ -131,7 +131,7 @@ second failure.
 
 One case is roughly **1-4 minutes and $0.30-$0.50** of contender spend, plus the
 judge and the honesty check. A world is **ten cases**, so one world's run is
-roughly 10x that; all twelve worlds is **120 cases**, and nobody runs that
+roughly 10x that; all fourteen worlds is **140 cases**, and nobody runs that
 casually. `--models` multiplies the whole thing again by the number of models,
 because the matrix is every harness in every model.
 
@@ -152,9 +152,9 @@ A world is a **folder**, `worlds/<name>/`:
 | `cases.json` | the prompts |
 | `font.woff2` | optional. The face the theme's `fontFamily` names, injected into every contender's page |
 
-There are **twelve worlds** — `maple` (consumer banking) plus eleven more, from
-clinic scheduling to trades accounting — and each carries **ten cases**, so the
-whole corpus is 120. A tool that declares `data` returns rows and is graded
+There are **fourteen worlds** — `maple` (consumer banking) plus thirteen more,
+from build logs to trades accounting — and each carries **ten cases**, so the
+whole corpus is 140. A tool that declares `data` returns rows and is graded
 `read`; one that only declares `takes` mutates and is graded `write`. Input
 schemas are derived from `takes` (a name → type map), output schemas from the
 example rows.
