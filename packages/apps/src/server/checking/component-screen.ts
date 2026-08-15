@@ -41,6 +41,7 @@ import { parse } from "acorn";
 import type { Node, Program } from "acorn";
 import { VENDO_TREE_FORMAT, type JsonSchema, type TreeNode } from "@vendoai/core";
 import {
+  DISPLAY_TAG_NAMES,
   KIT_COMPONENT_NAMES,
   resolveIslandToolName,
   scanIslandTools,
@@ -698,7 +699,11 @@ export function screenName(source: string): string {
  *  A text run is the engine's own node kind, not a component anybody registered,
  *  so it is not measured against the catalog — but it IS a child, so the nesting
  *  rule reads the tree whole: text nested in a component that renders no
- *  children is the same blank as a node nested there. */
+ *  children is the same blank as a node nested there. A display brick is the
+ *  same case: the renderer resolves it beside the Kit, nothing registered it,
+ *  and the type check already refused every tag that is not one. */
+const DISPLAY_TAGS: ReadonlySet<string> = new Set(DISPLAY_TAG_NAMES);
+
 const treeCheckIssues = async (
   flat: FlatTree,
   catalog: readonly string[],
@@ -711,7 +716,7 @@ const treeCheckIssues = async (
   }
   const normalized: NormalizedCatalog = [...new Set(catalog)].map((name) => ({ name, description: "" }));
   const found = await catalogIssues(
-    { ...validation.tree, nodes: nodes.filter((node) => node.component !== SCREEN_TEXT_NODE) },
+    { ...validation.tree, nodes: nodes.filter((node) => node.component !== SCREEN_TEXT_NODE && !DISPLAY_TAGS.has(node.component)) },
     undefined,
     normalized,
   );

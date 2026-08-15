@@ -27,6 +27,7 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
+  DISPLAY_TAG_NAMES,
   KIT_WIRE_COMPONENT_NAMES,
   kitSpec,
   type NormalizedCatalog,
@@ -392,15 +393,19 @@ const HANDLER_TYPE = "(event?: { target: { value?: string; checked?: boolean } }
  *  one cannot be imported by a screen either. */
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
 
-/** Everything the frame needs and nothing more. `IntrinsicElements` is EMPTY on
- *  purpose — that is what makes `<div>` an error — and `IntrinsicAttributes`
- *  carries `key`, because a list rendered with `.map()` writes one and it is
- *  React's, not the component's. */
+/** Everything the frame needs and nothing more. `IntrinsicElements` lists the
+ *  display bricks and NOTHING else — that is what keeps `<img>` and `<script>`
+ *  errors while `<div>` compiles — and each one takes only children and an
+ *  inline style, so `className`, `onClick` and `dangerouslySetInnerHTML` are
+ *  type errors on the tag itself. `IntrinsicAttributes` carries `key`, because a
+ *  list rendered with `.map()` writes one and it is React's, not the tag's. */
 const JSX_FRAME = `declare namespace JSX {
   interface Element {}
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
-  interface IntrinsicElements {}
+  interface IntrinsicElements {
+${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: Record<string, string | number> };`).join("\n")}
+  }
 }`;
 
 /** React as a screen may use it: the hooks, the two frame values, and the
@@ -414,6 +419,8 @@ const REACT_MODULE = `declare module "react" {
   export function useRef<T>(initial: T): { current: T };
   export function createElement(...args: any[]): JSX.Element;
   export const Fragment: (props: { children?: any }) => JSX.Element;
+  /** So a screen can name the type of a style it hoists out of the JSX. */
+  export interface CSSProperties { [property: string]: string | number }
   const React: {
     useState: typeof useState; useMemo: typeof useMemo; useCallback: typeof useCallback;
     useEffect: typeof useEffect; useRef: typeof useRef;

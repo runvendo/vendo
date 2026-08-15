@@ -35,6 +35,7 @@ import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
+import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
 import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
@@ -663,9 +664,11 @@ function generatedContent(context: NodeContent): ReactNode {
   );
 }
 
-/** V4 — one component family: the Kit is the only built-in set. */
+/** V4 — one component family: the Kit is the only built-in set, plus the display
+ *  bricks, which resolve exactly like one. A brick's tag is lowercase and a Kit
+ *  or catalog name is an identifier, so the two can never collide. */
 function builtinContent({ props, node, children, invoke, handle }: NodeContent): ReactNode {
-  const kit = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
+  const kit = (KIT_COMPONENTS[node.component] ?? DISPLAY_BRICKS[node.component]) as ComponentType<Record<string, unknown>> | undefined;
   const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
   // An explicit `source: "host"` means the host brand won the name. An
   // undefined (or "prewired") source keeps the built-in first, so a stored
@@ -1025,32 +1028,34 @@ function StatefulTreeView({
     : null;
 
   return (
-    <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
-      {dataNotice}
-      {dropBackNotice}
-      {driftNotice}
-      <NodeRenderer
-        nodeId={validation.tree.root}
-        ancestry={new Set()}
-        nodes={repaint.nodes}
-        marks={repaint.marks}
-        generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
-        {...(componentTools === undefined ? {} : { componentTools })}
-        inClientGranted={inClientGranted}
-        furnishings={furnishings}
-        themeVars={themeVars}
-        components={components}
-        data={data ?? validation.tree.data ?? {}}
-        state={viewState}
-        streaming={streaming}
-        outcomes={outcomes}
-        orphans={orphans}
-        runAction={runAction}
-        {...(onReview === undefined ? {} : { onReview })}
-        setViewState={updateState}
-        {...(interactive === undefined ? {} : { screen })}
-      />
-    </NodeErrorBoundary>
+    <div data-vendo-surface="" style={SURFACE_CONTAINMENT}>
+      <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
+        {dataNotice}
+        {dropBackNotice}
+        {driftNotice}
+        <NodeRenderer
+          nodeId={validation.tree.root}
+          ancestry={new Set()}
+          nodes={repaint.nodes}
+          marks={repaint.marks}
+          generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+          {...(componentTools === undefined ? {} : { componentTools })}
+          inClientGranted={inClientGranted}
+          furnishings={furnishings}
+          themeVars={themeVars}
+          components={components}
+          data={data ?? validation.tree.data ?? {}}
+          state={viewState}
+          streaming={streaming}
+          outcomes={outcomes}
+          orphans={orphans}
+          runAction={runAction}
+          {...(onReview === undefined ? {} : { onReview })}
+          setViewState={updateState}
+          {...(interactive === undefined ? {} : { screen })}
+        />
+      </NodeErrorBoundary>
+    </div>
   );
 }
 

@@ -93,12 +93,12 @@ const FIXTURES: readonly Fixture[] = [
     source: `import { Text } from "@vendo/screen";
 
 export default function Rows() {
-  return <div><Text text="hi" /></div>;
+  return <img><Text text="hi" /></img>;
 }
 `,
     answer: ROWS,
     codes: ["types"],
-    says: "writes the HTML element <div> — a screen has no HTML elements",
+    says: "writes the HTML element <img>, which a screen does not have",
   },
   {
     name: "refuses a screen that throws on the data its query really returned",

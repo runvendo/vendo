@@ -4,6 +4,7 @@
  * implementations stay in `@vendoai/ui` (`KIT_COMPONENTS`), keyed by these
  * names — a ui drift test pins the two in step.
  */
+export * from "./display.js";
 export * from "./schema.js";
 export * from "./specs.js";
 export { kitPrompt, type KitPromptOptions } from "./kit-prompt.js";

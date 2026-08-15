@@ -3,6 +3,7 @@
  * Rendered entirely from `KIT_SPECS`; hand-written component lists are dead.
  * W3 wires this into the engine's wire contract (engine.ts).
  */
+import { DISPLAY_TAG_NAMES } from "./display.js";
 import { KIT_SHARED_PROP_NAMES, KIT_SPECS } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 
@@ -47,6 +48,14 @@ const PREAMBLE = [
   "under its name as a caption `Text` instead of costing a column. Only the value",
   "tier and Stack/Row go in a cell, and only containers take children — a Button",
   "in a cell, or anything nested in a chart, is REFUSED, not quietly dropped.",
+  "",
+  `Beside the Kit you have display-only HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` —`,
+  "taking children and an inline `style` and nothing else (no className, no id, no",
+  "handlers). Arrange and typeset freely with them, off the host's own CSS",
+  "variables (`var(--vendo-color-accent)`, `var(--vendo-density-content-gap)`) so",
+  "the screen stays branded; a hard-coded color is yours, not the product's. There",
+  "is no network here, so a style that fetches (`url(…)`) is dropped. Anything with",
+  "BEHAVIOR — a table, a number, a date, a control — is still a Kit component.",
 ].join("\n");
 
 /**

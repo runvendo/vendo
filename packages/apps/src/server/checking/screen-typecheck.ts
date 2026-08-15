@@ -15,6 +15,7 @@
  * Everything else is handed to the wire screen's own translator (screen-tsc.ts),
  * which already says the right thing about props, arguments and missing fields.
  */
+import { DISPLAY_TAG_NAMES } from "../../contract/index.js";
 import { diagnosticLine, translateDiagnostic, type ScreenProgram } from "./screen-program.js";
 import { SCREEN_MODULE } from "./screen-typings.js";
 import type { ComponentScreenIssue } from "./component-screen.js";
@@ -112,7 +113,7 @@ const typeIssue = (
 
   const intrinsic = INTRINSIC_ELEMENT.exec(sentence);
   if (intrinsic !== null) {
-    return at(`writes the HTML element <${intrinsic[1]}> — a screen has no HTML elements. It renders only the components it imports from ${JSON.stringify(SCREEN_MODULE)}: ${list(surface.components)}. Lay out with <Stack>/<Row>/<Grid> and write text with <Text>.`);
+    return at(`writes the HTML element <${intrinsic[1]}>, which a screen does not have. The HTML a screen has is display-only: ${list(DISPLAY_TAG_NAMES)} — each taking children and an inline style and nothing else. Anything with behavior comes from ${JSON.stringify(SCREEN_MODULE)}: ${list(surface.components)}.`);
   }
 
   if (UNKNOWN_NAME.has(diagnostic.code)) {

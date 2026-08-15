@@ -539,7 +539,7 @@ export default function S() {
     // fixed yet, so only the scan's finding is reported.
     const { codes, text } = await refusal(`import { z } from "zod";
 import { Text } from "@vendo/screen";
-export default function S() { return <div><Text text={String(z)} /></div>; }
+export default function S() { return <img><Text text={String(z)} /></img>; }
 `);
 
     expect(codes).toEqual(["import"]);
@@ -548,15 +548,15 @@ export default function S() { return <div><Text text={String(z)} /></div>; }
 });
 
 describe("stage 3 — the real compiler, with no DOM", () => {
-  it("refuses an HTML element, and says what to lay out with instead", async () => {
+  it("refuses an HTML element that is not a display brick, and names the ones that are", async () => {
     const { codes, text } = await refusal(`import { Text } from "@vendo/screen";
-export default function S() { return <div><Text text="x" /></div>; }
+export default function S() { return <img><Text text="x" /></img>; }
 `);
 
     expect(codes).toEqual(["types"]);
-    expect(text).toContain("line 2: writes the HTML element <div>");
-    expect(text).toContain("It renders only the components it imports from \"@vendo/screen\": Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
-    expect(text).toContain("Lay out with <Stack>/<Row>/<Grid> and write text with <Text>.");
+    expect(text).toContain("line 2: writes the HTML element <img>");
+    expect(text).toContain("The HTML a screen has is display-only: div, span, section");
+    expect(text).toContain("Anything with behavior comes from \"@vendo/screen\": Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
     // The closing tag is the same break; a repair list that says everything
     // twice reads as two problems.
     expect(text.match(/writes the HTML element/gu)).toHaveLength(1);

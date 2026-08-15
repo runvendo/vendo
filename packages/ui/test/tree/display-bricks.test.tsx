@@ -1,0 +1,69 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { DISPLAY_TAG_NAMES, VENDO_TREE_FORMAT } from "@vendoai/apps/contract";
+import type { ToolOutcome } from "@vendoai/core";
+import { TreeView, type WalkTree } from "../../src/tree/index.js";
+import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, withoutFetchableUrls } from "../../src/tree/display-bricks.js";
+
+afterEach(cleanup);
+
+const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+
+const tree = (nodes: WalkTree["nodes"]): WalkTree =>
+  ({ formatVersion: VENDO_TREE_FORMAT, root: nodes[0]!.id, nodes });
+
+describe("display bricks", () => {
+  it("implements exactly the tags the specs name (the drift test)", () => {
+    expect(Object.keys(DISPLAY_BRICKS).sort()).toEqual([...DISPLAY_TAG_NAMES].sort());
+  });
+
+  it("renders a brick with its style, and nothing else it was handed", () => {
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "section", props: { style: { padding: "8px" }, className: "host-chrome", onClick: "x" }, children: ["h"] },
+          { id: "h", component: "h2", props: { style: { color: "var(--vendo-color-accent)" } }, children: ["t"] },
+          { id: "t", component: "#text", props: { text: "Overdue" } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    const heading = screen.getByText("Overdue");
+    expect(heading.tagName).toBe("H2");
+    expect(heading.getAttribute("style")).toBe("color: var(--vendo-color-accent);");
+    const box = heading.closest("section")!;
+    expect(box.getAttribute("style")).toBe("padding: 8px;");
+    expect(box.getAttribute("class")).toBeNull();
+  });
+
+  it("drops the style values that would make the browser fetch", () => {
+    expect(withoutFetchableUrls({
+      background: "url(https://evil/x)",
+      borderImage: "image-set('https://evil/y' 1x)",
+      cursor: "-webkit-image-set(url(https://evil/z) 1x)",
+      maskImage: "src(https://evil/w)",
+      color: "var(--vendo-color-accent)",
+      filter: "blur(4px)",
+    })).toEqual({ color: "var(--vendo-color-accent)", filter: "blur(4px)" });
+    expect(withoutFetchableUrls(undefined)).toBeUndefined();
+  });
+
+  it("paints the surface inside its own box", () => {
+    render(
+      <TreeView
+        tree={tree([{ id: "root", component: "div", props: { style: { position: "fixed", width: "200vw" } } }])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    // Not a rule about the word "fixed": `contain: paint` makes the wrapper the
+    // containing block for every fixed descendant, so the escape has nowhere to go.
+    expect(document.querySelector("[data-vendo-surface]")?.getAttribute("style"))
+      .toBe("contain: layout paint; overflow: clip; position: relative; isolation: isolate;");
+    expect(SURFACE_CONTAINMENT.contain).toBe("layout paint");
+  });
+});

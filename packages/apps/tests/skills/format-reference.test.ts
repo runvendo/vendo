@@ -118,11 +118,11 @@ describe("the reference only teaches what a screen really has", () => {
   });
 
   it("forbids the HTML and CSS a screen genuinely does not have", () => {
-    // No DOM lib is loaded into the check's program, so `<div>` and `className`
-    // are type errors; the theme lives in the components. A reference that let a
-    // model style a screen itself teaches an app that fails the checks AND
-    // arrives unbranded.
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/No `<div>`, no\s+`className`, no `style`, no CSS/);
+    // The display bricks are the ONLY HTML in the check's program, and they take
+    // children and a style and nothing else — so `className` is still a type
+    // error, and a color the model invents is still unbranded.
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/nothing else: no `className`, no `id`, no handlers/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/var\(--vendo-color-accent\)/);
     expect(VENDO_FORMAT_REFERENCE).toMatch(/no `fetch`, `localStorage` or `setTimeout`/);
     expect(VENDO_FORMAT_REFERENCE).toMatch(/there is no clock in here, so no\s+`new Date\(\)`/);
   });

@@ -15,6 +15,7 @@
  * it now teaches the same idiom this chapter does, so nothing here has to correct
  * it (`contract/kit/kit-prompt.ts`).
  */
+import { DISPLAY_TAG_NAMES } from "../../contract/kit/index.js";
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { HOT_PATH_FILES } from "../generation/render-seam.js";
 import { componentsPromptSection } from "../generation/contracts/sections.js";
@@ -54,10 +55,18 @@ confirmed by the product OUTSIDE your screen — the guard asks the person befor
 the call runs — so never build a confirm step of your own: no "are you sure"
 panel, no second button, no \`confirming\` state.
 
-**Components — the catalog below, and nothing else.** No \`<div>\`, no
-\`className\`, no \`style\`, no CSS: each component already carries this product's
-own theme, so a screen built out of them is branded and a screen you style
-yourself is wrong. \`key={…}\` on every row you \`.map\`. Dates go to the date
+**Components — the catalog below, and nothing else.** Every component already
+carries this product's own theme, so anything with behavior — a table, a number,
+a date, a control — is a component, never HTML you assemble yourself.
+
+**Layout — the display tags, plus \`style\`.** \`${DISPLAY_TAG_NAMES.join("`, `")}\`
+are yours to arrange with, and they take children and an inline \`style\` and
+nothing else: no \`className\`, no \`id\`, no handlers. Style them off the host's own
+CSS variables (\`var(--vendo-color-accent)\`, \`var(--vendo-density-content-gap)\`)
+so the screen stays branded — a hard-coded color is your color, not the
+product's. There is no network in here, so a style that fetches (\`url(…)\`) is
+dropped.
+\`key={…}\` on every row you \`.map\`. Dates go to the date
 component as the ISO string you were given — there is no clock in here, so no
 \`new Date()\`; and no \`fetch\`, \`localStorage\` or \`setTimeout\` either, because
 there is no network, no storage and no timers.
