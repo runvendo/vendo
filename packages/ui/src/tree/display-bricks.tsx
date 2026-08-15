@@ -62,16 +62,22 @@ const POSITION_KEEP: ReadonlySet<string> = new Set(["static", "relative", "absol
  * and a fetching one (`url()`, `image-set()`). Kept, but only when every CSS
  * function its value calls is on the property's list — `cursor` calls none
  * (keyword cursors only), so a `url()` cursor is dropped like any other fetch.
+ * `var()` is on the list so the standard theme value survives (`background:
+ * var(--vendo-color-background, #fff)`); it is safe because the scan sees every
+ * function anywhere in the value, so a `url()` smuggled into a `var()` fallback
+ * (`var(--x, url(evil))`) still puts `url` on the list and drops the whole
+ * declaration — and a custom-property DEFINITION is never allowlisted, so the
+ * model cannot mint its own token for `var()` to resolve to.
  */
 const GRADIENTS = ["linear-gradient", "radial-gradient", "conic-gradient",
   "repeating-linear-gradient", "repeating-radial-gradient", "repeating-conic-gradient"];
 const FILTERS = ["blur", "brightness", "contrast", "grayscale", "hue-rotate",
   "invert", "opacity", "saturate", "sepia", "drop-shadow"];
 const VALUE_RESTRICTED: Record<string, ReadonlySet<string>> = {
-  background: new Set(GRADIENTS),
-  backgroundImage: new Set(GRADIENTS),
-  filter: new Set(FILTERS),
-  backdropFilter: new Set(FILTERS),
+  background: new Set([...GRADIENTS, "var"]),
+  backgroundImage: new Set([...GRADIENTS, "var"]),
+  filter: new Set([...FILTERS, "var"]),
+  backdropFilter: new Set([...FILTERS, "var"]),
   cursor: new Set(),
 };
 

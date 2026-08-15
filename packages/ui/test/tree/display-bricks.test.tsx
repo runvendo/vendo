@@ -83,9 +83,27 @@ describe("display bricks", () => {
     // these IS `url(` to the browser whatever the raw string reads.
     expect(safeStyle({ background: "\\75 rl(https://evil/x)" })).toEqual({});
     expect(safeStyle({ background: "u\\72 l(https://evil/y)" })).toEqual({});
-    // A custom property is not on the allowlist, so a `var()` that would smuggle
-    // one in has nothing to resolve to — both declarations go.
-    expect(safeStyle({ "--x": "url(/pixel)", background: "var(--x)" } as CSSProperties)).toEqual({});
+    // A custom-property DEFINITION is never on the allowlist, so the model cannot
+    // mint its own token: `--x` is dropped and `var(--x)` resolves to nothing. The
+    // reference itself survives now — themed `var(--vendo-*)` is the whole point.
+    expect(safeStyle({ "--x": "url(/pixel)", background: "var(--x)" } as CSSProperties))
+      .toEqual({ background: "var(--x)" });
+  });
+
+  it("keeps themed var() theme tokens and still drops a url smuggled in a fallback", () => {
+    // (a) The standard theme pattern survives — the regression #1325 dropped it.
+    expect(safeStyle({ background: "var(--vendo-color-background, #ffffff)" }))
+      .toEqual({ background: "var(--vendo-color-background, #ffffff)" });
+    // (b) A themed filter survives the same way.
+    expect(safeStyle({ filter: "var(--vendo-x)" })).toEqual({ filter: "var(--vendo-x)" });
+    // (c) A gradient mixing a var() token survives — both functions are on the list.
+    expect(safeStyle({ background: "linear-gradient(var(--vendo-accent), #fff)" }))
+      .toEqual({ background: "linear-gradient(var(--vendo-accent), #fff)" });
+    // (d) A bare url() still drops.
+    expect(safeStyle({ background: "url(https://evil/x)" })).toEqual({});
+    // (e) A url() smuggled into a var() fallback still drops — the scan sees `url(`
+    // anywhere in the value, so `var` on the list does not let it through.
+    expect(safeStyle({ background: "var(--x, url(https://evil/x))" })).toEqual({});
   });
 
   it("paints the surface inside its own box", () => {
