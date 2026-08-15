@@ -126,6 +126,9 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Disclaimer reason="No tool exposes forecasts." title="Not shown"/>
     <EmptyState icon="inbox" title="No periods" description="They appear the moment one closes."><Button label="Refresh" onClick="host_getCashflowInsights"/></EmptyState>
     <Steps items={[{ label: "Details" }, { label: "Review", description: "Check the totals" }, { label: "Done" }]} active={1}/>
+    <Modal open={false} onClose="host_search" title="Confirm" description="Send reminders?" size="medium"><Text text="Body"/></Modal>
+    <Sheet open={false} onClose="host_search" title="Detail" side="right" size="medium"><Text text="Body"/></Sheet>
+    <Toast open={false} onClose="host_search" message="Saved." tone="success" duration={4000}/>
     <Text text="Grouped" pending={true}/>
     <Sparkline data={cashflow.data.map((row) => ({ label: row.label, value: row.in }))} valueKey="value"/>
   </Stack>
