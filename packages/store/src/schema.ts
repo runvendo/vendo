@@ -216,6 +216,13 @@ export const DDL = [
   // from the same key carrying a DIFFERENT body, which is a client bug and not a
   // replay at all. The PK is the whole scope, `tenant` first, so a mount serving
   // many tenants out of one schema cannot let one tenant's key answer another's.
+  // `status = 0` is the one value that is NOT an answer: it is the reservation
+  // `IdempotencyLedger.claim` takes before a mutation runs, settled to the real
+  // status by `record`. It rides the existing column rather than a nullable
+  // answer because 0 is not a status a mount can send, so no reader — including
+  // the console's copy of this table, which predates `claim` — can mistake a
+  // reservation for a replayable result. That is what keeps `claim` additive:
+  // no migration, and no row of this shape exists until something calls it.
   `CREATE TABLE IF NOT EXISTS vendo_idempotency_ledger (
     tenant text NOT NULL, op text NOT NULL, key text NOT NULL,
     request_hash text NOT NULL, status int NOT NULL, result jsonb NOT NULL,

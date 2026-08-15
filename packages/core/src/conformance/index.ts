@@ -415,6 +415,74 @@ export function storeAdapterConformance(opts: {
         );
       }),
 
+      /** 01-core §12: `claim`'s whole reason to exist. The same key carrying a
+          DIFFERENT body is refused AT THE RESERVATION, so the caller never gets
+          as far as its mutation — where `check` refuses the identical request
+          only after it has already committed one. The reservation the winner
+          holds survives the refusal: a losing body must not be able to knock the
+          owner off its own key. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.claim refuses a differing request before the mutation", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger?.claim === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_1" };
+        assert(await ledger.claim(scope, "hash_a") === "claimed", "a fresh key did not reserve");
+        const refusal = await ledger.claim(scope, "hash_b").then(() => null, (error: unknown) => error);
+        assert(
+          (refusal as { code?: unknown } | null)?.code === "conflict",
+          `a reserved key claimed with a different request hash should throw conflict, got ${String(refusal)}`,
+        );
+        await ledger.record(scope, "hash_a", { status: 200, result: { committed: 1 } });
+        assertDeepEqual(
+          await ledger.check(scope, "hash_a"),
+          { status: 200, result: { committed: 1 } },
+          "the refused claim took the reservation away from the request that held it",
+        );
+      }),
+
+      /** 01-core §12: the reservation's whole lifecycle. A contender carrying the
+          SAME hash is told to PROCEED (null), not to wait — one key and one body
+          is one effect, and a contender that blocked would hang behind an owner
+          that died before `record`. Until it is settled a reservation is not an
+          answer, so neither verb may hand it back as one: `status` 0 replayed as
+          a result is a mount answering 0 to a live request. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.claim reserves, never replays a reservation, and record settles it", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger?.claim === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_2" };
+        assert(await ledger.claim(scope, "hash_a") === "claimed", "a fresh key did not reserve");
+        assert(await ledger.claim(scope, "hash_a") === null, "a same-body contender was not told to proceed");
+        assert(await ledger.check(scope, "hash_a") === null, "an unsettled reservation was replayed as an answer");
+        await ledger.record(scope, "hash_a", { status: 201, result: { id: "wsc_1" } });
+        assertDeepEqual(
+          await ledger.claim(scope, "hash_a"),
+          { status: 201, result: { id: "wsc_1" } },
+          "a claim after the key was settled did not replay the recorded answer",
+        );
+        assertDeepEqual(
+          await ledger.check(scope, "hash_a"),
+          { status: 201, result: { id: "wsc_1" } },
+          "check did not replay the answer that settled the reservation",
+        );
+      }),
+
+      /** 01-core §12: the reservation is ATOMIC or it is nothing. Fired together
+          rather than in sequence, because a read-then-insert implementation
+          passes every sequential case above and still lets both racers reserve —
+          which is the check-then-do shape `claim` exists to replace. */
+      readyAdapterCase(opts, "01-core §12 — concurrent idempotency.claim calls reserve exactly once", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger?.claim === undefined) return;
+        const claim = ledger.claim.bind(ledger);
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_3" };
+        const settled = await Promise.all([claim(scope, "hash_a"), claim(scope, "hash_a"), claim(scope, "hash_a")]);
+        const won = settled.filter((one) => one === "claimed");
+        assert(won.length === 1, `${won.length} of 3 concurrent claims reserved one key; exactly 1 may`);
+        assert(
+          settled.filter((one) => one === null).length === 2,
+          "a contender that lost the reservation was not told to proceed",
+        );
+      }),
+
       /** 01-core §12: blob list filters keys by prefix. */
       readyAdapterCase(opts, "01-core §12 — blobs.list filters by prefix", async (adapter) => {
         const blobs = adapter.blobs("conformance_blob_list");
