@@ -128,5 +128,75 @@
     ],
     "tags": ["action"],
     "shape": "table"
+  },
+  {
+    "id": "portfolio-dashboard",
+    "lane": "screen",
+    "prompt": "Give me one screen with occupancy, how much of August rent is collected so far, and how many maintenance requests are still open — the whole portfolio at a glance.",
+    "pass": [
+      "all three answers sit on the one screen: occupancy, August rent collected, and open maintenance requests",
+      "occupancy counts the two vacant units out of the ten — 8 of 10, or 80%",
+      "shows $12,075.00 collected of the $19,045.00 charged for August",
+      "counts 5 requests still open, not all nine"
+    ],
+    "tags": ["display"],
+    "shape": "dashboard",
+    "source": "AppFolio — Owner Portal Dashboard (appfolio.com/property-management-owner-experience)"
+  },
+  {
+    "id": "portal-announcement",
+    "lane": "screen",
+    "prompt": "Write a notice about Saturday's water shutoff and post it to the resident portal for Wexler Row.",
+    "pass": [
+      "the notice is aimed at Wexler Row, picked from the buildings the tool returned rather than typed free-hand",
+      "a title and a body are both drafted and both still editable before anything goes out",
+      "the drafted body says what the notice is about — Saturday and the water shutoff",
+      "posting fires post_announcement with Wexler Row, the title and the body on screen"
+    ],
+    "tags": ["action"],
+    "shape": "feed-composer",
+    "source": "AppFolio — Portal announcement composer"
+  },
+  {
+    "id": "lease-timeline",
+    "lane": "screen",
+    "prompt": "Pull up everything that's happened on Ellis Boone's lease — payments, notices, work orders — in the order it happened, so I have the full story before I call him.",
+    "pass": [
+      "shows exactly the six events on Ellis Boone's lease and none from another tenant's",
+      "lays them out as one dated track rather than a plain table of rows",
+      "the events run in the order they happened, the Nov 1 2025 signing first and the Aug 10 late notice last",
+      "each event says what kind it is — signing, payment, notice, work order — alongside what happened"
+    ],
+    "tags": ["display"],
+    "shape": "timeline",
+    "source": "Buildium — Timeline activity views"
+  },
+  {
+    "id": "message-inbox",
+    "lane": "screen",
+    "prompt": "Show me every tenant and prospect message from this week as an inbox — the list on one side, the full message when I open one.",
+    "pass": [
+      "lists all six messages newest first, each with its sender, subject and preview line",
+      "the three unread ones are visibly marked apart from the three already read",
+      "opening a message shows its full body without leaving the screen, and the list is still reachable",
+      "each message names the unit it is about as 'Wexler Row · 2B', never a raw id"
+    ],
+    "tags": ["display"],
+    "shape": "split-inbox",
+    "source": "AppFolio — Realm-X centralized inbox (appfolio.com/property-manager/communication-service)"
+  },
+  {
+    "id": "vacant-unit-photos",
+    "lane": "screen",
+    "prompt": "Wexler Row 2B and Alder Court 2B are both empty — pull up the marketing photos we already have on file for each so I know what's ready to post.",
+    "pass": [
+      "shows seven tiles in a grid, four under Wexler Row · 2B and three under Alder Court · 2B",
+      "the tiles are grouped by unit, each group headed by its unit name",
+      "every tile carries its caption from the tool, so a tile that cannot load still says what it is",
+      "the two photos on Alder Court 2A are not shown"
+    ],
+    "tags": ["display"],
+    "shape": "gallery",
+    "source": "AppFolio — Marketing/Floorplan Photos (help.propertymeld.com/hc/en-us/articles/45793810226323)"
   }
 ]

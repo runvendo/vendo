@@ -126,6 +126,51 @@
         ]
       }
     },
+    "list_lease_activity": {
+      "does": "Everything that has happened on a lease — signings, payments, notices and work orders — for every lease in the portfolio, newest first. The rows are the `data` array. `leaseId` is a row from list_leases and `type` is lease_signed, payment_received, notice_sent, or maintenance_opened.",
+      "data": {
+        "data": [
+          { "id": "la_9", "leaseId": "lease_4", "date": "2026-08-10", "type": "notice_sent", "description": "Late notice emailed for the $1,200.00 still owed on August rent" },
+          { "id": "la_8", "leaseId": "lease_7", "date": "2026-08-10", "type": "notice_sent", "description": "Late notice emailed for the $1,095.00 still owed on August rent" },
+          { "id": "la_7", "leaseId": "lease_4", "date": "2026-08-05", "type": "payment_received", "description": "Partial August rent, $1,200.00 by ACH" },
+          { "id": "la_6", "leaseId": "lease_1", "date": "2026-08-01", "type": "payment_received", "description": "August rent paid in full, $1,850.00 by ACH" },
+          { "id": "la_5", "leaseId": "lease_4", "date": "2026-07-22", "type": "maintenance_opened", "description": "Dishwasher leaking onto the floor, sent to Ridge Appliance Service" },
+          { "id": "la_4", "leaseId": "lease_4", "date": "2026-07-01", "type": "payment_received", "description": "July rent paid in full, $2,400.00 by ACH" },
+          { "id": "la_3", "leaseId": "lease_8", "date": "2026-06-01", "type": "lease_signed", "description": "Lease signed for Foxglove House at $3,850.00 a month" },
+          { "id": "la_2", "leaseId": "lease_4", "date": "2026-06-01", "type": "payment_received", "description": "June rent paid in full, $2,400.00 by ACH" },
+          { "id": "la_1", "leaseId": "lease_4", "date": "2025-11-01", "type": "lease_signed", "description": "Lease signed for Wexler Row 3A at $2,400.00 a month, 12 months" }
+        ]
+      }
+    },
+    "list_messages": {
+      "does": "Messages tenants and prospects have sent this week, newest first. The rows are the `data` array. `unitId` is the unit the message is about — for a prospect, the vacant unit they are asking after. `preview` is the first line of `body`, and `unread` is true until someone opens it.",
+      "data": {
+        "data": [
+          { "id": "msg_6", "from": "Ellis Boone", "unitId": "unit_wex_3a", "subject": "August balance", "preview": "I know I'm short on August — can I bring the rest by Friday?", "body": "I know I'm short on August — can I bring the rest by Friday? I'd rather hand you a check than run another transfer. Let me know if that works.", "receivedAt": "2026-08-12T09:15:00", "unread": true },
+          { "id": "msg_5", "from": "Naomi Castellan", "unitId": "unit_wex_2b", "subject": "Tonight's showing", "preview": "Confirming 5pm for Wexler Row 2B — is parking easy on that block?", "body": "Confirming 5pm for Wexler Row 2B — is parking easy on that block? I'm coming straight from work so I may be five minutes late.", "receivedAt": "2026-08-12T08:02:00", "unread": true },
+          { "id": "msg_4", "from": "Harriet Nolan", "unitId": "unit_ald_2b", "subject": "Is Alder Court 2B pet friendly?", "preview": "I have a small dog — is there a pet deposit on top of the regular one?", "body": "I have a small dog — is there a pet deposit on top of the regular one? Also, is the second bedroom big enough for a desk and a bed?", "receivedAt": "2026-08-11T16:40:00", "unread": true },
+          { "id": "msg_3", "from": "Grace Okonjo", "unitId": "unit_ald_2a", "subject": "Move-out walkthrough", "preview": "Can we do the walkthrough on the 31st rather than the 30th?", "body": "Can we do the walkthrough on the 31st rather than the 30th? The movers pushed me back a day. I'll have the keys with me either way.", "receivedAt": "2026-08-11T11:20:00", "unread": false },
+          { "id": "msg_2", "from": "Theo Mancini", "unitId": "unit_ald_1a", "subject": "Front door buzzer still broken", "preview": "Nobody can buzz up — deliveries are being left on the step.", "body": "Nobody can buzz up — deliveries are being left on the step. It's been a couple of weeks now. Any idea when someone is coming out?", "receivedAt": "2026-08-10T18:05:00", "unread": false },
+          { "id": "msg_1", "from": "Dominic Hartley", "unitId": "unit_fox_house", "subject": "Garage door opener", "preview": "The electrician came by — the opener works, but the remote still doesn't.", "body": "The electrician came by — the opener works, but the remote still doesn't. Do I need a new remote or is that part of the same job?", "receivedAt": "2026-08-10T07:45:00", "unread": false }
+        ]
+      }
+    },
+    "list_unit_photos": {
+      "does": "The marketing photos on file for units being listed. The rows are the `data` array. `unitId` is a row from list_units and `caption` is what the photo shows.",
+      "data": {
+        "data": [
+          { "id": "pho_1", "unitId": "unit_wex_2b", "caption": "Living room from the entry" },
+          { "id": "pho_2", "unitId": "unit_wex_2b", "caption": "Kitchen and breakfast bar" },
+          { "id": "pho_3", "unitId": "unit_wex_2b", "caption": "Main bedroom" },
+          { "id": "pho_4", "unitId": "unit_wex_2b", "caption": "Building exterior from the street" },
+          { "id": "pho_5", "unitId": "unit_ald_2b", "caption": "Living room with the bay window" },
+          { "id": "pho_6", "unitId": "unit_ald_2b", "caption": "Galley kitchen" },
+          { "id": "pho_7", "unitId": "unit_ald_2b", "caption": "Shared courtyard" },
+          { "id": "pho_8", "unitId": "unit_ald_2a", "caption": "Living room, taken before the current tenant moved in" },
+          { "id": "pho_9", "unitId": "unit_ald_2a", "caption": "Kitchen, taken before the current tenant moved in" }
+        ]
+      }
+    },
     "assign_vendor": {
       "does": "Put a vendor on a maintenance request, which schedules the job and notifies them. `requestId` is a row from list_maintenance_requests, `vendorId` a row from list_vendors.",
       "takes": { "requestId": "string", "vendorId": "string" }
@@ -141,6 +186,10 @@
     "renew_lease": {
       "does": "Renew a lease at a new end date and rent. `leaseId` is a row from list_leases, `endDate` is YYYY-MM-DD, and `rentCents` is the new rent in CENTS: 195000 is $1,950.00.",
       "takes": { "leaseId": "string", "endDate": "string", "rentCents": "number" }
+    },
+    "post_announcement": {
+      "does": "Post an announcement to the resident portal of one building, where every tenant there sees it. `property` is a building name from list_units — 'Wexler Row'. `title` is the headline and `body` the notice itself.",
+      "takes": { "property": "string", "title": "string", "body": "string" }
     }
   }
 }
