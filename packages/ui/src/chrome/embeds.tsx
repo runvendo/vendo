@@ -28,8 +28,6 @@ import {
   CardLine,
   CardShell,
   CARD_EYEBROWS,
-  SHIELD_GLYPH,
-  ToolkitLogo,
 } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
@@ -223,7 +221,6 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
           // detail); it stays a dev-mode aid.
           <CardShell label={`Approval — ${summary}`} className="fl-approval">
             <CardHead
-              icon={<ToolkitLogo fallback={SHIELD_GLYPH} />}
               eyebrow={CARD_EYEBROWS.resolved}
               title={summary}
             />

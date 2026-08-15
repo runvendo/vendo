@@ -1,4 +1,4 @@
-import { riskLabelSchema, type AppId, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { riskLabelSchema, VENDO_MAKE_TOOL, type AppId, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -149,6 +149,29 @@ function ThreadErrorBlock({ marker, headline, detail }: {
   );
 }
 
+/** The app card BEFORE its first view bytes: the same frame, the same
+    "Building your view…" bar and sweeping hairline the streaming card wears,
+    over one resting silhouette of the view to come. Build calm (spec §8) holds
+    here too — the hairline is the only moving thing. */
+function ThreadFormingCard() {
+  return (
+    <div className="fl-uihost fl-appcard" data-vendo-app-forming="">
+      <div className="fl-appcard-bar" data-state="building">
+        <span className="fl-appcard-dot" aria-hidden="true" />
+        <span className="fl-appcard-name fl-boot-building" role="status">Building your view…</span>
+        <span className="fl-boot-hairline" aria-hidden="true" />
+      </div>
+      <div className="fl-appcard-body">
+        {/* The renderer's own placeholder skin (`Skeleton`), written out: this
+            directory ships as an eject template and may only import the public
+            surface, which a loading placeholder is deliberately not on. */}
+        <span className="fl-glass fl-glass-shimmer" data-skeleton="" aria-hidden="true"
+          style={{ display: "block", height: 72 }} />
+      </div>
+    </div>
+  );
+}
+
 /** A native tool call at its transcript position: the connector's ConnectCard
     when the call ended `connect-required`, otherwise its build beat.
 
@@ -160,12 +183,15 @@ function ThreadErrorBlock({ marker, headline, detail }: {
         stays visible either way (spec §15: the ✕ stays in the record);
       · D1 — an app-building call renders no beat, from the moment the build
         starts, because its card IS that step (the summary still counts it). */
-function ToolCallPart({ part, risks, count, connectLive, hideBeats, sendMessage, siblingParts }: {
+function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnPending, sendMessage, siblingParts }: {
   part: ToolUIPart | DynamicToolUIPart;
   risks: Map<string, RiskLabel>;
   count: number;
   connectLive: boolean;
   hideBeats: boolean;
+  /** Spec §8 — a turn that is over is never still forming: an abandoned build
+      must not leave the empty card sweeping forever. */
+  turnPending: boolean;
   sendMessage?: ((message: { text: string }) => unknown) | undefined;
   siblingParts?: UIMessage["parts"] | undefined;
 }) {
@@ -182,7 +208,19 @@ function ToolCallPart({ part, risks, count, connectLive, hideBeats, sendMessage,
   }
   // The narration check runs FIRST: a failed build is content (its ✕ stays in
   // the record), but its record is the build-failed block, not a second ✕.
-  if (narratedByAppCard(part, siblingParts ?? [])) return null;
+  if (narratedByAppCard(part, siblingParts ?? [])) {
+    // …except in the build's FIRST seconds. `vendo_make` is on the wire and its
+    // beat is suppressed as "narrated by the app card" — but that card only
+    // mounts on the first `data-vendo-view` part, so the window between the ask
+    // and the first view bytes rendered nothing at all. The card arrives EMPTY
+    // instead, in the place the view will fill, and ThreadAppCard replaces it
+    // the moment the first partial lands.
+    const forming = turnPending
+      && toolName(part) === VENDO_MAKE_TOOL
+      && (part.state === "input-streaming" || part.state === "input-available")
+      && !(siblingParts ?? []).some(sibling => sibling.type === "data-vendo-view");
+    return forming ? <ThreadFormingCard /> : null;
+  }
   if (hideBeats && !toolCallIsContent(part)) return null;
   return <BuildBeat part={part} risk={risks.get(part.toolCallId) ?? "read"} count={count} />;
 }
@@ -244,6 +282,7 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
         count={count}
         connectLive={connectLive}
         hideBeats={hideBeats}
+        turnPending={turnPending}
         sendMessage={sendMessage}
         siblingParts={siblingParts}
       />
@@ -826,8 +865,16 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
               allowRemember={guardApprovalId !== undefined}
               onDecide={async decision => {
                 // The approved card lifts into the top-right notification
-                // (ENG-205 morph) as the run resumes underneath it.
-                if (decision.approve) {
+                // (ENG-205 morph) as the run resumes underneath it — for an
+                // AUTOMATION's ask only. A person answering their own live
+                // conversation is already looking at the answer, so flying the
+                // card to a corner notification narrates a handoff that never
+                // happened; an automation's ask is the one that settles
+                // somewhere the person isn't, so it earns the flight.
+                // The in-thread wire carries no ctx, so every ask built here is
+                // venue `chat` (approval-wire.ts) and nothing in the thread
+                // morphs today — this is the rule, not a switch.
+                if (decision.approve && approval.ctx.venue === "automation") {
                   const card = cardRefs.current.get(part.approval.id)?.querySelector<HTMLElement>(".fl-approval");
                   if (card) {
                     // L38 — the toast's title must be the CARD's title: without

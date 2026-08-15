@@ -44,7 +44,7 @@ import { themeCssVariables } from "../theme.js";
 import type { ApprovalResolution } from "../wire-types.js";
 import { refusalCopy } from "./approval-card.js";
 import { consentAsk, toolPresentation } from "./build-beat.js";
-import { CARD_EYEBROWS, CardFields, SHIELD_GLYPH } from "./card-shell.js";
+import { CARD_EYEBROWS, CardFields } from "./card-shell.js";
 import { ensureChromeStyles } from "./chrome-root.js";
 import { fieldRows } from "./field-rows.js";
 import { inertBehind } from "./inert-behind.js";
@@ -280,7 +280,6 @@ export function ApprovalModal({ approvalId, onClose }: {
         {...(deciding === undefined ? {} : { "data-deciding": deciding })}
         onKeyDown={onKeyDown}
       >
-        <span className="fl-apmodal-mark" aria-hidden="true">{SHIELD_GLYPH}</span>
         {settled !== undefined ? (
           <>
             <p className="fl-apmodal-settled">{settled}</p>

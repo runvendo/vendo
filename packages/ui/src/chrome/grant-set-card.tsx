@@ -9,7 +9,6 @@ import {
   CardList,
   CardShell,
   CARD_EYEBROWS,
-  SHIELD_GLYPH,
   TICK_GLYPH,
   ToolkitLogo,
 } from "./card-shell.js";
@@ -153,7 +152,6 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
         data-state={state}
       >
         <CardHead
-          icon={<ToolkitLogo fallback={SHIELD_GLYPH} />}
           eyebrow={CARD_EYEBROWS.standingAccess}
           title={`${name} needs ${permissionCount(permissions.length)}`}
         />

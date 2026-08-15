@@ -965,7 +965,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   border-right: 0 solid var(--vendo-border);
   transition: opacity .28s ease .1s, border-right-width 0s .45s; }
 .fl-split-rail { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column;
-  transition: flex-basis .45s cubic-bezier(.22, 1, .36, 1); }
+  transition: flex-basis .45s cubic-bezier(.22, 1, .36, 1), filter .22s ease; }
 .fl-overlay-panel[data-vendo-expanded] { width: min(1500px, 96vw); height: min(940px, 94vh); }
 .fl-overlay-panel[data-vendo-expanded] .fl-split-rail { flex-basis: max(360px, 33.5%); }
 .fl-overlay-panel[data-vendo-expanded] .fl-split-stage { opacity: 1; border-right-width: 1px;
@@ -1065,6 +1065,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   border-radius: 14px; border: 1px solid var(--vendo-border); background: var(--vendo-bg);
   box-shadow: 0 24px 70px color-mix(in srgb, var(--vendo-fg) 22%, transparent); }
 .fl-embed-ghost-scale { transform-origin: top left; }
+/* …and the conversation UNDER the flight softens while it crosses. The ghost
+   is an opaque card travelling over a razor-sharp transcript, which reads as
+   two competing layers instead of one thing moving; the blur puts the chat
+   behind the app and clears the moment it lands. */
+.fl-overlay-panel[data-vendo-ghost] .fl-split-rail { filter: blur(7px); }
 .fl-embed-ghost .fl-turn-actions, .fl-embed-ghost .fl-newbar { display: none; }
 /* While the ghost flies IN, the real stage frame holds back and takes over
    right where the ghost lands (the fade-out/fade-in overlap masks the swap).
@@ -1085,8 +1090,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 @media (prefers-reduced-motion: reduce) {
   .fl-overlay-panel { animation: fl-overlay-fade .18s ease both; }
   @keyframes fl-overlay-fade { from { opacity: 0; } to { opacity: 1; } }
-  /* Split-view flips snap instead of sliding. */
+  /* Split-view flips snap instead of sliding — and a blur that cannot fade is
+     a flash, so the conversation stays sharp under the flight. */
   .fl-split-rail, .fl-split-stage { transition: none; }
+  .fl-overlay-panel[data-vendo-ghost] .fl-split-rail { filter: none; }
   .fl-stage { animation: none; }
   /* Silence every looping loader for vestibular-sensitive users. */
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
@@ -1663,11 +1670,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    to it) drew a 2px accent box around the whole card whenever it was opened by
    anything but a mouse. The controls inside keep their rings. */
 .fl-apmodal:focus-visible { outline: none; }
-/* The consent register's mark at hero size. The 28px well is the CARD's law
-   (one item among many); this surface has ONE mark and it is the subject. */
-.fl-apmodal-mark { display: grid; place-items: center; width: 40px; height: 40px; margin: 0 auto 14px;
-  border-radius: 999px; color: var(--vendo-accent); background: var(--vendo-accent-soft); }
-.fl-apmodal-mark svg { width: 19px; height: 19px; }
 .fl-apmodal-eyebrow { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .07em;
   text-transform: uppercase; color: var(--vendo-fg-muted); }
 /* The ask, big and plain. Tracking goes NEGATIVE and leading tightens as type

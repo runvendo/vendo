@@ -23,6 +23,8 @@ import {
 import {
   ApprovalCard,
   ConnectCard,
+  GrantSetCard,
+  useApprovalModal,
   NoPolicyNotice,
   VendoOverlay,
   VendoPalette,
@@ -358,6 +360,33 @@ const humanizedThread: Thread = {
       },
     ],
   }],
+};
+
+/** The build's FIRST seconds: `vendo_make` is on the wire and no view part has
+ *  arrived yet. The window used to render nothing at all — the call's beat is
+ *  suppressed in favour of an app card that had not mounted. */
+const formingThread: Thread = {
+  id: "thr_forming",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    { id: "msg_forming_user", role: "user", parts: [{ type: "text", text: "Build me a spending breakdown." }] },
+    {
+      id: "msg_forming_turn",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "On it — putting that together." },
+        {
+          type: "dynamic-tool",
+          toolName: "vendo_make",
+          toolCallId: "call_make",
+          state: "input-available",
+          input: { request: "a spending breakdown by category" },
+        },
+      ],
+    },
+  ],
 };
 
 /** An in-thread app surface (VendoViewPart) whose payload carries a format no
@@ -1318,6 +1347,49 @@ function BuildFailedScenario() {
   );
 }
 
+/** The consent register with no badge on it: the screen-initiated modal and the
+ *  standing-access card, both of which used to wear a shield the in-chat
+ *  approval card had already dropped. */
+function ConsentMarksScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components}>
+      <GrantSetCard
+        name="Invoice watcher"
+        permissions={[
+          { approvalId: "apr_grant_1", tool: "host_send_email", risk: "write" },
+          { approvalId: "apr_grant_2", tool: "host_list_client_documents", risk: "read" },
+        ]}
+        state="parked"
+        onDecide={async () => {}}
+      />
+      <ParkedApprovalOpener />
+    </VendoProvider>
+  );
+}
+
+/** The press that parks: how a person actually reaches the modal. */
+function ParkedApprovalOpener() {
+  const approval = useApprovalModal();
+  return (
+    <>
+      <button type="button" onClick={() => approval.onParked({ nodeId: "pay-1", approvalId: "apr_1" })}>
+        Open the approval modal
+      </button>
+      {approval.modal}
+    </>
+  );
+}
+
+/** The pre-view build window: the empty app card stands in until the first
+ *  view bytes land. */
+function FormingScenario() {
+  return (
+    <VendoProvider client={threadClient(baseClient, formingThread)} components={components}>
+      <VendoThread threadId="thr_forming" />
+    </VendoProvider>
+  );
+}
+
 /** Containment (c): an unregistered formatVersion must render a contained notice
  *  both when handed straight to the renderer AND when it arrives in a thread. */
 function UnknownFormatScenario() {
@@ -2070,6 +2142,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
+    case "/thread-forming": return { title: "Thread — the build's first seconds", content: <FormingScenario />, ownProvider: true };
+    case "/consent-marks": return { title: "Consent surfaces — no shield", content: <ConsentMarksScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
