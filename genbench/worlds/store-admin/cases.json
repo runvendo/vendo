@@ -129,5 +129,75 @@
       "offers no approve or deny control"
     ],
     "data": { "list_refund_requests": { "data": [] } }
+  },
+  {
+    "id": "theme-gallery",
+    "lane": "screen",
+    "prompt": "Show me the themes on the store as a grid so I can see which one's live.",
+    "tags": ["display"],
+    "shape": "gallery",
+    "pass": [
+      "lays all five themes out as a grid of tiles, not a table or a single column",
+      "each tile names its theme and when it was last updated",
+      "marks Fernbrook Classic as the live theme, and marks no other tile live",
+      "names no theme the tool did not return"
+    ],
+    "source": "Shopify, Online Store > Themes — help.shopify.com/en/manual/online-store/themes/managing-themes"
+  },
+  {
+    "id": "packer-access",
+    "lane": "screen",
+    "prompt": "I hired someone part-time to help pack orders. Show me who has access to the shop and what each person can touch, and let me tick on exactly what my new packer can see — orders and inventory only, nothing about money or discounts.",
+    "tags": ["action"],
+    "shape": "permissions",
+    "pass": [
+      "lists all four staff with the role each one holds",
+      "shows for every person whether they can open orders, inventory, discounts and payouts",
+      "Rosa Delgado's four areas all read as off to start",
+      "ticking orders on for Rosa calls set_staff_permission with her staff id, the orders area and enabled true"
+    ],
+    "source": "Shopify, Settings > Users > Roles — help.shopify.com/en/manual/your-account/users/roles/manage-roles"
+  },
+  {
+    "id": "selling-regions",
+    "lane": "screen",
+    "prompt": "Show me which regions my orders are actually shipping to right now, and let me flag a new one I want to start selling into.",
+    "tags": ["action"],
+    "shape": "map",
+    "pass": [
+      "plots all seven regions as markers on a map, not only as a list",
+      "each selling region shows its order count and its sales, the United States highest at 128 orders",
+      "the three regions with no orders read as not sold into yet, distinct from the four active ones",
+      "flagging one of those three calls activate_region with that region"
+    ],
+    "source": "Shopify, Markets — help.shopify.com/en/manual/markets/getting-started/managing-markets"
+  },
+  {
+    "id": "order-inbox",
+    "lane": "screen",
+    "prompt": "Customers keep messaging asking where their order is. Let me see who's waiting on the left and read and reply to whichever one I click, without leaving the screen.",
+    "tags": ["action"],
+    "shape": "split-inbox",
+    "pass": [
+      "lists all five conversations down one side, with the three unread ones marked",
+      "clicking a conversation opens it beside the list, with the list still on screen",
+      "the opened conversation shows every message in it in order, saying who sent each",
+      "the reply box calls send_message with that conversation's id and the typed text"
+    ],
+    "source": "Shopify, Inbox — help.shopify.com/en/manual/inbox/conversations"
+  },
+  {
+    "id": "shipping-settings",
+    "lane": "screen",
+    "prompt": "Let me see and change how shipping works here — my flat rate, the order total that earns free shipping, and which carrier I hand packages to — all on one page I can save in one go.",
+    "tags": ["action"],
+    "shape": "settings",
+    "pass": [
+      "shows the flat rate as $9.00 and free shipping from $75.00, both editable",
+      "the carrier picker offers only the three carriers the tool returned, with Standard post chosen",
+      "one save control commits all three settings together, rather than each saving on its own",
+      "saving calls update_shipping_settings with all three values"
+    ],
+    "source": "Shopify, Settings > Shipping and delivery — help.shopify.com/en/manual/fulfillment/setup"
   }
 ]

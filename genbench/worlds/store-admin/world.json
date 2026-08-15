@@ -146,6 +146,115 @@
         ]
       }
     },
+    "list_themes": {
+      "does": "Every theme installed on the storefront, most recently updated first. `live` is true for the one theme customers currently see; the rest are drafts kept beside it.",
+      "data": {
+        "data": [
+          { "id": "thm_classic", "name": "Fernbrook Classic", "live": true, "updated_at": "2026-08-11" },
+          { "id": "thm_market", "name": "Market Stall", "live": false, "updated_at": "2026-08-04" },
+          { "id": "thm_potting", "name": "Potting Shed", "live": false, "updated_at": "2026-07-22" },
+          { "id": "thm_harvest", "name": "Harvest Table", "live": false, "updated_at": "2026-06-30" },
+          { "id": "thm_seedling", "name": "Seedling", "live": false, "updated_at": "2026-05-18" }
+        ]
+      }
+    },
+    "list_staff": {
+      "does": "Everyone with access to the shop. `orders`, `inventory`, `discounts` and `payouts` are true when that person can open and act in that area, false when it is hidden from them entirely.",
+      "data": {
+        "data": [
+          { "id": "stf_wren", "name": "Wren Fairbairn", "role": "Owner", "orders": true, "inventory": true, "discounts": true, "payouts": true },
+          { "id": "stf_ida", "name": "Ida Marchetti", "role": "Shop manager", "orders": true, "inventory": true, "discounts": true, "payouts": false },
+          { "id": "stf_gil", "name": "Gil Ostrander", "role": "Fulfilment", "orders": true, "inventory": true, "discounts": false, "payouts": false },
+          { "id": "stf_rosa", "name": "Rosa Delgado", "role": "Packer", "orders": false, "inventory": false, "discounts": false, "payouts": false }
+        ]
+      }
+    },
+    "list_regions": {
+      "does": "Every region the shop can sell into. `active` is true where the shop already sells, and those regions carry the orders taken and `sales` billed there in the last 30 days — a region that is not active has none of either. `lat` and `lng` place the region on a map. `sales` is in CENTS: 984510 is $9,845.10.",
+      "data": {
+        "data": [
+          { "region": "United States", "active": true, "orders": 128, "sales": 984510, "lat": 39.8, "lng": -98.6 },
+          { "region": "Canada", "active": true, "orders": 34, "sales": 246800, "lat": 56.1, "lng": -106.3 },
+          { "region": "United Kingdom", "active": true, "orders": 21, "sales": 158920, "lat": 54.0, "lng": -2.0 },
+          { "region": "Australia", "active": true, "orders": 9, "sales": 61340, "lat": -25.3, "lng": 133.8 },
+          { "region": "Germany", "active": false, "orders": 0, "sales": 0, "lat": 51.2, "lng": 10.5 },
+          { "region": "Japan", "active": false, "orders": 0, "sales": 0, "lat": 36.2, "lng": 138.3 },
+          { "region": "New Zealand", "active": false, "orders": 0, "sales": 0, "lat": -41.0, "lng": 174.9 }
+        ]
+      }
+    },
+    "list_conversations": {
+      "does": "Every customer conversation in the shop inbox, most recently updated first, each with its whole thread in `messages` oldest first. `unread` is true when the customer's last message has not been read, `order_id` is the order the customer is asking about, and `from` on a message is either the customer's name or Fernbrook Goods.",
+      "data": {
+        "data": [
+          {
+            "id": "cnv_411",
+            "customer": "Nora Whitfield",
+            "order_id": "PDL-1051",
+            "unread": true,
+            "updated_at": "2026-08-13",
+            "messages": [
+              { "from": "Nora Whitfield", "text": "Hi — any idea when PDL-1051 goes out? It's a gift for Saturday.", "at": "2026-08-13" }
+            ]
+          },
+          {
+            "id": "cnv_410",
+            "customer": "Desmond Ali",
+            "order_id": "PDL-1050",
+            "unread": true,
+            "updated_at": "2026-08-13",
+            "messages": [
+              { "from": "Desmond Ali", "text": "Ordered yesterday and it still says unfulfilled.", "at": "2026-08-12" },
+              { "from": "Fernbrook Goods", "text": "Thanks Desmond — it's packed and going out with tomorrow's post.", "at": "2026-08-13" },
+              { "from": "Desmond Ali", "text": "Perfect, thank you. Will I get a tracking number?", "at": "2026-08-13" }
+            ]
+          },
+          {
+            "id": "cnv_409",
+            "customer": "Hollis Byrne",
+            "order_id": "PDL-1045",
+            "unread": true,
+            "updated_at": "2026-08-12",
+            "messages": [
+              { "from": "Hollis Byrne", "text": "Two of the mugs arrived chipped. I've raised a refund but wanted to tell you directly.", "at": "2026-08-12" }
+            ]
+          },
+          {
+            "id": "cnv_408",
+            "customer": "Theo Vance",
+            "order_id": "PDL-1047",
+            "unread": false,
+            "updated_at": "2026-08-11",
+            "messages": [
+              { "from": "Theo Vance", "text": "Is the apron the same size as the one I bought in spring?", "at": "2026-08-11" },
+              { "from": "Fernbrook Goods", "text": "It runs a size larger — happy to swap it for you.", "at": "2026-08-11" }
+            ]
+          },
+          {
+            "id": "cnv_407",
+            "customer": "Priya Raman",
+            "order_id": "PDL-1049",
+            "unread": false,
+            "updated_at": "2026-08-11",
+            "messages": [
+              { "from": "Priya Raman", "text": "Can you take one planter off PDL-1049 before it ships?", "at": "2026-08-11" },
+              { "from": "Fernbrook Goods", "text": "Done — the difference is on its way back to your card.", "at": "2026-08-11" }
+            ]
+          }
+        ]
+      }
+    },
+    "get_shipping_settings": {
+      "does": "How the shop charges for shipping today — the single row of the `data` array. `carrier` is the one packages are handed to, and `carriers` is every carrier the shop has an account with. `flat_rate` and `free_shipping_threshold` are in CENTS: 900 is $9.00 and 7500 is $75.00.",
+      "data": {
+        "data": [{
+          "flat_rate": 900,
+          "free_shipping_threshold": 7500,
+          "carrier": "Standard post",
+          "carriers": ["Standard post", "Ridgeway Courier", "Harbor Freight Post"]
+        }]
+      }
+    },
     "approve_refund": {
       "does": "Approve an open refund request. The request's amount goes back to the customer's original payment method.",
       "takes": { "request_id": "string" }
@@ -165,6 +274,22 @@
     "create_discount": {
       "does": "Create a discount code. `kind` is percent, amount or free_shipping. `value` is percent points for percent and CENTS for amount. `usage_limit` is the number of redemptions allowed.",
       "takes": { "code": "string", "kind": "string", "value": "number", "usage_limit": "number" }
+    },
+    "set_staff_permission": {
+      "does": "Open or close one area — orders, inventory, discounts or payouts — for one staff member. Call it once per area changed.",
+      "takes": { "staff_id": "string", "area": "string", "enabled": "boolean" }
+    },
+    "activate_region": {
+      "does": "Start selling into a region the shop does not sell into yet. Orders from it are accepted from then on.",
+      "takes": { "region": "string" }
+    },
+    "send_message": {
+      "does": "Send a reply into one customer conversation. The customer is emailed the text.",
+      "takes": { "conversation_id": "string", "text": "string" }
+    },
+    "update_shipping_settings": {
+      "does": "Save how the shop charges for shipping. `flat_rate` and `free_shipping_threshold` are in CENTS, and `carrier` must be one the shop has an account with.",
+      "takes": { "flat_rate": "number", "free_shipping_threshold": "number", "carrier": "string" }
     }
   }
 }
