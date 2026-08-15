@@ -7,4 +7,5 @@
 export * from "./display.js";
 export * from "./schema.js";
 export * from "./specs.js";
+export * from "./overlay.js";
 export { kitPrompt, type KitPromptOptions } from "./kit-prompt.js";
