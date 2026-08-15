@@ -142,5 +142,75 @@
     ],
     "tags": ["display"],
     "shape": "comparison"
+  },
+  {
+    "id": "bills-calendar",
+    "lane": "screen",
+    "prompt": "Show me the bills and subscriptions coming up this month, laid out like a calendar so I can see which days they hit.",
+    "pass": [
+      "lays the month out as a calendar grid rather than a list of bills",
+      "puts each of the six bills on its due day — Aug 1, Aug 5, Aug 9, Aug 12, Aug 18 and Aug 24",
+      "shows each bill's name and amount, Mission St Rent at $2,850.00 down to Verdant Streaming at $15.99",
+      "marks Ridgeline Gym missed, Mission St Rent and Onyx Fiber paid, and the other three upcoming"
+    ],
+    "tags": ["display"],
+    "shape": "calendar",
+    "source": "Monarch — Recurring bills calendar · https://help.monarch.com/hc/en-us/articles/4890751141908-Tracking-Recurring-Expenses-and-Bills"
+  },
+  {
+    "id": "money-dashboard",
+    "lane": "screen",
+    "prompt": "Give me one screen with my net worth, my account balances and what I've spent this month.",
+    "pass": [
+      "shows net worth as $36,265.15, the three balances summed",
+      "lists all three accounts with name and balance, Maple Credit's as negative",
+      "shows this month's spending with housing largest at $2,850.00 and a total of $4,243.11",
+      "carries net worth, accounts and spending as three blocks on the one screen, not just one of them"
+    ],
+    "tags": ["display"],
+    "shape": "dashboard",
+    "source": "Monarch — Main dashboard · https://screensdesign.com/showcase/monarch-budget-track-money"
+  },
+  {
+    "id": "dining-budget-cap",
+    "lane": "screen",
+    "prompt": "Let me set a monthly cap on my dining spending so I stop going over.",
+    "pass": [
+      "shows a form for dining's cap rather than a breakdown of every category",
+      "prefills dining's current cap of $400.00 and shows $438.20 already spent against it",
+      "says dining is over its cap",
+      "saving fires set_budget with category dining and the entered limit_cents"
+    ],
+    "tags": ["action"],
+    "shape": "form",
+    "source": "Monarch — Budget creation · https://screensdesign.com/showcase/monarch-budget-track-money"
+  },
+  {
+    "id": "category-groups",
+    "lane": "screen",
+    "prompt": "Show me how my spending categories are organized into groups, so I can see what rolls up into what.",
+    "pass": [
+      "nests the six categories under their groups rather than showing one flat list",
+      "shows Food & Drink holding groceries, dining and coffee, and Home holding housing alone",
+      "shows each category's amount, housing $2,850.00 down to coffee $61.30",
+      "rolls Food & Drink's three categories up to $1,111.95"
+    ],
+    "tags": ["display"],
+    "shape": "tree",
+    "source": "Monarch — Categories & groups · https://help.monarch.com/hc/en-us/articles/360048883771-Creating-Custom-Categories-and-Groups"
+  },
+  {
+    "id": "savings-goals",
+    "lane": "screen",
+    "prompt": "Show me the savings goals I've got going and how close each one is to done.",
+    "pass": [
+      "shows all three goals as cards side by side rather than table rows",
+      "shows each goal's saved amount against its target, Emergency Fund $7,420.00 of $10,000.00",
+      "carries a progress bar or percentage on each — Emergency Fund about 74%, Japan Trip 25%, New Laptop 100%",
+      "marks New Laptop as fully funded"
+    ],
+    "tags": ["display"],
+    "shape": "board",
+    "source": "Monarch — Goals / Revolut — Pockets · https://screensdesign.com/showcase/monarch-budget-track-money"
   }
 ]

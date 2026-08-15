@@ -60,6 +60,56 @@
     "cancel_transfer": {
       "does": "Cancel a pending transfer. The money is returned to the source account.",
       "takes": { "id": "string" }
+    },
+    "list_upcoming_bills": {
+      "does": "Recurring bills and subscriptions due this month, earliest due first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00.",
+      "data": {
+        "data": [
+          { "id": "bill_1", "name": "Mission St Rent", "amount": 285000, "due_date": "2026-08-01", "status": "paid" },
+          { "id": "bill_2", "name": "Onyx Fiber", "amount": 8900, "due_date": "2026-08-05", "status": "paid" },
+          { "id": "bill_3", "name": "Ridgeline Gym", "amount": 4500, "due_date": "2026-08-09", "status": "missed" },
+          { "id": "bill_4", "name": "Verdant Streaming", "amount": 1599, "due_date": "2026-08-12", "status": "upcoming" },
+          { "id": "bill_5", "name": "Cascade Insurance", "amount": 14200, "due_date": "2026-08-18", "status": "upcoming" },
+          { "id": "bill_6", "name": "Aster Mobile", "amount": 6200, "due_date": "2026-08-24", "status": "upcoming" }
+        ]
+      }
+    },
+    "list_budgets": {
+      "does": "The monthly spending caps the customer has set, and what has gone against each so far. The rows are the `data` array. `limit_cents` and `spent_cents` are in CENTS: 40000 is $400.00.",
+      "data": {
+        "data": [
+          { "category": "dining", "limit_cents": 40000, "spent_cents": 43820 },
+          { "category": "groceries", "limit_cents": 70000, "spent_cents": 61245 },
+          { "category": "transport", "limit_cents": 15000, "spent_cents": 9675 }
+        ]
+      }
+    },
+    "set_budget": {
+      "does": "Set the monthly spending cap for a category, replacing any cap already on it.",
+      "takes": { "category": "string", "limit_cents": "number" }
+    },
+    "list_category_groups": {
+      "does": "Every spending category with the group it rolls up into, and what it spent this month. The rows are the `data` array. `amount` is in CENTS: 61245 is $612.45.",
+      "data": {
+        "data": [
+          { "group": "Home", "category": "housing", "amount": 285000 },
+          { "group": "Food & Drink", "category": "groceries", "amount": 61245 },
+          { "group": "Food & Drink", "category": "dining", "amount": 43820 },
+          { "group": "Food & Drink", "category": "coffee", "amount": 6130 },
+          { "group": "Lifestyle", "category": "subscriptions", "amount": 18441 },
+          { "group": "Getting Around", "category": "transport", "amount": 9675 }
+        ]
+      }
+    },
+    "list_goals": {
+      "does": "The customer's savings goals and what each has put away. The rows are the `data` array. `target_cents` and `saved_cents` are in CENTS: 1000000 is $10,000.00.",
+      "data": {
+        "data": [
+          { "id": "goal_1", "name": "Emergency Fund", "target_cents": 1000000, "saved_cents": 742000 },
+          { "id": "goal_2", "name": "Japan Trip", "target_cents": 450000, "saved_cents": 112500 },
+          { "id": "goal_3", "name": "New Laptop", "target_cents": 240000, "saved_cents": 240000 }
+        ]
+      }
     }
   }
 }
