@@ -1,5 +1,63 @@
 # @vendoai/core
 
+## 0.19.0
+
+### Minor Changes
+
+- 5f4d694: Six capabilities the StoreOps contract was missing, so nothing has to reach
+  around it into raw SQL to get them.
+
+  - `audit.list` — the audit drawer's own typed read, filtered by kind, venue,
+    outcome and decidedBy, on the same keyset cursor `engine.list("vendo_audit")`
+    already walks. `venue` is a column, `outcome` and `decidedBy` live inside the
+    event, and no `engine.list` ref key reaches any of them.
+  - `secrets.{get,set,list,delete}` — the store's vault, on the wire. Values cross
+    in the clear under TLS and are encrypted at rest server-side, so no key ever
+    leaves the mount; the local engine keeps the `vendo_secrets` table and the
+    envelope cipher it already had.
+  - `footprint()` — per-collection byte accounting, with each collection's kind
+    (`storage` or `knowledge`) alongside. `bytes` is row-content size, uniform
+    across collections and comparable with itself over time — deliberately not a
+    relation size, because most collections share one table and a per-collection
+    disk number does not exist to report.
+  - `engine.list`'s `watermark` bound — the forward walk `cursor` cannot express:
+    everything after a mark, oldest first, so a job that has already counted rows
+    resumes where it stopped instead of re-reading from the newest. Valid only on
+    fields the collection registry declares indexed (`vendo_runs.started_at`
+    today), and the bound is opaque and full-precision on purpose: a mark
+    round-tripped through a JS `Date` truncates to milliseconds, moves BACKWARDS,
+    and re-counts a window. The answer echoes the next bound back, which is also
+    how a caller detects a mount too old to have honored it — a request field, unlike
+    a new op, has no 501 to protect it.
+  - `retention.{quarantine,purge}` — aging rows out of a collection in two moves,
+    because the gap between them is the recovery window. OPTIONAL, and no
+    implementation ships one yet: the contract is frozen here and the engine that
+    owns the quarantine lands next.
+  - `IdempotencyLedger` — server-side only, no wire op. `createStore()` provides
+    one, and implementations MUST colocate it with the mutations it gates: a
+    ledger that can commit while its mutation rolls back will confidently replay
+    an answer for work that never happened.
+
+  `ENGINE_COLLECTIONS` is now derived from `ENGINE_COLLECTION_REGISTRY`, which
+  carries each collection's kind and indexed fields. Same 38 names, same order; a
+  second place naming them is how an allowlist rots.
+
+### Patch Changes
+
+- 2879e46: `STORE_WIRE_PATHS` now declares the erase door that actually exists. The manifest listed `lifecycle.erase` at `/lifecycle/erase` with a body that wrapped the scope in `{target: {...}}`, while every mount — the console included — serves `/erase` with the scope FLAT, and the hosted client sent it there by hardcoding the path rather than reading the table. The published contract therefore described a route no client calls and no service answers: anyone building a Store Wire v1 mount faithfully from `STORE_WIRE_PATHS` would never receive an erase, and would have validated the wrong body if one arrived. The manifest is now `/erase` with a flat `{subject}` / `{appId}` request schema (still exactly one of the two — a destructive call with no scope is still refused), and both hosted erase surfaces, the `StoreOps` client and the `StoreAdapter` façade, take their route from the table like the other 35 ops, so the two can no longer drift.
+
+  No behavior changes on the wire: the client sent `POST /erase` with a flat body before this change and sends the identical request after it. Only the contract the manifest publishes changed, to match what ships.
+
+- 39a1c78: `parseStoreWireError` no longer degrades a 429/5xx store-wire failure to
+  `not-implemented`. A dropped Postgres connection under load answered a bare
+  503, and the client reported "Vendo Cloud store does not support the
+  transcripts.appendMessages operation" — a transient dependency failure
+  misread as a missing capability. 429/500/502/503/504 now classify as the new
+  `unavailable` VendoErrorCode (retryable); 400/402/403/409 are unchanged. The
+  console's own `unavailable` envelope (`lib/api/respond.ts`'s
+  `apiServerError`) now parses as itself too, instead of failing schema
+  validation for carrying a code the enum didn't recognize.
+
 ## 0.18.0
 
 ### Minor Changes
