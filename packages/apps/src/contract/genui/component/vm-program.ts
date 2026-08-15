@@ -31,6 +31,7 @@
  * `setTimeout` in the VM at all. `act()` in Preact's own test utilities is the
  * same trick.
  */
+import { TREE_MAX_NODES } from "@vendoai/core";
 import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from "./preact-source.js";
 
 /**
@@ -79,6 +80,14 @@ const MAX_PROP_DEPTH = 8;
  *  the wall-clock budget would otherwise have to catch. */
 const MAX_FLUSH_TURNS = 64;
 
+/** How deep the emitted tree may nest. A screen paints sections, not a chain,
+ *  and the host walks this tree recursively on the other side. */
+const MAX_TREE_DEPTH = 128;
+
+/** How large one paint may be, measured on the JSON string in code units —
+ *  which for a tree of component names and props is its byte count. */
+const MAX_TREE_BYTES = 512 * 1_024;
+
 /** The engine, in the VM. Depends on the three Preact globals above it and on
  *  `__vendo_tool`, the host's tool bridge, both of which it captures and then
  *  deletes off the global object so the screen's own code cannot reach them. */
@@ -86,6 +95,10 @@ const ENGINE = `(function () {
   var preact = globalThis.preact, hooks = globalThis.preactHooks, jsx = globalThis.jsxRuntime;
   var options = preact.options;
   var callTool = globalThis.__vendo_tool;
+  // The intrinsics the engine still needs AFTER the screen's own code has run,
+  // held where the screen cannot reach them: a screen that assigned
+  // JSON.stringify would otherwise hand the host a tree it never painted.
+  var stringify = JSON.stringify, keys = Object.keys, isArray = Array.isArray, create = Object.create;
 
   // ── the fake host ─────────────────────────────────────────────────────────
   // Everything Preact 10 touches on a node, and nothing else. Props are read
@@ -161,6 +174,10 @@ const ENGINE = `(function () {
   // and a keyed row keeps its handlers even when a row is inserted over it.
   var slots = {}, minted = 0, drawer = {};
 
+  // A key that would mean the prototype chain rather than data once the host
+  // parses this tree back. Never emitted, whatever the screen calls it.
+  function unsafe(key) { return key === "__proto__" || key === "prototype" || key === "constructor"; }
+
   function handlerId(slot) {
     var id = slots[slot];
     if (id === undefined) { id = "h" + ++minted; slots[slot] = id; }
@@ -179,21 +196,29 @@ const ENGINE = `(function () {
     // it would emit as {} — a Date has no enumerable own properties.
     if (typeof Date !== "undefined" && value instanceof Date) return value.toISOString();
     if (depth >= ${MAX_PROP_DEPTH}) return undefined;
-    if (Array.isArray(value)) {
+    if (isArray(value)) {
       var list = [];
       for (var i = 0; i < value.length; i++) list.push(emitValue(value[i], slot + "." + i, depth + 1));
       return list;
     }
-    var out = {};
-    for (var key in value) out[key] = emitValue(value[key], slot + "." + key, depth + 1);
+    // Own keys onto a bare object: what the screen wrote, and nothing its
+    // prototype carries or the host's Object.prototype would answer for.
+    var out = create(null), names = keys(value);
+    for (var at = 0; at < names.length; at++) {
+      var key = names[at];
+      if (unsafe(key)) continue;
+      out[key] = emitValue(value[key], slot + "." + key, depth + 1);
+    }
     return out;
   }
 
   function emitProps(props, slot, depth) {
-    var out = {};
+    var out = create(null);
     if (props === null || typeof props !== "object") return out;
-    for (var key in props) {
-      if (key === "children" || key === "key" || key === "ref") continue;
+    var names = keys(props);
+    for (var at = 0; at < names.length; at++) {
+      var key = names[at];
+      if (key === "children" || key === "key" || key === "ref" || unsafe(key)) continue;
       var value = emitValue(props[key], slot + "#" + key, depth);
       if (value !== undefined) out[key] = value;
     }
@@ -240,6 +265,23 @@ const ENGINE = `(function () {
     }
   }
 
+  // What the host is about to parse, counted BEFORE it is JSON — the parse on
+  // the other side is one parse too late. The node cap is core's TREE_MAX_NODES
+  // so the cap in here and the gate out there are one number, and a text child
+  // counts as a node because that is what it becomes when the tree is flattened.
+  var counted = 0;
+
+  function measure(node, depth) {
+    if ((counted += 1) > ${TREE_MAX_NODES}) {
+      throw new Error("this screen painted more than ${TREE_MAX_NODES} nodes — paint a page of rows and let an event ask for the next");
+    }
+    if (depth > ${MAX_TREE_DEPTH}) {
+      throw new Error("this screen nested components more than ${MAX_TREE_DEPTH} deep — a screen paints a list of sections, not a chain");
+    }
+    if (typeof node === "string") return;
+    for (var i = 0; i < node.children.length; i++) measure(node.children[i], depth + 1);
+  }
+
   // ── the driver ────────────────────────────────────────────────────────────
   var root = null, component = null, eventPhase = false, failure = null;
 
@@ -273,7 +315,7 @@ const ENGINE = `(function () {
     return event;
   }
 
-  globalThis.__vendo = {
+  var api = {
     tools: (function make(path) {
       return new Proxy(function () {}, {
         get: function (target, key) { return typeof key === "string" ? make(path.concat(key)) : undefined; },
@@ -298,7 +340,7 @@ const ENGINE = `(function () {
       var handler = drawer[id];
       eventPhase = true;
       if (typeof handler !== "function") {
-        throw new Error('no handler "' + id + '" is on this screen — it named ' + Object.keys(drawer).length + " handler(s) at its last paint; deliver an event from the tree you are showing");
+        throw new Error('no handler "' + id + '" is on this screen — it named ' + keys(drawer).length + " handler(s) at its last paint; deliver an event from the tree you are showing");
       }
       var returned = handler(makeEvent(event));
       // An async handler's throw lands here, long after the call returned. The
@@ -332,7 +374,7 @@ const ENGINE = `(function () {
     takeFailure: function () {
       var taken = failure;
       failure = null;
-      return taken === null ? "null" : JSON.stringify(taken);
+      return taken === null ? "null" : stringify(taken);
     },
 
     /** The paint, as JSON. Handlers stay in here; the tree carries their ids. */
@@ -346,7 +388,13 @@ const ENGINE = `(function () {
       if (nodes.length !== 1 || typeof nodes[0] !== "object") {
         throw new Error("a screen must paint exactly one root element, and this one painted " + nodes.length + " — wrap what it returns in a single container component");
       }
-      return JSON.stringify(nodes[0]);
+      counted = 0;
+      measure(nodes[0], 1);
+      var json = stringify(nodes[0]);
+      if (json.length > ${MAX_TREE_BYTES}) {
+        throw new Error("this paint is too large to hand over at " + json.length + " bytes (max ${MAX_TREE_BYTES}) — paint a page of rows and let an event ask for the next");
+      }
+      return json;
     },
   };
 
@@ -379,18 +427,24 @@ const ENGINE = `(function () {
 
   var jsxModule = copy(jsx, ["jsx", "jsxs", "jsxDEV", "jsxTemplate", "Fragment"], {});
 
-  globalThis.__vendo_modules = {
+  // The module space is the engine's, not a global the screen can extend or
+  // swap: ./installSource takes it from here, adds its one module and freezes it.
+  api.modules = {
     react: react,
     "react/jsx-runtime": jsxModule,
     "react/jsx-dev-runtime": jsxModule,
   };
-  globalThis.__vendo_require = function (id) {
-    var found = __vendo_modules[id];
+  api.require = function (id) {
+    var found = api.modules[id];
     if (found === undefined) {
-      throw new Error('a screen cannot import "' + id + '" — the only modules it has are ' + Object.keys(__vendo_modules).join(", "));
+      throw new Error('a screen cannot import "' + id + '" — the only modules it has are ' + keys(api.modules).join(", "));
     }
     return found;
   };
+
+  // Not writable, not configurable, and nothing on it can be replaced — the
+  // host calls these by name after the screen's code has run.
+  Object.defineProperty(globalThis, "__vendo", { value: Object.freeze(api) });
 
   // The globals the engine captured are now unreachable from the screen.
   delete globalThis.preact;
@@ -435,12 +489,16 @@ export function installSource(input: InstallInput): string {
     tools: __vendo.tools,
   };
   for (var i = 0; i < names.length; i++) screen[names[i]] = names[i];
-  __vendo_modules["@vendo/screen"] = screen;
+  // The last module the space will ever hold. Frozen, and named nowhere the
+  // screen's own code can reach, before that code runs.
+  var modules = __vendo.modules;
+  modules["@vendo/screen"] = screen;
+  Object.freeze(modules);
 
   var module = { exports: {} };
   (function (require, module, exports) {
 ${input.compiledSource}
-  })(__vendo_require, module, module.exports);
+  })(__vendo.require, module, module.exports);
 
   var loaded = module.exports.default === undefined ? module.exports : module.exports.default;
   if (typeof loaded !== "function") {

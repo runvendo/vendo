@@ -119,6 +119,12 @@ const messageOf = (thrown: unknown): Thrown => {
   };
 };
 
+/** A paint carries data, so a key that would touch this realm's prototypes is
+ *  dropped rather than parsed — the emitter refuses to write one, and this is
+ *  the second lock on the same door. */
+const dropPrototypeKeys = (key: string, value: unknown): unknown =>
+  key === "__proto__" || key === "prototype" || key === "constructor" ? undefined : value;
+
 /** QuickJS reports a tripped interrupt handler as exactly this. */
 const isInterrupt = (thrown: Thrown): boolean => thrown.message === "InternalError: interrupted";
 
@@ -248,7 +254,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     const json = evalString("__vendo.serialize()", "render");
     if (json === painted) return false;
     painted = json;
-    tree = JSON.parse(json) as NestedNode;
+    tree = JSON.parse(json, dropPrototypeKeys) as NestedNode;
     return true;
   };
 

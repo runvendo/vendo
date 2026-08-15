@@ -841,12 +841,12 @@ export default function Everything() {
 }
 `);
 
-    // The screen ran fine — it is the TREE that is not one a surface can hold, and
-    // the check measures it with the format's own validator rather than a second
-    // implementation.
-    expect(codes).toEqual(["tree"]);
-    expect(text).toContain("the rendered screen is not a valid tree");
-    expect(text).toContain("too many nodes (max 5000)");
+    // The cap is the format's own number (core's TREE_MAX_NODES), counted INSIDE
+    // the VM before the JSON crosses — so the refusal now arrives from the run,
+    // one stage before the tree check that used to catch it.
+    expect(codes).toEqual(["run"]);
+    expect(text).toContain("the screen would not paint");
+    expect(text).toContain("more than 5000 nodes");
   });
 
   /** Wide enough to write a chart, a table and a slot. Its own list because the
