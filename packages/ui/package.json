@@ -51,13 +51,13 @@
   ],
   "scripts": {
     "build:jail": "node scripts/build-jail-runtime.mjs",
-    "prebuild": "pnpm run build:jail",
+    "prebuild": "pnpm run build:jail && pnpm run check:icons",
     "build": "tsc -p tsconfig.json",
     "postbuild": "node scripts/build-eject-templates.mjs",
-    "pretest": "pnpm run build:jail",
+    "pretest": "pnpm run build:jail && pnpm run check:icons",
     "test": "vitest run",
     "pretest:coverage": "pnpm run build:jail",
-    "pretypecheck": "pnpm run build:jail",
+    "pretypecheck": "pnpm run build:jail && pnpm run check:icons",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest:browser": "pnpm run build:jail",
     "test:browser": "playwright test",
@@ -67,6 +67,7 @@
     "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",
     "build:onest-font": "node scripts/build-onest-font.mjs",
     "build:icons": "node scripts/build-icons.mjs",
+    "check:icons": "node scripts/build-icons.mjs --check",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

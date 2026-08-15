@@ -31,6 +31,7 @@ export { kitPrompt, type KitPromptOptions } from "./kit-prompt.js";
 // Components
 export * from "./layout.js";
 export * from "./values.js";
+export { Icon, type IconProps } from "./icon.js";
 export { DataTable, type DataTableColumn, type DataTableProps } from "./data/data-table.js";
 export { CardList, type CardField, type CardListProps } from "./data/card-list.js";
 export { Stat, type StatProps } from "./data/stat.js";
