@@ -98,6 +98,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Num value={12} notation="compact"/>
     <DateTime value="2026-01-01" mode="date"/>
     <EnumBadge value="past_due" tones={{ past_due: "danger" }}/>
+    <Icon name="trending-up" size={20} label="Trending up"/>
     <Progress value={0.4} max={1} label="Budget" showValue={true} tone="accent"/>
     <LineChart data={cashflow.data} xKey="label" series={["in", "out"]} format="money" height={220}/>
     <BarChart data={cashflow.data} xKey="label" series={[{ key: "in", label: "In" }]} stacked={true} horizontal={false}/>

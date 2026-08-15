@@ -50,7 +50,7 @@ const LIMITS = {
 /** The component vocabulary a generated app may name without a source map. */
 const VOCABULARY = [
   "Accordion", "Badge", "BarChart", "Button", "Callout", "Card", "CardList", "Checkbox", "DataTable",
-  "DatePicker", "DateTime", "Disclaimer", "Divider", "DonutChart", "EnumBadge", "Form", "Grid", "Input",
+  "DatePicker", "DateTime", "Disclaimer", "Divider", "DonutChart", "EnumBadge", "Form", "Grid", "Icon", "Input",
   "LineChart", "Money", "Num", "Percent", "Progress", "Row", "Select", "Sparkline", "Stack", "Stat",
   "Surface", "Tabs", "Text", "Textarea",
 ];
