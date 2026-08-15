@@ -253,10 +253,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     // parity.
     erase: {
       async bySubject(subject) {
-        return parseReport(await sendJson("/erase", { subject }));
+        return parseReport(await sendJson(STORE_WIRE_PATHS["lifecycle.erase"], { subject }));
       },
       async byApp(appId) {
-        return parseReport(await sendJson("/erase", { appId }));
+        return parseReport(await sendJson(STORE_WIRE_PATHS["lifecycle.erase"], { appId }));
       },
     },
     // The service owns its migrations; there is nothing to migrate from here.
@@ -357,9 +357,10 @@ const raiseWireError = async (response: Response): Promise<never> => {
  * storeWire*RequestSchema bodies — collection/namespace/key ride the JSON body
  * and blob bytes are base64 on the wire — so any conforming Store Wire v1
  * service (the console's wire mount, a BYO httpStore) accepts them verbatim.
- * Transcripts, harness, workspace, `lifecycle.promote` and `/status` answer at
- * their STORE_WIRE_PATHS path too; erase keeps `/erase` — T5's own note: it
- * "keeps its existing door until the cloud client moves it".
+ * EVERY op takes its route from that table, erase included — its door really is
+ * `/erase` rather than `/lifecycle/erase`, and the table says so, because a
+ * client that spelled its own route was free to drift from the contract third
+ * parties build against (it did, for as long as erase was hardcoded here).
  */
 export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
   return storeWireClient(options, raiseWireError);
@@ -743,7 +744,7 @@ function storeWireClient(
     lifecycle: {
       // The erase door takes the target FLAT (exactly one of subject/appId).
       async erase(target) {
-        return reportOf(await mutate("lifecycle.erase", "/erase", target));
+        return reportOf(await mutate("lifecycle.erase", P["lifecycle.erase"], target));
       },
       async promote(appId, orgId) {
         await mutate("lifecycle.promote", P["lifecycle.promote"], { appId, orgId });

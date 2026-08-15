@@ -57,6 +57,11 @@ describe("vendo/store-wire@1", () => {
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
     expect(STORE_WIRE_PATHS["appData.put"]).toBe("/app-data/put");
     expect(STORE_WIRE_PATHS["lifecycle.promote"]).toBe("/lifecycle/promote");
+    // erase is the one door NOT under its family prefix: it shipped at /erase
+    // before the wire had families and every mount serves it there. The
+    // manifest records the door that EXISTS — a prettier path here would be a
+    // route no client calls and no service answers.
+    expect(STORE_WIRE_PATHS["lifecycle.erase"]).toBe("/erase");
   });
 
   it("every engine door is its own path, and no route is left on the retired generic family", () => {
@@ -235,15 +240,17 @@ describe("vendo/store-wire@1", () => {
   });
 
   it("parses lifecycle request DTOs", () => {
-    expect(storeWireLifecycleEraseRequestSchema.parse({ target: { subject: "sub_1" } }).target.subject).toBe("sub_1");
-    expect(storeWireLifecycleEraseRequestSchema.parse({ target: { appId: "app_1" } }).target.appId).toBe("app_1");
-    // A destructive erase must name exactly one scope: no empty target...
-    expect(storeWireLifecycleEraseRequestSchema.safeParse({ target: {} }).success).toBe(false);
-    // ...and no ambiguous both-set target.
-    expect(storeWireLifecycleEraseRequestSchema.safeParse({
-      target: { subject: "sub_1", appId: "app_1" },
-    }).success).toBe(false);
-    expect(storeWireLifecycleEraseRequestSchema.safeParse({ target: { subject: "" } }).success).toBe(false);
+    // The erase body is FLAT — the scope rides the body itself, not a `target`
+    // wrapper, which is what every shipped mount reads and every client sends.
+    expect(storeWireLifecycleEraseRequestSchema.parse({ subject: "sub_1" }).subject).toBe("sub_1");
+    expect(storeWireLifecycleEraseRequestSchema.parse({ appId: "app_1" }).appId).toBe("app_1");
+    // A destructive erase must name exactly one scope: no empty body...
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({}).success).toBe(false);
+    // ...and no ambiguous both-set body.
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({ subject: "sub_1", appId: "app_1" }).success).toBe(false);
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({ subject: "" }).success).toBe(false);
+    // A wrapped target names no scope at all, so it is not an erase request.
+    expect(storeWireLifecycleEraseRequestSchema.safeParse({ target: { subject: "sub_1" } }).success).toBe(false);
     expect(storeWireLifecyclePromoteRequestSchema.parse({ appId: "app_1", orgId: "org_1" }).orgId).toBe("org_1");
   });
 

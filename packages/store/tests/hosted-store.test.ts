@@ -26,6 +26,7 @@ import {
   storeWireCollectionInsertIfAbsentRequestSchema,
   storeWireCollectionListRequestSchema,
   storeWireCollectionPutRequestSchema,
+  storeWireLifecycleEraseRequestSchema,
   type StoreAdapter,
 } from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
@@ -293,6 +294,10 @@ describe("hostedStore wire", () => {
     const byApp = await store.erase.byApp("app_gone");
     expect(byApp).toEqual({ vendo_apps: 1, vendo_threads: 2 });
     expect(console_.eraseCalls).toEqual([{ subject: "user_gone" }, { appId: "app_gone" }]);
+    // Written out, NOT read off STORE_WIRE_PATHS: this is the shipped console
+    // route, and it is what gives the manifest-derived assertions elsewhere
+    // their meaning. Two derived sides always agree with each other; only a
+    // literal here can catch the manifest declaring a door nobody serves.
     expect(console_.requests.map((request) => request.url)).toEqual([
       "https://cloud.test/api/v1/store/erase",
       "https://cloud.test/api/v1/store/erase",
@@ -623,12 +628,14 @@ const wireRecord = {
   revision: "1",
 };
 
-/** The door each named op knocks on. Records and blobs speak the EXPORTED
- * store-wire v1 contract (STORE_WIRE_PATHS, collection/namespace/key on the
- * body, blob bytes base64); transcripts, harness, workspace,
- * lifecycle.promote and /status answer at their STORE_WIRE_PATHS path too;
- * erase keeps the console's own route. `keyed` marks the mutations that carry
- * an Idempotency-Key. */
+/** The door each named op knocks on — EVERY one of them read off
+ * STORE_WIRE_PATHS, never spelled out here. Records and blobs speak the
+ * EXPORTED store-wire v1 contract (collection/namespace/key on the body, blob
+ * bytes base64); transcripts, harness, workspace, lifecycle and /status answer
+ * at their STORE_WIRE_PATHS path too. A path written out here instead would let
+ * the client and the manifest disagree forever, which is exactly how
+ * `lifecycle.erase` came to declare a route no mount has ever served. `keyed`
+ * marks the mutations that carry an Idempotency-Key. */
 const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "engine.get": { method: "POST", path: P["engine.get"] },
   "engine.put": { method: "POST", path: P["engine.put"], keyed: true },
@@ -662,7 +669,7 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "workspace.read": { method: "POST", path: P["workspace.read"] },
   "workspace.commit": { method: "POST", path: P["workspace.commit"], keyed: true },
   "workspace.history": { method: "POST", path: P["workspace.history"] },
-  "lifecycle.erase": { method: "POST", path: "/erase", keyed: true },
+  "lifecycle.erase": { method: "POST", path: P["lifecycle.erase"], keyed: true },
   "lifecycle.promote": { method: "POST", path: P["lifecycle.promote"], keyed: true },
   status: { method: "GET", path: P.status },
 };
@@ -1007,12 +1014,18 @@ describe("hostedStoreOps — the 35-op wire client", () => {
   it("lifecycle: erase and promote on their own doors", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
 
-    // The erase door takes the target FLAT (exactly one of subject/appId).
+    // The erase door takes the target FLAT (exactly one of subject/appId), on
+    // the path the MANIFEST declares — the client derives both, so a third
+    // party building its mount from STORE_WIRE_PATHS receives this call.
     expect(await ops.lifecycle.erase({ subject: "sub_1" })).toEqual({ vendo_apps: 1 });
-    expect(calls[0]).toMatchObject({ path: "/erase", body: { subject: "sub_1" } });
+    expect(calls[0]).toMatchObject({ path: P["lifecycle.erase"], body: { subject: "sub_1" } });
+    expect(storeWireLifecycleEraseRequestSchema.parse(calls[0]!.body).subject).toBe("sub_1");
+
+    await ops.lifecycle.erase({ appId: "app_1" });
+    expect(storeWireLifecycleEraseRequestSchema.parse(calls[1]!.body).appId).toBe("app_1");
 
     await ops.lifecycle.promote("app_1", "org_1");
-    expect(calls[1]).toMatchObject({ path: "/lifecycle/promote", body: { appId: "app_1", orgId: "org_1" } });
+    expect(calls[2]).toMatchObject({ path: P["lifecycle.promote"], body: { appId: "app_1", orgId: "org_1" } });
   });
 
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {

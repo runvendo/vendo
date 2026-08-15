@@ -57,7 +57,13 @@ export const STORE_WIRE_PATHS = {
   "workspace.commit": "/workspace/commit",
   "workspace.history": "/workspace/history",
   // lifecycle (2)
-  "lifecycle.erase": "/lifecycle/erase",
+  // ⚠ erase is the ONE door not under its family prefix, and that is the
+  // point: it shipped at `/erase` before the wire had families, and every
+  // mount — the console included — serves it there and nowhere else. This
+  // manifest records the door that EXISTS. Tidying it to `/lifecycle/erase`
+  // makes it a route no client calls and no service answers, so a third party
+  // that builds its mount from this table never receives an erase at all.
+  "lifecycle.erase": "/erase",
   "lifecycle.promote": "/lifecycle/promote",
   // status (1)
   status: "/status",
@@ -363,17 +369,17 @@ export const storeWireWorkspaceHistoryRequestSchema = cursorQuerySchema.extend({
 // lifecycle
 // ---------------------------------------------------------------------------
 
-/** Exactly ONE of subject/appId — an erase with no scope (or an ambiguous
-    both-set scope) is a destructive call with no target and must be rejected. */
+/** The scope rides the body FLAT, the way the shipped door reads it — no
+    `target` wrapper. Exactly ONE of subject/appId: an erase with no scope (or
+    an ambiguous both-set scope) is a destructive call with no target and must
+    be rejected. */
 export const storeWireLifecycleEraseRequestSchema = z.object({
-  target: z.object({
-    subject: z.string().min(1).optional(),
-    appId: z.string().min(1).optional(),
-  }).passthrough().refine(
-    (t) => (t.subject === undefined) !== (t.appId === undefined),
-    { message: "erase target must set exactly one of subject or appId" },
-  ),
-}).passthrough();
+  subject: z.string().min(1).optional(),
+  appId: z.string().min(1).optional(),
+}).passthrough().refine(
+  (target) => (target.subject === undefined) !== (target.appId === undefined),
+  { message: "erase target must set exactly one of subject or appId" },
+);
 
 export const storeWireLifecyclePromoteRequestSchema = z.object({
   appId: z.string().min(1),
