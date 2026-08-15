@@ -14,12 +14,16 @@ cd examples/crate
 pnpm dev
 ```
 
-Open http://localhost:3000. No environment file is needed yet — Crate has no
-external dependencies and boots straight into the seeded store.
+Open http://localhost:3000. **No environment file is needed.** With nothing
+configured Crate boots into the seeded store and acts as the shop owner, so a
+fresh clone shows the shop rather than a stack trace about a missing key. Each
+line in `.env.example` switches on one more thing: a model key for the agent,
+Clerk for real sign-in.
 
 ```bash
-pnpm test    # 55 tests: the seed's invariants and every domain rule
-pnpm build   # production build
+pnpm test    # 63 tests: the seed's invariants, every domain rule, the roster
+pnpm build   # production build (runs `vendo sync --strict --no-ai` first)
+npx vendo doctor   # verify the wiring against a running dev server
 ```
 
 ## The demo story
@@ -92,12 +96,67 @@ variable is instantiated twice: a refund posted through `/api/refunds` landed in
 one copy while `/orders/[id]` kept rendering the other, and the page showed
 "Paid" for an order the API called "refunded".
 
-## Not wired yet
+## Vendo
 
-- **Vendo itself.** `vendo init`, `.vendo/`, `src/vendo/`, and the
-  `<VendoProvider>` paste in `src/app/layout.tsx` are still to come.
-- **Auth.** `src/server/actor.ts` returns the seeded admin so every write already
-  records who did it. It is deliberately one function, so swapping in the real
-  Clerk or Supabase session touches one seam.
-- **A knowledge corpus.** Store policies — return window, shipping cutoffs,
-  warranty — so the agent can answer policy questions with citations.
+Composed in `src/app/api/vendo/[...vendo]/route.ts`, mounted by the
+`<VendoProvider>` + `<VendoOverlay />` pair in `src/app/layout.tsx`.
+
+**The tool surface comes from `openapi.json`.** Without a spec, `vendo init`
+extracts the same 18 routes but every one of them arrives *blind* — no input
+parameters, no output shape, nothing but a method and a path. The spec is what
+turns "18 tools" into 18 tools an agent can actually use, and it is worth more
+than anything else in this directory. `vendo sync` reports the difference:
+
+```
+tool schemas: inputs 0/18 · outputs 0/18   ← without openapi.json
+tool schemas: inputs 18/18 · outputs 18/18 ← with it
+```
+
+**Risk is graded by hand** in `.vendo/overrides.json`, which needs no model key:
+reads run, writes ask, refunds and cancellations are `destructive`, and
+`resetDemo` is disabled outright — an agent helping a customer has no business
+discarding the shop's data. Overrides merge at load, so `tools.json` still shows
+the extractor's `ungraded`; `vendo doctor` is what confirms the grades landed
+("catalog: all 18 tools graded", "17 live host tools" — 18 minus the disabled one).
+
+`.vendo/theme.json` is hand-corrected too. Extraction found no host evidence and
+fell back to a neutral blue; Crate's palette lives in a Tailwind v4 `@theme`
+block, which the extractor does not read.
+
+## Identity
+
+Clerk, wired through `clerk()` in the composition. Two rules:
+
+- **Clerk answers "who signed in"; Crate's roster answers "and are they staff
+  here?"** The join is on email, because a Clerk subject (`user_2abc…`) means
+  nothing to Crate and Clerk's default session claims carry no email — so
+  `staffForSubject` asks Clerk's backend once per subject and memoizes it.
+- **Everything runs without Clerk.** `clerkEnabled` gates the provider, the
+  proxy and the session read, and with it false Crate acts as the seeded owner.
+
+`src/server/actor.ts` is the one seam every write goes through, and it is also
+where an unattended run lands: the proxy verifies the `VendoAway` token Vendo
+mints in place of a Clerk session, and sets the subject as a trusted header.
+
+The only thing a role decides is refunds — the shop owner may issue one, a
+support agent gets a 403 telling them to ask. It is said out loud in the agent's
+`[User]` facts rather than left to be discovered by failing.
+
+## Known rough edges
+
+Found while wiring this up; all three are in Linear.
+
+1. **`clerk()` 501s the whole wire when its keys are missing.** Any request
+   carrying `Authorization: Bearer …` throws instead of resolving to an
+   anonymous principal — including `vendo doctor`'s own probe, which reports
+   "Internal Vendo error". `vendo init --auth clerk` leaves you in exactly this
+   state before you paste your keys. The same preset returns null for an
+   unverifiable token two lines away.
+2. **`vendo init` does not add `serverExternalPackages`.** The composed default
+   store is PGlite, whose Emscripten module breaks under Turbopack's production
+   chunking — `next dev` is fine and `next build` + `next start` 501s every wire
+   request with "f.instantiateWasm is not a function". Every Next example in this
+   repo sets it by hand; nothing tells a newcomer to.
+3. **`openapi.json` is undocumented.** The extractor looks for it by convention
+   in six locations, and it is the single highest-leverage file a host can add.
+   It appears in no doc — the only way to find it is to read demo-bank.

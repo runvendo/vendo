@@ -8,9 +8,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "predev": "vendo sync --no-ai",
+    "prebuild": "vendo sync --strict --no-ai"
   },
   "dependencies": {
+    "@clerk/backend": "^2.24.0",
+    "@clerk/nextjs": "^6.36.0",
+    "@vendoai/actions": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^1.21.0",
     "next": "16.2.11",

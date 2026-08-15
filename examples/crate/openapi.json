@@ -1,0 +1,1739 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Crate order-ops API",
+    "version": "0.1.0",
+    "description": "Orders, customers, inventory, shipments and refunds for a small online store. Every amount is an integer number of cents: divide by 100 exactly once before showing it to a person. Order numbers look like CR-1084 and are what customers quote; ids look like ord_1084."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "summary": "List orders, newest first. Use this to answer questions about recent activity, to find a customer's orders, or to work a backlog by status.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only orders in this state. One of: pending, paid, fulfilled, shipped, delivered, cancelled, refunded. Anything else is rejected.",
+            "schema": {
+              "$ref": "#/components/schemas/OrderStatus"
+            }
+          },
+          {
+            "name": "customer_id",
+            "in": "query",
+            "description": "Only this customer's orders, e.g. cus_1.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text. Matches an order number (CR-1084) or the customer's name or email.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many to return, 1-200. Defaults to 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching orders.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "orders": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Order"
+                          }
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "orders",
+                        "count"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}": {
+      "get": {
+        "operationId": "getOrder",
+        "summary": "One order in full: its items, the customer, where it shipped, its shipment, and any refunds against it. Start here for any question about a specific order.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The order number a customer would quote (CR-1084) or the internal id (ord_1084). Either works.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order, with everything hanging off it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OrderDetail"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/cancel": {
+      "post": {
+        "operationId": "cancelOrder",
+        "summary": "Cancel an order that has not shipped yet. This releases its reserved stock and removes it from the customer's lifetime value. Only pending, paid or fulfilled orders can be cancelled — once something has shipped or been delivered, refund it instead.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Order number (CR-1084) or id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "Why it was cancelled. Appended to the order's notes, e.g. 'customer changed their mind'.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cancelled order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "actor": {
+                          "$ref": "#/components/schemas/Actor"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/fulfill": {
+      "post": {
+        "operationId": "fulfillOrder",
+        "summary": "Mark a paid order as picked and packed. Nothing leaves the building yet — that is createShipment. Only paid orders can be fulfilled; calling it twice is harmless.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Order number (CR-1084) or id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The fulfilled order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "actor": {
+                          "$ref": "#/components/schemas/Actor"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/customers": {
+      "get": {
+        "operationId": "listCustomers",
+        "summary": "List customers, biggest spenders first. Use the q parameter to find someone by name, email or phone.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text. Matches name, email or phone.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many to return, 1-200. Defaults to 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching customers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "customers": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Customer"
+                          }
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "customers",
+                        "count"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}": {
+      "get": {
+        "operationId": "getCustomer",
+        "summary": "One customer with their addresses, every order they have placed newest first, and any refunds. This is the support view — reach for it when someone writes in.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The customer id (cus_1) or their email address. Either works.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The customer and their history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CustomerDetail"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/customers/{id}/notes": {
+      "post": {
+        "operationId": "addCustomerNote",
+        "summary": "Append a note to a customer's record, stamped with today's date and who wrote it. Nothing is overwritten. Use it to record what happened on a call.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Customer id (cus_1) or email.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "note",
+            "in": "query",
+            "required": true,
+            "description": "What to record, e.g. 'Called about the double charge, promised a refund today.'",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The customer, with the note appended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Customer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/products": {
+      "get": {
+        "operationId": "listProducts",
+        "summary": "List the catalogue. Set low_stock=true for the only inventory question anyone really asks: what needs reordering.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text. Matches SKU, title or category.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Exact category, e.g. Kitchen.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "low_stock",
+            "in": "query",
+            "description": "true to return only products at or below their reorder point.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many to return, 1-200. Defaults to 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching products, each with its sellable count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "products": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Product"
+                          }
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "products",
+                        "count"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "get": {
+        "operationId": "getProduct",
+        "summary": "One product with what is actually sellable and its full stock-adjustment history.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The SKU quoted on a purchase order (CRT-ESP-01) or the internal id. Either works.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product and its history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProductDetail"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/products/{id}/adjust-stock": {
+      "post": {
+        "operationId": "adjustStock",
+        "summary": "Correct how many units are on hand, and record why. Use a positive delta for a delivery received and a negative one for damage or a miscount. The adjustment cannot take stock below zero, and the reason is not optional — a stock level that changed with no reason attached is what nobody can audit later.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "SKU (CRT-ESP-01) or product id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "delta",
+            "in": "query",
+            "required": true,
+            "description": "Signed whole units. 12 means twelve arrived; -1 means one was damaged. Zero is rejected.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": true,
+            "description": "Why the count changed, e.g. 'Purchase order PO-4417 received'.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated product and the adjustment that was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "product": {
+                          "$ref": "#/components/schemas/Product"
+                        },
+                        "adjustment": {
+                          "$ref": "#/components/schemas/StockAdjustment"
+                        }
+                      },
+                      "required": [
+                        "product",
+                        "adjustment"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/shipments": {
+      "get": {
+        "operationId": "listShipments",
+        "summary": "List shipments, most recently shipped first. Set problems_only=true for the triage view: exceptions and returns, the only ones needing a human.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "One of: label_created, in_transit, out_for_delivery, delivered, exception, returned.",
+            "schema": {
+              "$ref": "#/components/schemas/ShipmentStatus"
+            }
+          },
+          {
+            "name": "problems_only",
+            "in": "query",
+            "description": "true to return only exceptions and returns.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many to return, 1-200. Defaults to 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching shipments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "shipments": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Shipment"
+                          }
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "shipments",
+                        "count"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createShipment",
+        "summary": "Hand a paid or fulfilled order to a carrier: creates the label, moves the order to shipped, and takes the units off the shelf. An order can only have one shipment, and only paid or fulfilled orders can ship.",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "query",
+            "required": true,
+            "description": "Order number (CR-1084) or id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "carrier",
+            "in": "query",
+            "description": "UPS, USPS or FedEx. Defaults to UPS.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "UPS",
+                "USPS",
+                "FedEx"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new shipment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Shipment"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/shipments/{id}": {
+      "get": {
+        "operationId": "getShipment",
+        "summary": "One shipment with its full scan timeline, plus the order and customer it belongs to. Use this to answer 'where is my package'.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The shipment id, the tracking number, or the order id/number — all three arrive in real tickets, and any of them works.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The shipment, its order and its customer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShipmentDetail"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/shipments/{id}/events": {
+      "post": {
+        "operationId": "addShipmentEvent",
+        "summary": "Record a carrier scan on a shipment. The shipment's own status follows the newest event, and a delivered scan closes out the order. A shipment that has already been delivered cannot be moved again.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Shipment id, tracking number, or the order it belongs to.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": true,
+            "description": "The new state: label_created, in_transit, out_for_delivery, delivered, exception or returned.",
+            "schema": {
+              "$ref": "#/components/schemas/ShipmentStatus"
+            }
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "description": "Where the scan happened, e.g. 'Reno, NV'.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "detail",
+            "in": "query",
+            "description": "Anything the carrier said, e.g. 'Address could not be verified'.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated shipment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Shipment"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/refunds": {
+      "get": {
+        "operationId": "listRefunds",
+        "summary": "List refunds, newest first. Pass order_id to see what has already been refunded against one order.",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "query",
+            "description": "Only refunds against this order. Order number (CR-1084) or id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many to return, 1-200. Defaults to 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching refunds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "refunds": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Refund"
+                          }
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "refunds",
+                        "count"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRefund",
+        "summary": "Send money back to the customer. THIS IRREVERSIBLY MOVES MONEY: there is no undo, and a refund cannot be taken back. Leave amount_cents out to refund everything still outstanding on the order. Refunding the full outstanding amount marks the order refunded and drops it out of the customer's lifetime value. An order that was never paid, or was cancelled, or has already been refunded in full, is refused. Only the shop owner may issue a refund; a support agent gets a 403 telling them to ask the owner.",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "query",
+            "required": true,
+            "description": "Which order to refund. Order number (CR-1084) or id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": true,
+            "description": "Why: duplicate, defective, not_as_described, late_delivery, changed_mind or other.",
+            "schema": {
+              "$ref": "#/components/schemas/RefundReason"
+            }
+          },
+          {
+            "name": "amount_cents",
+            "in": "query",
+            "description": "How much to send back, in integer cents (48155 = $481.55). Must be positive and no more than the amount still outstanding. Omit to refund all of it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "note",
+            "in": "query",
+            "description": "Anything worth recording, e.g. 'Charged twice, 3 minutes apart. Delivered copy retained.'",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The refund, and what is still refundable afterwards.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "refund": {
+                          "$ref": "#/components/schemas/Refund"
+                        },
+                        "remainingRefundableCents": {
+                          "type": "integer",
+                          "description": "Integer cents still refundable on this order after this refund. Zero means it is fully refunded."
+                        }
+                      },
+                      "required": [
+                        "refund",
+                        "remainingRefundableCents"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/metrics/summary": {
+      "get": {
+        "operationId": "getShopSummary",
+        "summary": "The shop's health in one call: orders and revenue over the last 7 days, plus the three backlogs — unfulfilled orders, shipment problems, and products needing a reorder. Cheaper than rebuilding it from the list endpoints.",
+        "responses": {
+          "200": {
+            "description": "Headline numbers and what needs attention.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "summary": {
+                          "$ref": "#/components/schemas/ShopSummary"
+                        },
+                        "attention": {
+                          "type": "object",
+                          "properties": {
+                            "unfulfilledOrders": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Order"
+                              }
+                            },
+                            "problemShipments": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Shipment"
+                              }
+                            },
+                            "lowStock": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Product"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "summary",
+                        "attention"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/reset": {
+      "post": {
+        "operationId": "resetDemo",
+        "summary": "Throw away every change made since the server started and rebuild the seeded store, including the duplicate charge the demo hangs off. This DISCARDS ALL WORK — refunds, shipments, notes and stock corrections all disappear. Only for putting the demo back after someone has walked through it.",
+        "responses": {
+          "200": {
+            "description": "Confirmation, and the order numbers of the restored story.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "reset": {
+                          "type": "boolean"
+                        },
+                        "story": {
+                          "type": "object",
+                          "description": "The duplicate-charge pair the demo hangs off. Read these rather than assuming any order number.",
+                          "properties": {
+                            "deliveredOrderNumber": {
+                              "type": "string"
+                            },
+                            "duplicateOrderNumber": {
+                              "type": "string"
+                            },
+                            "customerId": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "reset"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Error": {
+        "description": "The request was refused. The message is written to be read aloud to a customer.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "not_found",
+                        "bad_request",
+                        "conflict",
+                        "unauthorized",
+                        "forbidden"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "code"
+                  ]
+                }
+              },
+              "required": [
+                "error"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "paid",
+          "fulfilled",
+          "shipped",
+          "delivered",
+          "cancelled",
+          "refunded"
+        ],
+        "description": "pending: not paid. paid: money taken, nothing packed. fulfilled: picked and packed. shipped: with the carrier. delivered: it arrived. cancelled: stopped before it shipped. refunded: money returned in full."
+      },
+      "ShipmentStatus": {
+        "type": "string",
+        "enum": [
+          "label_created",
+          "in_transit",
+          "out_for_delivery",
+          "delivered",
+          "exception",
+          "returned"
+        ]
+      },
+      "RefundReason": {
+        "type": "string",
+        "enum": [
+          "duplicate",
+          "defective",
+          "not_as_described",
+          "late_delivery",
+          "changed_mind",
+          "other"
+        ]
+      },
+      "Actor": {
+        "type": "object",
+        "description": "The staff member the write was recorded against.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "Address": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "postalCode": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "customerId",
+          "line1",
+          "city",
+          "region",
+          "postalCode",
+          "country"
+        ]
+      },
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "defaultAddressId": {
+            "type": "string"
+          },
+          "lifetimeValueCents": {
+            "type": "integer",
+            "description": "Integer cents. Excludes cancelled and fully refunded orders — money the shop actually kept."
+          },
+          "orderCount": {
+            "type": "integer"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "createdAt",
+          "defaultAddressId",
+          "lifetimeValueCents",
+          "orderCount"
+        ]
+      },
+      "CustomerDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Customer"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "addresses": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              },
+              "orders": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              },
+              "refunds": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Refund"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string",
+            "description": "What a purchase order quotes, e.g. CRT-ESP-01."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priceCents": {
+            "type": "integer",
+            "description": "Integer cents: 44900 = $449.00."
+          },
+          "category": {
+            "type": "string"
+          },
+          "stockOnHand": {
+            "type": "integer",
+            "description": "Physical units in the warehouse."
+          },
+          "stockReserved": {
+            "type": "integer",
+            "description": "Units spoken for by orders that have not shipped."
+          },
+          "reorderPoint": {
+            "type": "integer",
+            "description": "Reorder when available stock falls to this."
+          },
+          "available": {
+            "type": "integer",
+            "description": "stockOnHand minus stockReserved: what can actually be sold."
+          }
+        },
+        "required": [
+          "id",
+          "sku",
+          "title",
+          "priceCents",
+          "category",
+          "stockOnHand",
+          "stockReserved",
+          "reorderPoint"
+        ]
+      },
+      "ProductDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Product"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "belowReorderPoint": {
+                "type": "boolean"
+              },
+              "adjustments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/StockAdjustment"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OrderLine": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "unitPriceCents": {
+            "type": "integer",
+            "description": "Integer cents."
+          },
+          "lineTotalCents": {
+            "type": "integer",
+            "description": "Integer cents: unitPriceCents times quantity."
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "productId",
+          "sku",
+          "title",
+          "quantity",
+          "unitPriceCents",
+          "lineTotalCents"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string",
+            "description": "The human-facing number a customer quotes, e.g. CR-1084."
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "placedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USD"
+            ]
+          },
+          "subtotalCents": {
+            "type": "integer",
+            "description": "Integer cents."
+          },
+          "shippingCents": {
+            "type": "integer",
+            "description": "Integer cents."
+          },
+          "taxCents": {
+            "type": "integer",
+            "description": "Integer cents."
+          },
+          "totalCents": {
+            "type": "integer",
+            "description": "Integer cents: subtotal plus shipping plus tax."
+          },
+          "shippingAddressId": {
+            "type": "string"
+          },
+          "paymentRef": {
+            "type": "string",
+            "description": "The payment processor's charge id."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "web",
+              "mobile",
+              "phone",
+              "marketplace"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "customerId",
+          "status",
+          "placedAt",
+          "currency",
+          "subtotalCents",
+          "shippingCents",
+          "taxCents",
+          "totalCents",
+          "shippingAddressId",
+          "paymentRef",
+          "channel",
+          "lines"
+        ]
+      },
+      "OrderDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Order"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "customer": {
+                "$ref": "#/components/schemas/Customer"
+              },
+              "shippingAddress": {
+                "$ref": "#/components/schemas/Address"
+              },
+              "shipment": {
+                "$ref": "#/components/schemas/Shipment"
+              },
+              "refunds": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Refund"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ShipmentEvent": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ShipmentStatus"
+          },
+          "location": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "status"
+        ]
+      },
+      "Shipment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "carrier": {
+            "type": "string"
+          },
+          "trackingNumber": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ShipmentStatus"
+          },
+          "shippedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "estimatedDelivery": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipmentEvent"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "carrier",
+          "trackingNumber",
+          "status",
+          "events"
+        ]
+      },
+      "ShipmentDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Shipment"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/Order"
+              },
+              "customer": {
+                "$ref": "#/components/schemas/Customer"
+              }
+            }
+          }
+        ]
+      },
+      "Refund": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "amountCents": {
+            "type": "integer",
+            "description": "Integer cents sent back to the customer."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/RefundReason"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "The staff email or agent id that issued it."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "amountCents",
+          "reason",
+          "status",
+          "createdAt",
+          "createdBy"
+        ]
+      },
+      "StockAdjustment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "integer",
+            "description": "Signed units: positive received, negative removed."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "productId",
+          "delta",
+          "reason",
+          "createdAt",
+          "createdBy"
+        ]
+      },
+      "ShopSummary": {
+        "type": "object",
+        "properties": {
+          "ordersLast7Days": {
+            "type": "integer"
+          },
+          "revenueLast7DaysCents": {
+            "type": "integer",
+            "description": "Integer cents, excluding cancelled and refunded orders."
+          },
+          "awaitingFulfilment": {
+            "type": "integer"
+          },
+          "problemShipments": {
+            "type": "integer"
+          },
+          "lowStockProducts": {
+            "type": "integer"
+          },
+          "refundedLast7DaysCents": {
+            "type": "integer",
+            "description": "Integer cents."
+          }
+        }
+      }
+    }
+  }
+}

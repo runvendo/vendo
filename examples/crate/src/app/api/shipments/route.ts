@@ -8,7 +8,7 @@
 import { createShipment, listShipments } from "@/server/shipments"
 import { readParams } from "@/server/params"
 import { resolveActor } from "@/server/actor"
-import { ok, created, fail, badRequest } from "@/server/http"
+import { ok, created, fail, badRequest, unauthorized } from "@/server/http"
 
 export const dynamic = "force-dynamic"
 
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const args = await readParams(req)
   const actor = await resolveActor(req)
+  if (!actor) return unauthorized()
 
   const orderId = args.get("order_id")
   if (!orderId) return badRequest("order_id is required.")

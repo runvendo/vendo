@@ -1,0 +1,27 @@
+{
+  "format": "vendo/policy@1",
+  "directions": [],
+  "rules": [
+    {
+      "match": {
+        "risk": "destructive"
+      },
+      "action": "ask",
+      "note": "Review irreversible actions"
+    },
+    {
+      "match": {
+        "tool": "vendo_knowledge_*",
+        "venue": "mcp"
+      },
+      "action": "ask",
+      "note": "Knowledge access from an MCP client"
+    },
+    {
+      "match": {
+        "risk": "read"
+      },
+      "action": "run"
+    }
+  ]
+}

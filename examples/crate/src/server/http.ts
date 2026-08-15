@@ -13,6 +13,16 @@ export function badRequest(message: string) {
   return NextResponse.json({ error: { message, code: "bad_request" } }, { status: 400 })
 }
 
+/** Signed in to the auth provider, but not on Crate's staff roster. */
+export function unauthorized(message = "You are not signed in to Crate.") {
+  return NextResponse.json({ error: { message, code: "unauthorized" } }, { status: 401 })
+}
+
+/** Staff here, but not allowed to do this particular thing. */
+export function forbidden(message: string) {
+  return NextResponse.json({ error: { message, code: "forbidden" } }, { status: 403 })
+}
+
 /** The state-machine rejection: the request was well-formed but not legal now. */
 export function conflict(message: string) {
   return NextResponse.json({ error: { message, code: "conflict" } }, { status: 409 })

@@ -7,7 +7,7 @@
 import { cancelOrder } from "@/server/orders"
 import { readParams } from "@/server/params"
 import { resolveActor } from "@/server/actor"
-import { ok, fail } from "@/server/http"
+import { ok, fail, unauthorized } from "@/server/http"
 
 export const dynamic = "force-dynamic"
 
@@ -15,6 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const args = await readParams(req)
   const actor = await resolveActor(req)
+  if (!actor) return unauthorized()
   try {
     const order = cancelOrder(id, args.get("reason"))
     return ok({ order, actor: { id: actor.id, email: actor.email } })

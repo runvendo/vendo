@@ -4,13 +4,14 @@
  */
 import { fulfillOrder } from "@/server/orders"
 import { resolveActor } from "@/server/actor"
-import { ok, fail } from "@/server/http"
+import { ok, fail, unauthorized } from "@/server/http"
 
 export const dynamic = "force-dynamic"
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const actor = await resolveActor(req)
+  if (!actor) return unauthorized()
   try {
     const order = fulfillOrder(id)
     return ok({ order, actor: { id: actor.id, email: actor.email } })

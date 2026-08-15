@@ -8,7 +8,7 @@
 import { createRefund, listRefunds, refundableCents } from "@/server/refunds"
 import { readParams } from "@/server/params"
 import { resolveActor } from "@/server/actor"
-import { ok, created, fail, badRequest } from "@/server/http"
+import { ok, created, fail, badRequest, unauthorized, forbidden } from "@/server/http"
 
 export const dynamic = "force-dynamic"
 
@@ -28,6 +28,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const args = await readParams(req)
   const actor = await resolveActor(req)
+  if (!actor) return unauthorized()
+  // The one place a role decides anything: money only goes back on an owner's
+  // say-so. Checked here rather than in the domain so the rule stays a
+  // deployment decision, not a fact about refunds.
+  if (actor.role !== "admin") {
+    return forbidden("Only the shop owner can issue refunds. Ask them to approve this one.")
+  }
 
   const orderId = args.get("order_id")
   if (!orderId) return badRequest("order_id is required.")
