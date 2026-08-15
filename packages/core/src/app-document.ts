@@ -319,6 +319,16 @@ export interface AppDocument {
    */
   buildFailed?: AppBuildFailure;
   /**
+   * A build still WRITING this app — the time its first painting save landed.
+   * `buildFailed`'s live half: a screen saves as it goes, so its row exists
+   * tens of seconds before the mandatory reviewer pass and its repair round
+   * finish, and mounting on the row alone showed people a draft the build was
+   * about to correct. `open()` answers not-found until it clears, which the
+   * wire's build window already turns into the `{kind:"pending"}` every embed
+   * waits on. Server-written; cleared when the assembler returns.
+   */
+  building?: IsoDateTime;
+  /**
    * What this app remembers about itself. Server-written — stripped from a
    * generated document before persist and pinned from the stored row on every
    * edit, so only the memory door ever changes it.
@@ -353,6 +363,7 @@ const appDocumentShapeSchema = z.object({
   seed: appSeedSchema.optional(),
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
+  building: isoDateTimeSchema.optional(),
   memory: appMemorySchema.optional(),
 }).passthrough() satisfies z.ZodType<AppDocument>;
 

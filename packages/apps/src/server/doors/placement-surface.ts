@@ -11,9 +11,10 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import {
+  buildInFlight,
   effectiveAppBuildUiDeadlineMs,
 } from "../../contract/index.js";
-import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, updateAppRow } from "../persistence/persistence.js";
 import type { PlacementRow } from "../persistence/placements.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, PlacementEntry } from "../runtime/types.js";
@@ -75,14 +76,40 @@ export const createPlacementRows = (
     }, ctx.principal.subject, false, "screen-agent"));
   };
 
+  /**
+   * The ids an assembler is running for right now — what tells a screen's first
+   * painting save that it belongs to a BUILD, which is not finished when it first
+   * paints, rather than to a harness writing `app.tsx` straight through the
+   * workspace, which is. Per-process, which is exactly why the save persists
+   * `AppDocument.building` onto the row: the poll that reads it back is a
+   * different request, often a different process.
+   */
+  const buildsInFlight = new Set<AppId>();
+  const beginBuild = (appId: AppId): void => { buildsInFlight.add(appId); };
+  const buildingNow = (appId: AppId): boolean => buildsInFlight.has(appId);
+
+  /**
+   * `markUnbuilt`'s LIVE twin — the assembler came back, however it came back, so
+   * the row may mount. Its one caller is the wrapper `createRuntimeContext` puts
+   * around `assemble` itself, which is why no door has to remember to call it.
+   */
+  const settleBuild = async (appId: AppId): Promise<void> => {
+    buildsInFlight.delete(appId);
+    await updateAppRow(engine, appId, (doc) => {
+      delete doc.building;
+      return doc;
+    }, "screen-agent").catch(() => undefined);
+  };
+
   /** Where a placed app's build stands, read off its record every time.
    *
    *  NO RECORD is the build still running — the slot is claimed at mint and the
-   *  app record only lands at completion. Past the UI build window
-   *  that stops being true: either the watchdog would have landed a terminal
-   *  record by now, or the app was deleted out from under the row. Either way
-   *  it is not forming, and a slot that says "building" forever is the exact
-   *  failure the build watchdog exists to prevent. */
+   *  app record lands at the build's first painting save. A row that carries
+   *  `building` is that same build, still writing. Past the UI build window
+   *  neither is forming any more: either the watchdog would have landed a
+   *  terminal record by now, or the app was deleted out from under the row, and
+   *  a slot that says "building" forever is the exact failure the build watchdog
+   *  exists to prevent. */
   const entryFor = async (row: PlacementRow, ctx: RunContext): Promise<PlacementEntry | undefined> => {
     const record = await engine.get(APPS_COLLECTION, row.appId);
     if (record === null) {
@@ -97,16 +124,19 @@ export const createPlacementRows = (
     // Two fields off the raw row, deliberately without document validation:
     // one unparseable app must not take down every other slot's answer (the
     // same read the wire's ?pending=1 probe does).
-    const doc = (record.data as { doc?: { name?: unknown; buildFailed?: unknown } } | null)?.doc;
+    const doc = (record.data as { doc?: { name?: unknown; buildFailed?: unknown; building?: unknown } } | null)?.doc;
+    const failed = doc?.buildFailed !== undefined && doc.buildFailed !== null;
     return {
       slot: row.slot,
       app: row.appId,
       title: typeof doc?.name === "string" ? doc.name : "",
-      status: doc?.buildFailed === undefined || doc.buildFailed === null ? "ready" : "failed",
+      status: failed ? "failed" : buildInFlight(typeof doc?.building === "string" ? doc.building : undefined)
+        ? "building"
+        : "ready",
     };
   };
 
-  return { requireSlot, claimSlot, markUnbuilt, entryFor };
+  return { requireSlot, claimSlot, markUnbuilt, beginBuild, buildingNow, settleBuild, entryFor };
 };
 
 /** The placement slice of `AppsRuntime`. */

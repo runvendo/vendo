@@ -212,9 +212,19 @@ const withScreenInSeat = (document: AppDocument, source: string): AppDocument =>
 const screenDocument = (
   input: { appId: AppId; name: string; source: string },
   previous: AppDocument | undefined,
+  /** An assembler is running for this app, so this save is a BUILD's. */
+  building: boolean,
 ): AppDocument => {
   const document = withScreenInSeat({
-    ...(previous === undefined ? { format: VENDO_APP_FORMAT } : structuredClone(previous)),
+    // A build's FIRST paint, which is not a finished build: the reviewer pass and
+    // its repair round run after it (`assemble`, screen-agent.ts). `building`
+    // holds the row back from mounting until the assembler returns and settles
+    // it. Every later save of the same build clones it forward; a harness writing
+    // `app.tsx` straight through the workspace never sets it, because there is no
+    // build behind that save to be unfinished.
+    ...(previous === undefined
+      ? { format: VENDO_APP_FORMAT, ...(building ? { building: new Date().toISOString() } : {}) }
+      : structuredClone(previous)),
     id: input.appId,
     name: input.name,
     ui: "tree",
@@ -248,11 +258,11 @@ const screenDocument = (
  * own mount.
  */
 const createAuthoredScreenDoor = (
-  deps: Pick<AppsRuntimeContext, "engine" | "holds"> & {
+  deps: Pick<AppsRuntimeContext, "engine" | "holds" | "buildingNow"> & {
     saveAuthoredDocument: ReturnType<typeof createAuthoredSaver>;
   },
 ): AppsRuntime["authoredScreen"] => {
-  const { engine, holds, saveAuthoredDocument } = deps;
+  const { engine, holds, buildingNow, saveAuthoredDocument } = deps;
   return async (input, ctx) => {
     const record = await engine.get(APPS_COLLECTION, input.appId);
     const row = record === null ? null : rowFromRecord(record);
@@ -265,7 +275,7 @@ const createAuthoredScreenDoor = (
     if (row?.doc.source?.[SCREEN_FILE]?.text === input.source) return;
     await saveAuthoredDocument({
       appId: input.appId,
-      document: screenDocument(input, row?.doc),
+      document: screenDocument(input, row?.doc, buildingNow(input.appId)),
       previous: row?.doc,
       row,
     }, ctx);
@@ -440,7 +450,7 @@ const createEditDoor = (
 /** The write slice of `AppsRuntime`. */
 export const createWriteSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "history" | "holds" | "lifecycle" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "holds" | "buildingNow" | "lifecycle" | "requireOwned"
     | "updateAppDocument" | "assembleEdit" | "failedEdit" | "takeEditVersion"
     | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"

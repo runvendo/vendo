@@ -42,8 +42,9 @@ export type OpenSurface =
 
 /** Existing-agents polish — the flag-gated build-window answer: what
  *  `GET /apps/:id/open?pending=1` returns while the app is not yet servable
- *  (the record lands at build completion). Only flagged polls ever see it;
- *  unflagged callers keep the contracted not-found. */
+ *  (no record yet, or a record the build is still writing — see
+ *  `AppDocument.building`). Only flagged polls ever see it; unflagged callers
+ *  keep the contracted not-found. */
 export interface PendingSurface {
   kind: "pending";
 }

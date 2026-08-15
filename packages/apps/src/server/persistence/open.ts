@@ -9,6 +9,7 @@ import {
   type UIPayload,
 } from "@vendoai/core";
 import {
+  buildInFlight,
   componentSources,
   validateTree,
   type AppDocument,
@@ -311,6 +312,16 @@ export const createAppOpener = (
   // A terminally failed build never becomes servable: resolve the poll now
   // with the persisted reason (approvals resolve to denied/expired the same
   // way) instead of leaving the embed to spin to its client deadline.
+  // A build that is still WRITING this app has nothing terminal to serve. Its row
+  // lands at the first painting save, tens of seconds before the reviewer pass and
+  // its repair round finish, and mounting on the row alone put people in front of
+  // a draft — a wrong NUMBER included — that the build then corrected where nobody
+  // was looking. Not-found is the same answer the app gave a moment earlier with
+  // no row at all, so the wire's build window turns it into the `{kind:"pending"}`
+  // every embed already waits on.
+  if (buildInFlight(app.building)) {
+    throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
+  }
   if (app.buildFailed !== undefined) {
     return {
       kind: "failed",

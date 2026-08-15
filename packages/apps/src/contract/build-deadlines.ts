@@ -30,3 +30,10 @@ export const effectiveBuildWatchdogMs = (): number => {
  *  the strict cutoff > watchdog invariant holds under the env override too. */
 export const effectiveAppBuildUiDeadlineMs = (): number =>
   effectiveBuildWatchdogMs() + UI_DEADLINE_MARGIN_MS;
+
+/** Whether `AppDocument.building` still names a build in flight. Time-bounded
+ *  for the placement read's reason: past the window either the watchdog landed
+ *  a terminal record or the build's process died, and a flag that never cleared
+ *  would leave the app unmountable forever. */
+export const buildInFlight = (building: string | undefined): boolean =>
+  building !== undefined && Date.now() - Date.parse(building) < effectiveAppBuildUiDeadlineMs();
