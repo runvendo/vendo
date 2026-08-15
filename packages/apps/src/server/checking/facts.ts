@@ -19,6 +19,7 @@ import {
   type TreeNode,
 } from "@vendoai/core";
 import {
+  DISPLAY_TAG_NAMES,
   KIT_CHILDLESS_NAMES,
   KIT_SLOT_CONTENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
@@ -452,12 +453,19 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
 
   /** One slot: the element it holds, and every element nested in that one. A
    *  slot with no declared vocabulary takes the read-only value tier, and a
-   *  per-row one says WHY that tier is the one it takes. */
+   *  per-row one says WHY that tier is the one it takes.
+   *
+   *  A DISPLAY BRICK passes every slot, and is stated here rather than added to
+   *  each vocabulary: these lists gate BEHAVIOR — what may sort, submit or call a
+   *  tool where there is no row to act on — and a brick has none to gate. It is
+   *  arrangement and typography, `style` and children and nothing else
+   *  (`contract/kit/display.ts`), so it can no more break the per-row rule than a
+   *  word can. */
   const checkSlot = (nodeId: string, path: string, key: string, slot: KitSlotSpec, value: unknown, sigil = true): void => {
     const element = asElement(value, sigil);
     if (element === undefined) return;
     const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
-    if (!allowed.includes(element.component)) {
+    if (!allowed.includes(element.component) && !DISPLAY_TAG_NAMES.includes(element.component)) {
       const why = slot.perRow === true && slot.content === undefined
         ? `a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${allowed.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`
         : `this slot may hold: ${allowed.join(", ")}.`;

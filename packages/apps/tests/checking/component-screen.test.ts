@@ -932,6 +932,28 @@ export default function Ledger() {
     expect(result.issues[0]?.message).toContain('prop "columns[0].cell.children[1]" holds <Button> in a cell slot');
   });
 
+  /** A slot's vocabulary gates BEHAVIOR — what may sort, submit or call a tool
+   *  where there is no row to act on. A display brick has none to gate: it is
+   *  `style` and children and nothing else, so it passes the same per-row cell
+   *  that refuses a Button, and the renderer builds it back
+   *  (`packages/ui` renderer.tsx `reifyElement`). Whole gauntlet, real compiler. */
+  it("passes a display brick in a per-row cell — arrangement is not behavior", async () => {
+    const result = await painted(`import { DataTable, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return (
+    <DataTable
+      rows={[{ id: "r1", status: "past_due" }]}
+      columns={[{ key: "status", cell: <div style={{ display: "flex" }}><Text field="status" /></div> }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
   it("reads the sigil, not the shape — row data that describes a component is data", async () => {
     // A "cell" column whose value happens to name a component and carry a
     // children list. The VM stamps `$element` on what a screen wrote as an

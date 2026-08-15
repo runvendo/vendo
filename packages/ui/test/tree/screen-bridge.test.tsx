@@ -510,6 +510,43 @@ export default function Invoice() {
     expect(document.body.innerHTML).not.toContain("$element");
   });
 
+  it("renders a display brick the screen put in a PROP, as that tag", async () => {
+    // The other half of the slot round trip, end to end and unstubbed: the VM
+    // emits `<blockquote>` into `content` as `{$element}` data exactly as it
+    // emits a Kit element, the checks floor admits it (a brick carries no
+    // behavior for a slot to gate), and `reifyElement` resolves it through
+    // DISPLAY_BRICKS. Resolving only the Kit painted this as nothing at all.
+    const compiled = compile(`
+import { Accordion, EnumBadge, useQuery } from "@vendo/screen";
+
+export default function Invoice() {
+  const invoice = useQuery("get_invoice");
+  return (
+    <Accordion
+      defaultOpen={[0]}
+      items={[{ label: "Status", content: (
+        <blockquote style={{ paddingLeft: "8px" }}>
+          <EnumBadge value={invoice.data.status} tone="warning" />
+        </blockquote>
+      ) }]}
+    />
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, { get_invoice: { data: { status: "past_due" } } })}
+        components={{}}
+        onAction={host.onAction}
+      />,
+    );
+
+    const brick = document.querySelector("blockquote");
+    expect(brick?.style.paddingLeft).toBe("8px");
+    expect(brick?.querySelector('[data-kit="EnumBadge"]')?.textContent).toBe("Past due");
+    expect(document.body.innerHTML).not.toContain("$element");
+  });
+
   it("leaves a payload with no interactive half exactly as static as it was", async () => {
     const { interactive: _none, ...served } = payloadFor(compile(TRANSFERS), { list_pending: { data: ROWS } }) as unknown as Record<string, unknown>;
     const host = hostPipe(() => ok(null));
