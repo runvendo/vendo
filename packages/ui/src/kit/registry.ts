@@ -9,6 +9,7 @@ import type { ComponentType } from "react";
 // Components
 import { Card, Divider, Grid, Row, Stack, Surface } from "./layout.js";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "./values.js";
+import { Icon } from "./icon.js";
 import { DataTable } from "./data/data-table.js";
 import { CardList } from "./data/card-list.js";
 import { Stat } from "./data/stat.js";
@@ -39,7 +40,7 @@ export {
 /** Name → React component, for the tree renderer. */
 export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string, never>>>> = {
   Stack, Row, Grid, Surface, Card, Divider,
-  Text, Money, DateTime, Percent, Num, EnumBadge,
+  Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
   DataTable, CardList, Stat, Badge,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
   Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,

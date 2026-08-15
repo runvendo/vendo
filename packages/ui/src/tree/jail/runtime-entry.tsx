@@ -26,6 +26,7 @@ import {
   Stack, Stat, Surface, Tabs, Text, Textarea,
   fmt, setKitIntl, type KitIntl,
 } from "../../kit/index.js";
+import { Icon } from "../../kit/icon.js";
 
 declare global {
   // These globals are visible only inside the opaque-origin jail realm.
@@ -194,7 +195,7 @@ const AMBIENT_SCOPE: Record<(typeof ISLAND_AMBIENT_NAMES)[number], unknown> = {
   useDeferredValue: React.useDeferredValue,
   useSyncExternalStore: React.useSyncExternalStore,
   Stack, Row, Grid, Surface, Card, Divider,
-  Text, Money, DateTime, Percent, Num, EnumBadge,
+  Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
   DataTable, CardList, Stat, Badge,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
   Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,

@@ -41,7 +41,7 @@ export const ISLAND_AMBIENT_REACT_NAMES = [
  *  by a test in @vendoai/ui (core cannot import ui — layering). */
 export const ISLAND_AMBIENT_KIT_NAMES = [
   "Stack", "Row", "Grid", "Surface", "Card", "Divider",
-  "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge",
+  "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Icon",
   "DataTable", "CardList", "Stat", "Badge",
   "LineChart", "BarChart", "DonutChart", "Sparkline", "Progress",
   "Input", "Select", "DatePicker", "Textarea", "Checkbox", "Button", "Form", "Disclaimer",

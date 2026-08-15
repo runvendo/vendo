@@ -214,6 +214,20 @@ const BASE_SPECS: KitComponentSpec[] = [
     },
     examples: ['<EnumBadge value={invoice.status} tones={{ overdue: "danger", paid: "success" }}/>'],
   },
+  {
+    name: "Icon",
+    group: "values",
+    summary: "One lucide glyph, drawn in the surrounding text's color. Names are lucide's own kebab-case (arrow-up-right, credit-card, alert-triangle); a name outside that set renders nothing, so never invent one.",
+    props: {
+      name: config(z.string(), "lucide icon name in kebab-case", { required: true }),
+      size: config(z.number().int().positive(), "edge length in px, default 16"),
+      label: copy(z.string(), "screen-reader name; omit for a decorative glyph"),
+    },
+    examples: [
+      '<Icon name="trending-up" size={20}/>',
+      '<Row gap={6} align="center"><Icon name="credit-card"/><Text text="Payment method"/></Row>',
+    ],
+  },
 
   // Data
   {

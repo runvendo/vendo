@@ -66,6 +66,7 @@
     "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
     "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",
     "build:onest-font": "node scripts/build-onest-font.mjs",
+    "build:icons": "node scripts/build-icons.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -100,6 +101,7 @@
     "@types/react-dom": "^19.2.0",
     "ai": "6.0.28",
     "jsdom": "^25.0.0",
+    "lucide": "1.31.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.6.0",
