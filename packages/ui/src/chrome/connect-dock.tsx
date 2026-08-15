@@ -17,6 +17,8 @@ import { toolkitDisplayName } from "./humanize.js";
 
 const POLL_INTERVAL_MS = 1_500;
 const POLL_DEADLINE_MS = 120_000;
+const POLL_BACKOFF_BASE_MS = 1_000;
+const POLL_BACKOFF_CAP_MS = 15_000;
 const POPUP_WIDTH = 520;
 const POPUP_HEIGHT = 680;
 
@@ -85,10 +87,17 @@ export async function completeConnection(
   if (popup === undefined) window.open(initiated.redirectUrl, "_blank", "noopener");
   else if (popup !== null) popup.location.replace(initiated.redirectUrl);
   const deadline = Date.now() + POLL_DEADLINE_MS;
+  let failures = 0;
   while (!isCancelled() && Date.now() < deadline) {
-    const account = await client.connections
-      .status(initiated.id, initiated.connector)
-      .catch(() => undefined);
+    let account: ConnectionAccount | undefined;
+    let failure: unknown;
+    try {
+      account = await client.connections.status(initiated.id, initiated.connector);
+      failures = 0;
+    } catch (reason) {
+      failure = reason;
+      failures += 1;
+    }
     // Closed from the OPENER: the consent page is the broker's, so there is
     // nothing of ours running inside it to postMessage back.
     if (account?.status === "active") {
@@ -99,13 +108,54 @@ export async function completeConnection(
       popup?.close();
       throw new Error(`The ${input.toolkit} connection ${account.status} — try again.`);
     }
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    // Each poll is itself a broker call, so retrying failures on the healthy
+    // cadence sustained the very rate limit that was failing it in the field.
+    // Ordinary failures back off exponentially with jitter (so parked tabs
+    // drift apart), floored at the healthy cadence so one hiccup never polls
+    // faster than success does; a rate-limited answer goes straight to the
+    // full cap, unjittered — the server said stop, nothing shorter will do.
+    let delay = POLL_INTERVAL_MS;
+    if (failures > 0) {
+      if (isRateLimited(failure)) {
+        delay = POLL_BACKOFF_CAP_MS;
+      } else {
+        const backoff = Math.min(POLL_BACKOFF_CAP_MS, POLL_BACKOFF_BASE_MS * 2 ** (failures - 1));
+        delay = Math.max(POLL_INTERVAL_MS, backoff / 2 + Math.random() * (backoff / 2));
+      }
+    }
+    await waitUnlessCancelled(Math.min(delay, deadline - Date.now()), isCancelled);
   }
   if (isCancelled()) return;
+  // One last look before giving up: a capped backoff wait can blind the loop
+  // for up to 15s, and a connection that went active inside that window would
+  // otherwise be reported as "nothing changed".
+  const last = await client.connections
+    .status(initiated.id, initiated.connector)
+    .catch(() => undefined);
+  if (last?.status === "active") {
+    popup?.close();
+    return;
+  }
   popup?.close();
   // Coded, because a deadline is not a refusal: the surface says "nothing
   // changed" and re-offers, where a failure says the connect went wrong.
   throw Object.assign(new Error(`Timed out waiting for the ${input.toolkit} connection — try again.`), { code: "timeout" });
+}
+
+/** A rate-limited answer is a signal to back off hardest, not retry sooner.
+    The wire speaks it as the `unavailable` code. */
+function isRateLimited(reason: unknown): boolean {
+  if (typeof reason !== "object" || reason === null) return false;
+  return (reason as { code?: unknown }).code === "unavailable";
+}
+
+/** Sleep `ms`, in short slices so a cancel (an unmount, a superseding connect)
+    is honoured mid-backoff instead of after a full capped wait. */
+async function waitUnlessCancelled(ms: number, isCancelled: () => boolean): Promise<void> {
+  const until = Date.now() + ms;
+  while (!isCancelled() && Date.now() < until) {
+    await new Promise(resolve => setTimeout(resolve, Math.min(250, until - Date.now())));
+  }
 }
 
 /**
