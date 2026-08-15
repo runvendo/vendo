@@ -25,7 +25,7 @@ const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined =>
 export const wireDepsFor = (composition: VendoComposition): WireDeps => {
   const { config, store, ops, guard, apps, actionsConfig, appTokens, automations } = composition;
   const { boundTools, byoApprovals, connections, sandbox, inference, doctor, door } = composition;
-  const { resolvePrincipal, membershipsSeam, userFactsSeam, ready } = composition;
+  const { resolvePrincipal, membershipsSeam, userFactsSeam, userPoolsSeam, ready } = composition;
   const { appsMounted, automationsMounted } = composition;
   const { runSweep, sweepEnabled, hostedStoreComposed, doorWellKnown, harnessDoor } = composition;
   const { configuredBaseUrl, isDevelopmentEnv } = composition;
@@ -51,6 +51,7 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     principal: resolvePrincipal,
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
     ...(userFactsSeam === undefined ? {} : { userFacts: userFactsSeam }),
+    ...(userPoolsSeam === undefined ? {} : { userPools: userPoolsSeam }),
     ready,
     trustedBaseIsHttps,
     get sessionId() { return sessionId(); },

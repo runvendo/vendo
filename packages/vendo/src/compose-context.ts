@@ -124,6 +124,7 @@ export interface VendoComposition {
    *  automations engine and the MCP door all resolve the SAME answer through. */
   membershipsSeam: HostAuthPreset["memberships"];
   userFactsSeam: HostAuthPreset["facts"];
+  userPoolsSeam: HostAuthPreset["pools"];
   sweepConfig: ResolvedSweep;
   sweepNow: () => number;
 

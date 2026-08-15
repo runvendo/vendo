@@ -57,7 +57,7 @@ function validateSweepConfig(sweep: CreateVendoConfig["sweep"]): ResolvedSweep {
 /** 09-vendo §2 — the config, the identity seams, and the sweep cadence. */
 export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   "appsMounted" | "automationsMounted" | "config" | "composed" | "resolvePrincipal"
-  | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "userFactsSeam"
+  | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "userFactsSeam" | "userPoolsSeam"
   | "sweepConfig" | "sweepNow"> => {
   // Whether each subsystem mounts, decided once. `apps: false` is folded away
   // here so the hundred reads below stay `config.apps?.x`: an unmounted
@@ -117,6 +117,9 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // 5: no seam for raw principal-trio hosts — a hand-rolled `principal` has no
   // facts channel).
   const userFactsSeam = config.auth?.facts;
+  // The limits pools seam rides the preset for the same reason: a hand-rolled
+  // `principal` has no session to read shared meters off.
+  const userPoolsSeam = config.auth?.pools;
   // The TTL sweep's cadence and clock. One timer serves both surviving legs
   // (expired parked BYO calls and stranded approvals), so the knob is the
   // deployment's, not either feature's. `now` is the internal clock seam the
@@ -133,6 +136,7 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
     oauthSeam,
     membershipsSeam,
     userFactsSeam,
+    userPoolsSeam,
     sweepConfig,
     sweepNow,
   };

@@ -69,6 +69,10 @@ export interface WireDeps {
       decode with `principal`; the preset memoizes per Request). Resolved once
       per context resolution and stashed as `ctx.user`; unset → no [User] block. */
   userFacts?: (req: Request) => Promise<Record<string, Json> | undefined>;
+  /** The auth preset's request→pools seam (the same session decode again).
+      Resolved once per context resolution and stashed as `ctx.pools`; unset →
+      the user's usage counts into no shared meter. */
+  userPools?: (req: Request) => Promise<Record<string, string> | undefined>;
   ready: () => Promise<void>;
   /** VENDO_BASE_URL is https → TLS terminates upstream, so the request reaches
       this process as http. */

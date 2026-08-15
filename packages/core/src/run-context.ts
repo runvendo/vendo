@@ -90,6 +90,10 @@ export interface RunContext {
       (name, plan, role, …). Server-trust and MODEL-VISIBLE — prompt assembly's
       `[User]` block reads it — so data only, never functions or secrets. */
   user?: Record<string, Json>;
+  /** The named shared meters this request's usage also counts into, pool name →
+      the id it accrues to. Host-asserted (the auth preset's pools seam) and read
+      by the limits policy; never rendered to the model. */
+  pools?: Record<string, string>;
   /** Agents spec (2026-08-04): the host's own bag for guards and tools, never
       the model. Functions are allowed and callable at check time; only plain
       data survives into anything persisted (the frozen approval snapshot is an
@@ -129,6 +133,7 @@ export const runContextSchema = z.object({
   grantedServiceSlugs: z.array(z.string()).optional(),
   memberships: z.array(membershipSchema).optional(),
   user: z.record(z.unknown()).optional(),
+  pools: z.record(z.string()).optional(),
   context: z.record(z.unknown()).optional(),
   // `messages` is deliberately not named here: it is function-valued and
   // in-process only, so no wire shape exists for it (`.passthrough()` keeps it
