@@ -1,6 +1,6 @@
 /** Accordion — self-managing collapsible sections (W2 §The Kit). */
 import { useState, type ReactNode } from "react";
-import { font, t } from "../tokens.js";
+import { font, hairline, t, transitionFor } from "../tokens.js";
 
 export interface AccordionItem {
   label: string;
@@ -27,12 +27,12 @@ export function Accordion({ items, multiple = false, defaultOpen = [] }: Accordi
   return (
     <div
       data-kit="Accordion"
-      style={{ ...font, border: `1px solid ${t.border}`, borderRadius: t.radiusMedium, overflow: "hidden", background: t.surface }}
+      style={{ ...font, border: hairline, borderRadius: t.radiusMedium, overflow: "hidden", background: t.surface }}
     >
       {items.map((item, i) => {
         const isOpen = open.has(i);
         return (
-          <div key={`${item.label}-${i}`} style={{ borderTop: i === 0 ? 0 : `1px solid ${t.border}` }}>
+          <div key={`${item.label}-${i}`} style={{ borderTop: i === 0 ? 0 : hairline }}>
             <button
               type="button"
               aria-expanded={isOpen}
@@ -47,13 +47,14 @@ export function Accordion({ items, multiple = false, defaultOpen = [] }: Accordi
                 border: 0,
                 background: "transparent",
                 cursor: "pointer",
-                fontWeight: 600,
+                fontWeight: t.weightEmphasis,
                 padding: "var(--vendo-density-card-padding, 12px 14px)",
                 textAlign: "left",
+                transition: transitionFor("background-color", "color"),
               }}
             >
               {item.label}
-              <span aria-hidden="true" style={{ color: t.muted, transform: isOpen ? "rotate(90deg)" : "none", transition: `transform ${t.motionDuration} ${t.motionEasing}` }}>
+              <span aria-hidden="true" style={{ color: t.muted, transform: isOpen ? "rotate(90deg)" : "none", transition: transitionFor("transform") }}>
                 ›
               </span>
             </button>

@@ -65,7 +65,7 @@ export function ChartEmpty({ height = 220, children }: { height?: number; childr
     height,
     minHeight: height,
     color: t.muted,
-    border: `1px dashed ${t.border}`,
+    border: `${t.borderWidth} dashed ${t.border}`,
     borderRadius: t.radiusMedium,
     background: `color-mix(in srgb, ${t.background} 40%, transparent)`,
     fontSize: "0.9em",

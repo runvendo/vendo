@@ -1,7 +1,7 @@
 /** DonutChart — recharts Pie internals, data props only (W2 §The Kit). */
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
-import { font, seriesColor, t } from "../tokens.js";
+import { font, hairline, numeric, seriesColor, t } from "../tokens.js";
 import { ChartEmpty, ChartFrame } from "./sanitize.js";
 
 export interface DonutChartProps {
@@ -62,7 +62,7 @@ export function DonutChart({
                 <Cell key={i} fill={seriesColor(i)} />
               ))}
             </Pie>
-            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12 }} />
+            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: t.radiusSmall, border: hairline, background: t.surface, color: t.text, fontSize: 12, boxShadow: t.shadowSmall }} />
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>
@@ -84,16 +84,16 @@ export function DonutChart({
           }}
         >
           {slices.map((slice, i) => (
-            <li key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <li key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span
                 aria-hidden="true"
-                style={{ width: 9, height: 9, flexShrink: 0, borderRadius: 3, background: seriesColor(i) }}
+                style={{ width: 8, height: 8, flexShrink: 0, borderRadius: 999, background: seriesColor(i) }}
               />
               {/* The name as the DATA spells it, which is what the slice's own
                   tooltip shows: humanizing lowercased proper nouns ("ACME Corp"
                   → "Acme corp") and made the two disagree. */}
               <span>{slice.name}</span>
-              <span style={{ color: t.muted, fontVariantNumeric: "tabular-nums" }}>{fmt(slice.value)}</span>
+              <span style={{ ...numeric, color: t.muted }}>{fmt(slice.value)}</span>
             </li>
           ))}
         </ul>

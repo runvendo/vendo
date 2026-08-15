@@ -15,7 +15,7 @@ import {
   type MoneyOptions,
 } from "./format.js";
 import { useFieldValue } from "./row.js";
-import { font, resolveTone, t, toneColor, toneStyle, type KitTone } from "./tokens.js";
+import { font, microLabel, numeric, resolveTone, t, toneColor, toneStyle, type KitTone } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -36,8 +36,6 @@ function Placeholder(): ReactNode {
     </span>
   );
 }
-
-const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 /** A tone's paint, or nothing at all — an absent (or neutral) tone leaves the
  *  component's own color exactly as it was. The catalog teaches "the figure that
@@ -181,12 +179,12 @@ export function EnumBadge({ value, labels, tones, tone, field }: EnumBadgeProps)
         alignItems: "center",
         width: "fit-content",
         minHeight: "var(--vendo-density-badge-height, 24px)",
-        border: `1px solid ${style.border}`,
+        border: `${t.borderWidth} solid ${style.border}`,
         borderRadius: "999px",
         color: style.color,
         background: style.background,
         fontSize: "0.78em",
-        fontWeight: 700,
+        fontWeight: t.weightEmphasis,
         lineHeight: 1,
         padding: "var(--vendo-density-badge-padding, 5px 9px)",
       }}
@@ -226,12 +224,15 @@ export function Text({ text, variant = "body", tone, field }: TextProps) {
       ? null
       : (applyFormat(typeof value === "object" ? null : value, "text") ?? <Placeholder />);
   const style: CSSProperties = {
-    color: variant === "caption" ? t.muted : t.text,
-    fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
-    fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
-    letterSpacing: "-0.011em",
-    lineHeight: variant === "heading" ? 1.3 : 1.5,
+    ...font,
+    // `label` IS the micro-label — the word over a figure, not prose. `caption`
+    // stays sentence-case: it carries model-authored sentences, and uppercasing
+    // a sentence costs more legibility than the rhythm buys.
+    ...(variant === "label" ? microLabel : {}),
+    ...(variant === "caption" ? { color: t.muted, fontSize: "var(--vendo-font-size-caption, 12.5px)" } : {}),
+    ...(variant === "heading"
+      ? { fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, lineHeight: t.lineHeightHeading }
+      : {}),
     margin: 0,
     ...tonePaint(tone),
   };

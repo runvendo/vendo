@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { densityVars, font, t, type KitDensity } from "../tokens.js";
+import { densityVars, font, hairline, numeric, t, type KitDensity } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
@@ -42,7 +42,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
           ...font,
           color: t.muted,
           textAlign: "center",
-          border: `1px dashed ${t.border}`,
+          border: `${t.borderWidth} dashed ${t.border}`,
           borderRadius: t.radiusMedium,
           padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
         }}
@@ -71,17 +71,16 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                 display: "flex",
                 flexDirection: "column",
                 gap: "var(--vendo-density-field-gap, 6px)",
-                border: `1px solid ${t.border}`,
+                border: hairline,
                 borderRadius: t.radiusLarge,
                 background: t.surface,
-                boxShadow: `0 4px 20px color-mix(in srgb, ${t.text} 5%, transparent)`,
                 padding: "var(--vendo-density-card-padding, 16px)",
               }}
             >
               {(titleField || badge !== undefined) && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   {titleField ? (
-                    <span style={{ fontFamily: t.headingFamily, fontWeight: 650, letterSpacing: "-0.015em" }}>
+                    <span style={{ fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, lineHeight: t.lineHeightHeading }}>
                       {String(readField(item, titleField) ?? "—")}
                     </span>
                   ) : <span />}
@@ -94,7 +93,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                 <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
                   <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
                   {f.cell ?? (
-                    <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                    <span style={numeric}>
                       {applyFormat(readField(item, f.key), f.format ?? "text") ?? "—"}
                     </span>
                   )}

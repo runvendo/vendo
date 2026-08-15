@@ -17,7 +17,7 @@ import {
 } from "@tanstack/react-table";
 import { applyFormat, formatDateTime, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { densityVars, font, t, type KitDensity } from "../tokens.js";
+import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, type KitDensity } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -271,7 +271,7 @@ export function DataTable(props: DataTableProps) {
   return (
     <div
       data-kit="DataTable"
-      style={{ ...font, ...densityVars(density), display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
+      style={{ ...font, ...numeric, ...densityVars(density), display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
     >
       {(searchable || (filterableBy && filterableBy.length > 0)) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--vendo-density-inline-gap, 7px)", alignItems: "center" }}>
@@ -286,9 +286,10 @@ export function DataTable(props: DataTableProps) {
               style={{
                 ...font,
                 minHeight: "var(--vendo-density-control-height, 38px)",
-                border: `1px solid ${t.border}`,
+                border: hairline,
                 borderRadius: t.radiusSmall,
                 background: t.surface,
+                transition: transitionFor("border-color"),
                 padding: "var(--vendo-density-control-padding, 9px 12px)",
                 flex: "1 1 180px",
               }}
@@ -309,9 +310,10 @@ export function DataTable(props: DataTableProps) {
               style={{
                 ...font,
                 minHeight: "var(--vendo-density-control-height, 38px)",
-                border: `1px solid ${t.border}`,
+                border: hairline,
                 borderRadius: t.radiusSmall,
                 background: t.surface,
+                transition: transitionFor("border-color"),
                 padding: "6px 10px",
                 cursor: "pointer",
               }}
@@ -332,18 +334,18 @@ export function DataTable(props: DataTableProps) {
         style={{
           width: "100%",
           overflowX: "auto",
-          border: `1px solid ${t.border}`,
+          border: hairline,
           borderRadius: t.radiusMedium,
           background: t.surface,
         }}
       >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           {caption ? (
-            <caption style={{ padding: cellPad, textAlign: "left", fontWeight: 650 }}>{caption}</caption>
+            <caption style={{ ...microLabel, padding: cellPad, textAlign: "left" }}>{caption}</caption>
           ) : null}
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr ref={headRow} key={hg.id} style={{ background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})` }}>
+              <tr ref={headRow} key={hg.id} style={{ background: t.surfaceRaised }}>
                 {shown(hg.headers).map((header) => {
                   const col = columns.find((c) => c.key === header.column.id);
                   const sorted = header.column.getIsSorted();
@@ -353,14 +355,10 @@ export function DataTable(props: DataTableProps) {
                       scope="col"
                       onClick={header.column.getToggleSortingHandler()}
                       style={{
-                        color: t.muted,
-                        borderBottom: `1px solid ${t.border}`,
-                        fontSize: "0.78em",
-                        fontWeight: 700,
-                        letterSpacing: "0.045em",
+                        ...microLabel,
+                        borderBottom: hairline,
                         padding: cellPad,
                         textAlign: alignCss(col?.align),
-                        textTransform: "uppercase",
                         cursor: "pointer",
                         userSelect: "none",
                         whiteSpace: "nowrap",
@@ -392,19 +390,18 @@ export function DataTable(props: DataTableProps) {
                   <RowContext.Provider value={row.original}>
                     {shown(row.getVisibleCells()).map((cell, cellIndex) => {
                       const col = columns.find((c) => c.key === cell.column.id);
-                      // A slot is elements, not a figure: only formatted TEXT is
-                      // tabular, and only formatted text is one unbreakable atom
-                      // ("Mar 14" split across two lines reads as two values).
+                      // A slot is elements, not a figure: only formatted text is
+                      // one unbreakable atom ("Mar 14" split across two lines
+                      // reads as two values). Tabular is the table's own default.
                       const figure = col?.format !== undefined && col.format !== "text" && col.cell === undefined;
                       return (
                         <td
                           key={cell.id}
                           style={{
-                            borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                            borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
                             padding: cellPad,
                             textAlign: alignCss(col?.align),
                             whiteSpace: figure ? "nowrap" : undefined,
-                            fontVariantNumeric: figure ? "tabular-nums" : undefined,
                           }}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -413,7 +410,7 @@ export function DataTable(props: DataTableProps) {
                               style={{
                                 display: "flex",
                                 flexDirection: "column",
-                                gap: 2,
+                                gap: 4,
                                 marginTop: 4,
                                 color: t.muted,
                                 fontSize: "0.85em",
@@ -479,15 +476,16 @@ function PageButton({ disabled, onClick, children }: { disabled: boolean; onClic
       onClick={onClick}
       style={{
         ...font,
-        border: `1px solid ${t.border}`,
+        border: hairline,
         borderRadius: t.radiusSmall,
         background: t.surface,
         color: t.text,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,
         fontSize: "0.85em",
-        fontWeight: 600,
+        fontWeight: t.weightEmphasis,
         padding: "6px 12px",
+        transition: transitionFor("background-color", "border-color", "opacity"),
       }}
     >
       {children}

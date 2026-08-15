@@ -32,13 +32,13 @@ export function FieldShell({ fieldId, helpId, label, hint, error, inline, childr
       }}
     >
       {label ? (
-        <label htmlFor={fieldId} style={{ color: t.text, fontSize: "0.88em", fontWeight: 600, order: inline ? 2 : 0 }}>
+        <label htmlFor={fieldId} style={{ color: t.text, fontSize: "0.88em", fontWeight: t.weightEmphasis, order: inline ? 2 : 0 }}>
           {label}
         </label>
       ) : null}
       {children}
       {message ? (
-        <span id={helpId} style={{ color: error ? t.danger : t.muted, fontSize: "0.82em", lineHeight: 1.35 }}>
+        <span id={helpId} style={{ color: error ? t.danger : t.muted, fontSize: "0.82em" }}>
           {message}
         </span>
       ) : null}

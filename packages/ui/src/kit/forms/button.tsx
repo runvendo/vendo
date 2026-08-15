@@ -5,7 +5,7 @@
  * host action. Standalone it just calls the bound callback.
  */
 import type { PropsWithChildren } from "react";
-import { font, t } from "../tokens.js";
+import { font, hairline, t, transitionFor } from "../tokens.js";
 
 export interface ButtonProps {
   label?: string;
@@ -37,19 +37,19 @@ export function Button({ label, variant = "primary", disabled = false, onClick, 
         justifyContent: "center",
         gap: "var(--vendo-density-inline-gap, 7px)",
         minHeight: "var(--vendo-density-control-height, 38px)",
-        border: primary || danger ? "1px solid transparent" : `1px solid ${t.border}`,
+        border: primary || danger ? `${t.borderWidth} solid transparent` : hairline,
         borderRadius: t.radiusSmall,
         color,
         background,
-        boxShadow: primary || danger
-          ? `0 2px 8px color-mix(in srgb, ${t.text} 14%, transparent)`
-          : `0 1px 2px color-mix(in srgb, ${t.text} 7%, transparent)`,
+        // The one lift in the Kit: the page's filled action. Every other surface
+        // is flat and states its edge with the hairline instead.
+        boxShadow: primary || danger ? t.shadowSmall : "none",
         cursor: disabled ? "not-allowed" : "pointer",
-        fontWeight: 650,
-        lineHeight: 1.2,
+        fontWeight: t.weightEmphasis,
+        lineHeight: t.lineHeightHeading,
         opacity: disabled ? 0.55 : 1,
         padding: "var(--vendo-density-control-padding, 9px 12px)",
-        transition: `background-color ${t.motionDuration} ${t.motionEasing}, opacity ${t.motionDuration} ${t.motionEasing}`,
+        transition: transitionFor("background-color", "border-color", "box-shadow", "opacity"),
       }}
     >
       {label ?? children}

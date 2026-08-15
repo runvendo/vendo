@@ -1,7 +1,7 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
 import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { densityVars, font, resolveTone, t, toneColor, type KitDensity, type KitTone } from "../tokens.js";
+import { densityVars, font, hairline, microLabel, numeric, resolveTone, t, toneColor, type KitDensity, type KitTone } from "../tokens.js";
 
 export interface StatProps {
   /** Metric name. */
@@ -48,23 +48,27 @@ export function Stat({ label, value, format = "text", trend, tone, density, chil
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
+        // The tone rule only paints when there IS a tone: a neutral tile's
+        // `emphasis` is the foreground itself, and a near-black 3px bar on every
+        // resting tile is the opposite of quiet.
+        border: hairline,
+        ...(resolvedTone === "neutral" ? {} : { borderLeft: `3px solid ${emphasis}` }),
         borderRadius: t.radiusSmall,
-        background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
+        background: t.surface,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
       }}
     >
-      <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>
+      <span style={microLabel}>{label}</span>
       <strong
         {...(empty ? { "data-empty": "", title: "No data yet" } : overflow ? { title: formatted } : {})}
         style={{
+          ...numeric,
           color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
           fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
-          fontWeight: 700,
+          fontWeight: t.weightEmphasis,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
-          fontVariantNumeric: "tabular-nums",
           // A money figure has no break opportunity of its own, so a tile
           // narrower than its number cut it off mid-number ("$1,113.1").
           overflowWrap: "anywhere",
@@ -73,7 +77,7 @@ export function Stat({ label, value, format = "text", trend, tone, density, chil
         {display}
       </strong>
       {trend ? (
-        <span style={{ color: t.muted, fontSize: "0.8em", lineHeight: 1.35 }}>{trend}</span>
+        <span style={{ ...numeric, color: t.muted, fontSize: "0.8em" }}>{trend}</span>
       ) : null}
       {children}
     </article>

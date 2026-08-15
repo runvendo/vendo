@@ -9,7 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t } from "../tokens.js";
+import { hairline, seriesColor, t } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
@@ -30,7 +30,7 @@ function normalize(series: SeriesInput[]): Array<{ key: string; label: string }>
   return series.map((s) => (typeof s === "string" ? { key: s, label: s } : { key: s.key, label: s.label ?? s.key }));
 }
 
-const axisTick = { fill: "var(--vendo-color-muted, #6b6b76)", fontSize: 11 };
+const axisTick = { fill: t.muted, fontSize: 11 };
 
 export function BarChart({
   data,
@@ -66,7 +66,7 @@ export function BarChart({
                 <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
               </>
             )}
-            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12 }} cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }} />
+            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: t.radiusSmall, border: hairline, background: t.surface, color: t.text, fontSize: 12, boxShadow: t.shadowSmall }} cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }} />
             {cols.map((c, i) => (
               <Bar
                 key={c.key}

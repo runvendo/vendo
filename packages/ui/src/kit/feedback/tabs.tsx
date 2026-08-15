@@ -9,7 +9,7 @@
  *  are present.
  */
 import { Children, useId, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { font, t } from "../tokens.js";
+import { font, hairline, t, transitionFor } from "../tokens.js";
 
 export type TabItem = string | number | {
   value?: string | number;
@@ -92,9 +92,9 @@ export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
           width: "fit-content",
           maxWidth: "100%",
           overflowX: "auto",
-          border: `1px solid ${t.border}`,
+          border: hairline,
           borderRadius: t.radiusMedium,
-          background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})`,
+          background: t.surfaceRaised,
           padding: "var(--vendo-density-tabs-padding, 4px)",
         }}
       >
@@ -115,17 +115,20 @@ export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
               style={{
                 ...font,
                 minHeight: "var(--vendo-density-tab-height, 30px)",
-                border: selected ? `1px solid ${t.border}` : "1px solid transparent",
+                border: selected ? hairline : `${t.borderWidth} solid transparent`,
                 borderRadius: t.radiusSmall,
-                color: selected ? t.text : t.muted,
+                // Accent marks the ACTIVE state — the tablist's one brand pixel.
+                color: selected ? t.accent : t.muted,
                 background: selected ? t.surface : "transparent",
-                boxShadow: selected ? `0 1px 3px color-mix(in srgb, ${t.text} 10%, transparent)` : "none",
                 cursor: tab.disabled ? "not-allowed" : "pointer",
                 fontSize: "0.88em",
-                fontWeight: selected ? 650 : 550,
+                fontWeight: selected ? t.weightEmphasis : t.weightNormal,
                 opacity: tab.disabled ? 0.5 : 1,
                 padding: "var(--vendo-density-tab-padding, 6px 10px)",
                 whiteSpace: "nowrap",
+                // The indicator glide: the fill and the rule travel to the tab
+                // that was pressed instead of jumping.
+                transition: transitionFor("background-color", "border-color", "color"),
               }}
             >
               {tab.label}

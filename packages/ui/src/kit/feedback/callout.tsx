@@ -46,20 +46,19 @@ export function Callout({ tone = "info", title, children }: PropsWithChildren<Ca
         display: "flex",
         gap: "var(--vendo-density-inline-gap, 10px)",
         alignItems: "flex-start",
+        border: `${t.borderWidth} solid color-mix(in srgb, ${accent} 25%, ${t.border})`,
         borderLeft: `3px solid ${accent}`,
-        border: `1px solid color-mix(in srgb, ${accent} 25%, ${t.border})`,
-        borderLeftWidth: 3,
         borderRadius: t.radiusMedium,
         background: `color-mix(in srgb, ${accent} 7%, ${t.surface})`,
         padding: "var(--vendo-density-card-padding, 12px 14px)",
       }}
     >
-      <span aria-hidden="true" style={{ color: accent, fontWeight: 700, lineHeight: 1.4 }}>
+      <span aria-hidden="true" style={{ color: accent, fontWeight: t.weightEmphasis, lineHeight: t.lineHeight }}>
         {icon}
       </span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {title ? <span style={{ fontWeight: 650, letterSpacing: "-0.01em" }}>{title}</span> : null}
-        <span style={{ color: t.muted, fontSize: "0.92em", lineHeight: 1.45 }}>{children}</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {title ? <span style={{ fontWeight: t.weightEmphasis }}>{title}</span> : null}
+        <span style={{ color: t.muted, fontSize: "0.92em" }}>{children}</span>
       </div>
     </div>
   );

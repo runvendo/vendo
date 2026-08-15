@@ -1,6 +1,6 @@
 /** Layout tier — themed containers (W2 §The Kit). */
 import type { CSSProperties, PropsWithChildren } from "react";
-import { densityVars, font, resolveTone, t, toneColor, type KitDensity, type KitTone } from "./tokens.js";
+import { densityVars, font, hairline, resolveTone, t, toneColor, type KitDensity, type KitTone } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
@@ -127,10 +127,9 @@ export function Surface({ title, tone, density, children }: PropsWithChildren<Su
         display: "flex",
         flexDirection: "column",
         gap: "var(--vendo-density-content-gap, 10px)",
-        border: `1px solid ${borderColor(tone)}`,
+        border: `${t.borderWidth} solid ${borderColor(tone)}`,
         borderRadius: t.radiusMedium,
         background: t.surface,
-        boxShadow: `0 4px 24px color-mix(in srgb, ${t.text} 6%, transparent)`,
         padding: "var(--vendo-density-card-padding, 16px)",
       }}
     >
@@ -139,8 +138,8 @@ export function Surface({ title, tone, density, children }: PropsWithChildren<Su
           style={{
             fontFamily: t.headingFamily,
             fontSize: "calc(var(--vendo-font-size, 15px) * 1.05)",
-            fontWeight: 650,
-            letterSpacing: "-0.015em",
+            fontWeight: t.weightEmphasis,
+            lineHeight: t.lineHeightHeading,
           }}
         >
           {title}
@@ -170,10 +169,9 @@ export function Card({ title, description, tone, density, children }: PropsWithC
         display: "flex",
         flexDirection: "column",
         gap: "var(--vendo-density-content-gap, 10px)",
-        border: `1px solid ${borderColor(tone)}`,
+        border: `${t.borderWidth} solid ${borderColor(tone)}`,
         borderRadius: t.radiusLarge,
         background: t.surface,
-        boxShadow: `0 8px 24px color-mix(in srgb, ${t.text} 7%, transparent)`,
         padding: "var(--vendo-density-card-padding, 16px)",
       }}
     >
@@ -182,16 +180,15 @@ export function Card({ title, description, tone, density, children }: PropsWithC
           style={{
             fontFamily: t.headingFamily,
             fontSize: "calc(var(--vendo-font-size, 15px) * 1.08)",
-            fontWeight: 650,
-            letterSpacing: "-0.015em",
-            lineHeight: 1.3,
+            fontWeight: t.weightEmphasis,
+            lineHeight: t.lineHeightHeading,
           }}
         >
           {title}
         </div>
       ) : null}
       {description ? (
-        <div style={{ color: t.muted, fontSize: "0.9em", lineHeight: 1.45 }}>{description}</div>
+        <div style={{ color: t.muted, fontSize: "0.9em" }}>{description}</div>
       ) : null}
       {children}
     </article>
@@ -204,7 +201,7 @@ export function Divider() {
     <hr
       data-kit="Divider"
       aria-hidden="true"
-      style={{ width: "100%", margin: 0, border: 0, borderTop: `1px solid ${t.border}` }}
+      style={{ width: "100%", margin: 0, border: 0, borderTop: hairline }}
     />
   );
 }

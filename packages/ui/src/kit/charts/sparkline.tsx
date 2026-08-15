@@ -57,7 +57,7 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
             type="monotone"
             dataKey="v"
             stroke={line}
-            strokeWidth={1.6}
+            strokeWidth={1.5}
             fill={`url(#${fillId})`}
             dot={false}
             isAnimationActive={false}

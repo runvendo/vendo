@@ -1,7 +1,7 @@
 /** Progress — a themed progress bar; ratio or value/max (W2 §The Kit). */
 import { isRenderableNumber } from "../format.js";
 import { useFieldValue } from "../row.js";
-import { font, resolveTone, t, toneColor, type KitTone } from "../tokens.js";
+import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitTone } from "../tokens.js";
 
 export interface ProgressProps {
   /** A ratio (0..1) unless `max` is given, then a raw value. */
@@ -31,9 +31,9 @@ export function Progress({ value, max, label, showValue = false, tone, field }: 
   return (
     <div data-kit="Progress" style={{ ...font, display: "flex", flexDirection: "column", gap: 4 }}>
       {(label || showValue) && (
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85em" }}>
-          {label ? <span style={{ color: t.muted }}>{label}</span> : <span />}
-          {showValue ? <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct}</span> : null}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, fontSize: "0.85em" }}>
+          {label ? <span style={microLabel}>{label}</span> : <span />}
+          {showValue ? <span style={{ ...numeric, fontWeight: t.weightEmphasis }}>{pct}</span> : null}
         </div>
       )}
       <div
@@ -54,7 +54,7 @@ export function Progress({ value, max, label, showValue = false, tone, field }: 
             height: "100%",
             borderRadius: 999,
             background: toneColor(resolveTone(tone, "accent")),
-            transition: `width ${t.motionDuration} ${t.motionEasing}`,
+            transition: transitionFor("width"),
           }}
         />
       </div>

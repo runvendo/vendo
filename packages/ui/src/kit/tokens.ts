@@ -28,21 +28,55 @@ export const t = {
   success: `var(--vendo-color-success, ${themeDefaults.colors.success})`,
   warning: `var(--vendo-color-warning, ${themeDefaults.colors.warning})`,
   border: `var(--vendo-color-border, ${d.colors.border})`,
+  surfaceRaised: `var(--vendo-color-surface-raised, ${themeDefaults.colors.surfaceRaised})`,
   radiusSmall: `var(--vendo-radius-small, ${d.radius.small})`,
   radiusMedium: `var(--vendo-radius-medium, ${d.radius.medium})`,
   radiusLarge: `var(--vendo-radius-large, ${d.radius.large})`,
+  borderWidth: `var(--vendo-border-width, ${themeDefaults.borderWidth})`,
+  shadowSmall: `var(--vendo-shadow-small, ${themeDefaults.shadow.small})`,
   fontFamily: `var(--vendo-font-family, ${d.typography.fontFamily})`,
   headingFamily: `var(--vendo-heading-family, var(--vendo-font-family, ${d.typography.fontFamily}))`,
   fontSize: `var(--vendo-font-size, ${d.typography.baseSize})`,
+  weightNormal: `var(--vendo-font-weight-normal, ${themeDefaults.typography.weightNormal})`,
+  weightEmphasis: `var(--vendo-font-weight-emphasis, ${themeDefaults.typography.weightEmphasis})`,
+  letterSpacing: `var(--vendo-letter-spacing, ${themeDefaults.typography.letterSpacing})`,
+  lineHeight: `var(--vendo-line-height, ${themeDefaults.typography.lineHeightBody})`,
+  lineHeightHeading: `var(--vendo-line-height-heading, ${themeDefaults.typography.lineHeightHeading})`,
   motionDuration: "var(--vendo-motion-duration, 160ms)",
   motionEasing: "var(--vendo-motion-easing, cubic-bezier(0.2, 0.8, 0.2, 1))",
 } as const;
+
+/** The ONE edge a Kit component draws. Hairline and low-contrast: borders do the
+ *  work that shadows used to, so almost nothing in the Kit is elevated. */
+export const hairline = `${t.borderWidth} solid ${t.border}`;
+
+/** Transition the named properties on the host's own motion pair. `motion:
+ *  "reduced"` emits a 0ms duration, so this collapses to nothing with no branch. */
+export const transitionFor = (...properties: string[]): string =>
+  properties.map((p) => `${p} ${t.motionDuration} ${t.motionEasing}`).join(", ");
+
+/** Figures line up by place value wherever the Kit prints one. */
+export const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+/** The structural micro-label: a column header, a caption, a tile's metric name.
+ *  Uppercase and letterspaced so it reads as chrome, never as content. */
+export const microLabel: CSSProperties = {
+  color: t.muted,
+  fontSize: "0.72em",
+  fontWeight: t.weightEmphasis,
+  letterSpacing: "0.08em",
+  lineHeight: t.lineHeight,
+  textTransform: "uppercase",
+};
 
 /** Base text style shared by every Kit component. */
 export const font: CSSProperties = {
   color: t.text,
   fontFamily: t.fontFamily,
   fontSize: t.fontSize,
+  fontWeight: t.weightNormal,
+  letterSpacing: t.letterSpacing,
+  lineHeight: t.lineHeight,
 };
 
 /** A form control (input/select) surface. */
@@ -56,10 +90,11 @@ export const control: CSSProperties = {
   boxSizing: "border-box",
   minWidth: 0,
   minHeight: "var(--vendo-density-control-height, 38px)",
-  border: `var(--vendo-border-width, ${themeDefaults.borderWidth}) solid ${t.border}`,
+  border: hairline,
   borderRadius: t.radiusSmall,
   background: t.surface,
   padding: "var(--vendo-density-control-padding, 9px 12px)",
+  transition: transitionFor("border-color"),
 };
 
 // ---------------------------------------------------------------------------

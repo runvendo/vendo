@@ -26,7 +26,7 @@ export function Checkbox({ label, checked, hint, disabled, onChange }: CheckboxP
         onChange={(e) => screen === null
           ? onChange?.(e.target.checked)
           : screen({ target: { checked: e.target.checked } })}
-        style={{ width: 17, height: 17, accentColor: t.accent, cursor: disabled ? "not-allowed" : "pointer" }}
+        style={{ width: 16, height: 16, accentColor: t.accent, cursor: disabled ? "not-allowed" : "pointer" }}
       />
     </FieldShell>
   );
