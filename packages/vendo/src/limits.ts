@@ -13,6 +13,8 @@
  * a turn that was refused and said so.
  */
 import {
+  VENDO_MAKE_TOOL,
+  VENDO_VIEW_STREAM,
   VendoError,
   log,
   type LimitAction,
@@ -21,6 +23,8 @@ import {
   type LimitsCallback,
   type RunContext,
   type StoreOps,
+  type ToolRegistry,
+  type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import type { VendoComposition } from "./compose-context.js";
 
@@ -99,6 +103,37 @@ export function createLimiter({ callback, ops }: {
     },
   };
 }
+
+/** What the AGENT is told when a build was refused — FACTS, like every other
+ *  refusal on this registry (`ask-user.ts`, apps' `FORBIDDEN_FACTS`): what did
+ *  not happen, the host's own sentence when the policy wrote one, and that the
+ *  call is not worth repeating. The person is told by the card beside it. */
+const generationDenied = (message: string | undefined): string =>
+  "The app was not built: this user has reached a limit the host's own policy sets."
+  + `${message === undefined ? "" : ` The host says: ${message}`}`
+  + " Calling again gets the same answer, and there is no other way to build it.";
+
+/** The generation choke — `vendo_make`, the ONE door an app is built through,
+ *  asked before it runs. A deny answers the agent with the same `blocked`
+ *  outcome every other refusal on this registry uses, and raises the card the
+ *  person reads on the call's own stream, so the turn CARRIES ON: unlike a
+ *  refused message, a refused generation is something the agent can talk about.
+ *
+ *  Wrapped at composition rather than inside `@vendoai/apps`, so a deployment
+ *  with no `limits` key executes the registry it always executed. */
+export const limitGenerations = (tools: ToolRegistry, limiter: Limiter): ToolRegistry => ({
+  ...tools,
+  execute: async (call, ctx) => {
+    if (call.tool !== VENDO_MAKE_TOOL) return tools.execute(call, ctx);
+    const verdict = await limiter.gate("generation", ctx);
+    if (verdict.allow) return tools.execute(call, ctx);
+    (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM]?.({
+      id: `vendo-limit:${call.id}`,
+      part: { type: "data-vendo-limit", ...(verdict.message === undefined ? {} : { message: verdict.message }) },
+    });
+    return { status: "blocked", reason: generationDenied(verdict.message) };
+  },
+});
 
 /** The `limits` key, composed ONLY when the host set one — unset leaves no
  *  limiter, and every choke point then costs a single undefined check.

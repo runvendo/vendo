@@ -17,11 +17,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vendoLimitPartSchema, type LimitsCallback, type Principal } from "@vendoai/core";
+import { VENDO_MAKE_TOOL, vendoLimitPartSchema, type LimitsCallback, type Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { readSse, scriptedModel, textTurn, type ScriptedModel } from "../src/agent-doubles.test-util.js";
+import { readSse, scriptedModel, textTurn, toolCallTurn, type ScriptedModel } from "../src/agent-doubles.test-util.js";
 import { createVendo, type CreateVendoConfig, type Vendo } from "../src/server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -32,6 +32,7 @@ afterEach(async () => {
 const principal: Principal = { kind: "user", subject: "user_limited" };
 
 const MESSAGE_CAP = "You have used all 2 messages on Maple Free. It resets on the 1st.";
+const GENERATION_CAP = "Maple Free builds one app a month. Upgrade for more.";
 
 type Chunk = Record<string, unknown>;
 
@@ -106,3 +107,39 @@ describe("the message choke — a denied message costs nothing", () => {
   });
 });
 
+describe("the generation choke — the agent is told, and the turn goes on", () => {
+  const noGenerations: LimitsCallback = ({ action }) =>
+    action !== "generation" || { allow: false, message: GENERATION_CAP };
+
+  it("refuses the build to the AGENT, cards the person, and finishes the turn in words", async () => {
+    const { model, chat } = await compose({
+      limits: noGenerations,
+      turns: [
+        toolCallTurn(VENDO_MAKE_TOOL, { request: "a spending dashboard" }),
+        textTurn("You've used every app on your plan."),
+      ],
+    });
+
+    const turn = await chat("build me a dashboard");
+
+    expect(limitCards(turn)).toEqual([{ type: "data-vendo-limit", message: GENERATION_CAP }]);
+    // The refusal reached the MODEL: it was asked a second time, carrying the
+    // denial, and answered in words.
+    expect(model.calls).toBe(2);
+    expect(JSON.stringify(model.prompts[1])).toContain(GENERATION_CAP);
+    expect(turn.some((chunk) => chunk["delta"] === "You've used every app on your plan.")).toBe(true);
+    // A refusal is not a failure: the thread's own affordance for the call is
+    // the denied one.
+    expect(turn.some((chunk) => chunk["type"] === "tool-output-denied")).toBe(true);
+  });
+
+  it("leaves a message-only policy's generations alone", async () => {
+    const { model, chat } = await compose({
+      limits: ({ action }) => action !== "generation",
+      turns: [textTurn("nothing to refuse")],
+    });
+
+    expect(limitCards(await chat("just talk to me"))).toEqual([]);
+    expect(model.calls).toBe(1);
+  });
+});

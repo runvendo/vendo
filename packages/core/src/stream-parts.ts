@@ -81,9 +81,9 @@ const wirePartSchema = <Type extends string, Data extends z.ZodRawShape>(
  */
 export const VENDO_VIEW_STREAM = Symbol.for("@vendoai/core/vendo-view-stream");
 
-/** What a tool execution may publish: the screen, and the automation card an
- *  armed automation raises. */
-export type VendoStreamedPart = VendoViewPart | VendoAutomationPart;
+/** What a tool execution may publish: the screen, the automation card an armed
+ *  automation raises, and the limit card a refused generation raises. */
+export type VendoStreamedPart = VendoViewPart | VendoAutomationPart | VendoLimitPart;
 
 export interface VendoViewStreamUpdate {
   id: string;

@@ -24,6 +24,7 @@ import type { CloudConfigResult } from "./cloud-config.js";
 import type { VendoActionsConfig, VendoComposition } from "./compose-context.js";
 import { selectConnectors } from "./compose-selection.js";
 import { selectHostTools } from "./dot-vendo.js";
+import { limitGenerations } from "./limits.js";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
 import {
   DOCTOR_ACT_AS_APP_ID,
@@ -219,7 +220,7 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   "configuredBaseUrl" | "urls" | "isDevelopmentEnv" | "connectorToolkits" | "resolvedConnectors"
   | "actionsConfig" | "actions" | "doctor" | "connectGate" | "boundTools" | "byoApprovals"
   | "parkedCallTtlMs"> => {
-  const { config, guard, ops } = composition;
+  const { config, guard, ops, limiter } = composition;
   const posture = baseUrlPosture();
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
@@ -253,7 +254,11 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   // here — the one place the deployment's whole registry is assembled — and it
   // fires the instant the descriptor set first resolves, which is the earliest
   // this is knowable (createVendo is synchronous; descriptors are not).
-  const boundTools = withUniqueToolTitles(connectGate.bind(guard.bind(actions)));
+  const guardedTools = withUniqueToolTitles(connectGate.bind(guard.bind(actions)));
+  // The generation choke (limits.ts), OUTSIDE the guard binding for the connect
+  // gate's reason: a build the host's policy refused must not mint an approval
+  // on any door. Only a deployment that set `limits` wraps at all.
+  const boundTools = limiter === undefined ? guardedTools : limitGenerations(guardedTools, limiter);
   // 04 §6: compound steps route through the guard binding — grants, approvals,
   // breakers, and audit see every real call; there is no second
   // execution path. createActions reads invokeTool at execution time (same
