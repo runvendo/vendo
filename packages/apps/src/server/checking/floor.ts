@@ -196,6 +196,7 @@ export const createAppFloor = (
         source,
         hostTools: resolved.tools ?? [],
         catalog: screenCatalog(resolved.catalog),
+        ...(resolved.routes === undefined ? {} : { routes: resolved.routes }),
         runQuery: (tool, input) => runQuery(appId, tool, input),
         toolchain,
       });

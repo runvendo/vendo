@@ -33,6 +33,7 @@ import {
   type KitSlotSpec,
   type NormalizedCatalog,
   type Tree,
+  type VendoRouteMap,
 } from "../../contract/index.js";
 import type {
   AppDocument,
@@ -422,6 +423,9 @@ export const catalogIssues = async (
 };
 
 const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
+/** The one brick that takes a route (`kit/specs.ts`). Pinned to its spec by the
+ *  route check's own test, so renaming the brick cannot leave this behind. */
+const KIT_LINK = "Link";
 
 /** A Kit element sitting in a PROP — what a slot holds. The screen VM
  *  stamps the SLOT's own element `$element` and leaves the ones nested under it
@@ -555,6 +559,38 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   return issues;
 };
 
+/**
+ * A `<Link to>` naming a page the host never registered.
+ *
+ * The registry already refuses one at RENDER (`resolveVendoRoute` answers
+ * undefined and the brick falls back to plain text), which is a silent break of
+ * exactly the kind the nesting rule above exists to catch: the model wrote a way
+ * out of the screen, the person got dead words, and generation said it passed.
+ * So the refusal moves to where it can be repaired — a screen carrying a route
+ * that will never work does not leave the floor.
+ *
+ * One function, both artifacts, for the reason `kitNestingIssues` is: a wire tree
+ * and the tree a `.tsx` screen paints reach the same renderer.
+ *
+ * The message lists the registered names because that list is the model's WHOLE
+ * vocabulary here — a link selects a name, it never writes a URL, so the repair
+ * is always "pick another one of these, or drop the link".
+ */
+export const routeIssues = (tree: Tree, routes: VendoRouteMap | undefined): FactIssue[] => {
+  if (routes === undefined) return [];
+  const names = Object.keys(routes);
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    if (node.component !== KIT_LINK) continue;
+    // Own keys only: `to` is model-written, and `routes["toString"]` on a plain
+    // object answers with Object's own (the a1-slots reading of the same risk).
+    const to = node.props?.to;
+    if (typeof to !== "string" || Object.prototype.hasOwnProperty.call(routes, to)) continue;
+    issues.push(atProp(node.id, "to", `names route "${to}" on <${KIT_LINK}>, which this host never registered — it would render as plain text and go nowhere. ${names.length === 0 ? "This host registered no routes at all, so nothing may link out of a screen; drop the link." : `The registered routes are: ${names.join(", ")}. A link NAMES one of these; it never writes a URL.`}`));
+  }
+  return issues;
+};
+
 /** A query naming a tool the host does not have. The message lists the real
  *  ones — a model reading it can pick, and a human reading it learns the
  *  surface. `fn:` queries are the app's own server code, not host tools. */
@@ -673,6 +709,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...hostReshapeIssues(tree, deps),
   ]),
   treeCheck("kit-nesting", (tree) => kitNestingIssues(tree)),
+  treeCheck("routes-exist", (tree) => routeIssues(tree, deps.routes)),
   treeCheck("expressions-compute", (tree) => exprIssues(tree)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),

@@ -101,6 +101,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
       ...(rules === undefined || rules === "" ? {} : { designRules: rules }),
       ...(brief === undefined || brief === "" ? {} : { brief }),
       catalog: catalogSummaryEntries(composition.catalog),
+      ...(config.routes === undefined ? {} : { routes: config.routes }),
       // The one rendering of the shape card there is (`AppsRuntime.toolShapeBrief`).
       // Absent before the apps runtime is composed, which only a boot-time
       // caller could see — every real read happens inside a request.

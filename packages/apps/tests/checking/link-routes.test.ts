@@ -1,0 +1,134 @@
+/**
+ * A route a generated screen names, measured against the registry the HOST
+ * registered — at generation, not at render.
+ *
+ * `resolveVendoRoute` already refuses an unregistered name when the brick paints
+ * (it falls back to plain text), and that is the silent break: the model wrote a
+ * way out of the screen, the person got dead words, and every stage said the
+ * screen was fine. So the refusal moves to where it can still be repaired.
+ *
+ * Driven through the REAL floor — `createApps({ routes })` → `floor(ctx).component`,
+ * the same door composition hands the render seam — because the value of this
+ * check is entirely in whether the host's registry actually reaches it. A test
+ * that handed the registry to the checker by hand would pass with the umbrella's
+ * wiring cut.
+ */
+import {
+  type AppId,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import { describe, expect, it } from "vitest";
+import {
+  kitSpec,
+  renderBriefingPack,
+  type NormalizedCatalog,
+  type VendoRouteMap,
+} from "../../src/contract/index.js";
+import { createApps } from "../../src/server/index.js";
+import { guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
+
+const routes: VendoRouteMap = {
+  accounts: { path: "/accounts", description: "Every account, with its balance." },
+  account: { path: "/accounts/:id", description: "One account by id, and its transactions." },
+};
+
+const screen = (to: string) => `import { Link, Stack, Text } from "@vendo/screen";
+
+export default function Wayfinding() {
+  return (
+    <Stack>
+      <Text text="Your balance moved." />
+      <Link to="${to}" label="Take me there" />
+    </Stack>
+  );
+}
+`;
+
+const ctx: RunContext = {
+  principal: { kind: "user", subject: "user_ada" },
+  venue: "app",
+  presence: "present",
+  sessionId: "session_ada",
+};
+
+const tools: ToolRegistry = {
+  async descriptors() { return []; },
+  async execute() { return { status: "error", error: { code: "not-found", message: "no tools" } }; },
+};
+
+const catalog: NormalizedCatalog = [];
+
+/** The floor as composition hands it over, with the host's registry in the slot
+ *  `createVendo({ routes })` fills. */
+const paint = async (source: string, registry?: VendoRouteMap) => {
+  const apps = createApps({
+    store: memoryStore(),
+    guard: guardFixture(),
+    tools,
+    catalog,
+    model: scriptedLanguageModel(() => "no"),
+    ...(registry === undefined ? {} : { routes: registry }),
+  });
+  return apps.floor(ctx).component({ appId: `app_link_${Math.random().toString(36).slice(2)}` as AppId, source });
+};
+
+const blocking = (painted: Awaited<ReturnType<typeof paint>>): string =>
+  painted.ok ? "" : painted.blocking.join("\n");
+
+describe("the floor refuses a route the host never registered", () => {
+  it("names the route AND the component, and lists what this host really has", async () => {
+    const painted = await paint(screen("admin_panel"), routes);
+
+    expect(painted.ok, "an unregistered route reached a screen").toBe(false);
+    const said = blocking(painted);
+    expect(said).toContain('names route "admin_panel" on <Link>');
+    expect(said).toContain("which this host never registered");
+    // The repair is always "pick another of these" — the registry is the model's
+    // whole vocabulary here, so the message hands it over.
+    expect(said).toContain("The registered routes are: accounts, account");
+    expect(said).toContain("it never writes a URL");
+  }, 60_000);
+
+  it("lets a registered route through the same door", async () => {
+    expect(blocking(await paint(screen("accounts"), routes))).toBe("");
+  }, 60_000);
+
+  it("refuses EVERY link when the host registered an empty registry", async () => {
+    const painted = await paint(screen("accounts"), {});
+
+    expect(painted.ok).toBe(false);
+    expect(blocking(painted)).toContain("registered no routes at all");
+  }, 60_000);
+
+  it("stays silent for a host that registered no registry at all, exactly as `tools` does", async () => {
+    expect(blocking(await paint(screen("accounts")))).toBe("");
+  }, 60_000);
+
+  it("keeps the checker pinned to the brick that takes a route", () => {
+    // The check reads `<Link to>` by name. If the brick is ever renamed or loses
+    // its `to`, this fails here rather than going quietly unenforced.
+    expect(kitSpec("Link")?.props?.to).toBeDefined();
+  });
+});
+
+describe("what the writer is told about the routes", () => {
+  it("teaches the NAMES and the params to fill — and never a path", () => {
+    const rendered = renderBriefingPack({ catalog: [], hostSemantics: "", routes });
+
+    expect(rendered).toContain("ROUTES (this product's own pages");
+    expect(rendered).toContain("- accounts: Every account, with its balance.");
+    expect(rendered).toContain("- account: One account by id, and its transactions. (fill params: id)");
+    // THE security property of this section. A path in the prompt is a URL for
+    // the model to copy, and generated output must only ever SELECT a key: the
+    // host spells every address, through `onNavigate`.
+    expect(rendered).not.toContain("/accounts");
+  });
+
+  it("says nothing at all when the host registered no pages", () => {
+    expect(renderBriefingPack({ catalog: [], hostSemantics: "" })).not.toContain("ROUTES");
+    expect(renderBriefingPack({ catalog: [], hostSemantics: "", routes: {} })).not.toContain("ROUTES");
+  });
+});

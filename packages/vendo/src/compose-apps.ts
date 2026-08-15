@@ -303,6 +303,10 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
       return automationsForArming.enable(appId, triggerId, armCtx);
     },
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
+    // The SAME registry `<VendoProvider routes>` renders against, for the floor:
+    // a screen that names a page this host never registered is refused where it
+    // can still be repaired, not left to render as dead text.
+    ...(config.routes === undefined ? {} : { routes: config.routes }),
     // The floor's plugged checks: the host's own, then the ones a mounted
     // subsystem brings. Appended, never replacing — and a judgment rule rides
     // along here too, which the floor splits out into the reviewer's rubric

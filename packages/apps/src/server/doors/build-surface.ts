@@ -493,6 +493,7 @@ const createValidateDoor = (
         source: screen,
         hostTools: deps.tools ?? [],
         catalog: screenCatalog(deps.catalog),
+        ...(deps.routes === undefined ? {} : { routes: deps.routes }),
         runQuery: (tool, queryInput) => runQuery(document.id, tool, queryInput),
         // The same slot the floor honors: `validate` runs the identical gauntlet,
         // so it must run it on the identical toolchain.
@@ -576,14 +577,17 @@ export const createBuildSurface = (
           deps.runtime().refusedScreen(input),
       };
       return createAppFloor({
-        // Exactly the four fields the floor reads, built directly rather than
+        // Exactly the fields the floor reads, built directly rather than
         // through `generationDependencies`: none of the pipeline's other knobs
         // (theme, design rules, fill tiers, the partial-tree seam) is a fact about
-        // an app, so none of them belongs in a check's inputs. `model` rides along
-        // when the deployment has one and is absent when it does not — the seam
-        // never spends it either way, and the AI reviewer is `validate`'s.
+        // an app, so none of them belongs in a check's inputs. The host's routes
+        // ARE one — which pages exist is as much a fact as which tools do, and it
+        // is what `routes-exist` measures a `<Link to>` against. `model` rides
+        // along when the deployment has one and is absent when it does not — the
+        // seam never spends it either way, and the AI reviewer is `validate`'s.
         deps: async () => ({
           catalog: config.catalog,
+          ...(config.routes === undefined ? {} : { routes: config.routes }),
           ...(config.model === undefined ? {} : { model: config.model }),
           ...await generationToolContext(ctx),
         }),

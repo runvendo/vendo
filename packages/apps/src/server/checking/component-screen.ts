@@ -47,6 +47,7 @@ import {
   validateTree,
   type NormalizedCatalog,
   type Tree,
+  type VendoRouteMap,
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import {
@@ -55,7 +56,7 @@ import {
   type ScreenErrorKind,
 } from "../../contract/genui/component/index.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
-import { catalogIssues, factIssueLine, kitNestingIssues } from "./facts.js";
+import { catalogIssues, factIssueLine, kitNestingIssues, routeIssues } from "./facts.js";
 import { sampleLines } from "./reviewer.js";
 import { list, QUERY_HOOK } from "./screen-typecheck.js";
 import {
@@ -114,6 +115,9 @@ export interface ComponentScreenOptions {
   /** The components the screen may import from `@vendo/screen` — {@link screenCatalog}.
    *  A bare name is a component whose props nobody declared. */
   catalog: readonly ScreenCatalogEntry[];
+  /** The pages a `<Link to>` may name. Absent → the host registered no registry
+   *  and stage 5 measures no link against one. */
+  routes?: VendoRouteMap;
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
@@ -628,7 +632,7 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   }
 
   const initialTree = painted.tree;
-  const treeIssues = await treeCheckIssues(initialTree, names);
+  const treeIssues = await treeCheckIssues(initialTree, names, opts.routes);
   if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
 
   return { ok: true, issues: [], compiled, queryPlan, initialTree, queries };
@@ -677,6 +681,7 @@ const DISPLAY_TAGS: ReadonlySet<string> = new Set(DISPLAY_TAG_NAMES);
 const treeCheckIssues = async (
   flat: FlatTree,
   catalog: readonly string[],
+  routes: VendoRouteMap | undefined,
 ): Promise<ComponentScreenIssue[]> => {
   const nodes = Object.values(flat.nodes) as TreeNode[];
   const tree: Tree = { formatVersion: VENDO_TREE_FORMAT, root: flat.root, nodes };
@@ -692,6 +697,7 @@ const treeCheckIssues = async (
   );
   return [
     ...kitNestingIssues(validation.tree).map((entry) => issue("nesting", factIssueLine(entry))),
+    ...routeIssues(validation.tree, routes).map((entry) => issue("routes", factIssueLine(entry))),
     ...found.map((entry) => issue("tree", factIssueLine(entry))),
   ];
 };

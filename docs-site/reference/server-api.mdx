@@ -118,6 +118,7 @@ Types only; each key's behavior is documented once, on
 | `skills` | `readonly Skill[]` | SKILL.md values mounted at `/host/skills` for the harness to list cheaply and load on demand |
 | `catalog` | `ComponentCatalog \| ComponentRegistry` | host components exposed to the generation prompt; see [Host components](/customize/host-components) |
 | `theme` | `VendoTheme` | programmatic override for `.vendo/theme.json`, resolved once at compose |
+| `routes` | `VendoRouteMap` | the host's own pages a generated view may link to, `{ name: { path, description } }`; pass the same object to `<VendoProvider routes>` beside an `onNavigate` — see [Handler options](/reference/handler-options#composition-configuration) |
 | `instructions` | `string` | the prose this deployment puts in front of the agent every turn; the override for `.vendo/brief.md`. `brief` and `agent.instructions` were this same knob under two names and are gone |
 | `store` | `VendoStore` | default `createStore()` (PGlite, `.vendo/data`); with `VENDO_API_KEY` and no `store` passed, the Cloud hosted store fills the slot |
 | `files` | `FilesAdapter` | where workspace file content lives past 5 MiB; default: the store's own blobs |
