@@ -635,6 +635,36 @@
         ]
       }
     },
+    "list_ticket_events": {
+      "does": "Everything that has happened on one ticket, oldest first. The rows are the `data` array. The canned response always answers with TK-1040, whatever `ticket_id` is passed. `kind` is `created`, `reply`, `assigned`, `status`, `priority` or `sla`; `actor` is the person who did it, or `system` when nothing human did; `text` is what to read on the line.",
+      "takes": { "ticket_id": "string" },
+      "data": {
+        "data": [
+          { "at": "2026-08-10T08:12:00Z", "kind": "created", "actor": "Dominic Reyes", "text": "Opened by email: Wrong item shipped, I ordered walnut and got oak" },
+          { "at": "2026-08-10T08:14:00Z", "kind": "assigned", "actor": "system", "text": "Routed to June Hollis by the email queue rule" },
+          { "at": "2026-08-10T10:47:00Z", "kind": "assigned", "actor": "June Hollis", "text": "Handed to Nadia Okafor" },
+          { "at": "2026-08-10T11:00:00Z", "kind": "reply", "actor": "Nadia Okafor", "text": "Asked for a photo of what arrived" },
+          { "at": "2026-08-10T11:01:00Z", "kind": "status", "actor": "Nadia Okafor", "text": "Open to pending, waiting on the customer" },
+          { "at": "2026-08-11T07:26:00Z", "kind": "reply", "actor": "Dominic Reyes", "text": "Sent photos and asked who pays for the return" },
+          { "at": "2026-08-11T07:27:00Z", "kind": "status", "actor": "system", "text": "Pending to open, the customer answered" },
+          { "at": "2026-08-11T08:12:00Z", "kind": "sla", "actor": "system", "text": "Resolution SLA breached" },
+          { "at": "2026-08-11T09:05:00Z", "kind": "priority", "actor": "Nadia Okafor", "text": "Normal to high" },
+          { "at": "2026-08-12T13:37:00Z", "kind": "reply", "actor": "Nadia Okafor", "text": "Sent the prepaid return label and confirmed the walnut shelf ships on scan" }
+        ]
+      }
+    },
+    "list_agent_permissions": {
+      "does": "What each agent is allowed to do on their own. The rows are the `data` array, one per agent, keyed to `list_agents` by `agent_id`. Every `can_` field is a boolean: true means the agent does it without a lead signing off.",
+      "data": {
+        "data": [
+          { "agent_id": "ag_nadia", "agent": "Nadia Okafor", "can_approve_refunds": true, "can_close_tickets": true, "can_merge_tickets": true },
+          { "agent_id": "ag_theo", "agent": "Theo Lindqvist", "can_approve_refunds": true, "can_close_tickets": true, "can_merge_tickets": true },
+          { "agent_id": "ag_priya", "agent": "Priya Raman", "can_approve_refunds": true, "can_close_tickets": true, "can_merge_tickets": false },
+          { "agent_id": "ag_marco", "agent": "Marco Duarte", "can_approve_refunds": true, "can_close_tickets": true, "can_merge_tickets": false },
+          { "agent_id": "ag_june", "agent": "June Hollis", "can_approve_refunds": true, "can_close_tickets": true, "can_merge_tickets": false }
+        ]
+      }
+    },
     "assign_ticket": {
       "does": "Hand a ticket to an agent. `ticket_id` is a ticket id like TK-1049 and `agent_id` an agent id like ag_theo. Assigning a ticket that already has an owner moves it.",
       "takes": { "ticket_id": "string", "agent_id": "string" }
@@ -654,6 +684,10 @@
     "merge_tickets": {
       "does": "Merge one ticket into another when the same customer wrote in twice. `ticket_id` is the duplicate that gets absorbed, `into_ticket_id` the one that survives and keeps the conversation.",
       "takes": { "ticket_id": "string", "into_ticket_id": "string" }
+    },
+    "update_agent_permission": {
+      "does": "Turn one of an agent's permissions on or off. `permission` is a permission name like can_approve_refunds and `allowed` is what it becomes.",
+      "takes": { "agent_id": "string", "permission": "string", "allowed": "boolean" }
     }
   }
 }

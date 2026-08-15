@@ -161,5 +161,88 @@
     ],
     "tags": ["action"],
     "shape": "table"
+  },
+  {
+    "id": "merge-wizard",
+    "lane": "screen",
+    "prompt": "Walk me through merging these three duplicate tickets — pick which one stays, then confirm.",
+    "pass": [
+      "shows all three of Rosa Delgado's tickets — TK-1045, TK-1051, TK-1052 — with their subjects and when each came in",
+      "runs as steps: the survivor is picked first, and confirming is a second step, not the same click",
+      "only one ticket can be the one that stays",
+      "the confirm step names the ticket that stays and the two being absorbed into it",
+      "confirming fires merge_tickets once per absorbed ticket, each with into_ticket_id set to the chosen survivor"
+    ],
+    "tags": ["action"],
+    "shape": "wizard",
+    "source": "Zendesk — Bulk merge tickets — https://www.eesel.ai/blog/zendesk-merge-tickets-duplicate-conversations",
+    "data": {
+      "list_tickets": {
+        "data": [
+          { "id": "TK-1052", "subject": "Still nothing, where is my order?", "customer": "Rosa Delgado", "email": "rosa.delgado@fernpost.com", "channel": "email", "status": "new", "priority": "high", "created_at": "2026-08-12T15:02:00Z" },
+          { "id": "TK-1051", "subject": "Where is my order? Following up again", "customer": "Rosa Delgado", "email": "rosa.delgado@fernpost.com", "channel": "email", "status": "new", "priority": "high", "created_at": "2026-08-12T14:22:00Z" },
+          { "id": "TK-1045", "subject": "Order hasn't shipped yet", "customer": "Rosa Delgado", "email": "rosa.delgado@fernpost.com", "channel": "email", "status": "open", "priority": "normal", "created_at": "2026-08-11T16:40:00Z" }
+        ]
+      }
+    }
+  },
+  {
+    "id": "week-coverage",
+    "lane": "screen",
+    "prompt": "Lay next week's coverage out like a calendar so I can see at a glance who's on the desk each day.",
+    "pass": [
+      "draws the three days the tool returned — Wed Aug 12, Thu Aug 13, Fri Aug 14 — as a grid of days, not a list of shift rows",
+      "invents no day beyond those three and no shift the tool did not return",
+      "each day carries its agents with their start and end times",
+      "Thursday shows Theo, Priya, June and Marco, and Nadia is not on it",
+      "June Hollis's Wednesday reads as 08:00 to 12:00"
+    ],
+    "tags": ["display"],
+    "shape": "calendar",
+    "source": "Zendesk — WFM schedule — https://support.zendesk.com/hc/en-us/articles/6443348256794-Accessing-and-understanding-your-WFM-Schedule-page"
+  },
+  {
+    "id": "queue-split",
+    "lane": "screen",
+    "prompt": "Let me work my queue without leaving the list — pick a ticket, see the whole thread next to it, and reply right there.",
+    "pass": [
+      "the ticket list and the open ticket sit side by side on one screen, and picking a ticket does not replace the list",
+      "each list row shows the ticket's customer, subject and status",
+      "the open ticket's four messages read in order beside the list, customer turns distinguishable from agent turns",
+      "the reply control is beside the thread and offers the canned replies by title",
+      "sending fires send_canned_reply with TK-1040 and that reply's id"
+    ],
+    "tags": ["action"],
+    "shape": "split-inbox",
+    "source": "Intercom — Inbox split view — https://www.intercom.com/help/en/articles/6258745-the-inbox-explained"
+  },
+  {
+    "id": "ticket-history",
+    "lane": "screen",
+    "prompt": "Show me everything that happened on this ticket in order — every reply, every handoff, every status change — before I take it over.",
+    "pass": [
+      "shows all ten events the tool returned on one timeline, oldest first, and invents none",
+      "replies, handoffs and status changes read as different kinds of event, not as one undifferentiated list",
+      "shows the handoff from June Hollis to Nadia Okafor on Aug 10",
+      "shows the SLA breach on Aug 11 and the priority going from normal to high",
+      "each event carries who did it and when"
+    ],
+    "tags": ["display"],
+    "shape": "timeline",
+    "source": "Intercom — Conversation events — https://www.intercom.com/help/en/articles/13334840-conversation-events-in-the-inbox"
+  },
+  {
+    "id": "trainee-limits",
+    "lane": "screen",
+    "prompt": "Set up what our trainee can and can't do on her own — I don't want her approving refunds solo yet.",
+    "pass": [
+      "shows all five agents against the three permissions, each one a control that reads on or off",
+      "June Hollis's row reads: refunds on, closing on, merging off",
+      "no permission is shown that the tool did not return",
+      "turning June's refund approval off fires update_agent_permission with ag_june, can_approve_refunds and false"
+    ],
+    "tags": ["action"],
+    "shape": "permissions",
+    "source": "Zendesk — Roles & permissions — https://support.zendesk.com/hc/en-us/articles/4408824375450-Setting-roles-and-access-in-Zendesk-Admin-Center"
   }
 ]
