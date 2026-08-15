@@ -765,6 +765,45 @@ export function memoryStoreOps(): StoreOps {
   };
 
   // ---------------------------------------------------------------------------
+  // retention — the engine's OWN quarantine, which is why it is a map in here
+  // and not a collection: no caller may name it, and `purge` is the only way
+  // back out. A lifted row keeps the arrival clock's reading of WHEN it was
+  // lifted, because the grace a purge honors runs from the lift and not from
+  // the row's own age, which is already past.
+  // ---------------------------------------------------------------------------
+
+  const quarantined = new Map<string, Array<{ record: VendoRecord & { seq: number }; at: number }>>();
+
+  const retention: StoreOps["retention"] = {
+    async quarantine(collection, olderThan) {
+      assertEngineCollection(collection);
+      const held = quarantined.get(collection) ?? [];
+      const rows = col(collection);
+      const cutoff = Date.parse(olderThan);
+      const at = Date.parse(isoNow());
+      let moved = 0;
+      for (const record of [...rows.values()]) {
+        if (Date.parse(record.createdAt) >= cutoff) continue;
+        rows.delete(record.id);
+        held.push({ record, at });
+        moved += 1;
+      }
+      quarantined.set(collection, held);
+      // The count is what LEFT the live collection — never the window's whole
+      // population, which is the mistake a cron makes exactly once, on its
+      // second run.
+      return { moved };
+    },
+    async purge(collection, quarantinedBefore) {
+      assertEngineCollection(collection);
+      const held = quarantined.get(collection) ?? [];
+      const kept = held.filter((row) => row.at >= Date.parse(quarantinedBefore));
+      quarantined.set(collection, kept);
+      return { purged: held.length - kept.length };
+    },
+  };
+
+  // ---------------------------------------------------------------------------
   // status
   // ---------------------------------------------------------------------------
 
@@ -777,6 +816,7 @@ export function memoryStoreOps(): StoreOps {
     workspace,
     audit,
     secrets,
+    retention,
     lifecycle,
     /** Serialized JSON length, which is this reference's honest answer to "how
         much is in here": it grows with every row and shrinks when rows leave,

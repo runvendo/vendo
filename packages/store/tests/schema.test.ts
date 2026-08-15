@@ -27,6 +27,7 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_workspace_history: ["id", "path", "owner", "revision", "content", "blob_ref", "intent", "at"],
   vendo_app_grants: ["id", "app_id", "org_id", "principal", "level", "created_by", "created_at"],
   vendo_idempotency_ledger: ["tenant", "op", "key", "request_hash", "status", "result", "created_at"],
+  vendo_quarantine: ["collection", "id", "data", "subject", "app_id", "quarantined_at"],
 };
 
 for (const backend of backends()) {
@@ -47,17 +48,17 @@ for (const backend of backends()) {
     it("stores schema_version and a boot_id in vendo_meta", async () => {
       const rows = await made.sql("SELECT key, value FROM vendo_meta ORDER BY key");
       expect(rows).toEqual(expect.arrayContaining([
-        expect.objectContaining({ key: "schema_version", value: 8 }),
+        expect.objectContaining({ key: "schema_version", value: 9 }),
         expect.objectContaining({ key: "boot_id" }),
       ]));
       expect(rows.find((row) => row.key === "boot_id")?.value).toEqual(expect.any(String));
     });
 
-    it("lands a fresh database directly on schema version 8", async () => {
+    it("lands a fresh database directly on schema version 9", async () => {
       // A brand-new DB never runs the v2 backfill's DELETE against real data; it
       // just records the current version. (beforeAll already ran ensureSchema.)
       const version = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value;
-      expect(version).toBe(8);
+      expect(version).toBe(9);
     });
 
     it("keeps boot_id stable across a close and reopen", async () => {
@@ -77,7 +78,7 @@ for (const backend of backends()) {
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(8);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(9);
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = 'public' AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
@@ -101,7 +102,7 @@ for (const backend of backends()) {
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(8);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(9);
       const survivor = await made.sql(
         "SELECT id FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'",
       );
@@ -109,7 +110,7 @@ for (const backend of backends()) {
       await made.sql("DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'");
     });
 
-    it("creates all 21 contract tables with every contracted key column", async () => {
+    it("creates all 22 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
       );
@@ -128,7 +129,9 @@ for (const backend of backends()) {
       // sessions were then deleted, taking vendo_sessions back out. v8 adds
       // vendo_idempotency_ledger — the `Idempotency-Key` replay ledger, which
       // has to live in the same database as the mutations it gates (01 §12).
-      expect(actual.size).toBe(21);
+      // v9 adds vendo_quarantine — where a retention sweep parks the rows it
+      // lifts until a purge destroys them (01 §12 StoreOps.retention).
+      expect(actual.size).toBe(22);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);
@@ -154,6 +157,7 @@ for (const backend of backends()) {
         ["vendo_mcp_grants", "data"],
         ["vendo_knowledge_docs", "data"],
         ["vendo_knowledge_chunks", "data"],
+        ["vendo_quarantine", "data"],
       ];
       const rows = await made.sql(
         "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",

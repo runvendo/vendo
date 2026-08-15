@@ -15,6 +15,13 @@ import { invalid } from "./validate.js";
  *  and survived an erase forever. The 2026-07-30 contract amendment added
  *  `subject`, so the subject axis now reaches it like any other owned table.
  *
+ *  `vendo_quarantine` (v9) is emphatically NOT in that class. A retention sweep
+ *  lifts rows out of a live collection, and they are still the same person's
+ *  data on the other side — so the sweep copies each row's subject and app id
+ *  into columns on the way in (retention.ts) and both cascades below match
+ *  them. Without that, quarantining would be a way for data to outlive an
+ *  erasure, which is the exact hole `vendo_effects` sat in.
+ *
  *  `vendo_idempotency_ledger` (v8) is in the never-matched class TODAY, and not
  *  because it holds nothing: `result` is a recorded response body and can carry
  *  the caller's own data. Its key is (tenant, op, key) and its shape is the
@@ -43,6 +50,7 @@ export const ERASE_TABLES = [
   "vendo_workspace_history",
   "vendo_app_grants",
   "vendo_idempotency_ledger",
+  "vendo_quarantine",
 ] as const;
 
 export type EraseTable = typeof ERASE_TABLES[number];
@@ -151,6 +159,15 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
     await del(report, "vendo_runs", "app_id = $1", [appId]);
     // Build contract §9.2: an app that is gone grants nothing to anyone.
     await del(report, "vendo_app_grants", "app_id = $1", [appId]);
+    // Whatever a retention sweep already lifted out of those drawers. Two
+    // selectors, because the live rows needed two: the app id the sweep copied
+    // off the row, and the app-history collection, whose rows carry their app
+    // only in the collection NAME and no refs at all — the same blind spot
+    // that hid the version log from this cascade until it was named above.
+    await del(report, "vendo_quarantine", "app_id = $1 OR collection = $2", [
+      appId,
+      engineAppHistory(appId),
+    ]);
   };
 
   return {
@@ -198,6 +215,10 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       await del(report, "vendo_audit", "subject = $1", [subject]);
       // Generic and door-owned rows carry the subject only as a ref (§2/§3).
       await del(report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
+      // Rows a retention sweep already lifted are still this person's data;
+      // the sweep copied their subject into a column of its own precisely so
+      // this selector reaches them (01 §12, retention.ts).
+      await del(report, "vendo_quarantine", "subject = $1", [subject]);
       // An appData file twin carries no refs: its owner is the leading key leg
       // (`<owner>/<key>`) inside the app's own namespace. For the subject's own
       // apps the cascade above already took them with the namespace, but a

@@ -24,6 +24,7 @@ import { harnessStateKey } from "./harness-state.js";
 import { appendThreadMessages, putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
 import { cursorMs, decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
+import { storeRetention } from "./retention.js";
 import { createReservedRecordStore, threadRecord, watermarkPage } from "./routing.js";
 import { secretStore, storeSecrets } from "./secrets.js";
 import { dbFor, type VendoStore } from "./store.js";
@@ -204,7 +205,7 @@ const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 42 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 44 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -802,13 +803,13 @@ export function createStoreOps(
     },
 
     // -----------------------------------------------------------------------
-    // retention is deliberately ABSENT (01 §12: the family is optional). This
-    // engine has nowhere to quarantine rows TO, and the contract's own rule is
-    // that an engine says so by omitting the family rather than by accepting
-    // the call and destroying rows a quarantine was supposed to keep
-    // recoverable. OSS retention is still host SQL on the host's own cron —
-    // the table map is public precisely so that works (tests/retention.test.ts).
+    // retention — the two moves of a recoverable sweep, over the engine's own
+    // quarantine table (retention.ts, schema.ts v9). Host SQL on the host's own
+    // cron still works and always did (the table map is public,
+    // tests/retention.test.ts); what this family adds is the RECOVERY WINDOW a
+    // `DELETE ... WHERE at < ...` cannot express.
     // -----------------------------------------------------------------------
+    retention: storeRetention(db),
 
     // -----------------------------------------------------------------------
     // lifecycle
@@ -881,18 +882,14 @@ export function createStoreOps(
     },
 
     async status() {
-      // 42 of STORE_WIRE_PATHS' 45: `ops` is a LEVEL over that list's declared
-      // order, and the two this engine does not serve — retention.quarantine and
-      // retention.purge — are declared last for exactly this reason, so the
-      // level stops honestly at footprint instead of claiming a family that is
-      // absent from the object above.
-      //
-      // It stops there DESPITE serving audit.tally, the op declared past them:
-      // a level is a prefix and cannot say "all but the two in the middle". The
-      // number is unchanged rather than raised, because a raised one would
-      // claim the retention family this engine still has nowhere to quarantine
-      // to. A caller learns about a missing op from its own 501, never here.
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
+      // All 45 of STORE_WIRE_PATHS: `ops` is a LEVEL over that list's declared
+      // order, and the two that used to stop it short — retention.quarantine
+      // and retention.purge — are served above, so the prefix now runs to the
+      // end of the list and audit.tally, declared past `status`, is inside it
+      // for the first time. A number this engine cannot back with an op is the
+      // one thing the level must never report, so it moves WITH the object and
+      // never ahead of it.
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 45 };
     },
   };
 }

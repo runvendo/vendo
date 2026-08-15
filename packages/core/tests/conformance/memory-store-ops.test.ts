@@ -42,10 +42,12 @@ describe("StoreOps conformance kit against the memory reference", () => {
     const report = await runConformance(suite);
     expect(report.failures).toEqual([]);
     expect(report.ok).toBe(true);
-    // The reference serves no retention family, so the two cases over it must
-    // be reported as pending rather than passed — a green report that counted
-    // them as passes is exactly the blindness the tag exists to remove.
-    expect(report.pending.length).toBe(suite.cases.filter((c) => c.pending !== undefined).length);
+    // The reference now serves every family the suite covers — retention
+    // included — so nothing is carried unrun. The accounting is asserted
+    // rather than the number: a case that is neither passed nor named pending
+    // is a case the report lost, which is exactly the blindness the tag exists
+    // to remove.
+    expect(report.pending).toEqual(suite.cases.filter((c) => c.pending !== undefined).map((c) => c.name));
     expect(report.passed + report.pending.length).toBe(suite.cases.length);
   });
 

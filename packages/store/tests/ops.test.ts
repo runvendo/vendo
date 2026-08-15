@@ -4,7 +4,7 @@ import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { at, auditFixture } from "../src/fixtures.test-util.js";
 import { encodeCursor } from "../src/helpers/utils.js";
 import { createStore, createStoreOps } from "../src/index.js";
-import type { StoreOps } from "@vendoai/core";
+import { STORE_WIRE_PATHS, type StoreOps } from "@vendoai/core";
 
 /** One run at an exact instant — the watermark walk's only subject, because
  *  `vendo_runs.started_at` is the one indexed field the registry declares. */
@@ -84,14 +84,18 @@ for (const backend of backends()) {
       }
     });
 
-    it("status() reports the 42 ops this wire serves", async () => {
+    it("status() reports the 45 ops this wire serves", async () => {
       const { made, ops } = await makeOps();
       try {
         const status = await ops.status();
-        // 42 of 44: retention is declared last in STORE_WIRE_PATHS and this
-        // engine has nowhere to quarantine to, so the level stops at footprint.
-        expect(status.ops).toBe(42);
-        expect(ops.retention).toBeUndefined();
+        // All 45, against the manifest rather than a literal: `ops` is a LEVEL
+        // over STORE_WIRE_PATHS' declared order, and this engine now serves
+        // every op on it — including audit.tally, declared past `status`, which
+        // no level could reach while retention was missing from the middle.
+        expect(status.ops).toBe(Object.keys(STORE_WIRE_PATHS).length);
+        // The family is what the level is claiming, so assert both together or
+        // the number can drift ahead of the object it describes.
+        expect(ops.retention).toBeDefined();
         // Nothing left to announce: the handshake carries the format and the
         // count, and the retired generic family is not advertised as anything.
         expect(Object.keys(status).sort()).toEqual(["format", "ops"]);

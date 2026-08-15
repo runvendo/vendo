@@ -138,6 +138,10 @@ for (const backend of backends()) {
         // No selector can reach the idempotency ledger either: its key is
         // (tenant, op, key) and it carries no subject (see ERASE_TABLES).
         vendo_idempotency_ledger: 0,
+        // Nothing was swept out from under this subject; that the cascade
+        // reaches what a sweep DID lift is proven on real quarantined rows in
+        // retention.ops.test.ts, where the sweep exists to make them.
+        vendo_quarantine: 0,
         vendo_workspace_files: 0, // this subject wrote no workspace files
         vendo_workspace_history: 0,
         workspace_content_objects: 0, // ...so no workspace content was deleted either

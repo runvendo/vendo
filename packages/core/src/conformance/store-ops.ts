@@ -99,15 +99,6 @@ const seedAudit = async (ops: StoreOps, events: AuditEvent[]): Promise<void> => 
   for (const event of events) await ops.engine.put("vendo_audit", { id: event.id, data: event });
 };
 
-/** Carries a case without running it, and says why (see
-    `ConformanceCase.pending`). The body is the real one — landing the
-    capability is deleting this call, not writing the case. */
-const pending = (reason: string, conformanceCase: ConformanceCase): ConformanceCase =>
-  ({ ...conformanceCase, pending: reason });
-
-/** The one lane that owes every case tagged below. */
-const RETENTION_LANE = "the retention lane lands StoreOps.retention — the contract declares it, nothing serves it yet";
-
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
     seeds one first, with the shape the typed `vendo_apps` door accepts. */
@@ -1509,10 +1500,10 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       }),
 
       // =====================================================================
-      // retention — PENDING, both of them. The contract declares the family and
-      // nothing serves it yet, so these carry it in the open: a skipped case
-      // with a named owner is a standing line in every mount's output, where
-      // leaving the cases out until the code arrives is how an op ships dead.
+      // retention — OPTIONAL (01 §12), so both cases return early on a mount
+      // that omits the family rather than failing it. That is what lets every
+      // mount carry them; an implementation that HAS the family is held to all
+      // of it.
       // =====================================================================
 
       /** The sweep is a cron, so the two things that matter are the count it
@@ -1520,7 +1511,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           by moving the CUTOFF rather than the rows' age, because a case can
           only write rows now: a cutoff older than every row covers them all and
           must move nothing. */
-      pending(RETENTION_LANE, opsCase(opts, "retention.quarantine lifts rows past the cutoff out of the live collection, and re-running it moves nothing", async (ops) => {
+      opsCase(opts, "retention.quarantine lifts rows past the cutoff out of the live collection, and re-running it moves nothing", async (ops) => {
         const retention = ops.retention;
         if (retention === undefined) return;
         const collection = engineAppHistory("conf_ret");
@@ -1546,14 +1537,14 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
 
         const again = await retention.quarantine(collection, cutoff);
         assert(again.moved === 0, `a second quarantine at the same cutoff should move nothing, moved ${again.moved}`);
-      })),
+      }),
 
       /** The gap between the two verbs IS the feature, and the purge count is
           the only place it is observable: the engine owns the quarantine and no
           caller may name it, so "still recoverable" can only be read as a purge
           that declines to destroy. The cutoff is on the QUARANTINE time, not
           the row's age — the grace a purge honors runs from the lift. */
-      pending(RETENTION_LANE, opsCase(opts, "retention.purge destroys only quarantined rows lifted before its cutoff", async (ops) => {
+      opsCase(opts, "retention.purge destroys only quarantined rows lifted before its cutoff", async (ops) => {
         const retention = ops.retention;
         if (retention === undefined) return;
         const collection = engineAppHistory("conf_purge");
@@ -1570,7 +1561,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(destroyed.purged === ids.length, `the purge should report the ${ids.length} rows it destroyed, reported ${destroyed.purged}`);
         const again = await retention.purge(collection, past);
         assert(again.purged === 0, `a second purge reported ${again.purged} rows a first one had already destroyed`);
-      })),
+      }),
 
       // =====================================================================
       // status

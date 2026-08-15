@@ -11,7 +11,7 @@ export type { Db, Query } from "./db-postgres.js";
 // this store writes to when a redeploy wipes it. The deployment that composed
 // the store is what tells its operator (createVendo's boot block).
 export type { EphemeralDataDir } from "./db-postgres.js";
-// The StoreOps local backend (02-store): the 42-op named-operation contract
+// The StoreOps local backend (02-store): the 44-op named-operation contract
 // served off this store's own Postgres, transactions at verb boundaries.
 export { createStoreOps } from "./ops.js";
 // The `Idempotency-Key` replay ledger (01 §12). `createStore()` already hands

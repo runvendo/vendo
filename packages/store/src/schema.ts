@@ -49,8 +49,18 @@ import type { Db } from "./db-postgres.js";
     database rather than a store of its own because the ledger must commit with
     the mutation it gates — one that lives elsewhere can commit while its
     mutation rolls back, and the replay then confidently returns a result for
-    work that never happened. Same load-bearing bump. */
-export const SCHEMA_VERSION = 8;
+    work that never happened. Same load-bearing bump.
+
+    v9 adds `vendo_quarantine` (01 §12 `StoreOps.retention`): where a retention
+    sweep puts the rows it lifts out of a live collection, so the window between
+    `quarantine` and `purge` is recoverable instead of a delete with a nicer
+    name. The engine OWNS this table — no caller names it, no collection maps to
+    it, and `purge` is the only way back out. It is a table of its own rather
+    than a column on every collection because the rows come from thirty-odd
+    tables with nothing in common but their id, and a `quarantined_at` column
+    apiece would mean every read in the store growing a `WHERE quarantined_at IS
+    NULL` it can never be trusted to remember. Same load-bearing bump. */
+export const SCHEMA_VERSION = 9;
 
 /** 02-store §2 */
 export const DDL = [
@@ -212,6 +222,31 @@ export const DDL = [
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant, op, key)
   )`,
+  // v9 (01 §12 `StoreOps.retention`): the engine's quarantine. One row per
+  // record a sweep lifted, holding the live row VERBATIM (`to_jsonb` of the
+  // whole row, whichever table it came from) so nothing about it is lost while
+  // it waits out the recovery grace. `collection` is the drawer it left,
+  // `quarantined_at` is what `purge` measures its grace from — never the row's
+  // own age, which is already past.
+  // `subject`/`app_id` are lifted out of the row on the way in, because a
+  // quarantined row is still that person's data: without those two columns no
+  // erase selector could reach it and a sweep would be a way to survive an
+  // erasure (`vendo_effects`' frozen v1 shape is the same lesson).
+  // The key carries `quarantined_at` so a row re-created after a sweep and swept
+  // again is a second quarantined copy, not an overwrite of the first — the
+  // first is still inside its own grace.
+  `CREATE TABLE IF NOT EXISTS vendo_quarantine (
+    collection text NOT NULL, id text NOT NULL, data jsonb NOT NULL,
+    subject text, app_id text,
+    quarantined_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (collection, id, quarantined_at)
+  )`,
+  // purge's own statement: one collection, everything lifted before a cutoff.
+  // The primary key leads with (collection, id), so it cannot serve that range.
+  "CREATE INDEX IF NOT EXISTS vendo_quarantine_collection_at_idx ON vendo_quarantine (collection, quarantined_at)",
+  // The erase cascade's two selectors (§5).
+  "CREATE INDEX IF NOT EXISTS vendo_quarantine_subject_idx ON vendo_quarantine (subject)",
+  "CREATE INDEX IF NOT EXISTS vendo_quarantine_app_idx ON vendo_quarantine (app_id)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2

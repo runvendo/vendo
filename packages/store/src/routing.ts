@@ -656,6 +656,15 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
   }
 }
 
+/** The column one routed collection carries its own age in — the door's own
+ *  `cursorColumn`, read off the door's config rather than copied into a second
+ *  table, so a retention sweep and a reader can never come to disagree about
+ *  which column "older" is measured on. The Db is the config builder's; nothing
+ *  is queried to answer this. */
+export function ageColumnOf(db: Db, collection: ReservedCollection): string {
+  return configFor(db, collection).cursorColumn;
+}
+
 export function createReservedRecordStore(
   db: Db,
   collection: string,
