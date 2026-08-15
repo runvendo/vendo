@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { memoryStoreOps, storeOpsConformance } from "../../src/conformance/index.js";
+import { engineAppHistory } from "../../src/engine-collections.js";
 import { VendoError } from "../../src/errors.js";
+import type { IsoDateTime } from "../../src/ids.js";
 import type { StoreOps, VendoRecord } from "../../src/store.js";
 
 /**
@@ -356,6 +358,37 @@ describe("the memory reference serves what the proofs assume", () => {
     const ops = memoryStoreOps();
     expect(ops.transcripts.appendMessages).toBeTypeOf("function");
     expect((await ops.status()).ops).toBeGreaterThanOrEqual(36);
+  });
+
+  /** A quarantined row is still its owner's data. The local backend matches the
+      subject and app id it copies onto every lifted row (`store/src/erase.ts`),
+      so the reference has to as well — otherwise a retention lift is a way for
+      data to outlive an erasure, and the reference would disagree with the one
+      shipped engine on the one cascade nobody gets to re-run.
+      Read through `purge`, because that is the only door onto the quarantine:
+      a purge that finds nothing left to destroy is the erase having reached it. */
+  it("sweeps quarantined rows on both legs of the erase cascade", async () => {
+    const far = () => new Date(Date.now() + 86_400_000).toISOString() as IsoDateTime;
+    const lift = async (ops: StoreOps, collection: string): Promise<void> => {
+      const swept = await ops.retention!.quarantine(collection, far());
+      expect(swept.moved).toBe(1);
+    };
+
+    const bySubject = memoryStoreOps();
+    await bySubject.engine.put("vendo_parked_call", { id: "p1", data: {}, refs: { subject: "erase_me" } });
+    await bySubject.engine.put("vendo_parked_call", { id: "p2", data: {}, refs: { subject: "other" } });
+    expect((await bySubject.retention!.quarantine("vendo_parked_call", far())).moved).toBe(2);
+    await bySubject.lifecycle.erase({ subject: "erase_me" });
+    // One of the two lifted rows was this subject's, so only the neighbour's is
+    // left for the purge to destroy.
+    expect((await bySubject.retention!.purge("vendo_parked_call", far())).purged).toBe(1);
+
+    const byApp = memoryStoreOps();
+    const history = engineAppHistory("app_lifted");
+    await byApp.engine.put(history, { id: "v1", data: { version: 1 } });
+    await lift(byApp, history);
+    await byApp.lifecycle.erase({ appId: "app_lifted" });
+    expect((await byApp.retention!.purge(history, far())).purged).toBe(0);
   });
 
   it("cascades an app-scoped erase past harness state", async () => {

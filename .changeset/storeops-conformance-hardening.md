@@ -37,6 +37,15 @@ early on a mount that omitted them, which the report counted as a PASS — "this
 mount has no batch append" and "this mount's batch append is correct" were the
 same green line, and a whole family could be dropped invisibly.
 
+Two consequences of that landing alongside the retention engine: the memory
+reference now serves every op the manifest declares, so its `status()` reports
+`Object.keys(STORE_WIRE_PATHS).length` rather than a literal that goes stale the
+day an op is added; and its `lifecycle.erase` sweeps quarantined rows on BOTH
+legs, matching the subject and app id the local backend copies onto every lifted
+row. Without that second one a retention lift is a way for data to outlive an
+erasure — the reference would have disagreed with the only shipped engine on the
+one cascade nobody gets to re-run.
+
 **`transcripts.appendMessages`** gains cases for batch ordering after the tail,
 edit-by-id in place without moving the message, the refusals (an empty batch,
 two messages under one id), the thread it creates when the id is new, and a

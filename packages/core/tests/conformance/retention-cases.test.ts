@@ -90,12 +90,16 @@ describe("the retention cases catch what they were written for", () => {
     await expect(purge!.run()).rejects.toThrow(/purge cutoff predating the sweep should destroy nothing/);
   });
 
-  // The family is OPTIONAL (01 §12), and this is what that costs the suite:
-  // both cases no-op on a mount that omits it, which is what lets every mount
-  // carry them without going red.
-  it("passes both cases on a mount that omits the family entirely", async () => {
+  // The family is OPTIONAL (01 §12), so neither case may fail a mount that
+  // omits it — but neither may PASS one either, which is what a bare `return`
+  // used to do. Both report the omission instead, and `runConformance` counts
+  // it in its own bucket, so "this engine has nowhere to quarantine to" can
+  // never read as "this engine's sweep is correct".
+  it("reports an omission, not a pass, on a mount that omits the family entirely", async () => {
     for (const conformanceCase of retentionCases(() => ({ ...memoryStoreOps(), retention: undefined }))) {
-      await expect(conformanceCase.run()).resolves.toBeUndefined();
+      await expect(conformanceCase.run()).resolves.toEqual({
+        omitted: expect.stringContaining("omits the retention family"),
+      });
     }
   });
 });
