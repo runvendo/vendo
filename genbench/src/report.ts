@@ -341,11 +341,20 @@ function worldPanel(world: World | undefined): string {
 </details>`;
 }
 
+/** Where the question was found, for the two thirds of cases that were mined
+ *  from a real screen: the URLs are linked so the screen is one click away, and
+ *  a case nobody mined prints nothing rather than an empty line. */
+const sourceLine = (source: string | undefined): string =>
+  source === undefined
+    ? ""
+    : `<p class="source">from ${escape(source).replace(/https?:\/\/[^\s;]+/g, (url) => `<a href="${url}">${url}</a>`)}</p>`;
+
 async function caseSection(runDir: string, testCase: string, results: readonly CaseResult[], world: World | undefined): Promise<string> {
   const columns = await Promise.all(results.map(async (result) => await column(runDir, result)));
   return `<section class="case">
   <p class="case-id">${escape(testCase)}</p>
   <h2 class="prompt">${escape(results[0]?.prompt ?? "")}</h2>
+  ${sourceLine(results[0]?.source)}
   ${worldPanel(world)}
   <div class="grid">${columns.join("")}</div>
 </section>`;
@@ -384,6 +393,9 @@ h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 .case-id{margin:0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
   letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .prompt{margin:10px 0 0;font-size:20px;font-weight:500;line-height:1.35;letter-spacing:-.01em;max-width:62ch}
+/* Provenance, never a score: quieter than the prompt it sits under. */
+.source{margin:6px 0 0;font-size:12px;color:var(--ter);max-width:62ch}
+.source a{color:inherit}
 /* Every contender in ONE row, because the whole page is a comparison and a
    column you have to scroll to find is a column you never compare.
 

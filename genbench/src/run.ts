@@ -73,6 +73,9 @@ export interface CaseResult {
   readonly prompt: string;
   readonly lane: Lane;
   readonly shape: CaseShape;
+  /** The real screen the case was mined from, carried so the preview can say
+   *  where the question came from. Absent for a case nobody mined. */
+  readonly source?: string;
   readonly floor: FloorResult;
   readonly timing: { firstRenderMs?: number; settledMs: number };
   readonly cost: { usage: UsageTotals; usd: number };
@@ -376,6 +379,7 @@ async function main(argv: readonly string[]): Promise<number> {
       prompt: testCase.prompt,
       lane: testCase.lane,
       shape: testCase.shape,
+      source: testCase.source,
       floor,
       timing: {
         ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),

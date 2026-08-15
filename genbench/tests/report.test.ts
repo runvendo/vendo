@@ -115,6 +115,31 @@ describe("the preview page", () => {
     expect(html).toContain("Show me where my money went.");
   });
 
+  /**
+   * The screen a case was mined from is provenance, and this page is the only
+   * place anyone reads it — the field sat in `cases.json` with no reader at all
+   * until here. Two thirds of the cases were mined from nothing, and their
+   * headers must read exactly as they did before the field existed.
+   */
+  it("names the real screen a case was mined from, links it, and prints nothing for a case without one", async () => {
+    const html = await preview(
+      [
+        {
+          ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."),
+          source: "Monarch — Transactions, https://www.monarchmoney.com/features",
+        },
+        resultFor("vendo-sonnet", "spend-overview", "Show me where my money went."),
+      ],
+      { "pending-transfers": world, "spend-overview": world },
+    );
+
+    expect(html).toContain(
+      `<p class="source">from Monarch — Transactions, <a href="https://www.monarchmoney.com/features">https://www.monarchmoney.com/features</a></p>`,
+    );
+    // One of the two cases was mined; the other prints no source markup at all.
+    expect(html.split(`class="source"`).length - 1).toBe(1);
+  });
+
   it("shows the case's own tool data, overrides applied, not the authored world", async () => {
     const html = await preview([resultFor("vendo-sonnet", "no-pending-transfers", "Show my pending transfers.")], {
       "no-pending-transfers": emptyWorld,
