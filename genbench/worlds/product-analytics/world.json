@@ -62,6 +62,26 @@
         ]
       }
     },
+    "get_event_paths": {
+      "does": "What people do next after one event, as a branching tree over the last 7 days. The rows are the `data` array — this response is `app_opened`, which 16842 people fired. `from_event` is the branch's parent, `step` is how far past the root it sits, `users` is the people who took it and `pct_of_parent` their share of the parent. `(drop-off)` is the branch that ends the session. Only the branches worth opening are returned.",
+      "takes": { "event_name": "string" },
+      "data": {
+        "data": [
+          { "from_event": "app_opened", "step": 1, "event_name": "onboarding_step_viewed", "users": 4980, "pct_of_parent": 29.6 },
+          { "from_event": "app_opened", "step": 1, "event_name": "(drop-off)", "users": 4002, "pct_of_parent": 23.8 },
+          { "from_event": "app_opened", "step": 1, "event_name": "sidebar_collapsed", "users": 3120, "pct_of_parent": 18.5 },
+          { "from_event": "app_opened", "step": 1, "event_name": "report_exported", "users": 2650, "pct_of_parent": 15.7 },
+          { "from_event": "app_opened", "step": 1, "event_name": "pricing_page_viewed", "users": 2090, "pct_of_parent": 12.4 },
+          { "from_event": "onboarding_step_viewed", "step": 2, "event_name": "(drop-off)", "users": 2552, "pct_of_parent": 51.2 },
+          { "from_event": "onboarding_step_viewed", "step": 2, "event_name": "workspace_created", "users": 1806, "pct_of_parent": 36.3 },
+          { "from_event": "onboarding_step_viewed", "step": 2, "event_name": "invite_sent", "users": 622, "pct_of_parent": 12.5 },
+          { "from_event": "pricing_page_viewed", "step": 2, "event_name": "(drop-off)", "users": 1348, "pct_of_parent": 64.5 },
+          { "from_event": "pricing_page_viewed", "step": 2, "event_name": "checkout_started", "users": 742, "pct_of_parent": 35.5 },
+          { "from_event": "checkout_started", "step": 3, "event_name": "(drop-off)", "users": 424, "pct_of_parent": 57.1 },
+          { "from_event": "checkout_started", "step": 3, "event_name": "checkout_completed", "users": 318, "pct_of_parent": 42.9 }
+        ]
+      }
+    },
     "list_funnels": {
       "does": "Every saved funnel with how many people entered it and its end-to-end conversion over `window`. The rows are the `data` array. `steps` is how many steps the funnel has. Every step of every funnel is built on an event already in the tracking plan: Trial to paid checkout on checkout_started, pricing_page_viewed and checkout_completed, First teammate invited on workspace_created, app_opened and invite_sent.",
       "data": {
@@ -132,6 +152,63 @@
         ]
       }
     },
+    "list_filter_fields": {
+      "does": "Every event property a segment rule can be built on, with the values it most often takes and how many people match that one rule over the last 30 days. The rows are the `data` array. `matching_users` is people, not fires, and it counts that rule on its own — stacking a second rule with AND can only shrink it.",
+      "data": {
+        "data": [
+          { "event_name": "checkout_started", "property": "plan", "value": "pro", "matching_users": 1386 },
+          { "event_name": "checkout_started", "property": "plan", "value": "team", "matching_users": 962 },
+          { "event_name": "checkout_started", "property": "plan", "value": "starter", "matching_users": 662 },
+          { "event_name": "checkout_started", "property": "country", "value": "US", "matching_users": 1806 },
+          { "event_name": "checkout_started", "property": "country", "value": "GB", "matching_users": 391 },
+          { "event_name": "checkout_started", "property": "country", "value": "DE", "matching_users": 301 },
+          { "event_name": "pricing_page_viewed", "property": "source", "value": "web", "matching_users": 8420 },
+          { "event_name": "pricing_page_viewed", "property": "source", "value": "mobile", "matching_users": 2360 },
+          { "event_name": "signup_completed", "property": "source", "value": "web", "matching_users": 4210 },
+          { "event_name": "signup_completed", "property": "source", "value": "mobile", "matching_users": 1394 },
+          { "event_name": "report_exported", "property": "format", "value": "csv", "matching_users": 1204 },
+          { "event_name": "report_exported", "property": "format", "value": "pdf", "matching_users": 486 }
+        ]
+      }
+    },
+    "get_experiment_results": {
+      "does": "One experiment's variants side by side over its whole run so far. The rows are the `data` array — this response is the pricing-page experiment. `users` saw the variant, `signups` are the ones who then signed up, `revenue_cents` is in CENTS: 1284000 is $12,840.00. `delta_pct` is the lift over control and is 0 on control itself, and `is_significant` stays false until the result clears 95% confidence.",
+      "takes": { "experiment_id": "string" },
+      "data": {
+        "data": [
+          { "variant_name": "Control", "users": 4210, "signups": 261, "conversion_pct": 6.2, "revenue_cents": 1284000, "delta_pct": 0.0, "is_significant": false },
+          { "variant_name": "Annual-first pricing", "users": 4188, "signups": 310, "conversion_pct": 7.4, "revenue_cents": 1596000, "delta_pct": 19.4, "is_significant": false }
+        ]
+      }
+    },
+    "get_active_users_by_country": {
+      "does": "Where the workspace's active users were over the last 30 days, biggest country first. The rows are the `data` array — 42180 people were active in all, and `share_pct` is each country's share of that, so the nine countries here do not add up to 100. `country_code` is ISO 3166-1 alpha-2.",
+      "data": {
+        "data": [
+          { "country": "United States", "country_code": "US", "active_users": 18420, "share_pct": 43.7 },
+          { "country": "United Kingdom", "country_code": "GB", "active_users": 5104, "share_pct": 12.1 },
+          { "country": "Germany", "country_code": "DE", "active_users": 3862, "share_pct": 9.2 },
+          { "country": "Canada", "country_code": "CA", "active_users": 2940, "share_pct": 7.0 },
+          { "country": "India", "country_code": "IN", "active_users": 2610, "share_pct": 6.2 },
+          { "country": "Australia", "country_code": "AU", "active_users": 1884, "share_pct": 4.5 },
+          { "country": "Brazil", "country_code": "BR", "active_users": 1520, "share_pct": 3.6 },
+          { "country": "Japan", "country_code": "JP", "active_users": 1206, "share_pct": 2.9 },
+          { "country": "Netherlands", "country_code": "NL", "active_users": 1042, "share_pct": 2.5 }
+        ]
+      }
+    },
+    "list_members": {
+      "does": "Everyone on the workspace, admins first. The rows are the `data` array. `role` is viewer, editor or admin, `status` is active or invited, and `last_active` is null for someone who has not accepted the invite yet.",
+      "data": {
+        "data": [
+          { "id": "mbr_priya", "name": "Priya Raman", "email": "priya.raman@waypost.example", "role": "admin", "status": "active", "last_active": "2026-08-11" },
+          { "id": "mbr_marcus", "name": "Marcus Hale", "email": "marcus.hale@waypost.example", "role": "editor", "status": "active", "last_active": "2026-08-11" },
+          { "id": "mbr_dana", "name": "Dana Okonkwo", "email": "dana.okonkwo@waypost.example", "role": "editor", "status": "active", "last_active": "2026-08-10" },
+          { "id": "mbr_sam", "name": "Sam Ferreira", "email": "sam.ferreira@waypost.example", "role": "viewer", "status": "active", "last_active": "2026-08-04" },
+          { "id": "mbr_ines", "name": "Ines Vogel", "email": "ines.vogel@waypost.example", "role": "viewer", "status": "invited", "last_active": null }
+        ]
+      }
+    },
     "list_alerts": {
       "does": "Every anomaly alert raised in the last 7 days, newest first. The rows are the `data` array. `status` is firing, acknowledged or resolved; `observed` and `expected` are counts over the alert's `window`; `change_pct` is how far off the metric ran; `assignee` is null when nobody has taken it.",
       "data": {
@@ -155,6 +232,10 @@
     "deprecate_event": {
       "does": "Mark one event deprecated: it disappears from new charts and keeps its history. Call it once per event.",
       "takes": { "name": "string", "reason": "string" }
+    },
+    "update_member_role": {
+      "does": "Change one member's role. `role` is viewer, editor or admin, and the new role applies the moment it is called.",
+      "takes": { "member_id": "string", "role": "string" }
     }
   }
 }

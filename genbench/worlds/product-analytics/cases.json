@@ -131,5 +131,77 @@
     ],
     "tags": ["action"],
     "shape": "list-feed"
+  },
+  {
+    "id": "segment-rule-builder",
+    "lane": "screen",
+    "prompt": "I want a segment builder where I can stack rules against our events — pick an event, a property, a value — chain them with AND or OR, and see how many people match before I save it.",
+    "pass": [
+      "a rule is built by picking an event, then a property, then a value, all from the tool's rows — picking checkout_started leaves plan and country as its properties",
+      "a second rule can be added and joined to the first with AND or OR, without leaving the screen",
+      "the matching-people count shown before saving is one the tool returned — checkout_started plan is pro reads 1,386 people",
+      "saving calls the create tool with the name that was typed and a definition carrying both rules and the and/or between them",
+      "invents no event, property or value the tool did not return"
+    ],
+    "tags": ["action"],
+    "shape": "filter-builder",
+    "source": "Amplitude Create/Modify Segment (amplitude.com/docs/analytics/charts/build-charts-modify-user-segment); PostHog Cohorts (posthog.com/docs/data/cohorts)"
+  },
+  {
+    "id": "workspace-roles",
+    "lane": "screen",
+    "prompt": "Show me who's on this workspace, what role each person has, and let me change someone's role between viewer, editor and admin.",
+    "pass": [
+      "lists all five members with the role beside each: one admin, two editors, two viewers",
+      "shows Ines Vogel as invited, with a blank last-active rather than a date",
+      "each member's role sits in a control offering viewer, editor and admin, not plain text",
+      "changing a member's role calls the write tool with that member's id and the role that was picked"
+    ],
+    "tags": ["action"],
+    "shape": "permissions",
+    "source": "Amplitude Roles & Permissions (amplitude.com/docs/admin/account-management/role-based-access-controls-rbac); PostHog Access control (posthog.com/docs/settings/access-control)"
+  },
+  {
+    "id": "post-open-paths",
+    "lane": "screen",
+    "prompt": "Show me the paths people actually take after they open the app — the branching tree of what they do next and next after that — so I can see where they wander off before converting.",
+    "pass": [
+      "roots the tree at app_opened and hangs all five next events off it, onboarding_step_viewed's 4,980 the largest branch",
+      "the branches that go further — onboarding_step_viewed and pricing_page_viewed — nest their own children under them rather than sitting in one flat list",
+      "every count and share is the tool's: pricing_page_viewed 2,090 at 12.4%, then checkout_started 742 at 35.5% of it",
+      "shows drop-off as its own branch at each level, so the 2,552 people who leave after onboarding_step_viewed are visible"
+    ],
+    "tags": ["display"],
+    "shape": "tree",
+    "source": "Amplitude Pathfinder (amplitude.com/docs/analytics/charts/legacy-charts/legacy-charts-pathfinder); PostHog Paths (posthog.com/docs/product-analytics/insights)"
+  },
+  {
+    "id": "pricing-experiment",
+    "lane": "screen",
+    "prompt": "We're running a pricing-page experiment — put the control and the variant side by side: signups, conversion rate, revenue, and whether the difference is significant yet.",
+    "pass": [
+      "puts Control and Annual-first pricing side by side, the same metrics on each",
+      "every number is the tool's: Control 4,210 users, 261 signups, 6.2%, $12,840.00 — Annual-first 4,188 users, 310 signups, 7.4%, $15,960.00",
+      "shows Annual-first's 19.4% lift over Control, and no lift on Control itself",
+      "says the difference is not significant yet rather than calling Annual-first the winner"
+    ],
+    "tags": ["display"],
+    "shape": "comparison",
+    "source": "Amplitude Experiment Analysis view (amplitude.com/docs/feature-experiment/analysis-view); PostHog Experiments (posthog.com/docs/experiments/analyzing-results)"
+  },
+  {
+    "id": "active-users-map",
+    "lane": "screen",
+    "prompt": "Show me where our active users are logging in from — a map of active users by country over the last 30 days.",
+    "pass": [
+      "plots the nine countries the tool returned on a map, shaded or sized by active users rather than drawn as a bar chart",
+      "the United States reads as the biggest at 18,420 active users, 43.7%",
+      "each country's own count is readable, not only encoded as a shade — Germany 3,862 and Japan 1,206 are both legible",
+      "names the window, last 30 days, on the screen",
+      "marks no country the tool did not return"
+    ],
+    "tags": ["display"],
+    "shape": "map",
+    "source": "Amplitude Event Segmentation Map view (amplitude.com/docs/analytics/charts/event-segmentation/event-segmentation-build); PostHog World Map (posthog.com/docs/product-analytics/trends/charts)"
   }
 ]
