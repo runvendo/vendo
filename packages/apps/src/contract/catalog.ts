@@ -146,6 +146,52 @@ export const vendoThemeSchema = z.object({
   motionEasing: z.string().optional(),
 }).passthrough() satisfies z.ZodType<VendoTheme>;
 
+/** One page of the host product a generated view may send someone to. The
+ * `description` is what picks between them — the agent reads it, never the path. */
+export interface VendoRoute {
+  path: string;
+  description: string;
+}
+
+/** The host's route registry, keyed by the NAME generated UI links to. Paths are
+ * the host's own; a link names a key, so nothing generated authors a URL. */
+export type VendoRouteMap = Record<string, VendoRoute>;
+
+/** A resolved navigation — what a host's `onNavigate` is handed. `path` is the
+ * REGISTERED path with the link's params substituted and URL-encoded. */
+export interface VendoNavigation {
+  to: string;
+  path: string;
+  params?: Record<string, string>;
+}
+
+export const vendoRouteSchema = z.object({
+  path: z.string(),
+  description: z.string(),
+}) satisfies z.ZodType<VendoRoute>;
+
+export const vendoRouteMapSchema = z.record(z.string(), vendoRouteSchema);
+
+/** Resolve a link target against the registry. A name the host never registered
+ * — or one whose path has `:params` the link left unfilled — resolves to
+ * `undefined`: an unknown route is REFUSED here rather than passed through, so
+ * the only strings that can become an href are the host's own. */
+export function resolveVendoRoute(
+  routes: VendoRouteMap,
+  to: string,
+  params?: Record<string, string>,
+): VendoNavigation | undefined {
+  const route = routes[to];
+  if (route === undefined) return undefined;
+  let unfilled = false;
+  const path = route.path.replace(/:(\w+)/g, (_, key: string) => {
+    const value = params?.[key];
+    if (value === undefined) unfilled = true;
+    return value === undefined ? "" : encodeURIComponent(value);
+  });
+  return unfilled ? undefined : { to, path, ...(params === undefined ? {} : { params }) };
+}
+
 /** AGENT-1 — 03 §3 item (4): the model-facing summary of the host components a
  * generated view may use and how the host's brand should feel. One succinct
  * block; the agent injects it only for venues that render trees.

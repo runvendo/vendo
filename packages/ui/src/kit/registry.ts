@@ -24,6 +24,7 @@ import { DonutChart } from "./charts/donut.js";
 import { Sparkline } from "./charts/sparkline.js";
 import { Progress } from "./charts/progress.js";
 import { Button } from "./forms/button.js";
+import { Link } from "./link.js";
 import { Input } from "./forms/input.js";
 import { Select } from "./forms/select.js";
 import { DatePicker } from "./forms/date-picker.js";
@@ -57,7 +58,7 @@ export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string
   Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
   DataTable, CardList, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
-  Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,
+  Input, Select, DatePicker, Textarea, Checkbox, Button, Link, Form, Disclaimer,
   Switch, Radio, Slider, SegmentedControl, Combobox, DateRange,
   Tabs, Callout, Accordion, EmptyState, Steps, Menu, Tooltip,
 } as unknown as Record<string, ComponentType<Record<string, never>>>;

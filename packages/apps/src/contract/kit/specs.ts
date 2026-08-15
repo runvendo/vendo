@@ -574,6 +574,18 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
   },
   {
+    name: "Link",
+    takesChildren: true,
+    group: "forms",
+    summary: "Sends someone to a page of the host product. `to` NAMES a route the host registered — never a URL. A name the host did not register renders as plain text and goes nowhere, so link only where the host said you may.",
+    props: {
+      to: config(z.string(), "the registered route's name", { required: true }),
+      params: config(z.record(z.string(), z.string()), "values for the route path's :params"),
+      label: copy(z.string(), "link text; or nest the content as children"),
+    },
+    examples: ['<Link to="account" params={{id: accounts.data[0].id}} label="View account"/>'],
+  },
+  {
     name: "Form",
     takesChildren: true,
     group: "forms",

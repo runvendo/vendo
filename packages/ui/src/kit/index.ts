@@ -53,6 +53,7 @@ export {
   seriesIsEmpty,
 } from "./charts/sanitize.js";
 export { Button, type ButtonProps } from "./forms/button.js";
+export { Link, type LinkProps } from "./link.js";
 export { Input, type InputProps } from "./forms/input.js";
 export { Select, type SelectProps, type SelectOption } from "./forms/select.js";
 export { DatePicker, type DatePickerProps } from "./forms/date-picker.js";

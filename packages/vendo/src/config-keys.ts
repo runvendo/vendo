@@ -38,6 +38,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "tools",
   "skills",
   "catalog",
+  "routes",
   "theme",
   "instructions",
   "store",

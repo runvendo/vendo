@@ -35,6 +35,7 @@ import type {
 import type {
   ComponentCatalog,
   ComponentRegistry,
+  VendoRouteMap,
   VendoTheme,
 } from "@vendoai/apps/contract";
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
@@ -141,6 +142,11 @@ export interface CreateVendoConfig {
       each entry's `component` reference) or the array form. Entry names must
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
+  /** The host's own pages a generated view may link to, keyed by the name a
+      `<Link to>` reaches for. Each entry's `description` is what picks between
+      them. The SAME object goes to <VendoProvider>, which resolves a link
+      target against it and refuses any name that is not here. */
+  routes?: VendoRouteMap;
   /** cse lane 3 — programmatic override for the theme surface. An explicit
       theme wins over `.vendo/theme.json` (config-surface precedence). A
       structural, boot-once surface: it is resolved once at compose (feeds app

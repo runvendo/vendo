@@ -2,6 +2,8 @@
 import type {
   ComponentRegistry,
   ComponentRegistryEntry,
+  VendoNavigation,
+  VendoRouteMap,
   VendoTheme,
 } from "@vendoai/apps/contract";
 import type { ChatTransport, UIMessage } from "ai";
@@ -57,6 +59,12 @@ export interface VendoContextValue {
       the [Situation] channel. Default true; false disables capture entirely
       (useVendoContext data still rides). */
   captureScreen: boolean;
+  /** The host's own pages, by the name a generated `<Link to>` may reach for.
+      Unset, no target resolves and no link navigates. */
+  routes?: VendoRouteMap;
+  /** Where a Link press goes. The HOST performs the move — only its router
+      knows its basePath and its transitions; Vendo only says where. */
+  onNavigate?(nav: VendoNavigation): void;
 }
 
 /** One connectable toolkit in the connect dock (ENG-225). */
@@ -68,7 +76,9 @@ export interface ConnectorOption {
   label?: string;
 }
 
-const VendoContext = createContext<VendoContextValue | null>(null);
+/** Exported for the provider-optional hooks that live in their own modules
+ *  (`./routes.js`); not part of the package's public surface. */
+export const VendoContext = createContext<VendoContextValue | null>(null);
 
 /** 08 §2 (amended 2026-07-18): the components input — the plain name→component
  * map, or the 01 §14 name-keyed ComponentRegistry (the same object the server
@@ -118,9 +128,14 @@ export function VendoProvider(props: {
   intl?: Partial<KitIntl>;
   /** Disable the automatic screen snapshot on send (spec 2026-08-05 §2). */
   captureScreen?: boolean;
+  /** The host's own pages a generated `<Link to>` may open — see
+      VendoContextValue.routes. */
+  routes?: VendoRouteMap;
+  /** Perform the navigation a Link press asked for (`router.push(nav.path)`). */
+  onNavigate?(nav: VendoNavigation): void;
   children: ReactNode;
 }): ReactNode {
-  const { client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
+  const { client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -144,8 +159,10 @@ export function VendoProvider(props: {
       greeting,
       intl: resolvedIntl,
       captureScreen: captureScreen ?? true,
+      routes,
+      onNavigate,
     }),
-    [client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
+    [client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

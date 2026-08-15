@@ -51,7 +51,7 @@ const LIMITS = {
 const VOCABULARY = [
   "Accordion", "Avatar", "Badge", "BarChart", "Button", "Callout", "Card", "CardList", "Checkbox", "CodeBlock",
   "Combobox", "DataTable", "DatePicker", "DateRange", "DateTime", "Disclaimer", "Divider", "DonutChart",
-  "EmptyState", "EnumBadge", "Form", "Grid", "Icon", "Input", "KeyValue", "LineChart", "Menu", "Money", "Num",
+  "EmptyState", "EnumBadge", "Form", "Grid", "Icon", "Input", "KeyValue", "LineChart", "Link", "Menu", "Money", "Num",
   "Percent", "Progress", "Radio", "Row", "SegmentedControl", "Select", "Slider", "Sparkline", "Stack", "Stat",
   "Steps", "Surface", "Switch", "Tabs", "Text", "Textarea", "Timeline", "Tooltip",
 ];

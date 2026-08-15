@@ -121,6 +121,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Tooltip label="Sent 3 days ago"><Icon name="clock"/></Tooltip>
     <Form onSubmit="host_note" submitLabel="Save"><Textarea label="Note" rows={3}/><Checkbox label="Pin"/><Switch label="Notify" checked={true} onChange="host_notify"/></Form>
     <Button label="Refresh" onClick="host_getCashflowInsights" variant="primary"/>
+    <Link to="account" params={{ id: cashflow.data[0].label }} label="View account"/>
     <Tabs tabs={["In", "Out"]} value="In"><Text text="Money in"/><Text text="Money out"/></Tabs>
     <Disclaimer reason="No tool exposes forecasts." title="Not shown"/>
     <EmptyState icon="inbox" title="No periods" description="They appear the moment one closes."><Button label="Refresh" onClick="host_getCashflowInsights"/></EmptyState>

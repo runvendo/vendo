@@ -187,6 +187,9 @@ export type { CatalogFile, ExtractedTool, OverridesFile, ServerActionHandler } f
 // block the value came from.
 export type { VendoAgent as ComposedAgent } from "@vendoai/agents";
 export type {
+  VendoNavigation,
+  VendoRoute,
+  VendoRouteMap,
   VendoTheme,
 } from "@vendoai/apps/contract";
 export type { PolicyFile } from "@vendoai/guard";
