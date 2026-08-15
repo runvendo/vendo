@@ -49,8 +49,8 @@ generated UI in a sandboxed, brand-native surface.
 - Vendo-facing API/SDK/CLI design additionally routes through the
   **vendo-dx** skill (on top of api-design-dx).
 - Never commit to `main`; branch and open a PR.
-- UI-affecting changes are verified in a real browser with screenshots in the
-  PR. Tests and typecheck alone don't count.
+- UI-affecting changes are verified in a real browser. Tests and typecheck
+  alone don't count.
 - Local gate = `pnpm build && pnpm test:affected && pnpm typecheck && pnpm lint`
   on the touched scope. The FULL suite runs only in CI — the PR's green `ci`
   check is the gate of record; never run the full suite locally.
