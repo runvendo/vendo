@@ -59,6 +59,21 @@ export function buildFailureNotice(reason: string | undefined): string {
   return detail.length === 0 ? "This view couldn’t be built — nothing was changed." : detail;
 }
 
+/**
+ * What a person is told when the host's limits policy denies them: the host's
+ * own sentence, verbatim.
+ *
+ * The host set the cap, so the host is the only one who can say what it is, or
+ * when it lifts — the same reason `buildFailureNotice` above passes the
+ * runtime's classified line through rather than replacing it with one canned
+ * sentence. A policy that returned no message gets the chrome's own line, which
+ * claims nothing it cannot know: only that the request never ran.
+ */
+export function limitNotice(message: string | undefined): string {
+  const detail = (message ?? "").trim();
+  return detail.length === 0 ? "This request wasn’t run — nothing was changed." : detail;
+}
+
 // A stable placeholder for the in-thread synthesized ApprovalRequest's required
 // `createdAt`: the wire approval part carries no timestamp, and the value is
 // never displayed (the card hides the context byline in-thread). Fixed, not

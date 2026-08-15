@@ -6,6 +6,7 @@ import {
   vendoGrantSetPartSchema,
   vendoBuildFailedPartSchema,
   vendoCitationsPartSchema,
+  vendoLimitPartSchema,
   vendoStepLimitPartSchema,
   vendoConnectPartSchema,
   vendoViewPartSchema,
@@ -178,6 +179,29 @@ describe("vendoBuildFailedPartSchema", () => {
       type: "data-vendo-build-failed",
       toolCallId: "call_1",
       reason: "",
+    }).success).toBe(false);
+  });
+});
+
+/** The host limits policy's denial (additive). The sentence is OPTIONAL: a host
+ *  that wrote none still gets the card, in the chrome's own words. */
+describe("vendoLimitPartSchema", () => {
+  it("accepts a denial carrying the host's own sentence", () => {
+    expect(vendoLimitPartSchema.safeParse({
+      type: "data-vendo-limit",
+      message: "You've used all 50 requests on the Free plan this month.",
+    }).success).toBe(true);
+  });
+
+  it("accepts a denial with no sentence at all", () => {
+    expect(vendoLimitPartSchema.safeParse({ type: "data-vendo-limit" }).success).toBe(true);
+  });
+
+  it("rejects a wrong type literal or a non-string message", () => {
+    expect(vendoLimitPartSchema.safeParse({ type: "data-vendo-step-limit" }).success).toBe(false);
+    expect(vendoLimitPartSchema.safeParse({
+      type: "data-vendo-limit",
+      message: 50,
     }).success).toBe(false);
   });
 });
