@@ -62,10 +62,14 @@ describe("VendoThread and VendoOverlay exports", () => {
       "This tool changed since you approved it on Jul 1, 2026 — your previous permission no longer applies.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    // L38 — the morph toast is the SAME ask, so it carries the card's title. It
-    // recomputed the presentation without the descriptor's authored title, so a
-    // card reading "Send the report" morphed into "Email send — approved".
-    expect((await screen.findByText(/— approved$/)).textContent).toBe("Send the report — approved");
+    // An in-chat ask settles WHERE IT WAS ASKED: the decision goes out from the
+    // card in place and nothing lifts out of the thread. The fly-to-the-corner
+    // morph is an AUTOMATION's ask only (`ctx.venue`), and the in-thread wire
+    // carries none. The morph fires before the decision is sent, so waiting for
+    // the wire is also the window in which it would have appeared.
+    await waitFor(() => expect(wire.requests.some(request =>
+      request.method === "POST" && request.path === "/approvals/decide")).toBe(true));
+    expect(document.querySelector(".fl-morph-card")).toBeNull();
 
     expect(await screen.findByText("Turn complete")).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("button", { name: "Stop" })).toBeNull());
