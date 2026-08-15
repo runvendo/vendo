@@ -93,6 +93,10 @@ const BROAD_SCREEN = `<App name="Cash flow">
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
     <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In", format: "money" }]} columns={2}/>
+    <KeyValue record={cashflow.data[0]} items={[{ key: "label", label: "Period" }, { key: "in", format: "money" }]} dividers={true}/>
+    <Timeline entries={cashflow.data} titleField="label" emptyState="No history"/>
+    <Avatar name="Ada Lovelace" size="sm"/>
+    <CodeBlock language="json" code="const rate = 0.42;"/>
     <Money amount={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} currency="USD"/>
     <Percent value={0.42} fractionDigits={1}/>
     <Num value={12} notation="compact"/>
@@ -113,6 +117,8 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Button label="Refresh" onClick="host_getCashflowInsights" variant="primary"/>
     <Tabs tabs={["In", "Out"]} value="In"><Text text="Money in"/><Text text="Money out"/></Tabs>
     <Disclaimer reason="No tool exposes forecasts." title="Not shown"/>
+    <EmptyState icon="inbox" title="No periods" description="They appear the moment one closes."><Button label="Refresh" onClick="host_getCashflowInsights"/></EmptyState>
+    <Steps items={[{ label: "Details" }, { label: "Review", description: "Check the totals" }, { label: "Done" }]} active={1}/>
     <Text text="Grouped" pending={true}/>
     <Sparkline data={cashflow.data.map((row) => ({ label: row.label, value: row.in }))} valueKey="value"/>
   </Stack>
