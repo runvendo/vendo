@@ -154,7 +154,7 @@
       "lists all four staff with the role each one holds",
       "shows for every person whether they can open orders, inventory, discounts and payouts",
       "Rosa Delgado's four areas all read as off to start",
-      "ticking orders on for Rosa calls set_staff_permission with her staff id, the orders area and enabled true"
+      "each of Rosa's four areas ticks on its own, so orders and inventory can be opened without touching discounts or payouts"
     ],
     "source": "Shopify — Settings > Users > Roles, https://help.shopify.com/en/manual/your-account/users/roles/manage-roles"
   },
@@ -182,7 +182,7 @@
       "lists all five conversations down one side, with the three unread ones marked",
       "clicking a conversation opens it beside the list, with the list still on screen",
       "the opened conversation shows every message in it in order, saying who sent each",
-      "the reply box calls send_message with that conversation's id and the typed text"
+      "a reply box and its send control sit with the open conversation, so replying never leaves the list"
     ],
     "source": "Shopify — Inbox, https://help.shopify.com/en/manual/inbox/conversations"
   },
