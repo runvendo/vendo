@@ -1,5 +1,13 @@
 # @vendoai/knowledge
 
+## 0.20.0
+
+### Patch Changes
+
+- Updated dependencies [095f143]
+- Updated dependencies [cfd4f48]
+  - @vendoai/core@0.20.0
+
 ## 0.19.0
 
 ### Patch Changes
