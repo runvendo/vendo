@@ -212,6 +212,34 @@ describe("the preview page", () => {
     expect(html).not.toContain("judge ·");
   });
 
+  /**
+   * The one place on this page a contender's screens are added up, so the sum
+   * is what has to be checked — and a shape a contender never ran must not be
+   * scored: 0/0 painted green is a claim about a contender nobody put to the test.
+   */
+  it("adds a contender's checks up by shape, and leaves a shape it never ran unscored", async () => {
+    const html = await preview(
+      [
+        resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."),
+        resultFor("diy-sonnet", "pending-transfers", "Show my pending transfers."),
+        {
+          ...resultFor("vendo-sonnet", "spend-overview", "Show me where my money went."),
+          floor: { ...PASSING, renders: false, valid: false, pass: false },
+        },
+        { ...resultFor("vendo-sonnet", "spend-chart", "Chart my spending by category."), shape: "chart" },
+      ],
+      { "pending-transfers": world, "spend-overview": world, "spend-chart": world },
+    );
+
+    // Two table cases at five checks each: vendo ran both and lost two checks on
+    // one, diy ran one of the two and held everything on it.
+    expect(html).toContain(`<tr><th>table</th><td>2</td><td class="no">8/10</td><td class="ok">5/5</td></tr>`);
+    // Only vendo ran the chart case, so diy's cell says so rather than scoring it.
+    expect(html).toContain(`<tr><th>chart</th><td>1</td><td class="ok">5/5</td><td class="muted">—</td></tr>`);
+    // Shapes nobody ran are not rows at all.
+    expect(html).not.toContain(`<th>form</th>`);
+  });
+
   it("carries the listener that turns a press in an embedded page into a feed row", async () => {
     const html = await preview([resultFor("vendo-sonnet", "spend-overview", "Show me where my money went.")], {
       "spend-overview": world,
