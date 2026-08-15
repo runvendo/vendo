@@ -89,7 +89,7 @@ describe("the writers' design brief", () => {
     expect(brief).toContain("Lead with the answer.");
     expect(brief).toContain("Never chart two data points");
     expect(brief).toContain("A hole is a `<Disclaimer>`.");
-    expect(brief).toContain("`className`, no `style`, no CSS");
+    expect(brief).toContain("`var(--vendo-color-accent)`");
   });
 
   it("carries the WHOLE briefing pack when composition has one", async () => {
