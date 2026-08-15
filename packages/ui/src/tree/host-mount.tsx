@@ -11,11 +11,10 @@ import type {
   ToolOutcome,
 } from "@vendoai/core";
 import type {
-  JailBundledPackage,
-  JailModule,
+  InClientBundledPackage,
+  InClientModule,
 } from "@vendoai/apps/contract";
-import { zodShim } from "./jail/zod-shim.js";
-import type { JailFurnishing } from "./jail/JailedComponent.js";
+import { zodShim } from "./inclient-zod-shim.js";
 import { ContainedNotice } from "./notice.js";
 
 /**
@@ -23,41 +22,52 @@ import { ContainedNotice } from "./notice.js";
  * mounts natively in the host page, with full host-page authority (the diff
  * review is the control). This module is the mount path only; the decision to
  * use it is server-authoritative (`payload.inClient.granted`, written
- * exclusively by the runtime's hash-pin verification) and the renderer's
- * default remains the sandboxed iframe jail.
+ * exclusively by the runtime's hash-pin verification).
  *
- * Evaluation mirrors the jail runtime: sucrase rewrites every import into a
- * call to a controlled `require` bound to the captured import table, so the
- * approved source reaches exactly React and its captured sub-sources — the
- * module space stays closed even though the code now runs with host authority.
+ * Sucrase rewrites every import into a call to a controlled `require` bound to
+ * the captured import table, so the approved source reaches exactly React and
+ * its captured sub-sources — the module space stays closed even though the code
+ * runs with host authority.
  */
 
 /**
- * The in-client module space. Typed `Record<JailModule | JailBundledPackage,
- * unknown>` — NOT `Record<string, unknown>` — so it cannot drift from the jail:
- * this path renders APPROVED remixes of the host's OWN components, which are
- * exactly the components that import clsx/tailwind-merge/zod. Left untyped, a
- * newly bundled package would resolve in the preview and throw here, in
- * production, with host-page authority. A missing key is now a compile error.
+ * The in-client module space. Typed `Record<InClientModule |
+ * InClientBundledPackage, unknown>` — NOT `Record<string, unknown>` — so it
+ * cannot drift from the contract: this path renders APPROVED remixes of the
+ * host's OWN components, which are exactly the components that import
+ * clsx/tailwind-merge/zod. A missing key is a compile error.
  *
- * The kit-ish aliases (`@vendoai/ui`, `vendo/kit`, …) are deliberately absent:
- * those exist so a not-yet-stripped GENERATED island still renders, and a
- * generated island never reaches this path.
- *
- * zod is the same SHIM the jail uses, so one captured source resolves the same
- * modules in both venues. It refuses to validate loudly rather than silently.
+ * zod is a SHIM that refuses to validate loudly rather than silently.
  */
-const HOST_MODULES: Record<JailModule | JailBundledPackage, unknown> = {
+const HOST_MODULES: Record<InClientModule | InClientBundledPackage, unknown> = {
   react: { ...React, default: React },
   "react-dom": { createPortal, flushSync, default: { createPortal, flushSync } },
   "react-dom/client": { ...ReactDOMClient, default: ReactDOMClient },
   "react/jsx-runtime": { jsx, jsxs, Fragment, default: { jsx, jsxs, Fragment } },
   "react/jsx-dev-runtime": { jsx, jsxs, jsxDEV: jsx, Fragment, default: { jsx, jsxs, Fragment } },
-  // `__esModule: true` for the same interop reason as the jail table.
+  // `__esModule: true` so a `import cn from "clsx"` default read interops.
   clsx: { __esModule: true, clsx, default: clsx },
   "tailwind-merge": { __esModule: true, ...tailwindMerge, default: tailwindMerge },
   zod: zodShim,
 };
+
+export interface InClientSubSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+export interface InClientStyle {
+  path: string;
+  css: string;
+}
+
+/** Structural copy of the additive pin-baseline furnishing; ui depends on core only. */
+export interface InClientFurnishing {
+  sourceImports?: Record<string, string>;
+  subSources?: Record<string, InClientSubSource>;
+  sampleProps?: Record<string, unknown>;
+  styles?: InClientStyle[];
+}
 
 interface VirtualSource {
   source: string;
@@ -73,7 +83,7 @@ const compile = (source: string): string => transform(source, {
 /** Compile and evaluate one approved component plus its captured sub-sources. */
 export function evaluateApprovedComponent(
   source: string,
-  furnishing?: Pick<JailFurnishing, "sourceImports" | "subSources">,
+  furnishing?: Pick<InClientFurnishing, "sourceImports" | "subSources">,
 ): ComponentType<Record<string, unknown>> {
   const entryId = "\0vendo-inclient-entry";
   const modules = Object.create(null) as Record<string, VirtualSource>;
@@ -127,9 +137,7 @@ export interface InClientMountProps {
   source: string;
   /** Live tree props, already host-bound ($action → functions). */
   props?: Record<string, unknown>;
-  furnishing?: JailFurnishing;
-  /** The sandboxed fallback: rendered INSTEAD when evaluation or render fails. */
-  fallback: ReactNode;
+  furnishing?: InClientFurnishing;
   onAction(action: string, payload?: Json): Promise<ToolOutcome>;
   onStateSet(key: string, value: Json): void;
 }
@@ -138,19 +146,16 @@ interface DropBackState {
   failed?: string;
 }
 
-/** The shared drop-back rendering: a loud notice plus the sandboxed fallback. */
-const dropBack = (name: string, message: string, fallback: ReactNode) => (
-  <>
-    <ContainedNotice label="In-client mount failed" outcome="error">
-      {`${name} failed in the host page and dropped back to the sandbox: ${message}`}
-    </ContainedNotice>
-    {fallback}
-  </>
+/** The drop-back: a failed mount says so in-surface and renders nothing else. */
+const dropBack = (name: string, message: string) => (
+  <ContainedNotice label="In-client mount failed" outcome="error">
+    {`${name} failed in the host page: ${message}`}
+  </ContainedNotice>
 );
 
-/** A failed host-page mount drops back to the sandboxed iframe, loudly. */
+/** A failed host-page mount drops back to the notice, loudly. */
 class InClientBoundary extends Component<
-  { name: string; fallback: ReactNode; children: ReactNode },
+  { name: string; children: ReactNode },
   DropBackState
 > {
   override state: DropBackState = {};
@@ -161,21 +166,20 @@ class InClientBoundary extends Component<
 
   override render() {
     if (this.state.failed === undefined) return this.props.children;
-    return dropBack(this.props.name, this.state.failed, this.props.fallback);
+    return dropBack(this.props.name, this.state.failed);
   }
 }
 
 /**
  * 08-ui §5 amendment (06-apps §9) — mount ONE approved generated component in
  * the host page. Rendered only when the server's hash-pinned verdict granted
- * the in-client venue; every failure path drops back to the jail fallback.
+ * the in-client venue; every failure path drops back to a contained notice.
  */
 export function InClientMount({
   name,
   source,
   props,
   furnishing,
-  fallback,
   onAction,
   onStateSet,
 }: InClientMountProps) {
@@ -194,18 +198,18 @@ export function InClientMount({
   }, [furnishing, source]);
 
   if (evaluated.kind === "ssr") return null;
-  if (evaluated.kind === "error") return dropBack(name, evaluated.message, fallback);
+  if (evaluated.kind === "error") return dropBack(name, evaluated.message);
   const Approved = evaluated.Component;
   const vendo = {
     action: (action: string, payload?: Json) => onAction(action, payload),
     setState: (key: string, value: Json) => onStateSet(key, value),
   };
-  // Venue parity with the jail (JailedComponent): a node without live props
-  // renders the captured sampleProps rehearsal stub. The approved version is
-  // hash-pinned, so promotion must never change what props the component sees.
+  // A node without live props renders the captured sampleProps rehearsal stub.
+  // The approved version is hash-pinned, so promotion must never change what
+  // props the component sees.
   const effectiveProps = props ?? furnishing?.sampleProps ?? {};
   return (
-    <InClientBoundary name={name} fallback={fallback}>
+    <InClientBoundary name={name}>
       <div data-vendo-inclient-mount={name}>
         <Approved {...effectiveProps} vendo={vendo} />
       </div>

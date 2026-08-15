@@ -11,7 +11,6 @@ const shots = [
   { scenario: "notice", file: "notice", ready: '[role="region"][aria-label="Vendo is running without a policy"]' },
   { scenario: "stage", file: "stage", ready: '[aria-label="Voice transcript"]' },
   { scenario: "tree", file: "tree", ready: '[data-dangling-node="not-yet-streamed"]' },
-  { scenario: "tree-jail", file: "tree-jail", ready: 'iframe[title="Generated component: SecurityProbe"]' },
   { scenario: "tree-themed", file: "tree-themed", ready: '[data-vendo-node-id="host"]' },
   { scenario: "appframe", file: "appframe", ready: 'section[aria-label="HTTP app frame same-origin"] iframe' },
 ] as const;

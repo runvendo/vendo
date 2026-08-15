@@ -221,7 +221,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   // message-driven stick already ran. Re-run so the reader stays pinned.
   useLayoutEffect(follow, [messages, contentRevision]);
 
-  // A generated view mounts and grows AFTER the messages effect runs (the jail
+  // A generated view mounts and grows AFTER the messages effect runs (the frame
   // renders async; logos/images load late), and streamed text is REVEALED at
   // its own paced rate between deltas (chrome/markdown's useSmoothText), which
   // changes no message identity at all. Without watching actual size, the stick

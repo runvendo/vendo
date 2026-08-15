@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeViewportBlockCss } from "../src/tree/jail/viewport-css.js";
+import { normalizeViewportBlockCss } from "../../src/tree/viewport-css.js";
 
-// Existing-agents polish — the stylesheet arm of the jail's viewport-height
-// normalization. Inside an auto-sized iframe a viewport-relative BLOCK
-// constraint makes "content height" depend on the previous host height (the
-// embed-whitespace ratchet); the runtime already normalizes inline styles,
-// and generated islands that ship the same constraint in a <style> tag must
-// get the identical treatment: height→auto, min-height→0, everything else
-// untouched.
+// The stylesheet arm of an embedded surface's viewport-height normalization.
+// Inside an auto-sized iframe a viewport-relative BLOCK constraint makes
+// "content height" depend on the previous host height (the embed-whitespace
+// ratchet): height→auto, min-height→0, everything else untouched.
 describe("normalizeViewportBlockCss", () => {
   it("rewrites viewport-height block constraints to their content-sized forms", () => {
     expect(normalizeViewportBlockCss(".page { min-height: 100vh; }"))

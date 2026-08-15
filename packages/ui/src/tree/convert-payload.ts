@@ -12,7 +12,7 @@ import {
 
 /**
  * The `vendo-genui/v2` payload converts mechanically to the walk tree TreeView
- * renders, so jail, guard, bindings, `$state` and outcome containment are
+ * renders, so guard, bindings, `$state` and outcome containment are
  * shared rather than reimplemented. Only the payload surface differs:
  *
  * - `queries` name bare identifiers; the result lives at JSON Pointer

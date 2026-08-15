@@ -21,7 +21,7 @@ function emitted(name: string): string {
 
 /** Rebuild the typed theme from the CSS transport used by the door. Keeping the
  * shim on variables (rather than embedded JSON) leaves the generated source
- * generic and gives its own chrome and the inner jail one canonical namespace.
+ * generic and gives its own chrome one canonical namespace.
  * Only the variables a `VendoTheme` field maps back from are read; the derived
  * ones (color-scheme, the density sizing scale, the duplicate base size) are the
  * mapping's output, not its input. */

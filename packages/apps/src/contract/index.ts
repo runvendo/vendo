@@ -2,7 +2,7 @@
  * `@vendoai/apps/contract` — the app format, browser-safe.
  *
  * Everything a surface needs to SPEAK about a generated app: the document
- * envelope, the tree, the kit vocabulary, the island/jail rules, catalog +
+ * envelope, the tree, the kit vocabulary, the in-client module rules, catalog +
  * theme, the checking contract, remix provenance,
  * and the wire shapes `/apps/*` returns. No node built-ins, no model, no store —
  * this door is importable from a browser bundle, which is why `@vendoai/ui`
@@ -47,9 +47,8 @@ export {
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "@vendoai/core";
 export type { PathBinding, ReshapeStep, StateBinding, TreeNode, UIPayload } from "@vendoai/core";
-// islands — the seat's rules
-export * from "./island-ambient.js";
-export * from "./jail-modules.js";
+export * from "./screen-tools-scan.js";
+export * from "./inclient-modules.js";
 // genui/tree — the compiled tree
 export * from "./genui/tree.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/shape-check.js";

@@ -1,14 +1,12 @@
 /**
- * Existing-agents polish — the stylesheet arm of the jail's viewport-height
- * normalization. An auto-sized jail iframe has no independent block viewport:
- * `100vh` resolves to whatever height the HOST set from the last content
- * measurement, so a viewport-tall block plus any content after it grows the
- * frame on every measure (browser-observed: generated dashboards ratcheting
- * to the 8192px cap, leaving a tall run of empty background in the embed).
- * The runtime already rewrites inline viewport block constraints; generated
- * islands that ship the same constraint in a `<style>` tag get the identical
- * treatment here: growing block sizes go content-sized, everything else —
- * including bounding `max-*` constraints — stays untouched.
+ * The stylesheet arm of an embedded surface's viewport-height normalization.
+ * An auto-sized iframe has no independent block viewport: `100vh` resolves to
+ * whatever height the HOST set from the last content measurement, so a
+ * viewport-tall block plus any content after it grows the frame on every
+ * measure (browser-observed: dashboards ratcheting to the 8192px cap, leaving
+ * a tall run of empty background in the embed). Growing block sizes go
+ * content-sized; everything else — including bounding `max-*` constraints —
+ * stays untouched.
  */
 
 /** The viewport BLOCK units (vh/vb and their d/s/l variants), never vw/vi. */

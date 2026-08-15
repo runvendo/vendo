@@ -504,7 +504,7 @@ describe("registered host component capture", () => {
     // The console reads these rows straight out of the store, so what must
     // hold is that JSON.parse(JSON.stringify(record)) is still a valid record
     // and the seed is still a plain object of JSON values — the shape
-    // `sampleProps: z.record(z.unknown())` and `JailFurnishing.sampleProps`
+    // `sampleProps: z.record(z.unknown())` and `InClientFurnishing.sampleProps`
     // both accept.
     const stored = await record(root, "Card");
     const overTheWire = capturedHostComponentSchema.parse(JSON.parse(JSON.stringify(stored)));

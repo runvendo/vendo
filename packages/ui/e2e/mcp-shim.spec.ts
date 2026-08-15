@@ -10,8 +10,17 @@ import { fileURLToPath } from "node:url";
 import { themeCssVariables } from "../src/theme.js";
 import { browserTreeFixture } from "./fixtures/tree.js";
 
+/** Only the server's hash-pin verdict unlocks the in-client mount. */
+const GRANTED = {
+  granted: true,
+  versionHash: "sha256:approved",
+  approvedBy: "host-console",
+  at: "2026-07-15T09:00:00.000Z",
+};
+
 const shimTree = {
   ...browserTreeFixture,
+  inClient: GRANTED,
   queries: [{ name: "total", tool: "host_invoice_total", input: { invoiceId: "inv_42" } }],
   nodes: [
     ...browserTreeFixture.nodes.map((node) => node.id === "root"
@@ -34,6 +43,7 @@ const shimTree = {
 
 const themeProofTree = {
   formatVersion: "vendo-genui/v2",
+  inClient: GRANTED,
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["content"] },
@@ -58,7 +68,7 @@ const themeProofTree = {
         fontFamily: "var(--vendo-font-family)",
       }}>
         <strong style={{ fontSize: 17 }}>Generated component</strong>
-        <span>The same --vendo-* tokens reached the jail.</span>
+        <span>The same --vendo-* tokens reached the generated component.</span>
       </section>;
     }`,
   },
@@ -145,10 +155,7 @@ test("generated MCP Apps shim renders a tree and bridges queries and actions", a
     },
   });
 
-  const generated = shim
-    .frameLocator('iframe[title="Generated component: ShimAction"]')
-    .frameLocator('iframe[title="Generated Vendo component"]');
-  await generated.getByRole("button", { name: "Run shim action" }).click();
+  await shim.getByRole("button", { name: "Run shim action" }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __shimCalls: unknown[] }).__shimCalls)).toContainEqual({
     name: "vendo_apps_call",
     arguments: {
@@ -203,18 +210,17 @@ test("generated MCP Apps shim renders a branded HTTP link-out card", async ({ pa
   });
 });
 
-test("generated MCP Apps shim carries the Maple theme through the generated-component jail", async ({ page }) => {
+test("generated MCP Apps shim carries the Maple theme into the generated component", async ({ page }) => {
   const screenshotDir = new URL("../../../docs/verification/eng-274/", import.meta.url);
   await mkdir(screenshotDir, { recursive: true });
 
   await loadShim(page, themeProofTree as unknown as UIPayload);
   const unbrandedShim = page.frameLocator("#shim-frame");
-  const unbrandedGenerated = unbrandedShim
-    .frameLocator('iframe[title="Generated component: ThemeProof"]')
-    .frameLocator('iframe[title="Generated Vendo component"]');
-  await expect(unbrandedGenerated.locator("[data-theme-proof]")).toBeVisible();
-  await expect.poll(() => unbrandedGenerated.locator("html").evaluate((element) =>
-    getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim())).toBe("#111111");
+  await expect(unbrandedShim.locator("[data-theme-proof]")).toBeVisible();
+  // Unbranded, the shim declares no `--vendo-*` at all: the tokens are the
+  // HOST's to send, and the branded half below is the seam that matters.
+  await expect.poll(() => unbrandedShim.locator("html").evaluate((element) =>
+    getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim())).toBe("");
   await page.locator("#shim-frame").screenshot({
     path: fileURLToPath(new URL("eng-274-theme-unbranded.png", screenshotDir)),
     animations: "disabled",
@@ -226,19 +232,16 @@ test("generated MCP Apps shim carries the Maple theme through the generated-comp
   )) as VendoTheme;
   await loadShim(page, themeProofTree as unknown as UIPayload, mapleTheme);
   const mapleShim = page.frameLocator("#shim-frame");
-  const mapleGenerated = mapleShim
-    .frameLocator('iframe[title="Generated component: ThemeProof"]')
-    .frameLocator('iframe[title="Generated Vendo component"]');
   await expect(mapleShim.getByText("Host app inside MCP")).toBeVisible();
   await expect.poll(() => mapleShim.locator("body").evaluate((element) => ({
     background: getComputedStyle(element).backgroundColor,
     color: getComputedStyle(element).color,
   }))).toEqual({ background: "rgb(251, 251, 250)", color: "rgb(17, 17, 17)" });
-  await expect.poll(() => mapleGenerated.locator("html").evaluate((element) => ({
+  await expect.poll(() => mapleShim.locator("html").evaluate((element) => ({
     accent: getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim(),
     radius: getComputedStyle(element).getPropertyValue("--vendo-radius-medium").trim(),
   }))).toEqual({ accent: "#111111", radius: "14px" });
-  await expect.poll(() => mapleGenerated.locator("[data-theme-proof]").evaluate((element) => ({
+  await expect.poll(() => mapleShim.locator("[data-theme-proof]").evaluate((element) => ({
     background: getComputedStyle(element).backgroundColor,
     radius: getComputedStyle(element).borderRadius,
   }))).toEqual({ background: "rgb(17, 17, 17)", radius: "14px" });

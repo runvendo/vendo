@@ -236,7 +236,7 @@ function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnLive, re
 
 /** One stream part in a turn: text (user verbatim / assistant markdown with the
     ENG-217 caret choreography), assistant files, tool build beats, and the
-    jailed generated-view app card (06-apps §§8–9). */
+    generated-view app card (06-apps §§8–9). */
 export function ThreadPart({ part, partKey, role, restored, count = 1, risks, connectLive = false, hideBeats = false, turnPending = true, turnLive = turnPending, sendMessage, siblingParts, respond }: {
   part: UIMessage["parts"][number];
   partKey: string;
@@ -442,8 +442,8 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     if (!turnPending && (data.payload as { streaming?: boolean }).streaming === true) return null;
     // 06-apps §§8–9 — in-thread surfaces are conversational previews, never
     // the approved in-client venue and never a drift report: both fields are
-    // server-authoritative, so whatever the stream carried, render jailed
-    // and notice-free.
+    // server-authoritative, so whatever the stream carried, render
+    // notice-free.
     const {
       inClient: _neverInThread,
       pinDrift: _serverOnly,

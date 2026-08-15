@@ -1,9 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  IN_CLIENT_BUNDLED_PACKAGES,
   isIslandResolvableSpecifier,
-  isPinnedJailPackage,
-  JAIL_BUNDLED_PACKAGES,
+  isPinnedPackage,
 } from "@vendoai/apps/contract";
 import type { SeedSubSource } from "../formats.js";
 import {
@@ -21,14 +21,14 @@ import {
  * load-bearing as one file down — and is bounded instead by two honest limits:
  *
  *  - PACKAGE BOUNDARY. Anything that resolves into `node_modules` is never
- *    captured and never warned about: it is not the host's code, and the jail
+ *    captured and never warned about: it is not the host's code, and the mount
  *    supplies the modules it blesses.
  *  - BYTE BUDGET. One total budget per captured component. Over it, the whole
  *    capture is skipped with a warning naming the module that blew it, so the
  *    console can say "too large to preview" instead of rendering a hole.
  */
 
-/** ~1 MB of TypeScript is already far past what a jail should compile to draw
+/** ~1 MB of TypeScript is already far past what a mount should compile to draw
  *  one card; 256 KB leaves generous headroom for a real component tree while
  *  keeping a stray data fixture out of every host's `.vendo/`. */
 const DEFAULT_CAPTURE_BUDGET_BYTES = 256 * 1024;
@@ -41,26 +41,26 @@ export interface CapturedClosure {
   /** Entry source plus every captured module, in UTF-8 bytes. */
   bytes: number;
   /**
-   * Specifiers the jail will ask for and cannot answer: every import the walk
-   * did NOT capture that is not `isIslandResolvableSpecifier` — unbundled
-   * package imports, component-local stylesheets, unresolvable host paths.
+   * Specifiers the render venue will ask for and cannot answer: every import
+   * the walk did NOT capture that is not `isIslandResolvableSpecifier` —
+   * unbundled package imports, component-local stylesheets, unresolvable host
+   * paths.
    *
    * This is the difference between a closure that renders and one that
-   * error-boxes. The jail compiles with sucrase's `imports` transform, so every
-   * surviving import becomes `require(specifier)`; a specifier that is neither
-   * in JAIL_MODULES nor in the module's captured import table THROWS
-   * (`module "zod" is not available in the Vendo jail`), which the host catches
-   * into a red "Generated component error" notice. Dropping these silently is
-   * how a grey placeholder becomes a mislabeled crash.
+   * error-boxes. The mount compiles with sucrase's `imports` transform, so
+   * every surviving import becomes `require(specifier)`; a specifier that is
+   * neither in the mount table nor in the module's captured import table
+   * THROWS, which the host catches into a loud notice. Dropping these silently
+   * is how a grey placeholder becomes a mislabeled crash.
    */
   unsupported: string[];
   /**
-   * Every PACKAGE this closure needs at render time — the ones the jail runtime
-   * bundles (core's JAIL_BUNDLED_PACKAGES) and the ones a preview venue can
-   * fetch from the pinned CDN alike.
+   * Every PACKAGE this closure needs at render time — the ones the mount table
+   * bundles (`IN_CLIENT_BUNDLED_PACKAGES`) and the ones a preview venue can
+   * fetch from a pinned CDN alike.
    *
-   * Recorded so a CONSUMER can detect skew instead of failing silently: a jail
-   * runtime that cannot supply one throws `module "recharts" is not available`,
+   * Recorded so a CONSUMER can detect skew instead of failing silently: a
+   * venue that cannot supply one throws `module "recharts" is not available`,
    * and a surface that renders previews as `streaming` turns that throw into a
    * shimmer skeleton forever — no frame, no error, indistinguishable from
    * "still loading". A consumer that predates CDN loading sees `recharts` here,
@@ -69,8 +69,8 @@ export interface CapturedClosure {
   requires: string[];
   /**
    * PREVIEW VENUE ONLY. Import specifier -> `<name>@<exact installed version>`
-   * plus any subpath, for every package import a preview can resolve from the
-   * pinned CDN (core's `JAIL_PACKAGE_CDN_ORIGIN`).
+   * plus any subpath, for every package import a preview venue can resolve
+   * from a pinned CDN.
    *
    * Deliberately reported ALONGSIDE `unsupported` rather than removed from it:
    * the walk states facts, and the two venues that read a closure answer them
@@ -89,7 +89,7 @@ export interface CapturedClosure {
   unloadablePackages: Record<string, string>;
 }
 
-/** The specifiers that block a PREVIEW render: everything the jail cannot
+/** The specifiers that block a PREVIEW render: everything the venue cannot
  *  resolve, minus the packages a preview venue fetches from the pinned CDN. */
 export const previewBlockingSpecifiers = (closure: CapturedClosure): string[] =>
   closure.unsupported.filter((specifier) => closure.packages[specifier] === undefined);
@@ -145,7 +145,7 @@ async function pinnedPackage(
   const { version } = manifest.json;
   if (typeof version !== "string") return { why: `${split.name} declares no version, so it cannot be pinned` };
   const pin = `${split.name}@${version}${split.subpath}`;
-  return isPinnedJailPackage(pin) ? { pin } : { why: `${split.name}@${version} is not an exact published version` };
+  return isPinnedPackage(pin) ? { pin } : { why: `${split.name}@${version} is not an exact published version` };
 }
 
 export interface ClosureOverBudget {
@@ -254,7 +254,7 @@ export async function captureClosure(options: {
   const requires = new Set<string>();
   const packages: Record<string, string> = {};
   const unloadablePackages: Record<string, string> = {};
-  const BUNDLED: ReadonlySet<string> = new Set(JAIL_BUNDLED_PACKAGES);
+  const BUNDLED: ReadonlySet<string> = new Set(IN_CLIENT_BUNDLED_PACKAGES);
   const sourceImports: Record<string, string> = {};
   const captured = new Map<string, SeedSubSource>();
   const sizes = new Map<string, number>();
@@ -275,15 +275,15 @@ export async function captureClosure(options: {
     const task = queue.shift()!;
     const imports = task.id === null ? sourceImports : captured.get(task.id)!.imports;
     for (const specifier of importSpecifiers(task.source, task.file)) {
-      // Resolvable inside the jail without capture: react, the kit names, and
-      // the packages the jail runtime bundles (core's JAIL_BUNDLED_PACKAGES).
+      // Resolvable by the venue without capture: react, the kit names, and the
+      // packages the mount table bundles (`IN_CLIENT_BUNDLED_PACKAGES`).
       if (isIslandResolvableSpecifier(specifier)) {
         if (BUNDLED.has(specifier)) requires.add(specifier);
         continue;
       }
       const importer = task.id ?? primaryId;
       // Every path below leaves the specifier out of the import table, which
-      // means the jail will ask for it and throw. Record it once, here.
+      // means the venue will ask for it and throw. Record it once, here.
       const drop = (why: string): void => {
         unsupported.add(specifier);
         missed.push(`${label} missed import ${specifier} from ${importer} (${why})`);

@@ -1,16 +1,15 @@
 /**
- * A zod-SHAPED shim for the jail's module table — not zod.
+ * A zod-SHAPED shim for the in-client module table — not zod.
  *
  * WHY THIS EXISTS. Host components are registered with their props schema beside
  * them (`props: z.object({ … })`, Vendo's documented registry pattern), so the
- * captured module imports zod and the jail must answer `require("zod")` or the
+ * captured module imports zod and the mount must answer `require("zod")` or the
  * component cannot load at all. Bundling real zod costs ~+91 KB raw / ~+23 KB
- * gzip in the jail runtime — and that runtime is inlined by `renderer.tsx` into
- * the production bundle of EVERY host that renders generated UI, so every
+ * gzip in the bundle of EVERY host that renders generated UI, so every
  * customer's end users would pay it.
  *
  * WHY A SHIM IS ENOUGH. Measured against the real captures in this repo (both
- * Cadence components, loaded through the actual jail loader with a recording
+ * Cadence components, loaded through the actual mount loader with a recording
  * proxy in zod's place): the entire surface touched is
  *
  *   z.object · z.string · z.number · z.boolean · z.enum · .optional() · .describe()
@@ -27,7 +26,7 @@
  * worse than the bytes it saves. If a component really does parse at render, it
  * fails loudly and diagnosably, and the fix is to bundle real zod.
  *
- * SCOPE. Only reachable through the jail's module table: code outside the jail
+ * SCOPE. Only reachable through the in-client module table: code outside it
  * (the host's own app, the server) uses the host's own real zod, untouched.
  */
 
@@ -36,7 +35,7 @@
 const PARSERS = new Set(["parse", "safeParse", "parseAsync", "safeParseAsync"]);
 
 /** A chainable answer here would make every shim value a thenable whose `then`
- *  never calls back, so one `await` hangs the island forever. Absent is the only
+ *  never calls back, so one `await` hangs the component forever. Absent is the only
  *  safe answer, and `has` says the same.
  *
  *  ONLY `then`. It is the entire thenable protocol — `catch`/`finally` live on
@@ -52,8 +51,8 @@ const THENABLE_KEY = "then";
  * (e instanceof z.ZodError) … }` would swallow it and report "invalid input"
  * when the truth is "this preview cannot validate at all".
  */
-export class JailZodShimError extends Error {
-  override readonly name = "JailZodShimError";
+export class ZodShimError extends Error {
+  override readonly name = "ZodShimError";
 }
 
 /** Stand-in for zod's own error type. Nothing ever throws it — the shim does
@@ -63,8 +62,8 @@ class ZodError extends Error {
 }
 
 const refuse = (method: string): never => {
-  throw new JailZodShimError(
-    `zod's ${method}() is not available in the Vendo preview sandbox: it ships a small zod-shaped shim for DECLARING prop schemas, not a validator. `
+  throw new ZodShimError(
+    `zod's ${method}() is not available in a Vendo in-client mount: it ships a small zod-shaped shim for DECLARING prop schemas, not a validator. `
     + "This component validates at render time, which the shim cannot emulate honestly.",
   );
 };
@@ -73,7 +72,7 @@ const refuse = (method: string): never => {
  * One chainable declaration node. Every modifier (`.optional()`, `.describe()`,
  * `.min()`, `.nullable()`, …) returns another node, so any builder chain a
  * registry writes resolves; the node carries no schema meaning because nothing
- * in the jail reads one.
+ * in the mount reads one.
  */
 const node = (): unknown => new Proxy(function chain() {} as object, {
   get(_target, property) {

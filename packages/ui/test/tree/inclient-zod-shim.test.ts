@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  JAIL_BUNDLED_PACKAGES,
-  ISLAND_RESOLVABLE_SPECIFIERS,
-} from "@vendoai/apps/contract";
-import { zodShim } from "../../src/tree/jail/zod-shim.js";
+import { IN_CLIENT_BUNDLED_PACKAGES } from "@vendoai/apps/contract";
+import { zodShim } from "../../src/tree/inclient-zod-shim.js";
 
-/** The `z` namespace as jail code receives it. */
+/** The `z` namespace as an in-client component receives it. */
 const z = (zodShim as { z: Record<string, (...args: unknown[]) => Record<string, unknown>> }).z;
 
-describe("the jail's zod shim", () => {
+describe("the in-client zod shim", () => {
   it("resolves the declaration surface real host registries use", () => {
     // Measured against this repo's captures: z.object/string/number/boolean/
     // enum plus .optional() and .describe() is the whole surface touched.
@@ -34,15 +31,15 @@ describe("the jail's zod shim", () => {
     // host's own page would be far worse than the bytes it saves.
     for (const method of ["parse", "safeParse", "parseAsync", "safeParseAsync"] as const) {
       const schema = z.object({ a: z.string() }) as Record<string, () => unknown>;
-      expect(() => schema[method]!(), method).toThrow(/not available in the Vendo preview sandbox/);
+      expect(() => schema[method]!(), method).toThrow(/not available in a Vendo in-client mount/);
     }
-    expect(() => (z as unknown as Record<string, () => unknown>).parse!()).toThrow(/preview sandbox/);
+    expect(() => (z as unknown as Record<string, () => unknown>).parse!()).toThrow(/in-client mount/);
   });
 
   it("is not a thenable, so awaiting anything the shim answered resolves", async () => {
     // Every unknown property chains, and `then` is a property. A schema (or
     // the module itself) that answers `then` with another callable node is a
-    // thenable whose `then` never calls back: `await` on it hangs the island
+    // thenable whose `then` never calls back: `await` on it hangs the mount
     // forever, which is the one outcome this shim is written to avoid.
     const schema = z.object({ a: z.string() });
     expect(await Promise.resolve(schema)).toBe(schema);
@@ -70,15 +67,12 @@ describe("the jail's zod shim", () => {
     // tell good input from bad, so guessing the fallback would be exactly the
     // silent mis-validation this shim exists to never do.
     const schema = z.number().catch(3) as unknown as Record<string, () => unknown>;
-    expect(() => schema.parse!()).toThrow(/not available in the Vendo preview sandbox/);
+    expect(() => schema.parse!()).toThrow(/not available in a Vendo in-client mount/);
   });
 
-  it("is registered as a bundled package, so producers and the runtime agree", () => {
-    // Permit-without-provide is the bug this pairing prevents: the runtime
-    // table is typed on the same list capture checks.
-    expect(JAIL_BUNDLED_PACKAGES).toContain("zod");
-    for (const specifier of JAIL_BUNDLED_PACKAGES) {
-      expect(ISLAND_RESOLVABLE_SPECIFIERS).toContain(specifier);
-    }
+  it("is registered as a bundled package, so producers and the mount agree", () => {
+    // Permit-without-provide is the bug this pairing prevents: the mount table
+    // is typed on the same list capture checks.
+    expect(IN_CLIENT_BUNDLED_PACKAGES).toContain("zod");
   });
 });

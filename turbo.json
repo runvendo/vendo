@@ -11,15 +11,6 @@
     // before @vendoai/ui:build and the template build dies on an unresolvable @vendoai/ui.
     "@vendoai/apps#test": { "dependsOn": ["^build", "build", "@vendoai/box-template#build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "@vendoai/apps#test:coverage": { "dependsOn": ["^build", "build", "@vendoai/box-template#build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
-    // packages/ui's prebuild generates src/tree/jail/runtime-bundle.gen.ts INTO
-    // the source tree, and dev-mode hosts resolve @vendoai/ui from src/ rather
-    // than dist/ (examples/demo-bank/next.config.ts's turbopack resolveAlias).
-    // With the global `dist/**` alone, a cache hit replayed the generator's log
-    // line without restoring the file, so a fresh clone with a warm cache 500'd
-    // on every page: "Can't resolve './runtime-bundle.gen.js'" (#915).
-    // Package-scoped definitions replace the global one, so `dist/**` is
-    // repeated here. `.next/**` is not — this package has no Next build.
-    "@vendoai/ui#build": { "dependsOn": ["^build"], "outputs": ["dist/**", "src/tree/jail/runtime-bundle.gen.ts"] },
     "conformance": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
     "typecheck": { "dependsOn": ["^build"] },
     "lint": {},

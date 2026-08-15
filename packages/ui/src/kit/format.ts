@@ -25,7 +25,7 @@ const FALLBACK_INTL: KitIntl = { currency: "USD", locale: "en-US" };
 
 /**
  * Ambient, because the Kit's formatters are PURE FUNCTIONS, not components:
- * `applyFormat` runs inside DataTable/CardList/Stat/every chart, and the jail
+ * `applyFormat` runs inside DataTable/CardList/Stat/every chart, and the mount
  * hands islands a bare `fmt.money`. React context cannot reach those call
  * sites, so a host that bills in rupees would otherwise be stuck with the
  * hardcoded "$" no matter what its tool semantics declare.
@@ -268,7 +268,7 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
 }
 
 /**
- * The formatter bundle, as one object. The jail hands islands a bare `fmt`
+ * The formatter bundle, as one object. Generated code reads a bare `fmt`
  * (`ISLAND_AMBIENT_HELPER_NAMES`) and this barrel exports this same object into
  * code-land, so both venues format through ONE implementation.
  */

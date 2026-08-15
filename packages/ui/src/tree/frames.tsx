@@ -103,7 +103,7 @@ function ResumingCover({ cover }: { cover?: string }) {
 }
 
 /** The embedded served app: the iframe, its keepalive ping, and the resize
- *  protocol it shares with the jail frame. */
+ *  protocol every Vendo frame shares. */
 function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepalive }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   useEffect(() => {
@@ -140,7 +140,7 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
     };
   }, [keepalive]);
   // The served app reports its own natural height; the frame fits it inside the
-  // host's bounds. Same wire, same gate, same clamp as the jail (frame-resize.ts).
+  // host's bounds. One wire, one gate, one clamp (frame-resize.ts).
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const onMessage = (event: MessageEvent) => { applyFrameResize(frameRef.current, event); };

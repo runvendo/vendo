@@ -34,7 +34,7 @@ function toolkitFromToolName(name: string): string | undefined {
 }
 
 /** Toolkit marks come from Composio's logo CDN, which covers its full catalog
-    (chrome surfaces only — the jail blocks remote images). Unknown slugs get
+    (chrome surfaces only). Unknown slugs get
     Composio's neutral placeholder rather than a 404, so `onError` fallbacks
     only fire on real network failures. */
 export function toolkitLogoUrl(toolkit: string): string {

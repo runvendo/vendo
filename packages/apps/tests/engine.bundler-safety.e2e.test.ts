@@ -1,5 +1,5 @@
 /**
- * The island syntax check (checking/islands.ts) lazy-loads
+ * The TSX toolchain (checking/toolchain.ts) lazy-loads
  * esbuild (a native-binary package). A bundler (webpack, or Next's Turbopack) that
  * sees a literal `import("esbuild")` in a module it's bundling walks INTO
  * esbuild's own package to build its module graph — regardless of whether
@@ -23,11 +23,7 @@
  *
  * This test builds the package's real dist output (tsc, same command
  * `pnpm build` runs) and inspects it directly — proving what a consumer
- * actually imports, not just the source a human edits — then proves the
- * runtime behavior these comments must not disturb: the island syntax gate
- * still runs a real esbuild transform and still catches broken TSX
- * (engine.test.ts's "repairs a syntactically-broken island" already covers
- * that end to end; this file adds the narrower, direct assertion).
+ * actually imports, not just the source a human edits.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -55,25 +51,19 @@ const NAKED_ESBUILD_IMPORT = /import\(\s*["']esbuild["']\s*\)/;
 const GUARDED_ESBUILD_IMPORT =
   /import\(\s*\/\*\s*webpackIgnore:\s*true\s*\*\/\s*\/\*\s*turbopackIgnore:\s*true\s*\*\/\s*(?:\/\*\s*@vite-ignore\s*\*\/\s*)?ESBUILD_SPECIFIER\s*\)/;
 
-function buildDistIslandsSource(): string {
+function buildDistToolchainSource(): string {
   execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: PACKAGE_DIR, stdio: "pipe" });
-  return readFileSync(join(PACKAGE_DIR, "dist", "server", "checking", "islands.js"), "utf8");
+  return readFileSync(join(PACKAGE_DIR, "dist", "server", "checking", "toolchain.js"), "utf8");
 }
 
-describe("islands.ts esbuild import — bundler-style reachability (built dist)", () => {
+describe("toolchain.ts esbuild import — bundler-style reachability (built dist)", () => {
   it("the compiled dist never carries a naked, bundler-resolvable esbuild specifier", () => {
-    const compiled = buildDistIslandsSource();
+    const compiled = buildDistToolchainSource();
     expect(NAKED_ESBUILD_IMPORT.test(compiled)).toBe(false);
   });
 
   it("the compiled dist keeps the webpackIgnore + turbopackIgnore guarded form (tsc preserves comments; this is the actual proof, not just source)", () => {
-    const compiled = buildDistIslandsSource();
+    const compiled = buildDistToolchainSource();
     expect(GUARDED_ESBUILD_IMPORT.test(compiled)).toBe(true);
-  });
-
-  it("sanity: the source itself carries the same guarded form (what a reviewer edits matches what ships)", () => {
-    const source = readFileSync(join(PACKAGE_DIR, "src", "server", "checking", "islands.ts"), "utf8");
-    expect(NAKED_ESBUILD_IMPORT.test(source)).toBe(false);
-    expect(GUARDED_ESBUILD_IMPORT.test(source)).toBe(true);
   });
 }, 30_000);

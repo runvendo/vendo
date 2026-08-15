@@ -28,7 +28,7 @@ const DRIFT: SeedDrift = {
 const NOTICE = "Newer version available";
 
 function driftedTree(seedDrift?: SeedDrift): UIPayload {
-  const tree: UIPayload & { seedDrift?: SeedDrift } = {
+  const tree: UIPayload & { seedDrift?: SeedDrift; inClient?: unknown } = {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [
@@ -36,6 +36,12 @@ function driftedTree(seedDrift?: SeedDrift): UIPayload {
       { id: "card", component: "PinnedCard", source: "generated" },
     ],
     components: { PinnedCard: CARD_SOURCE },
+    inClient: {
+      granted: true,
+      versionHash: "sha256:approved",
+      approvedBy: "host-console",
+      at: "2026-07-15T09:00:00.000Z",
+    },
   };
   if (seedDrift !== undefined) tree.seedDrift = seedDrift;
   return tree;
@@ -58,8 +64,8 @@ describe("seed drift notice (06-apps §8)", () => {
     expect(notice.textContent).toContain("would be replaced");
     expect(notice.textContent).toContain("Nothing happens until you ask for it.");
     // Informational only: nothing is mutated without the user — the remixed
-    // component still renders in its jail below the notice.
-    expect(document.querySelector('iframe[title="Generated component: PinnedCard"]')).not.toBeNull();
+    // component still renders below the notice.
+    expect(document.querySelector('[data-vendo-inclient-mount="PinnedCard"]')).not.toBeNull();
   });
 
   it("tolerates a malformed drift field without breaking the surface", () => {
@@ -71,7 +77,7 @@ describe("seed drift notice (06-apps §8)", () => {
       />,
     );
     expect(screen.queryByRole("note", { name: NOTICE })).toBeNull();
-    expect(document.querySelector('iframe[title="Generated component: PinnedCard"]')).not.toBeNull();
+    expect(document.querySelector('[data-vendo-inclient-mount="PinnedCard"]')).not.toBeNull();
 
     // ONE seed, ONE report: a LIST is not a drift report, so the pre-seed
     // payload shape reads as no drift rather than rendering a broken notice.

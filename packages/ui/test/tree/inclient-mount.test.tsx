@@ -45,11 +45,10 @@ function venueTree(inClient?: InClientVenue, source = WIDGET_SOURCE): UIPayload 
 }
 
 describe("in-client venue enforcement (06-apps §9)", () => {
-  it("keeps generated components in the iframe jail by default (no inClient field)", () => {
+  it("does not mount generated code by default (no inClient field)", () => {
     render(<TreeView tree={venueTree()} components={{}} onAction={ok} />);
-    expect(document.querySelector('iframe[title="Generated component: Widget"]')).not.toBeNull();
     expect(document.querySelector("[data-vendo-inclient-mount]")).toBeNull();
-    expect(screen.queryByRole("note", { name: /in-client/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "In-client ready" })).toBeNull();
   });
 
   it("mounts the approved component in the host page when the verdict granted the venue", async () => {
@@ -66,10 +65,10 @@ describe("in-client venue enforcement (06-apps §9)", () => {
     expect(onAction).toHaveBeenCalledWith({ nodeId: "gen", action: "fn:run", payload: { id: 7 } });
   });
 
-  it("renders captured sampleProps for a prop-less approved node — venue parity with the jail (ENG-288 M6)", async () => {
-    // A forked pin commonly has no live tree props; the jail rehearses it with
-    // the baseline's sampleProps. Promotion is hash-pinned, so the approved
-    // mount must see the same props instead of crashing on undefined.
+  it("renders captured sampleProps for a prop-less approved node (ENG-288 M6)", async () => {
+    // A forked pin commonly has no live tree props. Promotion is hash-pinned,
+    // so the approved mount must see the baseline's sampleProps instead of
+    // crashing on undefined.
     const tree = venueTree(GRANTED, "export default function Widget({ label }) { return <p>Sampled {label}</p>; }") as UIPayload & {
       furnishings?: Record<string, { sampleProps?: Record<string, unknown> }>;
     };
@@ -90,11 +89,10 @@ describe("in-client venue enforcement (06-apps §9)", () => {
         onAction={ok}
       />,
     );
-    expect(document.querySelector('iframe[title="Generated component: Widget"]')).not.toBeNull();
     expect(document.querySelector("[data-vendo-inclient-mount]")).toBeNull();
   });
 
-  it("drops back to the jail loudly when the approval no longer matches the version", () => {
+  it("drops back loudly when the approval no longer matches the version", () => {
     render(
       <TreeView
         tree={venueTree({ granted: false, versionHash: "sha256:new", reason: "version-changed" })}
@@ -102,13 +100,12 @@ describe("in-client venue enforcement (06-apps §9)", () => {
         onAction={ok}
       />,
     );
-    expect(document.querySelector('iframe[title="Generated component: Widget"]')).not.toBeNull();
     expect(document.querySelector("[data-vendo-inclient-mount]")).toBeNull();
     const notice = screen.getByRole("note", { name: "In-client approval invalidated" });
     expect(notice.textContent).toContain("re-approved");
   });
 
-  it("drops an erroring approved component back to the sandboxed iframe, loudly", () => {
+  it("drops an erroring approved component back to a contained notice, loudly", () => {
     render(
       <TreeView
         tree={venueTree(GRANTED, "export default function Widget() { throw new Error('kaboom'); }")}
@@ -117,10 +114,10 @@ describe("in-client venue enforcement (06-apps §9)", () => {
       />,
     );
     expect(screen.getByRole("note", { name: "In-client mount failed" }).textContent).toContain("kaboom");
-    expect(document.querySelector('iframe[title="Generated component: Widget"]')).not.toBeNull();
+    expect(document.querySelector("[data-vendo-inclient-mount]")).toBeNull();
   });
 
-  it("drops a non-compiling approved component back to the sandboxed iframe", () => {
+  it("drops a non-compiling approved component back to a contained notice", () => {
     render(
       <TreeView
         tree={venueTree(GRANTED, "export default not even syntax {{{")}
@@ -129,7 +126,7 @@ describe("in-client venue enforcement (06-apps §9)", () => {
       />,
     );
     expect(screen.getByRole("note", { name: "In-client mount failed" })).toBeTruthy();
-    expect(document.querySelector('iframe[title="Generated component: Widget"]')).not.toBeNull();
+    expect(document.querySelector("[data-vendo-inclient-mount]")).toBeNull();
   });
 });
 

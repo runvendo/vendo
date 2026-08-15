@@ -91,8 +91,8 @@ jobs:
           - { name: store-1, pkg: "@vendoai/store", dir: packages/store, shard: "1/3", tsc: "true" }
           - { name: store-2, pkg: "@vendoai/store", dir: packages/store, shard: "2/3", tsc: "true" }
           - { name: store-3, pkg: "@vendoai/store", dir: packages/store, shard: "3/3", tsc: "true" }
-          - { name: ui-1, pkg: "@vendoai/ui", dir: packages/ui, shard: "1/2", pre: "build:jail" }
-          - { name: ui-2, pkg: "@vendoai/ui", dir: packages/ui, shard: "2/2", pre: "build:jail" }
+          - { name: ui-1, pkg: "@vendoai/ui", dir: packages/ui, shard: "1/2" }
+          - { name: ui-2, pkg: "@vendoai/ui", dir: packages/ui, shard: "2/2" }
     env:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
       VITEST_MIN_FORKS: "1"
@@ -119,12 +119,6 @@ jobs:
       # the tests run for real.
       - name: Build deps
         run: pnpm turbo run build --filter=${{ matrix.pkg }}
-      # The package's own pretest hook does not run here (we invoke vitest
-      # directly, to pass --shard), and a turbo cache HIT on `build` skips the
-      # prebuild hook that would otherwise produce these. So do it explicitly.
-      - name: Pre-step
-        if: matrix.pre
-        run: pnpm --filter ${{ matrix.pkg }} run ${{ matrix.pre }}
       - name: tsc (store keeps its tsc-before-test contract)
         if: matrix.tsc == 'true'
         run: pnpm --filter ${{ matrix.pkg }} exec tsc -p tsconfig.json

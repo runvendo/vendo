@@ -1,21 +1,20 @@
 /**
  * The frame resize protocol — ONE implementation, both frames.
  *
- * Vendo embeds two kinds of iframe: the jail's generated-component frame
- * (`JailedComponent`) and the served app's http frame (`HttpFrame`). Both let a
- * document they cannot see report its own natural height. The identity gate is
- * the security half of that, and a second copy of a security gate is a second
- * gate to get wrong — so the gate, the message validation, and the clamp live
- * here and nowhere else.
+ * Every Vendo iframe (the served app's http frame, the box app template) lets a
+ * document the host cannot see report its own natural height. The identity gate
+ * is the security half of that, and a second copy of a security gate is a
+ * second gate to get wrong — so the gate, the message validation, and the clamp
+ * live here and nowhere else.
  *
- * The wire is the jail runtime's, unchanged: the framed document posts
- * `{ vendo: true, kind: "resize", height }` to its parent (`post()` in
- * runtime-entry stamps every message), and the host fits the frame to it.
+ * The wire: the framed document posts `{ vendo: true, kind: "resize", height }`
+ * to its parent (`postToHost` in embedded-runtime.ts stamps every message), and
+ * the host fits the frame to it.
  */
 
 /**
- * The ceiling a host that configures nothing gets. This is the jail's old hard
- * `MAX_JAIL_HEIGHT`, kept to the pixel so no shipped host's behaviour changes.
+ * The ceiling a host that configures nothing gets, kept to the pixel so no
+ * shipped host's behaviour changes.
  */
 export const DEFAULT_FRAME_MAX_HEIGHT = 8_192;
 

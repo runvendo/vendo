@@ -129,8 +129,8 @@ export interface CapturedHostComponent {
   requires?: string[];
   /**
    * PREVIEW VENUE ONLY. Import specifier -> `<name>@<exact installed
-   * version>[/subpath]`, for every package a preview may load from
-   * `JAIL_PACKAGE_CDN_ORIGIN`. Never a range and never a tag: the version is
+   * version>[/subpath]`, for every package a preview may load from a pinned
+   * CDN. Never a range and never a tag: the version is
    * the one the host has installed, and one that cannot be resolved exactly
    * makes the component an honest skip instead.
    *
@@ -148,7 +148,7 @@ export interface CapturedHostComponent {
    * docs recommend and what every demo component does), and a preview has NO
    * data plane: every query stubs to `[]`. Without a seed the module loads, the
    * component correctly draws nothing, and the surface sits on a streaming
-   * silhouette forever. `JailFurnishing.sampleProps` is exactly this seam and
+   * silhouette forever. `InClientFurnishing.sampleProps` is exactly this seam and
    * pin baselines already carry it.
    */
   sampleProps?: Record<string, unknown>;

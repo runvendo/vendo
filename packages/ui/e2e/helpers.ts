@@ -1,4 +1,4 @@
-import { expect, type FrameLocator, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 export const screenshotPath = (name: string) => new URL(`./screenshots/${name}.png`, import.meta.url).pathname;
 
@@ -90,13 +90,3 @@ export async function tabTo(page: Page, predicate: () => Promise<boolean>, limit
   throw new Error("Keyboard target was not reached within the tab limit.");
 }
 
-/**
- * The jail is two nested frames (see JailedComponent): the host's iframe is a
- * trusted relay whose CSP jails the inner frame's navigations; generated code
- * runs one level down.
- */
-export function jailFrame(page: Page, componentName: string): FrameLocator {
-  return page
-    .frameLocator(`iframe[title="Generated component: ${componentName}"]`)
-    .frameLocator('iframe[title="Generated Vendo component"]');
-}

@@ -1,8 +1,7 @@
 /**
- * The INNER half of an embedded Vendo surface (blueprint §12.3) — ONE
- * implementation, two consumers: the jail runtime (`tree/jail/runtime-entry.tsx`)
- * and the box app template (`packages/box-template`). Both render inside a
- * host-owned iframe and owe the host exactly the same two behaviours, so they
+ * The INNER half of an embedded Vendo surface (blueprint §12.3) — the box app
+ * template (`packages/box-template`) and every other surface that renders
+ * inside a host-owned iframe owe the host the same two behaviours, so they
  * share this module rather than each keeping a copy of the protocol.
  *
  * Both jobs are RECEIVING or REPORTING, never negotiating:
@@ -17,10 +16,10 @@
  * overrides. This module only ever REPORTS a natural height — it holds no code
  * that sets or negotiates its own size against the host, and must never grow
  * any. An app taller than the host allows scrolls inside its own frame; it never
- * pushes the host's layout. The clamp is the host's (`JailedComponent`'s
- * `MAX_JAIL_HEIGHT`), and so is the min/max the host configured.
+ * pushes the host's layout. The clamp is the host's, and so is the min/max the
+ * host configured.
  */
-import { normalizeViewportBlockCss } from "./tree/jail/viewport-css.js";
+import { normalizeViewportBlockCss } from "./tree/viewport-css.js";
 
 /** Post one message to the embedding host. Every message is stamped `vendo: true`
  *  — that stamp is how the host tells a Vendo surface's messages from any other

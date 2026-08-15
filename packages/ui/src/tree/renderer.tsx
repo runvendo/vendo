@@ -31,16 +31,13 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { useVendoThemeOrDefault } from "../context.js";
-import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
 import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
-import { InClientMount } from "./host-mount.js";
-import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
+import { InClientMount, type InClientFurnishing } from "./host-mount.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
@@ -76,7 +73,7 @@ export interface TreeViewProps {
   onParked?: (parked: ParkedPress) => void;
   /**
    * 08-ui §5; 06-apps §6 — additive persistence hook for TreeView-local `$state`.
-   * It fires with the complete state map after every jail `state-set` message.
+   * It fires with the complete state map after every `vendo.setState` write.
    */
   onStateChange?(state: Record<string, Json>): void;
   /**
@@ -146,7 +143,7 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     ids.add(node.id);
   }
   const components = input.components ?? {};
-  // The jail-compile bounds hold per render: Kit names can never be shadowed
+  // The compile bounds hold per render: Kit names can never be shadowed
   // and the 01-core §8 component caps apply even to payloads that bypassed
   // document validation (direct TreeView input).
   const names = Object.keys(components);
@@ -288,8 +285,6 @@ function reifyElement(node: ElementBinding, bind: (value: unknown) => unknown): 
 /** The node's own handler dispatch, node-scoped by NodeRenderer. */
 type HandlerDispatch = (handlerId: string, event?: unknown) => void;
 
-type BoundMode = "host" | "jail";
-
 /** Apply a binding's `$reshape` chain to the resolved value.
  *  `applyReshape` is total: absent data passes through (loading is not a
  *  mismatch); a real mismatch reports through `onMismatch` and binds
@@ -310,7 +305,6 @@ function resolveReshaped(
 
 function bindValue(
   value: unknown,
-  mode: BoundMode,
   data: Record<string, Json>,
   state: Record<string, Json>,
   action: (name: string, payload?: Json) => Promise<ToolOutcome>,
@@ -332,35 +326,27 @@ function bindValue(
     return computed.value;
   }
   if (isActionBinding(value)) {
-    const payload = bindValue(value.payload, mode, data, state, action, handle, onMismatch) as Json;
-    if (mode === "jail") {
-      return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
-    }
+    const payload = bindValue(value.payload, data, state, action, handle, onMismatch) as Json;
     return () => action(value.$action, value.payload === undefined ? undefined : payload);
   }
-  // A handler becomes a LIVE callback only where a screen can receive the event.
-  // In the jail it falls through and travels as the data it is. In the host page
-  // with no screen behind it, it becomes an inert callback instead: the prop is a
+  // With no screen behind it a handler becomes an INERT callback: the prop is a
   // callback SLOT, and a control that calls `onClick?.()` on the binding object
   // raises a TypeError no boundary catches. Unmarked, so the control keeps the
   // uncontrolled DOM it has — a marked no-op would freeze the box a person types
   // in (kit/handler.ts).
-  if (isHandlerBinding(value) && mode === "host") {
+  if (isHandlerBinding(value)) {
     return handle === undefined
       ? () => undefined
       : markHandlerCallback((event?: unknown) => handle(value.$handler, screenEvent(event)));
   }
-  // A slot's element becomes a real element only in the host page. In the jail
-  // it falls through as the data it is: props cross to that frame by
-  // postMessage, and no element survives a structured clone.
-  if (isElementBinding(value) && mode === "host") {
-    return reifyElement(value, (child) => bindValue(child, mode, data, state, action, handle, onMismatch));
+  if (isElementBinding(value)) {
+    return reifyElement(value, (child) => bindValue(child, data, state, action, handle, onMismatch));
   }
-  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, handle, onMismatch));
+  if (Array.isArray(value)) return value.map((item) => bindValue(item, data, state, action, handle, onMismatch));
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [
       key,
-      bindValue(child, mode, data, state, action, handle, onMismatch),
+      bindValue(child, data, state, action, handle, onMismatch),
     ]));
   }
   return value;
@@ -370,7 +356,6 @@ function bindValue(
  *  name: the region shows one contained notice, not a broken component. */
 function bindProps(
   props: Record<string, Json> | undefined,
-  mode: BoundMode,
   data: Record<string, Json>,
   state: Record<string, Json>,
   action: (name: string, payload?: Json) => Promise<ToolOutcome>,
@@ -384,7 +369,7 @@ function bindProps(
   };
   const bound = Object.fromEntries(Object.entries(props).map(([key, child]) => {
     currentProp = key;
-    return [key, bindValue(child, mode, data, state, action, handle, onMismatch)];
+    return [key, bindValue(child, data, state, action, handle, onMismatch)];
   }));
   return { bound, mismatch };
 }
@@ -479,13 +464,9 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
-  /** The payload's compiler-stamped per-island tool manifests. Absent
-   *  (unstamped/streaming) means JailedComponent derives from source host-side. */
-  componentTools?: Record<string, string[]>;
   /** True ONLY when the payload's server-written verdict granted the venue. */
   inClientGranted: boolean;
-  furnishings: Record<string, JailFurnishing>;
-  themeVars: Record<string, string>;
+  furnishings: Record<string, InClientFurnishing>;
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
   state: Record<string, Json>;
@@ -562,41 +543,22 @@ interface NodeContent {
 }
 
 /** 06-apps §9 — the approved venue: this exact version's content hash matched a
- *  stored approval, so generated code mounts in the host page. The jail element
- *  stays wired as the drop-back for any mount failure. */
+ *  stored approval, so generated code mounts in the host page. */
 function inClientContent(
   { props, node, children, invoke, handle }: NodeContent,
   source: string,
-  toolManifest: string[] | undefined,
 ): ReactNode {
-  const hostBind = bindProps(node.props, "host", props.data, props.state, invoke, handle);
-  const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
-  // Reshape mismatches are mode-independent, so both binds report the same one.
-  const mismatch = hostBind.mismatch;
+  const { bound, mismatch } = bindProps(node.props, props.data, props.state, invoke, handle);
   if (mismatch !== null) {
     return <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>;
   }
-  const jailFallback = (
-    <JailedComponent
-      name={node.component}
-      source={source}
-      props={jailBind.bound}
-      furnishing={props.furnishings[node.component]}
-      themeVars={props.themeVars}
-      toolManifest={toolManifest}
-      streaming={props.streaming}
-      onAction={invoke}
-      onStateSet={props.setViewState}
-    />
-  );
   return (
     <>
       <InClientMount
         name={node.component}
         source={source}
-        props={hostBind.bound}
+        props={bound}
         furnishing={props.furnishings[node.component]}
-        fallback={jailFallback}
         onAction={invoke}
         onStateSet={props.setViewState}
       />
@@ -605,18 +567,13 @@ function inClientContent(
   );
 }
 
-/** The `source: "generated"` branch — an island, mounted in the host page when
- *  the venue was granted and in the jail otherwise. */
+/** The `source: "generated"` branch — human-approved code, mounted in the host
+ *  page when the venue was granted. There is no second venue: an ungranted node
+ *  drops back to a contained notice, never to a silent hole. */
 function generatedContent(context: NodeContent): ReactNode {
-  const { props, node, children, invoke } = context;
+  const { props, node } = context;
   const source = props.generated[node.component];
   const revealKey = source === undefined ? "forming" : "ready";
-  // Stamped era: a missing entry means "this island calls no tools" (least
-  // privilege). No stamping at all: undefined, so JailedComponent derives
-  // the manifest from the source the host holds.
-  const toolManifest = props.componentTools === undefined
-    ? undefined
-    : props.componentTools[node.component] ?? [];
   let content: ReactNode;
   if (source === undefined) {
     content = props.streaming ? (
@@ -629,24 +586,12 @@ function generatedContent(context: NodeContent): ReactNode {
       </ContainedNotice>
     );
   } else if (props.inClientGranted) {
-    content = inClientContent(context, source, toolManifest);
+    content = inClientContent(context, source);
   } else {
-    const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
-    content = mismatch !== null ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</> : (
-      <>
-        <JailedComponent
-          name={node.component}
-          source={source}
-          props={bound}
-          furnishing={props.furnishings[node.component]}
-          themeVars={props.themeVars}
-          toolManifest={toolManifest}
-          streaming={props.streaming}
-          onAction={invoke}
-          onStateSet={props.setViewState}
-        />
-        {children}
-      </>
+    content = (
+      <ContainedNotice label="Not approved for this page" outcome="blocked">
+        {`"${node.component}" needs a host reviewer's approval before it can run here.`}
+      </ContainedNotice>
     );
   }
   // ENG-205 render-slot morph: the streaming placeholder and the arrived
@@ -689,7 +634,7 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
       </ContainedNotice>
     );
   }
-  const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke, handle);
+  const { bound, mismatch } = bindProps(node.props ?? {}, props.data, props.state, invoke, handle);
   // The notice replaces only the mis-bound component, never its subtree —
   // a container (Stack/Grid) with one bad prop must not swallow its valid
   // children (same containment scope as the generated paths above).
@@ -804,7 +749,7 @@ function NodeShell({ nodeId, outcome, mark, children }: {
  * 08-ui §5 — render a validated walk tree.
  *
  * `$state` is local to this TreeView. Generated code can write through its
- * in-jail `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
+ * `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
  * receives the complete state map after every change for app-state persistence.
  */
 function StatefulTreeView({
@@ -816,9 +761,7 @@ function StatefulTreeView({
   onStateChange,
   interactive,
 }: TreeViewProps) {
-  const theme = useVendoThemeOrDefault();
   useExprRuntime();
-  const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   // The keyed `$state` store lives in the Kit bundle, shared with code-land's
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
   const [viewState, updateState] = useKeyedState(onStateChange);
@@ -894,10 +837,7 @@ function StatefulTreeView({
   // already here rather than a second renderer for interactive trees.
   const tree = screen.tree ?? painted;
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
-  const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
-  // The stamped per-island tool manifests ride the payload beside the
-  // component sources (a payload extra, like furnishings).
-  const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
+  const furnishings = (tree as WalkTree & { furnishings?: Record<string, InClientFurnishing> }).furnishings ?? {};
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
@@ -907,7 +847,7 @@ function StatefulTreeView({
     ? seedDriftRaw as SeedDrift
     : null;
   // The host-page mount unlocks on EXACTLY `granted === true` — the value only
-  // the server's hash-pin verification writes. Everything else stays jailed.
+  // the server's hash-pin verification writes. Everything else stays unmounted.
   const inClientGranted = inClient?.granted === true;
   // A partial stream may close a generated node before its top-level source
   // string closes. Supply validator-only placeholders, then keep the real map
@@ -940,7 +880,7 @@ function StatefulTreeView({
   // standing, checked BEFORE tree validation:
   // the server ships no executable fork source with `pending-review` (its
   // generated nodes have no components to validate against), so instead of an
-  // invalid-tree verdict, a jailed fork, or skeletons of stripped components
+  // invalid-tree verdict or skeletons of stripped components
   // the surface says "sent for review" — or carries the reviewer's rejection
   // note back to the user.
   if (inClient !== undefined && inClient.granted === false && inClient.reason === "pending-review") {
@@ -982,17 +922,16 @@ function StatefulTreeView({
   }
 
   // 06-apps §9 — a version change under an existing approval must be LOUD: the
-  // surface drops back to the sandbox and says so, in-surface, above the tree.
-  // Every ungranted reason except review-kind's pending-review (returned
-  // above) keeps this notice, so an unknown future reason still says
-  // SOMETHING rather than silently jailing.
+  // surface says so, in-surface, above the tree. Every ungranted reason except
+  // review-kind's pending-review (returned above) keeps this notice, so an
+  // unknown future reason still says SOMETHING.
   const dropBackNotice = inClient !== undefined && inClient.granted === false
     // The payload is a wire value, so a FUTURE ungranted reason this union
-    // does not know yet must still drop back loudly, not silently jail.
+    // does not know yet must still drop back loudly, not silently.
     && (inClient.reason as string) !== "pending-review"
     ? (
       <ContainedNotice label="In-client approval invalidated" outcome="blocked">
-        This app changed since it was approved for the host page. It is running in the sandbox again until the new version is re-approved.
+        This app changed since it was approved for the host page. Its generated components stay unrendered until the new version is re-approved.
       </ContainedNotice>
     )
     : null;
@@ -1039,10 +978,8 @@ function StatefulTreeView({
           nodes={repaint.nodes}
           marks={repaint.marks}
           generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
-          {...(componentTools === undefined ? {} : { componentTools })}
           inClientGranted={inClientGranted}
           furnishings={furnishings}
-          themeVars={themeVars}
           components={components}
           data={data ?? validation.tree.data ?? {}}
           state={viewState}
