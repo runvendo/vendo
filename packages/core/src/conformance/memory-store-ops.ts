@@ -1,4 +1,5 @@
-import { assertEngineCollection } from "../engine-collections.js";
+import type { AuditEvent } from "../audit.js";
+import { assertEngineCollection, assertIndexedField, collectionKind } from "../engine-collections.js";
 import { VendoError } from "../errors.js";
 import type { IsoDateTime } from "../ids.js";
 import { VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
@@ -6,6 +7,7 @@ import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
   type AppDataTarget,
+  type CollectionFootprint,
   type RecordInput,
   type RecordQuery,
   type StoreOps,
@@ -218,7 +220,29 @@ export function memoryStoreOps(): StoreOps {
     },
     async list(collection, query) {
       assertEngineCollection(collection);
-      return rows.list(collection, query);
+      if (query?.watermark === undefined) return await rows.list(collection, query);
+      const { field, after } = query.watermark;
+      assertIndexedField(collection, field);
+      if (query.cursor !== undefined) {
+        throw new VendoError(
+          "validation",
+          "engine.list takes a watermark or a cursor, never both — they page in opposite directions",
+        );
+      }
+      // Every indexed field declared today is the row's own creation instant,
+      // which is exactly what this reference stores as `createdAt`
+      // (`vendo_runs.started_at` IS the run record's createdAt in the real
+      // backend). Ascending, because a forward walk resumes where it stopped.
+      const forward = [...col(collection).values()]
+        .filter((r) => r.createdAt > after)
+        .sort((a, b) => (a.createdAt === b.createdAt ? a.seq - b.seq : (a.createdAt < b.createdAt ? -1 : 1)));
+      const page = forward.slice(0, pageLimit(query.limit));
+      return {
+        records: page.map(copyRecord),
+        // The bound to send next time: where this page ended, or the caller's
+        // own bound back unchanged when nothing was there to move it.
+        watermark: page.at(-1)?.createdAt ?? after,
+      };
     },
     async claim(collection, expected, replacement) {
       assertEngineCollection(collection);
@@ -604,6 +628,54 @@ export function memoryStoreOps(): StoreOps {
   };
 
   // ---------------------------------------------------------------------------
+  // audit — the typed read over the append-only drawer
+  // ---------------------------------------------------------------------------
+
+  const audit: StoreOps["audit"] = {
+    async list(query = {}) {
+      const page = await rows.list("vendo_audit", {
+        ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+        ...(query.limit === undefined ? {} : { limit: query.limit }),
+      });
+      // Filtering AFTER the page is a reference's licence, not the contract:
+      // a real backend narrows in its own statement. What the suite pins is
+      // WHICH rows come back, in what order, and that the cursor walks them
+      // all — none of which this shortcut changes.
+      const events = page.records
+        .map((record) => record.data as AuditEvent)
+        .filter((event) =>
+          (query.kind === undefined || event.kind === query.kind)
+          && (query.venue === undefined || event.venue === query.venue)
+          && (query.outcome === undefined || event.outcome === query.outcome)
+          && (query.decidedBy === undefined || event.decidedBy === query.decidedBy));
+      return { events, ...(page.cursor === undefined ? {} : { cursor: page.cursor }) };
+    },
+  };
+
+  // ---------------------------------------------------------------------------
+  // secrets — plaintext here BY DESIGN: a reference has nothing to protect and
+  // no key to hold, and a fake cipher would prove nothing the real one does.
+  // ---------------------------------------------------------------------------
+
+  const vault = new Map<string, string>();
+  const secrets: StoreOps["secrets"] = {
+    async get(name) {
+      return vault.get(name) ?? null;
+    },
+    async set(name, value) {
+      vault.set(name, value);
+    },
+    async list() {
+      // Sorted, because "the order the Map happened to be written in" is not an
+      // answer any two implementations would agree on.
+      return [...vault.keys()].sort();
+    },
+    async delete(name) {
+      vault.delete(name);
+    },
+  };
+
+  // ---------------------------------------------------------------------------
   // status
   // ---------------------------------------------------------------------------
 
@@ -614,8 +686,29 @@ export function memoryStoreOps(): StoreOps {
     transcripts,
     harness,
     workspace,
+    audit,
+    secrets,
     lifecycle,
+    /** Serialized JSON length, which is this reference's honest answer to "how
+        much is in here": it grows with every row and shrinks when rows leave,
+        which is the whole of what a footprint promises. */
+    async footprint() {
+      const measured: CollectionFootprint[] = [];
+      for (const [collection, records] of collections) {
+        let bytes = 0;
+        for (const record of records.values()) {
+          bytes += JSON.stringify({ id: record.id, data: record.data, refs: record.refs }).length;
+        }
+        if (bytes > 0) measured.push({ collection, kind: collectionKind(collection), bytes });
+      }
+      return measured.sort((a, b) => (a.collection < b.collection ? -1 : 1));
+    },
     async status(): Promise<StoreWireStatus> {
+      // Still 35: `ops` is a LEVEL over STORE_WIRE_PATHS' order, and this
+      // reference has no batch append (op 36), so it cannot claim anything past
+      // 35 — whatever it serves further down the list. That is the level's known
+      // coarseness, not a bug in it: the only thing any client reads it for is
+      // STORE_WIRE_APPEND_MESSAGES_OPS, and 35 is the right answer there.
       return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
     },
   };

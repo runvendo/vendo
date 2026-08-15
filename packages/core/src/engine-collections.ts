@@ -5,67 +5,109 @@ import { VendoError } from "./errors.js";
     ENGINE_COLLECTIONS or ENGINE_COLLECTION_PATTERNS changes. */
 export const ENGINE_ALLOWLIST_VERSION = 2;
 
+/** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
+    the chunks an engine mints from them; everything else is `storage`.
+    Deliberately a property of the DATA, not of anyone's billing: Vendo Cloud
+    meters the two kinds apart, but a category like "unmetered" is a price list,
+    not a data kind, and does not belong in a contract every BYO mount reads. */
+export type CollectionKind = "storage" | "knowledge";
+
+/** What the registry declares about one engine collection. */
+export interface EngineCollectionSpec {
+  kind: CollectionKind;
+  /** The fields an `engine.list` watermark may bound, because THIS collection
+      keeps them indexed. Absent for the 37 collections with nothing to walk
+      forward through: an unindexed bound is a full table scan wearing a filter's
+      clothes, so it is refused rather than served slowly. */
+  indexed?: readonly string[];
+}
+
 /** The collections the `engine` op family may touch: Vendo's OWN internal
-    drawers, nothing a host or a generated app owns. The list lives in core
+    drawers, nothing a host or a generated app owns. The registry lives in core
     because guard, automations and apps all need it and none of them may import
     @vendoai/store (layering); core imports nothing, so it is a literal here and
-    a drift test in @vendoai/store holds it to the real constants. */
-export const ENGINE_COLLECTIONS = [
+    a drift test in @vendoai/store holds it to the real constants.
+
+    ONE registry, not a list plus a side-table of attributes: a second place
+    naming these collections is how the allowlist rots, and `kind` and `indexed`
+    are facts ABOUT an entry, so they live on the entry. */
+export const ENGINE_COLLECTION_REGISTRY = {
   // Reserved, routed through typed doors — mirrors RESERVED_COLLECTIONS,
   // packages/store/src/routing.ts:53-63.
-  "vendo_grants",
-  "vendo_approvals",
-  "vendo_audit",
-  "vendo_threads",
-  "vendo_runs",
-  "vendo_apps",
-  "vendo_state",
-  "vendo_effects",
-  "vendo_app_grants",
+  vendo_grants: { kind: "storage" },
+  vendo_approvals: { kind: "storage" },
+  vendo_audit: { kind: "storage" },
+  vendo_threads: { kind: "storage" },
+  // The ONE collection with a watermark field today: `vendo_runs.started_at` is
+  // a real column with its own index (packages/store/src/schema.ts:120), and a
+  // meter that reconciles runs it has already counted has to walk forward from
+  // where it stopped. Every other collection is read newest-first and needs no
+  // forward walk — which is why this list is per-collection and not a blanket
+  // "any timestamp column".
+  vendo_runs: { kind: "storage", indexed: ["started_at"] },
+  vendo_apps: { kind: "storage" },
+  vendo_state: { kind: "storage" },
+  vendo_effects: { kind: "storage" },
+  vendo_app_grants: { kind: "storage" },
 
   // Dedicated tables — mirrors DEDICATED_RECORD_COLLECTIONS,
   // packages/store/src/routing.ts:65-70.
-  "vendo_mcp_clients",
-  "vendo_mcp_grants",
-  "vendo_knowledge_docs",
-  "vendo_knowledge_chunks",
+  vendo_mcp_clients: { kind: "storage" },
+  vendo_mcp_grants: { kind: "storage" },
+  // The retrieval corpus: the document rows and the chunks an engine mints from
+  // them. The only two `knowledge` entries in the registry, and the reason the
+  // kind exists — a footprint that cannot tell a corpus from a drawer cannot
+  // answer "what is the index costing me".
+  vendo_knowledge_docs: { kind: "knowledge" },
+  vendo_knowledge_chunks: { kind: "knowledge" },
 
   // Generic-table collections the blocks own.
-  "vendo_parked_call", // PARKED_COLLECTION, packages/vendo/src/byo-approvals.ts:47
+  vendo_parked_call: { kind: "storage" }, // PARKED_COLLECTION, packages/vendo/src/byo-approvals.ts:47
   // PARKED_CALL_OUTCOME_COLLECTION, packages/core/src/parked-outcome.ts — written
   // by BOTH parked-call lanes (byo-approvals.ts, parked-action.ts), read by one.
-  "vendo_parked_call_outcome",
+  vendo_parked_call_outcome: { kind: "storage" },
   // The next two, and guard:controls below, write rows carrying NEITHER a
   // subject ref NOR an app ref, and that is deliberate: they are HOST-LEVEL
   // CONFIG — the host's component registry, the pinned-baseline seed, the
   // guard's freeze switch — not any user's or any app's data, so the erase
   // cascade correctly never sweeps them. Do not "fix" them by adding a ref.
-  "vendo_host_components", // HOST_COMPONENTS_COLLECTION, packages/vendo/src/cli/cloud/host-components.ts:34
-  "vendo_pin_baselines", // PIN_BASELINES_COLLECTION, packages/vendo/src/cli/cloud/seed-baselines.ts:26
-  "vendo_placements", // PLACEMENTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:48
-  "vendo_placement_slots", // PLACEMENT_SLOTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:54
-  "vendo_app_tokens", // APP_TOKEN_COLLECTION, packages/apps/src/server/persistence/app-token.ts:12
-  "vendo_parked_action", // COLLECTION, packages/apps/src/server/persistence/parked-action.ts:50
-  "vendo_egress_approval", // COLLECTION, packages/apps/src/server/escalation/egress-approval.ts:96
-  "vendo_inclient_approvals", // COLLECTION, packages/apps/src/server/remix/inclient.ts:76
-  "vendo_remix_rejections", // COLLECTION, packages/apps/src/server/remix/review.ts:65
-  "vendo_slots", // SLOTS_COLLECTION, packages/apps/src/server/persistence/slots.ts:24
-  "vendo_workspace_commits", // WORKSPACE_COMMITS, packages/store/src/ops.ts:27
-  "automations:captures", // CAPTURES, packages/automations/src/types.ts:29
-  "automations:armed", // ARMED, packages/automations/src/types.ts:43
-  "automations:schedule", // SCHEDULE, packages/automations/src/types.ts:30
-  "automations:webhook", // WEBHOOK, packages/automations/src/types.ts:31
-  "automations:deliveries", // DELIVERIES, packages/automations/src/types.ts:32
-  "automations:sponsorships", // SPONSORSHIPS, packages/automations/src/sponsorship.ts:17
-  "automations:sponsored", // SPONSORED, packages/automations/src/sponsorship.ts:29
-  "guard:controls", // CONTROLS_COLLECTION, packages/guard/src/guard.ts:117 — host-level config, see above
-  "guard:approval-claims", // APPROVAL_CLAIMS_COLLECTION, packages/guard/src/guard.ts:111
-  "vendo_channel_links", // LINK_COLLECTION, packages/vendo/src/channel-links.ts:22
-  "vendo_channel_events", // EVENT_COLLECTION, packages/vendo/src/channel-links.ts:25
-  "vendo_channel_asks", // ASK_COLLECTION, packages/vendo/src/channel-links.ts:33
-] as const;
+  vendo_host_components: { kind: "storage" }, // HOST_COMPONENTS_COLLECTION, packages/vendo/src/cli/cloud/host-components.ts:34
+  vendo_pin_baselines: { kind: "storage" }, // PIN_BASELINES_COLLECTION, packages/vendo/src/cli/cloud/seed-baselines.ts:26
+  vendo_placements: { kind: "storage" }, // PLACEMENTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:48
+  vendo_placement_slots: { kind: "storage" }, // PLACEMENT_SLOTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:54
+  vendo_app_tokens: { kind: "storage" }, // APP_TOKEN_COLLECTION, packages/apps/src/server/persistence/app-token.ts:12
+  vendo_parked_action: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-action.ts:50
+  vendo_egress_approval: { kind: "storage" }, // COLLECTION, packages/apps/src/server/escalation/egress-approval.ts:96
+  vendo_inclient_approvals: { kind: "storage" }, // COLLECTION, packages/apps/src/server/remix/inclient.ts:76
+  vendo_remix_rejections: { kind: "storage" }, // COLLECTION, packages/apps/src/server/remix/review.ts:65
+  vendo_slots: { kind: "storage" }, // SLOTS_COLLECTION, packages/apps/src/server/persistence/slots.ts:24
+  vendo_workspace_commits: { kind: "storage" }, // WORKSPACE_COMMITS, packages/store/src/ops.ts:27
+  "automations:captures": { kind: "storage" }, // CAPTURES, packages/automations/src/types.ts:29
+  "automations:armed": { kind: "storage" }, // ARMED, packages/automations/src/types.ts:43
+  "automations:schedule": { kind: "storage" }, // SCHEDULE, packages/automations/src/types.ts:30
+  "automations:webhook": { kind: "storage" }, // WEBHOOK, packages/automations/src/types.ts:31
+  "automations:deliveries": { kind: "storage" }, // DELIVERIES, packages/automations/src/types.ts:32
+  "automations:sponsorships": { kind: "storage" }, // SPONSORSHIPS, packages/automations/src/sponsorship.ts:17
+  "automations:sponsored": { kind: "storage" }, // SPONSORED, packages/automations/src/sponsorship.ts:29
+  "guard:controls": { kind: "storage" }, // CONTROLS_COLLECTION, packages/guard/src/guard.ts:117 — host-level config, see above
+  "guard:approval-claims": { kind: "storage" }, // APPROVAL_CLAIMS_COLLECTION, packages/guard/src/guard.ts:111
+  vendo_channel_links: { kind: "storage" }, // LINK_COLLECTION, packages/vendo/src/channel-links.ts:22
+  vendo_channel_events: { kind: "storage" }, // EVENT_COLLECTION, packages/vendo/src/channel-links.ts:25
+  vendo_channel_asks: { kind: "storage" }, // ASK_COLLECTION, packages/vendo/src/channel-links.ts:33
+} as const satisfies Record<string, EngineCollectionSpec>;
 
-export type EngineCollection = typeof ENGINE_COLLECTIONS[number];
+export type EngineCollection = keyof typeof ENGINE_COLLECTION_REGISTRY;
+
+/** The registry's names, in registry order — the allowlist itself. Derived, so
+    adding a collection is one edit and the two can never disagree. */
+export const ENGINE_COLLECTIONS = Object.keys(ENGINE_COLLECTION_REGISTRY) as readonly EngineCollection[];
+
+/** One widened read of the registry. The `as const` literal types each entry
+    exactly — which is what makes `indexed` a compile-time fact where it exists
+    — but that same precision means the union has no `indexed` member at all on
+    the entries without one, so every lookup goes through here. */
+const specOf = (collection: string): EngineCollectionSpec | undefined =>
+  (ENGINE_COLLECTION_REGISTRY as Record<string, EngineCollectionSpec>)[collection];
 
 /** The id grammar the app-history pattern accepts. Shared by the builder so a
     name that cannot pass the gate is never composed in the first place. */
@@ -148,5 +190,34 @@ export function assertEngineCollection(collection: string): void {
     + (suggestion === undefined ? "." : ` — did you mean ${JSON.stringify(suggestion)}?`)
     + " App data belongs to the appData family (ops.appData.*), which takes an"
     + " { appId, collection, owner } target.",
+  );
+}
+
+/** What a collection holds, for the byte accounting `footprint()` reports.
+    A legal collection with no registry entry — today only the app-history
+    pattern — is `storage`: `knowledge` is the closed exception (the corpus and
+    its chunks), never the default, so a collection invented later is never
+    silently counted as index cost. */
+export function collectionKind(collection: string): CollectionKind {
+  return specOf(collection)?.kind ?? "storage";
+}
+
+/** The gate on an `engine.list` watermark bound. A field this collection does
+    not keep indexed is refused, not scanned: the whole point of the bound is a
+    cheap forward walk, and one that degrades into a full scan under load is a
+    performance cliff hidden behind a working API.
+
+    `validation`, not `blocked`: the collection is legal and the caller's right
+    to read it is not in question — the FIELD is wrong, and the message says
+    which fields are right. */
+export function assertIndexedField(collection: string, field: string): void {
+  const fields = specOf(collection)?.indexed ?? [];
+  if (fields.includes(field)) return;
+  throw new VendoError(
+    "validation",
+    `${JSON.stringify(field)} is not an indexed field of ${JSON.stringify(collection)}`
+    + (fields.length === 0
+      ? ` — that collection declares none, so it cannot be walked by watermark. List it newest-first with a cursor instead.`
+      : ` — it declares ${fields.map((name) => JSON.stringify(name)).join(", ")}.`),
   );
 }

@@ -1,8 +1,9 @@
+import type { AuditEvent } from "../audit.js";
 import { ENGINE_ALLOWLIST_VERSION, engineAppHistory } from "../engine-collections.js";
 import type { VendoErrorCode } from "../errors.js";
-import { isoDateTimeSchema } from "../ids.js";
-import { STORE_WIRE_APPEND_MESSAGES_OPS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
-import type { StoreOps } from "../store.js";
+import { isoDateTimeSchema, type IsoDateTime } from "../ids.js";
+import { STORE_WIRE_APPEND_MESSAGES_OPS, STORE_WIRE_PATHS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
+import type { AuditQuery, CollectionFootprint, StoreOps } from "../store.js";
 import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
 
@@ -76,6 +77,36 @@ const numberField = (entry: unknown, field: string, message: string): number => 
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
     onto harness state observable through the 35 ops. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
+
+/** A shape-valid AuditEvent. `vendo_audit` is a TYPED door — the real backend
+    parses every row with `auditEventSchema` and refuses what does not fit — so
+    the audit cases seed real events rather than convenient stubs. `minute` is
+    the event's own `at`, which is the column both doors over this drawer order
+    on. */
+const auditEvent = (id: string, minute: number, fields: Partial<AuditEvent>): AuditEvent => ({
+  id,
+  at: new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString() as IsoDateTime,
+  kind: "tool-call",
+  principal: { kind: "user", subject: "user_1" },
+  venue: "chat",
+  presence: "present",
+  ...fields,
+});
+
+/** Seeds the audit drawer through the engine door, in ascending `at` order —
+    which is what makes "newest first" one list rather than two. */
+const seedAudit = async (ops: StoreOps, events: AuditEvent[]): Promise<void> => {
+  for (const event of events) await ops.engine.put("vendo_audit", { id: event.id, data: event });
+};
+
+/** Carries a case without running it, and says why (see
+    `ConformanceCase.pending`). The body is the real one — landing the
+    capability is deleting this call, not writing the case. */
+const pending = (reason: string, conformanceCase: ConformanceCase): ConformanceCase =>
+  ({ ...conformanceCase, pending: reason });
+
+/** The one lane that owes every case tagged below. */
+const RETENTION_LANE = "the retention lane lands StoreOps.retention — the contract declares it, nothing serves it yet";
 
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
@@ -167,6 +198,77 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           const page = await ops.engine.list(collection, { limit: PAGE, cursor });
           return { ids: page.records.map((r) => r.id), cursor: page.cursor };
         });
+      }),
+
+      /** The forward walk — the one read a newest-first page cannot serve. A
+          meter that has already counted runs up to some instant asks for
+          everything after it and advances its mark as it goes, so a bound that
+          loses precision on the round trip moves BACKWARDS and the meter
+          re-counts a window it has already billed; one that moves too far skips
+          rows nobody ever counts. Both are silent, which is why the walk is
+          asserted lossless rather than merely non-empty.
+          Nothing here reads the watermark STRING: it is contractually opaque,
+          and the two shipped engines spell it differently (a Postgres-native
+          text form, an ISO instant). */
+      opsCase(opts, "engine.list walks forward from a watermark, oldest first, visiting every row exactly once", async (ops) => {
+        // vendo_runs is a typed door — appId, trigger, status, record and
+        // startedAt, or the real backend refuses the row. `startedAt` ascends
+        // with write order, so "oldest first" is one answer for an engine that
+        // orders on the indexed column and one that orders on arrival.
+        const ids = ["run_w1", "run_w2", "run_w3", "run_w4", "run_w5"];
+        for (const [index, id] of ids.entries()) {
+          await ops.engine.put("vendo_runs", {
+            id,
+            data: {
+              appId: "app_meter",
+              trigger: { kind: "schedule" },
+              status: "ok",
+              record: { index },
+              startedAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+            },
+          });
+        }
+
+        let after = new Date(0).toISOString(); // the mark a meter that has counted nothing holds
+        const seen: string[] = [];
+        for (let page = 0; page < ids.length + 2; page += 1) {
+          const answer = await ops.engine.list("vendo_runs", { limit: PAGE, watermark: { field: "started_at", after } });
+          const echoed = answer.watermark;
+          assert(answer.records.length <= PAGE, `a watermark page held ${answer.records.length} rows past its limit of ${PAGE}`);
+          // The echo is the ONLY thing that tells a caller its bound was
+          // understood: a mount older than the bound parses the query, ignores
+          // it, and answers with an ordinary newest-first page instead.
+          assert(echoed !== undefined, "a page that was given a watermark bound must echo the next bound back");
+          for (const record of answer.records) {
+            assert(!seen.includes(record.id), `${record.id} was visited twice by the forward walk`);
+            seen.push(record.id);
+          }
+          if (answer.records.length === 0) {
+            assert(echoed === after, "an empty page must echo the requested bound back unchanged");
+            break;
+          }
+          after = echoed;
+        }
+        assertDeepEqual(seen, ids, "the forward walk did not visit every row exactly once, oldest first");
+      }),
+
+      /** Two refusals, both of them cliffs a caller would otherwise fall off
+          quietly: an unindexed bound is a full table scan wearing a filter's
+          clothes, and a cursor beside a watermark is two walks in opposite
+          directions with no single answer to give. Refused, rather than served
+          slowly or resolved by a precedence rule nobody could guess. */
+      opsCase(opts, "engine.list refuses a watermark on an unindexed field, and one sent beside a cursor", async (ops) => {
+        const after = new Date(0).toISOString();
+        await assertThrowsCode(
+          () => ops.engine.list("vendo_audit", { watermark: { field: "at", after } }),
+          "validation",
+          "a watermark on a field vendo_audit does not declare indexed",
+        );
+        await assertThrowsCode(
+          () => ops.engine.list("vendo_runs", { cursor: "0", watermark: { field: "started_at", after } }),
+          "validation",
+          "a call carrying both a cursor and a watermark",
+        );
       }),
 
       opsCase(opts, "engine round-trips a record on an engine collection", async (ops) => {
@@ -1135,6 +1237,224 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       }),
 
       // =====================================================================
+      // audit
+      // =====================================================================
+
+      /** The reviewer's feed and the decision tally, which are the only two
+          reasons this door exists at all: three of its four filters are not
+          refs (`venue` is a column, `outcome` and `decidedBy` live inside the
+          event), so `engine.list`'s ref filter cannot express any of them. */
+      opsCase(opts, "audit.list narrows by each of its four filters and ANDs them together", async (ops) => {
+        await seedAudit(ops, [
+          auditEvent("aud_c1", 1, { kind: "tool-call", venue: "chat", outcome: "ok", decidedBy: "grant" }),
+          auditEvent("aud_c2", 2, { kind: "approval", venue: "app", outcome: "blocked", decidedBy: "denied" }),
+          auditEvent("aud_c3", 3, { kind: "tool-call", venue: "app", outcome: "ok", decidedBy: "rule" }),
+          auditEvent("aud_c4", 4, { kind: "policy-decision", venue: "chat", outcome: "error", decidedBy: "judge" }),
+          auditEvent("aud_c5", 5, { kind: "tool-call", venue: "chat", outcome: "blocked", decidedBy: "grant" }),
+        ]);
+        const idsOf = async (query?: AuditQuery): Promise<string[]> =>
+          (await ops.audit.list(query)).events.map((event) => event.id);
+
+        // No filter is the whole drawer, newest first — an empty query is the
+        // feed, not an empty answer.
+        assertDeepEqual(await idsOf(), ["aud_c5", "aud_c4", "aud_c3", "aud_c2", "aud_c1"], "an unfiltered audit.list is the whole drawer, newest first");
+        assertDeepEqual(await idsOf({ kind: "tool-call" }), ["aud_c5", "aud_c3", "aud_c1"], "the kind filter returned the wrong rows");
+        assertDeepEqual(await idsOf({ venue: "app" }), ["aud_c3", "aud_c2"], "the venue filter returned the wrong rows");
+        assertDeepEqual(await idsOf({ outcome: "blocked" }), ["aud_c5", "aud_c2"], "the outcome filter returned the wrong rows");
+        assertDeepEqual(await idsOf({ decidedBy: "grant" }), ["aud_c5", "aud_c1"], "the decidedBy filter returned the wrong rows");
+
+        // ANDed, never ORed: each of these pairs drops rows that either filter
+        // alone keeps, which an OR could not do.
+        assertDeepEqual(await idsOf({ kind: "tool-call", venue: "app" }), ["aud_c3"], "two filters did not AND");
+        assertDeepEqual(
+          await idsOf({ kind: "tool-call", venue: "chat", outcome: "blocked", decidedBy: "grant" }),
+          ["aud_c5"],
+          "all four filters did not AND",
+        );
+      }),
+
+      opsCase(opts, "audit.list walks its cursor without loss or duplicates", async (ops) => {
+        const ids = ["aud_p1", "aud_p2", "aud_p3", "aud_p4", "aud_p5"];
+        await seedAudit(ops, ids.map((id, index) => auditEvent(id, index + 1, {})));
+        await assertPaginates("audit.list", ids, async (cursor) => {
+          const page = await ops.audit.list({ limit: PAGE, cursor });
+          return { ids: page.events.map((event) => event.id), cursor: page.cursor };
+        });
+      }),
+
+      /** TWO DOORS, ONE DRAWER — the case that matters more than the filters.
+          `audit.list()` and `engine.list("vendo_audit")` read the same rows on
+          the same keyset order, and nothing in an implementation forces that: a
+          typed door sorting on the event's own `at` and a generic one sorting
+          on the row's arrival agree until the two differ, and then a reviewer's
+          feed and the drawer the erase cascade sweeps stop describing the same
+          history. Two doors that are allowed to disagree will. */
+      opsCase(opts, "audit.list and engine.list read one drawer in one order", async (ops) => {
+        await seedAudit(ops, [
+          auditEvent("aud_d1", 1, { kind: "tool-call", outcome: "ok", decidedBy: "grant" }),
+          auditEvent("aud_d2", 2, { kind: "approval", venue: "app", outcome: "pending-approval" }),
+          auditEvent("aud_d3", 3, { kind: "run", venue: "automation", outcome: "error" }),
+        ]);
+        const typed = (await ops.audit.list()).events;
+        const generic = (await ops.engine.list("vendo_audit")).records;
+        assertDeepEqual(
+          typed.map((event) => event.id),
+          generic.map((record) => record.id),
+          "the two doors over vendo_audit returned different rows or a different order",
+        );
+        assertDeepEqual(
+          typed,
+          generic.map((record) => record.data),
+          "the typed door returned events the drawer does not hold",
+        );
+      }),
+
+      // =====================================================================
+      // secrets
+      // =====================================================================
+
+      /** The vault a host's connectors authenticate out of. `get` answering
+          NULL for a name nobody set — not undefined, not a throw — is what lets
+          a boot path ask "is this connector configured yet" without wrapping
+          the call; a throw there turns an unconfigured connector into a crash. */
+      opsCase(opts, "secrets round-trip, overwrite in place, and answer null for a name nobody set", async (ops) => {
+        assert(await ops.secrets.get("conf_absent") === null, "a name nobody set must read as null");
+        await ops.secrets.set("conf_token", "value_1");
+        assert(await ops.secrets.get("conf_token") === "value_1", "the stored secret did not round-trip");
+        await ops.secrets.set("conf_token", "value_2");
+        assert(await ops.secrets.get("conf_token") === "value_2", "set on a name already held did not overwrite it");
+      }),
+
+      /** `list` is the vault's inventory, and it is SORTED: "the order they
+          happened to be written in" is not an answer two implementations would
+          ever give alike, and an operator reading a rotation list needs the
+          same order twice. */
+      opsCase(opts, "secrets.list holds exactly the live names, sorted, and delete removes one", async (ops) => {
+        for (const name of ["conf_b", "conf_a", "conf_c"]) await ops.secrets.set(name, `value_of_${name}`);
+        assertDeepEqual(await ops.secrets.list(), ["conf_a", "conf_b", "conf_c"], "list is not the live names in sorted order");
+        await ops.secrets.delete("conf_b");
+        assertDeepEqual(await ops.secrets.list(), ["conf_a", "conf_c"], "a deleted name stayed in the inventory");
+        assert(await ops.secrets.get("conf_b") === null, "a deleted secret remained readable");
+      }),
+
+      // =====================================================================
+      // footprint
+      // =====================================================================
+
+      /** What is in the drawers, per collection, with each collection's kind
+          alongside — and the kind is the reason the op is shaped this way: a
+          footprint that cannot tell a retrieval corpus from an ordinary drawer
+          cannot answer "what is the index costing me".
+          Nothing here asserts a byte COUNT. `bytes` is an estimate of row
+          content that each engine measures its own way, and a case pinning a
+          number would fail every honest implementation but the one it was
+          written against. */
+      opsCase(opts, "footprint reports a shape-valid entry per non-empty collection, with its kind", async (ops) => {
+        await ops.engine.put("vendo_workspace_commits", { id: "fp_1", data: { note: "x".repeat(64) } });
+        await ops.engine.put("vendo_knowledge_docs", { id: "fp_doc_1", data: { text: "y".repeat(64) } });
+        const footprint = await ops.footprint();
+        for (const entry of footprint) {
+          assert(typeof entry.collection === "string" && entry.collection.length > 0, `a footprint entry has no collection name: ${JSON.stringify(entry)}`);
+          assert(entry.kind === "storage" || entry.kind === "knowledge", `${entry.collection} reported the kind ${JSON.stringify(entry.kind)}`);
+          assert(
+            typeof entry.bytes === "number" && Number.isFinite(entry.bytes) && entry.bytes >= 0,
+            `${entry.collection} reported bytes ${String(entry.bytes)}`,
+          );
+        }
+        const entryFor = (collection: string): CollectionFootprint | undefined =>
+          footprint.find((entry) => entry.collection === collection);
+        assert(entryFor("vendo_workspace_commits")?.kind === "storage", "a storage collection holding rows is missing from the footprint");
+        assert(entryFor("vendo_knowledge_docs")?.kind === "knowledge", "the retrieval corpus was counted as ordinary storage");
+        assert(
+          footprint.length === new Set(footprint.map((entry) => entry.collection)).size,
+          "a collection was reported more than once",
+        );
+      }),
+
+      /** MONOTONIC, not exact: rows going in may only push the number up, which
+          is the whole of what makes two footprints comparable. `>=` and not `>`
+          on purpose — a byte accounting is allowed to be page-granular or
+          otherwise coarse, and pinning strict growth would fail an engine that
+          is telling the truth about a page it had already allocated. */
+      opsCase(opts, "footprint bytes never decrease as a collection grows", async (ops) => {
+        const collection = engineAppHistory("conf_fp");
+        const bytesOf = async (): Promise<number> =>
+          (await ops.footprint()).find((entry) => entry.collection === collection)?.bytes ?? -1;
+        await ops.engine.put(collection, { id: "fp_seed", data: { note: "a".repeat(64) } });
+        const before = await bytesOf();
+        assert(before >= 0, "a collection holding rows was left out of the footprint");
+        for (let index = 0; index < 10; index += 1) {
+          await ops.engine.put(collection, { id: `fp_more_${index}`, data: { note: "b".repeat(512) } });
+        }
+        const after = await bytesOf();
+        assert(after >= before, `the footprint shrank as rows were added: ${after} < ${before}`);
+      }),
+
+      // =====================================================================
+      // retention — PENDING, both of them. The contract declares the family and
+      // nothing serves it yet, so these carry it in the open: a skipped case
+      // with a named owner is a standing line in every mount's output, where
+      // leaving the cases out until the code arrives is how an op ships dead.
+      // =====================================================================
+
+      /** The sweep is a cron, so the two things that matter are the count it
+          reports and its behavior on the second pass. The window is expressed
+          by moving the CUTOFF rather than the rows' age, because a case can
+          only write rows now: a cutoff older than every row covers them all and
+          must move nothing. */
+      pending(RETENTION_LANE, opsCase(opts, "retention.quarantine lifts rows past the cutoff out of the live collection, and re-running it moves nothing", async (ops) => {
+        const retention = ops.retention;
+        if (retention === undefined) return;
+        const collection = engineAppHistory("conf_ret");
+        const ids = ["ret_1", "ret_2", "ret_3"];
+        for (const id of ids) await ops.engine.put(collection, { id, data: { id } });
+
+        const inWindow = await retention.quarantine(collection, new Date(0).toISOString() as IsoDateTime);
+        assert(inWindow.moved === 0, `a cutoff older than every row should move nothing, moved ${inWindow.moved}`);
+        assert(
+          (await ops.engine.list(collection)).records.length === ids.length,
+          "a quarantine that moved nothing still took rows out of the live collection",
+        );
+
+        const cutoff = new Date(Date.now() + 60_000).toISOString() as IsoDateTime;
+        const swept = await retention.quarantine(collection, cutoff);
+        assert(swept.moved === ids.length, `quarantine should report the ${ids.length} rows it moved, reported ${swept.moved}`);
+        assertDeepEqual(
+          (await ops.engine.list(collection)).records.map((record) => record.id),
+          [],
+          "quarantined rows stayed in the live collection",
+        );
+        assert(await ops.engine.get(collection, "ret_1") === null, "a quarantined row is still readable through the live door");
+
+        const again = await retention.quarantine(collection, cutoff);
+        assert(again.moved === 0, `a second quarantine at the same cutoff should move nothing, moved ${again.moved}`);
+      })),
+
+      /** The gap between the two verbs IS the feature, and the purge count is
+          the only place it is observable: the engine owns the quarantine and no
+          caller may name it, so "still recoverable" can only be read as a purge
+          that declines to destroy. The cutoff is on the QUARANTINE time, not
+          the row's age — the grace a purge honors runs from the lift. */
+      pending(RETENTION_LANE, opsCase(opts, "retention.purge destroys only quarantined rows lifted before its cutoff", async (ops) => {
+        const retention = ops.retention;
+        if (retention === undefined) return;
+        const collection = engineAppHistory("conf_purge");
+        const ids = ["purge_1", "purge_2"];
+        for (const id of ids) await ops.engine.put(collection, { id, data: { id } });
+        const lifted = await retention.quarantine(collection, new Date(Date.now() + 60_000).toISOString() as IsoDateTime);
+        assert(lifted.moved === ids.length, `the sweep should have lifted ${ids.length} rows, lifted ${lifted.moved}`);
+
+        const early = await retention.purge(collection, new Date(0).toISOString() as IsoDateTime);
+        assert(early.purged === 0, `a purge cutoff predating the sweep should destroy nothing, destroyed ${early.purged}`);
+
+        const past = new Date(Date.now() + 60_000).toISOString() as IsoDateTime;
+        const destroyed = await retention.purge(collection, past);
+        assert(destroyed.purged === ids.length, `the purge should report the ${ids.length} rows it destroyed, reported ${destroyed.purged}`);
+        const again = await retention.purge(collection, past);
+        assert(again.purged === 0, `a second purge reported ${again.purged} rows a first one had already destroyed`);
+      })),
+
+      // =====================================================================
       // status
       // =====================================================================
 
@@ -1142,14 +1462,26 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        // The count is the handshake's ONLY capability signal, so it must track
-        // what the mount actually serves — a client feature-detects the batch
-        // append on exactly this number (STORE_WIRE_APPEND_MESSAGES_OPS). A
-        // mount that omits the optional op is the 35-op vintage and says so.
-        const expected = ops.transcripts.appendMessages === undefined
-          ? STORE_WIRE_APPEND_MESSAGES_OPS - 1
-          : STORE_WIRE_APPEND_MESSAGES_OPS;
-        assert(status.ops === expected, `status.ops should be ${expected}, got ${status.ops}`);
+        // `ops` is a LEVEL over STORE_WIRE_PATHS' declared order, not an
+        // inventory, so there is no single right number to assert: three honest
+        // implementations report three (the local engine stops short of the two
+        // retention ops, the memory reference has no batch append). This case
+        // used to pin the count exactly, which only held while every mount was
+        // the same vintage — it would now fail two implementations that are
+        // telling the truth. What IS contract is the ceiling and the one
+        // question a client asks the level.
+        const declared = Object.keys(STORE_WIRE_PATHS).length;
+        assert(status.ops <= declared, `a mount cannot serve more than the ${declared} declared ops, got ${status.ops}`);
+        // The level's ONE contract use, and the only way it breaks a client: a
+        // caller feature-detects the batch append on this number alone, so a
+        // mount claiming the level must serve the op, and one serving the op
+        // must claim the level.
+        assert(
+          (status.ops >= STORE_WIRE_APPEND_MESSAGES_OPS) === (ops.transcripts.appendMessages !== undefined),
+          `status.ops ${status.ops} disagrees with transcripts.appendMessages being `
+          + `${ops.transcripts.appendMessages === undefined ? "absent" : "served"} `
+          + `(the batch append is op ${STORE_WIRE_APPEND_MESSAGES_OPS})`,
+        );
       }),
     ],
   };

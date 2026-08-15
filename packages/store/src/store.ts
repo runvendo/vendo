@@ -6,6 +6,7 @@ import { validateEncryptionKey } from "#store/crypto";
 // ./create-store.ts (main entry, PGlite dev default via #store/db) and
 // ./postgres.ts (pg only), so no engine module may be imported here.
 import type { Db, StoreConfig } from "./db-postgres.js";
+import { createIdempotencyLedger } from "./idempotency.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore } from "./routing.js";
 import { ensureSchema as migrateSchema } from "./schema.js";
@@ -73,6 +74,10 @@ export function createStoreForDb(
     blobs(namespace: string): BlobStore {
       return createBlobStore(db, namespace);
     },
+    // The ledger rides the SAME handle as the mutations it gates (01 §12): that
+    // colocation is the contract, and it is why `createStore()` hands one out
+    // instead of leaving it to a host to wire up somewhere else.
+    idempotency: createIdempotencyLedger(db),
     async ensureSchema() {
       await migrateSchema(db);
     },

@@ -1,6 +1,8 @@
 import {
+  type AuditEvent,
   type BlobStore,
   cloudStandingError,
+  type CollectionFootprint,
   consoleSender,
   defaultFetch,
   parseStoreWireError,
@@ -76,7 +78,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 36-op named-operation surface over the same mount and the same key —
+  /** The 44-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
    * above are built ON these ops: engine for Vendo's own collections, appData
    * for an app's own drawers. */
@@ -162,7 +164,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
-  // The StoreAdapter façade rides the SAME 36 ops as `ops` below — it has no
+  // The StoreAdapter façade rides the SAME 44 ops as `ops` below — it has no
   // doors of its own since the generic records family left the wire. A
   // collection (or blob namespace) either names an app's own drawer, which the
   // appData family serves with the owner stamped on, or it names one of Vendo's
@@ -279,15 +281,15 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 36-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 44-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 36 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 44 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
 /** Measurement instrument, not a feature: with VENDO_STORE_TRACE set, every
- * call through the store client below — the 35 ops AND the StoreAdapter façade,
+ * call through the store client below — the 44 ops AND the StoreAdapter façade,
  * which rides the same client — emits one greppable stderr line naming the op,
  * its path, the round trip in milliseconds (the body read included, since that
  * is what the caller waits for), the response size in bytes and the outcome.
@@ -353,7 +355,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 36-op store contract, speaking
+ * The Cloud client for the whole 44-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -580,7 +582,27 @@ function storeWireClient(
         await mutate("engine.delete", P["engine.delete"], { collection, id });
       },
       async list(collection, query) {
-        return listOf(await post("engine.list", P["engine.list"], { collection, query: query ?? {} }));
+        const payload = await post("engine.list", P["engine.list"], { collection, query: query ?? {} });
+        const watermark = (payload as { watermark?: unknown }).watermark;
+        // The echo is the ONLY evidence the bound was applied. Request bodies
+        // pass unknown keys through, so a mount older than the watermark parses
+        // this query, ignores it, and answers an ordinary newest-first page —
+        // data, not a refusal (EngineListPage, core/src/store.ts). Read as a
+        // forward walk, that page drags the caller's mark BACK onto the newest
+        // rows and re-reads them on every pass, forever. Refuse it here.
+        if (query?.watermark !== undefined && typeof watermark !== "string") {
+          throw new VendoError(
+            "not-implemented",
+            `the "engine.list" watermark bound was sent but the answer echoed no watermark back`
+            + " — this mount predates the bound, so it ignored the query and answered an ordinary"
+            + " newest-first page, which a forward walk would re-read forever."
+            + " Upgrade the mount, or page this collection with a cursor instead.",
+          );
+        }
+        return {
+          ...listOf(payload),
+          ...(typeof watermark === "string" ? { watermark } : {}),
+        };
       },
       async claim(collection, expected, replacement) {
         return claimedOf(await mutate("engine.claim", P["engine.claim"], {
@@ -755,6 +777,70 @@ function storeWireClient(
       },
       async promote(appId, orgId) {
         await mutate("lifecycle.promote", P["lifecycle.promote"], { appId, orgId });
+      },
+    },
+    // The audit drawer's one read, and the only door that answers with the type
+    // it stores: `vendo_audit`'s rows ARE AuditEvents, so handing back records
+    // would put a cast at every call site instead of one here.
+    audit: {
+      async list(query) {
+        const payload = await post("audit.list", P["audit.list"], { ...query });
+        return {
+          events: field<AuditEvent[]>(payload, "events", "invalid audit page", Array.isArray),
+          ...cursorOf(payload),
+        };
+      },
+    },
+    // `get` is the one read in this protocol that answers with a CREDENTIAL. The
+    // value rides the body in the clear (TLS is the transport's job) and the
+    // mount encrypts it at rest with a key that never leaves it — so this client
+    // holds no key and cannot lose one.
+    secrets: {
+      async get(name) {
+        return field<string | null>(
+          await post("secrets.get", P["secrets.get"], { name }),
+          "value",
+          "invalid secret",
+          (value) => value === null || typeof value === "string",
+        );
+      },
+      async set(name, value) {
+        await mutate("secrets.set", P["secrets.set"], { name, value });
+      },
+      async list() {
+        return field<string[]>(
+          await post("secrets.list", P["secrets.list"], {}),
+          "names",
+          "invalid secret list",
+          (value) => Array.isArray(value) && value.every((name) => typeof name === "string"),
+        );
+      },
+      async delete(name) {
+        await mutate("secrets.delete", P["secrets.delete"], { name });
+      },
+    },
+    async footprint() {
+      return field<CollectionFootprint[]>(
+        await post("footprint", P.footprint, {}),
+        "collections",
+        "invalid footprint",
+        Array.isArray,
+      );
+    },
+    // Served here even though the family is OPTIONAL on StoreOps and no mount
+    // answers it yet: this is the protocol's client, not a mount's mirror, and a
+    // path a mount does not have already answers the enveloped 501 that `wire`
+    // turns into a refusal naming the op. A capability check would be a second
+    // answer to a question the wire already answers exactly — and a worse one,
+    // since it can only be as fresh as the client that ships it.
+    retention: {
+      async quarantine(collection, olderThan) {
+        const payload = await mutate("retention.quarantine", P["retention.quarantine"], { collection, olderThan });
+        return { moved: field<number>(payload, "moved", "invalid quarantine", (value) => typeof value === "number") };
+      },
+      async purge(collection, quarantinedBefore) {
+        const payload = await mutate("retention.purge", P["retention.purge"], { collection, quarantinedBefore });
+        return { purged: field<number>(payload, "purged", "invalid purge", (value) => typeof value === "number") };
       },
     },
     async status(): Promise<StoreWireStatus> {

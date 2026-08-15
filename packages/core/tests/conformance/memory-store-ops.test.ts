@@ -30,14 +30,23 @@ describe("StoreOps conformance kit against the memory reference", () => {
     expect(suite.cases.length).toBeGreaterThanOrEqual(28);
   });
 
+  // A pending case is carried, not run — and it is SKIPPED WITH ITS REASON in
+  // the name, so an op the contract declares and nothing serves yet is a line
+  // in the test output rather than an absence nobody can see.
   for (const conformanceCase of suite.cases) {
-    it(conformanceCase.name, conformanceCase.run);
+    if (conformanceCase.pending === undefined) it(conformanceCase.name, conformanceCase.run);
+    else it.skip(`${conformanceCase.name} [pending: ${conformanceCase.pending}]`, conformanceCase.run);
   }
 
-  it("runConformance reports ok for the memory reference", async () => {
+  it("runConformance reports ok for the memory reference, and names what is pending", async () => {
     const report = await runConformance(suite);
     expect(report.failures).toEqual([]);
     expect(report.ok).toBe(true);
+    // The reference serves no retention family, so the two cases over it must
+    // be reported as pending rather than passed — a green report that counted
+    // them as passes is exactly the blindness the tag exists to remove.
+    expect(report.pending.length).toBe(suite.cases.filter((c) => c.pending !== undefined).length);
+    expect(report.passed + report.pending.length).toBe(suite.cases.length);
   });
 
   it("a deleteThread that leaves harness state behind fails conformance", async () => {

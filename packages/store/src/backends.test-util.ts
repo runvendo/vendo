@@ -19,6 +19,7 @@ export interface Backend {
 
 const TABLES = [
   "invoices",
+  "vendo_idempotency_ledger",
   "vendo_app_grants",
   "vendo_workspace_history",
   "vendo_workspace_files",

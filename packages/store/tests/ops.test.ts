@@ -1,8 +1,19 @@
+import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
-import { auditFixture } from "../src/fixtures.test-util.js";
-import { createStoreOps } from "../src/index.js";
+import { at, auditFixture } from "../src/fixtures.test-util.js";
+import { encodeCursor } from "../src/helpers/utils.js";
+import { createStore, createStoreOps } from "../src/index.js";
 import type { StoreOps } from "@vendoai/core";
+
+/** One run at an exact instant — the watermark walk's only subject, because
+ *  `vendo_runs.started_at` is the one indexed field the registry declares. */
+const putRun = async (ops: StoreOps, id: string, startedAt: string): Promise<void> => {
+  await ops.engine.put("vendo_runs", {
+    id,
+    data: { appId: "app_test", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt },
+  });
+};
 
 // The local backend's OWN laws, beyond the shared conformance suite: the F4
 // cascade proven at the rows, and the per-collection policies the routed
@@ -73,11 +84,14 @@ for (const backend of backends()) {
       }
     });
 
-    it("status() reports the 36 ops this wire serves", async () => {
+    it("status() reports the 42 ops this wire serves", async () => {
       const { made, ops } = await makeOps();
       try {
         const status = await ops.status();
-        expect(status.ops).toBe(36);
+        // 42 of 44: retention is declared last in STORE_WIRE_PATHS and this
+        // engine has nowhere to quarantine to, so the level stops at footprint.
+        expect(status.ops).toBe(42);
+        expect(ops.retention).toBeUndefined();
         // Nothing left to announce: the handshake carries the format and the
         // count, and the retired generic family is not advertised as anything.
         expect(Object.keys(status).sort()).toEqual(["format", "ops"]);
@@ -147,6 +161,166 @@ for (const backend of backends()) {
         expect((await made.sql("SELECT 1 FROM vendo_state WHERE app_id = $1", ["app_shared"])).length).toBe(2);
         await ops.harness.clear("app_shared", "alice");
         expect(await ops.harness.get("app_shared", "bob")).toEqual({ seen: 2 });
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("audit.list filters on the columns AND on the fields inside the event", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        const events = [
+          auditFixture("aud_a", { at: at(1), kind: "tool-call", venue: "chat", outcome: "ok" }),
+          auditFixture("aud_b", { at: at(2), kind: "policy-decision", venue: "app", outcome: "blocked", decidedBy: "rule" }),
+          auditFixture("aud_c", { at: at(3), kind: "policy-decision", venue: "app", outcome: "blocked", decidedBy: "judge" }),
+        ];
+        for (const event of events) await ops.engine.put("vendo_audit", { id: event.id, data: event });
+
+        // Newest first, and the whole feed when nothing narrows it.
+        expect((await ops.audit.list()).events.map((event) => event.id)).toEqual(["aud_c", "aud_b", "aud_a"]);
+        // `kind`/`venue` are columns; `outcome`/`decidedBy` are only inside the
+        // event jsonb — the filters that made this op worth having.
+        expect((await ops.audit.list({ venue: "app" })).events.map((event) => event.id)).toEqual(["aud_c", "aud_b"]);
+        expect((await ops.audit.list({ outcome: "blocked", decidedBy: "judge" })).events.map((event) => event.id)).toEqual(["aud_c"]);
+        expect((await ops.audit.list({ kind: "tool-call", venue: "app" })).events).toEqual([]);
+        // Typed events, not records.
+        expect((await ops.audit.list({ kind: "tool-call" })).events[0]?.principal.subject).toBe("user_test");
+
+        // The cursor is the routed door's, so a page taken here can be finished
+        // there — the two must never disagree about where a page stopped.
+        const first = await ops.audit.list({ limit: 2 });
+        expect(first.events.map((event) => event.id)).toEqual(["aud_c", "aud_b"]);
+        const rest = await ops.engine.list("vendo_audit", { cursor: first.cursor });
+        expect(rest.records.map((record) => record.id)).toEqual(["aud_a"]);
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("engine.list walks forward from a watermark WITHOUT losing microseconds", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        // Two runs inside ONE millisecond. A watermark truncated to ms would
+        // hand back .123000, and the next walk would re-read run_1 forever —
+        // the console incident this precision rule exists for.
+        await putRun(ops, "run_1", "2026-03-04T05:06:07.123456Z");
+        await putRun(ops, "run_2", "2026-03-04T05:06:07.123789Z");
+        await putRun(ops, "run_3", "2026-03-04T05:06:08.000000Z");
+
+        const first = await ops.engine.list("vendo_runs", {
+          watermark: { field: "started_at", after: "2026-03-04T05:06:07.000000Z" },
+          limit: 1,
+        });
+        expect(first.records.map((record) => record.id)).toEqual(["run_1"]);
+        expect(first.watermark).toBeDefined();
+
+        const second = await ops.engine.list("vendo_runs", {
+          watermark: { field: "started_at", after: first.watermark! },
+          limit: 1,
+        });
+        expect(second.records.map((record) => record.id)).toEqual(["run_2"]);
+
+        const third = await ops.engine.list("vendo_runs", {
+          watermark: { field: "started_at", after: second.watermark! },
+        });
+        expect(third.records.map((record) => record.id)).toEqual(["run_3"]);
+
+        // Nothing left: the echo comes back unchanged, so the next pass resumes
+        // from the same place rather than from the top.
+        const done = await ops.engine.list("vendo_runs", {
+          watermark: { field: "started_at", after: third.watermark! },
+        });
+        expect(done.records).toEqual([]);
+        expect(done.watermark).toBe(third.watermark);
+
+        // Same record shape as the ordinary newest-first list.
+        expect(first.records[0]).toEqual(
+          (await ops.engine.list("vendo_runs", { ids: ["run_1"] })).records[0],
+        );
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("a watermark is refused on an unindexed field, and never travels with a cursor", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        await expect(ops.engine.list("vendo_runs", { watermark: { field: "finished_at", after: at(1) } }))
+          .rejects.toMatchObject({ code: "validation" });
+        await expect(ops.engine.list("vendo_audit", { watermark: { field: "at", after: at(1) } }))
+          .rejects.toMatchObject({ code: "validation" });
+        await expect(ops.engine.list("vendo_runs", {
+          watermark: { field: "started_at", after: at(1) },
+          cursor: encodeCursor(at(2), "run_x"),
+        })).rejects.toMatchObject({ code: "validation" });
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("footprint measures row content per collection, counts a thread's messages, and omits the empty", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        // Incompressible on purpose: pg_column_size reports the size Postgres
+        // actually stores, and a repeated character would pglz down to nothing.
+        await ops.transcripts.putThread({
+          id: "thr_fp",
+          subject: "user_fp",
+          messages: [{ id: "m1", role: "user", text: randomBytes(2048).toString("hex") }],
+        });
+        await ops.engine.put("vendo_knowledge_docs", { id: "doc_fp", data: { body: randomBytes(1024).toString("hex") } });
+        await ops.engine.put("vendo_placements", { id: "plc_fp", data: { slot: "hero" } });
+
+        const footprint = await ops.footprint();
+        const bytesOf = (collection: string): number =>
+          footprint.find((entry) => entry.collection === collection)?.bytes ?? 0;
+        // Sorted by name, and every reported collection is holding something.
+        expect(footprint.map((entry) => entry.collection))
+          .toEqual([...footprint.map((entry) => entry.collection)].sort());
+        expect(footprint.every((entry) => entry.bytes > 0)).toBe(true);
+        // The transcript lives in vendo_thread_messages since v6; a thread
+        // footprint that counted only the header row would report ~200 bytes.
+        expect(bytesOf("vendo_threads")).toBeGreaterThan(4000);
+        // Generic-table collections come back too, and the corpus is the one
+        // kind that is not `storage`.
+        expect(bytesOf("vendo_placements")).toBeGreaterThan(0);
+        expect(footprint.find((entry) => entry.collection === "vendo_knowledge_docs")?.kind).toBe("knowledge");
+        expect(footprint.find((entry) => entry.collection === "vendo_placements")?.kind).toBe("storage");
+
+        // A collection holding nothing has no entry at all — which is what makes
+        // an empty store answer with an empty list.
+        await ops.engine.delete("vendo_placements", "plc_fp");
+        expect((await ops.footprint()).find((entry) => entry.collection === "vendo_placements"))
+          .toBeUndefined();
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("secrets delegate to the vault, and an absent name reads as null (not undefined)", async () => {
+      const made = await backend.make();
+      try {
+        // The vault fails closed without a key (secrets.ts), so a store that
+        // serves this family has one — the same requirement a BYO mount meets
+        // with VENDO_STORE_ENCRYPTION_KEY.
+        await made.store.close();
+        made.store = createStore({
+          url: made.url,
+          dataDir: made.dataDir,
+          encryption: { key: randomBytes(32).toString("base64") },
+        });
+        await made.store.ensureSchema();
+        const ops = createStoreOps(made.store);
+
+        expect(await ops.secrets.get("MISSING")).toBeNull();
+        await ops.secrets.set("API_TOKEN", "shhh");
+        expect(await ops.secrets.get("API_TOKEN")).toBe("shhh");
+        expect(await ops.secrets.list()).toEqual(["API_TOKEN"]);
+        // Encrypted at rest by the vault this op delegates to.
+        const row = (await made.sql("SELECT ciphertext FROM vendo_secrets WHERE name = 'API_TOKEN'"))[0];
+        expect(String(row?.ciphertext)).not.toContain("shhh");
+        await ops.secrets.delete("API_TOKEN");
+        expect(await ops.secrets.get("API_TOKEN")).toBeNull();
       } finally {
         await made.cleanup();
       }

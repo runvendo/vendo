@@ -11,9 +11,14 @@ export type { Db, Query } from "./db-postgres.js";
 // this store writes to when a redeploy wipes it. The deployment that composed
 // the store is what tells its operator (createVendo's boot block).
 export type { EphemeralDataDir } from "./db-postgres.js";
-// The StoreOps local backend (02-store): the 35-op named-operation contract
+// The StoreOps local backend (02-store): the 42-op named-operation contract
 // served off this store's own Postgres, transactions at verb boundaries.
 export { createStoreOps } from "./ops.js";
+// The `Idempotency-Key` replay ledger (01 §12). `createStore()` already hands
+// one out on the store handle; this is the door for a host assembling its own
+// mount over a Db it owns — the ledger MUST be the one that shares a database
+// with the mutations it gates.
+export { createIdempotencyLedger } from "./idempotency.js";
 // The one composer of appData names and the owner stamp: everything that
 // serves the family (the local backend here, the surfaces above it) spells
 // `app:<appId>:<collection>` and `<owner>/<key>` through these and nowhere else.
@@ -71,7 +76,7 @@ export {
 } from "./workspace.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 export { harnessStateStore } from "./harness-state.js";
-// The Cloud store: the same StoreAdapter and the same 35 ops, over the console
+// The Cloud store: the same StoreAdapter and the same ops, over the console
 // wire instead of a local Postgres. It lives HERE so every helper above can be
 // served by it without the caller reaching for the umbrella.
 export { hostedStore, hostedStoreOps, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";

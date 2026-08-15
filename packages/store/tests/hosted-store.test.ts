@@ -15,6 +15,7 @@ import {
   storeWireAppDataListRequestSchema,
   storeWireAppDataPutFileRequestSchema,
   storeWireAppDataPutRequestSchema,
+  storeWireAuditListRequestSchema,
   storeWireBlobsDeleteRequestSchema,
   storeWireBlobsGetRequestSchema,
   storeWireBlobsListRequestSchema,
@@ -26,7 +27,14 @@ import {
   storeWireCollectionInsertIfAbsentRequestSchema,
   storeWireCollectionListRequestSchema,
   storeWireCollectionPutRequestSchema,
+  storeWireFootprintRequestSchema,
   storeWireLifecycleEraseRequestSchema,
+  storeWireRetentionPurgeRequestSchema,
+  storeWireRetentionQuarantineRequestSchema,
+  storeWireSecretsDeleteRequestSchema,
+  storeWireSecretsGetRequestSchema,
+  storeWireSecretsListRequestSchema,
+  storeWireSecretsSetRequestSchema,
   type StoreAdapter,
 } from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
@@ -608,7 +616,7 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 35-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 44-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
 // and the response decoding for every op — engine, appData and blobs against the
@@ -637,7 +645,12 @@ const wireRecord = {
  * at their STORE_WIRE_PATHS path too. A path written out here instead would let
  * the client and the manifest disagree forever, which is exactly how
  * `lifecycle.erase` came to declare a route no mount has ever served. `keyed`
- * marks the mutations that carry an Idempotency-Key. */
+ * marks the mutations that carry an Idempotency-Key.
+ *
+ * 43 of STORE_WIRE_PATHS' 44: `transcripts.appendMessages` is the one op a
+ * client feature-detects before sending (STORE_WIRE_APPEND_MESSAGES_OPS), so it
+ * is driven where that detection is — thread-messages.batch.test.ts — rather
+ * than blind through this walker. */
 const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "engine.get": { method: "POST", path: P["engine.get"] },
   "engine.put": { method: "POST", path: P["engine.put"], keyed: true },
@@ -673,6 +686,17 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "workspace.history": { method: "POST", path: P["workspace.history"] },
   "lifecycle.erase": { method: "POST", path: P["lifecycle.erase"], keyed: true },
   "lifecycle.promote": { method: "POST", path: P["lifecycle.promote"], keyed: true },
+  "audit.list": { method: "POST", path: P["audit.list"] },
+  // `secrets.get` is the one READ in this protocol that answers with a
+  // credential — a mount authenticates it like a mutation, but it carries no
+  // Idempotency-Key, because reading a value twice is reading it twice.
+  "secrets.get": { method: "POST", path: P["secrets.get"] },
+  "secrets.set": { method: "POST", path: P["secrets.set"], keyed: true },
+  "secrets.list": { method: "POST", path: P["secrets.list"] },
+  "secrets.delete": { method: "POST", path: P["secrets.delete"], keyed: true },
+  footprint: { method: "POST", path: P.footprint },
+  "retention.quarantine": { method: "POST", path: P["retention.quarantine"], keyed: true },
+  "retention.purge": { method: "POST", path: P["retention.purge"], keyed: true },
   status: { method: "GET", path: P.status },
 };
 
@@ -743,6 +767,14 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
   [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
   [door("lifecycle.promote")]: { ok: true },
+  [door("audit.list")]: { events: [{ id: "aud_1", kind: "tool-call" }], cursor: "cur_audit" },
+  [door("secrets.get")]: { value: "shhh" },
+  [door("secrets.set")]: { ok: true },
+  [door("secrets.list")]: { names: ["stripe_key"] },
+  [door("secrets.delete")]: { ok: true },
+  [door("footprint")]: { collections: [{ collection: "vendo_runs", kind: "storage", bytes: 4096 }] },
+  [door("retention.quarantine")]: { moved: 3 },
+  [door("retention.purge")]: { purged: 2 },
   [door("status")]: { format: "vendo/store-wire@1", ops: 35 },
 };
 
@@ -789,27 +821,38 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.workspace.history();
   await ops.lifecycle.erase({ subject: "sub_1" });
   await ops.lifecycle.promote("app_1", "org_1");
+  await ops.audit.list();
+  await ops.secrets.get("stripe_key");
+  await ops.secrets.set("stripe_key", "sk_live_1");
+  await ops.secrets.list();
+  await ops.secrets.delete("stripe_key");
+  await ops.footprint();
+  // The client IMPLEMENTS retention even though the family is optional on the
+  // contract: it is the protocol's client, and a mount without these paths
+  // answers the enveloped 501 the client turns into a named refusal.
+  await ops.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z");
+  await ops.retention!.purge("vendo_runs", "2026-01-01T00:00:00.000Z");
   await ops.status();
 };
 
-describe("hostedStoreOps — the 35-op wire client", () => {
-  it("routes all 35 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 44-op wire client", () => {
+  it("routes 43 of the 44 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(35);
+    expect(calls).toHaveLength(43);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 20 mutations, 15 reads — and the /status handshake is the one GET with
+    // 24 mutations, 19 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(20);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(24);
     expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(20);
+    expect(new Set(keys).size).toBe(24);
   });
 
   it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
@@ -1030,6 +1073,119 @@ describe("hostedStoreOps — the 35-op wire client", () => {
     expect(calls[2]).toMatchObject({ path: P["lifecycle.promote"], body: { appId: "app_1", orgId: "org_1" } });
   });
 
+  it("audit, secrets, footprint and retention: bodies flat on the contract, answers read off their own field", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    // The four audit filters ride the body FLAT, beside the page keys.
+    expect(await ops.audit.list({ kind: "tool-call", outcome: "blocked", limit: 25 })).toEqual({
+      events: [{ id: "aud_1", kind: "tool-call" }],
+      cursor: "cur_audit",
+    });
+    expect(calls[0]!.body).toEqual({ kind: "tool-call", outcome: "blocked", limit: 25 });
+
+    expect(await ops.secrets.get("stripe_key")).toBe("shhh");
+    expect(calls[1]!.body).toEqual({ name: "stripe_key" });
+    // The value crosses in the clear under TLS; the mount encrypts at rest.
+    await ops.secrets.set("stripe_key", "sk_live_1");
+    expect(calls[2]!.body).toEqual({ name: "stripe_key", value: "sk_live_1" });
+    expect(await ops.secrets.list()).toEqual(["stripe_key"]);
+    expect(calls[3]!.body).toEqual({});
+    await ops.secrets.delete("stripe_key");
+    expect(calls[4]!.body).toEqual({ name: "stripe_key" });
+
+    expect(await ops.footprint()).toEqual([{ collection: "vendo_runs", kind: "storage", bytes: 4096 }]);
+    expect(calls[5]!.body).toEqual({});
+
+    expect(await ops.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z")).toEqual({ moved: 3 });
+    expect(calls[6]!.body).toEqual({ collection: "vendo_runs", olderThan: "2026-01-01T00:00:00.000Z" });
+    // The purge cutoff is on the QUARANTINE time, not on the row's own age.
+    expect(await ops.retention!.purge("vendo_runs", "2026-02-01T00:00:00.000Z")).toEqual({ purged: 2 });
+    expect(calls[7]!.body).toEqual({ collection: "vendo_runs", quarantinedBefore: "2026-02-01T00:00:00.000Z" });
+
+    const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
+      ["audit.list", storeWireAuditListRequestSchema],
+      ["secrets.get", storeWireSecretsGetRequestSchema],
+      ["secrets.set", storeWireSecretsSetRequestSchema],
+      ["secrets.list", storeWireSecretsListRequestSchema],
+      ["secrets.delete", storeWireSecretsDeleteRequestSchema],
+      ["footprint", storeWireFootprintRequestSchema],
+      ["retention.quarantine", storeWireRetentionQuarantineRequestSchema],
+      ["retention.purge", storeWireRetentionPurgeRequestSchema],
+    ];
+    expect(calls).toHaveLength(CONTRACT.length);
+    for (const [index, [op, schema]] of CONTRACT.entries()) {
+      const call = calls[index]!;
+      expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
+      expect(schema.safeParse(call.body).success, op).toBe(true);
+    }
+
+    // An absent secret is null at the seam, never an empty string.
+    const absent = wireFake({ ...ALL_BODIES, [door("secrets.get")]: { value: null } });
+    expect(await absent.ops.secrets.get("gone")).toBeNull();
+  });
+
+  it("engine.list: the watermark rides the query, and an answer that does not echo it is refused", async () => {
+    const watermark = { field: "started_at", after: "2026-01-01T00:00:00.000Z" };
+    const walked = wireFake({
+      [door("engine.list")]: { records: [wireRecord], watermark: "2026-01-02T00:00:00.000Z" },
+    });
+    expect(await walked.ops.engine.list("vendo_runs", { watermark, limit: 2 })).toEqual({
+      records: [expect.objectContaining({ id: "inv_1" })],
+      watermark: "2026-01-02T00:00:00.000Z",
+    });
+    expect(walked.calls[0]!.body).toEqual({ collection: "vendo_runs", query: { watermark, limit: 2 } });
+    expect(storeWireCollectionListRequestSchema.safeParse(walked.calls[0]!.body).success).toBe(true);
+
+    // The case the echo check exists for. A mount older than the bound passes
+    // the unknown key through, ignores it, and answers an ordinary
+    // newest-first page — records with no echo. Read as a forward walk that
+    // page drags the caller's mark back onto the NEWEST rows and re-reads them
+    // on every pass, forever, so it is refused rather than returned.
+    const older = wireFake({ [door("engine.list")]: { records: [wireRecord], cursor: "cur_engine" } });
+    const refused = await older.ops.engine.list("vendo_runs", { watermark })
+      .then(() => undefined, (reason: unknown) => reason);
+    expect(refused).toBeInstanceOf(VendoError);
+    expect(refused).toMatchObject({ code: "not-implemented" });
+    // What happened, why, and the way out — the page is never quietly unfiltered.
+    expect((refused as VendoError).message).toContain('"engine.list"');
+    expect((refused as VendoError).message).toContain("predates the bound");
+    expect((refused as VendoError).message).toContain("cursor");
+
+    // A caller that sent NO watermark asked for that page and gets it.
+    expect(await older.ops.engine.list("vendo_runs")).toEqual({
+      records: [expect.objectContaining({ id: "inv_1" })],
+      cursor: "cur_engine",
+    });
+  });
+
+  it("retention against a mount without it: the 501 becomes a refusal naming the op", async () => {
+    // Why the client implements retention with no capability check: every one
+    // of the new ops is a new PATH, and a mount that does not have it answers
+    // the enveloped 501 this protocol answers all unknown ops with — loud,
+    // specific, and impossible to read as data.
+    const refusing = (body: ConstructorParameters<typeof Response>[0]) => hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => new Response(body, {
+        status: 501,
+        ...(body === null ? {} : { headers: { "content-type": "application/json" } }),
+      })) as unknown as typeof fetch,
+    });
+    const enveloped = refusing(JSON.stringify({
+      error: { code: "not-implemented", message: "this store does not serve retention.quarantine." },
+    }));
+    await expect(enveloped.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z")).rejects.toMatchObject({
+      code: "not-implemented",
+      message: 'Vendo Cloud store does not support the "retention.quarantine" operation'
+        + " — this store does not serve retention.quarantine.",
+    });
+    // A bare 501 names the op just the same.
+    await expect(refusing(null).retention!.purge("vendo_runs", "2026-01-01T00:00:00.000Z")).rejects.toMatchObject({
+      code: "not-implemented",
+      message: expect.stringContaining('"retention.purge"'),
+    });
+  });
+
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 35 });
@@ -1245,9 +1401,13 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.records).toBe("function");
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
-    // Eight families — the generic records family is gone from the op surface.
+    // Eleven families plus the two bare verbs (`footprint`, `status`) — the
+    // generic records family is gone from the op surface, and `retention` is
+    // present because the CLIENT serves the whole protocol, whatever a given
+    // mount has.
     expect(Object.keys(store.ops).sort()).toEqual([
-      "appData", "blobs", "engine", "harness", "lifecycle", "status", "transcripts", "workspace",
+      "appData", "audit", "blobs", "engine", "footprint", "harness", "lifecycle",
+      "retention", "secrets", "status", "transcripts", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the
@@ -1269,18 +1429,78 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
   });
 
-  // 16 of the 35 ops have no door in the fake: all 6 transcripts, all 3
-  // harness, all 4 workspace, lifecycle.promote and /status. It used to answer
-  // them with a `not-found` envelope — the SAME answer a live console sends
-  // when it refuses — so a test exercising one of those families read a
-  // plausible rejection and asserted nothing. The fake now throws out of
-  // `fetch`, which no console answer can be mistaken for.
+  it("serves the drawers the wire gained: the audit read, the vault, the forward walk and the footprint", async () => {
+    const ops = hosted(fakeConsole()).ops;
+    const ctx = { principal: { kind: "user" as const, subject: "user_1" }, venue: "chat" as const, presence: "present" as const };
+    await ops.engine.put("vendo_audit", {
+      id: "aud_1",
+      data: { id: "aud_1", at: "2026-01-01T00:00:00.000Z", kind: "tool-call", tool: "host_send", outcome: "ok", ...ctx },
+    });
+    await ops.engine.put("vendo_audit", {
+      id: "aud_2",
+      data: { id: "aud_2", at: "2026-01-02T00:00:00.000Z", kind: "policy-decision", outcome: "blocked", decidedBy: "rule", ...ctx },
+    });
+
+    // Newest first, over the same rows engine.list("vendo_audit") walks, and
+    // the four filters AND together.
+    expect((await ops.audit.list()).events.map((event) => event.id)).toEqual(["aud_2", "aud_1"]);
+    expect((await ops.audit.list({ kind: "tool-call" })).events.map((event) => event.id)).toEqual(["aud_1"]);
+    expect((await ops.audit.list({ outcome: "blocked", decidedBy: "rule" })).events.map((event) => event.id))
+      .toEqual(["aud_2"]);
+    expect((await ops.audit.list({ venue: "app" })).events).toEqual([]);
+
+    await ops.secrets.set("stripe_key", "sk_live_1");
+    expect(await ops.secrets.get("stripe_key")).toBe("sk_live_1");
+    expect(await ops.secrets.list()).toEqual(["stripe_key"]);
+    await ops.secrets.delete("stripe_key");
+    expect(await ops.secrets.get("stripe_key")).toBeNull();
+    expect(await ops.secrets.list()).toEqual([]);
+
+    const started = ["2026-02-01T00:00:00.000Z", "2026-02-02T00:00:00.000Z", "2026-02-03T00:00:00.000Z"];
+    for (const [index, startedAt] of started.entries()) {
+      await ops.engine.put("vendo_runs", {
+        id: `run_${index + 1}`,
+        data: { appId: "app_1", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt },
+      });
+    }
+    // The forward walk: oldest-first from the bound, with the bound to send
+    // next time on the page — a meter advances its mark by that echo alone.
+    const first = await ops.engine.list("vendo_runs", {
+      watermark: { field: "started_at", after: started[0]! },
+      limit: 1,
+    });
+    expect(first).toMatchObject({ watermark: started[1] });
+    expect(first.records.map((record) => record.id)).toEqual(["run_2"]);
+    const next = await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: first.watermark! } });
+    expect(next.records.map((record) => record.id)).toEqual(["run_3"]);
+    // Nothing new to read echoes the caller's own bound back, so the mark holds
+    // where it was instead of falling back to the newest row.
+    expect(await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: next.watermark! } }))
+      .toEqual({ records: [], watermark: started[2] });
+    // A field the collection does not keep indexed is refused, not scanned.
+    await expect(ops.engine.list("vendo_apps", { watermark: { field: "started_at", after: started[0]! } }))
+      .rejects.toMatchObject({ code: "validation" });
+
+    // The footprint counts the drawers holding rows, each with its kind; the
+    // ones holding nothing are absent.
+    const footprint = await ops.footprint();
+    expect(footprint.map((entry) => entry.collection)).toEqual(["vendo_audit", "vendo_runs"]);
+    expect(footprint.every((entry) => entry.kind === "storage" && entry.bytes > 0)).toBe(true);
+  });
+
+  // 17 of the 43 ops have no door in the fake: all 6 transcripts, all 3
+  // harness, all 4 workspace, both retention verbs, lifecycle.promote and
+  // /status. It used to answer them with a `not-found` envelope — the SAME
+  // answer a live console sends when it refuses — so a test exercising one of
+  // those families read a plausible rejection and asserted nothing. The fake now
+  // throws out of `fetch`, which no console answer can be mistaken for.
   it("never stands in for a door it does not serve", async () => {
     const store = hosted(fakeConsole());
     const unserved: Array<[string, () => Promise<unknown>]> = [
       ["transcripts", () => store.ops.transcripts.listThreads()],
       ["harness", () => store.ops.harness.get("app_1", "sub_1")],
       ["workspace", () => store.ops.workspace.index()],
+      ["retention", () => store.ops.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z")],
       ["lifecycle.promote", () => store.ops.lifecycle.promote("app_1", "org_1")],
       ["status", () => store.ops.status()],
     ];

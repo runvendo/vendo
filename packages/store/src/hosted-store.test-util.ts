@@ -2,11 +2,17 @@ import {
   STORE_WIRE_PATHS,
   VendoError,
   assertEngineCollection,
+  assertIndexedField,
   canonicalJson,
+  collectionKind,
   type AppDataTarget,
+  type AuditEvent,
   type BlobStore,
+  type CollectionFootprint,
+  type EngineListQuery,
   type RecordStore,
   type VendoRecord,
+  type Watermark,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 
@@ -72,6 +78,7 @@ const routesOf = (family: string): Map<string, string> => new Map(
 
 const ENGINE_ROUTES = routesOf("engine");
 const APP_DATA_ROUTES = routesOf("appData");
+const SECRETS_ROUTES = routesOf("secrets");
 
 /** The ref key the appData family stamps its owner on, and the one key a caller
  *  may never supply — packages/store's APP_DATA_OWNER_REF, mirrored. */
@@ -96,8 +103,11 @@ async function recordsOp(records: RecordStore, op: string, body: Body, miss: Mis
     case "delete":
       await records.delete(body.id as string);
       return json({ ok: true });
-    case "list":
-      return json(await records.list((body.query ?? {}) as never));
+    case "list": {
+      const query = (body.query ?? {}) as EngineListQuery;
+      if (query.watermark === undefined) return json(await records.list(query as never));
+      return json(await forwardWalk(records, body.collection as string, query.watermark, query));
+    }
     case "claim":
       return recordsClaim(records, body);
     case "insertIfAbsent":
@@ -113,6 +123,72 @@ async function recordsOp(records: RecordStore, op: string, body: Body, miss: Mis
       });
     default:
       return miss(`unknown records op: ${op}`);
+  }
+}
+
+/** `engine.list`'s forward walk: oldest-first from the bound, with the bound to
+ *  send next time echoed back — the last row's value, or the caller's own bound
+ *  unchanged when the page was empty. The echo is not decoration and this fake
+ *  must not skip it: it is the only thing that tells a mount which APPLIED the
+ *  bound from one that parsed the query and ignored it, which is the exact
+ *  answer the client refuses (EngineListPage, core/src/store.ts).
+ *  `createdAt` stands in for the indexed field, as the reference engine does —
+ *  and for `vendo_runs`, the one collection with an indexed field today, they
+ *  are the same value: the reference adapter projects a run's `startedAt` onto
+ *  `createdAt`, which is the `started_at` column. The field name still goes through
+ *  `assertIndexedField`, because a bound on an unindexed field is refused by
+ *  the live door rather than served slowly. */
+async function forwardWalk(
+  records: RecordStore,
+  collection: string,
+  watermark: Watermark,
+  query: EngineListQuery,
+): Promise<{ records: VendoRecord[]; watermark: string }> {
+  assertIndexedField(collection, watermark.field);
+  const held = await records.list(query.refs === undefined ? {} : { refs: query.refs });
+  // The adapter answers newest-first; a forward walk reads the other way.
+  const forward = held.records.filter((record) => record.createdAt > watermark.after).reverse();
+  const page = forward.slice(0, query.limit ?? forward.length);
+  return { records: page, watermark: page.at(-1)?.createdAt ?? watermark.after };
+}
+
+/** The audit drawer's typed read, over the SAME rows `engine.list("vendo_audit")`
+ *  walks: the row's data IS the event. The four filters are applied AFTER the
+ *  page here — a licence a fake may take and a real mount may not, since it
+ *  narrows in its own statement — because what a caller can observe through
+ *  this door is which events come back and in what order. */
+async function auditListOp(records: RecordStore, body: Body): Promise<Response> {
+  const page = await records.list({
+    ...(body.cursor === undefined ? {} : { cursor: body.cursor as string }),
+    ...(body.limit === undefined ? {} : { limit: body.limit as number }),
+  });
+  const events = page.records
+    .map((record) => record.data as AuditEvent)
+    .filter((event) => (["kind", "venue", "outcome", "decidedBy"] as const)
+      .every((filter) => body[filter] === undefined || event[filter] === body[filter]));
+  return json({ events, ...(page.cursor === undefined ? {} : { cursor: page.cursor }) });
+}
+
+/** The vault, in plaintext and saying so: the console encrypts at rest with a
+ *  key that never leaves it, so a fake cipher here would prove nothing about
+ *  the real one and would hide that the VALUE is what crosses this wire. */
+function secretsOp(vault: Map<string, string>, op: string, body: Body, miss: Miss): Response {
+  const name = body.name as string;
+  switch (op) {
+    case "get":
+      return json({ value: vault.get(name) ?? null });
+    case "set":
+      vault.set(name, body.value as string);
+      return json({ ok: true });
+    case "list":
+      // Sorted: "the order the Map happened to be written in" is not an answer
+      // two implementations would ever agree on.
+      return json({ names: [...vault.keys()].sort() });
+    case "delete":
+      vault.delete(name);
+      return json({ ok: true });
+    default:
+      return miss(`unknown secrets op: ${op}`);
   }
 }
 
@@ -268,6 +344,33 @@ export function fakeConsole() {
   const adapter = memoryStoreAdapter();
   const requests: RecordedRequest[] = [];
   const eraseCalls: unknown[] = [];
+  const vault = new Map<string, string>();
+  // The drawers this mount has opened. The reference adapter hands out a
+  // RecordStore per name and never lists the names back, so `footprint` measures
+  // the ones that came through these doors — which is every drawer this fake can
+  // possibly hold anything in.
+  const opened = new Set<string>();
+  const records = (collection: string): RecordStore => {
+    opened.add(collection);
+    return adapter.records(collection);
+  };
+
+  /** Serialized row length per drawer — the reference engine's own measure: it
+   *  grows as rows land and shrinks as they leave, which is the whole of what a
+   *  footprint promises. Empty drawers are omitted, so a fresh mount answers an
+   *  empty list. */
+  const footprint = async (): Promise<CollectionFootprint[]> => {
+    const measured: CollectionFootprint[] = [];
+    for (const collection of [...opened].sort()) {
+      const held = await records(collection).list();
+      const bytes = held.records.reduce(
+        (total, row) => total + JSON.stringify({ id: row.id, data: row.data, refs: row.refs }).length,
+        0,
+      );
+      if (bytes > 0) measured.push({ collection, kind: collectionKind(collection), bytes });
+    }
+    return measured;
+  };
 
   const route = async (
     request: Request,
@@ -281,6 +384,7 @@ export function fakeConsole() {
       miss("not the console's store mount");
     }
     const rest = segments.slice(3);
+    const path = `/${rest.join("/")}`;
     const body = (recorded.json ?? {}) as Body;
     const post = request.method === "POST";
 
@@ -302,16 +406,24 @@ export function fakeConsole() {
     // with the allowlist in front. The gate is served here rather than skipped
     // because a fake that answers a collection the live door refuses lets a
     // wrong call pass every test and fail in production.
-    const engineOp = post ? ENGINE_ROUTES.get(`/${rest.join("/")}`) : undefined;
+    const engineOp = post ? ENGINE_ROUTES.get(path) : undefined;
     if (engineOp !== undefined) {
       const collection = body.collection as string;
       assertEngineCollection(collection);
-      return recordsOp(adapter.records(collection), engineOp, body, miss);
+      return recordsOp(records(collection), engineOp, body, miss);
     }
-    const appDataOpName = post ? APP_DATA_ROUTES.get(`/${rest.join("/")}`) : undefined;
+    const appDataOpName = post ? APP_DATA_ROUTES.get(path) : undefined;
     if (appDataOpName !== undefined) {
-      return appDataOp((c) => adapter.records(c), (n) => adapter.blobs(n), appDataOpName, body, miss);
+      return appDataOp(records, (n) => adapter.blobs(n), appDataOpName, body, miss);
     }
+    // The audit drawer's own read, and the vault — both over the same backing
+    // the engine door writes to. `retention.*` is deliberately NOT here: it is
+    // the op no mount serves yet, and an unserved route is exactly what a mount
+    // without it looks like to this client.
+    if (post && path === STORE_WIRE_PATHS["audit.list"]) return auditListOp(records("vendo_audit"), body);
+    const secretsOpName = post ? SECRETS_ROUTES.get(path) : undefined;
+    if (secretsOpName !== undefined) return secretsOp(vault, secretsOpName, body, miss);
+    if (post && path === STORE_WIRE_PATHS.footprint) return json({ collections: await footprint() });
     if (rest[0] === "blobs" && rest.length === 2 && post) {
       return blobsWireOp(adapter.blobs(body.namespace as string), rest[1]!, body, miss);
     }

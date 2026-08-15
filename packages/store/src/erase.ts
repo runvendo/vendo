@@ -13,7 +13,14 @@ import { invalid } from "./validate.js";
  *  `vendo_effects` used to be in that same never-matched class, because the
  *  frozen v1 shape had no subject column — its `outcome` holds real tool output
  *  and survived an erase forever. The 2026-07-30 contract amendment added
- *  `subject`, so the subject axis now reaches it like any other owned table. */
+ *  `subject`, so the subject axis now reaches it like any other owned table.
+ *
+ *  `vendo_idempotency_ledger` (v8) is in the never-matched class TODAY, and not
+ *  because it holds nothing: `result` is a recorded response body and can carry
+ *  the caller's own data. Its key is (tenant, op, key) and its shape is the
+ *  console's, so no subject or app selector can reach a row — the same gap
+ *  `vendo_effects` sat in until it was given a subject. Listed here so the gap
+ *  is visible in the report rather than forgotten in the schema. */
 export const ERASE_TABLES = [
   "vendo_meta",
   "vendo_apps",
@@ -35,6 +42,7 @@ export const ERASE_TABLES = [
   "vendo_workspace_files",
   "vendo_workspace_history",
   "vendo_app_grants",
+  "vendo_idempotency_ledger",
 ] as const;
 
 export type EraseTable = typeof ERASE_TABLES[number];

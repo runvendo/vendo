@@ -2,6 +2,9 @@ import {
   assertEngineCollection,
   VENDO_STORE_WIRE_FORMAT,
   VendoError,
+  type AuditEvent,
+  type AuditPage,
+  type AuditQuery,
   type FilesAdapter,
   type Json,
   type RecordStore,
@@ -13,11 +16,13 @@ import { backfillAppDataOnDb, reownAppData } from "./backfill-app-data.js";
 import type { Db, Query } from "./db.js";
 import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
+import { collectionFootprints } from "./footprint.js";
 import { harnessStateKey } from "./harness-state.js";
 import { appendThreadMessages, putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
-import { iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
+import { cursorMs, decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
-import { createReservedRecordStore, threadRecord } from "./routing.js";
+import { createReservedRecordStore, threadRecord, watermarkPage } from "./routing.js";
+import { secretStore, storeSecrets } from "./secrets.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid, parseThreadData, requireJson } from "./validate.js";
 import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
@@ -97,12 +102,56 @@ const commitEntries = (commit: VendoRecord): WorkspaceEntry[] =>
 const commitTouches = (commit: VendoRecord, path: string): boolean =>
   commitEntries(commit).some((entry) => entry.path === path);
 
+/** `audit.list`'s statement (01 §12 `AuditQuery`). `kind` and `venue` are real
+ *  columns; `outcome` and `decidedBy` are not — they live inside the stored
+ *  event, so they are read out of the jsonb. Every filter is optional and they
+ *  AND together, so an empty query is the whole feed.
+ *
+ *  The ordering and the cursor are the routed `vendo_audit` door's, verbatim
+ *  (cursorMs, ORDER BY the truncated instant then id, over-fetch by one): both
+ *  doors read the same rows, so a cursor minted by one has to keep meaning the
+ *  same place in the other. */
+async function auditPage(db: Db, query: AuditQuery): Promise<AuditPage> {
+  const limit = pageLimit(query.limit);
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+  const add = (sql: string, value: unknown): void => {
+    params.push(value);
+    clauses.push(sql.replace("?", `$${params.length}`));
+  };
+  if (query.kind !== undefined) add("kind = ?", query.kind);
+  if (query.venue !== undefined) add("venue = ?", query.venue);
+  if (query.outcome !== undefined) add("event->>'outcome' = ?", query.outcome);
+  if (query.decidedBy !== undefined) add("event->>'decidedBy' = ?", query.decidedBy);
+  if (query.cursor !== undefined) {
+    const cursor = decodeCursor(query.cursor);
+    params.push(cursor.c, cursor.i);
+    clauses.push(`(${cursorMs("at")}, id) < (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
+  }
+  params.push(limit + 1);
+  const result = await db.query(
+    `SELECT id, at, event FROM vendo_audit${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
+     ORDER BY ${cursorMs("at")} DESC, id DESC LIMIT $${params.length}`,
+    params,
+  );
+  const page = result.rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    // The typed events, not records: the drawer stores AuditEvents and every
+    // consumer casts a record's data straight back to one.
+    events: page.map((row) => row["event"] as AuditEvent),
+    ...(result.rows.length > limit && last
+      ? { cursor: encodeCursor(iso(last["at"]), text(last["id"])) }
+      : {}),
+  };
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 36 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 42 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -134,6 +183,12 @@ export function createStoreOps(
 
   const recordsDoor = (d: Db, collection: string): RecordStore =>
     createReservedRecordStore(d, collection) ?? createRecordStore(d, collection);
+
+  /** The secrets family IS the existing vault (secrets.ts): at-rest encryption,
+   *  the dev-mode plaintext envelope and the fail-closed refusal without a key
+   *  are all its, and nothing about them is re-decided here. */
+  const secretReader = storeSecrets(store);
+  const secretWriter = secretStore(store);
 
   /** commit id → the revision that commit superseded at `path`. Every write a
    *  commit lands stamps the commit id as its intent, so the workspace history
@@ -224,9 +279,14 @@ export function createStoreOps(
         assertEngineCollection(collection);
         await db.transaction((q) => recordsDoor(txDb(q), collection).delete(id));
       },
-      async list(collection, query) {
+      async list(collection, query = {}) {
         assertEngineCollection(collection);
-        return await recordsDoor(db, collection).list(query);
+        const { watermark } = query;
+        // No watermark, no change: the newest-first door as it always was. With
+        // one, the walk goes the other way and both of its gates (indexed field,
+        // no cursor alongside) live inside watermarkPage.
+        if (watermark === undefined) return await recordsDoor(db, collection).list(query);
+        return await watermarkPage(db, collection, { ...query, watermark });
       },
       async claim(collection, expected, replacement) {
         assertEngineCollection(collection);
@@ -652,6 +712,47 @@ export function createStoreOps(
     },
 
     // -----------------------------------------------------------------------
+    // audit — one verb, because reading is all anyone does to an append-only
+    // drawer. The filters that ARE refs (subject, app, tool) are already served
+    // by engine.list("vendo_audit", { refs }); this door exists for the ones
+    // that are not.
+    // -----------------------------------------------------------------------
+    audit: {
+      async list(query = {}) {
+        return await auditPage(db, query);
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // secrets — the vault door (secrets.ts) as-is. The one seam this layer
+    // owns: the provider answers `undefined` for a name it does not hold, and
+    // the op's contract is `null`.
+    // -----------------------------------------------------------------------
+    secrets: {
+      async get(name) {
+        return (await secretReader.get(name)) ?? null;
+      },
+      async set(name, value) {
+        await secretWriter.set(name, value);
+      },
+      async list() {
+        return await secretWriter.list();
+      },
+      async delete(name) {
+        await secretWriter.delete(name);
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // retention is deliberately ABSENT (01 §12: the family is optional). This
+    // engine has nowhere to quarantine rows TO, and the contract's own rule is
+    // that an engine says so by omitting the family rather than by accepting
+    // the call and destroying rows a quarantine was supposed to keep
+    // recoverable. OSS retention is still host SQL on the host's own cron —
+    // the table map is public precisely so that works (tests/retention.test.ts).
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
     // lifecycle
     // -----------------------------------------------------------------------
     lifecycle: {
@@ -717,8 +818,17 @@ export function createStoreOps(
       },
     },
 
+    async footprint() {
+      return await collectionFootprints(db);
+    },
+
     async status() {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 36 };
+      // 42 of STORE_WIRE_PATHS' 44: `ops` is a LEVEL over that list's declared
+      // order, and the two this engine does not serve — retention.quarantine and
+      // retention.purge — are declared last for exactly this reason, so the
+      // level stops honestly at footprint instead of claiming a family that is
+      // absent from the object above.
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
     },
   };
 }

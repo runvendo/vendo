@@ -1,14 +1,18 @@
 import {
+  assertIndexedField,
   TRIGGER_KIND_REF_KEYS,
   triggerKindRefs,
   VendoError,
   type AtomicRecordStore,
   type AuditEvent,
+  type EngineListPage,
+  type EngineListQuery,
   type Json,
   type PermissionGrant,
   type RecordQuery,
   type RecordStore,
   type VendoRecord,
+  type Watermark,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { createRecordStore, requireRevision, type DedicatedRecordTable } from "./records.js";
@@ -661,4 +665,60 @@ export function createReservedRecordStore(
   }
   if (!(RESERVED_COLLECTIONS as readonly string[]).includes(collection)) return undefined;
   return createTableRecordStore(db, configFor(db, collection as ReservedCollection));
+}
+
+/** The alias the walk's own bound comes back under. Never a table's column: the
+ *  page projects `page.*` and adds this beside it, and `fromDb` reads only the
+ *  columns it names, so the extra key rides along unread. */
+const WATERMARK_ECHO = "vendo_watermark_echo";
+
+/**
+ * `engine.list`'s FORWARD walk (01 §12 `Watermark`): oldest-first from a strict
+ * lower bound on an indexed field, for the meter that has to resume where its
+ * last pass stopped. The ordinary door pages newest-first and cannot express it.
+ *
+ * The gates live HERE, not at the call site, so no direct caller can bypass
+ * them, and `configFor`'s `select`/`fromDb` are what make a walked record
+ * indistinguishable from a listed one.
+ *
+ * PRECISION IS THE WHOLE POINT. The bound is compared at the column's FULL
+ * precision (never `cursorMs`, which truncates to milliseconds) and echoed back
+ * as Postgres' own text rendering, so it round-trips through `$1::timestamptz`
+ * unchanged. Do not route the echo through a JS `Date`: a microsecond timestamp
+ * truncated to ms moves the bound BACKWARDS, and the console lost a window of
+ * runs to exactly that — re-read and double-counted. `Watermark.after` is
+ * contractually opaque precisely so this can stay a database-native value.
+ */
+export async function watermarkPage(
+  db: Db,
+  collection: string,
+  query: EngineListQuery & { watermark: Watermark },
+): Promise<EngineListPage> {
+  const { field, after } = query.watermark;
+  // Refuses any field the registry does not declare indexed — which today is
+  // every field of every collection but `vendo_runs.started_at`. That is also
+  // what makes the reserved-table cast below honest: `indexed` is declared only
+  // on reserved collections, and engine-allowlist.test.ts holds it that way.
+  assertIndexedField(collection, field);
+  if (query.cursor !== undefined) {
+    throw new VendoError(
+      "validation",
+      "engine.list takes a watermark or a cursor, never both — they page in opposite directions",
+    );
+  }
+  const config = configFor(db, collection as ReservedCollection);
+  const result = await db.query(
+    `SELECT page.*, to_json(page.${field})#>>'{}' AS ${WATERMARK_ECHO} FROM (
+       ${config.select} WHERE ${field} > $1::timestamptz
+       ORDER BY ${field} ASC, id ASC LIMIT $2
+     ) page`,
+    [after, pageLimit(query.limit)],
+  );
+  const last = result.rows.at(-1);
+  return {
+    records: result.rows.map(config.fromDb),
+    // Present exactly because a bound was applied — the caller reads its absence
+    // as "this mount ignored my watermark", so it is never conditional on rows.
+    watermark: last === undefined ? after : text(last[WATERMARK_ECHO]),
+  };
 }

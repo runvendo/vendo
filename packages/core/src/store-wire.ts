@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode } from "./errors.js";
+import { isoDateTimeSchema } from "./ids.js";
 import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
@@ -65,6 +66,21 @@ export const STORE_WIRE_PATHS = {
   // that builds its mount from this table never receives an erase at all.
   "lifecycle.erase": "/erase",
   "lifecycle.promote": "/lifecycle/promote",
+  // audit (1)
+  "audit.list": "/audit/list",
+  // secrets (4)
+  "secrets.get": "/secrets/get",
+  "secrets.set": "/secrets/set",
+  "secrets.list": "/secrets/list",
+  "secrets.delete": "/secrets/delete",
+  // footprint (1)
+  footprint: "/footprint",
+  // retention (2) — LAST on purpose, and not because of the family's name.
+  // `ops` on /status is a monotone LEVEL over this list (see below), so the ops
+  // an engine may legitimately not serve yet have to be its tail, or a mount
+  // that stops short of them cannot report an honest number.
+  "retention.quarantine": "/retention/quarantine",
+  "retention.purge": "/retention/purge",
   // status (1)
   status: "/status",
 } as const;
@@ -108,9 +124,29 @@ export const storeWireCollectionDeleteRequestSchema = z.object({
   id: z.string().min(1),
 }).passthrough();
 
+/** The forward-walk bound. `after` is an opaque string, NOT a datetime: it is
+    echoed back verbatim from a previous page, and validating it as a datetime
+    here would quietly re-encode a value whose extra precision is the whole
+    point (see `Watermark` in store.ts). */
+export const storeWireWatermarkSchema = z.object({
+  field: z.string().min(1),
+  after: z.string().min(1),
+}).passthrough();
+
+/** `engine.list`'s query. A watermark pages oldest-first from its bound and a
+    cursor pages newest-first from its own; a body carrying both is asking for
+    two different walks at once and is refused here rather than resolved by a
+    precedence rule nobody could guess. */
+export const engineListQuerySchema = recordQuerySchema.extend({
+  watermark: storeWireWatermarkSchema.optional(),
+}).refine(
+  (query) => query.watermark === undefined || query.cursor === undefined,
+  { message: "engine.list takes a watermark or a cursor, never both — they page in opposite directions" },
+);
+
 export const storeWireCollectionListRequestSchema = z.object({
   collection: z.string().min(1),
-  query: recordQuerySchema.optional(),
+  query: engineListQuerySchema.optional(),
 }).passthrough();
 
 export const storeWireCollectionClaimRequestSchema = z.object({
@@ -289,7 +325,19 @@ export interface StoreWireAppendMessagesResult {
 
     Detect once, cache, and route to the older getThread + putMessage path when
     the mount is behind — never send it blind and read the 501 as a fallback
-    signal (#1251: a failed mutation is not a capability answer). */
+    signal (#1251: a failed mutation is not a capability answer).
+
+    ⚠ AND THIS IS THE LAST CONSTANT OF ITS KIND. Ops 37-44 (audit, secrets,
+    footprint, retention) added no twin, and a future op should not either. A
+    pre-send check earns its keep only when sending blind is unsafe, and that is
+    true of exactly one shape: a MUTATION with a cheaper fallback, where a 501
+    leaves the caller unable to tell "never ran" from "ran and failed". Every one
+    of 37-44 is a new PATH, so an older mount refuses it with the enveloped 501
+    this protocol already answers unknown ops with — loud, specific, and
+    impossible to mistake for data. The one genuinely invisible addition, the
+    watermark bound on `engine.list`, is a FIELD on an existing op that
+    `.passthrough()` would let an old mount ignore in silence; it is detected by
+    the echo on its own answer (`EngineListPage.watermark`), not from here. */
 export const STORE_WIRE_APPEND_MESSAGES_OPS = 36;
 
 export const storeWireTranscriptsRecordAnswerRequestSchema = z.object({
@@ -387,12 +435,86 @@ export const storeWireLifecyclePromoteRequestSchema = z.object({
 }).passthrough();
 
 // ---------------------------------------------------------------------------
+// audit
+// ---------------------------------------------------------------------------
+
+/** The four filters are ANDed and every one is optional, so an empty body is
+    the whole feed, newest first. The enums are spelled here rather than
+    imported from `auditEventSchema` because this is the REQUEST, and a request
+    that names a kind this build has not heard of should be refused by the
+    mount's own validation, not silently widened. */
+export const storeWireAuditListRequestSchema = cursorQuerySchema.extend({
+  kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth", "principal"]).optional(),
+  venue: z.enum(["chat", "app", "automation", "mcp"]).optional(),
+  outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]).optional(),
+  decidedBy: z.enum(["grant", "rule", "judge", "default", "confirmEach", "breaker", "denied", "org", "frozen"]).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// secrets
+//
+// The value rides the body in the clear — TLS is the transport's job and the
+// mount encrypts at rest. `secrets.get` is the one read in this protocol that
+// answers with a credential; a mount authenticates it like a mutation.
+// ---------------------------------------------------------------------------
+
+export const storeWireSecretsGetRequestSchema = z.object({
+  name: z.string().min(1),
+}).passthrough();
+
+export const storeWireSecretsSetRequestSchema = z.object({
+  name: z.string().min(1),
+  value: z.string(),
+}).passthrough();
+
+/** No filter and no page: a vault small enough to need one is not a vault. */
+export const storeWireSecretsListRequestSchema = z.object({}).passthrough();
+
+export const storeWireSecretsDeleteRequestSchema = z.object({
+  name: z.string().min(1),
+}).passthrough();
+
+// ---------------------------------------------------------------------------
+// footprint
+// ---------------------------------------------------------------------------
+
+/** No arguments: the answer is the whole store, and a caller that wants one
+    collection reads one entry out of it. */
+export const storeWireFootprintRequestSchema = z.object({}).passthrough();
+
+// ---------------------------------------------------------------------------
+// retention
+// ---------------------------------------------------------------------------
+
+/** Rows older than the cutoff leave the live collection. The cutoff is a real
+    datetime here (unlike a watermark, which is an opaque echo): it is a policy
+    the caller authored, not a value it read back. */
+export const storeWireRetentionQuarantineRequestSchema = z.object({
+  collection: z.string().min(1),
+  olderThan: isoDateTimeSchema,
+}).passthrough();
+
+/** The cutoff is on the QUARANTINE time, not the row's age — this verb destroys
+    rows, and the recovery grace it honors is measured from when they were
+    lifted. */
+export const storeWireRetentionPurgeRequestSchema = z.object({
+  collection: z.string().min(1),
+  quarantinedBefore: isoDateTimeSchema,
+}).passthrough();
+
+// ---------------------------------------------------------------------------
 // status
 // ---------------------------------------------------------------------------
 
 /** GET /status — the discovery handshake. Clients learn the protocol version
     and the op count. The body passes unknown keys through, so a mount that
-    still sends fields this build dropped is read, not refused. */
+    still sends fields this build dropped is read, not refused.
+
+    `ops` is a LEVEL, not an inventory: how far down STORE_WIRE_PATHS' declared
+    order this mount serves. It answers "are you at least as new as X" and
+    nothing finer — there is no way to say "all but one in the middle", which is
+    why the ops an engine may not have yet are declared last. Read it with `>=`
+    against a frozen constant, and read a missing op's absence off its own 501. */
 export interface StoreWireStatus {
   format: typeof VENDO_STORE_WIRE_FORMAT;
   ops: number;

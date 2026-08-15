@@ -25,7 +25,22 @@ export function engineOverAdapter(store: StoreAdapter): StoreOps["engine"] {
     delete: async (collection, id) => {
       await door(collection).delete(id);
     },
-    list: async (collection, query) => await door(collection).list(query),
+    /** A watermark is REFUSED here rather than dropped. `RecordStore.list`
+     *  takes a `RecordQuery`, which has no watermark in it, so passing the query
+     *  straight through would hand the adapter a bound it cannot see and answer
+     *  with an ordinary newest-first page — the caller's forward walk would
+     *  silently become a re-read of the newest rows, forever. An adapter door is
+     *  not the engine and has no indexed-field declaration to honor; say so. */
+    list: async (collection, query) => {
+      if (query?.watermark !== undefined) {
+        throw new VendoError(
+          "not-implemented",
+          `${collection} is served by a bare StoreAdapter, which cannot honor an engine.list watermark`
+          + " — use a store with its own engine (createStore, or a Store Wire mount).",
+        );
+      }
+      return await door(collection).list(query);
+    },
     claim: async (collection, expected, replacement) => {
       const records = door(collection);
       if (records.claim === undefined) {

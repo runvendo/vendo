@@ -11,6 +11,8 @@ import {
   threadIdSchema,
   TRIGGER_KIND_REF_KEYS,
   triggerKindRefs,
+  type IdempotencyRecord,
+  type IdempotencyScope,
   type Json,
   type RecordStore,
   type StoreAdapter,
@@ -349,6 +351,12 @@ export function memoryStoreAdapter(
     return records;
   };
 
+  /** The three fields together ARE the key — spelled through JSON so a tenant
+      or op containing the separator cannot forge another key's slot. */
+  const ledger = new Map<string, { requestHash: string; answer: IdempotencyRecord }>();
+  const ledgerKey = (scope: IdempotencyScope): string =>
+    JSON.stringify([scope.tenant, scope.op, scope.key]);
+
   const blobMap = (namespace: string): Map<string, { bytes: Uint8Array; contentType?: string }> => {
     let blobs = namespaces.get(namespace);
     if (blobs === undefined) {
@@ -487,6 +495,29 @@ export function memoryStoreAdapter(
           },
         },
       };
+    },
+    // Colocated with the rows above by construction — one process, one object,
+    // so the ledger cannot commit while the mutation it gates rolls back. A
+    // hosted mount earns the same guarantee by putting it in the same database.
+    idempotency: {
+      async check(scope, requestHash) {
+        const held = ledger.get(ledgerKey(scope));
+        if (held === undefined) return null;
+        if (held.requestHash !== requestHash) {
+          throw new VendoError(
+            "conflict",
+            `idempotency key ${scope.key} was already used with a different request body`,
+          );
+        }
+        return { status: held.answer.status, result: jsonCopy(held.answer.result) };
+      },
+      async record(scope, requestHash, answer) {
+        const key = ledgerKey(scope);
+        // First writer wins: the answer a replay has already been handed must
+        // not change under it.
+        if (ledger.has(key)) return;
+        ledger.set(key, { requestHash, answer: { status: answer.status, result: jsonCopy(answer.result) } });
+      },
     },
     blobs(namespace: string) {
       const blobs = blobMap(namespace);

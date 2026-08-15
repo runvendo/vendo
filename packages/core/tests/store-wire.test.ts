@@ -48,10 +48,12 @@ import {
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 36 mount-relative paths", () => {
+  it("exposes the format constant and 44 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 8 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 36
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(36);
+    // 12 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
+    // + workspace(4) + lifecycle(2) + audit(1) + secrets(4) + footprint(1)
+    // + retention(2) + status(1) = 44
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(44);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
@@ -62,6 +64,42 @@ describe("vendo/store-wire@1", () => {
     // manifest records the door that EXISTS — a prettier path here would be a
     // route no client calls and no service answers.
     expect(STORE_WIRE_PATHS["lifecycle.erase"]).toBe("/erase");
+  });
+
+  // `ops` on /status is a LEVEL over this order, so an implementation that
+  // stops short of the newest ops can only report an honest number when those
+  // ops are the tail. retention is the one family nothing serves yet; if a
+  // later op is ever declared after it, the local engine's 42 starts claiming
+  // ops it does not have.
+  it("declares the ops nothing serves yet LAST, so the /status level can stay honest", () => {
+    const ops = Object.keys(STORE_WIRE_PATHS).filter((op) => op !== "status");
+    expect(ops.slice(-2)).toEqual(["retention.quarantine", "retention.purge"]);
+  });
+
+  describe("engine.list's watermark bound", () => {
+    const list = (query: unknown): boolean =>
+      storeWireCollectionListRequestSchema.safeParse({ collection: "vendo_runs", query }).success;
+
+    it("takes a watermark alongside the ordinary query fields", () => {
+      expect(list({ watermark: { field: "started_at", after: "2026-08-14T00:00:00.000Z" }, limit: 50 })).toBe(true);
+    });
+
+    // A cursor walks newest-first from its own position and a watermark walks
+    // oldest-first from its bound. A body carrying both is asking for two
+    // different pages at once, and any precedence rule the mount picked would be
+    // one the caller could not have guessed — so neither is honored.
+    it("refuses a body that carries a watermark AND a cursor", () => {
+      expect(list({ watermark: { field: "started_at", after: "2026-08-14T00:00:00.000Z" }, cursor: "cur_1" })).toBe(false);
+    });
+
+    // The bound is echoed back verbatim from a previous page and can carry more
+    // precision than an ISO-with-milliseconds string keeps. Validating it as a
+    // datetime would re-encode it, and a bound that loses precision moves
+    // BACKWARDS — which re-reads a window a caller had already counted.
+    it("takes the bound as an opaque string, not a datetime", () => {
+      expect(list({ watermark: { field: "started_at", after: "2026-08-14 00:00:00.123456+00" } })).toBe(true);
+      expect(list({ watermark: { field: "started_at", after: "" } })).toBe(false);
+    });
   });
 
   it("every engine door is its own path, and no route is left on the retired generic family", () => {

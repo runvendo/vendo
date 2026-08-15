@@ -41,8 +41,16 @@ import type { Db } from "./db-postgres.js";
     v7 (build contract §9.2, wave 3) adds `vendo_app_grants`: app → principal →
     level, the ONLY multi-party rows Vendo stores. Memberships are asserted per
     request by the host's own identity system and are never persisted (§9.1),
-    so this one table is the whole sharing model. Same load-bearing bump. */
-export const SCHEMA_VERSION = 7;
+    so this one table is the whole sharing model. Same load-bearing bump.
+
+    v8 adds `vendo_idempotency_ledger` (01 §12 `IdempotencyLedger`): what a keyed
+    request already answered, so a replayed `Idempotency-Key` gives that answer
+    back instead of applying the mutation a second time. It is a table in THIS
+    database rather than a store of its own because the ledger must commit with
+    the mutation it gates — one that lives elsewhere can commit while its
+    mutation rolls back, and the replay then confidently returns a result for
+    work that never happened. Same load-bearing bump. */
+export const SCHEMA_VERSION = 8;
 
 /** 02-store §2 */
 export const DDL = [
@@ -192,6 +200,18 @@ export const DDL = [
   // grant table on the hot list path — the same order-of-magnitude regression
   // the perf gate exists to catch.
   "CREATE INDEX IF NOT EXISTS vendo_app_grants_principal_idx ON vendo_app_grants (principal)",
+  // v8 (01 §12): the `Idempotency-Key` replay ledger, in the shape the Vendo
+  // Cloud console already runs. `status` + `result` are the answer a repeat
+  // caller is handed back verbatim; `request_hash` is what separates a replay
+  // from the same key carrying a DIFFERENT body, which is a client bug and not a
+  // replay at all. The PK is the whole scope, `tenant` first, so a mount serving
+  // many tenants out of one schema cannot let one tenant's key answer another's.
+  `CREATE TABLE IF NOT EXISTS vendo_idempotency_ledger (
+    tenant text NOT NULL, op text NOT NULL, key text NOT NULL,
+    request_hash text NOT NULL, status int NOT NULL, result jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant, op, key)
+  )`,
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2

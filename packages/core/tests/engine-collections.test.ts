@@ -4,6 +4,8 @@ import {
   ENGINE_ALLOWLIST_VERSION,
   ENGINE_COLLECTIONS,
   assertEngineCollection,
+  assertIndexedField,
+  collectionKind,
   engineAppHistory,
   isEngineCollection,
 } from "../src/engine-collections.js";
@@ -91,5 +93,46 @@ describe("engine allowlist", () => {
   it("refuses app-history names the pattern does not accept", () => {
     expect(codeOf(() => assertEngineCollection("vendo:app-history:"))).toBe("blocked");
     expect(codeOf(() => assertEngineCollection("vendo:app-history:a/b"))).toBe("blocked");
+  });
+});
+
+describe("collection kind", () => {
+  it("calls the corpus knowledge and everything else storage", () => {
+    expect(collectionKind("vendo_knowledge_docs")).toBe("knowledge");
+    expect(collectionKind("vendo_knowledge_chunks")).toBe("knowledge");
+    expect(collectionKind("vendo_audit")).toBe("storage");
+    expect(collectionKind("guard:controls")).toBe("storage");
+  });
+
+  // `knowledge` is what Cloud meters as index cost, so a collection nobody
+  // registered must never fall into it by default — the app-history pattern and
+  // any appData collection a footprint runs across are storage.
+  it("defaults an unregistered collection to storage, never knowledge", () => {
+    expect(collectionKind(engineAppHistory("app_1"))).toBe("storage");
+    expect(collectionKind("app:app_1:notes")).toBe("storage");
+  });
+
+  it("registers exactly two knowledge collections", () => {
+    expect(ENGINE_COLLECTIONS.filter((name) => collectionKind(name) === "knowledge"))
+      .toEqual(["vendo_knowledge_docs", "vendo_knowledge_chunks"]);
+  });
+});
+
+describe("indexed fields", () => {
+  it("accepts the one field a collection declares", () => {
+    expect(() => assertIndexedField("vendo_runs", "started_at")).not.toThrow();
+  });
+
+  // A bound on an unindexed column is a full table scan wearing a filter's
+  // clothes — refused, and the refusal names what IS indexed so the caller is
+  // not left guessing.
+  it("refuses a field the collection does not index, and says what it does", () => {
+    expect(codeOf(() => assertIndexedField("vendo_runs", "finished_at"))).toBe("validation");
+    expect(messageOf(() => assertIndexedField("vendo_runs", "finished_at"))).toContain("started_at");
+  });
+
+  it("refuses every field of a collection that declares none, and says so", () => {
+    expect(codeOf(() => assertIndexedField("vendo_audit", "at"))).toBe("validation");
+    expect(messageOf(() => assertIndexedField("vendo_audit", "at"))).toContain("declares none");
   });
 });

@@ -37,6 +37,23 @@ export { memoryAppAccess, type MemoryAppAccess } from "./memory-app-access.js";
  */
 export interface ConformanceCase {
   name: string;
+  /**
+   * Why this case does not run yet, and which lane lands it. Set it and the
+   * case is carried but never executed — by `runConformance`, and by every
+   * mount, which reports it as skipped WITH this reason in the test name.
+   *
+   * It exists so that an op the contract declares and nothing yet serves is
+   * VISIBLE. The alternative every time has been to leave the case out until
+   * its implementation arrives, and a case nobody can see is how a feature
+   * ships dead four times over: the suite is green, the op is in the types,
+   * and the first person to find out is a caller in production. A named
+   * pending case is a standing line in the test output that says the contract
+   * is ahead of the code and who owes the difference.
+   *
+   * The body is a real one, not a placeholder: landing the capability means
+   * deleting this one field.
+   */
+  pending?: string;
   run(): Promise<void>;
 }
 
@@ -46,10 +63,14 @@ export interface ConformanceSuite {
   cases: ConformanceCase[];
 }
 
-/** The serializable result of executing every case in a conformance suite. */
+/** The serializable result of executing every case in a conformance suite.
+    `pending` names the cases that were carried but not run; `ok` is keyed off
+    failures alone, because a pending case is a promise nobody has made yet, not
+    a broken one. */
 export interface ConformanceReport {
   seam: string;
   passed: number;
+  pending: string[];
   failures: Array<{ name: string; error: string }>;
   ok: boolean;
 }
@@ -57,8 +78,13 @@ export interface ConformanceReport {
 /** Executes all cases without stopping at the first failure. */
 export async function runConformance(suite: ConformanceSuite): Promise<ConformanceReport> {
   const failures: ConformanceReport["failures"] = [];
+  const pending: string[] = [];
   let passed = 0;
   for (const conformanceCase of suite.cases) {
+    if (conformanceCase.pending !== undefined) {
+      pending.push(conformanceCase.name);
+      continue;
+    }
     try {
       await conformanceCase.run();
       passed += 1;
@@ -69,7 +95,7 @@ export async function runConformance(suite: ConformanceSuite): Promise<Conforman
       });
     }
   }
-  return { seam: suite.seam, passed, failures, ok: failures.length === 0 };
+  return { seam: suite.seam, passed, pending, failures, ok: failures.length === 0 };
 }
 
 type AdapterFactoryResult = { adapter: StoreAdapter; close?(): Promise<void> };
@@ -290,6 +316,76 @@ export function storeAdapterConformance(opts: {
         await blobs.put("delete.bin", new Uint8Array([1]));
         await blobs.delete("delete.bin");
         assert(await blobs.get("delete.bin") === null, "deleted blob remained readable");
+      }),
+
+      /** 01-core §12: the replay ledger behind `Idempotency-Key`. A fresh key
+          tells the caller to go do the work; the same key with the same body
+          gets the recorded answer back instead of applying the mutation twice.
+          OPTIONAL, on `RecordStore.claim`'s rule — an adapter that cannot
+          colocate a ledger with its mutations omits it and passes here by not
+          claiming one. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.check is null when fresh and replays what record wrote", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_1" };
+        assert(await ledger.check(scope, "hash_a") === null, "a key nobody has recorded should check as null");
+        await ledger.record(scope, "hash_a", { status: 200, result: { committed: 1 } });
+        assertDeepEqual(
+          await ledger.check(scope, "hash_a"),
+          { status: 200, result: { committed: 1 } },
+          "the replay did not return the recorded status and result",
+        );
+      }),
+
+      /** 01-core §12: the same key with a DIFFERENT body is not a replay, it is
+          a client bug — and returning some other request's result for it is the
+          one failure this shape exists to make impossible. The hash is passed
+          IN so the comparison cannot be skipped at a call site. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.check refuses a held key carrying a different request", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_2" };
+        await ledger.record(scope, "hash_a", { status: 200, result: { committed: 1 } });
+        const refusal = await ledger.check(scope, "hash_b").then(() => null, (error: unknown) => error);
+        assert(
+          (refusal as { code?: unknown } | null)?.code === "conflict",
+          `a held key checked with a different request hash should throw conflict, got ${String(refusal)}`,
+        );
+      }),
+
+      /** 01-core §12: first writer wins. A replay that has already been handed
+          an answer must keep getting THAT answer — a second `record` landing
+          over it would change history under a caller who already read it. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.record does not overwrite a key already held", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_3" };
+        await ledger.record(scope, "hash_a", { status: 200, result: { attempt: 1 } });
+        await ledger.record(scope, "hash_a", { status: 500, result: { attempt: 2 } });
+        assertDeepEqual(
+          await ledger.check(scope, "hash_a"),
+          { status: 200, result: { attempt: 1 } },
+          "a second record replaced the answer a replay had already been given",
+        );
+      }),
+
+      /** 01-core §12: `tenant` and `op` are part of the key, not decoration. A
+          mount serving many tenants out of one schema would otherwise let one
+          tenant's "req_1" answer another's, and a key reused across two ops
+          would replay the wrong mutation's result. */
+      readyAdapterCase(opts, "01-core §12 — idempotency keys are isolated across tenant and op", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined) return;
+        const held = { tenant: "tenant_a", op: "workspace.commit", key: "shared" };
+        await ledger.record(held, "hash_a", { status: 200, result: { whose: "tenant_a" } });
+        assert(
+          await ledger.check({ ...held, tenant: "tenant_b" }, "hash_a") === null,
+          "another tenant's key replayed this tenant's answer",
+        );
+        assert(
+          await ledger.check({ ...held, op: "lifecycle.erase" }, "hash_a") === null,
+          "the same key on another op replayed the first op's answer",
+        );
       }),
 
       /** 01-core §12: blob list filters keys by prefix. */

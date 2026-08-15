@@ -34,6 +34,7 @@ export function createStore(config: PostgresStoreConfig): VendoStore {
 // The rest of the store surface is engine-agnostic — the same modules the
 // main entry exports (keep this list in lockstep with index.ts).
 export { createStoreOps } from "./ops.js";
+export { createIdempotencyLedger } from "./idempotency.js";
 export { maybeDbFor } from "./store.js";
 export { createStoreForDb } from "./store.js";
 export type { Db, Query } from "./db-postgres.js";
