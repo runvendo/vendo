@@ -241,6 +241,13 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
   const underReview = venue?.granted !== true
     && (review || (venue !== undefined && !venue.granted && venue.reason === "pending-review"));
 
+  // The seed's provenance row lands the instant the fork is minted; its screen
+  // arrives seconds later (until then `open` has no ui payload to serve). The
+  // pill reads that OPEN PAYLOAD — the same signal the mount below waits on —
+  // or it claims "Remixed" over the host's untouched original for the whole
+  // generation, which reads as broken.
+  const pending = surface === undefined;
+
   // Until the fork's surface arrives (or if it never does), the original child
   // is the honest content — the wrapper never trades working host markup for
   // a skeleton, and a crashing fork drops back to it (PinMount).
@@ -270,10 +277,11 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
             aria-label={`Manage the ${slot} remix`}
             aria-haspopup="true"
             aria-expanded={menuOpen}
+            aria-busy={pending || undefined}
             onClick={() => onMenuToggle(!menuOpen)}
           >
             <span aria-hidden="true" className="fl-remix-pill-mark">✦</span>
-            Remixed
+            {pending ? "Remixing…" : "Remixed"}
           </button>
           {menuOpen ? (
             <div className="fl-remix-menu" role="group" aria-label={`Remix of ${slot}`}>

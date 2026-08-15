@@ -365,6 +365,27 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     expect(screen.getByRole("button", { name: `Manage the ${SLOT} remix` })).toBeTruthy();
   });
 
+  it("says Remixing… until the edited screen actually lands, then Remixed", async () => {
+    // The seed's provenance row exists the instant the fork is minted, seconds
+    // before its screen does — `open` answers "tree app has no ui payload" for
+    // that whole window. The pill used to report the row, so it said "Remixed"
+    // over the host's untouched original for ~4s of a ~5s remix.
+    const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
+    const notYet = { method: "GET", path: `/apps/${forked.id}/open`, code: "validation", message: "tree app has no ui payload", status: 400 };
+    wire.state.failures.push({ ...notYet }, { ...notYet });
+    mount();
+    await waitFor(() => expect(managePill()).toBeTruthy());
+    // Still the host's own markup, so the pill must not claim otherwise.
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+    expect(managePill().textContent).toContain("Remixing…");
+    expect(managePill().getAttribute("aria-busy")).toBe("true");
+    // The screen lands — and only now is the work done.
+    await waitFor(() => expect(forkIframe()).toBeTruthy());
+    expect(managePill().textContent).toContain("Remixed");
+    expect(managePill().getAttribute("aria-busy")).toBeNull();
+  });
+
   it("wraps only a statically importable component: inline JSX gets no affordance, and a dev warning", () => {
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
