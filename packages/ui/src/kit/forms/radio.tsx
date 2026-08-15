@@ -49,6 +49,10 @@ export function Radio({ label, options: rawOptions, labelField, valueField, valu
             <Base.Root
               id={`${fieldId}-${i}`}
               value={option.value}
+              // Named by its OWN option, not by the field. The surrounding
+              // Field.Root offers every control the field's label, which would
+              // make all four radios answer to "Client".
+              aria-labelledby={`${fieldId}-${i}-label`}
               style={({ checked }) => ({
                 display: "inline-flex",
                 alignItems: "center",
@@ -63,7 +67,7 @@ export function Radio({ label, options: rawOptions, labelField, valueField, valu
             >
               <Base.Indicator style={{ width: 8, height: 8, borderRadius: "50%", background: t.accent }} />
             </Base.Root>
-            {option.label}
+            <span id={`${fieldId}-${i}-label`}>{option.label}</span>
           </label>
         ))}
       </RadioGroup>
