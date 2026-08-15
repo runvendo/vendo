@@ -107,6 +107,10 @@
         ]
       }
     },
+    "create_issue": {
+      "does": "File a new issue on a team. `priority` is one of urgent, high, medium and low, and `points` is a story-point estimate. The key is assigned when the issue is filed.",
+      "takes": { "title": "string", "team": "string", "priority": "string", "member_id": "string", "points": "number" }
+    },
     "move_issue": {
       "does": "Move one issue to a different status. `status` is one of backlog, todo, in_progress, in_review, blocked, done.",
       "takes": { "issue_id": "string", "status": "string" }
@@ -122,6 +126,10 @@
     "cut_release": {
       "does": "Cut a release: freeze what is tagged to it, tag the build and ship it. This cannot be undone.",
       "takes": { "release_id": "string" }
+    },
+    "save_filter": {
+      "does": "Save one issue filter under a name, so it is waiting on the next visit. `conditions` is the filter written out, like 'status is blocked and priority is urgent'.",
+      "takes": { "name": "string", "conditions": "string" }
     }
   }
 }
