@@ -207,12 +207,19 @@ function asJobs(value: string): number {
   return jobs;
 }
 
-/** Every contender that has a driver today, in every requested model. */
+/** Every contender that has a driver today, in every model that driver can
+ *  think with. Claude Code spawns its own Anthropic engine and never reads
+ *  `meter.model`, so a Wafer alias would reach its Agent SDK as an Anthropic id
+ *  and the column would report the harness's mistake as the model's score. */
 export function contenders(
   models: readonly ModelAlias[],
   harnesses: readonly HarnessId[] = HARNESS_IDS,
 ): readonly ContenderId[] {
-  return harnesses.flatMap((harness) => models.map((model) => ({ harness, model, slug: `${harness}-${model}` })));
+  return harnesses.flatMap((harness) =>
+    models
+      .filter((model) => harness !== "claude-code" || !Object.hasOwn(WAFER_MODEL_IDS, model))
+      .map((model) => ({ harness, model, slug: `${harness}-${model}` })),
+  );
 }
 
 /**

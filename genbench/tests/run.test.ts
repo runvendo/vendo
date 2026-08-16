@@ -309,6 +309,14 @@ describe("--contenders", () => {
   it("refuses a contender that has no driver", () => {
     expect(() => parseArgs(["run", "--contenders", "vendo,langchain"])).toThrow(/unknown contender "langchain"/);
   });
+
+  /** Claude Code is Anthropic's own engine and never reads the meter's model, so
+   *  a Wafer alias would reach its Agent SDK as an Anthropic id — a column that
+   *  scores zero for a mistake the harness made. It has no such column. */
+  it("leaves Claude Code out of a Wafer model's row, and keeps the rest of it", () => {
+    expect(contenders(["glm-fast"]).map((contender) => contender.slug)).toEqual(["vendo-glm-fast", "diy-glm-fast"]);
+    expect(contenders(["sonnet", "glm-fast"]).map((contender) => contender.slug)).toContain("claude-code-sonnet");
+  });
 });
 
 /** Within a case the contenders already race each other. `--jobs` is the bound
