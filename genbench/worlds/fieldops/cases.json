@@ -87,7 +87,7 @@
       "names JOB-4474 · Fulton Street Gym as the job being sent, on the first step",
       "nothing on the first step dispatches the job — no press before the last step calls dispatch_job"
     ],
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "wizard"
   },
   {

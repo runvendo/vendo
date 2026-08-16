@@ -211,14 +211,21 @@ for (const name of folders) {
       expect(offenders, "a case with no pass lines is graded on nothing").toEqual([]);
     });
 
-    it("tags every case display or action, at least three of them actions", () => {
+    it("tags every case display or action, at least two of them actions", () => {
       const mistagged = cases
         .filter((entry) => (entry.tags ?? []).filter((tag) => CASE_TAGS.includes(tag)).length !== 1)
         .map((entry) => entry.id);
       expect(mistagged, "each case carries exactly one of display | action").toEqual([]);
 
+      // Two, not three: `action` is what makes the floor demand an OBSERVED tool
+      // call, and the probe only reaches a control that fires from the default
+      // state in one click, optionally through one confirmation dialog. A wizard
+      // whose write sits on step three is graded on its shape, so it is tagged
+      // `display` however much it is "about" a write — which leaves a world with
+      // a single write tool (fieldops, `dispatch_job`) two honest action cases,
+      // and a third could only be invented.
       const actions = cases.filter((entry) => (entry.tags ?? []).includes("action"));
-      expect(actions.length, "a world whose cases never act grades no write tool").toBeGreaterThanOrEqual(3);
+      expect(actions.length, "a world whose cases never act grades no write tool").toBeGreaterThanOrEqual(2);
     });
 
     it("gives every case one shape, and any source it names a real one", () => {

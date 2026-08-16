@@ -167,7 +167,7 @@
       "marks the coupon step as one that can be skipped, so a customer without a coupon still reaches the confirmation",
       "nothing on the first step creates anything — no press before the confirmation calls create_subscription"
     ],
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "wizard",
     "source": "Chargebee — Hosted checkout page, https://chargebee.com/subscription-management"
   },

@@ -163,7 +163,7 @@
   {
     "id": "new-alert-rule",
     "lane": "screen",
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "wizard",
     "source": "Grafana — New alert rule, https://grafana.com/docs/grafana/latest/alerting/alerting-rules/create-grafana-managed-rule/",
     "prompt": "Walk me through setting up a new alert on search-indexer's tail latency — the condition, the threshold, and who it pages.",

@@ -172,7 +172,7 @@
       "only one ticket can be the one that stays",
       "nothing on the first step merges anything — no press before the confirmation calls merge_tickets"
     ],
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "wizard",
     "source": "Zendesk — Bulk merge tickets, https://www.eesel.ai/blog/zendesk-merge-tickets-duplicate-conversations",
     "data": {

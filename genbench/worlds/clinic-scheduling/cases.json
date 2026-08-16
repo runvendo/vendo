@@ -140,7 +140,7 @@
       "names Ruth Ozawa as the patient being booked, so no step has to ask who it is for",
       "nothing on the first step books anything — no press before the last step calls the booking tool"
     ],
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "wizard",
     "source": "Jane — Online booking (patient-facing), https://jane.app/features/online-booking"
   },

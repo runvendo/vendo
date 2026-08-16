@@ -168,7 +168,7 @@
       "invents no product names for the freight — the shipment tool gives a count of 6 pieces and no item names",
       "nothing on the first step opens the return — no press before the last step calls create_return"
     ],
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "wizard",
     "source": "ShipStation — Returns Portal, https://shipstation.com/fulfillment/shipping/"
   },
