@@ -104,7 +104,7 @@
       "lists exactly the three solved tickets — TK-1036, TK-1037, TK-1038 — each with its own checkbox, all three ticked when the screen loads",
       "the close control says how many are selected",
       "asks for confirmation before closing anything",
-      "confirming fires close_tickets once, with the ids of the rows the screen shows ticked"
+      "the confirmation names the three tickets it is about to close — TK-1036, TK-1037 and TK-1038"
     ],
     "tags": ["action"],
     "shape": "table"

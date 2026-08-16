@@ -84,7 +84,7 @@
       "shows both pending transfers, Alex Rivera $250.00 and Jordan Avery $60.00, and no completed transfer",
       "offers exactly one cancel button for all of them rather than one per row",
       "that button says it will cancel 2 transfers, and pressing it asks for confirmation before anything is cancelled",
-      "confirming fires cancel_transfer twice, once with id tr_1 and once with id tr_2"
+      "the confirmation names what it would cancel — Alex Rivera's $250.00 and Jordan Avery's $60.00 — rather than asking a bare 'are you sure'"
     ],
     "tags": ["action"],
     "shape": "list-feed"

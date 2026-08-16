@@ -1,6 +1,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { z } from "zod";
+import type { ExtractedTool } from "@vendoai/actions";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { VendoThemeFont } from "@vendoai/apps/contract";
 import type { ToolImpact } from "../sync-impact.js";
@@ -61,6 +62,10 @@ export interface SyncFlowOptions {
   interactive: boolean;
   yes: boolean;
   ai?: boolean;
+  /** `vendo init --agent`: the caller is itself a coding agent, so judgment is
+      its work, not ours. Beats every other answer — even `--ai` — because
+      spawning an engine underneath one is the one thing agent mode may not do. */
+  delegated?: boolean;
   engine?: string;
   force?: boolean;
   themeRefresh?: boolean;
@@ -127,7 +132,10 @@ export interface SyncFlowResult {
   themeDraft: z.infer<typeof modelThemeSchema> | null;
   /** How long the deterministic theme scan took, when this run made one. */
   themeMs?: number;
-  /** The catalog on disk after this run — what telemetry counts. */
+  /** The catalog on disk after this run: the tools themselves, and what
+   *  telemetry counts. Unreadable degrades to empty, so every consumer sees
+   *  the same answer instead of one of them failing the run. */
+  catalog: ExtractedTool[];
   counts: { tools: number; routes: number };
   /** [] = nothing referenced the changed tools; null = impact unknown. */
   impact: ToolImpact[] | null;
@@ -290,19 +298,16 @@ function themeStageInput(summary: ThemeSummary): Pick<ThemeStageInput, "needed" 
   };
 }
 
-/** The catalog as it stands on disk, for telemetry. Unreadable degrades to
- *  zero — sync already reported any extraction warning. */
-async function countCatalog(vendoDir: string): Promise<SyncFlowResult["counts"]> {
+/** The catalog as it stands on disk: read and parsed ONCE for everyone who
+ *  needs it (telemetry's counts, init's risk advice). Unreadable degrades to
+ *  empty — sync already reported any extraction warning, and a second reader
+ *  that threw instead would fail a run this one calls fine. */
+async function readCatalog(vendoDir: string): Promise<ExtractedTool[]> {
   try {
-    const tools = JSON.parse(await readFile(join(vendoDir, "tools.json"), "utf8")) as {
-      tools?: Array<{ binding?: { kind?: string } }>;
-    };
-    return {
-      tools: tools.tools?.length ?? 0,
-      routes: tools.tools?.filter((tool) => tool.binding?.kind === "route").length ?? 0,
-    };
+    const file = JSON.parse(await readFile(join(vendoDir, "tools.json"), "utf8")) as { tools?: ExtractedTool[] };
+    return file.tools ?? [];
   } catch {
-    return { tools: 0, routes: 0 };
+    return [];
   }
 }
 
@@ -357,6 +362,10 @@ async function chooseEngine(
   note: (message: string) => void,
 ): Promise<{ skip: true } | { skip: false; engine?: AvailableEngine }> {
   const { output } = options;
+  if (options.delegated === true) {
+    output.log("Judgment: delegated to you. The receipt lists what the catalog still needs.");
+    return { skip: true };
+  }
   if (options.ai === false) {
     output.log("AI polish (descriptions, risk review, brief, theme): off (--no-ai) — extractor defaults stand.");
     return { skip: true };
@@ -762,6 +771,7 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   const keyed = cloudKey !== undefined && cloudKey.trim() !== "";
   const baselines = await pushBaselinesToCloud({ vendoDir, cloudKey, keyed, options, notes: notes_ });
   const components = await pushComponentsToCloud({ vendoDir, cloudKey, keyed, options, notes: notes_ });
+  const catalog = await readCatalog(vendoDir);
 
   return {
     report,
@@ -770,7 +780,11 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
     themeSummary,
     themeDraft,
     ...(themeMs === undefined ? {} : { themeMs }),
-    counts: await countCatalog(vendoDir),
+    catalog,
+    counts: {
+      tools: catalog.length,
+      routes: catalog.filter((tool) => tool.binding?.kind === "route").length,
+    },
     impact,
     baselines,
     components,

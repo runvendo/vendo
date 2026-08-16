@@ -49,7 +49,7 @@
       "shows both times, with the deploy landing before the incident started",
       "shows the incident's commander and its customers-affected count from the tool",
       "shows who shipped the deploy and which build number it was",
-      "the rollback control asks for confirmation and then rolls back that deploy, not another one"
+      "the rollback control asks for confirmation, and the confirmation names the checkout-api build it would roll back — 4192 — not another deploy"
     ]
   },
   {
@@ -115,7 +115,7 @@
       "shows the acknowledged count beside the fired count for each alert",
       "singles out the two alerts that fired repeatedly and were never acknowledged",
       "lets more than one alert be selected and silenced in a single action",
-      "the bulk silence asks for confirmation, and confirming fires one silence call, with a number of minutes, for each alert the screen shows picked when it loads"
+      "the bulk silence asks for confirmation, and the confirmation says how many alerts it would silence — the two picked when the screen loads — and for how long"
     ]
   },
   {

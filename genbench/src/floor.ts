@@ -136,8 +136,12 @@ export interface WiredActionsResult {
    *  one control that was pressed. */
   readonly pressed: number;
   readonly bindings: readonly Binding[];
+  /** What cleared an `action` case's bar, and which of the two did it: a press
+   *  that asked the host for something, or one that opened a confirmation the
+   *  probe never presses inside. Absent when neither happened. */
+  readonly acted?: "tool" | "confirmation";
   /** Why the check failed for a reason no single binding carries — an `action`
-   *  case none of whose presses ever asked the host for anything. */
+   *  case none of whose presses did either. */
   readonly why?: string;
 }
 
@@ -329,7 +333,8 @@ export const holds = (binding: Binding): boolean =>
  *  catch: a screen can name a tool in its document and still be dead in a
  *  browser. A DISPLAY screen with nothing to press passes vacuously; an `action`
  *  case does not, because a case that asked the screen to do something is proven
- *  by a tool call and by nothing else. */
+ *  by a tool call — or by a confirmation, since the probe stops at the dialog
+ *  and the call behind it can never reach this trace. */
 export function wiredActions(
   trace: readonly Probed[],
   world: World,
@@ -337,30 +342,12 @@ export function wiredActions(
 ): WiredActionsResult {
   const bindings = trace.flatMap((candidate): Binding[] => {
     if (candidate.calls.length === 0) {
-      // A confirmation exists to authorize an action, and the probe only ever
-      // follows through on its PRIMARY action (`probe.ts` clicks the dialog's last
-      // control; a way out sits before it and is never taken). So a chain that was
-      // followed through and still asked for nothing is dead by construction —
-      // however much opening the dialog moved the screen. This is the "looks
-      // wired, is dead" case the probe exists to catch, and letting the dialog's
-      // own repaint stand in for an effect would hide exactly it.
-      //
-      // A dismiss button is not caught by this: closing a dialog leaves none
-      // visible, so its own press records `confirmed: false` and is graded on
-      // whether the screen moved, like any other local control.
-      if (candidate.confirmed) {
-        return [
-          {
-            where: candidate.label,
-            effect: "none",
-            why: "a confirmation was followed through and it still called nothing",
-          },
-        ];
-      }
       return [
-        candidate.changed
-          ? { where: candidate.label, effect: "state", why: "changed the screen without calling a tool" }
-          : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
+        candidate.dialog !== undefined
+          ? { where: candidate.label, effect: "state", why: "opened a confirmation — not followed; the judge reads it" }
+          : candidate.changed
+            ? { where: candidate.label, effect: "state", why: "changed the screen without calling a tool" }
+            : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
       ];
     }
     return candidate.calls.map((call): Binding => {
@@ -379,15 +366,20 @@ export function wiredActions(
       };
     });
   });
-  const acted = bindings.some((binding) => binding.effect === "tool" && holds(binding));
+  const acted = bindings.some((binding) => binding.effect === "tool" && holds(binding))
+    ? "tool"
+    : trace.some((candidate) => candidate.dialog !== undefined)
+      ? "confirmation"
+      : undefined;
   const why =
-    tags.includes("action") && !acted
-      ? "this case asks the screen to DO something, and no press ever asked the host for anything"
+    tags.includes("action") && acted === undefined
+      ? "this case asks the screen to DO something, and no press ever asked the host for anything or opened a confirmation"
       : undefined;
   return {
     pass: why === undefined && bindings.every(holds),
     pressed: trace.length,
     bindings,
+    ...(acted === undefined ? {} : { acted }),
     ...(why === undefined ? {} : { why }),
   };
 }

@@ -87,7 +87,7 @@
       "lists the four unfulfilled orders and neither the shipped, delivered nor cancelled ones",
       "flags PDL-1044 as still awaiting payment",
       "one control marks the whole batch fulfilled, and asks for confirmation before it does",
-      "confirming calls mark_fulfilled once per order listed"
+      "the confirmation says how many orders it is about to fulfil — all four"
     ]
   },
   {

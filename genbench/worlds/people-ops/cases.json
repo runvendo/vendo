@@ -22,7 +22,7 @@
       "shows the four pending requests and none of the approved or denied ones",
       "shows each pending request's employee, dates and hours",
       "approve fires approve_time_off with the id of the request it sits on",
-      "deny asks for confirmation first, and confirming fires deny_time_off with that request's id"
+      "deny asks for confirmation first, and the confirmation names whose request it is about to deny"
     ]
   },
   {
@@ -100,7 +100,7 @@
       "lists the four people whose review step is late and nobody who is on time",
       "orders them most days late first, so Marcus Odell and Tomas Bello come before Daniel Okafor and Sena Nakamura",
       "shows each person's days late and the stage they are stuck at",
-      "the nudge-everyone control asks for confirmation and then fires send_review_reminder for each late person"
+      "the nudge-everyone control asks for confirmation, and the confirmation says it is about to email all four of them"
     ]
   },
   {

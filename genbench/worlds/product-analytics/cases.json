@@ -127,7 +127,7 @@
       "does not list csv_import_finished, which the Import-first accounts segment is built on",
       "shows each listed event's 7-day fire count, so sidebar_collapsed's 9,402 is visible",
       "one control deprecates all three, and it asks for confirmation before any call fires",
-      "confirming fires one deprecate call per listed event"
+      "the confirmation names all three events it would deprecate — sidebar_collapsed, old_pricing_toggle and legacy_signup_v1"
     ],
     "tags": ["action"],
     "shape": "list-feed"

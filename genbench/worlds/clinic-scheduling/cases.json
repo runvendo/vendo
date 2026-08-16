@@ -112,7 +112,7 @@
       "lists the appointments still to come that the patient has not confirmed, and no others",
       "offers one control that texts all of them at once",
       "that control says how many people it will text, and pressing it asks for confirmation before anything sends",
-      "confirming calls the reminder tool once for each of those appointments"
+      "the confirmation names the three patients it is about to text — Amara Osei, Owen Bragg and Sam Iyer"
     ],
     "tags": ["action"],
     "shape": "list-feed"

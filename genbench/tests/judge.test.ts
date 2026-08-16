@@ -19,8 +19,8 @@ const PNG = Buffer.from(
 );
 
 const TRACE: Probed[] = [
-  { label: "Cancel", confirmed: true, changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
-  { label: "Refresh", confirmed: false, changed: false, calls: [] },
+  { label: "Cancel", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+  { label: "Refresh", changed: false, calls: [] },
 ];
 
 const CASE_LINES = ["alpha shows every row", "bravo totals the rows", "charlie confirms deletions"];
@@ -62,6 +62,16 @@ const asked = (call: { prompt: unknown }): string[] => {
   );
   const checklist = parts.filter((part) => part.type === "text").at(-1)?.text ?? "";
   return [...checklist.matchAll(/^\s*\d+\.\s+\[\w+\]\s+(.+)$/gm)].map((match) => match[1]!);
+};
+
+/** The interaction trace exactly as it went over the wire. Its wording is a
+ *  contract, not a detail: the corpus grades confirmation lines off these words. */
+const traceSent = (call: { prompt: unknown }): string => {
+  const parsed = JSON.parse(JSON.stringify(call.prompt)) as Array<{ content: unknown }>;
+  const parts = parsed.flatMap((message) =>
+    Array.isArray(message.content) ? (message.content as Array<{ type: string; text?: string }>) : [],
+  );
+  return parts.find((part) => part.text?.startsWith("INTERACTION TRACE") === true)?.text ?? "";
 };
 
 /** The verdict this line is worth, decided by its own first word — so a remap
@@ -122,7 +132,7 @@ describe("blindness", () => {
 <script type="module">import { PayloadView } from "@vendoai/ui/tree";</script>
 <button onclick="window.vendo.callTool('cancel_transfer', { id: 'tr_1' })">Cancel</button>`,
         // A control's label is page text, and page text can sign its own work.
-        trace: [{ label: "Built with Vendo", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
+        trace: [{ label: "Built with Vendo", changed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
       }),
       contender: "vendo-sonnet",
       harness: "claude-code",
@@ -151,6 +161,36 @@ describe("blindness", () => {
     expect(sent).toContain("cancel_transfer");
     expect(sent).toContain("Cancel");
     for (const line of [...CASE_LINES, ...STYLE_LINES]) expect(sent).toContain(line);
+  });
+
+  /** The probe presses nothing inside a confirmation, so the dialog's own words
+   *  are the evidence that press left. They are quoted verbatim, because a line
+   *  like "asks before it cancels two transfers" is graded off them. */
+  const DIALOG = "Cancel 2 transfers? This cannot be undone.";
+
+  it("renders a confirmation as the text it showed, quoted", async () => {
+    const model = answering();
+    const trace: Probed[] = [{ label: "Cancel all", dialog: DIALOG, changed: true, calls: [] }];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "Cancel all" — opened a confirmation: "${DIALOG}"`,
+    );
+  });
+
+  /** A press can do both, and then the judge is owed both: dropping the call
+   *  would fail a "pressing it calls X" line on a screen that really does call X
+   *  and then ask. */
+  it("renders a press that called AND confirmed as both, in one line", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      { label: "Cancel all", dialog: DIALOG, changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "Cancel all" — called cancel_transfer({"id":"tr_1"}) and opened a confirmation: "${DIALOG}"`,
+    );
   });
 
   it("keeps the artifact's format while taking its name — a tree still reads as a tree", async () => {

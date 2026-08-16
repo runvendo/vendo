@@ -243,7 +243,7 @@ describe("checks", () => {
 
 describe("wiredActions", () => {
   const pressed = (name: string, args: unknown): Probed[] => [
-    { label: "Cancel", confirmed: false, changed: false, calls: [{ name, args }] },
+    { label: "Cancel", changed: false, calls: [{ name, args }] },
   ];
 
   it("passes a real tool called with the arguments it declares", () => {
@@ -259,7 +259,7 @@ describe("wiredActions", () => {
    * moved, and that is the only thing these two cases differ by.
    */
   it("passes a control that called nothing but visibly changed the screen", () => {
-    const result = wiredActions([{ label: "Details", confirmed: false, changed: true, calls: [] }], world);
+    const result = wiredActions([{ label: "Details", changed: true, calls: [] }], world);
     expect(result.pass).toBe(true);
     expect(result.bindings[0]).toEqual({
       where: "Details",
@@ -269,7 +269,7 @@ describe("wiredActions", () => {
   });
 
   it("fails a control that called nothing and changed nothing", () => {
-    const result = wiredActions([{ label: "Cancel", confirmed: false, changed: false, calls: [] }], world);
+    const result = wiredActions([{ label: "Cancel", changed: false, calls: [] }], world);
     expect(result.pass).toBe(false);
     expect(result.bindings[0]).toEqual({
       where: "Cancel",
@@ -278,25 +278,25 @@ describe("wiredActions", () => {
     });
   });
 
-  /** The one press that changed the screen and is dead anyway. A confirmation
-   *  authorizes an action, and the probe only follows through on the primary one,
-   *  so being told yes and asking for nothing is not local state — it is a screen
-   *  that asks "are you sure?" and means nothing by it. */
-  it("fails a confirmation that was followed through and still called nothing", () => {
-    const result = wiredActions([{ label: "Cancel transfer", confirmed: true, changed: true, calls: [] }], world);
-    expect(result.pass).toBe(false);
+  /** A press that opened a confirmation. The probe stops at the dialog — which
+   *  control inside it confirms is a judgement, not a lookup — so the call behind
+   *  it can never appear here, and "it confirmed and called nothing" is a verdict
+   *  nobody is entitled to. The dialog's words go to the judge instead. */
+  it("passes a press that opened a confirmation, and says nobody followed it through", () => {
+    const result = wiredActions([{ label: "Cancel transfer", dialog: "Cancel this transfer?", changed: true, calls: [] }], world);
+    expect(result.pass).toBe(true);
     expect(result.bindings[0]).toEqual({
       where: "Cancel transfer",
-      effect: "none",
-      why: "a confirmation was followed through and it still called nothing",
+      effect: "state",
+      why: "opened a confirmation — not followed; the judge reads it",
     });
   });
 
   /** …and the control that closes one. Nothing is left visible for the probe to
-   *  confirm, so a dismiss records `confirmed: false` and is graded like any other
-   *  local control — the rule above cannot reach it. */
+   *  read, so a dismiss records no dialog and is graded like any other local
+   *  control. */
   it("passes a dismiss that closes a dialog and calls nothing", () => {
-    const result = wiredActions([{ label: "Keep it", confirmed: false, changed: true, calls: [] }], world);
+    const result = wiredActions([{ label: "Keep it", changed: true, calls: [] }], world);
     expect(result.pass).toBe(true);
     expect(result.bindings[0]).toMatchObject({ effect: "state" });
   });
@@ -335,18 +335,21 @@ describe("wiredActions", () => {
   });
 
   /**
-   * An `action` case asks the screen to DO something, and the only evidence that
-   * it did is a tool call. A screen that opens a confirmation, moves a toggle and
-   * never asks the host for anything passed this check — every press held, and
-   * the case it was answering was never done.
+   * An `action` case asks the screen to DO something, and a toggle moving is not
+   * evidence that it did. Two things are: a tool call, and a confirmation — the
+   * probe presses nothing inside a dialog, so a confirm-gated action's call can
+   * never reach this trace, and the tool-call-only bar failed every screen that
+   * asks before it acts. Which of the two cleared it is on the result, because a
+   * confirmation that was never followed through is a weaker proof than a call.
    */
   describe("an action case", () => {
-    const DETAILS: Probed[] = [{ label: "Details", confirmed: false, changed: true, calls: [] }];
+    const DETAILS: Probed[] = [{ label: "Details", changed: true, calls: [] }];
 
     it("is not proven by controls that only moved the screen", () => {
       const result = wiredActions(DETAILS, world, ["action"]);
       expect(result.pass).toBe(false);
       expect(result.why).toContain("no press ever asked the host for anything");
+      expect(result.acted).toBeUndefined();
       // Every binding still holds on its own — the failure is the case's, and it
       // has to say so somewhere a reader can find it.
       expect(result.bindings[0]).toMatchObject({ effect: "state" });
@@ -356,6 +359,14 @@ describe("wiredActions", () => {
       const result = wiredActions(pressed("cancel_transfer", { id: "tr_1" }), world, ["action"]);
       expect(result.pass).toBe(true);
       expect(result.why).toBeUndefined();
+      expect(result.acted).toBe("tool");
+    });
+
+    it("is proven by a press that opened a confirmation, and says that is what proved it", () => {
+      const result = wiredActions([{ label: "Cancel all", dialog: "Cancel 2 transfers?", changed: true, calls: [] }], world, ["action"]);
+      expect(result.pass).toBe(true);
+      expect(result.why).toBeUndefined();
+      expect(result.acted).toBe("confirmation");
     });
 
     it("is not proven by a tool call that does not hold", () => {
@@ -372,8 +383,8 @@ describe("wiredActions", () => {
     // One press that fires two tools is two bindings and one control; a press
     // that fires nothing is still a control that was pressed.
     const trace: Probed[] = [
-      { label: "Refresh", confirmed: false, changed: true, calls: [{ name: "list_transfers", args: { limit: 5 } }, { name: "get_spending", args: {} }] },
-      { label: "Details", confirmed: false, changed: true, calls: [] },
+      { label: "Refresh", changed: true, calls: [{ name: "list_transfers", args: { limit: 5 } }, { name: "get_spending", args: {} }] },
+      { label: "Details", changed: true, calls: [] },
     ];
 
     expect(wiredActions(trace, world).pressed).toBe(2);
