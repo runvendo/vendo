@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   STORE_WIRE_PATHS,
+  STORE_WIRE_TURN_OPS,
   VendoError,
   engineAppHistory,
   parseStoreWireError,
@@ -880,6 +881,30 @@ describe("hostedStoreOps — the 48-op wire client", () => {
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
     expect(new Set(keys).size).toBe(25);
+  });
+
+  it("asks the mount's /status ONCE, however many capability checks read it", async () => {
+    const { calls, ops } = wireFake({
+      ...ALL_BODIES,
+      [door("status")]: { format: "vendo/store-wire@1", ops: STORE_WIRE_TURN_OPS },
+      [`POST ${P["turn.load"]}`]: { thread: null, index: { entries: [] } },
+      [`POST ${P["turn.commit"]}`]: { messages: { revision: "2", count: 1 } },
+    });
+
+    // Both envelopes feature-detect before sending, and a caller that asks the
+    // level itself (the harness does, before the first send) is a third reader
+    // of the same deployment fact. Three checks, ONE handshake.
+    await ops.turn!.load({ thread: { id: "thr_1" }, index: { owner: "sub_1" } });
+    await ops.turn!.commit({
+      messages: { threadId: "thr_1", subject: "sub_1", messages: [{ id: "m_1", role: "user" }] },
+    });
+    await ops.status();
+
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      `GET ${P.status}`,
+      `POST ${P["turn.load"]}`,
+      `POST ${P["turn.commit"]}`,
+    ]);
   });
 
   it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
