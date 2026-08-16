@@ -19,7 +19,7 @@ import {
   type KitSlotSpec,
   type Tree,
 } from "../../src/contract/index.js";
-import { kitNestingIssues } from "../../src/server/checking/facts.js";
+import { catalogIssues, kitNestingIssues } from "../../src/server/checking/facts.js";
 
 /** An element as the screen VM stamps one into a prop (vm-program.ts). */
 const element = (component: string, over: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -158,5 +158,42 @@ describe("the Kit's slots", () => {
       items: [{ label: "Ghost", content: element("Hallucinated") }],
     });
     expect(message).toContain('prop "items[0].content" holds <Hallucinated> in a content slot');
+  });
+
+  /**
+   * THE OTHER HALF OF THE SAME LAW: a slot the catalog teaches must be a slot
+   * the floor lets you WRITE.
+   *
+   * `kit-nesting` governs what may go IN a slot, and passes silently on a prop
+   * it does not recognise — the refusal by NAME comes from `components-exist`,
+   * which reads `wirePropNames` off `spec.props` and nothing else. So a slot
+   * declared only in `SLOTS` is taught by `kitPrompt`, admitted by the nesting
+   * check, and then blocked by name at the floor: the model is told to write
+   * something the gate rejects. `Modal.header`, `Modal.footer`, `Sheet.header`
+   * and `Sheet.footer` shipped in exactly that state.
+   *
+   * Swept from the table rather than listed, so the next slot added inherits
+   * the rule instead of having to remember it.
+   */
+  it("lets every declared slot be WRITTEN, not just teach that it exists", async () => {
+    for (const spec of KIT_SPECS) {
+      for (const [name, slot] of Object.entries(spec.slots ?? {})) {
+        const at = `${spec.name}.${kitSlotPath(name, slot)}`;
+        const held = element((slot.content ?? KIT_SLOT_CONTENT_NAMES)[0]!);
+        const issues = await catalogIssues({
+          formatVersion: VENDO_TREE_FORMAT,
+          root: "n1",
+          nodes: [{
+            id: "n1",
+            component: spec.name,
+            source: "prewired",
+            props: propsAt(name, slot, held) as Tree["nodes"][0]["props"],
+          }],
+        }, undefined, []);
+
+        expect(issues.map((issue) => issue.message).filter((message) => message.includes("unknown prop")), at)
+          .toEqual([]);
+      }
+    }
   });
 });

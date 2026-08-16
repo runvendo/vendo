@@ -13,4 +13,6 @@ A chart's `tooltip` publishes the hovered point on `RowContext`, so the value co
 
 An `empty` slot replaces the container's dashed box rather than its text: what goes in one is an `EmptyState`, which draws that frame itself, and nested it read as a box inside a box.
 
+Every slot also gets its entry in the component's `props`, the way `Timeline.cell` and `Timeline.marker` already had one. The screen typings and the wire's allowed-prop set are printed from `props` alone, so a slot declared only in `SLOTS` is one the catalog teaches and `components-exist` then refuses by name. **This fixes `Modal.header`, `Modal.footer`, `Sheet.header` and `Sheet.footer`, which are in that state on `main` today** — declared, taught, painted, and blocked at the floor. A new sweep pins the rule for every slot there will ever be.
+
 `Select.hint` is the one slot from the worklist not implemented here.
