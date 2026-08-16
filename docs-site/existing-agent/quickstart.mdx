@@ -177,6 +177,70 @@ Run your own chat and ask for something behind your API. The answer comes back a
 
 </Steps>
 
+## Teach your model when to build UI
+
+Your system prompt is yours, so nothing Vendo assembles reaches it. A tool your model never reaches for is not a feature, so paste this beside whatever you already say about your other tools.
+
+```text your agent's system prompt highlight={20-21,30-34,36-42}
+## Making the person a screen
+
+You have `vendo_make`. It puts a real, live view in front of the person, and it
+is the only way you can do that. You never build UI yourself.
+
+USE IT when the honest answer is a shape, not a sentence: more than a handful of
+rows, a comparison or trend or breakdown, something they will come back to
+("track", "every week"), something they need to act on — a screen carries
+buttons; your message cannot.
+
+ANSWER IN WORDS when the answer IS words: one number, one status, one fact, a
+yes or no, an explanation. A screen for "what's my balance" is worse than saying
+the balance.
+
+`request` is prose — what you would say to a designer sitting next to you.
+- Describe the want: "the last three months of spending, broken down by
+  category, with a way to jump into any month"
+- No component names, no layout grids, no JSON, no field names you guessed at
+- No fonts, colors, or branding: it inherits the product's own
+- Never paste numbers you looked up or computed ("Total: $4,210"). The screen
+  binds live data itself, and hardcoded figures are rejected as invented
+
+`context`: background the product cannot see — what they told you earlier, a
+constraint they mentioned, which of several things they meant. A sentence or two.
+
+`app`: ONLY to change one view that already exists, by id or by its name exactly
+as they said it. Leave it out and the product decides whether to continue the
+last one or start something new, which is usually right.
+
+`slot`: ONLY when they name a place in the product AND you have that place's
+exact id — they said it, or an earlier answer carried it. Slot ids belong to the
+product, not to you: NEVER invent one. A made-up id puts the screen where nobody
+is looking, and that does not look like an error. No id, no `slot`, and it lands
+in the person's own list of views.
+
+WHAT COMES BACK is a receipt: id, title, status, and `say` — one line in the
+person's voice. Say `say`, close to verbatim. That is the whole report. You never
+get the screen; it goes from the server straight to their page, on a channel you
+are not on. So:
+- NEVER wait for it. Nothing to poll, nothing to check.
+- NEVER describe it. You have not seen it. No sections, charts, colors, or
+  buttons, and never tell them what to click.
+- Never paste a link or an id unless they asked.
+- status "failed": try once more on the same `app`, narrower, then stop and say
+  so plainly.
+- status "building": honest, not an error. Say the line and move on.
+- status "partial": the screen is on their page, the server-side part of it is
+  not. Say the line and offer to try that part again. Never rebuild it.
+```
+
+The same guidance ships to Claude Code as a skill,
+[`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).
+
+<Warning>
+The in-process tool pack carries no `vendo_apps_*` tool. Teaching your model to pin or unpin a view here buys you an invented tool call that nothing answers.
+
+Pinning and unpinning live on the door your own agent connects to, in [How the door works](/outside-agents/how-the-door-works#where-a-screen-lands).
+</Warning>
+
 ## Where to go next
 
 The pack is in your loop. These three are the rest of this track.

@@ -56,8 +56,8 @@ Names, descriptions, and input schemas are served verbatim from your registry.
 A tool's `title` is what a client shows a person instead of the wire name.
 
 Vendo's own `vendo_*` tools ride along: `vendo_make` for a generated screen,
-and the saved-apps viewer. They are runtime plumbing and are never curated
-away.
+and the saved-apps viewer, which is `vendo_apps_list`, `vendo_apps_open`, and
+`vendo_apps_call`. They are runtime plumbing and are never curated away.
 
 Each listing carries MCP `annotations` derived from the tool's Vendo risk
 label, so a client can warn before a write without re-reading prose.
@@ -131,6 +131,46 @@ write.
 
 `vendo_make` answers with an id, a title, a status, and one line to say out
 loud. The screen itself lands in your product, never in the agent's transcript.
+
+That line is `say`, and it is written for the person rather than for the model.
+An agent relays it close to verbatim and reports nothing else.
+
+| `status` | What the agent has |
+| --- | --- |
+| `ready` | the screen is on the person's page |
+| `building` | the build was accepted and has not finished |
+| `partial` | the screen is up, and the server-side work its plan called for is not |
+| `failed` | nothing painted. One narrower retry on the same `app`, then stop |
+
+## Where a screen lands
+
+A new screen goes to the person's own list of views. Pass `slot` on
+`vendo_make` and it takes a named place on your page instead.
+
+```json tools/call arguments focus={3}
+{
+  "request": "spend by category for the last three months",
+  "slot": "home-hero"
+}
+```
+
+Slot ids belong to your product. Your surfaces report the ones they mount, so
+an agent passes an id it was told rather than one it invented.
+
+`slot` is for something new. Moving an app the person already has is a
+different pair of tools.
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `vendo_apps_pin` | `app`, `slot` | puts one of the caller's own apps in that slot, and names the `evicted` app it replaced |
+| `vendo_apps_unpin` | `app`, `slot` | takes the app back out. The app itself is untouched |
+
+A slot holds one app, so pinning replaces. Both are writes, and on the
+`cautious` preset they park like any other write.
+
+`vendo_make` refuses `app` and `slot` together, by name. An edit that also
+moved the app would evict whatever held that slot off the back of a change
+nobody aimed there.
 
 ## Approvals wait for the person
 
