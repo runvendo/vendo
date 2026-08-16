@@ -92,6 +92,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
     <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In", format: "money" }]} columns={2}/>
+    <Calendar items={cashflow.data} month="2026-01" dateField="label" titleField="label" amountField="in" statusField="label" tones={{ Jan: "success" }}/>
     <KeyValue record={cashflow.data[0]} items={[{ key: "label", label: "Period" }, { key: "in", format: "money" }]} dividers={true}/>
     <Timeline entries={cashflow.data} titleField="label" emptyState="No history"/>
     <Avatar name="Ada Lovelace" size="sm"/>
