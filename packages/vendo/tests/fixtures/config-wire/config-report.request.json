@@ -1,0 +1,9 @@
+{
+  "surfaces": {
+    "design-rules.md": { "source": "file", "content": "# Design rules\n\nUse the host's own components.\n" },
+    "brief.md": { "source": "code", "content": "Maple is a consumer bank." },
+    "theme.json": { "source": "file", "content": "{\n  \"radius\": \"8px\"\n}\n" },
+    "policy.json": { "source": "unset", "content": null },
+    "overrides.json": { "source": "unset", "content": null }
+  }
+}
