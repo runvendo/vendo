@@ -44,13 +44,16 @@ the same `blocked` outcome every other refusal on that registry uses — so the
 agent can say what happened in its own words — while raising the card the person
 reads on the call's own stream.
 
-A refusal by the host's own rules — a limit, a guard rule — now settles on the
-wire as that typed `blocked` outcome rather than as the ai-SDK's `output-denied`.
-That state is the terminal state of an approval a PERSON turned down: its
-provider conversion takes the refusal's words off the part's `approval`, so a
-refusal nobody was asked about used to write history that could not be sent
-again, and the thread died on the turn after one. The beat says who refused too —
-"wasn't allowed", not "you declined it".
+A refusal nobody was asked about — a limit, a guard rule, an unattended park, a
+guard that could not run its check — now settles on the wire as that typed
+`blocked` outcome rather than as the ai-SDK's `output-denied`. That state is the
+terminal state of an approval a PERSON turned down: its provider conversion takes
+the refusal's words off the part's `approval`, so a refusal that has none used to
+write history that could not be sent again, and the thread died on the turn after
+one — including an unattended thread whose call is waiting on a standing grant.
+The refusal's own words are now kept in the record too, and the beat says who
+refused: "wasn't allowed", not "you declined it". A person's actual no is
+unchanged, and is the only thing `output-denied` now means.
 
 Both raise `data-vendo-limit`, and the chat surface renders it as a card in the
 beat's ordinary muted register: a cap reached is not a failure, so no ✕, no
