@@ -278,7 +278,7 @@ describe("a pages-only host is told to wire the file it actually has", () => {
     expect(logs).toContain("ONE STEP LEFT");
     expect(logs).toContain(`File: ${join("pages", "_app.tsx")}`);
     // The wrapped child is the pages-router one, not app-router's {children}.
-    expect(logs).toContain("<Component {...pageProps} /></VendoProvider>");
+    expect(logs).toContain("<Component {...pageProps} /><VendoOverlay /></VendoProvider>");
     expect(logs).not.toContain(join("app", "layout.tsx"));
   });
 });

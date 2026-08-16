@@ -295,6 +295,10 @@ describe("vendo init (zero-question)", () => {
       name: "host",
       dependencies: { next: "16.0.0", [dependency]: "1.0.0" },
     }));
+    // ENG-422: a supabase host with no server env would rightly carry the
+    // env advisory — a satisfied env keeps this test about SILENT wiring
+    // (the advisory has its own tests in init-auth.test.ts).
+    await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
@@ -451,6 +455,8 @@ describe("vendo init (zero-question)", () => {
       name: "host",
       dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0", "@auth0/nextjs-auth0": "3.0.0" },
     }));
+    // ENG-422: satisfied env keeps the supabase pick advisory-free here.
+    await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
     const askedSelects: Array<Array<{ value: string; hint?: string }>> = [];
     let confirmCount = 0;
     const sink = output();
@@ -526,6 +532,8 @@ describe("vendo init (zero-question)", () => {
       name: "host",
       dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0" },
     }));
+    // ENG-422: satisfied env keeps the detection-accept advisory-free here.
+    await writeFile(join(detected, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
     const detectedSink = output();
     expect(await run(detected, detectedSink, { yes: true, auth: "supabase" })).toBe(0);
     const detectedRoute = await readFile(join(detected, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
