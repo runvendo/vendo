@@ -75,6 +75,11 @@ describe("Timeline", () => {
     expect(screen.getByText(/Mar 1, 2026/)).toBeTruthy();
   });
 
+  it("labels a date-only entry with the day alone, no midnight stamp", () => {
+    render(<Timeline entries={[{ id: "c", what: "Rent due", due_date: "2026-08-01" }]} titleField="what" timeField="due_date" />);
+    expect(screen.getByText("Aug 1, 2026")).toBeTruthy();
+  });
+
   it("renders the cell slot once per entry, each reading its OWN record", () => {
     // One element, two entries, two different values — the whole reason a slot
     // binds by field name instead of by prop.
