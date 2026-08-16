@@ -23,20 +23,42 @@ Your agent picks the right setup for your repo. You confirm it.
 
 <Columns cols={2}>
   <Frame caption="Ask, and a working screen shows up in your product.">
-    <img
-      src="/images/maple/hero-generated-card.png"
-      alt="Maple's overview page with a generated spend by category screen sitting in the grid beside the balance card"
-      width="1280"
-      height="900"
-    />
+    <video
+      className="vendo-loop"
+      width="1200"
+      height="592"
+      poster="/images/ui/hero-generated-view.png"
+      autoPlay
+      loop
+      muted
+      playsInline
+      aria-label="Someone asks for a view of their upcoming renewals. A Renewals radar screen builds in place, with counts for renewals due, accounts at risk, and the next one up, over a list of accounts and their renewal dates."
+    >
+      <source
+        src="/images/ui/loop-view-arrival.mp4"
+        type="video/mp4"
+        media="(prefers-reduced-motion: no-preference)"
+      />
+    </video>
   </Frame>
-  <Frame caption="Every action runs through your own API, with approval and an audit log.">
-    <img
-      src="/images/maple/hero-approval.png"
-      alt="Maple's payments page with the panel open on an approval card for a $200 transfer, showing Approve and Deny"
-      width="1280"
-      height="900"
-    />
+  <Frame caption="It asks before it writes anything, then acts as you.">
+    <video
+      className="vendo-loop"
+      width="1200"
+      height="592"
+      poster="/images/ui/hero-approval.png"
+      autoPlay
+      loop
+      muted
+      playsInline
+      aria-label="An approval card reads Needs your approval, Post to #renewals in Slack, and quotes the exact message with Approve and Deny beneath it. After approval, a toast confirms the post went out as you."
+    >
+      <source
+        src="/images/ui/loop-approval-toast.mp4"
+        type="video/mp4"
+        media="(prefers-reduced-motion: no-preference)"
+      />
+    </video>
   </Frame>
 </Columns>
 

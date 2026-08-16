@@ -28,6 +28,26 @@ html.dark img[src$="/images/logos/mastra.svg"] {
   filter: invert(1);
 }
 
+/* The two looping demos under "What you can do". A <video> carries its own
+   intrinsic width, so without this it overflows its column. The footage is a
+   light-theme capture on a white canvas, so the element paints white in both
+   themes and the poster's letterbox blends into it. Reduced motion is handled
+   by the media attribute on each <source>: no source matches, so the video
+   never loads and the poster is all a reader gets.
+
+   aspect-ratio is not redundant with the width/height attributes: a poster of a
+   different shape overrides the attribute ratio, so the box resized by 27px the
+   moment the first video frame painted. Pinning the ratio and letting the
+   poster letterbox inside it holds the layout still. */
+.vendo-loop {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 592;
+  object-fit: contain;
+  background: #fff;
+}
+
 .card {
   box-shadow:
     0 1px 2px rgba(20, 15, 40, 0.04),
