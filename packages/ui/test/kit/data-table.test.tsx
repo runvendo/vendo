@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
 import { EnumBadge } from "../../src/kit/values.js";
@@ -260,5 +260,108 @@ describe("DataTable", () => {
   it("leaves the table wide where nothing can be measured (SSR, jsdom)", () => {
     render(<DataTable rows={rows} columns={columns} />);
     expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+  });
+
+  /**
+   * Every header keeps its OWN width wherever it sits, which is what the
+   * uniform `stubLayout` cannot express: the bug below turns on the actions
+   * header being narrower than the data column whose slot it takes over once
+   * the row folds. The observer's callback is handed back so a test can drive a
+   * SECOND measurement — the resize that a static render never reaches.
+   */
+  function stubMeasuredLayout(widths: Record<string, number>, initialWidth: number) {
+    const observers = globalThis.ResizeObserver;
+    let resize = () => {};
+    let clientWidth = initialWidth;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) { resize = callback; }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as never;
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        // A column header by its label, the actions header by the name it
+        // carries for the screen reader — never by POSITION, which is the
+        // thing folding changes.
+        const key = this.getAttribute("aria-label") ?? this.textContent?.replace(/[▲▼]/gu, "").trim() ?? "";
+        return widths[key] ?? 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => clientWidth });
+    return {
+      /** A resize the surface really had. */
+      resizeTo: (next: number) => { clientWidth = next; act(() => resize()); },
+      /** A callback the observer fires with nothing about the surface changed —
+       *  a reflow, a scrollbar, a parent settling. */
+      settle: () => act(() => resize()),
+      restore: () => {
+        globalThis.ResizeObserver = observers;
+        delete (HTMLElement.prototype as Partial<HTMLElement>).offsetWidth;
+        delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
+      },
+    };
+  }
+
+  /**
+   * THE REGRESSION: a folded column must not come BACK on the next resize.
+   *
+   * The natural edges are recorded once, while every column is still shown —
+   * every later decision is taken against them. The guard on that recording
+   * counted headers with `>=`, which a FOLDED row satisfies by coincidence:
+   * three data columns plus actions fold to `[Client, Amount, Actions]`, which
+   * is three children for three columns. The next callback then recorded the
+   * 40px ACTIONS header as the third data column's natural width, the third
+   * edge fell from 600 to 340, and at 350px of room the column that had just
+   * folded away reappeared.
+   *
+   * Only a resize reaches it — the first measurement is correct — so it is a
+   * table that breaks as the person narrows the window, and nothing static
+   * catches it.
+   */
+  const WIDTHS = { Client: 100, Amount: 200, Due: 300, Actions: 40 };
+  const headerText = () => screen.getAllByRole("columnheader").map((h) => h.textContent).join();
+
+  it("keeps a folded column folded when the actions column is measured again", () => {
+    const { settle, restore } = stubMeasuredLayout(WIDTHS, 350);
+    try {
+      render(<DataTable rows={rows} columns={columns} rowActions={<span>Pay</span>} />);
+      // Natural edges are 100 / 300 / 600, so at 350px of room the third column
+      // folds and the actions column rides beside the two that fit.
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      expect(headerText()).not.toContain("Due");
+
+      settle();
+
+      // Nothing about the surface changed, so nothing about the fold may.
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      expect(headerText()).not.toContain("Due");
+      expect(screen.getAllByRole("row")[1]!.textContent).toContain("Due:");
+    } finally {
+      restore();
+    }
+  });
+
+  it("still folds when the resize is the first thing that measured it", () => {
+    // The other half of the same guard: made too strict it would stop recording
+    // altogether, and a table narrowed after mount would never fold at all.
+    const { resizeTo, restore } = stubMeasuredLayout(WIDTHS, 900);
+    try {
+      render(<DataTable rows={rows} columns={columns} rowActions={<span>Pay</span>} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(4);
+
+      resizeTo(350);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      expect(headerText()).not.toContain("Due");
+
+      // …and widening gives the column back, off the edges recorded while it
+      // was still shown.
+      resizeTo(900);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(4);
+      expect(headerText()).toContain("Due");
+    } finally {
+      restore();
+    }
   });
 });
