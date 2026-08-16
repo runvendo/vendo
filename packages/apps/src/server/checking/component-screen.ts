@@ -481,7 +481,12 @@ const scanQuery = (
   }
   const tool = context.byName.get(literal);
   if (tool === undefined) {
-    context.issues.push(issue("query-tool", `${QUERY_HOOK}("${literal}") names unknown tool "${literal}"; the host tools are: ${list(context.known)}`));
+    // The no-readable-tool case has to be said outright. A model refused with a
+    // list it cannot use invents a near-miss name, and after enough refusals it
+    // ships a screen that ASSERTS the data is missing above data it made up.
+    context.issues.push(issue("query-tool", context.readable.length === 0
+      ? `${QUERY_HOOK}("${literal}") names unknown tool "${literal}", and this product has NO tool a screen can read. There is no data behind this ask. Do not invent a tool name, and do not claim the data is missing or empty, which you cannot know: drop the query and use <Disclaimer> to say plainly that no tool provides this data.`
+      : `${QUERY_HOOK}("${literal}") names unknown tool "${literal}"; the host tools are: ${list(context.known)}`));
     return;
   }
   if (isMutatingTool(tool)) {

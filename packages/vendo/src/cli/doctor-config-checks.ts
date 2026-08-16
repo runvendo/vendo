@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ExtractedTool, type ToolJudgment, type ToolsFile } from "@vendoai/actions";
+import { applyJudgment, disabledReason, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ExtractedTool, type ToolJudgment, type ToolsFile } from "@vendoai/actions";
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
@@ -156,10 +156,12 @@ function effectiveGrades(
   toolsFile: ToolsFile,
   judgments: Record<string, ToolJudgment>,
   overridesTools: Record<string, { disabled?: boolean; risk?: RiskLabel }>,
-): { live: number; ungraded: number } {
-  const live = toolsFile.tools.filter((tool) => {
-    const effective = applyJudgment(tool, judgments[tool.name]);
-    return (overridesTools[tool.name]?.disabled ?? effective.disabled ?? false) !== true;
+): { live: number; ungraded: number; off: string[] } {
+  // Named, not just counted: `live > 0` passed while three of five tools were
+  // gone, and nothing anywhere said which three or who took them.
+  const off = toolsFile.tools.flatMap((tool) => {
+    const reason = disabledReason(tool, judgments[tool.name], overridesTools[tool.name]);
+    return reason === undefined ? [] : [`${tool.name} (${reason})`];
   });
   // Risk-grading redesign D4 — not-knowing must be FELT. Extraction only
   // asserts protocol facts, so a catalog nobody has judged is mostly
@@ -170,7 +172,7 @@ function effectiveGrades(
     const effective = applyJudgment(tool, judgments[tool.name]);
     return (overridesTools[tool.name]?.risk ?? effective.risk) === "ungraded";
   });
-  return { live: live.length, ungraded: ungraded.length };
+  return { live: toolsFile.tools.length - off.length, ungraded: ungraded.length, off };
 }
 
 /** Malformed overrides are their own (pre-existing) failure surface, and
@@ -230,11 +232,13 @@ export async function checkToolCatalog(run: DoctorRun): Promise<void> {
       overridesRaw, (value) => overridesFileSchema.parse(value).tools, {});
     const judgments = parseSidecar<Record<string, ToolJudgment>>(
       judgmentsRaw, (value) => judgmentsFileSchema.parse(value).tools, {});
-    const { live, ungraded } = effectiveGrades(toolsFile, judgments, overridesTools);
+    const { live, ungraded, off } = effectiveGrades(toolsFile, judgments, overridesTools);
     if (toolsFile.tools.length === 0) {
       run.warn("tools/live-surface", "E-TOOLS-002", "the extracted tool surface is empty — the agent cannot act on this product's API; re-run `vendo init` extraction (or ignore if this deployment is connector-only)");
     } else if (live === 0) {
       run.fail("tools/live-surface", "E-TOOLS-001", `zero live host tools — all ${toolsFile.tools.length} extracted tools are disabled or excluded; review the audience exclusions in .vendo/overrides.json and re-enable the end-user surface (disabled: false)`);
+    } else if (off.length > 0) {
+      run.warn("tools/live-surface", "E-TOOLS-005", `${live} of ${toolsFile.tools.length} extracted host tools are live; the agent will never offer the other ${off.length}: ${off.join(", ")}. To turn one back on, set its "disabled": false in .vendo/overrides.json`);
     } else {
       run.pass("tools/live-surface", `${live} live host tool${live === 1 ? "" : "s"}`);
     }

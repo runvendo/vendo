@@ -400,6 +400,27 @@ export default function S() { return <Text text={String(useQuery("ghost_list"))}
     expect(text).toContain("the host tools are: list_pending_transfers, list_accounts, search_transfers, cancel_transfer");
   });
 
+  it("tells a screen with NO readable tool to say so, instead of listing tools it cannot read", async () => {
+    // The field failure this closes: refused with a list of write-only tools,
+    // the model invented a plausible read tool, failed five times, then shipped
+    // a screen asserting there was no data above a table of that same data.
+    const result = await checkComponentScreen({
+      source: `import { Text, useQuery } from "@vendo/screen";
+export default function S() { return <Text text={String(useQuery("invoices_list"))} />; }
+`,
+      hostTools: tools.filter(({ risk }) => risk !== "read"),
+      catalog,
+      runQuery: async () => ROWS,
+    });
+    if (result.ok) throw new Error("expected the gauntlet to refuse this screen");
+    const text = result.issues.map(({ message }) => message).join("\n");
+    expect(text).toContain("this product has NO tool a screen can read");
+    expect(text).toContain("do not claim the data is missing or empty, which you cannot know");
+    expect(text).toContain("<Disclaimer>");
+    // The tools it CANNOT read are not offered as if they were an answer.
+    expect(text).not.toContain("cancel_transfer");
+  });
+
   it("refuses a query that WRITES, because a query runs on every render", async () => {
     const { codes, text } = await refusal(`import { Text, useQuery } from "@vendo/screen";
 export default function S() { return <Text text={String(useQuery("cancel_transfer"))} />; }

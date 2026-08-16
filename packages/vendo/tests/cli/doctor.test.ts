@@ -659,6 +659,32 @@ describe("vendo doctor error codes + fix_refs", () => {
       .toMatchObject({ status: "ok", message: "catalog: inputs 1/1 · outputs 1/1" });
   });
 
+  it("warns E-TOOLS-005 naming each tool the merge left off, and keeps the exit green", async () => {
+    // `live > 0` passed while 3 of 5 tools were gone: the count was the whole
+    // report, so a catalog that lost most of itself read as healthy.
+    const root = await healthy();
+    const tool = (name: string, path: string) => ({
+      name, description: "d", inputSchema: { type: "object" }, risk: "read" as const,
+      inputSchemaSource: "declared", outputSchemaSource: "declared",
+      binding: { kind: "route" as const, method: "GET" as const, path, argsIn: "query" as const },
+    });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [tool("host_invoices_list", "/api/invoices"), tool("host_customers_list", "/api/customers")],
+    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: { host_customers_list: { disabled: true } },
+    }));
+    const { exit, report } = await jsonChecks({ targetDir: root });
+    const check = report.checks.find((entry) => entry.id === "tools/live-surface");
+    expect(check).toMatchObject({ status: "warning", error_code: "E-TOOLS-005" });
+    expect(check?.message).toContain("1 of 2 extracted host tools are live");
+    expect(check?.message).toContain("host_customers_list (turned off in .vendo/overrides.json)");
+    // Awareness, not breakage: which exclusions are acceptable is the host's call.
+    expect(exit).toBe(0);
+  });
+
   it("check ids are unique across a full run, healthy and broken alike", async () => {
     // Duplicate ids would make fix_ref anchors and agents' remediation notes
     // ambiguous — every check in one run must be individually addressable.

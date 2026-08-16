@@ -34,7 +34,7 @@ import {
   type ToolOverride,
   type TrpcBinding,
 } from "../formats.js";
-import { applyJudgment } from "../judgments.js";
+import { applyJudgment, disabledReason } from "../judgments.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
@@ -764,19 +764,30 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   // The product's core promise, warned at the seam that knows: an agent with
   // zero live host tools serves users it cannot help (field case: an
   // extraction stripped to tools: [] shipped a silently useless agent).
+  // PARTIAL loss is the same failure at a quieter volume — a catalog that keeps
+  // 2 of 5 reads healthy everywhere else, so the tools it lost are named here
+  // with the layer that took them (field case: an `operator` grade took 3).
   /** One warning per surface per boot, however often the menu is resolved. */
   const surfaceMenuWarned = new Set<string>();
-  let zeroLiveWarned = false;
-  const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
-    if (zeroLiveWarned) return host;
-    const live = host.tools.filter((tool) => effectiveHostTool(host, tool).disabled !== true);
-    if (live.length === 0) {
-      zeroLiveWarned = true;
+  let hostToolsWarned = false;
+  const warnHostToolSurface = (host: LoadedHost): LoadedHost => {
+    if (hostToolsWarned) return host;
+    hostToolsWarned = true;
+    const off = host.tools.flatMap((tool) => {
+      const reason = disabledReason(tool, host.judgments?.tools[tool.name], host.overrides.tools[tool.name]);
+      return reason === undefined ? [] : [`${tool.name} (${reason})`];
+    });
+    if (off.length === host.tools.length) {
       console.warn(
         "[vendo] zero live host tools — every extracted tool is absent, disabled, or excluded, so the agent cannot "
         + "act on this product's API. Review .vendo/tools.json, the judgments in .vendo/judgments.json, and the "
         + "audience exclusions in .vendo/overrides.json, or re-run `vendo init` extraction. (Connector-only "
         + "deployments can ignore this.)",
+      );
+    } else if (off.length > 0) {
+      console.warn(
+        `[vendo] ${off.length} of ${host.tools.length} extracted host tools are off, so the agent will never offer `
+        + `them: ${off.join(", ")}. To turn one back on, set its "disabled": false in .vendo/overrides.json.`,
       );
     }
     return host;
@@ -844,7 +855,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         briefs: overrides.briefs ?? [],
       };
     })();
-    return hostPromise.then(warnZeroLiveTools);
+    return hostPromise.then(warnHostToolSurface);
   }
 
   /** Memoized per source. A REJECTION is never memoized: a transient schema

@@ -27,6 +27,7 @@ import {
 import { aiBelowPeerFloor, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
 import {
   customServerSource,
+  disabledTools,
   expressServerSource,
   importsGeneratedMap,
   missingRegistrationLines,
@@ -654,6 +655,10 @@ async function agentTailLines(args: {
   }
   for (const edit of args.edits) {
     lines.push(`edit ${edit.file} — apply the change printed above yourself (it already exists, so init did not write it)`);
+  }
+  const off = await disabledTools(args.root);
+  if (off.length > 0) {
+    lines.push(`tools off: ${off.join(", ")}. The assistant will never offer these. To turn one on, set "disabled": false under its name in ${join(".vendo", "overrides.json")}`);
   }
   if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
     lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);

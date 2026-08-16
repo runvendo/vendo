@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bindingIdentity } from "../../src/binding-identity.js";
+import { disabledReason } from "../../src/judgments.js";
 import {
   VENDO_JUDGMENTS_FORMAT,
   VENDO_OVERRIDES_FORMAT,
@@ -194,6 +195,61 @@ describe("judgments.json load posture", () => {
     await expect(actionsFor(root).descriptors()).rejects.toMatchObject({
       message: expect.stringContaining("judgments.json"),
     });
+  });
+});
+
+/**
+ * The seam the zero-live warning does not cover: a catalog that loses SOME of
+ * its tools. Every other vantage point reads healthy (doctor passes on any
+ * live > 0, the agent simply never offers the tool), so the count and the
+ * reason have to come out of the same merge the runtime actually performs.
+ * Field case: an `operator` grade took 3 of 5 host tools in silence.
+ */
+describe("partial host-tool loss is named at boot", () => {
+  const tool = (name: string, path: string): ExtractedTool =>
+    routeTool({ name, binding: { kind: "route", method: "GET", path, argsIn: "query" } });
+
+  it("offers exactly what the merge left live, and names every tool it did not", async () => {
+    const plain = tool(HOST, "/api/invoices");
+    const graded = tool("host_customers_list", "/api/customers");
+    const explicit = tool("host_admin_purge", "/api/admin/purge");
+    const written = [plain, graded, explicit];
+    const judgments = {
+      [graded.name]: judgment({ binding: bindingIdentity(graded.binding), fields: { audience: "operator" } }),
+    };
+    const overrides: Record<string, { disabled: boolean }> = { [explicit.name]: { disabled: true } };
+    const root = await tempVendo({
+      tools: toolsFile(written),
+      judgments: judgmentsFile(judgments),
+      overrides: overridesFile(overrides),
+    });
+
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    let live: string[];
+    try {
+      const actions = actionsFor(root);
+      live = (await actions.descriptors()).map((descriptor) => descriptor.name);
+      await actions.descriptors();
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The oracle is the merge itself, never a hard-coded list: whatever
+    // `applyJudgment` decides about a grade, the registry has to agree with it
+    // and the boot line has to say it. The two sides cannot drift apart here.
+    const reasons = new Map(written.map((tool) =>
+      [tool.name, disabledReason(tool, judgments[tool.name], overrides[tool.name])]));
+    const lines = warned.filter((message) => message.includes("host tools are off"));
+    expect(lines).toHaveLength(1);
+    // Nothing vanishes quietly: what is live plus what was named IS the file.
+    expect(live).toEqual(written.map((tool) => tool.name).filter((name) => reasons.get(name) === undefined));
+    for (const [name, reason] of reasons) {
+      if (reason !== undefined) expect(lines[0]).toContain(`${name} (${reason})`);
+    }
+    // An explicit disable is off under every reading of the catalog.
+    expect(live).not.toContain(explicit.name);
+    expect(live).toContain(plain.name);
   });
 });
 
