@@ -51,6 +51,15 @@ import { Remixable } from "@vendoai/ui/chrome";
 
 At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hover into a **✦ Remix** pill, and pressing it copies the captured source into the user's own fork with no model call.
 
+<Frame>
+  <img
+    src="/images/maple/remix-mark.png"
+    alt="Maple's balance card under the pointer, with the Remix pill bloomed in its top right corner"
+    width="480"
+    height="370"
+  />
+</Frame>
+
 The fork renders in place, because the wrapper is the mount boundary. The page morphs for that user alone.
 
 Forking is a user gesture the engine executes, so the model never decides to fork. The route dedupes per user and per component, so a double press can never mint a duplicate.

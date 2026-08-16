@@ -57,6 +57,15 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 
 `<VendoToolResult>` handles plain data, app refs, and approval refs, so you never branch on the envelope yourself. Full contract: [Embeds in your chat](/existing-agent/embeds).
 
+<Frame>
+  <img
+    src="/images/existing-agents/ai-sdk-dashboard.png"
+    alt="The AI SDK example chat answering a dashboard request with a generated weather comparison screen rendered inline in the assistant message"
+    width="448"
+    height="800"
+  />
+</Frame>
+
 ## One Next.js line
 
 `serverExternalPackages` keeps Vendo's native and wasm dependencies out of the bundler.

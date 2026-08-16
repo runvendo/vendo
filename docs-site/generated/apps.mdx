@@ -10,6 +10,15 @@ Your user asks for something. One `app.tsx` screen comes back, live on real data
 
 The plan's skeleton paints in seconds. The finished screen replaces it in place.
 
+<Frame caption="The screen re-runs on every open, so it opens on today's numbers. There is no snapshot to go stale.">
+  <img
+    src="/images/maple/app-savings-goals.png"
+    alt="A savings goals screen built in the Maple panel, one card per goal with the amount saved, the target, and a progress bar"
+    width="620"
+    height="680"
+  />
+</Frame>
+
 An app is one file, holding one default-exported React component. Saving it repaints the person's screen.
 
 ```tsx app.tsx focus={4,15}

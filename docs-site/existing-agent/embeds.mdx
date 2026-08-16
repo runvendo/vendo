@@ -89,6 +89,15 @@ A guarded call that needs approval does not throw and does not stall your turn. 
 
 When the person approves in the card, the wire runs the parked call and the card resolves in place. Deny throws it away.
 
+<Frame>
+  <img
+    src="/images/existing-agents/embed-approval.png"
+    alt="An approval card inside a host chat thread, naming the recipient and the message body, with Approve and Deny buttons and a remember this decision control"
+    width="448"
+    height="445"
+  />
+</Frame>
+
 A pending approval expires after 60 minutes on a sweep, and the card then reads "expired". Change it with `createVendo({ guard: guard({ approvals: { parkedCallTtlMs } }) })`, where `0` means never.
 
 ## Dispatching it yourself

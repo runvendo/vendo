@@ -87,6 +87,15 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 
 Everything downstream of that is the same as any other framework. Full contract: [Embeds in your chat](/existing-agent/embeds).
 
+<Frame>
+  <img
+    src="/images/existing-agents/mastra-approval.png"
+    alt="The Mastra example chat with the vendo_send_trip_report tool pill above an approval card carrying the report, the recipient, and Approve and Deny buttons"
+    width="672"
+    height="605"
+  />
+</Frame>
+
 ## Open input schemas ride a bridge
 
 Extraction emits an open object schema for a route whose body shape it cannot type. Mastra's provider compat layers hard-close every object node, so an open schema reaches the model as "this tool takes no arguments", and the model then calls it with `{}`.
