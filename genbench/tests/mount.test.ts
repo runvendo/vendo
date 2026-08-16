@@ -1,5 +1,8 @@
 /**
- * The settle signal, which is what decides when a screen is looked at.
+ * What `mount.tsx` does to a page in a real browser: when it says the screen is
+ * ready, and whose brand the screen is wearing when it says so.
+ *
+ * THE SETTLE SIGNAL, which is what decides when a screen is looked at.
  *
  * Everything downstream hangs off it: the screenshot the judge grades, the text
  * the auditor answers for, and the page the probe starts pressing. A signal that
@@ -16,6 +19,16 @@
  * When `PayloadView` boots the VM and can say when it has painted, that signal
  * replaces the wait and the grace becomes its ceiling — and this file is where
  * that change is proven.
+ *
+ * THE THEME is the other half, and it is graded: every judge note on a live
+ * maple run said the vendo column's surface was accent #111111 with 6/10/16px
+ * corners — the product's DEFAULT theme — while the baselines, handed the same
+ * theme as prompt text, painted the world's green. So the one column running
+ * the real renderer was the only one not wearing the brand, and was marked down
+ * for the harness's mount. Asserted on the element that PAINTS with the token,
+ * not on the variable the page sets: the renderer's surface re-emits every
+ * `--vendo-*` from its own theme, so a root variable can be right and the screen
+ * still default.
  */
 import type { UIPayload } from "@vendoai/core";
 import type { ScreenInteractive } from "@vendoai/ui/tree";
@@ -101,5 +114,31 @@ describe("the settle signal", () => {
     // interactive screen would be shot and pressed on whatever the VM had
     // managed to paint by the second frame — which is nothing.
     expect(waitedMs).toBeGreaterThanOrEqual(VM_BOOT_MS);
+  }, 120_000);
+});
+
+/** A screen whose whole surface is one brand-filled control: the Kit's primary
+ *  Button fills with `var(--vendo-color-accent)` (kit/forms/button.tsx:22). */
+const BRANDED: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [{ id: "root", component: "Button", props: { label: "Send payment" } }],
+} as UIPayload;
+
+/** A hex the world authored, as the browser reports it back. */
+const rgb = (hex: string): string =>
+  `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+
+describe("the theme the screen wears", () => {
+  it("is the world's brand, not the product's default", async () => {
+    const visit = await shooter.visit(pageHtml(BRANDED, world, bundle, "vendo-sonnet"));
+    try {
+      const filled = await visit.page.evaluate(() =>
+        getComputedStyle(document.querySelector('[data-kit="Button"]')!).backgroundColor);
+
+      expect(filled).toBe(rgb(world.theme.colors.accent));
+    } finally {
+      await visit.close();
+    }
   }, 120_000);
 });
