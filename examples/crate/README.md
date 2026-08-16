@@ -119,9 +119,20 @@ discarding the shop's data. Overrides merge at load, so `tools.json` still shows
 the extractor's `ungraded`; `vendo doctor` is what confirms the grades landed
 ("catalog: all 18 tools graded", "17 live host tools" — 18 minus the disabled one).
 
-`.vendo/theme.json` is hand-corrected too. Extraction found no host evidence and
-fell back to a neutral blue; Crate's palette lives in a Tailwind v4 `@theme`
-block, which the extractor does not read.
+`.vendo/theme.json` is hand-corrected too, and the reason is worth knowing.
+Extraction's deterministic pass reads *shadcn's* token vocabulary —
+`--background`, `--foreground`, `--card`, `--primary`, `--border`,
+`--destructive` — plus each name's Tailwind-v4 `--color-*` spelling. Crate's
+palette is a Tailwind v4 `@theme` block named the Tailwind way (`--color-bg`,
+`--color-ink`, `--color-surface`, `--color-accent`), so out of twelve slots it
+matched exactly one: `border`, and only because `--color-border` happens to
+collide. See `.vendo/theme.extracted.json` — it is the whole record.
+
+The `@theme` block is read fine; it is the *names* that miss. Everything the
+allowlist leaves empty rides init's consent-gated model pass, so without a model
+key a fully-declared design-token sheet still lands on the neutral blue default.
+Naming the tokens after shadcn's vocabulary would have extracted the palette
+deterministically. (ENG-418.)
 
 ## Identity
 
