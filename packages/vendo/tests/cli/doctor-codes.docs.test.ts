@@ -23,8 +23,14 @@ const TROUBLESHOOTING_DIR = new URL("../../../../docs-site/production/troublesho
 /** `title: "E-AREA-NNN"` in a page's Mintlify frontmatter. */
 const TITLE = /^title: "(E-[A-Z]+-\d{3})"$/m;
 
+/** Every code page in the directory. `index.mdx` is the group's own landing
+ *  page — it lists all the codes rather than documenting one, so it carries no
+ *  code title. It exists because doctor's `fix_ref` puts the code in a URL
+ *  FRAGMENT, which never reaches the server: every already-installed CLI links
+ *  at `/agents/verify#E-WIRE-003`, so the redirect has to land on a page that
+ *  lists all of them. The 1:1 contract below is unchanged. */
 const pageFiles = (): string[] =>
-  readdirSync(TROUBLESHOOTING_DIR).filter((file) => file.endsWith(".mdx"));
+  readdirSync(TROUBLESHOOTING_DIR).filter((file) => file.endsWith(".mdx") && file !== "index.mdx");
 
 describe("the troubleshooting pages stay 1:1 with the doctor error-code registry", () => {
   it("gives every registered code a page and every page a registered code", async () => {

@@ -134,6 +134,7 @@
               {
                 "group": "Troubleshooting",
                 "pages": [
+                  "production/troubleshooting/index",
                   "production/troubleshooting/e-wire-001",
                   "production/troubleshooting/e-wire-002",
                   "production/troubleshooting/e-wire-003",
@@ -283,7 +284,7 @@
     },
     {
       "source": "/agents/verify",
-      "destination": "/production/troubleshooting/e-wire-001",
+      "destination": "/production/troubleshooting",
       "permanent": true
     },
     {
@@ -573,7 +574,7 @@
     },
     {
       "source": "/deploy/troubleshooting",
-      "destination": "/production/troubleshooting/e-wire-001",
+      "destination": "/production/troubleshooting",
       "permanent": true
     },
     {
