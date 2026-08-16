@@ -14,6 +14,17 @@ describe("Stat", () => {
     expect(screen.getByText("+12% MoM")).toBeTruthy();
   });
 
+  it("reads seconds as a duration, and writes a unit after the figure", () => {
+    render(
+      <>
+        <Stat label="Build time" value={268} format="duration" />
+        <Stat label="Tail latency" value={842} unit="ms" format="number" />
+      </>,
+    );
+    expect(screen.getByText("4m 28s")).toBeTruthy();
+    expect(screen.getByText("842 ms")).toBeTruthy();
+  });
+
   it("renders a placeholder for an unrenderable value, never $NaN", () => {
     render(<Stat label="Broken" value={Number.NaN} format="money" />);
     expect(screen.queryByText(/NaN/)).toBeNull();

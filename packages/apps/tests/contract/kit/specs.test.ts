@@ -75,6 +75,22 @@ describe("the Kit specs", () => {
     expect(validateProps(cards, { items: [], fields: [{ key: "plan", cell }] }).success).toBe(true);
   });
 
+  it("admits the props a screen needs to drop a year, read seconds, and name a unit", () => {
+    // By NAME for the two config props: zod strips an unknown key rather than
+    // failing it, so the allowed-prop set is what turns a prop the spec never
+    // declared into a blocking error instead of a silent drop at render.
+    expect(kitPropClasses("DateTime")?.compact).toBe("config");
+    expect(kitPropClasses("Num")?.unit).toBe("config");
+    expect(kitPropClasses("Stat")?.unit).toBe("config");
+    // …and by VALUE for the format token, which is a declared enum.
+    const stat = kitSpec("Stat")!;
+    expect(validateProps(stat, { label: "Build time", value: 268, format: "duration" }).success).toBe(true);
+    expect(validateProps(stat, { label: "Build time", value: 268, format: "fortnights" }).success).toBe(false);
+    const table = kitSpec("DataTable")!;
+    expect(validateProps(table, { rows: [], columns: [{ key: "duration_seconds", format: "duration" }] }).success)
+      .toBe(true);
+  });
+
   it("names the childless components and what a cell may hold", () => {
     // The renderer hands children to every node it renders, so "renders no
     // children" is a fact only the spec can state.

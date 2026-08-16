@@ -155,17 +155,48 @@ export interface NumOptions {
   maximumFractionDigits?: number;
   minimumFractionDigits?: number;
   notation?: "standard" | "compact";
+  /** A unit written after the figure — "ms", "min", "h", "GB". Not `Intl`'s
+   *  `style: "unit"`: that takes a fixed vocabulary ("millisecond"), and the
+   *  short word a host actually uses is not always in it. */
+  unit?: string;
   locale?: string;
 }
 
 /** Format a plain number with thousands grouping. Returns `null` if non-finite. */
 export function formatNum(value: number | undefined, options: NumOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
-  return new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
+  const text = new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
     notation: options.notation ?? "standard",
     maximumFractionDigits: options.maximumFractionDigits,
     minimumFractionDigits: options.minimumFractionDigits,
   }).format(value);
+  return options.unit === undefined ? text : `${text} ${options.unit}`;
+}
+
+/** The duration units, largest first, and the seconds each one holds. */
+const DURATION_UNITS: ReadonlyArray<readonly [string, number]> = [
+  ["d", 86_400], ["h", 3_600], ["m", 60], ["s", 1],
+];
+
+/**
+ * A count of SECONDS as a duration: `268` → `"4m 28s"`, `46` → `"46s"`,
+ * `9480` → `"2h 38m"`. The two largest non-zero units and no more — "1h 5m 3s"
+ * is three figures where a person reads one — and under half a second is `"0s"`.
+ *
+ * Hand-rolled rather than `Intl.DurationFormat`: it is absent from engines this
+ * still ships on, which is the same engine drift `MINOR_UNITS` exists for.
+ */
+export function formatDuration(seconds: number | undefined): string | null {
+  if (!isRenderableNumber(seconds)) return null;
+  let rest = Math.round(Math.abs(seconds));
+  const parts: string[] = [];
+  for (const [suffix, size] of DURATION_UNITS) {
+    const count = Math.floor(rest / size);
+    rest -= count * size;
+    if (count > 0) parts.push(`${count}${suffix}`);
+    if (parts.length === 2) break;
+  }
+  return parts.length === 0 ? "0s" : `${seconds < 0 ? "-" : ""}${parts.join(" ")}`;
 }
 
 export type DateInput = string | number | Date;
@@ -241,7 +272,7 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
 }
 
 /** The value-tier `format` union — the same tokens a DataTable column accepts. */
-export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "text";
+export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text";
 
 /** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
 export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
@@ -252,6 +283,8 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
       return typeof value === "number" ? formatPercent(value) : null;
     case "number":
       return typeof value === "number" ? formatNum(value) : null;
+    case "duration":
+      return typeof value === "number" ? formatDuration(value) : null;
     case "date":
     case "datetime":
     case "time":
@@ -279,6 +312,7 @@ export const fmt = {
   money: formatMoney,
   percent: formatPercent,
   num: formatNum,
+  duration: formatDuration,
   dateTime: formatDateTime,
   format: applyFormat,
 };

@@ -14,7 +14,7 @@ import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropC
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
-const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "text"]);
+const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "duration", "text"]);
 const align = z.enum(["start", "center", "end"]);
 /** A series descriptor stays OPEN: what is written beside `key`, `label` and
  *  `color` is passed to that one series' engine element, so per-line colors are a
@@ -223,12 +223,20 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DateTime",
     group: "values",
-    summary: "A date/time from an ISO string, epoch millis, or Date. Invalid input renders a dash, never 'Invalid Date'.",
+    summary: "A date/time from an ISO string, epoch millis, or Date. Invalid input renders a dash, never 'Invalid Date'. `compact` drops the year — \"Aug 7\", for a narrow column or a date this year.",
     props: {
       value: data(z.union([z.string(), z.number()]), "ISO string or epoch millis"),
       mode: config(z.enum(["date", "time", "datetime", "relative"]), "how to render"),
+      // Read by `date` and `datetime` — the two modes that print a year at all.
+      // A clock has none to drop and `relative` counts from now, so on `time`
+      // and `relative` it is inert rather than wrong.
+      compact: config(z.boolean(), 'drop the year: "Aug 7" instead of "Aug 7, 2026" (date and datetime)'),
     },
-    examples: ['<DateTime value={invoice.dueDate} mode="date"/>', '<DateTime value={event.at} mode="relative"/>'],
+    examples: [
+      '<DateTime value={invoice.dueDate} mode="date"/>',
+      '<DateTime value={event.at} mode="relative"/>',
+      '<DateTime value={build.started} mode="datetime" compact/>',
+    ],
   },
   {
     name: "Percent",
@@ -244,13 +252,17 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Num",
     group: "values",
-    summary: "A grouped number. Use notation=compact for large counts (1.5M).",
+    summary: "A grouped number. Use notation=compact for large counts (1.5M), and unit for the word after the figure (842 ms).",
     props: {
       value: data(z.number(), "the number"),
       notation: config(z.enum(["standard", "compact"]), "grouping style"),
       maximumFractionDigits: config(z.number().int().nonnegative(), "decimal places"),
+      unit: config(z.string(), 'a unit written after the figure — "ms", "min", "h", "GB"'),
     },
-    examples: ['<Num value={metrics.count} notation="compact"/>'],
+    examples: [
+      '<Num value={metrics.count} notation="compact"/>',
+      '<Num value={service.tail_latency_ms} unit="ms"/>',
+    ],
   },
   {
     name: "EnumBadge",
@@ -343,6 +355,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "metric name", { required: true }),
       value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
       format: config(valueFormat, "value tier format"),
+      unit: config(z.string(), 'a unit written after the value — "ms", "min", "h"'),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       icon: config(slot, "a glyph beside the metric name"),
     },

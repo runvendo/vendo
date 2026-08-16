@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyFormat,
   formatDateTime,
+  formatDuration,
   formatMoney,
   formatNum,
   formatPercent,
@@ -76,8 +77,53 @@ describe("formatNum", () => {
     expect(formatNum(1500000, { notation: "compact" })).toBe("1.5M");
   });
 
+  it("writes a unit after the figure, so a bare number never has to carry one", () => {
+    expect(formatNum(842, { unit: "ms" })).toBe("842 ms");
+    expect(formatNum(9.5, { unit: "h" })).toBe("9.5 h");
+    expect(formatNum(1500000, { notation: "compact", unit: "GB" })).toBe("1.5M GB");
+  });
+
   it("returns null for non-finite input", () => {
     expect(formatNum(Number.NaN)).toBeNull();
+  });
+});
+
+describe("formatDuration (takes seconds)", () => {
+  it("reads a count of seconds as a duration", () => {
+    expect(formatDuration(268)).toBe("4m 28s");
+    expect(formatDuration(412)).toBe("6m 52s");
+    // A minutes field is `* 60` where it is read, the way cents are `/ 100`.
+    expect(formatDuration(158 * 60)).toBe("2h 38m");
+  });
+
+  it("keeps to the two largest units — a duration is one figure, not three", () => {
+    expect(formatDuration(3661)).toBe("1h 1m");
+    expect(formatDuration(90 * 60)).toBe("1h 30m");
+    expect(formatDuration(5 * 86_400)).toBe("5d");
+  });
+
+  it("drops a unit that would read as zero", () => {
+    expect(formatDuration(46)).toBe("46s");
+    expect(formatDuration(300)).toBe("5m");
+    expect(formatDuration(3600)).toBe("1h");
+  });
+
+  it("says 0s rather than nothing at all, and keeps a sign", () => {
+    expect(formatDuration(0)).toBe("0s");
+    expect(formatDuration(0.4)).toBe("0s");
+    expect(formatDuration(-115 * 60)).toBe("-1h 55m");
+  });
+
+  it("returns null for non-finite input", () => {
+    expect(formatDuration(Number.NaN)).toBeNull();
+    expect(formatDuration(Number.POSITIVE_INFINITY)).toBeNull();
+    // deliberately exercising the runtime guard against bad model data
+    expect(formatDuration("268" as unknown as number)).toBeNull();
+  });
+
+  it("is reachable through the format token every column and Stat takes", () => {
+    expect(applyFormat(268, "duration")).toBe("4m 28s");
+    expect(applyFormat("268", "duration")).toBeNull();
   });
 });
 

@@ -54,6 +54,25 @@ describe("DataTable", () => {
     expect(screen.getByText("Mar 14")).toBeTruthy();
   });
 
+  it("reads a duration column as a duration, and still sorts it as the number it is", () => {
+    const builds = [
+      { id: 1, name: "4192", duration_seconds: 133 },
+      { id: 2, name: "4187", duration_seconds: 46 },
+    ];
+    render(
+      <DataTable
+        rows={builds}
+        columns={[{ key: "name" }, { key: "duration_seconds", label: "Took", format: "duration" }]}
+        sortBy="duration_seconds asc"
+      />,
+    );
+    expect(screen.getByText("2m 13s")).toBeTruthy();
+    // The cell TEXT is formatted; the data stays numeric, so the shortest run
+    // leads rather than "133" sorting before "46" as a string would.
+    const first = screen.getAllByRole("row")[1]!;
+    expect(within(first).getAllByRole("cell")[0]?.textContent).toBe("4187");
+  });
+
   it("applies an initial sortBy", () => {
     render(<DataTable rows={rows} columns={columns} sortBy="amount asc" />);
     const bodyRows = screen.getAllByRole("row").slice(1); // drop header

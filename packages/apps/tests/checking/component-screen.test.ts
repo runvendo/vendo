@@ -244,6 +244,35 @@ describe("a screen that passes", () => {
     }
   });
 
+  // The three props a screen had no way to spell: the year a narrow column drops,
+  // a count of seconds read as a duration, and the unit that keeps a latency from
+  // being a bare number. Undeclared in the specs, each one is a blocking error
+  // here — which is what a model writing them off the catalog would have hit.
+  it("passes a screen that drops the year, reads seconds as a duration, and names a unit", async () => {
+    const result = await checkComponentScreen({
+      source: `import { DataTable, DateTime, Num, Row, Stack, Stat, useQuery } from "@vendo/screen";
+export default function S() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <Stack gap={12}>
+      <Stat label="Longest wait" value={pending.data[0].amount_cents} format="duration" />
+      <Row gap={8} align="center">
+        <DateTime value={pending.data[0].scheduled_for} mode="date" compact />
+        <Num value={pending.data[0].amount_cents} unit="ms" />
+      </Row>
+      <DataTable rows={pending.data} columns={[{ key: "amount_cents", label: "Took", format: "duration" }]} />
+    </Stack>
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable", "Num", "Stat"],
+      runQuery: async () => ROWS,
+    });
+
+    expect(result).toMatchObject({ ok: true, issues: [] });
+  });
+
   it("passes a screen with no queries at all, and runs nothing", async () => {
     const ran: Ran[] = [];
     const result = await check(`import { Stack, Text } from "@vendo/screen";

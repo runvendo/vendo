@@ -10,6 +10,8 @@ export interface StatProps extends KitStyled {
   value: number | string;
   /** Value-tier format. */
   format?: ValueFormat;
+  /** A unit written after the value — "ms", "min", "h". */
+  unit?: string;
   /** A trend / delta caption, e.g. "+12% MoM". */
   trend?: string;
   /** Emphasis. "default" is the older spelling of "neutral". */
@@ -27,10 +29,11 @@ export interface StatProps extends KitStyled {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", trend, tone, density, icon, style, children }: StatProps) {
+export function Stat({ label, value, format = "text", unit, trend, tone, density, icon, style, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
-  const formatted = applyFormat(value, format);
+  const shown = applyFormat(value, format);
+  const formatted = shown !== null && unit !== undefined ? `${shown} ${unit}` : shown;
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
   const display = empty

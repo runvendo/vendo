@@ -56,6 +56,11 @@ describe("Percent + Num", () => {
     render(<Num value={1234567} />);
     expect(screen.getByText("1,234,567")).toBeTruthy();
   });
+
+  it("carries its unit, so a latency is never a bare number", () => {
+    const { container } = render(<Num value={842} unit="ms" />);
+    expect(container.textContent).toBe("842 ms");
+  });
 });
 
 describe("EnumBadge", () => {

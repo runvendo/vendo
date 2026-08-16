@@ -111,6 +111,8 @@ export interface NumProps extends KitStyled {
   value?: number;
   maximumFractionDigits?: number;
   notation?: "standard" | "compact";
+  /** A unit written after the figure — "ms", "min", "h". */
+  unit?: string;
   /** Paints the figure — the count that is bad news is `danger`. */
   tone?: KitTone;
   /** Inside a cell slot: the row field this number comes from. */
@@ -118,8 +120,8 @@ export interface NumProps extends KitStyled {
 }
 
 /** A grouped number. `<Num value={1234567}/>` → "1,234,567". */
-export function Num({ value, maximumFractionDigits, notation, tone, field, style }: NumProps) {
-  const formatted = formatNum(useValue(field, value), { maximumFractionDigits, notation });
+export function Num({ value, maximumFractionDigits, notation, unit, tone, field, style }: NumProps) {
+  const formatted = formatNum(useValue(field, value), { maximumFractionDigits, notation, unit });
   if (formatted === null) return <Placeholder style={style} />;
   return (
     <span data-kit="Num" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
