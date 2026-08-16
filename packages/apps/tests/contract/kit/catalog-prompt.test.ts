@@ -41,7 +41,11 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
   it("carries every slot with its doc, and marks the per-row ones", () => {
     const line = body({ only: ["DataTable"] })[0]!;
     expect(line).toContain(`slot cell (per row): ${kitSpec("DataTable")!.slots!["cell"]!.doc}`);
-    expect(line).toContain(`slot toolbar: ${kitSpec("DataTable")!.slots!["toolbar"]!.doc}`);
+    // A non-per-row slot carries its doc WITHOUT the marker — without this the
+    // per-row half is unfalsifiable, since marking every slot would still pass.
+    const timeline = body({ only: ["Timeline"] })[0]!;
+    expect(timeline).toContain(`slot marker: ${kitSpec("Timeline")!.slots!["marker"]!.doc}`);
+    expect(timeline).not.toContain("slot marker (per row)");
   });
 
   it("teaches every registered component, one line each, and nothing else", () => {
