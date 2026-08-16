@@ -123,7 +123,15 @@ const generationDenied = (message: string | undefined): string =>
 export const limitGenerations = (tools: ToolRegistry, limiter: Limiter): ToolRegistry => ({
   ...tools,
   execute: async (call, ctx) => {
-    if (call.tool !== VENDO_MAKE_TOOL) return tools.execute(call, ctx);
+    // `ctx.trigger` is the AUTOMATION VENUE, and the only honest sign of it: the
+    // engine mints it per firing (`automations/src/sponsorship-gate.ts`'s
+    // baseRunContext) and the wire's context resolution never writes one. A
+    // firing is nobody's request, has no per-user meter to spend, and was never
+    // in this feature's scope — gated, every host who set `limits` silently lost
+    // every automation build. NOT keyed on a missing subject or empty pools:
+    // those are also what a request whose identity did not resolve looks like,
+    // and that one must keep failing closed below.
+    if (call.tool !== VENDO_MAKE_TOOL || ctx.trigger !== undefined) return tools.execute(call, ctx);
     const verdict = await limiter.gate("generation", ctx);
     if (verdict.allow) return tools.execute(call, ctx);
     (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM]?.({

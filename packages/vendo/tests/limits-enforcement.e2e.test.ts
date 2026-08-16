@@ -17,9 +17,16 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { triggerKey } from "@vendoai/automations";
 import {
+  DEFAULT_TRIGGER_ID,
+  TRIGGER_KIND_REF_PRESENT,
+  VENDO_APP_FORMAT,
   VENDO_MAKE_TOOL,
+  triggerKindRefKey,
   vendoLimitPartSchema,
+  type AppDocument,
+  type LimitAction,
   type LimitsCallback,
   type Principal,
   type StoreOps,
@@ -179,6 +186,76 @@ describe("the generation choke — the agent is told, and the turn goes on", () 
 
     expect(limitCards(await chat("just talk to me"))).toEqual([]);
     expect(model.calls).toBe(1);
+  });
+});
+
+describe("the generation choke and the AUTOMATION venue", () => {
+  /** An armed host-event automation whose one step IS the build door. */
+  const arm = async (vendo: Vendo, appId: string): Promise<void> => {
+    const doc: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: appId,
+      name: "Nightly build",
+      triggers: [{
+        id: DEFAULT_TRIGGER_ID,
+        on: { kind: "host-event", event: "go" },
+        run: {
+          kind: "steps",
+          // Step args are JSONata, so the request is a quoted literal.
+          steps: [{ id: "build", tool: VENDO_MAKE_TOOL, args: { request: "'a spending dashboard'" } }],
+        },
+      }],
+    };
+    await vendo.store.records("vendo_apps").put({
+      id: appId,
+      data: { subject: principal.subject, enabled: true, doc },
+      refs: { subject: principal.subject, [triggerKindRefKey("host-event")]: TRIGGER_KIND_REF_PRESENT },
+    });
+    await vendo.store.records("automations:armed").put({
+      id: triggerKey(appId, DEFAULT_TRIGGER_ID),
+      data: { appId, triggerId: DEFAULT_TRIGGER_ID },
+      refs: { app_id: appId },
+    });
+  };
+
+  it("never asks the policy about a firing, and meters nothing for it", async () => {
+    // The policy refuses EVERYTHING, so a firing that were gated could not
+    // possibly build: asking it at all is the defect.
+    const asked: LimitAction[] = [];
+    const { vendo } = await compose({
+      limits: ({ action }) => { asked.push(action); return false; },
+      turns: [],
+    });
+    await arm(vendo, "app_limits_automation");
+
+    expect(await vendo.emit("go", {}, principal)).toHaveLength(1);
+
+    expect(asked).toEqual([]);
+    await expect(vendo.usage({ since: new Date(0) })).resolves.toEqual([]);
+    // The step reached the registry rather than the choke's refusal.
+    const runs = (await vendo.store.records("vendo_runs").list()).records;
+    expect(JSON.stringify(runs)).not.toContain("reached a limit");
+  });
+});
+
+describe("the generation choke and a REQUEST whose identity did not resolve", () => {
+  // The deployment asserts no pools and no facts for this visitor — the shape a
+  // missing session leaves behind. A policy written against a pool cannot be
+  // answered, and the ONLY safe answer is the refusal: skipping here would hand
+  // every uncredentialed caller an unlimited deployment.
+  const perWorkspace: LimitsCallback = async ({ action, count }) =>
+    action !== "generation" || await count("generation", { pool: "workspace" }) < 5;
+
+  it("still fails CLOSED — the build is refused, not waved through", async () => {
+    const { chat } = await compose({
+      limits: perWorkspace,
+      turns: [
+        toolCallTurn(VENDO_MAKE_TOOL, { request: "a spending dashboard" }),
+        textTurn("I could not build that."),
+      ],
+    });
+
+    expect(limitCards(await chat("build me a dashboard"))).toEqual([{ type: "data-vendo-limit" }]);
   });
 });
 
