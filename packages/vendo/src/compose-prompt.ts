@@ -1,14 +1,21 @@
 /**
  * What the ONE thinker is told, and how it finds the rest.
  *
- * The system-prompt inputs (03 §3's one prose story, the catalog+theme summary,
- * the knowledge index) and the two discovery rails were written twice — once for
- * a `createAgent` that no longer exists, once for the harness runtime. They are
+ * The system-prompt inputs (03 §3's one prose story, the theme line, the
+ * knowledge index) and the two discovery rails were written twice — once for a
+ * `createAgent` that no longer exists, once for the harness runtime. They are
  * defined ONCE here and handed to the runtime below.
+ *
+ * The host COMPONENT list is no longer one of them: this thinker renders nothing,
+ * and what a writer is told about the host's components is the briefing pack
+ * (`contract/briefing.ts`), which is now the only rendering of that list there is.
+ * The theme LINE stays — the pack hands the screen agent the tokens verbatim, so
+ * a sentence about the brand here is a different thing for a different reader,
+ * not a second copy.
  */
 import type { CapabilityMissConfig } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
-import { catalogThemeSummary } from "@vendoai/apps/contract";
+import { themeSummary } from "@vendoai/apps/contract";
 import type { VendoComposition } from "./compose-context.js";
 import { selectConfigSurface } from "./config-surface.js";
 
@@ -16,13 +23,12 @@ import { selectConfigSurface } from "./config-surface.js";
 export const composePrompt = (composition: VendoComposition): Pick<VendoComposition,
   "system" | "capabilityMiss" | "toolSearch"> => {
   const { config, composed, readSurfaceFile } = composition;
-  const { catalog, theme, knowledgeIndex, missSurface, missCapture, actions } = composition;
+  const { theme, knowledgeIndex, missSurface, missCapture, actions } = composition;
   // AGENT-1/2 — 03 §3: ONE prose story. `instructions` and the
   // `.vendo/brief.md` surface behind it are the deployment's own words about
-  // what this product is and how to speak about it; prompt.ts places them (the
-  // Product section) beside the catalog+theme summary (only where trees
-  // render). `brief:` and `agent.instructions` were two names for this and are
-  // gone.
+  // what this product is and how to speak about it; prompt.ts places them as the
+  // Product section. `brief:` and `agent.instructions` were two names for this
+  // and are gone.
   // Programmatic `instructions` wins over the file; an adopted agent's own
   // `instructions` is the same slot (AGENT_OWNED_KEYS refuses both at once).
   // Task 15a: the in-memory profile.brief sits between them — below the
@@ -34,11 +40,11 @@ export const composePrompt = (composition: VendoComposition): Pick<VendoComposit
     : config.profile?.brief !== undefined
       ? config.profile.brief.trim() || undefined
       : selectConfigSurface("brief.md", { readFile: readSurfaceFile }).value?.trim() || undefined;
-  const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = product !== undefined || promptCatalog !== undefined || knowledgeIndex !== undefined
+  const promptTheme = themeSummary(theme);
+  const system = product !== undefined || promptTheme !== undefined || knowledgeIndex !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
-        ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+        ...(promptTheme === undefined ? {} : { theme: promptTheme }),
         ...(knowledgeIndex === undefined ? {} : { knowledge: knowledgeIndex }),
       }
     : undefined;

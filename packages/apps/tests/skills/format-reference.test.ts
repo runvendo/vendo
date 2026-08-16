@@ -152,11 +152,11 @@ describe("the reference only teaches what a screen really has", () => {
     expect(VENDO_FORMAT_REFERENCE).not.toContain("`validate`");
   });
 
-  it("carries the component prop schemas, generated from the specs", () => {
+  it("carries the whole catalog, one line per component, generated from the specs", () => {
     // The host catalog is on the host/components mount; everything that ships
     // with the format has to be IN here, or its props are unknowable.
     expect(VENDO_FORMAT_REFERENCE).toContain("# The Kit");
-    expect(VENDO_FORMAT_REFERENCE).toContain("## <DataTable>");
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/^<DataTable> .* · data: rows!/m);
     // Workspace-RELATIVE: the mount lands under the machine's root
     // (`/workspace/host/...` in a box), which is the session's cwd, so a leading
     // slash would point at a directory that does not exist on either leg.

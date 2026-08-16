@@ -54,12 +54,13 @@ Two references, both paths relative to the directory you are working in:
 - \`host/skills/building-apps/references/format.md\` — how to write the screen. It
   is the \`references/format.md\` beside this skill.
 - \`host/components/\` — one file per component you may use: what it is for, its
-  full props schema, its examples. Grep it; \`search_components\` is the quick
-  lookup when you do not know a name yet.
+  full props schema, its examples. Every name is already listed for you in
+  \`format.md\` and the product brief, so open the file by name when you need the
+  detail.
 
-Tools are named bare here — \`search_components\`, \`ask_user\`, and this product's
-own operations. Your own tool list may show every one of them behind a server
-prefix (\`mcp__vendo__search_components\`, \`mcp__vendo__host_listTransactions\`):
+Tools are named bare here — \`ask_user\` and this product's own operations. Your
+own tool list may show every one of them behind a server prefix
+(\`mcp__vendo__ask_user\`, \`mcp__vendo__host_listTransactions\`):
 call them by the exact name your list shows, and if a bare name comes back as no such
 tool, look for the prefixed one before concluding it does not exist.
 

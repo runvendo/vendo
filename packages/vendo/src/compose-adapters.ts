@@ -89,7 +89,7 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   // with a blank value, because the blank rule is per surface, not global:
   // design-rules falls through to the file (compose-surfaces.ts:73), while a
   // DEFINED `profile.brief` is authoritative even when blank and never touches
-  // disk (compose-prompt.ts:33-36). `undefined` here — and only `undefined` —
+  // disk (compose-prompt.ts:40-42). `undefined` here — and only `undefined` —
   // means "code said nothing, go look at the file".
   const codeSurface: Record<ConfigSurfaceName, unknown> = {
     "design-rules.md": config.apps?.designRules?.trim() || config.profile?.designRules?.trim() || undefined,

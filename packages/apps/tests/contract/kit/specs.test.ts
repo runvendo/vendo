@@ -21,7 +21,7 @@ import {
  *  validates and the renderer drops it, which is the silent failure the whole
  *  prop-name gate exists to turn into a blocking error. */
 const READERS: Record<string, readonly string[]> = {
-  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout"],
+  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
   density: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
   field: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress"],
 };

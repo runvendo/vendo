@@ -18,8 +18,8 @@ import { z } from "zod";
 import { vendoRouteMapSchema, vendoRouteParams, vendoThemeSchema, type VendoRouteMap, type VendoTheme } from "./catalog.js";
 
 /** One host component, as a writer needs to know about it: the name it may use
- *  and the FIRST line of its description — `catalogThemeSummary`'s existing
- *  one-line reduction, kept verbatim (d5). */
+ *  and the FIRST line of its description (d5). THE host rendering — the umbrella's
+ *  own second copy of this list is gone. */
 export interface CatalogSummaryEntry {
   name: string;
   description: string;

@@ -2,12 +2,14 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type {
   VendoTheme,
+  VendoThemeFont,
 } from "@vendoai/apps/contract";
 import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
 import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
-import { deriveBodyFontStack } from "./font-stack.js";
+import { themeFontFamilies } from "./embed-fonts.js";
+import { deriveBodyFontStack, deriveMonoFontStack } from "./font-stack.js";
 import { walk } from "./walk.js";
 
 /**
@@ -53,6 +55,7 @@ export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
     typography: {
       fontFamily: slots.fontFamily,
       headingFamily: slots.headingFamily,
+      ...(slots.monoFamily === undefined ? {} : { monoFamily: slots.monoFamily }),
       baseSize: slots.baseSize,
     },
     radius: {
@@ -63,6 +66,29 @@ export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
     density: slots.density,
     motion: slots.motion,
   };
+}
+
+/**
+ * Record on a theme document which faces `.vendo/fonts.css` actually holds.
+ *
+ * The ONE place that metadata is attached, because there are two writers that
+ * must agree — the install path builds a fresh document, the reconcile path
+ * edits the host's — and they drifted: a rebrand rewrote the sheet and left
+ * `typography.fonts` advertising the previous brand's faces. An empty list
+ * REMOVES the key rather than writing `[]`, so a theme never claims faces that
+ * are not on disk.
+ *
+ * Faces for a family this document does NOT select are dropped, so the metadata
+ * cannot name a typeface the theme rejected — the case a `--theme fontFamily=`
+ * answer creates by overriding the family AFTER the faces were resolved.
+ */
+export function applyThemeFonts(theme: unknown, fonts: VendoThemeFont[]): void {
+  const typography = (theme as { typography?: Record<string, unknown> } | null)?.typography;
+  if (typography === undefined || typography === null) return;
+  const selected = new Set(themeFontFamilies(theme).map((family) => family.toLowerCase()));
+  const kept = fonts.filter((font) => selected.has(font.family.toLowerCase()));
+  if (kept.length === 0) delete typography["fonts"];
+  else typography["fonts"] = kept;
 }
 
 export interface ThemeSlotValues {
@@ -80,6 +106,12 @@ export interface ThemeSlotValues {
   baseSize: string;
   density: "compact" | "comfortable";
   motion: "full" | "reduced";
+  /** The host's code font, when it ships one. Deliberately absent from
+   *  DEFAULT_THEME_SLOTS — and therefore from SLOT_KEYS — because it has no
+   *  sensible neutral default: a host without a brand mono must fall through
+   *  to the system stack in `themeDefaults` rather than report a defaulted
+   *  slot or spend a model call. Derived after assembly, in `extractTheme`. */
+  monoFamily?: string;
 }
 
 export interface ThemeUncertainty {
@@ -105,6 +137,10 @@ export interface ThemeSummary {
   /** The CSS/layout/tailwind-config paths the context gatherer collected,
    *  repo-relative — seeded as evidence-path hints for the staged pass. */
   evidencePaths: string[];
+  /** What `.vendo/fonts.css` ended up holding (embed-fonts.ts). Set by the
+   *  sync flow, not by extraction: resolving a face reads the build output and
+   *  can reach the network, and `extractTheme` does neither. */
+  fonts?: VendoThemeFont[];
 }
 
 /** Key ORDER is load-bearing: assembleTheme derives accentText from the
@@ -290,18 +326,18 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
   return undefined;
 }
 
-function normalizeFontStack(value: string): string {
+function normalizeFontStack(value: string, generic = "sans-serif"): string {
   // Quotes are optional CSS syntax around family names, not identity: "Outfit"
   // and Outfit are the same family (unquoted multi-word names are valid too).
   // The stack itself is preserved in full — every source-declared fallback
-  // entry stays; only a stack with no generic at all gets `sans-serif`.
+  // entry stays; only a stack with no generic at all gets one appended.
   const stack = value.split(",")
     .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
     .filter(Boolean)
     .join(", ");
   return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(stack)
     ? stack
-    : `${stack}, sans-serif`;
+    : `${stack}, ${generic}`;
 }
 
 /** Fully-resolved font stack: no var() refs, no CSS structural characters. */
@@ -377,6 +413,7 @@ export const modelThemeSchema = z.object({
     radius: z.string().optional(),
     fontFamily: z.string().optional(),
     headingFamily: z.string().optional(),
+    monoFamily: z.string().optional(),
     baseSize: z.string().optional(),
     density: z.enum(["compact", "comfortable"]).optional(),
     motion: z.enum(["full", "reduced"]).optional(),
@@ -398,6 +435,8 @@ export function validateSlotValue(slot: SlotKey, raw: string): string | null {
     case "fontFamily":
     case "headingFamily":
       return isSafeFontStack(value) ? normalizeFontStack(value) : null;
+    case "monoFamily":
+      return isSafeFontStack(value) ? normalizeFontStack(value, "monospace") : null;
     default:
       return normalizeColor(value);
   }
@@ -452,6 +491,10 @@ export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
   const context = await gatherContext(targetDir);
   const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
   const exact = readExact(vars);
+  const resolveCssVar = (name: string): string | null => {
+    const decl = lastLightDecl(vars, [name]);
+    return decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+  };
   // No CSS `--font-sans`: the body stack may still be deterministically
   // derivable from the Tailwind config / next/font conventions (font-stack.ts)
   // — same exact-read status, so the staged model pass never re-guesses it.
@@ -461,10 +504,7 @@ export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
       layout: context.layout?.content ?? null,
       tailwindConfig: context.tailwindConfig?.content ?? null,
       cssText: context.css.map((file) => file.content).join("\n"),
-      resolveCssVar: (name) => {
-        const decl = lastLightDecl(vars, [name]);
-        return decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
-      },
+      resolveCssVar,
       ...(declaredSans === undefined ? {} : { cssFontSans: declaredSans.value }),
     });
     if (derived !== null && isSafeFontStack(derived.value)) {
@@ -474,6 +514,19 @@ export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
   }
   const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
   const { slots, matched, defaulted } = assembleTheme(exact.values, exact.matched, {});
+
+  const declaredMono = lastLightDecl(vars, ["--font-mono"]);
+  const mono = deriveMonoFontStack({
+    layout: context.layout?.content ?? null,
+    resolveCssVar,
+    ...(declaredMono === undefined ? {} : { cssFontMono: declaredMono.value }),
+  });
+  if (mono !== null && isSafeFontStack(mono.value)) {
+    // `monospace`, not the sans default: a code font that fails to load must
+    // fall back to another code font.
+    slots.monoFamily = normalizeFontStack(mono.value, "monospace");
+    matched["monoFamily"] = mono.provenance;
+  }
 
   return {
     slots,
@@ -524,6 +577,12 @@ export function applyThemeDraft(
   }
 
   const { slots, matched, defaulted } = assembleTheme(exactValues, exactMatched, fromModel);
+  // monoFamily is not a SLOT_KEY, so the assembly loop never sees it — carry
+  // the deterministic read across rather than losing it to the model pass.
+  if (summary.slots.monoFamily !== undefined) {
+    slots.monoFamily = summary.slots.monoFamily;
+    matched["monoFamily"] = summary.matched["monoFamily"]!;
+  }
   const usedModel = Object.keys(fromModel).length > 0;
   const uncertain = (draft.uncertain ?? [])
     .filter((entry): entry is ThemeUncertainty => (BRAND_SLOTS as string[]).includes(entry.slot))

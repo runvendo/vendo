@@ -20,6 +20,9 @@ export interface VendoContextValue {
   components: Record<string, ComponentType>;
   /** Resolved brand tokens (defaults ⊕ provider overrides). */
   theme: VendoTheme;
+  /** The host's `.vendo/fonts.css` text — the brand's `@font-face` rules, as
+      inlined data URIs. Chrome injects it beside its own sheet. */
+  fonts?: string;
   /**
    * Optional chat-transport override (director/replay tooling). When absent,
    * threads use the live wire transport — this is never a default.
@@ -115,6 +118,8 @@ export function VendoProvider(props: {
   baseUrl?: string;
   components?: HostComponentsInput;
   theme?: Partial<VendoTheme>;
+  /** The host's `.vendo/fonts.css` text — see VendoContextValue.fonts. */
+  fonts?: string;
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void;
   /** The slot pins land in — see VendoContextValue.pinSlot. */
@@ -135,7 +140,7 @@ export function VendoProvider(props: {
   onNavigate?(nav: VendoNavigation): void;
   children: ReactNode;
 }): ReactNode {
-  const { client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
+  const { client, baseUrl, components, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -150,6 +155,7 @@ export function VendoProvider(props: {
       client: client ?? createVendoClient(baseUrl === undefined ? {} : { baseUrl }),
       components: hostComponentMap(components),
       theme: resolveTheme(defaultVendoTheme, theme),
+      fonts,
       transport,
       onPin,
       pinSlot,
@@ -162,7 +168,7 @@ export function VendoProvider(props: {
       routes,
       onNavigate,
     }),
-    [client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
+    [client, baseUrl, components, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

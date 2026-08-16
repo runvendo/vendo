@@ -1515,7 +1515,7 @@ describe("stop is still the only thing that cancels — steering never does", ()
  *
  * Both already exist and are already generated — `hostComponentFiles(catalog)`
  * writes `/host/components/<Name>.md` and `buildingAppsSkill.files` carries
- * `references/format.md`, which is `kitPrompt()`'s output, not a hand-written
+ * `references/format.md`, which is `catalogPrompt()`'s output, not a hand-written
  * second copy. What nothing proved is the HOP: that the projection composition
  * assembles actually reaches the machine's disk, at a path the skill's own
  * workspace-relative instructions resolve against.

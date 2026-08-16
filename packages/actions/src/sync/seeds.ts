@@ -267,7 +267,13 @@ async function captureRootStyles(
       }
       if (seen.has(realFile)) continue;
       seen.add(realFile);
-      styles.push({ path: portablePath(realRoot, realFile), css: resolved.source });
+      const portable = portablePath(realRoot, realFile);
+      // `.vendo/` is sync's OWN output, not host source. The root layout
+      // imports `.vendo/fonts.css`, and capturing it back would copy ~65 KB of
+      // base64 font into every seed on every run — a sheet Vendo emitted
+      // reading itself in.
+      if (portable.startsWith(".vendo/")) continue;
+      styles.push({ path: portable, css: resolved.source });
     }
   }
   return styles;

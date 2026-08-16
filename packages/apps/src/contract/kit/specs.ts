@@ -65,7 +65,7 @@ const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly s
   {
     name: "tone",
     spec: config(tone, "emphasis — neutral | accent | success | warning | danger"),
-    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout"],
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
   },
   {
     name: "density",
@@ -713,6 +713,53 @@ const BASE_SPECS: KitComponentSpec[] = [
     },
     examples: ['<Steps items={[{label:"Details"},{label:"Review"},{label:"Done"}]} active={1}/>'],
   },
+
+  // Overlays — the bricks that paint outside the screen's own box.
+  {
+    name: "Modal",
+    takesChildren: true,
+    group: "overlays",
+    summary: "A dialog over the screen for a decision that must be answered before anything else. `open` raises it, `onClose` names the tool that takes it down; focus, Esc and the page's scroll lock are handled for you.",
+    props: {
+      open: config(z.boolean(), "whether the dialog is up", { required: true }),
+      // REQUIRED, because every way out of a controlled dialog runs through it:
+      // the X, Esc and the backdrop all do nothing but call this. Without it a
+      // generated screen can raise a modal that nothing can take down.
+      onClose: config(action, "called when it asks to close — Esc, the backdrop, or the X", { required: true }),
+      title: copy(z.string(), "the dialog's heading"),
+      description: copy(z.string(), "one line under the heading"),
+      size: config(z.enum(["small", "medium", "large"]), "width, default medium"),
+    },
+    examples: ['<Modal open={$state.confirming} onClose="ui.cancel" title="Send reminders?" description="Three clients will be emailed."><Button label="Send" onClick="invoices.sendReminders"/></Modal>'],
+  },
+  {
+    name: "Sheet",
+    takesChildren: true,
+    group: "overlays",
+    summary: "A dialog that slides in from an edge, for detail beside the screen rather than on top of it. Same open/close pair as Modal; `side` picks the edge.",
+    props: {
+      open: config(z.boolean(), "whether the sheet is out", { required: true }),
+      // REQUIRED for the same reason Modal's is — see there.
+      onClose: config(action, "called when it asks to close — Esc, the backdrop, or the X", { required: true }),
+      title: copy(z.string(), "the sheet's heading"),
+      description: copy(z.string(), "one line under the heading"),
+      size: config(z.enum(["small", "medium", "large"]), "how far it comes out, default medium"),
+      side: config(z.enum(["left", "right", "top", "bottom"]), "the edge it slides from, default right"),
+    },
+    examples: ['<Sheet open={$state.viewing} onClose="ui.closeDetail" title="Invoice INV-204" side="right"><KeyValue pairs={invoices.get({id:$state.viewing}).data}/></Sheet>'],
+  },
+  {
+    name: "Toast",
+    group: "overlays",
+    summary: "A transient notice in the corner, for something that already happened. It takes itself down after `duration`; `onClose` is how the screen learns it went.",
+    props: {
+      open: config(z.boolean(), "whether the notice is up", { required: true }),
+      onClose: config(action, "called when it dismisses itself"),
+      message: copy(z.string(), "the one line to show", { required: true }),
+      duration: config(z.number().int().positive(), "ms on screen before it leaves, default 5000"),
+    },
+    examples: ['<Toast open={$state.sent} onClose="ui.clearSent" message="Reminders sent." tone="success"/>'],
+  },
 ];
 
 /**
@@ -755,6 +802,16 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   },
   Tabs: { content: { doc: "ONE tab's panel, written inline instead of as a child", content: region, at: "tabs" } },
   Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
+  // No `at` on either pair: a dialog reads its header and footer as props of
+  // its own, the way Timeline reads `marker`.
+  Modal: {
+    header: { doc: "elements along the top edge, beside the title", content: region },
+    footer: { doc: "the buttons under the content", content: region },
+  },
+  Sheet: {
+    header: { doc: "elements along the top edge, beside the title", content: region },
+    footer: { doc: "the buttons under the content", content: region },
+  },
 };
 
 /** Where a slot's element sits, as ONE comparable string: `columns[].cell` for a

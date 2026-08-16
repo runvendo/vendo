@@ -106,11 +106,9 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_apps_data_delete: "Remove an item from the app",
   vendo_knowledge_search: "Look it up in the docs",
   // The verbs and `ask_user` authored these titles inline first; they moved here
-  // verbatim so the CLIENT can say them too. A live browser proof caught the gap:
-  // `search_components` narrated "Search components…" — its identifier
-  // prettified — while its descriptor carried "Look up available components".
+  // verbatim so the CLIENT can say them too — a live browser proof caught a verb
+  // narrating its identifier prettified while its descriptor carried a real title.
   validate: "Check the app for mistakes",
-  search_components: "Look up available components",
   schedule: "Change when this runs",
   ask_user: "Ask you a question",
   find_service_tools: "Look for an outside service",

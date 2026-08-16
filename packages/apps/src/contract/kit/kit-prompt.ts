@@ -14,7 +14,7 @@ export interface KitPromptOptions {
   omitPreamble?: boolean;
 }
 
-const PREAMBLE = [
+export const PREAMBLE = [
   "# The Kit",
   "",
   "Build the app from these components — you only fill props; they sort, filter,",
@@ -138,7 +138,7 @@ function renderSpec(spec: KitComponentSpec): string {
   return lines.join("\n");
 }
 
-const GROUP_ORDER = ["layout", "values", "data", "charts", "forms", "feedback"];
+const GROUP_ORDER = ["layout", "values", "data", "charts", "forms", "feedback", "overlays"];
 const GROUP_TITLE: Record<string, string> = {
   layout: "Layout",
   values: "Values (semantic — formatted for you)",
@@ -146,6 +146,7 @@ const GROUP_TITLE: Record<string, string> = {
   charts: "Charts",
   forms: "Forms & actions",
   feedback: "Feedback & interactive",
+  overlays: "Overlays",
 };
 
 /** Render the generation prompt section from the schemas. */

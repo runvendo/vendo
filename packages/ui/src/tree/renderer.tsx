@@ -15,6 +15,7 @@ import {
 } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
+  KIT_OVERLAY_SPECS,
   SCREEN_TEXT_NODE,
   evaluateExpr,
   isExprBinding,
@@ -44,6 +45,7 @@ import { InClientMount, type InClientFurnishing } from "./host-mount.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
+import { ensureKitStyles } from "../kit/kit-css.js";
 import { markHandlerCallback, screenEvent } from "../kit/handler.js";
 import { useKeyedState } from "../kit/state.js";
 import { useParkedApprovals } from "./parked-approvals.js";
@@ -614,17 +616,35 @@ function generatedContent(context: NodeContent): ReactNode {
   );
 }
 
+/** Which implementation wins for a built-in node. An explicit `source: "host"`
+ *  means the host brand won the name. An undefined (or "prewired") source keeps
+ *  the built-in first, so a stored app whose node collides with a host catalog
+ *  name still renders the built-in it was written against. */
+function resolveBuiltin(node: TreeNode, components: NodeRendererProps["components"]): ComponentType<Record<string, unknown>> | undefined {
+  const kit = (KIT_COMPONENTS[node.component] ?? DISPLAY_BRICKS[node.component]) as ComponentType<Record<string, unknown>> | undefined;
+  const host = components[node.component] as ComponentType<Record<string, unknown>> | undefined;
+  return node.source === "host" ? host ?? kit : kit ?? host;
+}
+
+/**
+ * Whether this node renders one of OUR overlay bricks — decided by the SAME
+ * resolution that picks the implementation, never by the component's name.
+ *
+ * Hosts name their own components, and a host `Modal` is an ordinary in-flow
+ * component: classifying it by name alone handed it a shell that generates no
+ * box, and it lost its layout box. (A GENERATED `Modal` needs no clause here —
+ * `validateWalkTree` refuses a generated name that shadows a Kit one.)
+ */
+function rendersKitOverlay(node: TreeNode, components: NodeRendererProps["components"]): boolean {
+  if (KIT_OVERLAY_SPECS[node.component] === undefined) return false;
+  return resolveBuiltin(node, components) === KIT_COMPONENTS[node.component];
+}
+
 /** V4 — one component family: the Kit is the only built-in set, plus the display
  *  bricks, which resolve exactly like one. A brick's tag is lowercase and a Kit
  *  or catalog name is an identifier, so the two can never collide. */
 function builtinContent({ props, node, children, invoke, handle }: NodeContent): ReactNode {
-  const kit = (KIT_COMPONENTS[node.component] ?? DISPLAY_BRICKS[node.component]) as ComponentType<Record<string, unknown>> | undefined;
-  const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-  // An explicit `source: "host"` means the host brand won the name. An
-  // undefined (or "prewired") source keeps the built-in first, so a stored
-  // app whose node collides with a host catalog name still renders the
-  // built-in it was written against.
-  const Implementation = node.source === "host" ? host ?? kit : kit ?? host;
+  const Implementation = resolveBuiltin(node, props.components);
   if (!Implementation) {
     // Mid-stream, an unresolved name is a transient (the defining island or
     // a corrected reference may still arrive) — hold the silhouette; the
@@ -713,7 +733,12 @@ function NodeRenderer(props: NodeRendererProps) {
   const notice = (firedId: string, settled: ToolOutcome | undefined): ReactNode =>
     outcomeNotice(settled, review === undefined ? undefined : (approvalId) => review(firedId, approvalId));
   return (
-    <NodeShell nodeId={node.id} outcome={outcome} mark={props.marks.get(node.id)}>
+    <NodeShell
+      nodeId={node.id}
+      outcome={outcome}
+      mark={props.marks.get(node.id)}
+      overlay={rendersKitOverlay(node, props.components)}
+    >
       {content}
       {notice(node.id, outcome)}
       {props.orphans.get(node.id)?.map(([firedId, orphan]) => (
@@ -728,10 +753,14 @@ function NodeRenderer(props: NodeRendererProps) {
  * the render that carries the change and never on a first paint, so the effect
  * plays exactly one beat per node per repaint (repaint-motion.ts).
  */
-function NodeShell({ nodeId, outcome, mark, children }: {
+function NodeShell({ nodeId, outcome, mark, overlay, children }: {
   nodeId: string;
   outcome: ToolOutcome | undefined;
   mark: NodeMark | undefined;
+  /** An overlay brick paints on the body-level host (overlay-portal.tsx), so its
+   *  shell must generate NO box: an empty div left where the overlay was written
+   *  is still a flex item, and takes a whole gap out of the Stack around it. */
+  overlay: boolean;
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -742,6 +771,7 @@ function NodeShell({ nodeId, outcome, mark, children }: {
     <div
       ref={box}
       data-vendo-node-id={nodeId}
+      {...(overlay ? { style: { display: "contents" } } : {})}
       data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
       {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
     >
@@ -774,6 +804,10 @@ function StatefulTreeView({
   // surface nested in chrome restates identical values and cannot disagree.
   const theme = useVendoThemeOrDefault();
   useExprRuntime();
+  // The surface is also the only place every Kit brick passes through, so the
+  // Kit's pseudo-class sheet is injected here rather than from the overlay host
+  // alone — a screen with a Button and no Modal has hover and focus states too.
+  useEffect(ensureKitStyles, []);
   // The keyed `$state` store lives in the Kit bundle, shared with code-land's
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
   const [viewState, updateState] = useKeyedState(onStateChange);

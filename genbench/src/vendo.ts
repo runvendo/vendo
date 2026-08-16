@@ -160,12 +160,10 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   // and lives one layer up (packages/vendo/src/compose-apps.ts:452). Without it
   // the screen agent's brief still tells it to "call `validate` on what you
   // saved" and the call fails, so it spends its whole step budget blind. Same
-  // ports the product wires; the catalog is empty here, so the component search
-  // has nothing to find.
+  // ports the product wires.
   const verbs = vendoVerbsRegistry({
     validate: (input, verbCtx) =>
       apps.validate(input.appId === undefined ? {} : { appId: input.appId as AppId }, verbCtx),
-    searchComponents: async () => [],
     schedule: async () => {
       throw new Error("genbench: the screen lane arms no schedules");
     },

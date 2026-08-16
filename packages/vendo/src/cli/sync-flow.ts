@@ -1,7 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { z } from "zod";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
+import type { VendoThemeFont } from "@vendoai/apps/contract";
 import type { ToolImpact } from "../sync-impact.js";
 import {
   pushHostComponents,
@@ -15,7 +16,9 @@ import { runProseStages } from "./init-judgment.js";
 import { selectJudgmentEngines, type AvailableEngine } from "./judge/engine.js";
 import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
 import { plainSelect, type PrettyOutput, type SelectOption } from "./pretty.js";
+import { embedHostFonts } from "./theme/embed-fonts.js";
 import {
+  applyThemeFonts,
   extractTheme,
   toVendoTheme,
   type modelThemeSchema,
@@ -236,8 +239,21 @@ async function reconcileTheme(
   const summary = await extractTheme(root);
   const base = await readBase(vendoDir);
   const merge = mergeExtraction({ theme, base, summary, ...(force ? { force: true } : {}) });
-  if (merge.theme !== null) {
-    await writeText(join(vendoDir, "theme.json"), `${JSON.stringify(merge.theme, null, 2)}\n`);
+  // The brand moved, or this host predates fonts.css — either way the sheet is
+  // (re)built. An unchanged brand with the sheet already on disk touches
+  // nothing: resolving a face can reach the network, and sync runs from
+  // `predev`.
+  //
+  // The sheet is rebuilt BEFORE theme.json is written, because
+  // `typography.fonts` describes that sheet: writing the document first left it
+  // advertising the previous brand's faces.
+  const document = merge.theme ?? theme;
+  const rebuilt = merge.theme !== null || !(await exists(join(vendoDir, "fonts.css")))
+    ? await writeFonts(root, vendoDir, document, note)
+    : null;
+  if (rebuilt !== null) applyThemeFonts(document, rebuilt);
+  if (merge.theme !== null || rebuilt !== null) {
+    await writeText(join(vendoDir, "theme.json"), `${JSON.stringify(document, null, 2)}\n`);
   }
   // The base advances whenever this run is unambiguous — everything agreed, or
   // every disagreement was resolved. While disagreements remain unresolved it
@@ -424,6 +440,40 @@ interface FlowNotes {
   noteError: (message: string) => void;
 }
 
+/**
+ * `.vendo/fonts.css` — the theme's families resolved to real files and inlined,
+ * so the surfaces the host's own stylesheet never reaches can still render the
+ * brand font (embed-fonts.ts).
+ *
+ * Built at install, on any sync where the brand actually moved, and on the
+ * first sync of a host that predates the file. Never on an unchanged run:
+ * resolving a face can reach the network, and `sync` runs from `predev`, so
+ * rebuilding it every `npm run dev` would buy a request per run and a
+ * committed artifact that churns.
+ */
+export async function writeFonts(
+  root: string,
+  vendoDir: string,
+  theme: unknown,
+  note: (message: string) => void,
+): Promise<VendoThemeFont[]> {
+  const embedded = await embedHostFonts(root, theme);
+  for (const line of embedded.notes) note(`fonts: ${line}`);
+  const sheet = join(vendoDir, "fonts.css");
+  if (embedded.css === "") {
+    // Nothing resolved. Leaving the old sheet would keep the host SHIPPING the
+    // brand they just dropped, from a theme that no longer mentions it.
+    if (await exists(sheet)) {
+      await rm(sheet);
+      note("fonts: no face resolved for this brand — removed .vendo/fonts.css");
+    }
+    return [];
+  }
+  await writeText(sheet, embedded.css);
+  note(`fonts: ${embedded.fonts.length} face${embedded.fonts.length === 1 ? "" : "s"} inlined (${Math.round(embedded.bytes / 1024)} KB) → .vendo/fonts.css`);
+  return embedded.fonts;
+}
+
 /** Theme, ONE path: init's install creates the file (it is the editable source
  *  of truth from then on), and every later run reconciles it — a rebrand
  *  reaches Vendo, a hand edit is never clobbered. */
@@ -440,7 +490,10 @@ async function resolveTheme(input: {
     const themeStarted = Date.now();
     const themeSummary = await extractTheme(root);
     const themeMs = Date.now() - themeStarted;
-    await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
+    const document = toVendoTheme(themeSummary.slots);
+    themeSummary.fonts = await writeFonts(root, vendoDir, document, note);
+    applyThemeFonts(document, themeSummary.fonts);
+    await writeText(themePath, `${JSON.stringify(document, null, 2)}\n`);
     // The merge base for every later re-scan: what the DETERMINISTIC pass read,
     // before any model fill or --theme answer — those are decisions, and the
     // reconcile must pin them (theme/provenance.ts).

@@ -37,6 +37,12 @@ const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<st
   Timeline: { props: { entries: [{ id: "1" }] } },
   Tabs: { props: {}, item: { label: "One" } },
   Accordion: { props: { defaultOpen: [0] }, item: { label: "One" } },
+  // A dialog paints nothing at all while it is down, so the probe would never
+  // land no matter how faithfully the slot is wired. `open` is the truth these
+  // two follow; raise them and the slots are on the same footing as everyone
+  // else's here.
+  Modal: { props: { open: true, onClose: () => {} } },
+  Sheet: { props: { open: true, onClose: () => {} } },
 };
 
 /** The probe at the slot's DECLARED path: a nested slot sits in its prop's

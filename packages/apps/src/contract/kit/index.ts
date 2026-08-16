@@ -7,4 +7,7 @@
 export * from "./display.js";
 export * from "./schema.js";
 export * from "./specs.js";
+export * from "./overlay.js";
 export { kitPrompt, type KitPromptOptions } from "./kit-prompt.js";
+export { catalogPrompt, type CatalogPromptOptions } from "./catalog-prompt.js";
+export { KIT_ICON_NAMES } from "./icon-names.gen.js";

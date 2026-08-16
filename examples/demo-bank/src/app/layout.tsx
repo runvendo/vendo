@@ -4,6 +4,9 @@ import { AppShell } from "@/components/shell/app-shell"
 import { VendoLayer } from "@/components/vendo/VendoLayer"
 import { VendoRoot } from "@/components/vendo/VendoRoot"
 import "./globals.css"
+// What `vendo init` prints: Maple's own font, inlined by `vendo sync`, so Vendo
+// surfaces render the brand face instead of falling back to the system stack.
+import "../../.vendo/fonts.css"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 

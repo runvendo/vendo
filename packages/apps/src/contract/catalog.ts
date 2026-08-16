@@ -49,6 +49,17 @@ export interface NormalizedCatalogEntry extends RegisteredComponent {
 /** The normalized internal catalog the composition hands to the apps block. */
 export type NormalizedCatalog = ReadonlyArray<NormalizedCatalogEntry>;
 
+/** One face `vendo sync` resolved to a real file and inlined into
+ * `.vendo/fonts.css`. Metadata ONLY — never the bytes: theme.json is a bundle
+ * import and rides the `?vendoTheme=` query string, so a base64 face here
+ * would blow past every proxy's request-line limit. */
+export interface VendoThemeFont {
+  family: string;
+  weight: string;
+  style: string;
+  source: "next/font" | "public" | "google";
+}
+
 /** 01-core §14. The shape only: `./theme.js` owns the defaults, the merge, and
  * the one mapping onto `--vendo-*` CSS variables that every surface renders
  * through. */
@@ -76,6 +87,9 @@ export interface VendoTheme {
     letterSpacing?: string;
     lineHeightBody?: string;
     lineHeightHeading?: string;
+    /** What `.vendo/fonts.css` holds, for a reader that has the theme but not
+     * the sheet. Emitted by sync; nothing renders off it. */
+    fonts?: VendoThemeFont[];
   };
   radius: { small: string; medium: string; large: string };
   shadow?: { small: string; medium: string; large: string };
@@ -116,6 +130,12 @@ export const vendoThemeSchema = z.object({
     letterSpacing: z.string().optional(),
     lineHeightBody: z.string().optional(),
     lineHeightHeading: z.string().optional(),
+    fonts: z.array(z.object({
+      family: z.string(),
+      weight: z.string(),
+      style: z.string(),
+      source: z.enum(["next/font", "public", "google"]),
+    }).passthrough()).optional(),
   }).passthrough(),
   radius: z.object({
     small: z.string(),
@@ -235,27 +255,15 @@ export function resolveVendoRoute(
   return unfilled ? undefined : { to, path, ...(params === undefined ? {} : { params }) };
 }
 
-/** AGENT-1 — 03 §3 item (4): the model-facing summary of the host components a
- * generated view may use and how the host's brand should feel. One succinct
- * block; the agent injects it only for venues that render trees.
- *
- * THE catalog summary — it lived in the umbrella (`vendo/src/catalog.ts`) and
- * belongs beside the catalog shape it reduces, so a second rendering of the same
- * two config keys cannot start disagreeing with this one. */
-export function catalogThemeSummary(
-  catalog: NormalizedCatalog,
-  theme?: VendoTheme,
-): string | undefined {
-  const sections: string[] = [];
-  if (catalog.length > 0) {
-    const lines = catalog.map((entry) =>
-      `- ${entry.name}: ${entry.description.split("\n", 1)[0] ?? ""}`.trimEnd());
-    sections.push(`Host components (usable in generated views beside the built-in primitives)\n${lines.join("\n")}`);
-  }
-  if (theme !== undefined) {
-    sections.push(
-      `Theme: ${theme.density} density, ${theme.motion} motion, ${theme.typography.fontFamily} typography.`,
-    );
-  }
-  return sections.length > 0 ? sections.join("\n\n") : undefined;
-}
+/** How this host's brand FEELS, in one line, for the thinker that does not
+ * render. Its companion — the host component list this used to render beside the
+ * theme — is gone: `renderBriefingPack` renders that list for the rung that
+ * actually writes a screen, and two renderings of one config key is what the
+ * briefing pack exists to prevent. The theme half is NOT a second copy of
+ * anything: the pack hands the screen agent the tokens VERBATIM, and this is a
+ * sentence. It is also the one observable that says the theme surface resolved
+ * at all (server.test.ts's profile/profileDir/disk seam). */
+export const themeSummary = (theme?: VendoTheme): string | undefined =>
+  theme === undefined
+    ? undefined
+    : `Theme: ${theme.density} density, ${theme.motion} motion, ${theme.typography.fontFamily} typography.`;

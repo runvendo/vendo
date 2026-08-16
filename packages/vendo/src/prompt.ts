@@ -68,14 +68,14 @@ const CAPABILITY_MISS_PROMPT = `When the user's ask cannot be fulfilled:
 - List only tool names you actually considered. Do not call the reporter for a pending approval or a policy-blocked call.
 Repeated failures are detected automatically; if the reporter says the miss was already recorded, do not call it again.`;
 
-// 03-agent §3 item (4): the catalog+theme summary rides only where generated
-// trees can actually render — the chat surface and the app venue. Away
-// automation runs and the MCP door get no component vocabulary.
+// 03-agent §3 item (4): the theme summary rides only where a generated view can
+// actually render — the chat surface and the app venue. Away automation runs and
+// the MCP door get no brand vocabulary.
 const TREE_VENUES: ReadonlySet<RunContext["venue"]> = new Set(["chat", "app"]);
 
 // Demo-refresh 2026-07-23: a rendered view owns its data — the reply around
-// it must not compete with it. Venue-gated with the catalog: only surfaces
-// that render trees have views to defer to.
+// it must not compete with it. Venue-gated with the theme: only surfaces
+// that render views have one to defer to.
 const PRESENTATION_PROMPT = `Presentation
 - When a view or app renders, it owns the data: never restate its data as a markdown table, list, or repeated numbers in your reply.
 - Around a rendered view, reply with at most a sentence or two of insight the view does not already show.
@@ -146,7 +146,7 @@ export async function assembleSystemPrompt(
   // reads return the SAME bytes — prompt-cache stability is a hard criterion.
   system?: {
     product?: string | (() => string | undefined);
-    catalog?: string;
+    theme?: string;
     knowledge?: string | (() => string | undefined | Promise<string | undefined>);
     instructions?: string;
   },
@@ -186,10 +186,11 @@ export async function assembleSystemPrompt(
     sections.push(`Directions\n${directions.map((direction) => `- ${direction}`).join("\n")}`);
   }
 
-  // 03-agent §3 item (4) — the umbrella assembles the summary (AGENT-1); the
-  // agent places it, venue-gated.
-  const catalog = system?.catalog?.trim();
-  if (catalog && TREE_VENUES.has(ctx.venue)) sections.push(catalog);
+  // 03-agent §3 item (4), theme half — the umbrella assembles the line
+  // (`themeSummary`); the agent places it, venue-gated. The host COMPONENT list
+  // that used to ride beside it is the briefing pack's, and only the pack's.
+  const theme = system?.theme?.trim();
+  if (theme && TREE_VENUES.has(ctx.venue)) sections.push(theme);
 
   // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
   // venues whose turns go through this assembler with a knowledge-capable

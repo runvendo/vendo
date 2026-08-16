@@ -65,15 +65,14 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
     });
     // The WHOLE offered surface, measured. The host's two plus every runtime
     // tool the composed umbrella registers — the `vendo_*` namespace is never
-    // curated away (10-mcp §2), and `ask_user`/`schedule`/`validate`/
-    // `search_components` are the runtime's own. Pinned as a SET so closing a
-    // divergence cannot quietly add or withhold one from an outside agent.
+    // curated away (10-mcp §2), and `ask_user`/`schedule`/`validate` are the
+    // runtime's own. Pinned as a SET so closing a divergence cannot quietly add
+    // or withhold one from an outside agent.
     expect([...byName.keys()].sort()).toEqual([
       "ask_user",
       "host_lookup",
       "host_pay",
       "schedule",
-      "search_components",
       "validate",
       "vendo_apps_call",
       "vendo_apps_data_delete",

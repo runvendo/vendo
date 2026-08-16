@@ -2095,7 +2095,7 @@ export default function Ledger() {
 });
 
 describe("03 §3 prompt wiring (AGENT-1/2)", () => {
-  it("feeds .vendo/brief.md and the catalog+theme summary into the composed system prompt", async () => {
+  it("feeds .vendo/brief.md and the theme summary into the composed system prompt, and the host catalog into neither", async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const root = await mkdtemp(join(tmpdir(), "vendo-prompt-"));
     const dataDir = join(root, "store-data");
@@ -2166,10 +2166,16 @@ describe("03 §3 prompt wiring (AGENT-1/2)", () => {
     const content = typeof system!.content === "string" ? system!.content : JSON.stringify(system!.content);
     // AGENT-2: the host product brief rides as the Product section.
     expect(content).toContain("Product\nMaple is a neobank for freelancers.");
-    // AGENT-1: catalog + theme summary assembled per 03 §3 item (4).
-    expect(content).toContain("InvoiceTable: Renders invoice line items with totals.");
+    // AGENT-1: the theme summary assembled per 03 §3 item (4).
     expect(content).toContain("comfortable");
     expect(content).toContain("Inter");
+    // …and the host COMPONENT list does not ride here at all. This thinker
+    // renders nothing — it asks `vendo_make` for a screen — and the rung that
+    // writes one reads the list from the briefing pack (`renderBriefingPack`,
+    // proven end to end in briefing-pack.test.ts). A registered component is in
+    // scope for this deployment and still absent from these bytes, which is the
+    // difference between "no catalog configured" and "not rendered here".
+    expect(content).not.toContain("InvoiceTable");
   });
 });
 

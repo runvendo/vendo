@@ -11,7 +11,7 @@ import { log, VENDO_TOOL_TITLES, VendoError, type Json, type RunContext, type To
  * generation prompt. Renaming them would invalidate live documents for no
  * behavioural gain.
  */
-export const VENDO_VERB_TOOLS = ["validate", "search_components", "schedule"] as const;
+export const VENDO_VERB_TOOLS = ["validate", "schedule"] as const;
 
 export interface VendoVerbFinding {
   severity: "block" | "warn";
@@ -31,10 +31,6 @@ export interface VendoVerbPorts {
     input: { appId?: string },
     ctx: RunContext,
   ): Promise<{ ok: boolean; findings: VendoVerbFinding[] }>;
-  /** Search the component catalog. Returns the SHIPPED catalog vocabulary
-   *  (`{ component, description, props?, examples?, remixable? }`). No ctx: the
-   *  catalog is the deployment's, identical for everyone. */
-  searchComponents(query: string, limit?: number): Promise<Json>;
   /** Arm or change an app's schedule. Owner-scoped through `ctx`. */
   schedule(input: { appId: string; cron: string }, ctx: RunContext): Promise<Json>;
 }
@@ -55,23 +51,6 @@ const DESCRIPTORS: ToolDescriptor[] = [
         appId: { type: "string", minLength: 1 },
       },
       required: ["appId"],
-      additionalProperties: false,
-    },
-    risk: "read",
-  },
-  {
-    name: "search_components",
-    title: VENDO_TOOL_TITLES.search_components,
-    description:
-      "Search the component catalog by intent to find what you can render. Returns each component's name, "
-      + "description, and props. Use it instead of guessing a component name.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", minLength: 1 },
-        limit: { type: "integer", minimum: 1 },
-      },
-      required: ["query"],
       additionalProperties: false,
     },
     risk: "read",
@@ -129,15 +108,6 @@ export function vendoVerbsRegistry(ports: VendoVerbPorts): ToolRegistry {
             // "your screen is wrong". Only the second one gets fixed.
             const result = await ports.validate({ appId }, ctx);
             return { status: "ok", output: { ok: result.ok, findings: result.findings } as unknown as Json };
-          }
-          case "search_components": {
-            const query = typeof args["query"] === "string" ? args["query"].trim() : "";
-            if (query === "") {
-              return fail("validation", "search_components needs a query — it never lists the whole catalog");
-            }
-            const limit = typeof args["limit"] === "number" ? args["limit"] : undefined;
-            const components = await ports.searchComponents(query, limit);
-            return { status: "ok", output: { components } as unknown as Json };
           }
           case "schedule": {
             const appId = typeof args["appId"] === "string" ? args["appId"] : "";

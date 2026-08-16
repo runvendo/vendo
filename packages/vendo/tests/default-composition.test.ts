@@ -26,7 +26,6 @@ import { createVendo } from "../src/server.js";
 const DEFAULT_TOOL_NAMES = [
   "ask_user",
   "schedule",
-  "search_components",
   "validate",
   "vendo_apps_data_delete",
   "vendo_apps_data_list",

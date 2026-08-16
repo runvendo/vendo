@@ -174,7 +174,7 @@ describe("it points at the references instead of inlining them", () => {
     // 2026-08-03 the model called a host tool bare TWICE, got "No such tool
     // available", and only then found the prefix — so the sentence names the
     // shape and says what to do when a bare name fails.
-    expect(body).toContain("mcp__vendo__search_components");
+    expect(body).toContain("mcp__vendo__ask_user");
     expect(body).toContain("mcp__vendo__host_listTransactions");
     expect(body).toMatch(/if a bare name comes back as no such\s+tool, look for the prefixed one/);
   });

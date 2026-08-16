@@ -12,7 +12,7 @@ import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type 
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
 import { mcpStepLines, planMcp, type McpPosture } from "./init-mcp.js";
-import { rendererFlowOptions, runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
+import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, workspaceHostCandidates, type HostFramework } from "./framework.js";
@@ -41,8 +41,10 @@ import {
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSecret, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
+import { themeFontFamilies } from "./theme/embed-fonts.js";
 import {
   applyThemeDraft,
+  applyThemeFonts,
   toVendoTheme,
   validateSlotValue,
   type ThemeSlotValues,
@@ -574,9 +576,12 @@ async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit
   const { file: entry, children } = await clientRoot(root);
   const entryDir = dirname(entry);
   const specifier = await themeImportSpecifier(root, entryDir);
+  const fontsPath = join(root, ".vendo", "fonts.css");
+  const fonts = await exists(fontsPath) ? relative(entryDir, fontsPath).split(sep).join("/") : null;
   return {
     file: relative(root, entry),
     lines: [
+      ...(fonts === null ? [] : [`import ${JSON.stringify(fonts)};`]),
       `import { VendoProvider } from "@vendoai/vendo/react";`,
       ...(specifier === null
         ? []
@@ -586,7 +591,8 @@ async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit
           ]),
       `… then wrap: <VendoProvider baseUrl="/api/vendo"${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}</VendoProvider>`,
     ],
-    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it.",
+    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it."
+      + (fonts === null ? "" : " fonts.css carries your brand font as inlined @font-face rules, so generated screens render it wherever your own stylesheet doesn't reach."),
   };
 }
 
@@ -1199,6 +1205,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/brief.md",
     ".vendo/theme.json",
     ".vendo/theme.extracted.json",
+    ".vendo/fonts.css",
     ".vendo/data/.gitignore",
   ];
   const mount = await mountStep(root, layout);
@@ -1299,6 +1306,7 @@ function applyThemeAnswers(
  *  "(you)" wins over a model value), the one-glance palette print, and
  *  finally the uncertain-slot review. */
 async function finalizeTheme(input: {
+  root: string;
   themeSummary: ThemeSummary;
   themeDraft: SyncFlowResult["themeDraft"];
   themePath: string;
@@ -1306,7 +1314,7 @@ async function finalizeTheme(input: {
   output: Output;
   pretty: PrettyOutput | null;
 }): Promise<void> {
-  const { themeSummary, themeDraft, themePath, options, pretty, output } = input;
+  const { root, themeSummary, themeDraft, themePath, options, pretty, output } = input;
   const summary = themeDraft === null ? themeSummary : applyThemeDraft(themeSummary, themeDraft);
   // --theme answers land first; the review prompt then covers only the
   // uncertain slots the flags left unanswered (non-interactive runs keep
@@ -1324,7 +1332,20 @@ async function finalizeTheme(input: {
     }
   }
   if (Object.keys(answers).length > 0) applyThemeAnswers(summary, answers, output);
-  await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+  const document = toVendoTheme(summary.slots);
+  // A model fill or a --theme answer can replace the family AFTER the flow
+  // resolved faces from the extracted one, and the host would then SHIP a
+  // typeface they overrode. Re-resolve from the document actually being
+  // written — and only when the selection really moved, so the ordinary
+  // install still embeds exactly once.
+  const chose = new Set(themeFontFamilies(document).map((family) => family.toLowerCase()));
+  const embedded = new Set((summary.fonts ?? []).map((font) => font.family.toLowerCase()));
+  const moved = chose.size !== embedded.size || [...chose].some((family) => !embedded.has(family));
+  const fonts = moved
+    ? await writeFonts(root, join(root, ".vendo"), document, (message: string) => output.log(message))
+    : summary.fonts ?? [];
+  applyThemeFonts(document, fonts);
+  await writeText(themePath, `${JSON.stringify(document, null, 2)}\n`);
   printThemeSummary(summary, output);
 }
 
@@ -1962,7 +1983,7 @@ const explainedPlanFailure = (error: unknown): boolean => {
     // finally the uncertain-slot review. Skipped entirely when theme.json
     // pre-existed this run (the flow reconciles that one instead).
     if (themeSummary !== null) {
-      await finalizeTheme({ themeSummary, themeDraft: flow.themeDraft, themePath, options, output, pretty });
+      await finalizeTheme({ root, themeSummary, themeDraft: flow.themeDraft, themePath, options, output, pretty });
     }
 
     // Judgment state, one line: a pass that ran already narrated itself (it

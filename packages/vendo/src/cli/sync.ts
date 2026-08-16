@@ -6,7 +6,7 @@ import { pushSyncReport } from "./cloud/services.js";
 import type { JudgmentPassOptions } from "./judge/pass.js";
 import { createPrettyOutput, usePrettyOutput, type PrettyOutput } from "./pretty.js";
 import { rendererFlowOptions, runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
-import { applyThemeDraft, toVendoTheme } from "./theme/extract-theme.js";
+import { applyThemeDraft, applyThemeFonts, toVendoTheme } from "./theme/extract-theme.js";
 import { consoleOutput, invokedByPackageScript, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -158,7 +158,9 @@ async function writeThemeDraft(root: string, flow: SyncFlowResult, output: Outpu
   // tokens bought.
   const filled = Object.keys(summary.matched).filter((slot) => summary.matched[slot] === "(model)");
   if (filled.length === 0) return;
-  await writeText(join(root, ".vendo", "theme.json"), `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+  const document = toVendoTheme(summary.slots);
+  applyThemeFonts(document, summary.fonts ?? []);
+  await writeText(join(root, ".vendo", "theme.json"), `${JSON.stringify(document, null, 2)}\n`);
   output.log(`theme: ${filled.length} slot${filled.length === 1 ? "" : "s"} filled by the AI pass (${filled.join(", ")}) → .vendo/theme.json`);
 }
 

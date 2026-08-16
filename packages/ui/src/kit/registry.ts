@@ -45,6 +45,9 @@ import { EmptyState } from "./feedback/empty-state.js";
 import { Steps } from "./feedback/steps.js";
 import { Menu } from "./feedback/menu.js";
 import { Tooltip } from "./feedback/tooltip.js";
+import { Modal } from "./overlay/modal.js";
+import { Sheet } from "./overlay/sheet.js";
+import { Toast } from "./overlay/toast.js";
 
 export {
   KIT_SPECS,
@@ -61,4 +64,5 @@ export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string
   Input, Select, DatePicker, Textarea, Checkbox, Button, Link, Form, Disclaimer,
   Switch, Radio, Slider, SegmentedControl, Combobox, DateRange,
   Tabs, Callout, Accordion, EmptyState, Steps, Menu, Tooltip,
+  Modal, Sheet, Toast,
 } as unknown as Record<string, ComponentType<Record<string, never>>>;

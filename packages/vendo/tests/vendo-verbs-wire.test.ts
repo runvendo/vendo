@@ -47,8 +47,7 @@ async function tempStore(): Promise<VendoStore> {
   return store;
 }
 
-/** Two host components with distinguishable intents, so a search has something
- *  to rank rather than one entry to return. */
+/** Two host components, so the composed deployment has a catalog behind it. */
 const catalog: ComponentRegistry = {
   InvoiceTable: {
     component: null,
@@ -86,13 +85,12 @@ async function compose(): Promise<{ vendo: Vendo; store: VendoStore }> {
 }
 
 describe("the vendo verbs are on the one registry", () => {
-  it("enumerates validate, search_components and schedule as guarded descriptors", async () => {
+  it("enumerates validate and schedule as guarded descriptors", async () => {
     const { vendo } = await compose();
     const names = (await vendo.guardedTools.descriptors(ctx)).map((descriptor) => descriptor.name);
 
-    // The three verbs lane D shipped...
+    // The verbs lane D shipped...
     expect(names).toContain("validate");
-    expect(names).toContain("search_components");
     expect(names).toContain("schedule");
     // ...and the records family under the names the shipped app documents use.
     // Renaming them would invalidate live apps for cosmetics (contract §8).
@@ -107,33 +105,8 @@ describe("the vendo verbs are on the one registry", () => {
       .map((descriptor) => [descriptor.name, descriptor]));
 
     expect(byName.get("validate")?.risk).toBe("read");
-    expect(byName.get("search_components")?.risk).toBe("read");
     // Arming future unattended behaviour is a write, not a read.
     expect(byName.get("schedule")?.risk).toBe("write");
-  });
-});
-
-describe("search_components", () => {
-  it("ranks the host catalog by intent and returns the shipped vocabulary", async () => {
-    const { vendo } = await compose();
-    const outcome = await vendo.guardedTools.execute(
-      { id: "c1", tool: "search_components", args: { query: "spending chart" } },
-      ctx,
-    );
-    expect(outcome.status).toBe("ok");
-    const { components } = (outcome as { output: { components: Array<{ component: string }> } }).output;
-    expect(components[0]?.component).toBe("SpendChart");
-  });
-
-  it("refuses an empty query instead of dumping the catalog", async () => {
-    // A model that can dump the catalog stops searching and starts guessing from
-    // the top of the list.
-    const { vendo } = await compose();
-    const outcome = await vendo.guardedTools.execute(
-      { id: "c2", tool: "search_components", args: { query: "   " } },
-      ctx,
-    );
-    expect(outcome).toMatchObject({ status: "error", error: { code: "validation" } });
   });
 });
 

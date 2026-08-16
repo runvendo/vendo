@@ -59,7 +59,7 @@ export * from "./genui/screen.js";
 export * from "./genui/component/index.js";
 // kit — the component vocabulary
 export * from "./kit/index.js";
-// catalog + theme — one catalog shape, one summary
+// catalog + theme — one catalog shape, one theme line
 export * from "./catalog.js";
 // the briefing pack — one assembly, both rungs
 export * from "./briefing.js";

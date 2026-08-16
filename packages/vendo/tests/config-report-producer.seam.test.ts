@@ -75,13 +75,11 @@ const waitForReport = async (count = 1): Promise<void> => {
 //
 // The Agent tab's whole promise is "this page shows what your deployments are
 // actually running", so the report and the runtime cannot be allowed to
-// disagree about which surface won. Both go through `selectConfigSurface`,
-// which TRIMS the code value (config-surface.ts:59-60), so a present-but-blank
-// knob — `instructions: process.env.BRIEF ?? ""`, an ordinary way to write it —
-// falls through to the `.vendo/` file in the REPORT exactly as it does in
-// RESOLUTION (compose-prompt.ts:36, compose-surfaces.ts:55). A report built off
-// compose-adapters' `??` table instead would say "set in code" over an empty
-// well while the deployment ran the file.
+// disagree about which surface won. What a BLANK code value means is decided
+// PER SURFACE, in compose-adapters' `codeSurface` table, exactly as each block
+// decides it for itself: a blank `instructions` or `apps.designRules` falls
+// through to the `.vendo/` file, a defined `profile.brief` never does. Any
+// single global blank rule gets one of these two backwards.
 describe("the report has to name the surface the runtime actually resolved", () => {
   it("reports brief.md as the FILE when an empty `instructions` falls through to it", async () => {
     await project({ "brief.md": "Maple is a consumer bank.\n" });
@@ -96,7 +94,7 @@ describe("the report has to name the surface the runtime actually resolved", () 
 
   // The mirror image, and the reason the blank rule cannot live in the shared
   // `selectConfigSurface`: it is per SURFACE. A DEFINED `profile.brief` is
-  // authoritative even when blank — compose-prompt.ts:33-36 takes that branch
+  // authoritative even when blank — compose-prompt.ts:40-42 takes that branch
   // and never touches disk, so the deployment runs with NO brief. A report that
   // trimmed it to falsy would show the operator a file-backed brief this
   // deployment deliberately does not run.

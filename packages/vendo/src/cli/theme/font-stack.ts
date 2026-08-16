@@ -557,6 +557,25 @@ function splitStack(value: string): string[] {
   return entries.filter(Boolean);
 }
 
+/** Resolve one stack entry: a literal passes through, a `var()` resolves from
+ *  the gathered sheets, then the layout's next/font bindings, then its own
+ *  fallback. */
+function entryResolver(
+  bindings: FontBinding[],
+  resolveCssVar: (name: string) => string | null,
+): (entry: string) => string | null {
+  return (entry) => {
+    const varRef = entry.match(/^var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*))?\)$/);
+    if (varRef === null) return entry;
+    const fromCss = resolveCssVar(varRef[1]!);
+    if (fromCss !== null) return fromCss;
+    const binding = bindings.find((candidate) => candidate.variable === varRef[1]);
+    if (binding !== undefined) return binding.family;
+    const fallback = varRef[2]?.trim();
+    return fallback ? fallback : null;
+  };
+}
+
 export function deriveBodyFontStack(input: {
   layout: string | null;
   tailwindConfig: string | null;
@@ -570,16 +589,7 @@ export function deriveBodyFontStack(input: {
   cssFontSans?: string;
 }): DerivedFontStack | null {
   const bindings = input.layout === null ? [] : layoutFontBindings(input.layout);
-  const resolveEntry = (entry: string): string | null => {
-    const varRef = entry.match(/^var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*))?\)$/);
-    if (varRef === null) return entry;
-    const fromCss = input.resolveCssVar(varRef[1]!);
-    if (fromCss !== null) return fromCss;
-    const binding = bindings.find((candidate) => candidate.variable === varRef[1]);
-    if (binding !== undefined) return binding.family;
-    const fallback = varRef[2]?.trim();
-    return fallback ? fallback : null;
-  };
+  const resolveEntry = entryResolver(bindings, input.resolveCssVar);
 
   // A declared `--font-sans` is the MOST authoritative source — when the
   // exact CSS read failed only because its var() refs are next/font
@@ -613,4 +623,26 @@ export function deriveBodyFontStack(input: {
     };
   }
   return { value: family, provenance: `(next/font) ${family}` };
+}
+
+/** The mono family the body derivation deliberately filters OUT of its sans
+ *  candidates. It used to be found and dropped on the floor, so a host that
+ *  ships a real code font (geist's Geist Mono, `next/font`'s Geist_Mono) got
+ *  the generic system stack back. Same two rules as the body read: a declared
+ *  `--font-mono` wins, else the single applied mono binding. */
+export function deriveMonoFontStack(input: {
+  layout: string | null;
+  resolveCssVar: (name: string) => string | null;
+  /** Raw value of a CSS `--font-mono` declaration, when one is declared. */
+  cssFontMono?: string;
+}): DerivedFontStack | null {
+  const bindings = input.layout === null ? [] : layoutFontBindings(input.layout);
+  if (input.cssFontMono !== undefined) {
+    const resolved = splitStack(input.cssFontMono).map(entryResolver(bindings, input.resolveCssVar));
+    if (!resolved.every((entry): entry is string => entry !== null)) return null;
+    return { value: resolved.join(", "), provenance: "--font-mono (next/font vars)" };
+  }
+  const applied = bindings.filter((binding) => binding.applied && /\bmono\b/i.test(binding.family));
+  if (applied.length !== 1) return null;
+  return { value: applied[0]!.family, provenance: `(next/font) ${applied[0]!.family}` };
 }

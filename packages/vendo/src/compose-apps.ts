@@ -24,7 +24,6 @@ import {
 } from "@vendoai/core";
 import { appAccess } from "@vendoai/store";
 import { askUserRegistry } from "./ask-user.js";
-import { searchRuntimeCatalog } from "./catalog.js";
 import { cloudApps } from "./cloud-apps.js";
 import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
@@ -241,7 +240,7 @@ const appsHostSeams = (composition: VendoComposition): Partial<AppsConfig> => {
 /** THE SEAM (blueprint §1 point 2) — the screen agent in front of the
  *  conductor, joined here because composition is what holds every half. */
 const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsConfig["screen"] => {
-  const { inference, boundTools, briefing, catalog } = composition;
+  const { inference, boundTools, briefing } = composition;
   const { screenWorkspace } = seams;
   return screenAssembler({
       // The SAME seats every other thinker runs on.
@@ -249,9 +248,6 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
       // The SAME guard-bound registry. There is no second choke point.
       tools: boundTools,
       workspace: screenWorkspace,
-      // Composition is what holds the catalog, so it is what answers whether
-      // there is anything for `search_components` to find.
-      hasComponents: catalog.length > 0,
       // The SAME seam options the harness turns pass below — every one of them,
       // because a screen assembled here lands on the same store through the same
       // `commit()`. §3.2's source half and §7.1's floor — the gauntlet's own
@@ -351,7 +347,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
   "appTokens" | "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
-  const { store, ops, actions, catalog, capability } = composition;
+  const { store, ops, actions, capability } = composition;
   // execution-v2 Lane C — the per-app box bearer store (hash rows are the
   // authority) shared by the machine-env assembler below (mint at provision)
   // and the wire's /box verification. The hash rows are one of Vendo's own
@@ -433,8 +429,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
       input.appId === undefined ? {} : { appId: input.appId as AppId },
       ctx,
     ),
-    searchComponents: async (query, limit) =>
-      searchRuntimeCatalog(catalog, query, limit) as unknown as Json,
     schedule: async ({ appId, cron }, ctx) =>
       await apps.schedule(appId as AppId, cron, ctx) as unknown as Json,
   }));

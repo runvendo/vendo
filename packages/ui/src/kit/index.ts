@@ -75,6 +75,10 @@ export { EmptyState, type EmptyStateProps } from "./feedback/empty-state.js";
 export { Steps, type StepsProps, type StepItem } from "./feedback/steps.js";
 export { Menu, type MenuProps, type MenuItem } from "./feedback/menu.js";
 export { Tooltip, type TooltipProps } from "./feedback/tooltip.js";
+export { Modal, type ModalProps } from "./overlay/modal.js";
+export { Sheet, type SheetProps, type SheetSide } from "./overlay/sheet.js";
+export { Toast, type ToastProps } from "./overlay/toast.js";
+export { KIT_CSS, ensureKitStyles } from "./kit-css.js";
 
 // The theme the Kit's tokens read, and the embedded-surface runtime that applies
 // it — reachable from a generated app's box, where `@vendoai/ui`'s root barrel
