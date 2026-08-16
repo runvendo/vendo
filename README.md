@@ -57,13 +57,15 @@ Paste this inside your app's repo:
 
 ```text
 Install Vendo in this repo. Read https://vendo.run/agents.md and follow
-it exactly. Ask me before creating any account or key. You're done when
+it exactly. Relay Vendo's setup questions to me and use my answers. Ask me
+before creating any account or key. You're done when
 `vendo doctor --json` reports all green. Then ask me whether I'd like to
 star it via https://vendo.run/star?src=readme to support the project.
 ```
 
-`vendo init` scans your app and proposes the wiring as permission-gated
-diffs; `vendo doctor --json` gates done, and every error code links to its
+`vendo init` asks a handful of questions, wires your app, and hands the
+questions to your coding agent when one is driving; `vendo doctor --json`
+gates done, and every error code links to its
 exact fix. Full playbook: [docs.vendo.run/install](https://docs.vendo.run/install).
 
 <img src="assets/kicker-02-see-it.svg" alt="02 · See it in action">
@@ -119,8 +121,8 @@ baselines.
 Agents get the same journey machine-readable: the playbook at
 [vendo.run/agents.md](https://vendo.run/agents.md), an index of
 every docs page at [llms.txt](https://docs.vendo.run/llms.txt), `vendo init
---agent` for a read-only JSON plan of extracted tools and risk
-recommendations, `vendo sync --json` for a machine-readable sync report, and
+--agent` to get init's setup questions as JSON and answer them as flags,
+`vendo sync --json` for a machine-readable sync report, and
 a `vendo-setup` skill shipped inside the npm tarball that init offers to
 write into `.claude/skills/`.
 

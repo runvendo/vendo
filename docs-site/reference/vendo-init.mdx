@@ -1,7 +1,7 @@
 ---
 title: "vendo init: scan, scaffold, and wire your app"
 sidebarTitle: "vendo init"
-description: "How vendo init scans your app, scaffolds the two-file surface and the .vendo contract without an interview, every flag it accepts, and how --agent prints a read-only plan instead."
+description: "How vendo init scans your app, scaffolds the two-file surface and the .vendo contract without an interview, every flag it accepts, and how --agent hands its questions to a coding agent."
 ---
 
 Run init after installing the umbrella:
@@ -67,8 +67,8 @@ printed as an exact paste.
 - **No client file.** Init never writes one. Mounting the provider in your
   `app/layout.tsx` — one import line plus wrapping `{children}` in
   `<VendoProvider baseUrl="/api/vendo">` — is **your** paste: init prints it in
-  a framed "ONE STEP LEFT" block naming the file and the exact lines, carries
-  it in the `--agent` plan as `mount`, and `vendo doctor` fails with
+  a framed "ONE STEP LEFT" block naming the file and the exact lines, and
+  `vendo doctor` fails with
   [E-WIRE-004](/deploy/troubleshooting#E-WIRE-004) (printing the same paste) until it
   lands. Nothing is printed when you already mount a Vendo provider. A host
   with its own components writes one `"use client"` file holding the registry
@@ -170,16 +170,25 @@ provider key.
 npx vendo init --agent
 ```
 
-`--agent` is read-only: it prints a JSON plan and writes nothing. The plan
-carries the detected framework, `writes` (every file init would create),
-`codeChanges` (their diffs), `mount` (the layout paste as structured data —
-file, lines, and what skipping it costs), `edits` (pastes for files that
-already exist, such as a route missing its `serverActions` wiring),
-`manualSteps` (the same pastes as printable lines), the deterministically
-extracted tools with warnings, and per-tool `riskRecommendations`. It is a
-plan, not a scaffolding step: running `--agent` alone writes no `.vendo/`
-files, so `vendo doctor` will still report a missing install. Scaffold with
-`vendo init --yes` (below).
+`--agent` changes how init's questions travel, not what init asks. Called
+with no answers, init detects what it can and prints ONE JSON object holding
+the questions it still needs answered, each with its options and its flag. It
+writes nothing and exits 0. Your coding agent relays those questions to you in
+chat, then re-runs init with your answers as flags:
+
+```bash
+npx vendo init --agent --use-case embedded --auth clerk --byo
+```
+
+That run writes. Pass every answer on the first call and there is no ask pass
+at all: init writes in one go. The object's `status` field tells the two runs
+apart, so an agent never has to guess whether the repo was touched.
+
+The answer flags are the ones init already has: `--use-case`, `--auth`,
+`--cloud-key` or `--byo`, and on the MCP path `--posture` and `--service-key`.
+Nothing else is asked. `--base-url`, the `zod` bump, uncertain theme slots,
+and the closing live check never surface in agent mode; they take exactly the
+defaults `--yes` takes.
 
 ## Non-interactive setup
 
@@ -239,7 +248,7 @@ Both only apply with `--use-case mcp`. Passing either without it exits 1.
 | Flag | Effect |
 | --- | --- |
 | `--yes` | skip every prompt and take the detected defaults |
-| `--agent` | print the JSON plan and write nothing |
+| `--agent` | ask through a coding agent: print the questions as JSON, or write when the answers ride along |
 | `--force` | regenerate Vendo-owned files under `.vendo/`. Never replaces host source files |
 | `--check` / `--no-check` | run `vendo doctor` at the end, or skip it. Only offered when the run owes you no paste, since doctor grades that paste. Never changes init's exit code |
 

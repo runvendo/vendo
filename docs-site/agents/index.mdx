@@ -1,6 +1,6 @@
 ---
 title: "Agent install playbook"
-description: "The install playbook for coding agents: detect the stack, run vendo init with value flags, hand-wire the gaps the agent tail names, gate on the vendo doctor JSON output."
+description: "The install playbook for coding agents: detect the stack, relay init's setup questions to your human, wire the surface and the slots they choose, gate on the vendo doctor JSON output."
 ---
 
 Vendo puts an agent inside a company's product: customers build views, act
@@ -37,14 +37,16 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    add Vendo's tool pack. Never assume the full install in a repo that
    already has an agent.
 
-   **If they choose the tool pack, leave this page now.** Fetch exactly ONE
+   **If they choose the tool pack, take the walkthrough first.** Fetch exactly ONE
    framework walkthrough and follow it end to end — do not read both, and do
    not read the overview:
    - AI SDK loop → `https://docs.vendo.run/existing-agents/ai-sdk.md`
    - Mastra loop → `https://docs.vendo.run/existing-agents/mastra.md`
 
-   Everything below (steps 2–7) is the FULL-install path. Continue only if
-   your human chose Vendo's agent.
+   Then come back for steps 6 and 7. The walkthrough wires your human's chat.
+   It never asks where their users keep the screens they build, and that
+   question is here. Steps 2 to 10 in order are the FULL-install path, for the
+   human who chose Vendo's agent.
 
 2. **Detect the stack.** Read `package.json`. A `next` dependency means
    Next.js; an `express` dependency means Express. Anything else — Cloudflare
@@ -113,38 +115,49 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    alone half-upgrades: new CLI, old runtime. `vendo doctor` (0.4.3+) flags
    the mismatch.
 
-4. **Run init with value flags.** Every wizard question has a flag, so a
-   non-interactive run never hangs on a prompt. Both commands below run from
+4. **Run init in agent mode and relay its questions.** Init asks; you carry
+   the questions to your human and their answers back. Both commands below run from
    the app package directory (step 2's pick). `vendo init` can also be
    pointed at it from the root (`npx vendo init apps/web`), but `vendo login`
    writes the minted key to `.env.local` **in the directory it runs from** —
    a login at a workspace root lands the key where the framework never loads
-   it, and everything afterward silently behaves keyless. Answer auth
-   ([which preset?](/deploy/auth)) and the model-key question explicitly:
+   it, and everything afterward silently behaves keyless.
 
    ```bash
-   # Recommended — Vendo Cloud: run the `vendo login` loop below first
-   # (the key lands in .env.local), then:
-   npx vendo init --yes --auth authJs
-
-   # Bring-your-own model key instead (declines the Cloud offer):
-   npx vendo init --yes --auth none --byo
+   npx vendo init --agent
    ```
 
+   That run writes nothing and exits 0. It prints ONE JSON object holding the
+   questions init still needs answered, each with its options, its recommended
+   pick, and the flag that answers it. Put all of them to your human in your
+   very next message, in your own words, in one turn. Keep init's order and
+   keep its recommendation first: "recommended" in the label is not enough if
+   the cursor lands on the other choice. Usually there are three. How will
+   people use your agent: embedded in their app (most apps, and the
+   recommended pick), through their own agent loop, or from outside AI apps
+   over MCP. Should the assistant act as their signed-in user, on the provider
+   init detected ([which preset?](/deploy/auth)). And where the model comes
+   from: a free Vendo Cloud key is one browser click and needs no provider
+   account, or they bring their own Anthropic or OpenAI key. Say what each
+   option gets their users, not what it configures.
+
+   Re-run init with their answers as flags. That run writes:
+
+   ```bash
+   npx vendo init --agent --use-case embedded --auth clerk --byo
+   ```
+
+   `status` tells you which run you got: the questions, or the write. Every
+   answer on the first call skips the ask pass and writes in one go, which is
+   right only when your human has already told you everything.
+
    `--auth` takes `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, or `none`.
-   `--byo` declines the Vendo Cloud offer; `--cloud-key <key>` answers it with
-   an existing key instead. A `VENDO_API_KEY` already sitting in `.env.local`
-   needs neither flag — init merges it into the run's env and uses it as it is,
-   with no login and no key minted. A non-interactive run skips init's AI
-   judgment pass — the one that writes task-oriented tool descriptions, grades
-   risk, and drafts `.vendo/brief.md` — because consent cannot be assumed. Ask your
-   human whether to grant it (their source is read by a model provider under
-   their own account), and pass `--ai` if they say yes. Cloud vs bring-your-own is your human's call:
-   ask first, presenting Vendo Cloud as the recommended default (a free
-   metered API key, one browser approval, no provider account needed). When
-   your question UI orders options, put Vendo Cloud FIRST — the preselected
-   slot — and bring-your-own second; "recommended" in the label text is not
-   enough if the cursor lands on the other choice.
+   `--byo` means your human brings their own model key; `--cloud-key <key>`
+   answers with an existing Vendo Cloud key. A `VENDO_API_KEY` already sitting
+   in `.env.local` needs neither: init merges it into the run's env, uses it as
+   it is, and never asks. If they bring their own key, tell them to put it in
+   `.env.local` as `ANTHROPIC_API_KEY=...` or `OPENAI_API_KEY=...` and to tell
+   you when it is there. It never passes through your chat.
    If they choose Vendo Cloud, drive the login as a bounded loop —
    never a single blocking call:
 
@@ -179,19 +192,22 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    [CLI reference](/reference/cli#vendo-init-dir) for every other flag and
    [vendo init](/reference/vendo-init) for exactly what it writes.
 
-5. **Hand-wire the gaps the agent tail names.** A non-interactive init ends
+5. **Hand-wire the gaps the agent tail names.** The write run ends
    with an `Agent tail:` block listing the exact files this run left for you;
    typically: wrap the root layout (or client entry) in the printed
-   `<VendoProvider>` lines, mount a visible surface, pass real host
-   components to the provider ([tools and catalog](/customize/host-components)),
-   replace the `.vendo/brief.md` placeholder, and add the auth line if none
-   was wired ([host auth](/deploy/auth)). Follow the tail, not memory;
-   it is derived from what init actually wrote in this repo.
+   `<VendoProvider>` lines, pass real host components to the provider
+   ([tools and catalog](/customize/host-components)), and add the auth line if
+   none was wired ([host auth](/deploy/auth)). Follow the tail, not memory;
+   it is derived from what init actually wrote in this repo. Apply those edits
+   and report them in one line, not a list of diffs.
 
-   The surface matters: `VendoProvider` is provider-only and renders NOTHING
-   by itself. Doctor gates on both halves — E-WIRE-004 until a layout mounts
-   `<VendoProvider>`, E-WIRE-006 until something visible renders inside it.
-   Mount the overlay yourself:
+6. **Offer the overlay, then mount it.** `VendoProvider` is provider-only and
+   renders NOTHING by itself. Doctor gates on both halves: E-WIRE-004 until a
+   layout mounts `<VendoProvider>`, E-WIRE-006 until something visible renders
+   inside it. The overlay is that visible half, and it is a question first.
+   Say what it is in their product's terms: a floating assistant button on
+   every page, where their users ask for things like "show me my top customers
+   as a chart" and get a working screen built right there. Ask, then mount:
 
    ```tsx
    import { VendoOverlay } from "@vendoai/vendo/react";
@@ -199,10 +215,57 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    <VendoOverlay />
    ```
 
-   Confirm a visible surface exists before you call the install done —
-   doctor green alone does not prove your human can see anything.
+   On the own-loop path there is no overlay to place. Your human keeps their
+   chat, their loop, and their model; wire that chat to render Vendo's guarded
+   tool cards and generated screens inline, and say so plainly. On the MCP path
+   the outside AI app is the surface. Either way, confirm something visible
+   exists before you call the install done: doctor green alone does not prove
+   your human can see anything.
 
-6. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
+7. **Offer slots, and explain what a slot is.** A slot is a spot on one of
+   your human's own pages where a user can keep a screen they built: a chart
+   pinned to their dashboard, still there tomorrow. Without one, everything a
+   user builds lives in that user's own list of views. Say that much, then
+   give three ways out: name a place, let you read the app and bring back
+   options, or skip. Say that skipping is fine. If they want options, come back
+   with two or three real pages and a reason each ("the dashboard, since your
+   data tables live there"), and let them take one, several, or none.
+
+   A slot is markup, so wiring one is your paste:
+
+   ```tsx
+   import { VendoSlot } from "@vendoai/ui/chrome";
+
+   <VendoSlot id="home-hero" label="Dashboard hero">
+     <YourOriginalCard />
+   </VendoSlot>
+   ```
+
+   Add `@vendoai/ui` as a direct dependency. Always give a `label`: it is what
+   a person picking a destination reads and what an assistant matches a request
+   against, so write it as meaning, not as an id. A slot with children renders
+   them untouched while it is empty; a slot with none shows users an invitation
+   with prompt chips instead, which is the hint that this space builds itself.
+   Filled, it holds one view per person. On the own-loop path pass `onAuthor`
+   so pressing an empty slot opens your human's own chat rather than Vendo's
+   palette. See
+   [where the screen lands](/capabilities/generated-ui#where-the-screen-lands).
+
+8. **Do the judgment init leaves you.** Init writes the deterministic
+   contract. The parts that need reading the code are yours, and doctor does
+   not grade them, so nothing but you will catch a miss. Four things:
+
+   - **Tool descriptions.** Write each extracted tool as the task a user would
+     ask for, not the endpoint it calls.
+   - **Risk grades.** Anything destructive or irreversible gets `confirmEach`
+     in `.vendo/overrides.json`, the file that means "a human decided this"
+     and that sync never clobbers.
+   - **The product brief.** Replace the `.vendo/brief.md` placeholder with
+     what this product does and for whom, read out of the code.
+   - **Theme slots.** Fill anything `.vendo/theme.json` left unresolved from
+     the app's own styles.
+
+9. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
    never starts it for you), then loop:
 
    ```bash
@@ -212,13 +275,13 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    Every failing or warning check carries an `error_code` and a `fix_ref` URL
    into the [verify page](/deploy/troubleshooting). Fix, re-run, repeat until exit 0.
 
-7. **Show it running.** Doctor green is the gate, but your human should SEE
-   the install, not take your word for it. Leave the dev server running,
-   hand them the exact URL, and give them one concrete first ask to type
-   into the product's chat surface — e.g. "ask it to build a small dashboard
-   from your data; a guarded write will render an approve/deny card inline."
-   Name which of their agent's surfaces now renders Vendo output (the chat
-   page, the overlay, an embed) so they know where to look.
+10. **Show it running.** Doctor green is the gate, but your human should SEE
+    the install, not take your word for it. Leave the dev server running,
+    hand them the exact URL, and give them one concrete first ask to type
+    into the product's chat surface — e.g. "ask it to build a small dashboard
+    from your data; a guarded write will render an approve/deny card inline."
+    Name which of their agent's surfaces now renders Vendo output (the chat
+    page, the overlay, an embed) so they know where to look.
 
 ## MCP door
 
@@ -231,15 +294,21 @@ MCP**) and init writes 1 and 2 below for you — the composition with
 route:
 
 ```bash
-npx vendo init --yes --use-case mcp --auth authJs --base-url https://app.example.com
+npx vendo init --agent --use-case mcp --auth authJs --base-url https://app.example.com
 ```
 
 That path needs Next.js and one of the four zero-arg presets,
 `--auth authJs|clerk|supabase|auth0`. On anything else — Express, `--auth none`,
 or `--auth jwt` (init prints the recipe instead: it cannot guess your signing
 secret) — it prints why and writes nothing MCP, and 1 and 2 are yours to wire.
-`--posture broker` and `--service-key` answer the two extra questions the MCP
-path asks; 3 is always yours.
+Once the use case is `mcp`, two more questions come back on that run for you to
+relay. Who runs the OAuth plumbing: Vendo can host it at a stable
+`yourcompany.mcp.vendo.run` so none of it sits on your human's domain
+(`--posture broker`, and it uses their Vendo Cloud account), or their app can
+serve it itself with zero config (`--posture local`). And whether their own
+backend will call these tools machine to machine, like a nightly job, which
+sets up a service key (`--service-key`). Answer both as flags on the next run;
+3 is always yours.
 
 1. **`mcp: true` plus the OAuth adapter.** Written by `--use-case mcp`; add it
    to the `createVendo({...})` init wrote otherwise. The door mints its own
@@ -281,7 +350,7 @@ path asks; 3 is always yours.
    seam: doctor then runs its live mint-and-verify round-trip and FAILS
    [`E-AUTH-004`](/deploy/troubleshooting#E-AUTH-004), because a fixed demo principal can
    never echo the probe's own subject. Absent, doctor warns
-   [`E-AUTH-007`](/deploy/troubleshooting#E-AUTH-007) and step 6's gate still passes — the
+   [`E-AUTH-007`](/deploy/troubleshooting#E-AUTH-007) and step 9's gate still passes — the
    price is that your own route-bound tools answer `not-implemented` over the
    door, while `vendo_make` and the apps tools work. Every client acts as that
    one person: a demo or an internal tool, not a multi-user product.
@@ -333,7 +402,7 @@ path asks; 3 is always yours.
    the per-user OAuth the door already serves. Recipe:
    [MCP door](/reference/mcp-door).
 
-5. **Verify — step 6's gate, nothing new.** Doctor reads the door's posture off
+5. **Verify — step 9's gate, nothing new.** Doctor reads the door's posture off
    the running composition, so the dev server must be up for the MCP checks to
    run at all. The registry checks grade `server.json` and the challenge only
    when those files already exist — publishing to the MCP registry is a separate
@@ -384,7 +453,7 @@ path asks; 3 is always yours.
 | `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
-| `npx vendo init --agent` | Read-only JSON plan: framework, files init would write, code diffs, the `mount` and `edits` pastes, extracted tools, risk recommendations (writes nothing) |
+| `npx vendo init --agent` | Init's setup questions as one JSON object, answered back as flags on a re-run |
 | `npx vendo sync --json` | One machine-readable sync report object on stdout |
 | `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init writes it when `.claude/` exists and it is missing, and never overwrites an edited copy |
 
