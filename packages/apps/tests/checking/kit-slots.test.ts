@@ -46,13 +46,14 @@ describe("the Kit's slots", () => {
   });
 
   it("refuses an element where no slot was declared, naming the component and the key", () => {
-    // Surface takes a header; a DataTable does not, and an element written
-    // there reaches nothing at all.
+    // A DataTable column takes a cell; the table itself takes no `header`, and
+    // an element written there reaches nothing at all.
     const [message] = issuesFor("DataTable", { header: element("Text") });
 
     expect(message).toContain('node "n1" prop "header" holds <Text>, but "header" is not a slot');
-    expect(message).toContain("the slots on <DataTable> are: cell, rowActions, toolbar, empty");
-    expect(issuesFor("Surface", { header: element("Text") })).toEqual([]);
+    expect(message).toContain("the slots on <DataTable> are: cell");
+    // …while a slot the Kit really renders admits its own vocabulary.
+    expect(issuesFor("Timeline", { marker: element("Icon") })).toEqual([]);
   });
 
   it("says so when the component takes no element at all", () => {
@@ -68,10 +69,12 @@ describe("the Kit's slots", () => {
     expect(cell).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
     expect(cell).toContain("a cell is read, never operated");
     expect(cell).toContain(`A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")}`);
-    expect(issuesFor("DataTable", { rowActions: element("Button") })).toEqual([]);
-    // …and the tooltip a chart paints per point takes the same read-only tier.
-    expect(issuesFor("LineChart", { tooltip: element("Button") })[0])
+    // …the entry body a Timeline paints per entry takes that same tier…
+    expect(issuesFor("Timeline", { cell: element("Button") })[0])
       .toContain("a cell is read, never operated");
+    // …and the marker beside it takes the narrower one it declares.
+    expect(issuesFor("Timeline", { marker: element("Button") })[0])
+      .toContain("this slot may hold: Icon, Avatar, Badge, EnumBadge, Text");
   });
 
   it("lets an Accordion section hold a whole screen, and refuses a name the Kit has not got", () => {

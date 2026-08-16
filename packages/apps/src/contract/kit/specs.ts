@@ -709,7 +709,16 @@ const BASE_SPECS: KitComponentSpec[] = [
  * it: an element under a key that is NOT declared here is refused rather than
  * dropped at render, which is the silent-breakage class this floor exists for.
  * A slot's key is the last segment of where the element sits, so `columns[].cell`
- * and `header` are the slots `cell` and `header`.
+ * and `marker` are the slots `cell` and `marker`.
+ *
+ * THE LAW: a slot is declared here only when the React component RENDERS it —
+ * a `ReactNode` prop it actually paints (`@vendoai/ui`). Teaching a slot the Kit
+ * does not implement is worse than teaching none: the prompt tells the model to
+ * write it, every check passes it, and the renderer drops it in silence. That is
+ * the same silent-breakage this table exists to refuse, arriving through the
+ * table itself. `@vendoai/ui`'s `test/kit/slot-drift.test.tsx` puts a probe in
+ * every slot declared here and fails unless it finds it in the DOM, so the two
+ * move together at every merge.
  *
  * Vocabulary: no `content` means the read-only value tier
  * (`KIT_SLOT_CONTENT_NAMES`) — right for a slot painted per row, which is
@@ -720,68 +729,20 @@ const BASE_SPECS: KitComponentSpec[] = [
 const region: readonly string[] = BASE_SPECS.map((spec) => spec.name);
 const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"];
 
-/** The three charts draw the same furniture, so they take the same three. */
-const CHART_SLOTS: Record<string, KitSlotSpec> = {
-  empty: { doc: "what the chart shows when there is nothing to plot", content: region },
-  tooltip: { doc: "the hover card for ONE point", perRow: true },
-  legend: { doc: "the series key, in place of the drawn one", content: region },
-};
-
 const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
-  Surface: {
-    header: { doc: "elements along the top edge, beside the title", content: region },
-    footer: { doc: "elements under the content", content: region },
-  },
-  Card: {
-    header: { doc: "elements along the top edge, beside the title", content: region },
-    footer: { doc: "elements under the content", content: region },
-  },
-  Divider: { label: { doc: "a word or pill sitting in the rule" } },
   DataTable: {
     cell: { doc: "Kit value components composed for ONE row, in place of the column's plain text", perRow: true },
-    rowActions: { doc: "the controls for ONE row, at the end of it", content: ["Button", "Icon", "Row"], perRow: true },
-    toolbar: { doc: "controls above the table, beside its search and filters", content: region },
-    empty: { doc: "what the table shows in place of rows when the query returns none", content: region },
   },
   CardList: {
     cell: { doc: "Kit value components composed for ONE item, in place of the field's plain text", perRow: true },
-    actions: { doc: "controls above the list", content: region },
-    empty: { doc: "what the list shows when there are no items", content: region },
   },
-  Stat: { icon: { doc: "a glyph beside the metric's label", content: mark } },
   KeyValue: { cell: { doc: "Kit value components composed for the record, in place of the field's plain text", perRow: true } },
   Timeline: {
     cell: { doc: "Kit components rendered as ONE entry's body", perRow: true },
     marker: { doc: "a glyph drawn in place of the entry's dot", content: mark },
-    empty: { doc: "what the timeline shows when there are no entries", content: region },
   },
-  LineChart: CHART_SLOTS,
-  BarChart: CHART_SLOTS,
-  DonutChart: CHART_SLOTS,
-  Progress: { label: { doc: "a caption written as elements instead of a string" } },
-  Input: {
-    hint: { doc: "the help or error line under the field" },
-    prefix: { doc: "a glyph or unit inside the field's leading edge", content: mark },
-    suffix: { doc: "a glyph or unit inside the field's trailing edge", content: mark },
-  },
-  Select: { hint: { doc: "the help or error line under the field" } },
-  DatePicker: { hint: { doc: "the help or error line under the field" } },
-  Textarea: {
-    hint: { doc: "the help or error line under the field" },
-    footer: { doc: "a counter or controls under the field", content: region },
-  },
-  Form: {
-    header: { doc: "elements above the fields", content: region },
-    footer: { doc: "elements under the fields", content: region },
-    actions: { doc: "the buttons beside submit", content: region },
-  },
-  Tabs: {
-    actions: { doc: "controls on the tab bar's trailing edge", content: region },
-    content: { doc: "ONE tab's panel, written inline instead of as a child", content: region },
-  },
+  Tabs: { content: { doc: "ONE tab's panel, written inline instead of as a child", content: region } },
   Accordion: { content: { doc: "ONE section's body", content: region } },
-  EmptyState: { icon: { doc: "a glyph above the headline, in place of the icon name", content: mark } },
-  Steps: { marker: { doc: "a glyph drawn in place of a step's dot", content: mark } },
 };
 
 /** Every spec, with each shared adjective folded into the components that read
