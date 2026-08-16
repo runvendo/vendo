@@ -9,34 +9,53 @@ import { describe, expect, it } from "vitest";
  *
  * What it holds:
  *  1. the setup page exists, is in the nav, and every nav entry still resolves;
- *  2. the setup page opens the door, the playbook teaches the make-and-place
- *     contract, and both pages' links resolve;
- *  3. reference/mcp-door.mdx no longer claims the door cannot create;
+ *  2. the setup page opens the door, and both pages' links resolve;
+ *  3. the door page no longer claims the door cannot create;
  *  4. the HTTP reference carries the three placement routes;
  *  5. the plugin skill teaches slot targeting and pin etiquette;
- *  6. the plugin's own surfaces point at the new page.
+ *  6. the plugin's own surfaces point at the walkthrough.
  */
 
 const REPO_ROOT = new URL("../../../", import.meta.url);
 const read = (path: string): Promise<string> => readFile(new URL(path, REPO_ROOT), "utf8");
 const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(path)) as T;
 
-/** Opening the door and connecting a client. */
-const SETUP_PAGE = "docs-site/mcp/quickstart.mdx";
-const NAV_ENTRY = "mcp/quickstart";
-/** #1139 split the story in two, and this gate follows the split rather than
-    holding the docs to a shape they deliberately left: the setup page opens the
-    door, and the make-and-place CONTRACT — what `vendo_make` answers with, where
-    the screen lands, how a pin replaces what held a slot — is taught on the
-    generated-UI capability page. Every fact below is still pinned; each is
-    pinned in the page whose job it is. Move a fact between the pages and move
-    it here. */
-const CONTRACT_PAGE = "docs-site/capabilities/generated-ui.mdx";
+/** Opening the door, minting a user-bound token, wiring a client. */
+const SETUP_PAGE = "docs-site/outside-agents/quickstart.mdx";
+const NAV_ENTRY = "outside-agents/quickstart";
+/** The Cloud restructure split the door story in three, and this gate follows
+    the split rather than holding the docs to a shape they deliberately left:
+    the setup page opens the door, `how-the-door-works` is what a call does once
+    it is through, and the envelope a tool answers with is taught beside the
+    embeds that render it. Every fact below is pinned in the page whose job it
+    is. Move a fact between the pages and move it here. */
+const DOOR_PAGE = "docs-site/outside-agents/how-the-door-works.mdx";
 
+interface NavGroup {
+  group: string;
+  pages: (string | NavGroup)[];
+}
 interface DocsJson {
-  navigation: { groups: { group: string; pages: string[] }[] };
+  navigation: { tabs: { tab: string; groups: NavGroup[] }[] };
   redirects?: { source: string }[];
 }
+
+/** Every group in the nav, tabs and nested groups flattened. */
+const navGroups = (docs: DocsJson): NavGroup[] => {
+  const groups: NavGroup[] = [];
+  const walk = (group: NavGroup): void => {
+    groups.push(group);
+    for (const page of group.pages) if (typeof page !== "string") walk(page);
+  };
+  for (const tab of docs.navigation.tabs) for (const group of tab.groups) walk(group);
+  return groups;
+};
+
+/** Every page id the nav lists. */
+const navPages = (docs: DocsJson): string[] =>
+  navGroups(docs).flatMap((group) =>
+    group.pages.filter((page): page is string => typeof page === "string"),
+  );
 
 /** A docs.json page id resolves as `<id>.mdx` or `<id>/index.mdx`. */
 const pageExists = (id: string): boolean =>
@@ -44,7 +63,7 @@ const pageExists = (id: string): boolean =>
   existsSync(new URL(`docs-site/${id}/index.mdx`, REPO_ROOT));
 
 describe("the BYO-over-MCP pages are published", () => {
-  it.each([SETUP_PAGE, CONTRACT_PAGE])("%s exists with Mintlify frontmatter", async (page) => {
+  it.each([SETUP_PAGE, DOOR_PAGE])("%s exists with Mintlify frontmatter", async (page) => {
     expect(existsSync(new URL(page, REPO_ROOT)), `${page} must exist`).toBe(true);
     const text = await read(page);
     expect(text.startsWith("---\n")).toBe(true);
@@ -52,29 +71,27 @@ describe("the BYO-over-MCP pages are published", () => {
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("sits in the MCP nav group", async () => {
+  it("sits in the outside-agents nav group", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "Outside agents over MCP");
-    expect(group, "the 'Outside agents over MCP' group must exist").toBeDefined();
+    const group = navGroups(docs).find((entry) => entry.group === "From outside agents");
+    expect(group, "the 'From outside agents' group must exist").toBeDefined();
     expect(group?.pages).toContain(NAV_ENTRY);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const missing = docs.navigation.groups
-      .flatMap((group) => group.pages)
-      .filter((id) => !pageExists(id));
-    expect(missing).toEqual([]);
+    expect(navPages(docs).filter((id) => !pageExists(id))).toEqual([]);
   });
 });
 
 describe("the setup page opens the door", () => {
   const mustMention: [label: string, needle: string | RegExp][] = [
     ["the door URL to paste", "/api/vendo/mcp"],
-    ["the marketplace install", "/plugin marketplace add runvendo/vendo"],
-    ["the plugin install", "/plugin install vendo@vendo"],
-    ["the plugin's env var", "VENDO_MCP_URL"],
-    ["the door internals link", "/reference/mcp-door"],
+    ["the createVendo key that opens it", "mcp: true"],
+    ["the origin every discovery document derives from", "VENDO_BASE_URL"],
+    ["the broker the door trusts", "VENDO_MCP_BROKER_URL"],
+    ["the token exchange the backend runs", "urn:ietf:params:oauth:grant-type:token-exchange"],
+    ["the door internals link", "/outside-agents/how-the-door-works"],
   ];
 
   it.each(mustMention)("names %s", async (_label, needle) => {
@@ -82,28 +99,8 @@ describe("the setup page opens the door", () => {
   });
 });
 
-describe("the playbook teaches the door's make-and-place contract", () => {
-  const mustMention: [label: string, needle: string | RegExp][] = [
-    ["the make tool", "vendo_make"],
-    ["the slot argument, by name and by example", /"slot": "home-hero"/],
-    ["the pin tool", "vendo_apps_pin"],
-    ["the unpin tool", "vendo_apps_unpin"],
-    ["the receipt's say field", /`say`/],
-    ["the building status", /"building"/],
-    ["the host-side slot component", "VendoSlot"],
-    // The asymmetry this used to pin as "VendoToolResult, the in-process embed
-    // it is not". Same danger, stated the way the page now states it: an agent
-    // on the in-process path calling a pin tool it was never handed.
-    ["the pin tools' absence on the in-process path", /carries no `vendo_apps_\*` tool/],
-  ];
-
-  it.each(mustMention)("names %s", async (_label, needle) => {
-    expect(await read(CONTRACT_PAGE)).toMatch(needle);
-  });
-});
-
 describe("both pages link only to pages that exist", () => {
-  it.each([SETUP_PAGE, CONTRACT_PAGE])("%s", async (page) => {
+  it.each([SETUP_PAGE, DOOR_PAGE])("%s", async (page) => {
     const text = await read(page);
     const targets = [...text.matchAll(/\]\((\/[^)\s#]*)(#[^)\s]*)?\)/g)].map((match) => match[1]!);
     const broken = [...new Set(targets)].filter((target) => !pageExists(target.replace(/^\//, "")));
@@ -111,23 +108,21 @@ describe("both pages link only to pages that exist", () => {
   });
 });
 
-describe("reference/mcp-door.mdx tells the truth about creation at the door", () => {
-  const DOOR_PAGE = "docs-site/reference/mcp-door.mdx";
-
+describe("the door page tells the truth about creation at the door", () => {
   it("no longer calls the door a viewer and runner that cannot create", async () => {
     const text = await read(DOOR_PAGE);
     expect(text).not.toMatch(/viewer and runner/i);
     expect(text).not.toMatch(/creation and editing stay in-product/i);
   });
 
-  it("names vendo_make in the saved-apps section and points at the walkthrough", async () => {
+  it("names vendo_make in the tool listing section and says what it answers with", async () => {
     const text = await read(DOOR_PAGE);
-    const start = text.indexOf("## Saved apps ride along");
-    expect(start, "the saved-apps section must still exist").toBeGreaterThan(-1);
+    const start = text.indexOf("## What the agent sees");
+    expect(start, "the tool-listing section must still exist").toBeGreaterThan(-1);
     const section = text.slice(start, text.indexOf("\n## ", start + 1));
     expect(section).toContain("vendo_make");
-    expect(section).toContain("vendo_apps_pin");
-    expect(section).toContain("/mcp/quickstart");
+    expect(section).toContain("saved-apps");
+    expect(text).toMatch(/`vendo_make` answers with an id, a title, a status/);
   });
 });
 
@@ -178,6 +173,9 @@ describe("the plugin skill teaches slot targeting and pin etiquette", () => {
 });
 
 describe("the plugin's own surfaces point at the walkthrough", () => {
+  // Published to the marketplace and to installed plugins, so it is an OUTSIDE
+  // link: the restructure keeps it alive through docs.json's permanent redirect
+  // rather than by rewriting shipped manifests.
   const DOCS_URL = "https://docs.vendo.run/existing-agents/mcp";
 
   it("the README covers placement and links the page", async () => {
@@ -192,6 +190,16 @@ describe("the plugin's own surfaces point at the walkthrough", () => {
     );
     expect(manifest.homepage).toBe(DOCS_URL);
     expect(manifest.description).toMatch(/screen/i);
+  });
+
+  it("the slug that URL rides on still redirects to a real page", async () => {
+    const docs = await readJson<DocsJson>("docs-site/docs.json");
+    const slug = new URL(DOCS_URL).pathname;
+    const redirect = (docs.redirects ?? []).find((entry) => entry.source === slug) as
+      | { source: string; destination: string }
+      | undefined;
+    expect(redirect, `docs.json must keep a redirect for ${slug}`).toBeDefined();
+    expect(pageExists(redirect!.destination.replace(/^\//, ""))).toBe(true);
   });
 
   it("the marketplace entry says where the screen can land", async () => {
