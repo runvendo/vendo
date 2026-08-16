@@ -1,0 +1,177 @@
+---
+title: "How the panel works"
+description: "One question in the panel, end to end: your route, your identity, your API, and the screen that streams back."
+sidebarTitle: "How it works"
+---
+
+The panel is the only Vendo code in your browser. Every turn goes to a route
+inside your own app and streams back to that panel.
+
+<svg viewBox="0 0 704 208" width="100%" role="img" aria-labelledby="vendo-path-title">
+  <title id="vendo-path-title">A question travels from the panel to your route, through the turn and the guard, to your API, and streams back to the panel.</title>
+  <defs>
+    <marker id="vendo-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+    </marker>
+    <marker id="vendo-flow-brand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6c3bff" />
+    </marker>
+  </defs>
+
+  <rect x="364" y="8" width="160" height="44" rx="10" fill="none" stroke="#6c3bff" strokeOpacity="0.55" strokeDasharray="4 4" />
+  <text x="444" y="27" textAnchor="middle" fontSize="12" fontWeight="600" fill="#6c3bff">Vendo Cloud</text>
+  <text x="444" y="42" textAnchor="middle" fontSize="10" fill="#6c3bff" fillOpacity="0.8">model · sandbox · store</text>
+  <path d="M 444 52 L 444 80" stroke="#6c3bff" strokeOpacity="0.55" strokeWidth="1.5" strokeDasharray="4 4" fill="none" markerEnd="url(#vendo-flow-brand)" />
+
+  <rect x="16" y="84" width="112" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
+  <text x="72" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">Panel</text>
+  <text x="72" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">your page</text>
+
+  <rect x="184" y="84" width="124" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
+  <text x="246" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">Your route</text>
+  <text x="246" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">/api/vendo</text>
+
+  <rect x="364" y="84" width="160" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
+  <text x="444" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">The turn</text>
+  <text x="444" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">harness, then guard</text>
+
+  <rect x="580" y="84" width="112" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
+  <text x="636" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">Your API</text>
+  <text x="636" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">as this user</text>
+
+  <path d="M 132 110 L 180 110" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow)" />
+  <path d="M 312 110 L 360 110" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow)" />
+  <path d="M 528 110 L 576 110" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow)" />
+  <text x="156" y="100" textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.55">asks</text>
+  <text x="336" y="100" textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.55">runs</text>
+  <text x="552" y="100" textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.55">calls</text>
+
+  <path d="M 444 136 L 444 172 L 72 172 L 72 140" stroke="#6c3bff" strokeOpacity="0.7" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow-brand)" />
+  <text x="258" y="190" textAnchor="middle" fontSize="10.5" fill="#6c3bff">text, tool beats, and a live screen, streamed back through your route</text>
+</svg>
+
+## The path of one question
+
+<Steps>
+
+<Step title="The panel posts the question">
+
+The panel sends `POST /api/vendo/threads` and reads the reply as a stream.
+`baseUrl` on the provider is what decides that path.
+
+The body carries the question and a snapshot of what the user is looking at.
+Nothing else leaves the browser.
+
+</Step>
+
+<Step title="Your route answers who is asking">
+
+`vendo init` wrote one file, and it is ordinary source you can read and change.
+
+```ts app/api/vendo/[...vendo]/route.ts focus={5}
+import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
+import { clerk } from "@vendoai/vendo/auth/clerk";
+
+const vendo = createVendo({
+  auth: clerk(),
+  guard: guard({ policy: {} }),
+});
+
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
+```
+
+Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the matching
+preset. With no library found it writes a `principal` function for you to fill
+in instead.
+
+Vendo mints no identity of its own. Without one of the two, `createVendo`
+throws, and a visitor your resolver cannot place is refused the turn.
+
+</Step>
+
+<Step title="The turn runs on your server">
+
+The harness runs the loop in your own process. The model answers over the
+Vendo Cloud gateway, on the `VENDO_API_KEY` in your environment.
+
+Its tools are your API, extracted into `.vendo/tools.json` by `vendo init` and
+refreshed by `vendo sync`, plus Vendo's own tools for building screens.
+
+</Step>
+
+<Step title="The guard grades every call">
+
+Every tool call passes the guard before it runs. Reads run; anything
+destructive, and anything extraction could not grade, stops and asks.
+
+An ask parks the turn on an approval card in the thread, showing the exact
+request. Approve it and the same turn resumes and the tool runs.
+
+</Step>
+
+<Step title="Your API runs the call">
+
+The call reaches your own endpoint as the person who is signed in. The agent
+can do what that person could already do by clicking, and nothing more.
+
+</Step>
+
+<Step title="A screen comes back instead of a paragraph">
+
+When the answer is one to look at, the agent calls `vendo_make` with the
+request in plain language. Vendo assembles a screen, or builds a small app
+whose server code runs on a Cloud sandbox.
+
+The view streams into the transcript as it forms and lands interactive, bound
+to live data from your own tools. From there it can be pinned into a
+[`VendoSlot`](/product/mount-the-surface#slots) on your page.
+
+</Step>
+
+</Steps>
+
+## What runs where
+
+| Piece | Where it runs |
+| --- | --- |
+| Panel, palette, slots | Your browser, out of your own bundle |
+| The route and the composition | Your server, in your process |
+| Your API and your database | Yours, untouched |
+| The model | The Vendo Cloud gateway, keyed by `VENDO_API_KEY` |
+| Threads, apps, grants, audit | Hosted Postgres behind the same key |
+| Server code inside a generated app | A Cloud sandbox behind the same key |
+
+One key fills the model, store, and sandbox slots your composition left unset.
+Nothing to provision, and nothing to run.
+
+## What the agent can see
+
+Each send carries a small `[Situation]` bundle for that turn only. It rides the
+request and never enters the transcript.
+
+- The accessibility tree of the visible page, with the URL and title on top,
+  capped at 8 KB.
+- Anything you publish yourself with
+  [`useVendoContext`](/customize/context).
+
+Elements marked `data-vendo-ignore` are left out of the snapshot, and the
+panel excludes its own chrome. Pass `captureScreen={false}` on the provider to
+turn the page snapshot off entirely.
+
+## What stops a call
+
+The guard's decision is server-side, so no client can talk it out of one. The
+default policy runs reads and asks a person about destructive and ungraded
+calls.
+
+Write your own rules in `.vendo/policy.json`, or pass them to `guard()` in the
+route. Approved calls, denials, and everything that ran land in the audit log.
+
+<CardGroup cols={2}>
+  <Card title="Mount the surface" icon="layout-panel-left" href="/product/mount-the-surface">
+    Every surface the panel is made of, and the props that move them.
+  </Card>
+  <Card title="API tools" icon="wrench" href="/capabilities/api-tools">
+    How your endpoints become tools, and how each one gets its risk grade.
+  </Card>
+</CardGroup>
