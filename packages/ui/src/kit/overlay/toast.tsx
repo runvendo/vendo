@@ -36,10 +36,18 @@ function Notice({ open = false, onClose, message, tone, duration }: ToastProps) 
   closing.current = onClose;
 
   useEffect(() => {
-    if (open && !raised.current) {
+    if (open) {
+      // Unconditionally, NOT only on the way up: `add` with a known id updates
+      // that toast in place and refreshes its timer, which is the whole way a
+      // declarative notice re-states itself. Gating this on "not already
+      // raised" pinned the FIRST message and the FIRST duration for as long as
+      // `open` stayed true — a second, different notice silently showed the
+      // first one's text. The deps are what keep the timer honest: `add` and
+      // `close` are stable (read off the provider's store), so this runs when
+      // the notice actually changes and not once per render.
       raised.current = true;
       add({ id: TOAST_ID, description: message, timeout: duration ?? 5000, onClose: () => closing.current?.() });
-    } else if (!open && raised.current) {
+    } else if (raised.current) {
       raised.current = false;
       close(TOAST_ID);
     }

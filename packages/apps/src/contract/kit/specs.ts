@@ -722,7 +722,10 @@ const BASE_SPECS: KitComponentSpec[] = [
     summary: "A dialog over the screen for a decision that must be answered before anything else. `open` raises it, `onClose` names the tool that takes it down; focus, Esc and the page's scroll lock are handled for you.",
     props: {
       open: config(z.boolean(), "whether the dialog is up", { required: true }),
-      onClose: config(action, "called when it asks to close — Esc, the backdrop, or the X"),
+      // REQUIRED, because every way out of a controlled dialog runs through it:
+      // the X, Esc and the backdrop all do nothing but call this. Without it a
+      // generated screen can raise a modal that nothing can take down.
+      onClose: config(action, "called when it asks to close — Esc, the backdrop, or the X", { required: true }),
       title: copy(z.string(), "the dialog's heading"),
       description: copy(z.string(), "one line under the heading"),
       size: config(z.enum(["small", "medium", "large"]), "width, default medium"),
@@ -736,7 +739,8 @@ const BASE_SPECS: KitComponentSpec[] = [
     summary: "A dialog that slides in from an edge, for detail beside the screen rather than on top of it. Same open/close pair as Modal; `side` picks the edge.",
     props: {
       open: config(z.boolean(), "whether the sheet is out", { required: true }),
-      onClose: config(action, "called when it asks to close — Esc, the backdrop, or the X"),
+      // REQUIRED for the same reason Modal's is — see there.
+      onClose: config(action, "called when it asks to close — Esc, the backdrop, or the X", { required: true }),
       title: copy(z.string(), "the sheet's heading"),
       description: copy(z.string(), "one line under the heading"),
       size: config(z.enum(["small", "medium", "large"]), "how far it comes out, default medium"),

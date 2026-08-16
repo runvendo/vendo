@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Modal } from "../../src/kit/overlay/modal.js";
 import { Sheet } from "../../src/kit/overlay/sheet.js";
+import { Toast } from "../../src/kit/overlay/toast.js";
 import { KIT_CSS, ensureKitStyles } from "../../src/kit/kit-css.js";
 
 describe("the overlay host", () => {
@@ -55,6 +56,21 @@ describe("the overlay host", () => {
     render(<Modal open title="T" header={<span>badge</span>} footer={<button>Send</button>} />);
     expect(screen.getByText("badge")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  });
+});
+
+describe("an open Toast", () => {
+  it("re-states itself when the message changes underneath it", async () => {
+    // `open` is the truth and the notice follows it. Raising a SECOND notice
+    // without lowering the first one in between showed the first one's text:
+    // `add` ran once on the way up and never again, so the description and the
+    // timeout were pinned to whatever the first render happened to carry.
+    const { rerender } = render(<Toast open message="First." duration={60_000} />);
+    expect(await screen.findByText("First.")).toBeTruthy();
+
+    rerender(<Toast open message="Second." duration={60_000} />);
+    expect(await screen.findByText("Second.")).toBeTruthy();
+    expect(screen.queryByText("First.")).toBeNull();
   });
 });
 

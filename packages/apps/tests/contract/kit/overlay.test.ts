@@ -40,17 +40,33 @@ describe("the overlay specs", () => {
 
   it("validates the props each overlay was given", () => {
     const modal = kitSpec("Modal")!;
-    expect(validateProps(modal, { open: true, title: "Send reminders?", size: "large" }).success).toBe(true);
+    expect(validateProps(modal, { open: true, onClose: "ui.cancel", title: "Send reminders?", size: "large" }).success).toBe(true);
     expect(validateProps(modal, { title: "no open prop" }).success).toBe(false);
-    expect(validateProps(modal, { open: true, size: "enormous" }).success).toBe(false);
+    expect(validateProps(modal, { open: true, onClose: "ui.cancel", size: "enormous" }).success).toBe(false);
 
     const sheet = kitSpec("Sheet")!;
-    expect(validateProps(sheet, { open: true, side: "left" }).success).toBe(true);
-    expect(validateProps(sheet, { open: true, side: "diagonal" }).success).toBe(false);
+    expect(validateProps(sheet, { open: true, onClose: "ui.close", side: "left" }).success).toBe(true);
+    expect(validateProps(sheet, { open: true, onClose: "ui.close", side: "diagonal" }).success).toBe(false);
 
     const toast = kitSpec("Toast")!;
     expect(validateProps(toast, { open: true, message: "Sent.", tone: "success", duration: 4000 }).success).toBe(true);
     expect(validateProps(toast, { open: true }).success).toBe(false);
+  });
+
+  it("refuses a controlled overlay with no way out", () => {
+    // Every dismissal affordance a dialog has — the X, Esc, the backdrop — does
+    // nothing but call `onClose`. Optional, it let a generated screen raise a
+    // modal that NOTHING could take down, with the person shut behind it.
+    for (const name of ["Modal", "Sheet"]) {
+      const spec = kitSpec(name)!;
+      expect(spec.props.onClose!.required, `${name}.onClose`).toBe(true);
+      expect(validateProps(spec, { open: true, title: "Trapped" }).success, name).toBe(false);
+      expect(validateProps(spec, { open: true, onClose: "ui.cancel", title: "Fine" }).success, name).toBe(true);
+    }
+    // A Toast is NOT in that class: it takes itself down on its own timer, so
+    // `onClose` stays optional — it is how the screen learns, not the way out.
+    expect(kitSpec("Toast")!.props.onClose!.required ?? false).toBe(false);
+    expect(validateProps(kitSpec("Toast")!, { open: true, message: "Sent." }).success).toBe(true);
   });
 
   it("gives Modal and Sheet the header and footer slots, and Toast none", () => {
