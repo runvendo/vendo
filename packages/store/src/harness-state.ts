@@ -34,6 +34,13 @@ import type { VendoStore } from "./store.js";
  *  family, whose slot is keyed identically so `deleteThread` cascades there too. */
 export const harnessStateKey = (threadId: string): string => `harness_state:${threadId}`;
 
+/** The slot's stored payload. Spelled ONCE because three writers land it: both
+ *  backends' `set`, and a batched turn commit, which carries the row itself
+ *  rather than calling `set` — a second spelling would be a slot one writer
+ *  could no longer read. */
+export const harnessStateRow = (harnessName: string, value: string): { harness: string; value: string } =>
+  ({ harness: harnessName, value });
+
 export interface HarnessStateStore {
   /** `owner` is the thread row's own `subject`, passed when the caller has
    *  ALREADY read the row this verb would otherwise re-fetch to learn it (the
@@ -127,7 +134,7 @@ function overOps(ops: StoreOps): HarnessStateStore {
       }
       // One row per (appId, subject), so a harness swap overwrites in place —
       // the SQL half's delete-then-insert, expressed as the wire's own upsert.
-      await ops.harness.set(harnessStateKey(threadId), subject, { harness: harnessName, value });
+      await ops.harness.set(harnessStateKey(threadId), subject, harnessStateRow(harnessName, value));
     },
 
     async clear(threadId, owner) {
@@ -191,7 +198,7 @@ function overSql(db: Db): HarnessStateStore {
       await db.query(
         `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
          VALUES ($1, $2, $3, $4, $4)`,
-        [key(threadId), subject, JSON.stringify({ harness: harnessName, value }), now],
+        [key(threadId), subject, JSON.stringify(harnessStateRow(harnessName, value)), now],
       );
     },
 
