@@ -967,6 +967,23 @@ export default function Panels() {
     }
   });
 
+  /** Tooltip's `content` is documented as "code-only: Kit elements rendered as
+   *  the hint instead of label", and `SLOTS` carried no entry for it — so the
+   *  one shape the prop teaches was refused by the tree check while the Kit
+   *  component painted it perfectly well (`ui` feedback/tooltip.tsx `content ??
+   *  label`). The registry was the bug; the doc is the contract. */
+  it("passes an element in Tooltip's content — the slot its own prop documents", async () => {
+    const result = await painted(`import { Text, Tooltip } from "@vendo/screen";
+
+export default function Hint() {
+  return <Tooltip content={<Text text="Sent 3 days ago" />}><Text text="?" /></Tooltip>;
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
   it("follows a control nested INSIDE a legal slot component", async () => {
     const result = await painted(`import { Button, DataTable, Stack, Text, tools } from "@vendo/screen";
 

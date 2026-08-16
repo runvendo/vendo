@@ -890,6 +890,10 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
     actions: { doc: "elements at the end of the tab row", content: region },
   },
   Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
+  // The read tier, and no `at`: the hint is a prop of its own, and a hover
+  // popup is READ — nothing in one can be reliably operated, so a control there
+  // would be the same trap `rowActions` exists to keep out of a cell.
+  Tooltip: { content: { doc: "Kit elements rendered as the hint instead of the label" } },
   EmptyState: { icon: { doc: "a Kit mark drawn in the disc instead of a lucide name", content: mark } },
   Steps: { marker: { doc: "a glyph drawn in place of the step's numbered disc", content: mark } },
   Modal: { header, footer },
