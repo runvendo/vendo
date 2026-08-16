@@ -87,12 +87,12 @@ No agent handy? Do it by hand. Three steps, about five minutes.
 
         Quickstart →
       </Card>
-      <Card title="In your backend" href="/backend/quickstart">
-        {/* VISUAL: still of a server route streaming a Vendo response, with the resulting screen drawn by the host's own surface. */}
+      <Card title="From outside agents" href="/outside-agents/quickstart">
+        {/* VISUAL: still of a developer's own agent (Acme Agent) connected to Maple over the door, showing a "$400 transfer" approval card with From, To, and Approve/Deny. */}
 
-        Your server drives the turn and owns the surface.
+        Your own agent, acting as the signed-in user.
 
-        `agent.respond(subject, message)`
+        `createVendo({ mcp: true, oauth })`
 
         Quickstart →
       </Card>
