@@ -1,8 +1,6 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import type { ExtractedTool, OverridesFile } from "@vendoai/actions";
-import { mergeOverrides, vendoSync } from "@vendoai/actions/sync";
+import type { ExtractedTool } from "@vendoai/actions";
 import { VendoError } from "@vendoai/core";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -12,6 +10,7 @@ import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type 
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
 import { mcpStepLines, planMcp, type McpPosture } from "./init-mcp.js";
+import { initQuestions } from "./init-questions.js";
 import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
@@ -108,8 +107,8 @@ export interface RiskRecommendation {
 /** A step init cannot take for you. Init only ever CREATES files in your source
     tree, so every change to a file that already exists — the visible-surface
     mount, the server-action wiring — is the developer's paste, structured so
-    the terminal block, the `manualSteps` lines, and the `--agent` plan all
-    carry the SAME file and lines. */
+    the terminal block, the `manualSteps` lines and the receipt's `pasteEdits`
+    all carry the SAME file and lines. */
 export interface ManualEdit {
   /** The file the paste goes in, relative to the init root. */
   file: string;
@@ -126,31 +125,42 @@ export type InitUseCase = "embedded" | "agent-loop" | "mcp";
 
 export const INIT_USE_CASES: readonly InitUseCase[] = ["embedded", "agent-loop", "mcp"];
 
-export interface InitPlan {
+/** What the run settled before it writes anything. Everything else buildPlan
+    resolves — the changes, the pastes, the auth facts — rides beside it on that
+    function's return, where each has exactly one reader. */
+interface InitPlan {
   framework: Exclude<HostFramework, "unknown"> | "custom";
-  /** --use-case only: absent on a run that never named one, so an unattended
-      plan stays byte-identical to the one agents parse today. */
-  useCase?: InitUseCase;
-  root: string;
+  /** The `.vendo` artifacts every path lays down. */
   writes: string[];
-  codeChanges: Array<{ path: string; diff: string }>;
-  /** Whatever wiring the run could not do safely itself: the paste lines for
-      the user. Always carries the mount when one is outstanding. */
-  manualSteps: string[];
-  /** The mount paste as data (absent when a surface is already mounted, and
-      on Express/custom hosts, whose two wiring lines have no single file to
-      name — they ride `manualSteps`). */
-  mount?: ManualEdit;
-  /** Changes init found for files that already exist and it therefore will not
-      write: an existing route.ts missing its `serverActions` wiring, a
-      registration map that has fallen behind the host's `"use server"`
-      surface. Absent when there are none. */
-  edits?: ManualEdit[];
-  /** --agent only: deterministic extraction results, so an agent can act on
-      real tool names instead of re-deriving them. */
-  extraction?: { tools: ExtractedTool[]; warnings: string[] };
-  riskRecommendations?: RiskRecommendation[];
 }
+
+/** How an agent-mode run ENDS: the same facts the prose tail carries, as data.
+    Its twin is `InitQuestions` — one status field tells them apart, and both
+    exit 0, so the coding agent branches on the shape and never on a code. */
+export interface InitReceipt {
+  status: "written";
+  root: string;
+  useCase: InitUseCase;
+  /** The install's files, root-relative: what init wrote, plus what an earlier
+      init already put there (it is idempotent, so a re-run leaves the same set
+      in place). Every entry exists on disk. */
+  wrote: string[];
+  /** What init could not write for you: the mount, the wiring it found stale,
+      the loop snippet. Verbatim `ManualEdit`s (see `handSteps`). */
+  pasteEdits: ManualEdit[];
+  tools: number;
+  riskRecommendations: RiskRecommendation[];
+  /** Agent mode never spends a model on judgment: the caller IS the model, so
+      the work is named rather than done. */
+  judgment: { status: "delegated"; checklist: string[] };
+}
+
+const JUDGMENT_CHECKLIST = [
+  "task-quality descriptions per tool",
+  "risk grades into .vendo/overrides.json",
+  "replace the .vendo/brief.md placeholder",
+  "fill unresolved slots in .vendo/theme.json",
+];
 
 export interface InitOptions {
   targetDir: string;
@@ -504,32 +514,6 @@ interface PlannedChange {
   before: string | null;
   after: string;
   diff: string;
-}
-
-/** Read-only extraction for the agent plan. vendoSync writes its artifacts, so
-    it runs against a throwaway out dir — the host tree stays untouched (the
-    --agent contract). Existing overrides ride along so the plan reflects prior
-    human risk decisions, mirroring vendoSync's own merge semantics. */
-async function extractForPlan(root: string): Promise<{ tools: ExtractedTool[]; warnings: string[] }> {
-  const out = await mkdtemp(join(tmpdir(), "vendo-agent-plan-"));
-  try {
-    const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
-    if (overridesRaw !== null) await writeText(join(out, "overrides.json"), overridesRaw);
-    const report = await vendoSync({ root, out });
-    const file = JSON.parse(await readFile(join(out, "tools.json"), "utf8")) as { tools?: ExtractedTool[] };
-    let overrides: OverridesFile | null = null;
-    try {
-      overrides = overridesRaw === null ? null : JSON.parse(overridesRaw) as OverridesFile;
-    } catch {
-      // vendoSync already validated the copy; an unreadable original merges as absent.
-    }
-    return { tools: mergeOverrides(file.tools ?? [], overrides), warnings: report.warnings };
-  } catch (error) {
-    // The plan must always emit — extraction failures degrade to a warning.
-    return { tools: [], warnings: [`extraction failed: ${error instanceof Error ? error.message : "unknown error"}`] };
-  } finally {
-    await rm(out, { recursive: true, force: true });
-  }
 }
 
 /** 04-actions §1 risk ladder projected as advice: destructive asks first,
@@ -1224,18 +1208,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     layout,
     modelWritten,
     rewriteModels,
-    plan: {
-      framework,
-      // Only when the run named one: an unattended plan stays byte-identical
-      // to the one agents parse today.
-      ...(options.useCase === undefined ? {} : { useCase: options.useCase }),
-      root,
-      writes,
-      codeChanges: changes.map(({ path, diff: rendered }) => ({ path, diff: rendered })),
-      manualSteps,
-      ...(mount === null ? {} : { mount }),
-      ...(edits.length === 0 ? {} : { edits }),
-    },
+    plan: { framework, writes },
   };
 }
 
@@ -1429,7 +1402,7 @@ async function guardUndetectedFramework(input: {
   if (options.yes === true || !interactive) {
     output.error(
       "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
-      "Pass --framework. Examples: vendo init --yes --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
+      "Pass --framework. Examples: vendo init --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
     );
     return false;
   }
@@ -1640,6 +1613,9 @@ async function runInstallSyncFlow(input: {
     interactive: extract.interactive
       ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY)),
     yes: options.yes === true,
+    // Agent mode never spends a model here and never asks to: the caller IS
+    // the model, and the receipt hands it the checklist instead.
+    ...(options.agent === true ? { delegated: true } : {}),
     // --ai IS the consent (no prompt, non-interactive runs stop skipping);
     // --no-ai is the refusal. No flag = ask, every interactive run.
     ...(ai === undefined ? {} : { ai }),
@@ -1736,10 +1712,15 @@ async function finishRun(input: {
   layout: LayoutWiring;
   toolCount: number;
   brandCaptured: boolean;
+  /** Receipt-only (--agent): the install's files, and the risk ladder read off
+      the catalog this run synced. Empty on every other run. */
+  wrote: string[];
+  risks: RiskRecommendation[];
 }): Promise<string> {
   const {
     root, options, output, pretty, interactive, useCase, mcp, mount, edits, manualSteps,
     credential, cloud, compositionPath, framework, authWired, layout, toolCount, brandCaptured,
+    wrote, risks,
   } = input;
 
   // Where will this deploy? — every path but MCP, which needed the answer
@@ -1768,10 +1749,26 @@ async function finishRun(input: {
   const checkPassed = handSteps.length === 0
     && await offerLiveCheck({ root, options, output, pretty, interactive });
 
+  // The receipt: agent mode's LAST line, and the whole of its ending. Same
+  // facts as the prose tail below, shaped so the caller can act on them without
+  // parsing sentences.
+  if (options.agent === true) {
+    output.log(JSON.stringify({
+      status: "written",
+      root,
+      useCase,
+      wrote,
+      pasteEdits: handSteps,
+      tools: toolCount,
+      riskRecommendations: risks,
+      judgment: { status: "delegated", checklist: JUDGMENT_CHECKLIST },
+    } satisfies InitReceipt, null, 2));
+    return runStats({ toolCount, brandCaptured, handSteps: handSteps.length, checkPassed });
+  }
+
   // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
   // — the run's FINAL block is the repo-specific pointers an agent parses.
-  // Interactive human runs keep the clack-style output untouched; --agent
-  // never reaches here (its read-only JSON plan returned above).
+  // Interactive human runs keep the clack-style output untouched.
   if (options.yes === true || !interactive) {
     output.log("\nAgent tail:");
     const tail = await agentTailLines({ root, framework, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
@@ -1791,7 +1788,12 @@ async function finishRun(input: {
   return runStats({ toolCount, brandCaptured, handSteps: handSteps.length, checkPassed });
 }
 
-export async function runInit(options: InitOptions): Promise<number> {
+export async function runInit(input: InitOptions): Promise<number> {
+  // Agent mode answers every MECHANICAL question the way `--yes` does — the
+  // base URL, the zod floor, the theme slots, the live check — so they land in
+  // the diff instead of in someone's chat. Only what a person must decide is
+  // relayed, and that happens before anything here writes.
+  const options: InitOptions = input.agent === true ? { ...input, yes: true } : input;
   // The clack-style renderer rides the SAME Output seam: it restyles the
   // exact plain messages below, and is selected only for a human terminal
   // (TTY, no NO_COLOR/CI, never --agent, never an injected output). Every
@@ -1843,27 +1845,38 @@ const explainedPlanFailure = (error: unknown): boolean => {
     }
   };
 
-  if (options.agent === true) {
-    // Extraction runs before the plan is emitted so the plan carries real tool
-    // names and risk advice; the throwaway out dir keeps --agent read-only.
-    const planned = await buildPlanOrExplained(options);
-    if (planned === null) return 1;
-    const { plan } = planned;
-    const extraction = await extractForPlan(root);
-    output.log(JSON.stringify({
-      ...plan,
-      extraction,
-      riskRecommendations: riskRecommendations(extraction.tools),
-    } satisfies InitPlan, null, 2));
-    return 0;
-  }
-
   // Detect + confirm (interactive runs only): --yes and non-interactive runs
   // accept the detected default silently — the same interactivity posture as
-  // the AI-polish consent.
-  const interactive = options.interactive
-    ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
-  if (!await guardUndetectedFramework({ root, options, output, interactive })) return 1;
+  // the AI-polish consent. Agent mode is never interactive: its questions
+  // travel as JSON, so nothing on that run may prompt.
+  const interactive = options.agent !== true
+    && (options.interactive
+      ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY)));
+  // The guard belongs to the runs that would otherwise GUESS. Agent mode keeps
+  // the fall-through to the runtime-neutral custom scaffold it has always had:
+  // resolveFramework answers "custom" for an undetectable host, which is the
+  // safe default rather than a guess, and detection behaves the same in every
+  // mode.
+  if (options.agent !== true && !await guardUndetectedFramework({ root, options, output, interactive })) return 1;
+
+  // Ask first (agent mode): detection has run, so whatever a PERSON still owes
+  // an answer to leaves as ONE JSON object and this run writes nothing. The
+  // answers come back as flags and the re-run writes; a call that already
+  // carries them all falls through and writes in this one pass.
+  if (options.agent === true) {
+    const cloudKey = (credentialEnv(root, env)["VENDO_API_KEY"] ?? "").trim() !== "";
+    const questions = await initQuestions({
+      root,
+      options,
+      framework: await resolveFramework(root, options),
+      modelKey: cloudKey || scaffoldModel(root, options) !== null,
+      cloudKey,
+    });
+    if (questions !== null) {
+      output.log(JSON.stringify(questions, null, 2));
+      return 0;
+    }
+  }
 
   // The read-back first: every fact below is already detected for other
   // reasons, and showing it is the moment the tool proves it looked.
@@ -2053,6 +2066,14 @@ const explainedPlanFailure = (error: unknown): boolean => {
 
     await warnOffContractAi(root, output);
 
+    // `wrote` names files the caller may open, so the plan's static list is
+    // filtered to what is actually on disk: fonts.css exists only when a font
+    // was embedded, and naming it would send an agent to a file that is not
+    // there.
+    const planned = options.agent !== true ? [] : (await Promise.all(
+      plan.writes.map(async (path) => await exists(join(root, path)) ? path : null),
+    )).filter((path): path is string => path !== null);
+
     // Called on its OWN line, never inside `pretty?.done(…)`: optional
     // chaining short-circuits its arguments, so a null `pretty` — every
     // non-TTY run — would skip the entire ending without a trace.
@@ -2060,6 +2081,10 @@ const explainedPlanFailure = (error: unknown): boolean => {
       root, options, output, pretty, interactive, useCase, mcp, mount, edits, manualSteps,
       credential, cloud, compositionPath, framework: plan.framework, authWired, layout,
       toolCount, brandCaptured: themeSummary !== null,
+      wrote: [...planned, ...changes.map((change) => change.path)],
+      // The SAME projection the plan used to make from a throwaway extraction,
+      // over the catalog the flow already read this run.
+      risks: riskRecommendations(flow.catalog),
     });
     pretty?.done(Date.now() - started, true, stats);
     return 0;

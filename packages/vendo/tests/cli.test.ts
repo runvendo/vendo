@@ -95,21 +95,27 @@ describe("vendo CLI commands", () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-init-known-"));
     cleanup.push(root);
 
-    expect(await main(["init", root, "--agent", "--yes", "--force", "--byo", "--ai",
+    // Every option but the models answer, so this stays init's ask pass: it
+    // writes nothing and hands back the one question still open. (`--ai` is
+    // absent because --agent refuses it by name — the AI-flag test owns that.)
+    expect(await main(["init", root, "--agent", "--yes", "--force",
       "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed",
       "--use-case", "mcp", "--base-url", "https://app.acme.com", "--posture", "broker",
       "--service-key", "--no-check"])).toBe(0);
 
-    expect(await readdir(root)).toEqual([]); // --agent stayed read-only
-    // Value-flag values are never mistaken for the target dir, and the
-    // --framework and --use-case answers reach the plan.
-    const plan = JSON.parse(log.mock.calls.flat().join("\n")) as { root: string; framework: string; useCase: string };
-    expect(plan.root).toBe(root);
-    expect(plan.framework).toBe("next");
-    expect(plan.useCase).toBe("mcp");
+    expect(await readdir(root)).toEqual([]); // the ask pass wrote nothing
+    // Value-flag values are never mistaken for the target dir: --framework
+    // reached the run, so `next` was read as an answer and not as the target.
+    const asked = JSON.parse(log.mock.calls.flat().join("\n")) as {
+      detected: { framework: string };
+      questions: Array<{ id: string }>;
+    };
+    expect(asked.detected.framework).toBe("next");
+    expect(asked.questions.map((question) => question.id)).toEqual(["models"]);
 
-    // --cloud-key parses too — and --agent STILL writes nothing (the
-    // read-only promise beats the key-landing side effect).
+    // --byo and --cloud-key parse too, and neither writes while a question is
+    // still open.
+    expect(await main(["init", root, "--agent", "--byo"])).toBe(0);
     expect(await main(["init", root, "--agent", "--cloud-key", `vnd_${"b".repeat(40)}`])).toBe(0);
     expect(await readdir(root)).toEqual([]);
     log.mockRestore();
@@ -244,10 +250,14 @@ describe("vendo CLI commands", () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-ai-flags-"));
     cleanup.push(root);
 
-    // Parsed, not rejected (--agent keeps init read-only).
-    for (const flag of ["--ai", "--no-ai", "--ai-polish"]) {
-      expect(await main(["init", root, "--agent", flag])).toBe(0);
+    // Parsed, not rejected. Under --agent an `--ai` that can never run is
+    // refused BY NAME rather than dropped, since judgment is delegated to the
+    // caller; --no-ai agrees with what happens and passes.
+    for (const flag of ["--ai", "--ai-polish"]) {
+      expect(await main(["init", root, "--agent", flag])).toBe(1);
+      expect(error.mock.calls.flat().join("\n")).toContain("has no effect with --agent");
     }
+    expect(await main(["init", root, "--agent", "--no-ai"])).toBe(0);
     expect(await readdir(root)).toEqual([]);
 
     for (const flag of ["--ai", "--no-ai", "--no-watermark", "--yes", "--theme-refresh"]) {

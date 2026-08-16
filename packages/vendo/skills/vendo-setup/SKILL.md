@@ -20,31 +20,45 @@ fetch it when you need more detail than this skill carries.
    npm install @vendoai/vendo
    ```
 
-2. Run init. As an agent, plan first, then apply:
+2. Run init. It asks first, then writes:
 
    ```bash
-   npx vendo init --agent   # read-only JSON plan: framework, code diffs, the `mount` paste, extracted tools, risk recommendations
-   npx vendo init --yes
+   npx vendo init --agent
    ```
 
-   `--agent` writes nothing. Init applies its bounded change set and lists
-   it; the only questions are an auth confirm when detection is uncertain, a
-   review of uncertain theme slots, and the end-of-init cloud-login offer
-   (`--yes` skips it). Each question has a non-interactive answer flag:
-   `--auth <preset>`, `--framework <name>`, `--theme <slot=value>`
-   (repeatable), `--cloud-key <key>` or `--byo`, and `--ai` / `--no-ai` to
-   force the AI judgment pass on or off. Prefer the interactive run when a
-   human is present.
+   Init detects the stack and prints ONE JSON object. `{"status":
+   "questions", …}` means it wrote nothing: relay every `prompt` to the user
+   VERBATIM in chat, with its options. Each option carries the literal thing
+   you do to pick it, a `flag` for the re-run or a `command` to run first.
+   Then re-run with every answer:
+
+   ```bash
+   npx vendo login --wait 90                          # only if they picked the free Cloud key
+   npx vendo init --agent --use-case embedded --auth clerk --byo
+   ```
+
+   That run writes, narrates itself, and ends on the receipt, the LAST JSON
+   object it prints: `{"status": "written", …}` with `wrote` (the files
+   it created), `pasteEdits` (the changes only you can make), `tools`,
+   `riskRecommendations`, and `judgment`, which is always `delegated` with a
+   checklist that is yours to work through. Both runs exit 0, so branch on
+   `status`, never on the exit code. All answers on the first call and it
+   writes in one pass.
+
+   Never relay a mechanical question. The deploy URL, the zod floor, the
+   theme slots and the live check are never asked: they take their defaults
+   and show up in the diff.
 
    **Init never edits a file a human wrote.** Every file it writes is new and
    Vendo-owned, plus its own `package.json` hooks. Mounting the visible
-   surface is a paste YOU must apply — the plan carries it as
-   `mount: { file, lines, why }` and the run prints it in a framed
-   "ONE STEP LEFT" block. Apply it before calling the install done; `vendo
-   doctor` fails with `E-WIRE-004` until it lands.
+   surface is a paste YOU must apply: the receipt carries it in `pasteEdits`
+   as `{ file, lines, why }` and the run prints it in a framed "ONE STEP
+   LEFT" block. Apply it before calling the install done; `vendo doctor`
+   fails with `E-WIRE-004` until it lands.
 
 3. What init does (framework detected from `package.json`, `next` beats
-   `express`; anything else is treated as Next):
+   `express`; with neither present it refuses to guess and asks for
+   `--framework next|express|custom`):
    - Writes `.vendo/` — `tools.json` (extracted tools), `overrides.json`
      (your risk/confirmEach edits, respected forever), `policy.json`,
      `brief.md`, `theme.json` (brand extracted from the host CSS), and a

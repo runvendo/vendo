@@ -21,7 +21,7 @@ import type { Output } from "./shared.js";
  * below are pure string rules over those exact plain strings; the renderer
  * restyles and groups. The copy it owns is the block TITLES and the one docs
  * pointer (MOUNT_DOCS) that cannot live in the caller without changing the
- * --agent plan's pinned JSON; every fact on screen is still the caller's.
+ * receipt's pinned `pasteEdits`; every fact on screen is still the caller's.
  */
 
 const ESC = "\u001b";
@@ -178,9 +178,10 @@ const PASTE_FILE = /^ {2}File: (.+)$/;
     literal in the terminal would be wrong for half of hosts and the docs
     pointer below carries the exact per-router wording instead. */
 const MOUNT_WRAP = /^… then wrap: (<VendoProvider\b[^>]*>).*<\/VendoProvider>$/;
-/** This pointer is the renderer's and not the caller's: init's `mount.lines` is
-    pinned byte-for-byte by the --agent plan, and a line added there would
-    change that JSON. Emitted here, the --agent path never sees it. */
+/** This pointer is the renderer's and not the caller's: the mount's `lines` are
+    pinned byte-for-byte by the receipt's `pasteEdits`, and a line added there
+    would change that JSON. Emitted here, the --agent path never sees it (the
+    rail is off in agent mode). */
 const MOUNT_DOCS = "docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx";
 const WIRED = /^(Wired \(\d+ files?\)):$/;
 const DIFF_MARKER = /^ {2}([+~]) (.+)$/;
