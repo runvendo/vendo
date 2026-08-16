@@ -65,6 +65,45 @@ describe("Link — an unknown route is refused, not passed through", () => {
   });
 });
 
+describe("Link — a literal `:` in a path segment is not a parameter", () => {
+  // A colon is legal in a path segment. Read as a parameter, `/reports/2026:Q3`
+  // needed a `Q3` nobody could supply, so a perfectly good route rendered as
+  // inert text — the silent breakage this brick exists to prevent.
+  const literal: VendoRouteMap = {
+    quarter: { path: "/reports/2026:Q3", description: "The Q3 report." },
+    section: { path: "/reports/2026:Q3/:sectionId", description: "One section of it." },
+  };
+  const withLiteral = (ui: React.ReactNode, onNavigate: (nav: VendoNavigation) => void) =>
+    render(<VendoProvider routes={literal} onNavigate={onNavigate}>{ui}</VendoProvider>);
+
+  it("renders it as a real link and navigates to the path verbatim", () => {
+    const onNavigate = vi.fn();
+    withLiteral(<Link to="quarter" label="Go" />, onNavigate);
+    const anchor = link();
+    expect(anchor.tagName).toBe("A");
+    expect(anchor.getAttribute("href")).toBeNull();
+    expect(anchor.getAttribute("data-path")).toBe("/reports/2026:Q3");
+
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(onNavigate).toHaveBeenCalledWith({ to: "quarter", path: "/reports/2026:Q3" });
+  });
+
+  it("still substitutes the real :param beside it, and still refuses it unfilled", () => {
+    const onNavigate = vi.fn();
+    withLiteral(<Link to="section" params={{ sectionId: "s_1" }} label="Go" />, onNavigate);
+    link().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(onNavigate).toHaveBeenCalledWith({
+      to: "section",
+      path: "/reports/2026:Q3/s_1",
+      params: { sectionId: "s_1" },
+    });
+
+    cleanup();
+    withLiteral(<Link to="section" label="Go" />, vi.fn());
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+});
+
 describe("Link — provider-optional", () => {
   it("renders standalone, where there is no registry and nowhere to go", () => {
     render(<Link to="home" label="Go" />);

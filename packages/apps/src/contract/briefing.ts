@@ -15,7 +15,7 @@
  * This file renders knowledge, never instructions.
  */
 import { z } from "zod";
-import { vendoRouteMapSchema, vendoThemeSchema, type VendoRouteMap, type VendoTheme } from "./catalog.js";
+import { vendoRouteMapSchema, vendoRouteParams, vendoThemeSchema, type VendoRouteMap, type VendoTheme } from "./catalog.js";
 
 /** One host component, as a writer needs to know about it: the name it may use
  *  and the FIRST line of its description — `catalogThemeSummary`'s existing
@@ -90,7 +90,7 @@ export function renderBriefingPack(pack: BriefingPack): string {
     // because a link has to fill them, but their values are substituted into
     // the host's own path and encoded there (`resolveVendoRoute`).
     const lines = routes.map(([name, route]) => {
-      const params = [...route.path.matchAll(/:(\w+)/gu)].map(([, key]) => key);
+      const params = vendoRouteParams(route.path);
       return `- ${name}: ${route.description}${params.length === 0 ? "" : ` (fill params: ${params.join(", ")})`}`;
     });
     sections.push("ROUTES (this product's own pages — what a <Link to=\"…\"> may send someone to)."

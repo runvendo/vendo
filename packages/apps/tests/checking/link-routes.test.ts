@@ -139,6 +139,26 @@ describe("the floor refuses a route the host never registered", () => {
     expect(blocking(await paint(screen("account", ' params={{ id: "acc_1" }}'), routes))).toBe("");
   }, 60_000);
 
+  it("ACCEPTS a route whose path carries a literal colon in a segment", async () => {
+    // A colon is legal in a path segment, and reading `/reports/2026:Q3` as
+    // taking a `Q3` parameter refused a screen whose link was perfectly good.
+    const literal: VendoRouteMap = {
+      quarter: { path: "/reports/2026:Q3", description: "The Q3 report." },
+    };
+    expect(blocking(await paint(screen("quarter"), literal))).toBe("");
+  }, 60_000);
+
+  it("still refuses a real :param beside a literal colon", async () => {
+    const mixed: VendoRouteMap = {
+      section: { path: "/reports/2026:Q3/:sectionId", description: "One section of it." },
+    };
+    const said = blocking(await paint(screen("section"), mixed));
+    expect(said).toContain('leaves "sectionId" unfilled');
+    // The literal is not advertised as a blank to fill.
+    expect(said).not.toContain("Q3");
+    expect(blocking(await paint(screen("section", ' params={{ sectionId: "s_1" }}'), mixed))).toBe("");
+  }, 60_000);
+
   it("keeps the checker pinned to the brick that takes a route", () => {
     // The check reads `<Link to>` by name. If the brick is ever renamed or loses
     // its `to`, this fails here rather than going quietly unenforced.
@@ -157,6 +177,23 @@ describe("what the writer is told about the routes", () => {
     // the model to copy, and generated output must only ever SELECT a key: the
     // host spells every address, through `onNavigate`.
     expect(rendered).not.toContain("/accounts");
+  });
+
+  it("does not advertise a literal colon as a param the host must fill", () => {
+    const rendered = renderBriefingPack({
+      catalog: [],
+      hostSemantics: "",
+      routes: {
+        quarter: { path: "/reports/2026:Q3", description: "The Q3 report." },
+        section: { path: "/reports/2026:Q3/:sectionId", description: "One section of it." },
+      },
+    });
+
+    // The whole failure in one line: a blank the host can never fill.
+    expect(rendered).toContain("- quarter: The Q3 report.");
+    expect(rendered).not.toContain("fill params: Q3");
+    // The real parameter beside it is still taught.
+    expect(rendered).toContain("- section: One section of it. (fill params: sectionId)");
   });
 
   it("says nothing at all when the host registered no pages", () => {

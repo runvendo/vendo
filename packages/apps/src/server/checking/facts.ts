@@ -30,6 +30,7 @@ import {
   isExprBinding,
   validateAppDocument,
   validateTree,
+  vendoRouteParams,
   type KitSlotSpec,
   type NormalizedCatalog,
   type Tree,
@@ -597,7 +598,7 @@ export const routeIssues = (tree: Tree, routes: VendoRouteMap | undefined): Fact
     // so the floor and the render can never disagree about which links work. The
     // lookup keys come from the host's own path, not from the model.
     const given = node.props?.params as Record<string, unknown> | undefined;
-    const takes = [...route.path.matchAll(/:(\w+)/gu)].flatMap(([, key]) => key === undefined ? [] : [key]);
+    const takes = vendoRouteParams(route.path);
     const missing = takes.filter((key) => given?.[key] === undefined);
     if (missing.length > 0) {
       issues.push(atProp(node.id, "params", `names route "${to}" on <${KIT_LINK}> but leaves ${missing.map((key) => `"${key}"`).join(", ")} unfilled — that route's path takes ${takes.map((key) => `:${key}`).join(", ")}, and a link missing one of them renders as plain text and goes nowhere. Write params={{ ${missing.map((key) => `${key}: …`).join(", ")} }} beside to="${to}".`));

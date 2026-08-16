@@ -172,6 +172,26 @@ export const vendoRouteSchema = z.object({
 
 export const vendoRouteMapSchema = z.record(z.string(), vendoRouteSchema);
 
+/** A path SEGMENT that is a parameter: the whole segment, colon-prefixed.
+ *
+ * A colon is legal inside a segment — `/reports/2026:Q3` is a real path — and
+ * `:(\w+)` anywhere in the string read that as a parameter named `Q3`. The host
+ * can never fill a blank that is not there, so the route resolved to
+ * `undefined`, the link rendered as inert text, the floor refused the screen and
+ * the briefing advertised a parameter that does not exist. Anchoring to the
+ * segment is the line between a parameter and a literal colon. */
+const PARAM_SEGMENT = /^:(\w+)$/u;
+
+/** The parameters a registered path takes.
+ *
+ * ONE definition, because THREE readers must agree about it and they break in a
+ * correlated way when they drift: this file's resolver, the floor's
+ * `routes-exist` check, and the briefing's ROUTES section. A path whose
+ * parameters are read differently by any two of them is a link that resolves
+ * and is refused, or is accepted and goes nowhere. */
+export const vendoRouteParams = (path: string): string[] =>
+  path.split("/").flatMap((segment) => PARAM_SEGMENT.exec(segment)?.[1] ?? []);
+
 /** Resolve a link target against the registry. A name the host never registered
  * — or one whose path has `:params` the link left unfilled — resolves to
  * `undefined`: an unknown route is REFUSED here rather than passed through, so
@@ -184,11 +204,19 @@ export function resolveVendoRoute(
   const route = routes[to];
   if (route === undefined) return undefined;
   let unfilled = false;
-  const path = route.path.replace(/:(\w+)/g, (_, key: string) => {
+  // Segment by segment, on the SAME predicate `vendoRouteParams` reads the path
+  // with — so what this substitutes and what the other two advertise and enforce
+  // cannot come apart.
+  const path = route.path.split("/").map((segment) => {
+    const key = PARAM_SEGMENT.exec(segment)?.[1];
+    if (key === undefined) return segment;
     const value = params?.[key];
-    if (value === undefined) unfilled = true;
-    return value === undefined ? "" : encodeURIComponent(value);
-  });
+    if (value === undefined) {
+      unfilled = true;
+      return segment;
+    }
+    return encodeURIComponent(value);
+  }).join("/");
   return unfilled ? undefined : { to, path, ...(params === undefined ? {} : { params }) };
 }
 
