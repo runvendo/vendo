@@ -1,68 +1,48 @@
 ---
 title: "Tools from your API"
-description: "How Vendo sync extracts OpenAPI, tRPC, Next.js server actions, and host routes into .vendo/tools.json and runs them under guard."
+sidebarTitle: "API tools"
+description: "One command reads your API and hands the agent a guarded set of tools."
 ---
 
-Vendo sync extracts OpenAPI operations, tRPC procedures, Next.js server
-actions, and host routes into `.vendo/tools.json`, turning your API into a set
-of guarded tools. Extraction runs during build and development
-so the tool surface never drifts from your API.
+## The pipeline
 
-Zero config: `npx vendo init` runs the extractors and hooks `vendo sync` into
-`predev`/`prebuild`. No key, no adapter, no `tools` option. `createVendo()`
-reads `.vendo/tools.json` off disk on its own, and re-reads it per generation.
+Four extractors read what you already wrote. One file is the result.
 
-## The rules
+```mermaid
+flowchart LR
+  API["<b>Your API</b><br/>OpenAPI · tRPC · server actions · routes"]
+  SYNC["<b>vendo sync</b><br/>reads the source, runs no server"]
+  FILE["<b>.vendo/tools.json</b><br/>generated, in your repo"]
+  GUARD["<b>Guard</b><br/>risk · approval · audit"]
+  HANDS["<b>The agent's hands</b><br/>only what the file lists"]
 
-`.vendo/tools.json` is generated. Only tools in that file exist.
+  API --> SYNC --> FILE --> GUARD --> HANDS
 
-- **Never hand-edit `.vendo/tools.json`.** It is regenerated. Durable
-  corrections go in `.vendo/overrides.json`, which wins field by field and is
-  never touched by sync.
-- **Never invent a tool.** If an endpoint was not extracted, fix the source it
-  is extracted from (or its OpenAPI spec) and re-run `npx vendo sync`. Do not
-  add entries by hand.
-- Unclassifiable routes are extracted `disabled` with a note. Enable them
-  deliberately in `overrides.json` after review, never blanket-enable.
+  classDef yours fill:#ffffff,stroke:#c9c5d6,stroke-width:1px,color:#15141b
+  classDef vendo fill:#f5f1ff,stroke:#ddd0ff,stroke-width:1px,color:#4a22bd
+  class API yours
+  class SYNC,FILE,GUARD,HANDS vendo
+```
 
-## What makes a good tool
+Only tools in that file exist. Nothing else reaches your API.
 
-- **A task-oriented description**, written for the model: what the tool does
-  for the user and when to reach for it, not a restatement of the route path.
-- **An honest risk label.** `read` auto-runs; `write` and `destructive` are
-  policy-gated, and the default policy makes `destructive` ask first. Raise
-  risk in overrides freely.
-- **`confirmEach: true` on actions that need a person** (payments, sends,
-  exports) so policy asks before every run.
+<Note>
+  **Fails closed.** A route the extractor cannot classify is written `disabled`, with a note saying why. Enable it deliberately after you read it.
+</Note>
 
-Init's own judgment pass drafts all three, behind one consent question in an
-interactive run (`--ai` / `--no-ai` skips the question either way). Whatever it
-leaves wrong is yours to correct in `.vendo/overrides.json`. Two guards apply
-regardless of the pass. Every proposal carries a verbatim quote from your
-handler, and a second pass checks that quote against the real source. And a
-hardening applies itself, while a loosening waits for you: lower risk, a woken
-tool, or a cleared `confirmEach` lands only after you read the quote and say
-yes.
+Extraction runs in a fixed order: OpenAPI, tRPC, Next.js server actions, then the route scan. Each one skips itself when your app has nothing for it.
 
-## How extraction works
+## One tool, honestly
 
-Tool names use letters, numbers, `_`, and `-`, with a maximum of 64
-characters. Use `_` for namespaces. Each descriptor includes JSON Schema input
-and a `read`, `write`, or `destructive` risk label.
+Every entry carries the same five fields. Here is one, whole.
 
-### OpenAPI operations
-
-Vendo sync extracts OpenAPI operations from your spec into `.vendo/tools.json`,
-using the shared naming and risk-label rules above. See [Extraction
-reference](#extractor-order) for where OpenAPI sits in the extraction order.
-
-```json
+```json .vendo/tools.json highlight={3,9,10-14}
 {
   "name": "host_deleteTask",
   "description": "Permanently delete a Relay task",
   "inputSchema": {
     "type": "object",
-    "properties": { "id": { "type": "string", "description": "Relay task id" } },
+    "properties": { "id": { "type": "string" } },
     "required": ["id"]
   },
   "risk": "destructive",
@@ -75,189 +55,43 @@ reference](#extractor-order) for where OpenAPI sits in the extraction order.
 }
 ```
 
-Each tool name is `host_` plus the operation's `operationId` (or, when a spec
-omits one, the method-and-path fallback shared with route tools). The input
-schema comes from the operation's path/query parameters plus its
-`application/json` request body under a `body` property. The binding records
-the `operationId`, `method`, and `path` so the runtime can execute without
-re-reading the spec, plus `baseUrl` when the spec declares an absolute
-`servers[0].url`; omitted, the call goes same-origin. Risk labels follow the
-same rules as route tools: `DELETE` is always `destructive`, and the
-destructive word list can lift any other method.
+- `description` is written for the model: what the tool does for the user, not a restatement of the path.
+- `risk` is what the guard reads before the call. `destructive` asks first.
+- `binding` is where the call lands. The runtime executes from it without re-reading your spec.
 
-### tRPC procedures
+### Where the grade comes from
 
-If your app mounts a tRPC router, sync extracts each procedure as its own tool.
-The extractor statically parses your router (no server runs) and follows
-`router({...})`, `createTRPCRouter`, and `mergeRouters` across nested and
-cross-file routers. Both app router and pages router mounts are supported, and
-each mount is detected independently.
+Extraction grades from protocol facts only. `DELETE` is `destructive` and a tRPC mutation is at least `write`; a name decides nothing.
 
-```json
-{
-  "name": "host_polls_delete",
-  "description": "tRPC mutation polls.delete",
-  "inputSchema": {
-    "type": "object",
-    "properties": { "id": { "type": "string" } },
-    "required": ["id"]
-  },
-  "risk": "destructive",
-  "binding": {
-    "kind": "trpc",
-    "procedure": "polls.delete",
-    "type": "mutation",
-    "mount": "/api/trpc",
-    "transformer": "superjson"
-  }
-}
-```
+Everything else lands `ungraded`, which the guard asks about on every call. The grading pass reads the handler behind each tool and writes what it finds to `.vendo/judgments.json`, running on your Cloud key.
 
-Each tRPC tool name uses the procedure's dot path with `_` as the namespace
-separator. The binding records the procedure, its `query` or `mutation` type,
-the mount path, and the transformer when one is in use.
+<Warning>
+  Never hand-edit `.vendo/tools.json`. The next sync regenerates it wholesale.
+</Warning>
 
-At runtime Vendo speaks the tRPC HTTP envelope. Queries use
-`GET {mount}/{procedure}?input=` and mutations `POST` with a JSON body. When
-the router uses `superjson`, Vendo wraps and unwraps the payload automatically.
+## Keeping it current
 
-Auth is unchanged from route tools. Present calls forward the inbound cookie
-and authorization headers on same-origin fetches, and away calls still require
-the host's `actAs` seam plus an app-bound grant.
+The tool surface is a build artifact, so it moves when your API moves.
 
-Risk labels follow the procedure type. Queries are `read` only when the
-procedure name reads like a fetch; anything else falls back to the conservative
-default. Mutations default to `write`, and the destructive word list can lift
-them to `destructive`, the same rules that apply to route tools. Subscriptions
-and any procedure the extractor cannot classify are emitted as `disabled` with
-a note so you can promote them explicitly through overrides.
+<Steps>
+  <Step title="Edit your API">
+    Add the route, the procedure, or the action. Nothing about it is Vendo-shaped.
+  </Step>
+  <Step title="Run npx vendo sync">
+    The extractors re-read your source. No server starts.
+  </Step>
+  <Step title="Read the diff in git">
+    `.vendo/tools.json` is a tracked file, so a new capability arrives as a reviewable change.
+  </Step>
+</Steps>
 
-Zod input schemas are interpreted into JSON Schema for common patterns
-(objects, primitives, unions, enums, optionals). If the extractor cannot
-recognize a validator, it fails closed to a permissive schema and adds a note
-so the tool still surfaces without blocking your build.
+`vendo init` hooks sync into `predev` and `prebuild` in your `package.json`, so step 2 also runs on its own.
 
-The extractor loads the TypeScript compiler from your app's own
-`node_modules`. If TypeScript is not available, tRPC extraction is skipped with
-a warning and no tRPC tools are emitted. Extraction never fails your build.
+## Overrides
 
-### Next.js server actions {#next-js-server-actions}
+Corrections live in their own file, which sync never touches.
 
-If your Next.js app declares server actions, sync extracts each exported
-action as its own tool. The extractor statically scans modules that begin with
-`"use server"` and any inline `"use server"` directives (no host code runs).
-Every named export of a module-scoped `"use server"` file becomes a candidate
-tool.
-
-```json
-{
-  "name": "host_delete_board",
-  "description": "server action app/actions/boards.ts#deleteBoard",
-  "inputSchema": {
-    "type": "object",
-    "properties": { "id": { "type": "string" } },
-    "required": ["id"]
-  },
-  "risk": "destructive",
-  "binding": {
-    "kind": "server-action",
-    "module": "app/actions/boards.ts",
-    "exportName": "deleteBoard",
-    "params": ["id"]
-  }
-}
-```
-
-The binding records the root-relative module path, the export name, and the
-ordered parameter names. `module#exportName` is the tool identity. At runtime
-Vendo maps the arguments object onto positional parameters and returns the
-action's return value on the JSON wire.
-
-#### Input schemas
-
-Vendo interprets input schemas where they can be resolved statically:
-
-- Zod validators declared with `z.infer<typeof Schema>`, `z.input<typeof
-  Schema>`, or `z.output<typeof Schema>` type annotations, including imported
-  schemas resolved across files.
-- `createSafeAction(schema, handler)` from `next-safe-action`, unwrapped to a
-  single `data` parameter shaped by the schema.
-- Plain TypeScript primitives, object literals, and unions on parameter
-  annotations.
-
-Anything the extractor cannot recognize fails closed to a permissive parameter
-with a note, so the tool still surfaces without blocking your build.
-
-#### Wrappers
-
-The extractor unwraps two recognized patterns when the export remains an
-importable callable:
-
-- `cache(fn)` from React.
-- `createSafeAction(schema, handler)` from `next-safe-action`.
-
-#### Risk labels
-
-Server actions default to `write`. A read-shaped name never earns `read`,
-because a server action is a mutation seam. The destructive word list
-(`delete`, `remove`, `cancel`, `send`, `invite`, and similar verbs) can lift
-an action to `destructive`, the same rules that apply to route and tRPC
-tools.
-
-Some exports are always emitted as `disabled`. See [Disabled
-cases](#disabled-cases) for the full list.
-
-The extractor loads the TypeScript compiler from your app's own
-`node_modules`. If TypeScript is not available, server-action extraction is
-skipped with a warning and no server-action tools are emitted; extraction
-never fails your build. See [Server-action registration
-map](#server-action-registration-map) for how init wires the detected actions
-into `createVendo`.
-
-### Routes
-
-Route scanning reads Next.js route conventions: App Router `route.ts`
-handlers and `pages/api` files. Hosts on Express, Fastify, or Hono get route
-tools from an OpenAPI spec or a tRPC router today — plain routes on those
-frameworks are not yet scanned.
-
-```json
-{
-  "format": "vendo/tools@3",
-  "tools": [
-    {
-      "name": "host_invoices_list",
-      "description": "List invoices",
-      "inputSchema": {},
-      "risk": "read",
-      "binding": {
-        "kind": "route",
-        "method": "GET",
-        "path": "/api/invoices",
-        "argsIn": "query"
-      }
-    }
-  ]
-}
-```
-
-Route scans fail closed. The extractor emits any route it cannot classify as
-disabled, with a note.
-
-A GraphQL endpoint is skipped, with a warning naming the route. Vendo does not
-extract GraphQL, and a GraphQL handler answers one POST with a
-`{ query, variables }` envelope that route dispatch cannot construct — so the
-route yields no tool rather than one that fails on every call.
-
-Detection reads the route file and any local module it re-exports its handler
-from, so `export { GET, POST } from "./graphql-server"` is skipped too. A route
-that instead *imports* a GraphQL server and wraps it in its own exported
-handler is not recognized; set `"disabled": true` on that tool in
-`overrides.json`.
-
-## Durable overrides
-
-```json
+```json .vendo/overrides.json focus={4-5}
 {
   "format": "vendo/overrides@3",
   "tools": {
@@ -267,68 +101,34 @@ handler is not recognized; set `"disabled": true` on that tool in
 }
 ```
 
-Sync never edits overrides. Overrides win field by field, then Vendo computes
-the descriptor hash. A risk change intentionally lapses old grants: the next
-call parks a fresh approval that names the invalidated grant and audits one
-`grant-invalidated` policy decision. See [Tools and
-safety](/concepts/tools-and-safety) for the surfaced notice and event shape.
+Overrides win field by field: re-grade a tool, make it confirm every run, or hide it entirely. They are the last word, applied after both extraction and the grading pass.
 
-Overrides also apply to [compound tools](/capabilities/compound-tools), which
-live in the same file's `compounds` array. A compound entry inside
-`tools.json` is rejected. Compounds belong to the authored file.
+Raising risk lapses old grants. The next call parks a fresh approval that names the invalidated grant, and audits one `grant-invalidated` decision.
 
-Present route calls forward the inbound request's cookie and authorization
-headers on a same-origin fetch. Away calls require both an app-bound grant and
-the host's `actAs` seam. See [actAs presets](/deploy/auth) for
-provider-specific wiring.
+### Compound tools
 
-## Extraction reference
+The same file's `compounds` array bundles a short sequence of existing tools into one capability the agent calls by name.
 
-### Extractor order
+Each step still crosses the guard on its own descriptor, so approvals, grants, and audit apply per step. A compound entry inside `tools.json` is rejected.
 
-Extractors run in a fixed order: OpenAPI first, then tRPC, then server
-actions, then the route scan. Each extractor decides whether it applies to
-your app. The ones that do not detect anything are skipped. When the tRPC
-extractor emits tools for a mount, any catch-all route under that mount (for
-example `/api/trpc/[trpc]`) is dropped from the route scan so you do not see
-duplicate coverage of the same surface.
+## Where to go next
 
-### Disabled cases
+Your API is one source of tools. Two more sit beside it.
 
-**Next.js server actions.** The extractor fails closed and emits
-`disabled: true` with a note in two cases:
+<CardGroup cols={3}>
+  <Card title="Connected accounts" href="/capabilities/connected-accounts">
+    Each user connects their own Gmail, Slack, or GitHub once.
 
-- **Inline server actions.** A `"use server"` directive inside a
-  component-scoped function is real surface, but the function is not
-  importable by module path. Hoist the action into a module-level `"use
-  server"` file to promote it into a working tool.
-- **Unclassifiable exports.** When the export is not a callable Vendo can
-  bind (for example, a re-exported object or a value with no stable
-  signature), it is emitted disabled with `risk: "destructive"` so you can
-  promote it explicitly through overrides.
+    Connected accounts →
+  </Card>
+  <Card title="Automations" href="/capabilities/automations">
+    The same tools, fired on a schedule or by an event.
 
-### Server-action registration map
+    Automations →
+  </Card>
+  <Card title="Guard" href="/how-vendo-works">
+    Risk grade, approval, and an audit line on every call.
 
-`vendo init` generates an actions registration map beside your handler route
-and wires it into `createVendo({ serverActions })`. The map imports every
-detected action module keyed by `"<module>#<exportName>"`, so Vendo can
-dispatch calls through the map at runtime.
-
-Init writes those two files exactly once — on the run that creates them. From
-then on they are yours to edit, and init never rewrites a file that already
-exists. An existing map is compared only by the keys it registers, so your
-formatting, your comments, your aliases and your own extra entries all survive:
-when an action is missing, a later `vendo init` prints just the entries to add
-(plus the `serverActions` line for a route that predates your actions), and
-`vendo doctor` fails [E-WIRE-009](/deploy/troubleshooting#E-WIRE-009) until you apply
-them. Re-running init on an unchanged surface prints nothing.
-
-Actions disabled in `.vendo/overrides.json` are left out of all of this — the
-runtime never dispatches them, so neither init nor doctor asks you to register
-them. A route that passes a `serverActions` map it composes itself is left
-alone entirely, and no generated map is created for it.
-
-When the map lacks an entry for an action, or the registered value is not a
-function, execution fails closed with a clear `not-implemented` error and no
-work is performed. Server actions are present-only: away calls and MCP venues
-fail closed because there is no HTTP seam to attach `actAs` credentials to.
+    How Vendo works →
+  </Card>
+</CardGroup>
