@@ -147,6 +147,26 @@ describe("Calendar", () => {
     expect(month({ month: "2026-09" }).querySelector("caption")!.textContent).toBe("September 2026");
   });
 
+  it("falls back to the items when `month` names no real month, never to the clock", () => {
+    // The silent substitution: a malformed month resolved to the machine's own
+    // month, so the grid on screen was one the items are not in and nothing said
+    // so. Dated in the PAST, which the clock can never be — with the Aug 2026
+    // bills this test passed on the bug, because that IS the month it is.
+    const past = [{ id: "a", name: "Rent", amount: 1200, due_date: "2019-04-11", status: "paid" }];
+    for (const bad of ["banana", "2019-13", ""]) {
+      expect(month({ items: past, month: bad }).querySelector("caption")!.textContent, bad).toBe("April 2019");
+    }
+  });
+
+  it("ignores a date that names no real day when choosing the month", () => {
+    // "2026-02-30" is the one Date.parse does not refuse: it rolls forward to
+    // March 2. Left unchecked it won the inference away from August, and the
+    // item still landed on no day at all.
+    const container = month({ items: [{ id: "x", name: "Ghost", due_date: "2026-02-30" }, ...bills] });
+    expect(container.querySelector("caption")!.textContent).toBe("August 2026");
+    expect(container.textContent).not.toContain("Ghost");
+  });
+
   it("mutes the days the neighbouring months own", () => {
     const container = month();
     const number = (day: string): string => cell(container, day).querySelector("div")!.getAttribute("style")!;

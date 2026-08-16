@@ -27,26 +27,43 @@ export interface CalendarProps {
   statusField?: string;
   /** Status value → tone, exactly as EnumBadge takes it. */
   tones?: Record<string, KitTone>;
-  /** The month to lay out, as ISO `yyyy-mm`; defaults to the earliest item's. */
+  /** The month to lay out, as ISO `yyyy-mm`; defaults to the earliest item's,
+   *  and falls back to that same inference if it names no real month. */
   month?: string;
 }
 
 /** UTC throughout: a local-midnight Date shifts the day west of Greenwich. */
 const isoOf = (date: Date): string => date.toISOString().slice(0, 10);
 
-/** An item's day. An ISO string is taken at its face — the day the host wrote,
- *  not the day a local-midnight Date would slip it to. */
+/** An ISO day that is a REAL one. The round-trip is the check: `Date.parse`
+ *  refuses "2026-13-45" outright but rolls "2026-02-30" forward to March 2, and
+ *  a day the host cannot have meant must not be placed on one it never named. */
+const realDay = (day: string): string | null => {
+  const at = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(at) || isoOf(new Date(at)) !== day ? null : day;
+};
+
+/** An item's day, or nothing when it names no real one. An ISO string is taken
+ *  at its face — the day the host wrote, not the day a local-midnight Date would
+ *  slip it to. */
 const dayOf = (value: unknown): string | null => {
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/u.test(value)) return value.slice(0, 10);
+  if (typeof value === "string") return /^\d{4}-\d{2}-\d{2}/u.test(value) ? realDay(value.slice(0, 10)) : null;
   const at = value instanceof Date || typeof value === "number" ? new Date(value) : null;
   return at === null || Number.isNaN(at.getTime()) ? null : isoOf(at);
 };
 
-/** The first of the month an ISO `yyyy-mm`, day or timestamp names — this month
- *  when it names nothing, so an empty calendar still draws the month asked for. */
-const monthOf = (value: string | undefined): Date => {
+/** The first of the month an ISO `yyyy-mm`, day or timestamp names, or nothing
+ *  when it names no real month. */
+const monthOf = (value: string | undefined): Date | null => {
   const at = value === undefined ? Number.NaN : Date.parse(`${value.slice(0, 7)}-01T00:00:00Z`);
-  return Number.isNaN(at) ? new Date() : new Date(at);
+  return Number.isNaN(at) ? null : new Date(at);
+};
+
+/** The LAST resort, and only reached when no month was named and no item
+ *  carries a real day — the one case where there is nothing to hide. */
+const thisMonth = (): Date => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 };
 
 /** The month's weeks, whole: every row is seven days, so the leading and
@@ -81,7 +98,11 @@ export function Calendar({ items: rawItems, dateField, titleField, amountField, 
     const day = dateField === undefined ? null : dayOf(readField(item, dateField));
     if (day !== null) byDay.set(day, [...(byDay.get(day) ?? []), item]);
   }
-  const shown = monthOf(month ?? [...byDay.keys()].sort()[0]);
+  // The month asked for, else the month the items are in, else this one. A
+  // `month` that names no real month falls THROUGH to the data rather than to
+  // the clock: substituting today there drew a grid the items were not in and
+  // said nothing about it.
+  const shown = monthOf(month) ?? monthOf([...byDay.keys()].sort()[0]) ?? thisMonth();
   return (
     <div
       data-kit="Calendar"
@@ -116,6 +137,11 @@ export function Calendar({ items: rawItems, dateField, titleField, amountField, 
                       // its left edge to the container, which already has one.
                       borderInlineStart: index === 0 ? undefined : hairline,
                       background: outside ? t.surfaceRaised : undefined,
+                      // `height` on a table cell is a MINIMUM: a busy day grows
+                      // past it and an empty one holds it, which is what keeps
+                      // the weeks even. Off the type scale, like every other
+                      // measure the Kit derives rather than picks.
+                      height: "calc(var(--vendo-font-size, 15px) * 4)",
                       padding: 2,
                       verticalAlign: "top",
                     }}
