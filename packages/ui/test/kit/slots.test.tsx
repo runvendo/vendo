@@ -128,7 +128,7 @@ describe("what a slot promises beyond landing", () => {
     // recharts hands its `content` the payload of whatever is under the pointer;
     // the slot reads it through `field`, exactly as a table cell reads its row.
     const Hover = slotTooltip(<Money field="amount" />);
-    render(<Hover payload={[{ payload: { month: "Mar", amount: 1250 } }]} />);
+    render(<Hover payload={[{ graphicalItemId: "amount", payload: { month: "Mar", amount: 1250 } }]} />);
     expect(screen.getByText("$1,250.00")).toBeTruthy();
   });
 

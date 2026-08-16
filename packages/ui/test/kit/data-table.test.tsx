@@ -300,8 +300,8 @@ describe("DataTable", () => {
       settle: () => act(() => resize()),
       restore: () => {
         globalThis.ResizeObserver = observers;
-        delete (HTMLElement.prototype as Partial<HTMLElement>).offsetWidth;
-        delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
+        Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+        Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
       },
     };
   }
