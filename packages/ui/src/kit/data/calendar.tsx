@@ -10,10 +10,10 @@
  */
 import { applyFormat, getKitIntl } from "../format.js";
 import { readField } from "../row.js";
-import { font, hairline, microLabel, numeric, resolveTone, t, toneStyle, type KitTone } from "../tokens.js";
+import { font, hairline, microLabel, numeric, resolveTone, t, toneStyle, type KitStyled, type KitTone } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
-export interface CalendarProps {
+export interface CalendarProps extends KitStyled {
   /** Items from a tool call. */
   items: Array<Record<string, unknown>>;
   /** Field holding the day each item falls on (ISO date or datetime). */
@@ -90,7 +90,7 @@ const weekdays = (): string[] =>
 const toneFor = (tones: Record<string, KitTone> | undefined, status: string): KitTone =>
   resolveTone(tones !== undefined && Object.hasOwn(tones, status) ? tones[status] : undefined);
 
-export function Calendar({ items: rawItems, dateField, titleField, amountField, statusField, tones, month }: CalendarProps) {
+export function Calendar({ items: rawItems, dateField, titleField, amountField, statusField, tones, month, style }: CalendarProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   const byDay = new Map<string, Array<Record<string, unknown>>>();
@@ -106,7 +106,7 @@ export function Calendar({ items: rawItems, dateField, titleField, amountField, 
   return (
     <div
       data-kit="Calendar"
-      style={{ ...font, border: hairline, borderRadius: t.radiusMedium, background: t.surface, overflow: "hidden" }}
+      style={{ ...font, border: hairline, borderRadius: t.radiusMedium, background: t.surface, overflow: "hidden", ...style }}
     >
       <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
         <caption style={{ ...microLabel, padding: "var(--vendo-density-table-padding, 10px 12px)", textAlign: "start" }}>
