@@ -788,6 +788,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
         version: 3.0.12(zod@4.4.3)
+      '@ai-sdk/openai-compatible':
+        specifier: 2.0.9
+        version: 2.0.9(zod@4.4.3)
       '@ai-sdk/provider':
         specifier: 3.0.2
         version: 3.0.2
@@ -8385,6 +8388,12 @@ snapshots:
       '@ai-sdk/provider': 3.0.2
       '@ai-sdk/provider-utils': 4.0.5(zod@3.25.76)
       zod: 3.25.76
+
+  '@ai-sdk/openai-compatible@2.0.9(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
+      zod: 4.4.3
 
   '@ai-sdk/openai@3.0.9(zod@3.25.76)':
     dependencies:

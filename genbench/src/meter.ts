@@ -1,13 +1,23 @@
 import type { LanguageModelV3, LanguageModelV3Middleware, LanguageModelV3Usage } from "@ai-sdk/provider";
 import { wrapLanguageModel, type LanguageModel } from "ai";
 
-export type ModelAlias = "opus" | "sonnet" | "haiku";
+/** The open-source contenders, served through one OpenAI-compatible endpoint at
+ *  Wafer. Membership here is what says an alias is NOT an Anthropic model — the
+ *  provider a run builds for it, and the key it demands, both read this. */
+export const WAFER_MODEL_IDS = {
+  "glm-fast": "glm5.2-fast",
+  "deepseek-flash": "DeepSeek-V4-Flash-0731-Fast",
+} as const;
+
+export const WAFER_BASE_URL = "https://pass.wafer.ai/v1";
+
+export type ModelAlias = "opus" | "sonnet" | "haiku" | keyof typeof WAFER_MODEL_IDS;
 
 /**
  * Pinned ids. Each one was checked against the live API through
  * `@ai-sdk/anthropic` before being written here.
  *
- * Two of the three are floating aliases, and not for want of trying: as of
+ * Two of the three Anthropic ids are floating aliases, and not for want of trying: as of
  * 2026-08-15 `GET /v1/models` lists `claude-opus-5` and `claude-sonnet-5` with
  * no dated snapshot beside them, so there is nothing to pin them to. Haiku has
  * one and carries it. Until the other two do, `Meter.answeredBy` is what says
@@ -18,6 +28,7 @@ export const MODEL_IDS: Readonly<Record<ModelAlias, string>> = {
   opus: "claude-opus-5",
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001",
+  ...WAFER_MODEL_IDS,
 };
 
 interface ModelPrice {
@@ -34,6 +45,12 @@ const PRICING: Readonly<Record<string, ModelPrice>> = {
   "claude-opus-5": { inputPerMTok: 5, outputPerMTok: 25 },
   "claude-sonnet-5": { inputPerMTok: 2, outputPerMTok: 10 },
   "claude-haiku-4-5-20251001": { inputPerMTok: 1, outputPerMTok: 5 },
+  // Wafer's own quote, read off `GET /v1/models` on 2026-08-16 — its `pricing`
+  // block is in cents per million. Its cache reads are a tenth of input for GLM
+  // and a QUARTER for DeepSeek, so DeepSeek's cache-read dollars read low
+  // against the one multiplier below; its token counts are exact either way.
+  "glm5.2-fast": { inputPerMTok: 2.1, outputPerMTok: 6.6 },
+  "DeepSeek-V4-Flash-0731-Fast": { inputPerMTok: 0.28, outputPerMTok: 0.56 },
 };
 
 /** Cache reads bill at a tenth of the input rate; 5-minute cache writes at 1.25x. */

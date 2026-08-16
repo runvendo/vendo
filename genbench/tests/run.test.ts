@@ -19,6 +19,7 @@ import {
   exitCode,
   harnessStamp,
   parseArgs,
+  pool,
   shouldOpen,
   ungraded,
   worldsFor,
@@ -208,6 +209,8 @@ describe("opening the preview", () => {
     ...(only === undefined ? {} : { only }),
     models: ["sonnet"],
     world: "maple",
+    contenders: ["vendo", "diy", "claude-code"],
+    jobs: 1,
   });
 
   it("opens for the single case a person is sitting and watching", () => {
@@ -272,5 +275,88 @@ describe("harnessStamp", () => {
 
     expect(stamp.gitSha).toMatch(/^[0-9a-f]{40}$/);
     expect(stamp.agentSdkVersion).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+/** `--models` is the only door into a run, so an alias nothing serves is refused
+ *  at the flag rather than at the first model call, a case and a browser later. */
+describe("--models", () => {
+  it("takes the Wafer-served open-source contenders", () => {
+    expect(parseArgs(["run", "--models", "glm-fast,deepseek-flash"]).models).toEqual(["glm-fast", "deepseek-flash"]);
+  });
+
+  it("refuses a model no provider here serves", () => {
+    expect(() => parseArgs(["run", "--models", "gpt-9"])).toThrow(/unknown model "gpt-9"/);
+  });
+});
+
+/** A row is every driver, and the reason to narrow it is money: measuring one
+ *  harness should not spend the other two's tokens on the same case. */
+describe("--contenders", () => {
+  it("races every driver when nobody narrows the row", () => {
+    expect(parseArgs(["run"]).contenders).toEqual(["vendo", "diy", "claude-code"]);
+  });
+
+  it("narrows the row to the drivers named", () => {
+    const only = parseArgs(["run", "--contenders", "vendo,claude-code"]).contenders;
+
+    expect(contenders(["sonnet"], only).map((contender) => contender.slug)).toEqual([
+      "vendo-sonnet",
+      "claude-code-sonnet",
+    ]);
+  });
+
+  it("refuses a contender that has no driver", () => {
+    expect(() => parseArgs(["run", "--contenders", "vendo,langchain"])).toThrow(/unknown contender "langchain"/);
+  });
+});
+
+/** Within a case the contenders already race each other. `--jobs` is the bound
+ *  ACROSS cases — the only thing between a 200-case corpus and one case at a
+ *  time — and a bound that is not a whole number of cases is not a bound. */
+describe("--jobs", () => {
+  it("runs one case at a time unless asked otherwise", () => {
+    expect(parseArgs(["run"]).jobs).toBe(1);
+  });
+
+  it("takes the number of cases to keep in flight", () => {
+    expect(parseArgs(["run", "--jobs", "4"]).jobs).toBe(4);
+  });
+
+  it("refuses anything that is not a whole number of cases", () => {
+    for (const value of ["0", "-1", "2.5", "lots"]) {
+      expect(() => parseArgs(["run", "--jobs", value])).toThrow(/--jobs/);
+    }
+  });
+});
+
+describe("pool", () => {
+  it("keeps results in the jobs' own order, not the order they finished", async () => {
+    const jobs = [30, 1, 15].map((ms, index) => async () => {
+      await new Promise((settle) => setTimeout(settle, ms));
+      return index;
+    });
+
+    expect(await pool(jobs, 3)).toEqual([0, 1, 2]);
+  });
+
+  it("never has more than the bound in flight", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const jobs = Array.from({ length: 7 }, () => async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((settle) => setTimeout(settle, 5));
+      inFlight -= 1;
+    });
+
+    await pool(jobs, 2);
+
+    expect(peak).toBe(2);
+  });
+
+  it("runs every job when the bound is wider than the queue, and none when there are none", async () => {
+    expect(await pool([async () => "the only case"], 8)).toEqual(["the only case"]);
+    expect(await pool([], 8)).toEqual([]);
   });
 });

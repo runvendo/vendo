@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { UIPayload } from "@vendoai/core";
 import { execFileSync, spawn } from "node:child_process";
 import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
@@ -10,7 +11,15 @@ import { claudeCodeDriver, WALL_CLOCK_MS, type SessionRecord } from "./claude-co
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
 import { judge, JudgeContract, rubricLines, type JudgeResult } from "./judge.js";
-import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
+import {
+  meteredModel,
+  MODEL_IDS,
+  WAFER_BASE_URL,
+  WAFER_MODEL_IDS,
+  type Meter,
+  type ModelAlias,
+  type UsageTotals,
+} from "./meter.js";
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
 import { tally, writePreview, writeSummary } from "./report.js";
@@ -136,6 +145,8 @@ const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
   "claude-code": (model) => claudeCodeDriver({ model }),
 };
 
+const HARNESS_IDS = Object.keys(DRIVERS) as readonly HarnessId[];
+
 /** The world a run uses when `--world` names none — one of the fourteen folders
  *  under `worlds/`. */
 const DEFAULT_WORLD = "maple";
@@ -151,6 +162,10 @@ export interface Args {
   /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face —
    *  or `all`, which is every folder there. */
   readonly world: string;
+  /** The harnesses that race each case. Every driver, unless narrowed. */
+  readonly contenders: readonly HarnessId[];
+  /** How many cases are in flight at once. */
+  readonly jobs: number;
 }
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -158,6 +173,8 @@ export function parseArgs(argv: readonly string[]): Args {
   let only: string | undefined;
   let models: readonly ModelAlias[] = ["sonnet"];
   let world = DEFAULT_WORLD;
+  let harnesses = HARNESS_IDS;
+  let jobs = 1;
   let index = 0;
   while (index < rest.length) {
     const flag = rest[index];
@@ -166,10 +183,12 @@ export function parseArgs(argv: readonly string[]): Args {
     if (flag === "--prompt") only = value;
     else if (flag === "--models") models = value.split(",").map(asAlias);
     else if (flag === "--world") world = value;
+    else if (flag === "--contenders") harnesses = value.split(",").map(asHarness);
+    else if (flag === "--jobs") jobs = asJobs(value);
     else throw new Error(`genbench: unexpected argument "${flag}"`);
     index += 2;
   }
-  return { ...(only === undefined ? {} : { only }), models, world };
+  return { ...(only === undefined ? {} : { only }), models, world, contenders: harnesses, jobs };
 }
 
 function asAlias(value: string): ModelAlias {
@@ -177,11 +196,45 @@ function asAlias(value: string): ModelAlias {
   return value as ModelAlias;
 }
 
+function asHarness(value: string): HarnessId {
+  if (!Object.hasOwn(DRIVERS, value)) throw new Error(`genbench: unknown contender "${value}"`);
+  return value as HarnessId;
+}
+
+function asJobs(value: string): number {
+  const jobs = Number(value);
+  if (!Number.isInteger(jobs) || jobs < 1) throw new Error(`genbench: --jobs takes whole cases, not "${value}"`);
+  return jobs;
+}
+
 /** Every contender that has a driver today, in every requested model. */
-export function contenders(models: readonly ModelAlias[]): readonly ContenderId[] {
-  return Object.keys(DRIVERS).flatMap((harness) =>
-    models.map((model) => ({ harness: harness as HarnessId, model, slug: `${harness}-${model}` })),
-  );
+export function contenders(
+  models: readonly ModelAlias[],
+  harnesses: readonly HarnessId[] = HARNESS_IDS,
+): readonly ContenderId[] {
+  return harnesses.flatMap((harness) => models.map((model) => ({ harness, model, slug: `${harness}-${model}` })));
+}
+
+/**
+ * Up to `limit` jobs in flight, answering in the jobs' own order.
+ *
+ * Within a case the contenders already race each other; this is the bound
+ * ACROSS cases, and it is a bound rather than `Promise.all` because every case
+ * in flight holds a browser page, a model's rate limit and a share of the
+ * laptop. The order is the order the cases were authored in, never the order
+ * they finished, for the same reason the columns never shuffle.
+ */
+export async function pool<T>(jobs: readonly (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const done: T[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < jobs.length) {
+      const index = next++;
+      done[index] = await jobs[index]!();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker));
+  return done;
 }
 
 /** The recharts-backed Kit components (packages/ui/src/kit/charts/). */
@@ -343,6 +396,15 @@ async function main(argv: readonly string[]): Promise<number> {
     console.error("genbench: ANTHROPIC_API_KEY is not set");
     return 1;
   }
+  // Demanded up front rather than at the first call, which is a case and a
+  // browser later. The Anthropic key is still required whatever was asked for:
+  // the judge and the honesty check run on it, whoever built the screen.
+  const waferKey = process.env.WAFER_API_KEY;
+  const wanted = args.models.filter((alias) => Object.hasOwn(WAFER_MODEL_IDS, alias));
+  if (wanted.length > 0 && (waferKey === undefined || waferKey === "")) {
+    console.error(`genbench: WAFER_API_KEY is not set, and it is what serves ${wanted.join(", ")}`);
+    return 1;
+  }
 
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const worldsDir = join(root, "worlds");
@@ -351,6 +413,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const runDir = join(root, "runs", runId);
   const anthropic = createAnthropic({ apiKey });
+  const wafer = createOpenAICompatible({ name: "wafer", baseURL: WAFER_BASE_URL, apiKey: waferKey });
   const bundle = await bundleMount();
   const shooter = await openBrowser();
   const results: CaseResult[] = [];
@@ -367,7 +430,8 @@ async function main(argv: readonly string[]): Promise<number> {
     const modelId = MODEL_IDS[contender.model];
     // Its own meter, so a sibling's tokens and a sibling's clock are never
     // charged to this column.
-    const meter = meteredModel(anthropic(modelId), modelId);
+    const provider = Object.hasOwn(WAFER_MODEL_IDS, contender.model) ? wafer : anthropic;
+    const meter = meteredModel(provider(modelId), modelId);
 
     /** Evidence as it is produced, not as it is returned. Losing the outer race
      *  used to discard a screenshot that had already been taken and a trace that
@@ -514,6 +578,10 @@ async function main(argv: readonly string[]): Promise<number> {
   };
 
   try {
+    // Every case as a job first, then up to `--jobs` of them at once. The worlds
+    // are read here, in one pass and in order, so nothing a case is graded
+    // against depends on which cases happened to be in flight beside it.
+    const cases: (() => Promise<CaseResult[]>)[] = [];
     for (const name of names) {
       const worldDir = join(worldsDir, name);
       const world = await loadWorld(worldDir);
@@ -524,12 +592,17 @@ async function main(argv: readonly string[]): Promise<number> {
         worlds[key] = scoped;
         // The whole row at once: they share only the browser, a page each, and the
         // order of `results` is the order of `contenders` whoever finishes first.
-        const row = await Promise.all(
-          contenders(args.models).map(async (contender) => await runOne(contender, testCase, scoped, key)),
+        cases.push(
+          async () =>
+            await Promise.all(
+              contenders(args.models, args.contenders).map(
+                async (contender) => await runOne(contender, testCase, scoped, key),
+              ),
+            ),
         );
-        results.push(...row);
       }
     }
+    results.push(...(await pool(cases, args.jobs)).flat());
   } finally {
     await shooter.close();
   }

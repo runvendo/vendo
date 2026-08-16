@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/openai-compatible": "2.0.9",
     "@ai-sdk/provider": "3.0.2",
     "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1",
     "@playwright/test": "^1.49.0",
