@@ -13,6 +13,7 @@ import {
   type RecordInput,
   type RecordQuery,
   type StoreOps,
+  type UsageCountQuery,
   type UsageEvent,
   type UsageTallyRow,
   type VendoRecord,
@@ -913,17 +914,35 @@ export function memoryStoreOps(): StoreOps {
   const inWindow = (event: UsageEvent, window: { since: Date; until?: Date }): boolean =>
     event.at >= window.since && (window.until === undefined || event.at < window.until);
 
+  /** Shared by `count` and `claim` and SYNCHRONOUS on purpose: the claim's
+      check and its write have to be one step, and on one thread that means one
+      turn — an `await` between them is this backend's whole race window. */
+  const countIn = (query: UsageCountQuery): number =>
+    metered.filter((event) =>
+      event.action === query.action
+      && inWindow(event, query)
+      && (query.subject === undefined
+        ? (event.poolKeys ?? []).includes(query.poolKey)
+        : event.subject === query.subject)).length;
+  const store = (event: UsageEvent): void => {
+    metered.push({ ...event, poolKeys: [...event.poolKeys ?? []] });
+  };
+
   const usage: NonNullable<StoreOps["usage"]> = {
     async record(event) {
-      metered.push({ ...event, poolKeys: [...event.poolKeys ?? []] });
+      store(event);
     },
     async count(query) {
-      return metered.filter((event) =>
-        event.action === query.action
-        && inWindow(event, query)
-        && (query.subject === undefined
-          ? (event.poolKeys ?? []).includes(query.poolKey)
-          : event.subject === query.subject)).length;
+      return countIn(query);
+    },
+    async claim(event, observed) {
+      // No await from here to the push: nothing else runs in between, so the
+      // re-check and the write are indivisible without a lock to say so. The
+      // SQL backend has to buy the same thing with one, because it has readers
+      // that genuinely run at once.
+      if (observed.some(({ query, count }) => countIn(query) !== count)) return false;
+      store(event);
+      return true;
     },
     async tally(query) {
       const groups = new Map<string, UsageTallyRow>();

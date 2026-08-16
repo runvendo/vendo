@@ -13,6 +13,7 @@ import {
   type RecordStore,
   type StoreOps,
   type UsageCountQuery,
+  type UsageEvent,
   type UsageTallyQuery,
   type UsageTallyRow,
   type VendoRecord,
@@ -238,6 +239,34 @@ async function usageCount(db: Db, query: UsageCountQuery): Promise<number> {
   clauses.push(query.subject === undefined ? `$${params.length} = ANY(pool_keys)` : `subject = $${params.length}`);
   const result = await db.query(`SELECT count(*) AS count FROM vendo_usage WHERE ${clauses.join(" AND ")}`, params);
   return Number(result.rows[0]?.["count"]);
+}
+
+/** The one statement a metered action is written with, on whatever handle the
+ *  caller is holding — the pool for `record`, a transaction's for `claim`. Ids
+ *  are minted here because the contract's event is what HAPPENED, and nothing
+ *  outside this row ever refers to it. */
+async function usageInsert(db: Db, event: UsageEvent): Promise<void> {
+  await db.query(
+    "INSERT INTO vendo_usage (id, subject, action, at, pool_keys) VALUES ($1, $2, $3, $4::timestamptz, $5)",
+    [`usg_${globalThis.crypto.randomUUID()}`, event.subject, event.action, event.at.toISOString(), event.poolKeys ?? null],
+  );
+}
+
+/** The classid every meter lock is taken under. Postgres keeps the two-argument
+ *  advisory key space separate from the one-argument (bigint) space, so nothing
+ *  here can alias the schema lock, which takes the latter. */
+const USAGE_LOCK_CLASS = 7_461_002;
+
+/** A lock key for one meter target, as a signed 32-bit int (FNV-1a). Hashed
+ *  rather than interned because the space is every subject and pool a
+ *  deployment has ever had, and a collision costs two unrelated targets one
+ *  shared lock — extra serialization, never a wrong answer. */
+function usageLockKey(target: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < target.length; index += 1) {
+    hash = Math.imul(hash ^ target.charCodeAt(index), 0x01000193);
+  }
+  return hash | 0;
 }
 
 /** `usage.tally`'s statement (01 §12 `UsageTallyQuery`) — `auditTally`'s shape
@@ -863,16 +892,50 @@ export function createStoreOps(
     // -----------------------------------------------------------------------
     usage: {
       async record(event) {
-        await db.query(
-          "INSERT INTO vendo_usage (id, subject, action, at, pool_keys) VALUES ($1, $2, $3, $4::timestamptz, $5)",
-          [`usg_${globalThis.crypto.randomUUID()}`, event.subject, event.action, event.at.toISOString(), event.poolKeys ?? null],
-        );
+        await usageInsert(db, event);
       },
       async count(query) {
         return await usageCount(db, query);
       },
       async tally(query) {
         return await usageTally(db, query);
+      },
+      async claim(event, observed) {
+        // The lock, and not a conditional INSERT, is what makes this atomic.
+        // `INSERT ... WHERE (SELECT count(*) ...) = n` reads its own snapshot
+        // under READ COMMITTED, so two racers both count the old number and
+        // both insert — the very defect this verb closes, wearing the right
+        // shape. Holding a lock from BEGIN to COMMIT is what actually orders
+        // them, and the window it covers is a count and an insert, never the
+        // host's policy: that already returned before `claim` was called.
+        //
+        // Every target EITHER half touches, sorted so all callers take them in
+        // one order and no two can deadlock holding each other's. The event's
+        // own targets are in the set because a contender that never counts a
+        // pool still draws it down, and locking only what was observed would
+        // let that row past an observer of that pool.
+        const targets = [...new Set([
+          event.subject,
+          ...event.poolKeys ?? [],
+          ...observed.map(({ query }) => query.subject ?? query.poolKey),
+        ])].sort();
+        return await db.transaction(
+          async (run) => {
+            const tx = txDb(run);
+            for (const { query, count } of observed) {
+              if (await usageCount(tx, query) !== count) return false;
+            }
+            await usageInsert(tx, event);
+            return true;
+          },
+          {
+            beforeWork: async (run) => {
+              for (const target of targets) {
+                await run("SELECT pg_advisory_xact_lock($1, $2)", [USAGE_LOCK_CLASS, usageLockKey(target)]);
+              }
+            },
+          },
+        );
       },
     },
 

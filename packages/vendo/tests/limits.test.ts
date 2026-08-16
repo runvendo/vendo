@@ -185,6 +185,133 @@ describe("the meter reader the policy is handed", () => {
   });
 });
 
+describe("admission — the verdict and the write are one step", () => {
+  const logged = (): VendoLogEvent[] => {
+    const events: VendoLogEvent[] = [];
+    setLogger((event) => events.push(event));
+    return events;
+  };
+
+  /** The reference meter with its reservation forced to lose `failures` times,
+      standing in for another request landing in the window the policy's read
+      opened. Everything else is the real drawer. */
+  const outrun = (usage: Meter, failures: number): Meter => {
+    let left = failures;
+    return {
+      ...usage,
+      claim: async (event, observed) => {
+        if (left > 0) { left -= 1; return false; }
+        return await usage.claim!(event, observed);
+      },
+    };
+  };
+
+  /** The same ops with the OPTIONAL verb genuinely absent — an adapter that
+      cannot reserve, which is every hosted client today. */
+  const unreserving = (usage: Meter): Meter => {
+    const { claim: _absent, ...rest } = usage;
+    return rest as Meter;
+  };
+
+  it("admits ONE of two concurrent actions under a cap of one", async () => {
+    const usage = meter();
+    const limiter = createLimiter({
+      callback: async ({ count }) => (await count("message")) < 1,
+      ops: usage,
+    });
+
+    const verdicts = await Promise.all([limiter.gate("message", ctxFor()), limiter.gate("message", ctxFor())]);
+
+    expect(verdicts.filter((verdict) => verdict.allow)).toHaveLength(1);
+    expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(1);
+  });
+
+  it("keeps a pool's cap when the two actions are DIFFERENT people", async () => {
+    const usage = meter();
+    const limiter = createLimiter({
+      callback: async ({ count }) => (await count("generation", { pool: "workspace" })) < 1,
+      ops: usage,
+    });
+    const inWorkspace = (subject: string): RunContext =>
+      ctxFor({ principal: { kind: "user", subject }, pools: { workspace: "ws_maple" } });
+
+    const verdicts = await Promise.all([
+      limiter.gate("generation", inWorkspace("mia")),
+      limiter.gate("generation", inWorkspace("raj")),
+    ]);
+
+    expect(verdicts.filter((verdict) => verdict.allow)).toHaveLength(1);
+    expect(await usage.count({ action: "generation", poolKey: "ws_maple", since: ALL_TIME })).toBe(1);
+  });
+
+  it("asks the policy AGAIN on fresh numbers when the meter moved under it", async () => {
+    const usage = meter();
+    const seen: number[] = [];
+    const limiter = createLimiter({
+      callback: async ({ count }) => { seen.push(await count("message")); return true; },
+      ops: outrun(usage, 1),
+    });
+
+    await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: true });
+    // Twice, and the second pass read the meter for itself rather than
+    // re-staking the number the first pass lost with.
+    expect(seen).toHaveLength(2);
+    expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(1);
+  });
+
+  it("DENIES rather than admit over a cap when every pass is outrun", async () => {
+    const events = logged();
+    const usage = meter();
+    const limiter = createLimiter({ callback: () => true, ops: outrun(usage, Number.MAX_SAFE_INTEGER) });
+
+    await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: false });
+    expect(events.filter((event) => event.code === "limits.admission_contended")).toHaveLength(1);
+    expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(0);
+  });
+
+  it("stakes NOTHING for a policy that never read the meter", async () => {
+    const usage = meter();
+    // A reservation that refuses every non-empty stake: a policy that counted
+    // nothing has none, so this must still be admitted on the first pass.
+    let staked: number | undefined;
+    const limiter = createLimiter({
+      callback: () => true,
+      ops: { ...usage, claim: async (event, observed) => { staked = observed.length; return await usage.claim!(event, observed); } },
+    });
+
+    await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: true });
+    expect(staked).toBe(0);
+    expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(1);
+  });
+
+  it("falls back to count-then-record against an adapter that cannot reserve", async () => {
+    const usage = meter();
+    const limiter = createLimiter({ callback: () => true, ops: unreserving(usage) });
+
+    await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: true });
+    expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(1);
+  });
+
+  /** The defect itself, pinned against the fallback — and the reason the case
+      above it is worth anything. The SAME race, the SAME cap, the only
+      difference being an adapter that cannot reserve: both actions are admitted
+      and the meter ends at two. This is the bounded overrun Cloud still carries
+      until the mount serves the verb, and it fails the day the fallback stops
+      being the fallback — which is exactly when it should. */
+  it("over-admits WITHOUT a reservation — the bounded overrun the fallback keeps", async () => {
+    const usage = meter();
+    const limiter = createLimiter({
+      callback: async ({ count }) => (await count("message")) < 1,
+      ops: unreserving(usage),
+    });
+
+    const verdicts = await Promise.all([limiter.gate("message", ctxFor()), limiter.gate("message", ctxFor())]);
+
+    expect(verdicts.filter((verdict) => verdict.allow)).toHaveLength(2);
+    expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(2);
+  });
+});
+
 describe("the user the policy decides about", () => {
   it("is the resolved principal, the host's facts, and the pool NAMES", async () => {
     let seen: LimitUser | undefined;

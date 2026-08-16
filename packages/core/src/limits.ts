@@ -59,8 +59,14 @@ export const limitUserSchema = principalSchema.extend({
   pools: z.array(z.string()).optional(),
 }) satisfies z.ZodType<LimitUser>;
 
-/** The host's policy, asked once before each metered action. Vendo counts;
-    this decides.
+/** The host's policy, asked before each metered action. Vendo counts; this
+    decides.
+
+    Asked "before each" and not "exactly once per": when the meter moves between
+    the `count` this policy read and the write that admits the action, the
+    verdict was reached against numbers that no longer exist, and the policy is
+    asked AGAIN on fresh ones rather than honored over a cap. A policy is a
+    DECISION and should carry no side effects of its own, for that reason.
 
     `count` is a meter reader already bound to THIS user, so a policy never
     names a subject and can never read another person's usage by accident. It

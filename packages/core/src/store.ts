@@ -396,6 +396,20 @@ export interface UsageTallyRow {
   count: number;
 }
 
+/** One number a policy already decided on, paired with the question that
+    produced it — what {@link StoreOps.usage}'s `claim` re-checks before it
+    admits the action.
+
+    The QUERY travels, not just the number, because the window a policy chose is
+    the only thing that makes the count meaningful: re-counting "messages in the
+    last hour" against a different hour proves nothing about the verdict that was
+    reached. Carrying the query verbatim means the re-check asks the identical
+    question, so a mismatch can only mean the meter moved. */
+export interface UsageObservation {
+  query: UsageCountQuery;
+  count: number;
+}
+
 // ---------------------------------------------------------------------------
 // footprint — what the store is holding
 // ---------------------------------------------------------------------------
@@ -428,14 +442,22 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 48 store operations across 13 families.
-    Lean by design — this is the CONTRACT interface, not the implementation.
+/** The typed contract for all 48 wire-served store operations across 13
+    families, plus `usage.claim`. Lean by design — this is the CONTRACT
+    interface, not the implementation.
 
-    Three members are OPTIONAL, and all three mean the same thing: an
-    implementation that cannot serve the family says so by OMITTING it, never by
+    `usage.claim` is counted apart because it is the one op with no path in
+    `STORE_WIRE_PATHS`, and `status()`'s `ops` level is a count of THAT list: a
+    reservation is one indivisible check and write, which is a thing an
+    implementation either holds a handle to make or does not, never a round trip
+    a client can compose. `IdempotencyLedger` sits outside the interface for the
+    same reason.
+
+    FOUR members are OPTIONAL, and all four mean the same thing: an
+    implementation that cannot serve it says so by OMITTING it, never by
     accepting the call and doing something else (`transcripts.appendMessages`,
-    `retention` and `usage`, following `RecordStore.claim`/`atomic`). Everything
-    else is required. */
+    `retention`, `usage` and `usage.claim`, following
+    `RecordStore.claim`/`atomic`). Everything else is required. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
       effects, and the automations and guard drawers — reached through seven
@@ -563,6 +585,41 @@ export interface StoreOps {
     record(event: UsageEvent): Promise<void>;
     count(query: UsageCountQuery): Promise<number>;
     tally(query: UsageTallyQuery): Promise<UsageTallyRow[]>;
+    /**
+     * ATOMICALLY record `event`, but ONLY while every number in `observed` is
+     * still what it was — the meter's answer to `IdempotencyLedger.claim`, and
+     * the same move: put the refusal in front of the write instead of behind
+     * it.
+     *
+     * A quota has no unique key to reserve, and the cap is the HOST's, never
+     * Vendo's — a policy is handed a `count` and compares it to a number this
+     * side never sees. So the reservation is a compare-and-swap on the counts
+     * the policy actually read: admit this action only while the meter it was
+     * judged against has not moved. That needs no cap and no host API.
+     *
+     * - `true` — every observed count still holds and the event is RECORDED.
+     * - `false` — a count moved, so the verdict was decided against a meter
+     *   that no longer exists. NOTHING is written; the caller re-asks its
+     *   policy on fresh numbers or denies.
+     *
+     * An EMPTY `observed` records unconditionally and answers `true`: a policy
+     * that never read the meter has no race to lose.
+     *
+     * CONTRACT: the check and the write MUST be one indivisible step against
+     * every target either of them touches — the observed subjects and pools AND
+     * the event's own `subject`/`poolKeys`. Checking only what was observed
+     * leaves the hole this verb exists to close: a writer draining a pool it
+     * never counted invalidates an observer of that pool without ever meeting
+     * it. A plain `INSERT ... WHERE (SELECT count(*) ...) = n` is NOT that step
+     * under READ COMMITTED, where each statement counts its own snapshot and
+     * neither racer sees the other's uncommitted row.
+     *
+     * OPTIONAL, on `RecordStore.claim`/`atomic`'s rule: an adapter that cannot
+     * reserve omits it, and callers fall back to `count`-then-`record` — which
+     * races, bounded by however many requests for one subject are genuinely in
+     * flight at once.
+     */
+    claim?(event: UsageEvent, observed: readonly UsageObservation[]): Promise<boolean>;
   };
   /** The store's secret vault — the values a host's connectors authenticate
       with, kept where the rest of its data is kept.

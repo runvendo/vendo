@@ -51,7 +51,10 @@ type Flaw =
   | "workspaceNormalisesContent"
   | "readOfNoPathsRefuses"
   | "emptyCommitIsAccepted"
-  | "indexDefaultsElsewhere";
+  | "indexDefaultsElsewhere"
+  | "usageClaimIgnoresItsStake"
+  | "usageClaimReadsThenWrites"
+  | "usageClaimChecksOnlyWhatItRead";
 
 /** A message id nobody would collide with, so `appendNeverEdits` really appends. */
 let nonce = 0;
@@ -63,6 +66,7 @@ let nonce = 0;
 function broken(flaw: Flaw): StoreOps {
   const ops = memoryStoreOps();
   const append = ops.transcripts.appendMessages!;
+  const usage = ops.usage!;
   const yieldToTheOther = async (): Promise<void> => { await Promise.resolve(); };
 
   switch (flaw) {
@@ -233,6 +237,32 @@ function broken(flaw: Flaw): StoreOps {
     case "indexDefaultsElsewhere":
       return { ...ops, workspace: { ...ops.workspace, index: (query) =>
         ops.workspace.index({ ...query, owner: query?.owner ?? "some_other_default" }) } };
+
+    // ---- usage ----------------------------------------------------------
+    case "usageClaimIgnoresItsStake":
+      // A reservation that reserves nothing: it takes the stake, writes anyway,
+      // and reports the admission the caller was hoping for.
+      return { ...ops, usage: { ...usage, async claim(event) {
+        await usage.record(event);
+        return true;
+      } } };
+    case "usageClaimReadsThenWrites":
+      // The defect the verb exists to close, moved inside the verb: the counts
+      // are read, the window opens, and the write lands on a meter that has
+      // moved since. Passes every sequential case ever written.
+      return { ...ops, usage: { ...usage, async claim(event, observed) {
+        const counted = await Promise.all(observed.map(({ query }) => usage.count(query)));
+        await yieldToTheOther(); // the window a second caller lands in
+        if (counted.some((count, index) => count !== observed[index]!.count)) return false;
+        await usage.record(event);
+        return true;
+      } } };
+    case "usageClaimChecksOnlyWhatItRead":
+      // Re-checks the subject stakes and drops the pool ones — the plausible
+      // half-fix, and the one that lets a contender who never counted a bucket
+      // fill it under an observer who did.
+      return { ...ops, usage: { ...usage, claim: (event, observed) =>
+        usage.claim!(event, observed.filter(({ query }) => query.subject !== undefined)) } };
   }
 }
 
@@ -262,6 +292,9 @@ const proofs: Array<{ flaw: Flaw; case: string; red: RegExp }> = [
   { flaw: "readOfNoPathsRefuses", case: "workspace.read of no paths is an empty answer, not a refusal", red: /workspace\.read needs at least one path/ },
   { flaw: "emptyCommitIsAccepted", case: "workspace.commit refuses the same path twice in one commit, and an empty commit", red: /committing no entries at all did not throw/ },
   { flaw: "indexDefaultsElsewhere", case: "the workspace's default owner is one drawer on every verb", red: /an index with no owner did not see a commit with no owner/ },
+  { flaw: "usageClaimIgnoresItsStake", case: "usage.claim records only while the counts the policy read still hold", red: /was ADMITTED — this is the overrun the verb exists to stop/ },
+  { flaw: "usageClaimReadsThenWrites", case: "usage.claim under a real race admits exactly one of two callers reading one meter", red: /exactly one of two simultaneous claims on a cap of one may be admitted, 2 were/ },
+  { flaw: "usageClaimChecksOnlyWhatItRead", case: "usage.claim under a real race admits exactly one of two callers reading one meter", red: /admitted on a pool count of zero that ANOTHER subject's action had already moved/ },
 ];
 
 const caseNamed = (name: string, options: Parameters<typeof storeOpsConformance>[0]) => {
