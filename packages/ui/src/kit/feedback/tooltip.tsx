@@ -8,8 +8,24 @@ import { Tooltip as Base } from "@base-ui/react/tooltip";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { popup, popupMotion, t } from "../tokens.js";
 
-/** What the browser would already stop on inside the trigger. */
-const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])";
+/** What the browser would already stop on inside the trigger. `:disabled` is
+ *  excluded because a disabled control is SKIPPED by sequential navigation:
+ *  treating one as the reachable stop would drop the wrapper's fallback and
+ *  leave the hint with no way in at all — and "why is this disabled?" is the
+ *  thing a tooltip is most often for. */
+const FOCUSABLE = [
+  "a[href]",
+  "button:not(:disabled)",
+  "input:not(:disabled)",
+  "select:not(:disabled)",
+  "textarea:not(:disabled)",
+  "[tabindex]:not([tabindex='-1']):not(:disabled)",
+].join(", ");
+
+/** `aria-describedby` is a space-separated ID LIST, and this Tooltip owns
+ *  exactly one entry in it. */
+const described = (element: HTMLElement): string[] =>
+  (element.getAttribute("aria-describedby") ?? "").split(/\s+/u).filter(Boolean);
 
 export interface TooltipProps {
   /** The hint, as plain text. */
@@ -36,13 +52,16 @@ export function Tooltip({ label, content, children }: TooltipProps) {
   }, [children]);
   useEffect(() => {
     if (control === null) return undefined;
-    // Appended, never assigned: a described control (an Input with a hint) is
-    // already pointing at something, and aria-describedby is a LIST.
-    const existing = control.getAttribute("aria-describedby");
-    control.setAttribute("aria-describedby", existing === null ? hintId : `${existing} ${hintId}`);
+    // Add and remove are symmetric, and BOTH read the list as it stands now.
+    // Snapshotting it on the way in and restoring that snapshot on the way out
+    // would erase whatever arrived while this Tooltip was mounted — a
+    // validation-error id being exactly the description that matters most.
+    // This component owns one token and touches no other.
+    control.setAttribute("aria-describedby", [...described(control), hintId].join(" "));
     return () => {
-      if (existing === null) control.removeAttribute("aria-describedby");
-      else control.setAttribute("aria-describedby", existing);
+      const rest = described(control).filter((token) => token !== hintId);
+      if (rest.length === 0) control.removeAttribute("aria-describedby");
+      else control.setAttribute("aria-describedby", rest.join(" "));
     };
   }, [control, hintId]);
 

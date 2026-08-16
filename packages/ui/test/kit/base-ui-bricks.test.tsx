@@ -278,6 +278,10 @@ describe("Menu", () => {
   });
 });
 
+/** `aria-describedby` is an ID list, so assertions read it as one. */
+const described = (element: HTMLElement): string[] =>
+  (element.getAttribute("aria-describedby") ?? "").split(/\s+/u).filter(Boolean);
+
 /** Base UI opens a tooltip off a NATIVE `mouseenter` on the trigger — not the
  *  delegated one React synthesizes — and then waits out the hover delay. */
 const hover = (trigger: HTMLElement) => {
@@ -315,6 +319,49 @@ describe("Tooltip", () => {
     expect(described?.split(" ")).toContain("its-own");
     expect(described?.split(" ").length).toBe(2);
     expect(container.querySelector('[data-kit="Tooltip"]')?.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("removes only its OWN hint on unmount, keeping a description that arrived meanwhile", () => {
+    // The snapshot-and-restore bug: cleanup used to reinstate the list as it
+    // stood at MOUNT, so a description written while the Tooltip was open — a
+    // validation error id, the one that matters most — was erased on the way
+    // out, and the stale one came back.
+    function Host({ swapped }: { swapped: boolean }) {
+      return (
+        <Tooltip label="Sent 3 days ago">
+          {swapped
+            ? <a href="#next">Next</a>
+            : <button type="button" aria-describedby="initial-description">Resend</button>}
+        </Tooltip>
+      );
+    }
+    const view = render(<Host swapped={false} />);
+    const button = screen.getByRole("button", { name: "Resend" });
+    expect(described(button)).toContain("initial-description");
+    expect(described(button).length).toBe(2);
+
+    // Another owner rewrites the description while this Tooltip holds the
+    // control. A field turning invalid is exactly this.
+    button.setAttribute("aria-describedby", "dynamic-description");
+
+    // …and now the Tooltip lets this control go.
+    view.rerender(<Host swapped />);
+
+    expect(described(button)).toEqual(["dynamic-description"]);
+  });
+
+  it("keeps the wrapper reachable when the control it wraps is DISABLED", () => {
+    // A disabled control is skipped by sequential navigation, so treating it as
+    // the reachable stop left the hint with no way in — and "why is this
+    // disabled?" is the question a tooltip most often answers.
+    const { container } = render(
+      <Tooltip label="Awaiting approval"><button type="button" disabled>Send</button></Tooltip>,
+    );
+    const trigger = container.querySelector('[data-kit="Tooltip"]') as HTMLElement;
+
+    expect(trigger.getAttribute("tabindex")).toBe("0");
+    expect(trigger.getAttribute("aria-describedby")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Send" }).getAttribute("aria-describedby")).toBeNull();
   });
 
   it("still stands in for a child that could not be reached at all", () => {
