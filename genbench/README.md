@@ -330,9 +330,12 @@ like the product it claims to be) — from a pinned `claude-opus-5` that is show
 the screenshot, the click trace and the source.
 
 It grades **blind**. Nothing it is sent names the contender, its model or its
-run folder; the SOURCE channel is `page.html` for every column, because vendo's
-artifact is TSX and both baselines' is HTML and that is a perfect classifier for
-which column is the vendor's. The lines arrive shuffled and are mapped back
+run folder; the SOURCE channel is the DOM the browser holds once the screen has
+settled, script bodies dropped, captured when the shot is taken and the same for
+every column — vendo's artifact is TSX and both baselines' is HTML and that is a
+perfect classifier for which column is the vendor's, and the `page.html` that
+first fixed that carries vendo's whole inlined runtime, which is more than a
+judge's context can hold. The lines arrive shuffled and are mapped back
 after, and the shuffle is **seeded from the case's own stamp**, so one case is
 asked in one order — the same for every column of it and the same on every rerun.
 
