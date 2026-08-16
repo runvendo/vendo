@@ -287,8 +287,9 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
 10. **Show it running.** Doctor green is the gate, but your human should SEE
     the install, not take your word for it. Leave the dev server running,
     hand them the exact URL, and give them one concrete first ask to type
-    into the product's chat surface — e.g. "ask it to build a small dashboard
-    from your data; a guarded write will render an approve/deny card inline."
+    into the product's chat surface. For example: "ask it to build a small
+    dashboard from your data; a guarded write will render an approve/deny
+    card inline."
     Name which of their agent's surfaces now renders Vendo output (the chat
     page, the overlay, an embed) so they know where to look.
 
@@ -359,7 +360,7 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    seam: doctor then runs its live mint-and-verify round-trip and FAILS
    [`E-AUTH-004`](/production/troubleshooting/e-auth-004), because a fixed demo principal can
    never echo the probe's own subject. Absent, doctor warns
-   [`E-AUTH-007`](/production/troubleshooting/e-auth-007) and step 9's gate still passes — the
+   [`E-AUTH-007`](/production/troubleshooting/e-auth-007) and step 9's gate still passes. The
    price is that your own route-bound tools answer `not-implemented` over the
    door, while `vendo_make` and the apps tools work. Every client acts as that
    one person: a demo or an internal tool, not a multi-user product.
@@ -411,7 +412,7 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    the per-user OAuth the door already serves. Recipe:
    [MCP door](/outside-agents/how-the-door-works).
 
-5. **Verify — step 9's gate, nothing new.** Doctor reads the door's posture off
+5. **Verify: step 9's gate, nothing new.** Doctor reads the door's posture off
    the running composition, so the dev server must be up for the MCP checks to
    run at all. The registry checks grade `server.json` and the challenge only
    when those files already exist — publishing to the MCP registry is a separate
