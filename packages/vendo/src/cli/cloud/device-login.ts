@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { option } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
-import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
+import { deletePendingClaim, readPendingClaim, writePendingClaim, type PendingClaim } from "./pending-claim.js";
 import { writeCloudSession, type CloudSession } from "./session.js";
 import { ensureEnvLocalIgnored, upsertEnvLocal } from "../cloud-init.js";
 import { browserOpenCommand, CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
@@ -92,6 +92,18 @@ export async function preflightEnvLocalWrite(root: string): Promise<string | nul
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+/**
+ * A dead claim was still on disk when a fresh ceremony opened, so whoever the
+ * last code was relayed to may still be holding it. Say the old code is gone
+ * before the new one prints: the published flow has the agent hand its code to
+ * a human through a chat relay, and a silently replaced code reaches that human
+ * as a bare "no open request matches that code" on the approval page.
+ */
+function noteStaleCode(pending: PendingClaim | null, now: number, output: Output): void {
+  if (pending === null || pending.expires_at > now) return;
+  output.log(`The earlier code ${pending.user_code} has expired and no longer works. Here is a new one.`);
 }
 
 interface Ceremony {
@@ -276,6 +288,7 @@ export async function runDeviceLogin(
 
       const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
       const tty = options.isTty ?? (process.stdout.isTTY === true);
+      noteStaleCode(pending, now(), output);
       if (options.pretty === true) {
         if (tty) {
           // One line. The browser is already opening, so the code IS the whole

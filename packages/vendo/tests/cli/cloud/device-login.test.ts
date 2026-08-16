@@ -645,6 +645,48 @@ describe("pending claim persistence", () => {
     expect(new URLSearchParams(requests[1]!.body).get("claim_token")).toBe(CEREMONY.claim_token);
   });
 
+  it("says the expired code is dead before printing its replacement", async () => {
+    const home = await tempRoot();
+    const root = await tempRoot();
+    await writePending(home, root, { expires_at: Date.now() - 1_000 });
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    const logs = messages.logs.join("\n");
+    // The relay human may still be holding WXYZ-PQRS: naming it as dead is the
+    // whole point, and it has to land before the new code is printed.
+    expect(logs).toContain("The earlier code WXYZ-PQRS has expired and no longer works. Here is a new one.");
+    expect(logs.indexOf("WXYZ-PQRS")).toBeLessThan(logs.indexOf(CEREMONY.user_code));
+  });
+
+  it("says nothing about an earlier code when there was none", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root: await tempRoot(),
+      home: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(messages.logs.join("\n")).not.toContain("The earlier code");
+  });
+
   it("removes the pending claim when the human denies the request", async () => {
     const home = await tempRoot();
     const root = await tempRoot();
