@@ -1,0 +1,33 @@
+---
+title: "E-AUTH-003"
+sidebarTitle: "E-AUTH-003"
+description: "Doctor's present-credential probe cannot run while the dev server is down."
+---
+
+```text auth/present
+broken: present credential probe cannot run; start the dev server at <base>
+and retry
+```
+
+`check: auth/present` · `error_code: E-AUTH-003` · `doctor exits: 1`
+
+## What you're seeing
+
+This check never got to run at all.
+
+## Why
+
+It follows directly from a failed `/status` round trip. See
+[E-LIVE-002](/production/troubleshooting/e-live-002) for why the dev server
+was unreachable.
+
+## The fix
+
+Start the dev server at the probed base, then re-run `npx vendo doctor`.
+This check runs automatically once `/status` answers.
+
+## Related errors
+
+- [E-LIVE-002](/production/troubleshooting/e-live-002) — the root cause this check inherits
+- [E-AUTH-006](/production/troubleshooting/e-auth-006) — the actAs probe, blocked by the same dead server
+- [E-TURN-002](/production/troubleshooting/e-turn-002) — the model turn, blocked by the same dead server

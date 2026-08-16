@@ -1,0 +1,62 @@
+---
+title: "E-WIRE-004"
+sidebarTitle: "E-WIRE-004"
+description: "Doctor found no client entry mounting <VendoProvider> in any layout or _app file."
+---
+
+```text wiring/next-root
+broken: no client entry mounts <VendoProvider> — Vendo is wired but nothing on
+the page can reach it. In <file>, paste: import { VendoProvider } from
+"@vendoai/vendo/react";  … then wrap: <VendoProvider baseUrl="/api/vendo">
+<children></VendoProvider>. (Any layout that covers your pages works. `vendo
+init` never edits your source, so this paste is always yours.)
+```
+
+`<file>` is the exact layout or `_app` file doctor found covering your pages;
+`<children>` is whatever that file already renders (`{children}` on the App
+Router, `<Component {...pageProps} />` on the Pages Router).
+
+`check: wiring/next-root` · `error_code: E-WIRE-004` · `doctor exits: 1`
+
+## What you're seeing
+
+The app builds, every route renders, and `npx vendo doctor` still fails.
+There is no way for a user to reach the agent because the provider that
+carries the wire down to the UI was never mounted.
+
+## Why
+
+`vendo init` scaffolds the server route and the `.vendo/` contract, but it
+never edits your source files. Mounting `<VendoProvider>` in your layout is
+the one step init hands back to you, and it's printed as the last line of
+init's own output.
+
+## The fix
+
+Wrap the children in whichever layout covers your pages.
+
+```tsx app/layout.tsx {1,6}
+import { VendoProvider } from "@vendoai/vendo/react";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+On the Pages Router, wrap `<Component {...pageProps} />` in `pages/_app.tsx`
+the same way. If you have host components, declare the registry in your own
+`"use client"` file and mount the provider there instead: a Server Component
+layout cannot pass component references to a client provider without
+crashing every page.
+
+## Related errors
+
+- [E-WIRE-003](/production/troubleshooting/e-wire-003): the route this provider needs to reach is missing
+- [E-WIRE-006](/production/troubleshooting/e-wire-006): the provider is mounted but nothing visible sits inside it
+- [E-WIRE-010](/production/troubleshooting/e-wire-010): the same mount, still using the retired `<VendoRoot>` name

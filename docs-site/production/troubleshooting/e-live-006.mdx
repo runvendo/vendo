@@ -1,0 +1,47 @@
+---
+title: "E-LIVE-006"
+sidebarTitle: "E-LIVE-006"
+description: "Doctor's root-page probe found the app crashing for real users even though the wire itself answers."
+---
+
+```text live/render
+broken: the app's root page returned <status> — the site is crashing for
+users even though the wire answers (typical cause: the component registry
+declared in a Server Component layout; move it into your own "use client"
+file with the provider). Check the dev server log.
+```
+
+`<status>` is the HTTP status the app's root page returned; doctor only
+fires this check at 500 or above.
+
+`check: live/render` · `error_code: E-LIVE-006` · `doctor exits: 1`
+
+## What you're seeing
+
+Doctor GETs the app's root page after `/status` succeeds, and it comes back
+a 5xx. Every API-level check can be green while the site itself is down for
+a real visitor.
+
+## Why
+
+The most common cause right after a fresh install is the component registry
+imported in a Server Component layout and passed into the client provider.
+React refuses to serialize component references across that boundary, and
+every page 500s.
+
+## The fix
+
+Read the dev server log first; it carries the real stack. For the registry
+crash, declare your component registry in your own `"use client"` file and
+mount `<VendoProvider>` there instead of importing the registry directly in
+a Server Component layout. See
+[E-WIRE-004](/production/troubleshooting/e-wire-004) for the full
+provider-mount shape.
+
+Re-run `npx vendo doctor` once the layout imports that client file instead
+of the registry.
+
+## Related errors
+
+- [E-WIRE-004](/production/troubleshooting/e-wire-004) — the provider mount this fix changes
+- [E-LIVE-001](/production/troubleshooting/e-live-001) — the wire itself, one check up

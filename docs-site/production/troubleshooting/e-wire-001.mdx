@@ -1,0 +1,55 @@
+---
+title: "E-WIRE-001"
+sidebarTitle: "E-WIRE-001"
+description: "Doctor's Express check found no createVendo server wiring, so the wire never mounted."
+---
+
+```text wiring/express-server
+broken: Express server is not wired with createVendo from @vendoai/vendo/server
+```
+
+`check: wiring/express-server` · `error_code: E-WIRE-001` · `doctor exits: 1`
+
+## What you're seeing
+
+`npx vendo doctor` fails before it can probe anything live. On an Express
+host, this is the first check doctor runs, so nothing downstream even gets a
+chance to pass.
+
+## Why
+
+Doctor scanned the repo's source files for a module that imports
+`createVendo` from `@vendoai/vendo/server` and calls it. It found none. The
+server-side half of the wire was never written, or it imports from the wrong
+specifier.
+
+## The fix
+
+Compose the wire in a small server module and mount it on your Express app.
+
+```ts vendo/server.ts
+import { createVendo } from "@vendoai/vendo/server";
+import { anthropic } from "@ai-sdk/anthropic";
+
+export const vendo = createVendo({
+  models: { default: anthropic("claude-sonnet-4-6") },
+});
+```
+
+```ts app.ts {2,5}
+import express from "express";
+import { vendo } from "./vendo/server.js";
+
+const app = express();
+app.use("/api/vendo", vendo.express());
+```
+
+If you already have a composition, confirm it imports from
+`@vendoai/vendo/server` and calls `createVendo({...})` rather than a stale or
+misspelled path. Re-run `npx vendo doctor` once the mount is in place.
+
+## Related errors
+
+- [E-WIRE-002](/production/troubleshooting/e-wire-002): the client half of the same Express wiring
+- [E-WIRE-005](/production/troubleshooting/e-wire-005): the dependency itself is not declared
+- [E-WIRE-006](/production/troubleshooting/e-wire-006): the server wire is up but nothing renders it

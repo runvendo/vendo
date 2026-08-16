@@ -1,0 +1,53 @@
+---
+title: "E-WIRE-006"
+sidebarTitle: "E-WIRE-006"
+description: "Doctor found no visible agent surface mounted, so users have no way to open the agent."
+---
+
+```text wiring/surface
+broken: no visible agent surface is mounted — <VendoProvider> renders nothing
+by itself; add <VendoOverlay /> (the launcher pill + panel) or render your own
+surface (<VendoThread />, <VendoToolResult>, the BYO embeds)
+```
+
+`check: wiring/surface` · `error_code: E-WIRE-006` · `doctor exits: 1`
+
+## What you're seeing
+
+The app loads and looks right. There is nothing on the page to open the
+agent with: no pill, no panel, no trigger. Every other check can be green and
+a user opening the app still sees nothing.
+
+## Why
+
+`<VendoProvider>` is a context provider; it carries the wire and renders no
+UI of its own. Doctor scanned your source and found none of the surface
+markers: `<VendoOverlay`, `<VendoThread`, `<VendoTrigger`, `<VendoPalette`,
+`<VendoSlot`, the BYO embeds (`<VendoToolResult`, `<VendoAppEmbed`,
+`<VendoApprovalEmbed`), or the surface-driving hooks (`useVendoOverlay(`,
+`useVendoThread(`, `useSlotApp(`).
+
+## The fix
+
+Mount `<VendoOverlay />`, the launcher pill plus panel, anywhere inside the
+provider.
+
+```tsx app/layout.tsx {1,5}
+import { VendoProvider, VendoOverlay } from "@vendoai/vendo/react";
+
+<VendoProvider baseUrl="/api/vendo">
+  {children}
+  <VendoOverlay />
+</VendoProvider>
+```
+
+Already rendering tool output through `<VendoToolResult>` in your own chat
+UI? That passes this check as-is; no overlay needed. Re-run
+`npx vendo doctor` once a surface is mounted.
+
+## Related errors
+
+- [E-WIRE-004](/production/troubleshooting/e-wire-004): provider mount, one level up from the surface
+- [E-WIRE-003](/production/troubleshooting/e-wire-003): the route the surface talks to
+- [E-WIRE-005](/production/troubleshooting/e-wire-005): dependency declared, the layer below wiring
+- [E-WIRE-010](/production/troubleshooting/e-wire-010): legacy provider name that can hide this same check

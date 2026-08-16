@@ -1,0 +1,49 @@
+---
+title: "E-WIRE-002"
+sidebarTitle: "E-WIRE-002"
+description: "Doctor's Express check found no <VendoProvider> in the client, so the wire has no consumer."
+---
+
+```text wiring/express-client
+broken: Express client is not wrapped in <VendoProvider>
+```
+
+`check: wiring/express-client` · `error_code: E-WIRE-002` · `doctor exits: 1`
+
+## What you're seeing
+
+The Express server can be wired correctly and this check still fails. Doctor
+grades the client and server halves separately, so a green server does not
+excuse a missing client.
+
+## Why
+
+Doctor scanned the repo's source for a `<VendoProvider` element and found
+none. The client half of the wiring, the part that actually talks to your
+`/api/vendo` route, was never pasted in.
+
+## The fix
+
+Wrap your client entry point in `<VendoProvider>`, pointed at the mount path
+you gave Express.
+
+```tsx client/main.tsx {1,5}
+import { VendoProvider } from "@vendoai/vendo/react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+
+createRoot(document.getElementById("root")!).render(
+  <VendoProvider baseUrl="/api/vendo">
+    <App />
+  </VendoProvider>,
+);
+```
+
+`baseUrl` must match the path you mounted the Express handler on. Re-run
+`npx vendo doctor` once the provider wraps the app.
+
+## Related errors
+
+- [E-WIRE-001](/production/troubleshooting/e-wire-001): the server half of the same Express wiring
+- [E-WIRE-006](/production/troubleshooting/e-wire-006): the provider is mounted but nothing visible sits inside it
+- [E-WIRE-008](/production/troubleshooting/e-wire-008): the same missing-provider check on an unrecognized framework

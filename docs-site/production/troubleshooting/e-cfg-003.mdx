@@ -1,0 +1,54 @@
+---
+title: "E-CFG-003"
+sidebarTitle: "E-CFG-003"
+description: "Doctor found the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree, so every host tool call 404s."
+---
+
+```text config/mount
+broken: <spec> declares servers[0].url "<mount>" but VENDO_BASE_URL's path is
+"<basePath>" — one of them is wrong, and the disagreement 404s every host
+tool while every page renders.
+```
+
+`<spec>` is your OpenAPI spec's path, `<mount>` is the relative server URL it
+declares, and `<basePath>` is the path doctor read out of `VENDO_BASE_URL`.
+When `VENDO_BASE_URL` is unset entirely, the message instead reads
+`VENDO_BASE_URL is unset` in place of the path comparison, same cause, same
+fix.
+
+`check: config/mount` · `error_code: E-CFG-003` · `doctor exits: 1`
+
+## What you're seeing
+
+The app looks perfect. Every page renders and every number the agent quotes
+fails, because the client, the server, and the OpenAPI spec disagree about
+the deployment's path prefix.
+
+## Why
+
+Your deployment's path prefix has exactly one home: `VENDO_BASE_URL`. A spec
+that declares a different relative server mount is the same disagreement by
+another route. With no base URL set, the wire learns the bare request
+origin instead, so a prefix-free stored path lands one prefix short.
+
+## The fix
+
+Set `VENDO_BASE_URL` to the app's full public URL, prefix included, and pass
+that same prefix into the provider.
+
+```bash .env.local
+VENDO_BASE_URL=https://site.com/maple
+```
+
+```tsx app/layout.tsx {1}
+<VendoProvider baseUrl="/maple/api/vendo">{children}</VendoProvider>
+```
+
+If the app isn't actually mounted under a prefix, drop the relative
+`servers[0].url` from the spec instead. Re-run `npx vendo doctor`, which
+reports this same code if the disagreement remains.
+
+## Related errors
+
+- [E-CFG-001](/production/troubleshooting/e-cfg-001): a missing `.vendo/` file, a different kind of config gap
+- [E-WIRE-004](/production/troubleshooting/e-wire-004): the provider mount this base URL feeds into
