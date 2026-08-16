@@ -164,17 +164,32 @@ describe("blindness", () => {
   });
 
   /** The probe presses nothing inside a confirmation, so the dialog's own words
-   *  are the only evidence that press left. They are quoted verbatim, because a
-   *  line like "asks before it cancels two transfers" is graded off them. */
+   *  are the evidence that press left. They are quoted verbatim, because a line
+   *  like "asks before it cancels two transfers" is graded off them. */
+  const DIALOG = "Cancel 2 transfers? This cannot be undone.";
+
   it("renders a confirmation as the text it showed, quoted", async () => {
     const model = answering();
+    const trace: Probed[] = [{ label: "Cancel all", dialog: DIALOG, changed: true, calls: [] }];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "Cancel all" — opened a confirmation: "${DIALOG}"`,
+    );
+  });
+
+  /** A press can do both, and then the judge is owed both: dropping the call
+   *  would fail a "pressing it calls X" line on a screen that really does call X
+   *  and then ask. */
+  it("renders a press that called AND confirmed as both, in one line", async () => {
+    const model = answering();
     const trace: Probed[] = [
-      { label: "Cancel all", dialog: "Cancel 2 transfers? This cannot be undone.", changed: true, calls: [] },
+      { label: "Cancel all", dialog: DIALOG, changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
     ];
     await judge(input({ trace }), { model });
 
     expect(traceSent(model.doGenerateCalls[0]!)).toContain(
-      `pressed "Cancel all" — opened a confirmation: "Cancel 2 transfers? This cannot be undone."`,
+      `pressed "Cancel all" — called cancel_transfer({"id":"tr_1"}) and opened a confirmation: "${DIALOG}"`,
     );
   });
 
