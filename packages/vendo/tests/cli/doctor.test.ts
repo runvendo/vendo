@@ -1823,6 +1823,22 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
+  it("recognizes the unscoped vendoai alias spelling of the preset import", async () => {
+    const root = await expressHost(true);
+    // Assembled at runtime: an import-shaped alias literal in this file would
+    // read as a real cross-package import to the dependency guard.
+    const aliasSpecifier = ["vendoai", "auth", "supabase"].join("/");
+    await writeFile(join(root, "src", "server.ts"),
+      `import { supabase } from "${aliasSpecifier}";\n` +
+      'import { createVendo } from "@vendoai/vendo/server";\n' +
+      "createVendo({ auth: supabase(), models: { default: model }, principal });\n");
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({
+      status: "warning",
+      error_code: "E-AUTH-009",
+    });
+  });
+
   it("does not read a commented-out preset import as supabase wiring", async () => {
     const root = await expressHost(true);
     await writeFile(join(root, "src", "server.ts"),

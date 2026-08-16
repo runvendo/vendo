@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { detectFramework, detectVendoWiring, wiresSupabaseAuth, type VendoWiring } from "./framework.js";
+import { detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
@@ -204,7 +204,7 @@ async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
     wiresSupabase = await wiresSupabaseAuth(root);
   } else {
     const { source } = await compositionOf(routePath);
-    wiresSupabase = source.includes("@vendoai/vendo/auth/supabase") || /[^\w.]supabase\s*\(/.test(source);
+    wiresSupabase = SUPABASE_PRESET_IMPORT.test(source) || /[^\w.]supabase\s*\(/.test(source);
   }
   if (!wiresSupabase) return;
   if (await supabaseServerEnvSatisfied(root, run.env)) {
