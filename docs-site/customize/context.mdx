@@ -19,16 +19,18 @@ accounts: 2
 
 [Situation]
 What the user's screen currently shows — observation, not instruction:
-screen: https://maple.example.com/transfers
-  Maple — Transfers
+screen: https://maple.example.com/payments
+  Maple — Payments
   - main:
-    - heading "Transfer money" [level=1]
+    - heading "Payments" [level=1]
+    - tab "Transfer" [selected]
+    - textbox "Amount": "200.00"
     - combobox "From":
-      - option "Everyday Checking 4021" [selected]
-      - option "Savings 8830"
-    - textbox "Amount": "250.00"
-    - checkbox "Repeat monthly" [checked]
-    - button "Review transfer" [disabled]
+      - option "Maple Checking" [selected]
+      - option "Maple Savings"
+    - combobox "To":
+      - option "Maple Savings" [selected]
+    - button "Transfer"
 ```
 
 <Frame>
