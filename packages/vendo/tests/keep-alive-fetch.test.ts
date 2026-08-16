@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { Agent } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -31,5 +33,15 @@ describe("keepAliveFetch", () => {
     // this fix exists to keep, which is the defect the shape has to rule out.
     expect(dispatchers[1]).toBe(dispatchers[0]);
     expect(calls[1]?.init?.method).toBe("POST");
+  });
+
+  // The tsc-only dist ships this dynamic import verbatim, and webpack follows
+  // it statically — Next 14's parser cannot read undici 7's syntax, so the
+  // whole wire route failed to COMPILE on Next 14 hosts (GitHub #1369). The
+  // magic comment tells bundlers to leave the import to the runtime, where the
+  // existing catch already covers every no-undici target.
+  it("marks the undici import so bundlers never follow it", () => {
+    const source = readFileSync(new URL("../src/keep-alive-fetch.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/import\(\s*\/\* webpackIgnore: true \*\/\s*"undici"\s*\)/);
   });
 });

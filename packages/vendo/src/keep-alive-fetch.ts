@@ -12,7 +12,14 @@
  *  undici arrives through a dynamic import, so an edge/Worker target that
  *  cannot load it keeps today's plain fetch rather than failing at module
  *  load. And this is only ever what an `options.fetch ?? …` seam falls back to
- *  — a host that brings its own fetch still wins (adapter rule). */
+ *  — a host that brings its own fetch still wins (adapter rule).
+ *
+ *  Bundlers must never follow the import: webpack resolves dynamic imports
+ *  statically, and Next 14's parser cannot read undici 7's syntax, so a Next
+ *  14 host's wire route failed to COMPILE (GitHub #1369). The webpackIgnore
+ *  comment leaves the import to the runtime — Node resolves undici normally,
+ *  and every target that can't gets the same catch-to-plain-fetch as before.
+ *  (Turbopack ignores the comment but parses undici fine.) */
 import { defaultFetch } from "@vendoai/core";
 import type { Agent } from "undici";
 
@@ -27,7 +34,7 @@ const KEEP_ALIVE_MS = 60_000;
 let pool: Promise<Agent | undefined> | undefined;
 
 const keepAlivePool = (): Promise<Agent | undefined> =>
-  pool ??= import("undici")
+  pool ??= import(/* webpackIgnore: true */ "undici")
     .then(({ Agent }) => new Agent({ keepAliveTimeout: KEEP_ALIVE_MS, keepAliveMaxTimeout: KEEP_ALIVE_MS }))
     // One catch for BOTH halves on purpose: a Worker target can fail to load
     // undici at all, and a Worker target that a bundler DID hand a copy of it

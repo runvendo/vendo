@@ -77,6 +77,9 @@ const nextConfig = { serverExternalPackages: ["esbuild", "@electric-sql/pglite"]
 export default nextConfig;
 ```
 
+On Next 14 the key is `experimental.serverComponentsExternalPackages` — same
+list, old name and location (renamed in Next 15).
+
 The wire route needs no `runtime` or `dynamic` export. Node is the default
 runtime and route handlers are already dynamic.
 

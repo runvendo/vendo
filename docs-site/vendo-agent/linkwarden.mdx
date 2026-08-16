@@ -106,7 +106,8 @@ serverExternalPackages: ["esbuild", "@electric-sql/pglite"],
 ```
 
 Without it, Next tries to bundle the build engine and the dev store's native
-pieces into the server bundle.
+pieces into the server bundle. (On a Next 14 host the key is
+`experimental.serverComponentsExternalPackages` — renamed in Next 15.)
 
 ## 6. Older tsconfigs: `moduleResolution`
 
