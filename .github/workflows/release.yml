@@ -4,9 +4,17 @@ on:
   # Real release: pushing a v* tag publishes the fixed lockstep group to npm.
   push:
     tags: ["v*"]
-  # Dry run: manually dispatch to prove the publish end-to-end WITHOUT publishing
-  # or tagging. Runs the exact gate stack + `pnpm -r publish --dry-run`.
+  # Dry run by default: manually dispatch to prove the publish end-to-end WITHOUT
+  # publishing. Runs the exact gate stack + `pnpm -r publish --dry-run`.
   workflow_dispatch:
+    inputs:
+      publish:
+        # version-packages.yml sets this, dispatching at the tag it just pushed:
+        # a GITHUB_TOKEN tag push can never fire the `push: tags` trigger above,
+        # and a dispatch can. Leave it off for a hand-run dry run.
+        description: Publish for real
+        type: boolean
+        default: false
 
 # id-token: write powers npm trusted publishing (OIDC) AND provenance: the
 # workflow's OIDC token is exchanged for a short-lived npm credential, so
@@ -71,15 +79,16 @@ jobs:
       # touching the registry. --provenance is dropped here (no tag/release to
       # attest to, and dry runs mint no attestation).
       - name: Publish (dry run)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
         run: pnpm -r --filter './packages/*' publish --dry-run --no-git-checks --access public
 
-      # Real publish (v* tag): pack every public workspace with pnpm (rewrites
-      # workspace:*), then publish each tarball with npm's OIDC trusted
-      # publishing + provenance. Versions already on the registry are skipped,
-      # so re-runs are safe. No token env by design.
+      # Real publish (v* tag, or a dispatch with publish=true): pack every
+      # public workspace with pnpm (rewrites workspace:*), then publish each
+      # tarball with npm's OIDC trusted publishing + provenance. Versions
+      # already on the registry are skipped, so re-runs are safe. No token env
+      # by design.
       - name: Publish to npm
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.publish
         run: |
           set -euo pipefail
           npm install -g npm@11
@@ -109,3 +118,51 @@ jobs:
           # (libnpmpublish/lib/publish.js), and under `set -e` that aborts the
           # release partway through, after earlier packages are already live.
           done < <(pnpm -r --filter './packages/*' exec node -e "const p=require('./package.json'); if (!p.private) process.stdout.write(p.name+'\n')")
+
+      # Last: open the @vendoai bump PR on vendo-web, so the console never sits
+      # on a stale release. GITHUB_TOKEN is scoped to this repo alone, so this
+      # needs its own cross-repo credential; without it the step says so and
+      # stops, and it never reddens a release that already published.
+      - name: Open the vendo-web dep bump PR
+        if: github.event_name == 'push' || inputs.publish
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.VENDO_WEB_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::VENDO_WEB_PAT is not set — skipping the vendo-web bump PR"
+            exit 0
+          fi
+          version=$(node -p "require('./packages/vendo/package.json').version")
+          branch="chore/bump-vendoai-$version"
+          git clone --depth=1 "https://x-access-token:$GH_TOKEN@github.com/runvendo/vendo-web.git" /tmp/vendo-web
+          cd /tmp/vendo-web
+          # Rewritten in place so the file's own formatting survives; catches
+          # both `dependencies` and `pnpm.overrides`. @vendoai/telemetry is
+          # deliberately excluded: it is outside this repo's changesets `fixed`
+          # group and versions on its own, so it must never ride the lockstep
+          # bump. (It is a `file:` reference today, which the semver pattern
+          # skips anyway — the name is excluded so that holds if it is ever
+          # published as a version.)
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync("package.json", fs.readFileSync("package.json", "utf8")
+              .replace(/"@vendoai\/(?!telemetry")[a-z-]+": "\d+\.\d+\.\d+"/g,
+                (dep) => dep.replace(/\d+\.\d+\.\d+/, process.argv[1])));
+          ' "$version"
+          if git diff --quiet; then
+            echo "vendo-web is already on $version"
+            exit 0
+          fi
+          # pnpm 9 is what vendo-web's own CI installs with, and it runs
+          # --frozen-lockfile: a lockfile written by this repo's pnpm 11 would
+          # fail there. Without this refresh the PR is red on arrival.
+          npx --yes pnpm@9 install --lockfile-only --ignore-scripts
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -am "chore: bump @vendoai/* to $version"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --head "$branch" \
+            --title "chore: bump @vendoai/* to $version" \
+            --body "Automated by runvendo/vendo's release workflow for v$version. \`@vendoai/telemetry\` is outside the release group and is left alone."
