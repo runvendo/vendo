@@ -2,6 +2,7 @@ import {
   VENDO_APPS_PIN_TOOL,
   VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
+  VENDO_SLOTS_LIST_TOOL,
   VENDO_TOOL_TITLES,
   VendoError,
   type AppId,
@@ -90,6 +91,21 @@ const descriptors = [
         },
       },
       required: ["appId"],
+      additionalProperties: false,
+    },
+    risk: "read",
+  },
+  {
+    name: VENDO_SLOTS_LIST_TOOL,
+    // The answer to the one question the two `slot` arguments below cannot ask
+    // for themselves. A model with no way to see the real slot ids guesses one,
+    // and a guessed id is a placement aimed at a spot no page renders: the row
+    // is written, nothing ever shows it, and the user is told their view landed.
+    description: "List the places on the user's page where a generated view can go. Each entry has an `id`, a `label` the user would recognize, and a `description` of what that place is for. Pass an `id` from this list to `vendo_make`'s `slot` or to `vendo_apps_pin`'s `slot`, and never invent one: an id that is not here belongs to no page, so nothing would ever appear there. An empty list means the page the user is on offers no place to put a view, so make the view without a slot.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {},
       additionalProperties: false,
     },
     risk: "read",
@@ -286,6 +302,14 @@ export const createAgentTools = (
         // "no such app" while that app sat in the caller's own list.
         const appId = await resolveAppRef(runtime, args.appId as string, ctx);
         return { status: "ok", output: await runtime.open(appId, ctx) as unknown as Json };
+      }
+      if (call.tool === VENDO_SLOTS_LIST_TOOL) {
+        const slots = await runtime.slots.list(ctx);
+        return {
+          status: "ok",
+          output: slots.map(({ id, label, description }) =>
+            ({ id, label, ...(description === undefined ? {} : { description }) })),
+        };
       }
       if (call.tool === VENDO_APPS_PIN_TOOL) {
         const args = input(call.args, ["app", "slot"]);

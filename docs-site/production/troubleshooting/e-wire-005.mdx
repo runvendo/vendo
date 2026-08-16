@@ -1,0 +1,37 @@
+---
+title: "E-WIRE-005"
+sidebarTitle: "E-WIRE-005"
+description: "Doctor found neither @vendoai/vendo nor the vendoai alias declared in package.json."
+---
+
+```text wiring/dependency
+broken: @vendoai/vendo (or vendoai alias) is not declared
+```
+
+`check: wiring/dependency` · `error_code: E-WIRE-005` · `doctor exits: 1`
+
+## What you're seeing
+
+Every other wiring check can look plausible in your source and this one
+still fails, because it checks the manifest, not the code.
+
+## Why
+
+Doctor read `package.json` and found neither `@vendoai/vendo` nor `vendoai`
+in `dependencies` or `devDependencies`. Nothing is actually installed.
+
+## The fix
+
+Install the package. Either name works; both ship the same `vendo` bin.
+
+```bash
+npm install vendoai
+```
+
+Re-run `npx vendo doctor` once the install finishes.
+
+## Related errors
+
+- [E-WIRE-011](/production/troubleshooting/e-wire-011): the dependency is declared but not resolvable from the app
+- [E-WIRE-001](/production/troubleshooting/e-wire-001): the server side of the wiring this dependency backs
+- [E-WIRE-007](/production/troubleshooting/e-wire-007): the same missing-wiring check on an unrecognized framework

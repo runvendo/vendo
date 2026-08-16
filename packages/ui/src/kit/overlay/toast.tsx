@@ -9,12 +9,12 @@
  * and has nowhere to keep an imperative handle.
  */
 import { Toast as Base } from "@base-ui/react/toast";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ComponentProps } from "react";
 import { OverlayPortal } from "../../tree/overlay-portal.js";
-import { font, resolveTone, t, toneStyle } from "../tokens.js";
+import { font, resolveTone, t, toneStyle, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { closeStyle } from "./dialog.js";
 
-export interface ToastProps {
+interface ToastOwnProps extends KitStyled {
   open?: boolean;
   onClose?: () => void;
   message?: string;
@@ -22,11 +22,16 @@ export interface ToastProps {
   duration?: number;
 }
 
+/** Plus any Base UI `<Toast.Root>` prop, handed straight to the notice — the
+ *  surface `style` dresses too, not the viewport the stack sits in. `toast` is
+ *  NOT one of them: the manager raises the notice, so the brick owns it. */
+export type ToastProps = ToastOwnProps & KitEngine<ComponentProps<typeof Base.Root>, ToastOwnProps, "toast">;
+
 /** One notice per brick, so re-raising the same one refreshes it in place
  *  rather than stacking a duplicate. */
 const TOAST_ID = "vendo-kit-toast";
 
-function Notice({ open = false, onClose, message, tone, duration }: ToastProps) {
+function Notice({ open = false, onClose, message, tone, duration, style, children, pending, ...engine }: ToastProps & KitRendered) {
   const { add, close, toasts } = Base.useToastManager();
   const raised = useRef(false);
   // Held in a ref, NOT in the effect's deps: `add` with a known id refreshes the
@@ -72,8 +77,9 @@ function Notice({ open = false, onClose, message, tone, duration }: ToastProps) 
             {toasts.map((toast) => (
               <Base.Root
                 key={toast.id}
-                toast={toast}
                 data-kit="Toast"
+                {...given(engine)}
+                toast={toast}
                 style={{
                   ...font,
                   display: "flex",
@@ -86,6 +92,7 @@ function Notice({ open = false, onClose, message, tone, duration }: ToastProps) 
                   background: paint.background,
                   boxShadow: t.shadowSmall,
                   padding: "var(--vendo-density-card-padding, 16px)",
+                  ...style,
                 }}
               >
                 <Base.Description style={{ margin: 0, flex: 1, minWidth: 0 }}>{toast.description}</Base.Description>

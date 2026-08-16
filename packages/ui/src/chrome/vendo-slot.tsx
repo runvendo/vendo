@@ -202,7 +202,8 @@ export interface VendoSlotPin {
  *  A slot's one job is mounting brand-new generated apps (2026-08-02 final
  *  shape — remix lives entirely on `<Remixable>` now). Three states:
  *  - empty: no `appId`, no `pin`, no `children` → the ghost with a REAL CTA button
- *    that opens the authoring surface (`onAuthor`, else the mounted ⌘K palette);
+ *    that opens the authoring surface (`onAuthor`, else the mounted conversation
+ *    or ⌘K palette, else a line saying to ask the assistant);
  *  - app: `appId` → the whole app document mounts (via the single-app transport);
  *  - pinned component: `pin` → the authored `vendo-genui/v2` view mounts in place.
  *
@@ -211,11 +212,15 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked, discover = true, emptyState, children }: {
+export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAuthor, onParked, discover = true, emptyState, children }: {
   id: string;
   /** What a person choosing this slot in the "Add to…" picker reads. Defaults
    *  to the id read as words ("net-worth-card" → "Net worth card"). */
   label?: string;
+  /** What this spot is FOR, in your own words ("main dashboard area, where
+   *  users keep KPI views"). It reaches the agent through the slot registry, so
+   *  it can tell two slots apart that a label alone cannot. Nobody sees it. */
+  description?: string;
   appId?: string;
   pin?: VendoSlotPin;
   /** Invoked when the empty-state CTA is activated — the seam to open a thread
@@ -280,8 +285,14 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked
   // exists from here. Every state of a self-resolving slot reports it, including
   // the untouched-children one; a host-asserted one stays out of the picker
   // rather than promising a landing the person would never see.
-  useReportSlot(id, label ?? slotLabel(id), resolvesItself);
+  const name = label ?? slotLabel(id);
+  useReportSlot(id, name, resolvesItself, description);
 
+  // The third arm of the press, reached only when there is nowhere for it to
+  // go. Runtime-detected, never a prop: a host that mounts an overlay LATER
+  // gets the overlay, and one that never does gets a sentence instead of a
+  // button that quietly does nothing (the old behavior).
+  const [hint, setHint] = useState(false);
   const author = () => {
     if (onAuthor) {
       onAuthor(id);
@@ -290,7 +301,7 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked
     // One-surface model (pick P-C): authoring opens the conversation overlay
     // with the composer focused. The palette-opener fallback keeps hosts that
     // mounted only a VendoPalette (custom onCommand routing) working.
-    if (!openVendoConversation()) openVendoPalette();
+    if (!openVendoConversation() && !openVendoPalette()) setHint(true);
   };
 
   // Suggestion chips prefill the composer — never send (safe on any prompt).
@@ -366,7 +377,13 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked
                   </div>
                 </>
               ) : null}
-              <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
+              {hint ? (
+                <small className="fl-invite-sub" role="status">
+                  Ask your assistant to build something for this spot. <strong>{name}</strong>
+                </small>
+              ) : (
+                <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
+              )}
             </div>
           </div>
         </div>

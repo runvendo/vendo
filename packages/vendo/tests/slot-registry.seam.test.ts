@@ -16,11 +16,18 @@
  * real PGlite store; the destination is then read back through a SECOND client
  * instance — a fresh session for the same person, the "other device" — and
  * painted by the real picker.
+ *
+ * The AGENT is the registry's other consumer, and the same law applies to it:
+ * `vendo_slots_list` is called on a real turn through the composed, guard-bound
+ * registry, so the sentence a host wrote on a `<VendoSlot description>` prop has
+ * to survive every layer between that prop and the model's context or the
+ * assertion fails.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Principal } from "@vendoai/core";
+import { VENDO_SLOTS_LIST_TOOL, type Principal, type ToolResult } from "@vendoai/core";
+import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { VendoProvider, createVendoClient, type VendoClient } from "@vendoai/ui";
 import { AddToPicker, VendoSlot } from "@vendoai/ui/chrome";
@@ -48,13 +55,44 @@ async function tempStore(): Promise<VendoStore> {
   return store;
 }
 
+/** What `vendo_slots_list` hands the model for one slot. */
+interface ListedSlot { id: string; label: string; description?: string }
+
 /** The deployment, with the client's `fetch` routed straight into its door.
  *  Hands back how many reports have crossed it — the only thing the test needs
- *  the wire itself for. */
-async function compose(): Promise<{ reports: () => number }> {
+ *  the wire itself for — and the agent's own read of the registry. */
+async function compose(): Promise<{ reports: () => number; askTheAgent: () => Promise<ListedSlot[]> }> {
   const store = await tempStore();
   await store.ensureSchema();
-  const vendo = createVendo({ principal: async () => ADA, store });
+  // The consumer's real path: a turn, the composed guard-bound registry, and
+  // the tool a model would call. Nothing here reaches the store directly.
+  const answers: ToolResult[] = [];
+  const harness = defineHarness({
+    name: "slot-listing-probe",
+    async *run(turn) {
+      answers.push(await turn.tools.call(VENDO_SLOTS_LIST_TOOL, {}));
+      yield { type: "text", delta: "listed" };
+    },
+  });
+  const vendo = createVendo({ principal: async () => ADA, store, harness: harness as never });
+
+  let turns = 0;
+  const askTheAgent = async (): Promise<ListedSlot[]> => {
+    const threadId = `thr_slots_${(turns += 1)}`;
+    const answered = await vendo.handler(new Request(`${BASE}/threads`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId,
+        message: { id: `m_${threadId}`, role: "user", parts: [{ type: "text", text: "where can this go?" }] },
+      }),
+    }));
+    // The turn only completes as its stream is drained.
+    await answered.text();
+    const outcome = answers.at(-1);
+    expect(outcome?.status).toBe("ok");
+    return (outcome as { output: ListedSlot[] }).output;
+  };
 
   let reports = 0;
   const realFetch = globalThis.fetch;
@@ -69,7 +107,7 @@ async function compose(): Promise<{ reports: () => number }> {
   }) as typeof fetch;
   cleanups.push(() => { globalThis.fetch = realFetch; });
 
-  return { reports: () => reports };
+  return { reports: () => reports, askTheAgent };
 }
 
 // --- rendering, without a component-test harness in this package -------------
@@ -145,5 +183,25 @@ describe("the slot registry, from a mounted slot to another device's picker", ()
     ));
     await until(() => (reports() >= 2 ? reports() : undefined));
     expect(await other.slots.list()).toHaveLength(1);
+  });
+
+  it("hands the agent the description the host wrote on the slot, and nothing it made up", async () => {
+    const { askTheAgent } = await compose();
+    const description = "main dashboard area, where users keep KPI views";
+
+    // The producer, again: the ONLY thing in this test that tells the server
+    // this slot exists is a host component rendering.
+    await mount(under(
+      createVendoClient({ baseUrl: BASE }),
+      createElement(VendoSlot, { id: "dashboard.main", label: "Dashboard", description }),
+    ));
+
+    // The consumer: the tool a model calls to find out where a view may land.
+    // No inner budget — the test's own timeout is the hang detector.
+    const listed = await until(async () => {
+      const slots = await askTheAgent();
+      return slots.length > 0 ? slots : undefined;
+    });
+    expect(listed).toEqual([{ id: "dashboard.main", label: "Dashboard", description }]);
   });
 });

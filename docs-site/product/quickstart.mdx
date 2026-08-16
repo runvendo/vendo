@@ -1,0 +1,164 @@
+---
+title: "In your product"
+description: "Your agent as a panel inside your own product, in your own brand."
+sidebarTitle: "Quickstart"
+---
+
+Vendo brings the loop, the model, and the chat surface. You paste three things
+into your own client.
+
+This picks up where [`vendo init`](/) left off: `VENDO_API_KEY` in
+`.env.local`, and `app/api/vendo/[...vendo]/route.ts` written.
+
+<Steps>
+
+<Step title="Mount the provider">
+
+Paste what init printed into your client layout. Your paths and theme are
+already filled in.
+
+```tsx app/layout.tsx focus={10}
+import { VendoProvider } from "@vendoai/vendo/react";
+import type { VendoTheme } from "@vendoai/vendo";
+import type { ReactNode } from "react";
+import theme from "../.vendo/theme.json";
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+          {children}
+        </VendoProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+`baseUrl` is where the route is mounted, path prefix included. An app served
+under `/maple` passes `baseUrl="/maple/api/vendo"`.
+
+<Note>
+  The provider is context, so it draws nothing on its own. Step 2 puts
+  something on the screen.
+</Note>
+
+</Step>
+
+<Step title="Add the overlay">
+
+One line inside the provider puts your agent on every page. It opens over your
+app, or docks beside it with `placement="dock"`.
+
+```tsx app/layout.tsx focus={1,5}
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
+
+<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+  {children}
+  <VendoOverlay />
+</VendoProvider>
+```
+
+Start the app and click the launcher pill in the corner.
+
+```bash
+npm run dev
+```
+
+Ask for something you would otherwise click through to, like "Where did my
+money go?" The agent calls your own API as the person signed in, and answers
+with a screen instead of a paragraph when the answer is one to look at.
+
+<Frame caption="The panel is Vendo. The fonts, colors, and data are yours.">
+  <img
+    src="/images/maple/panel-generated-screen.png"
+    alt="The Vendo panel open over Maple, answering a spending question with a generated screen that lists each category and its total"
+    width="620"
+    height="680"
+  />
+</Frame>
+
+<Note>
+  Prefer a command bar? Mount `<VendoPalette />` beside the overlay and `⌘K`
+  opens the same panel in its compact form.
+</Note>
+
+</Step>
+
+<Step title="Add the slot">
+
+Put a slot where a card would go. A screen the agent builds can live there
+instead of in the panel.
+
+`VendoSlot` ships in `@vendoai/ui`, so add that package to the app.
+
+```bash
+npm install @vendoai/ui
+```
+
+```tsx app/overview/page.tsx focus={3,9}
+"use client";
+
+import { VendoSlot } from "@vendoai/ui/chrome";
+
+export default function Overview() {
+  return (
+    <section className="cards">
+      <BalanceTiles />
+      <VendoSlot id="spend-breakdown" />
+      <RecentActivity />
+    </section>
+  );
+}
+```
+
+Name that slot on the provider. It is where the panel's pin button sends a
+finished view.
+
+```tsx app/layout.tsx focus={4}
+<VendoProvider
+  baseUrl="/api/vendo"
+  theme={theme as VendoTheme}
+  pinSlot="spend-breakdown"
+>
+```
+
+Empty, the slot shows a ghost with prompts that open the panel. Ask for a
+view, press **Pin to dashboard** on the card that comes back, and it renders
+in your grid and stays there.
+
+<Frame caption="Your page, your grid. The card in the middle is generated.">
+  <img
+    src="/images/maple/slot-in-page.png"
+    alt="Maple's overview page with its own quick actions, balance chart, and account tiles, and a generated spend by category card holding the slot beside them"
+    width="1280"
+    height="900"
+  />
+</Frame>
+
+</Step>
+
+</Steps>
+
+## Where to go next
+
+The surface is up. These three are what people change first.
+
+<CardGroup cols={3}>
+  <Card title="How it works" icon="route" href="/product/how-it-works">
+    What the panel does, and what runs on your side.
+
+    `app/api/vendo/[...vendo]/route.ts`
+  </Card>
+  <Card title="Theming" icon="palette" href="/customize/theming">
+    Fonts, colors, and radii, taken from your own tokens.
+
+    `.vendo/theme.json`
+  </Card>
+  <Card title="Generated apps" icon="layout-dashboard" href="/generated/apps">
+    Real screens built from your data, pinned where you want.
+
+    `<VendoSlot id="home-hero" />`
+  </Card>
+</CardGroup>

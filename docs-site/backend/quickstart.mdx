@@ -1,0 +1,235 @@
+---
+title: "In your backend"
+sidebarTitle: "Quickstart"
+description: "Compose a governed agent with agent(), answer a waiting person with respond(), and drive unattended work with run(). The UI stays yours."
+---
+
+A governed agent in any Node backend. The UI stays yours.
+
+<Steps>
+
+<Step title="Compose the agent">
+
+Install, sign in, and write one `agent()` call at module scope. Only `name` is
+required.
+
+```bash terminal
+npm install @vendoai/agents ai
+npx vendo login
+npx vendo init
+```
+
+`vendo login` mints a `VENDO_API_KEY` into `.env.local` and never prints it.
+`vendo init` writes `.vendo/tools.json`, your API read into tool definitions
+with a schema, a risk grade, and a dispatch binding on each one.
+
+```ts lib/agent.ts focus={3-7}
+import { agent, api } from "@vendoai/agents";
+
+export const support = agent({
+  name: "support",
+  instructions: "Answer in the product's voice; never invent account numbers.",
+  tools: [api()],
+});
+```
+
+<CardGroup cols={4}>
+  <Card title="tools">
+    Your API, read by `api()` from `.vendo/tools.json`.
+  </Card>
+  <Card title="guard">
+    Risk grade, approval, and an audit row on every call.
+  </Card>
+  <Card title="store">
+    Threads and audit rows in your Cloud store.
+  </Card>
+  <Card title="harness">
+    `vendo()` by default, `claudeCode()` on request.
+  </Card>
+</CardGroup>
+
+<Note>
+  No umbrella and no client here. The composed agent has exactly two verbs, and
+  steps 2 and 3 are both of them.
+</Note>
+
+</Step>
+
+<Step title="Answer a person">
+
+`respond()` is one turn for someone who is waiting. It hands back a streamed
+`Response` you return from the route unchanged.
+
+```ts app/api/support/route.ts focus={13-17}
+import { support } from "@/lib/agent";
+import { auth } from "@/lib/auth";
+
+export async function POST(req: Request) {
+  const user = await auth(req);
+  if (user === null) return new Response("unauthorized", { status: 401 });
+
+  const { message, threadId } = (await req.json()) as {
+    message: string;
+    threadId?: string;
+  };
+
+  return support.respond(user.id, message, {
+    ...(threadId === undefined ? {} : { threadId }),
+    headers: req.headers,
+    user: { id: user.id, plan: user.plan },
+  });
+}
+```
+
+<Note>
+  `headers: req.headers` forwards the caller's own credentials, so the tool
+  call reaches your API as the person signed in. The reply carries
+  `x-vendo-thread-id`; hand it back to continue the thread.
+</Note>
+
+</Step>
+
+<Step title="Run unattended work">
+
+`run()` is work nobody is watching. The same object is awaitable and iterable,
+so `run.events` is the live feed and awaiting it is the report.
+
+```ts app/api/reports/route.ts focus={9,14-17,28}
+import { THREAD_ID_HEADER } from "@vendoai/agents";
+import { support } from "@/lib/agent";
+import { auth } from "@/lib/auth";
+
+export async function POST(req: Request) {
+  const user = await auth(req);
+  const { brief } = (await req.json()) as { brief: string };
+
+  const run = support.run(brief, { as: user.id, signal: req.signal });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for await (const event of run.events) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      }
+      const report = await run;
+      controller.enqueue(
+        encoder.encode(`event: report\ndata: ${JSON.stringify(report)}\n\n`),
+      );
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      [THREAD_ID_HEADER]: run.threadId,
+    },
+  });
+}
+```
+
+<Note>
+  `run.threadId` is there before the first event, so the header goes out with
+  the response. `signal: req.signal` ties the run to the connection, and
+  closing the tab stops it.
+</Note>
+
+A call the guard wants a person for comes back denied inside a `run()`, because
+nobody is there to ask. [Run](/backend/run) covers what an unattended run may
+touch.
+
+</Step>
+
+</Steps>
+
+***
+
+## One run, seen from your own UI
+
+Events leave your server on the left. Your own progress screen fills on the
+right.
+
+<div style={{ border: "1px solid #e9e6f1", borderRadius: 14, overflow: "hidden", background: "#fff", boxShadow: "0 18px 40px -22px rgba(24,18,54,.3)", margin: "1.25rem 0 0.5rem" }}>
+  <div style={{ display: "flex", flexWrap: "wrap" }}>
+    <div style={{ flex: "1 1 280px", minWidth: 0, background: "#151322" }}>
+      <div style={{ padding: "8px 12px", background: "#1c1930", borderBottom: "1px solid #2a2542", fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "#8b83ad" }}>
+        POST /api/reports · text/event-stream
+      </div>
+      <div style={{ padding: "12px", fontFamily: "ui-monospace, monospace", fontSize: 11, lineHeight: 1.9 }}>
+        <div><span style={{ color: "#7a72a0" }}>status</span> <span style={{ color: "#c6c1de" }}>started</span></div>
+        <div><span style={{ color: "#b79bff" }}>tool-call</span> <span style={{ color: "#c6c1de" }}>listInvoices</span></div>
+        <div><span style={{ color: "#4fc6b1" }}>tool-result</span> <span style={{ color: "#c6c1de" }}>42 rows</span></div>
+        <div><span style={{ color: "#b79bff" }}>tool-call</span> <span style={{ color: "#c6c1de" }}>getPayments</span></div>
+        <div><span style={{ color: "#4fc6b1" }}>tool-result</span> <span style={{ color: "#c6c1de" }}>38 rows</span></div>
+        <div><span style={{ color: "#e6e2f5" }}>text</span> <span style={{ color: "#fff" }}>Three invoices are overdue.</span></div>
+        <div style={{ marginTop: 8, paddingTop: 9, borderTop: "1px solid #2a2542" }}>
+          <span style={{ color: "#4fc6b1" }}>report</span> <span style={{ color: "#8ff0dc" }}>ok · 4 tool calls</span>
+        </div>
+      </div>
+    </div>
+    <div style={{ flex: "1 1 280px", minWidth: 0, background: "#fbfbfc" }}>
+      <div style={{ padding: "8px 12px", background: "#f6f4fa", borderBottom: "1px solid #e9e6f1", fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "#a8a5b4" }}>
+        app.maple.com/reports
+      </div>
+      <div style={{ padding: "15px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#0f7b6c" }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#16211f" }}>Monthly close</span>
+          <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, background: "#e7f4f1", color: "#12403a", border: "1px solid #cbe6e0", borderRadius: 999, padding: "2px 9px" }}>Done</span>
+        </div>
+        <div style={{ height: 6, borderRadius: 3, background: "#eaeeed", overflow: "hidden", marginBottom: 6 }}>
+          <span style={{ display: "block", height: "100%", width: "100%", background: "#0f7b6c" }} />
+        </div>
+        <div style={{ display: "flex", fontSize: 10, color: "#8a9491", marginBottom: 12 }}>
+          <span>August 2026</span>
+          <span style={{ marginLeft: "auto", fontWeight: 600, color: "#16211f" }}>4 steps</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 11.5, color: "#4b5654", padding: "7px 0" }}>
+          <span style={{ color: "#0f7b6c" }}>✓</span> Pulled invoices
+          <span style={{ marginLeft: "auto", fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#9aa4a1" }}>42</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 11.5, color: "#4b5654", padding: "7px 0", borderTop: "1px solid #eef2f1" }}>
+          <span style={{ color: "#0f7b6c" }}>✓</span> Matched payments
+          <span style={{ marginLeft: "auto", fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#9aa4a1" }}>38</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 11.5, color: "#4b5654", padding: "7px 0", borderTop: "1px solid #eef2f1" }}>
+          <span style={{ color: "#0f7b6c" }}>✓</span> Drafted the summary
+          <span style={{ marginLeft: "auto", fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#9aa4a1" }}>1</span>
+        </div>
+        <div style={{ marginTop: 12, border: "1px solid #e6e8ea", borderRadius: 9, background: "#fff", padding: "10px 11px" }}>
+          <div style={{ display: "flex", fontSize: 10.5, fontWeight: 600, color: "#16211f" }}>
+            <span>Overdue</span>
+            <span style={{ marginLeft: "auto", fontWeight: 500, color: "#9aa4a1" }}>3 invoices</span>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.03em", color: "#16211f", marginTop: 4 }}>$12,480</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p style={{ fontSize: 13, color: "#7c7989", textAlign: "center", marginTop: 0 }}>your chrome, not Vendo's</p>
+
+***
+
+## Where to go next
+
+Both verbs in depth, and the surface you build around them.
+
+<CardGroup cols={3}>
+  <Card title="Converse" href="/backend/converse">
+    Threads, forwarded credentials, and approvals with a person present.
+
+    `support.respond(user.id, message)`
+  </Card>
+  <Card title="Run" href="/backend/run">
+    Typed output from a schema, plus the usage you meter on.
+
+    `await support.run(task, { as })`
+  </Card>
+  <Card title="Your own surface" href="/backend/your-own-surface">
+    Forward the event feed over SSE and end on the report.
+
+    `for await (const e of run.events)`
+  </Card>
+</CardGroup>

@@ -3,14 +3,14 @@
  * The model passes tool output straight in; no `asOptions` reshape needed.
  * `multiple` folds in MultiSelect.
  */
-import { control } from "../tokens.js";
+import { control, type KitStyled } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 import { choices, type KitOption } from "./options.js";
 
 export type SelectOption = KitOption;
 
-export interface SelectProps {
+export interface SelectProps extends KitStyled {
   label?: string;
   /** Raw items — primitives or objects. */
   options: SelectOption[];
@@ -29,14 +29,14 @@ export interface SelectProps {
   onChange?: (value: string | string[]) => void;
 }
 
-export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
+export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange, style }: SelectProps) {
   const { fieldId, helpId } = useFieldIds("select");
   const options = choices(rawOptions, labelField, valueField);
   // Single choice only: `value` is one string, and a controlled `multiple` select
   // needs a list, so a multi-select on a screen keeps the uncontrolled DOM.
   const screen = controlledHandler(value !== undefined && multiple !== true, onChange);
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} style={style}>
       <select
         id={fieldId}
         data-kit="Select"

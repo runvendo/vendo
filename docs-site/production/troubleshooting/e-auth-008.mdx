@@ -1,0 +1,39 @@
+---
+title: "E-AUTH-008"
+sidebarTitle: "E-AUTH-008"
+description: "Doctor's actAs seam is configured and declined the doctor's synthetic test principal."
+---
+
+```text auth/act-as
+warning: actAs is configured and declined the doctor's synthetic principal
+(<detail>) — expected when a subject→user resolver only mints for real
+users; real away runs depend on it accepting real subjects
+```
+
+`<detail>` is the wire's own decline reason, or `no detail` when it didn't
+carry one.
+
+`check: auth/act-as` · `error_code: E-AUTH-008` · `doctor exits: 0`
+
+## What you're seeing
+
+A warning: the `actAs` seam is wired and answered, with a no.
+
+## Why
+
+This is expected when your `subject → user` resolver only mints for
+subjects in your host's real user table; doctor's synthetic test subject is
+not one of them. The doctor line names the wire's own decline reason.
+
+## The fix
+
+If the decline is your resolver correctly refusing an unknown subject,
+there is nothing to fix; that is the fail-closed behavior working as
+intended. If the reason instead names a missing secret, set it
+(`AUTH_SECRET`, or the preset's documented variable) and re-run
+`npx vendo doctor`.
+
+## Related errors
+
+- [E-AUTH-007](/production/troubleshooting/e-auth-007) — no seam configured at all, the state below this one
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — a mint that fails instead of declining

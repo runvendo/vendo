@@ -1,0 +1,50 @@
+---
+title: "E-MCP-007"
+sidebarTitle: "E-MCP-007"
+description: "The local MCP registry auth challenge is malformed."
+---
+
+# E-MCP-007
+
+<Warning>
+**what doctor prints** (broken)
+
+local MCP registry auth challenge must start with v=MCPv1
+</Warning>
+
+The file that proves you own this domain to an MCP registry exists on disk,
+but its contents are not a valid challenge.
+
+`check mcp/registry-auth-local` · `error_code E-MCP-007` · `doctor exits 1`
+
+## What you're seeing
+
+Doctor only runs this check when
+`public/.well-known/mcp-registry-auth` exists in the repo. It reads the file
+and checks that the content starts with the literal string `v=MCPv1`.
+
+## Why
+
+An MCP registry verifies domain ownership by asking for a signed challenge
+string served at a well-known path. The file's first bytes must name the
+protocol version it speaks; anything else is not a challenge a registry can
+verify, whatever else the file contains.
+
+## The fix
+
+Regenerate the domain-verification material rather than hand-editing it:
+
+```bash
+npx vendo mcp verify-domain --domain your-app.example.com \
+  --key-out ./mcp-registry.key \
+  --write-well-known public
+```
+
+Re-run doctor once the file starts with `v=MCPv1`.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-008" href="/production/troubleshooting/e-mcp-008">live auth challenge malformed</Card>
+  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
+</CardGroup>

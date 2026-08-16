@@ -1,0 +1,45 @@
+---
+title: "E-LIVE-002"
+sidebarTitle: "E-LIVE-002"
+description: "Doctor's /status probe got no answer at all: nothing is listening at the wire base."
+---
+
+```text live/status
+broken: /status is unreachable at <base>/status — doctor expects the WIRE
+BASE (your app origin plus the mount path, e.g. http://localhost:3000/api/vendo);
+a bare site origin passed to --url is missing the /api/vendo part
+```
+
+`check: live/status` · `error_code: E-LIVE-002` · `doctor exits: 1`
+
+## What you're seeing
+
+The `/status` fetch itself never returned an answer. A server that answers
+with an error, even a wrong one, is [E-LIVE-001](/production/troubleshooting/e-live-001),
+never this.
+
+## Why
+
+Nothing is listening at the probed base. The dev server is not running, it
+runs on a different port than the probe target, or `--url` was given the
+site root instead of the wire base.
+
+## The fix
+
+Start the dev server, then re-run doctor.
+
+```bash
+npm run dev
+npx vendo doctor
+```
+
+`--url` (or `VENDO_URL`) expects the WIRE BASE: your app origin plus the
+mount path, for example `http://localhost:3000/api/vendo`, not the bare
+origin. All live checks, the auth probes and the model turn, depend on this
+one passing first.
+
+## Related errors
+
+- [E-LIVE-001](/production/troubleshooting/e-live-001) — the fetch answered, just not correctly
+- [E-AUTH-003](/production/troubleshooting/e-auth-003) — the present-credential probe, blocked by this same dead server
+- [E-TURN-002](/production/troubleshooting/e-turn-002) — the live model turn, blocked by this same dead server

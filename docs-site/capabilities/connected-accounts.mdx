@@ -1,190 +1,135 @@
 ---
 title: "Connected accounts"
 sidebarTitle: "Connected accounts"
-description: "Let each signed-in user connect their own Gmail, Slack, or GitHub through Composio so every tool call runs as that user, isolated per principal."
+description: "Each user connects their own Gmail, Slack, or GitHub once, and every later tool call runs as that user."
 ---
 
-Connectors let each signed-in user connect their own Gmail, Slack, or GitHub
-once, then every later tool call runs as that user. Vendo builds no OAuth
-flows of its own and never holds a token: Composio brokers the credentials,
-and isolation is per principal by construction.
+## The picture
 
-Zero config: nothing connected, said out loud. With no connector passed and no
-`VENDO_API_KEY`, `GET /api/vendo/status` reports `blocks.connections: false`,
-listing a user's accounts returns an empty array, and any connect attempt
-throws an error naming the two fixes instead of failing vaguely. This is the
-one capability with no keyless rung. A broker holds the credentials, so you
-bring a Composio key or a Vendo Cloud key.
+No user token enters your server. The broker holds the credential and runs the call.
 
-## Connectors
+```mermaid
+flowchart LR
+  U["<b>Your user</b><br/>signed in to your product"]
+  CARD["<b>Connect card</b><br/>one OAuth popup"]
+  BROKER["<b>Cloud broker</b><br/>holds the credential"]
+  ACCT["<b>Their Gmail</b><br/>their account, not yours"]
 
-The actions block accepts connector implementations:
+  U --> CARD --> BROKER --> ACCT
+  ACCT -. "runs as them, every time after" .-> U
 
-```ts
-export interface Connector {
-  name: string;
-  descriptors(): Promise<ToolDescriptor[]>;
-  execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
-}
-
-export function composioConnector(config: {
-  apiKey: string;
-  apps?: string[];
-}): Connector;
-// Descriptor listing calls the resolver with no principal (a system
-// context), so every field is optional; a sync return is also allowed.
-export type McpHeadersResolver = (
-  auth: { principal?: Principal; presence?: RunContext["presence"]; grant?: PermissionGrant },
-) => Promise<Record<string, string>> | Record<string, string>;
-
-export function mcpConnector(config: {
-  url: string;
-  headers?: Record<string, string> | McpHeadersResolver;
-  name?: string;
-}): Connector;
+  classDef yours fill:#ffffff,stroke:#c9c5d6,stroke-width:1px,color:#15141b
+  classDef vendo fill:#f5f1ff,stroke:#ddd0ff,stroke-width:1px,color:#4a22bd
+  class U,ACCT yours
+  class CARD,BROKER vendo
 ```
 
-Connector names normalize into the provider-safe tool charset, such as
-`gmail_send` and `mcp_server_tool`. Vendo truncates and suffix-hashes names
-longer than 64 characters.
+A connection is keyed to the Vendo principal's subject. One user can never read, use, or disconnect another user's account.
 
-External connector tools (Gmail, Slack, GitHub, and anything else exposed
-through Composio) execute as the signed-in user, not as one shared bot
-account. Each user connects their own account once, and every later tool call
-rides that connection.
+## Naming the services
 
-Composio is the sole broker. A connection is a Composio connected account
-whose `entityId` is the Vendo principal subject, so isolation is structural:
-every list, initiate, and disconnect operation is scoped to exactly one
-subject. No token ever enters Vendo: the broker holds the credentials, and
-initiate hands back only the hosted redirect URL.
+With a Cloud key and nothing else, the agent gets one tool that lists what this product can connect to, and one that asks the user to connect it. No service tools sit on the listing.
 
-This connector support is distinct from the MCP door, which runs the other
-direction. Connectors pull remote MCP tools *into* your agent; the door serves
-*your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
-the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
-over the same `actAs` seam away automations use, since MCP clients have no host
-browser session. See [the MCP door](/reference/mcp-door) for setup.
+Name toolkits when you want their tools in the agent's hands from the start.
 
-## Setup
-
-You have two options: bring your own Composio key, or ride the Vendo Cloud
-broker.
-
-**Bring your own key.** `composioConnector` ships in `@vendoai/actions`, a
-separate install from `@vendoai/vendo`:
-
-```bash
-npm install @vendoai/actions
-```
-
-Pass it to `createVendo`:
-
-```ts
-import { createVendo } from "@vendoai/vendo/server";
-import { composioConnector } from "@vendoai/actions";
-import { resolvePrincipal } from "@/lib/auth"; // yours
-
+```ts app/api/vendo/[...vendo]/route.ts focus={4}
 const vendo = createVendo({
   principal: resolvePrincipal,
-  connectors: [
-    composioConnector({
-      apiKey: process.env.COMPOSIO_API_KEY!,
-      apps: ["gmail", "slack"],
-    }),
-  ],
+  instructions: "...",
+  connectors: ["gmail", "slack"],
 });
 ```
 
-**Vendo Cloud broker.** Set `VENDO_API_KEY` and ship no Composio key of your
-own. Connection endpoints then ride the Vendo Cloud broker using Vendo's
-Composio credentials, so cloud users bring zero keys. A BYO
-`composioConnector` always wins when both are configured, because connections
-must live where the connector's tools execute.
+Those strings scope three things at once: the tools the agent sees, the accounts the connect surface offers, and the catalog it advertises. They can never drift apart.
 
-`GET /api/vendo/status` reports the active posture under `blocks.connections`:
-`"byo"`, `"cloud"`, or `false` when neither path is wired.
+<Note>
+  The same list also accepts a connector object, which is used verbatim. Strings are the Cloud path.
+</Note>
 
-## The in-flow connect card
+## The connect card
 
-When a tool call needs a connection the user does not have yet, the connector
-returns a typed `connect-required` outcome instead of an opaque error. The
-shipped `VendoThread` renders an inline connect card next to the tool call,
-following the same pattern as approvals:
+A tool call for a service the user has not connected never reaches the guard. The call comes back `connect-required`, and the thread renders the ask in place.
 
-1. The user selects **Connect**. The card opens the broker's hosted OAuth
-   page in a popup.
-2. The card polls the connection until it becomes active.
-3. The thread retries the original tool call through the fresh connection,
-   no re-prompting required.
+<Steps>
+  <Step title="The user selects Connect">
+    A popup opens on the broker's own consent page. Your product never renders an OAuth screen.
+  </Step>
+  <Step title="The card polls until the account is active">
+    The user finishes in the popup and it closes itself.
+  </Step>
+  <Step title="The thread retries the original call">
+    No re-prompting. The turn picks up where it stopped.
+  </Step>
+</Steps>
 
-Automations and MCP door calls do not have a browser surface, so they surface
-`connect-required` as an actionable in-band error that names the connector and
-toolkit the user needs to connect.
+<Frame caption="The ask arrives as a card in the thread, where the user already is.">
+  <img
+    src="/images/maple/connect-card.png"
+    alt="A connect card in a Maple thread carrying the Gmail mark, the reason the agent needs it, and Connect and Not now buttons"
+    width="499"
+    height="135"
+  />
+</Frame>
 
-## Managing connected accounts
+The agent can also raise the ask on its own before calling anything, when the request plainly needs a service the user has not connected.
 
-Read a user's connected accounts — and disconnect them — through the
-`useConnections` hook from `@vendoai/ui`, and render them wherever you
-already handle user settings. Disconnect severs the account on the broker.
+## Managing accounts
 
-## Risk labels for Composio tools
+The `useConnections` hook reads the signed-in user's accounts and disconnects them. Render it wherever you already handle user settings.
 
-Composio tools carry a curated risk instead of the previous blanket
-`write` default. The connector resolves risk in three steps:
-
-1. **Metadata hints.** Composio `destructiveHint` and `readOnlyHint` tags
-   take precedence when present.
-2. **Slug patterns.** Destructive verbs anywhere in the slug (`DELETE`,
-   `REMOVE`, `DESTROY`, and similar) mark the tool destructive. Leading read
-   verbs (`GET`, `LIST`, `FETCH`, and similar) mark it read.
-3. **Conservative default.** Anything else falls back to `write`.
-
-`.vendo/overrides.json` still wins over the curated map, so you can pin risk
-per tool.
-
-## MCP connector credentials
-
-`mcpConnector({ headers })` accepts either shared static headers (the simple
-default) or an async per-principal resolver. Use the resolver when the MCP
-server binds authentication to the session and you need each user to get
-their own MCP session:
-
-```ts
-import { mcpConnector } from "@vendoai/actions";
-
-mcpConnector({
-  url: "https://mcp.example.com",
-  headers: async ({ principal, presence, grant }) => ({
-    authorization: `Bearer ${await tokenFor(principal)}`,
-  }),
-});
+```tsx
+const { connections, disconnect, isLoading } = useConnections();
 ```
 
-With a resolver, each subject gets its own cached MCP session (bounded by an
-LRU of 500 subjects). Descriptor listing still resolves without a principal,
-so tool discovery keeps working.
+The shipped thread also carries a connect dock: a badge counting active accounts, and a tray listing everything connectable.
 
-Every connector execution is audited with its account identity (connector,
-toolkit, `entityId`, and whether the credential was shared or per-principal)
-in the tool-call event's `detail`. The identity is stripped from the outcome
-the model and UI see, so no broker identifier leaks into a message.
+<Frame caption="The dock is the standing surface. The card is the moment.">
+  <img
+    src="/images/maple/connect-dock.png"
+    alt="The connect tray open above the Maple composer, with a search field and a grid of connectable services each carrying an add button"
+    width="620"
+    height="500"
+  />
+</Frame>
 
-## Connection endpoints
-
-Every connection route is per-principal. The wire uses exactly the resolved
-principal's subject: there is no caller-supplied subject and no cross-user
-read.
+Every route below uses exactly the resolved principal's subject. There is no caller-supplied subject and no cross-user read.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
 | `/api/vendo/connections` | GET | list the caller's connected accounts |
-| `/api/vendo/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }` |
-| `/api/vendo/connections/:id?connector=` | GET | status; poll while connecting |
-| `/api/vendo/connections/:id?connector=` | DELETE | disconnect |
+| `/api/vendo/connections/initiate` | POST | `{ toolkit }` back to `{ id, connector, redirectUrl }` |
+| `/api/vendo/connections/catalog` | GET | what this deployment can connect to |
+| `/api/vendo/connections/:id` | GET | status; poll while connecting |
+| `/api/vendo/connections/:id` | DELETE | disconnect |
 
-A principal marked `ephemeral: true` cannot initiate a connection: an
-external account would outlive it. Only a host resolver that sets the flag
-itself produces one now — Vendo no longer mints ephemeral principals on its
-own. Synthetic subjects (webhook principals, reserved `webhook:` and
-`vendo:` prefixes) are refused for the same reason.
+Connecting needs a signed-in person. A principal marked `ephemeral`, or one under a reserved synthetic subject, is refused: an external account would outlive it.
+
+## What the guard sees
+
+A connector tool's risk comes from the provider's own tags and nothing else. `destructiveHint` grades it destructive, `readOnlyHint` grades it read, and an untagged tool is `ungraded`, which the guard asks about on every call.
+
+`.vendo/overrides.json` still wins, so you can pin the grade of any tool by name.
+
+Every connector call is audited with the account identity behind it: the connector, the toolkit, and the subject it ran as. That identity is stripped from the outcome the model and the UI see.
+
+## Where to go next
+
+Outside services are one source of tools. Two more sit beside them.
+
+<CardGroup cols={3}>
+  <Card title="API tools" href="/capabilities/api-tools">
+    Your own routes, extracted into a guarded tool set.
+
+    API tools →
+  </Card>
+  <Card title="Automations" href="/capabilities/automations">
+    The same tools, fired on a schedule or by an event.
+
+    Automations →
+  </Card>
+  <Card title="Guard" href="/how-vendo-works">
+    Risk grade, approval, and an audit line on every call.
+
+    How Vendo works →
+  </Card>
+</CardGroup>

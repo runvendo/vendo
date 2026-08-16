@@ -1,0 +1,33 @@
+---
+title: "E-AUTH-005"
+sidebarTitle: "E-AUTH-005"
+description: "Doctor's actAs probe threw instead of answering."
+---
+
+```text auth/act-as
+broken: actAs probe is unreachable at <base>/doctor/act-as; restart the dev
+server and check createVendo({ actAs })
+```
+
+`check: auth/act-as` · `error_code: E-AUTH-005` · `doctor exits: 1`
+
+## What you're seeing
+
+`/status` answered, but the POST to `<base>/doctor/act-as` threw instead of
+returning a response.
+
+## Why
+
+The dev server died mid-run, or the `actAs` seam itself throws before it can
+answer.
+
+## The fix
+
+Restart the dev server, and check `createVendo({ actAs })` (or the `auth`
+preset providing it) for a construction-time error. Re-run
+`npx vendo doctor`.
+
+## Related errors
+
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — the same probe, answering but rejecting the mint
+- [E-AUTH-002](/production/troubleshooting/e-auth-002) — the present-credential probe's equivalent unreachable case

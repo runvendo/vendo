@@ -35,6 +35,7 @@ const DEFAULT_TOOL_NAMES = [
   "vendo_apps_reseed",
   "vendo_apps_unpin",
   "vendo_make",
+  "vendo_slots_list",
 ] as const;
 
 /** Every skill a default `createVendo()` mounts at /host/skills. */

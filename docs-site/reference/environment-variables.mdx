@@ -1,108 +1,80 @@
 ---
-title: "Environment variables for Vendo host, sandbox, and peers"
+title: "Environment variables"
 sidebarTitle: "Environment variables"
-description: "The environment variables a host developer sets across host process, app machines, and peer providers, with the effect each has on the composition and CLI."
+description: "Every environment variable a Vendo host sets, what each one does, and where it belongs: the host process, the app machine, and the auth presets."
 ---
 
-These are the variables a host developer sets. Vendo also reads internal test
-seams and harness markers that are deliberately left out — they are not
-contract and can change without notice.
+Every variable a host developer sets. Keys are credentials; config selects.
 
-**Env keys are credentials; config selects.** A third-party provider key in the
-environment never picks an adapter or a behavior for you — `VENDO_API_KEY` is the
-one variable that fills a slot you left unset, and everything else you choose in
-`createVendo`. So `E2B_API_KEY` is what an explicit `sandbox: e2bSandbox()`
-authenticates with, and `ANTHROPIC_API_KEY` is what the provider *you* pass in
-`models` authenticates with; neither one selects anything by being present.
+`VENDO_API_KEY` is the one variable that fills an adapter slot you left unset. Every other key here authenticates something you already chose in `createVendo`.
 
 ## Host process
 
-| Variable | Effect |
-| --- | --- |
-| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and fills any adapter slot (sandbox, store) the host left unset with the Cloud default — it is the ONLY environment variable that fills a slot; every other key on this page is a credential that selects nothing. See [Vendo Cloud](/deploy/vendo-cloud) for adapter precedence and the data-location warning. A well-formed key also switches build and development telemetry into the cloud lane documented in the repository's [`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md); see [Telemetry](/deploy/telemetry#build-and-development-telemetry) |
-| `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
-| `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
-| `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |
-| `VENDO_BASE_URL` | this deployment's **full public URL, path prefix included** (`https://site.com/maple`) — nothing strips its path, and every URL Vendo builds hangs off it: server-side execution of extracted route tools, the MCP door's canonical public base, and the box callback URLs (`VENDO_STORE_URL`/`VENDO_HOST_URL`); machine provisioning fails without it |
-| `VENDO_HOST_API_URL` | optional. The host API's base when it answers on a different origin than the public URL. Defaults to `VENDO_BASE_URL` |
-| `VENDO_LOGIN_URL` | optional. Where a sessionless caller is sent to sign in. Defaults to `{VENDO_BASE_URL}/login`; may be absolute, on another domain |
-| `VENDO_MCP_BROKER_URL` | optional. Your tenant's MCP endpoint at a broker fronting the door (`https://acme.mcp.vendo.run/mcp`). Setting it is what puts the door in broker mode: the URL's origin becomes the trusted issuer and the URL itself the expected token audience, the door stops serving `/authorize`, `/token` and `/register`, and a malformed value fails the composition loudly. An explicit `mcp.remoteAs` wins over it, and so does an explicit `mcp.serviceAuth` — that exchange only lives at the door's own `/token`, so the door stays local (a malformed value still fails loudly). See [Delegate to an external authorization server](/reference/mcp-door) |
-| `VENDO_MCP_FEDERATION_SECRET` | optional. The secret a broker signs its login-federation handshake with, so third-party agents can sign in through it against your users. Only meaningful alongside broker mode; an explicit `mcp.federation` wins over it |
-| `VENDO_SERVICE_KEY` | the name the docs use for an MCP service key (generate one with `openssl rand -hex 32`). Nothing reads it automatically: your composition passes it in explicitly (`mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } }`) and your backend posts the same value as `client_secret` at the door's token endpoint, so any name you prefer works just as well. See [Your own backend, as one of your users](/mcp/quickstart) |
-| `VENDO_URL` | base URL that `vendo doctor` probes for the live `/status` check and that `vendo sync` queries for blast-radius impact; defaults to `http://localhost:3000/api/vendo`, overridden per run by `--url` |
-| `VENDO_POSTHOG_KEY` · `VENDO_POSTHOG_HOST` | override the telemetry project key and the host capture events are sent to |
-| `DO_NOT_TRACK=1` | disables telemetry and is also honored by Scarf |
-| `CI` | disables telemetry |
-| `NODE_ENV` | gates the **runtime** (dev-server) telemetry collector only: it collects when `NODE_ENV` is `development` or `test`, and refuses otherwise — an unset or unrecognized value fails closed, so a production deploy that forgot to set it is never collected from. Build-side and CLI telemetry are unaffected by this variable; use `VENDO_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`, or `CI` to turn those off |
-| `E2B_API_KEY` | **credential only**: the default key read by the E2B SDK when an explicit `sandbox: e2bSandbox()` receives no inline `apiKey`. It selects nothing — a project with this key set and no `sandbox:` passed composes the `VENDO_API_KEY` Cloud sandbox, or no sandbox at all |
-| `VENDO_BOX_TEMPLATE` | provider base template a provisioned machine boots from (the box image with Node and the in-box agent harness); used by the BYO e2b path, ignored by the Cloud pool which ships its own image |
-| `VENDO_BOX_EDIT_TIMEOUT_MS` | long-poll budget for one in-box agent edit; default 8 minutes |
-| `VENDO_BOX_EDIT_POLL_MS` | poll interval while an in-box agent edit runs |
-| `VENDO_E2B_TIMEOUT_MS` | E2B machine lifetime; when unset, a raised `VENDO_BOX_EDIT_TIMEOUT_MS` implies a matching lifetime (budget plus 5 minutes) so the provider TTL cannot kill a long build |
-| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine. Both halves or neither: the explicit pair wins, otherwise `VENDO_API_KEY` rides the Vendo Cloud model gateway, and with neither the box gets no inference. A stray `ANTHROPIC_API_KEY` or `ANTHROPIC_BASE_URL` is not a rung — naming your own endpoint means setting both halves of this pair |
-| `VENDO_INFERENCE_MODEL` | optional model choice passed through to the box harness |
-| `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
-| `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default local store uses to encrypt secret values in `vendo_secrets`. Read only when the local store is what composes — that is, when no `store` is passed to `createVendo` **and** no `VENDO_API_KEY` is set. An explicit store ignores it, and so does the Cloud hosted store, which wins the slot whenever a key is present |
-| `VENDO_DEV_CREDENTIAL` | **internal only** — Vendo's own E2E rung matrix and escape hatch, not a host knob, and it can change without notice. It pins a [dev-mode credential ladder](/deploy/model-credentials) rung (`env-key:anthropic` / `:openai` / `:google`, `vendo-cloud`, or `none`), and is the only way to reach an `env-key` rung at all. Your app's model belongs in `models` |
-| `VENDO_MODEL` · `VENDO_MODEL_APPS` · `VENDO_MODEL_REVIEW` · `VENDO_MODEL_JUDGE` · `VENDO_MODEL_EXTRACT` | per-slot model pins, no code change: the string passes verbatim to whatever the resolved credential talks to — the Vendo Cloud gateway with `VENDO_API_KEY`. These pin a model *name*; they never select a provider, so on a deployment with no `models` config and no `VENDO_API_KEY` there is nothing for them to pin. Precedence per slot: explicit model object → env pin → `models` string → per-rung default. `VENDO_MODEL_EXTRACT` also pins the `vendo init` / `vendo sync` extraction engine |
-| `VENDO_AWAY_TOKEN_SECRET` | default source for the away-token preset's shared secret — the one the producer mints with and the host's verifier checks. Pass `secret` explicitly to override it; see [actAs presets](/deploy/auth) |
-| `VENDO_APP_BUILD_WATCHDOG_MS` | how long one app build may run before it is failed with a terminal, retryable record (default 4 minutes). The client's polling cutoff derives from it, so raising this keeps the two in step |
-| `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GOOGLE_GENERATIVE_AI_API_KEY` | **credentials only, selecting nothing.** Your app's Vendo never reads them. They are read by the `@ai-sdk/*@^3` provider *you* construct and pass — `models: { default: anthropic("claude-sonnet-4-6") }` — which is what selects a model. A key sitting in the environment with no `models` config leaves the deployment with no model, and the first turn says so. The `vendo` CLI is the one exception, and only for work you invoked explicitly: `vendo init` and `vendo sync` authenticate the coding agent they spawn for extraction and judgment with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` |
-
-`VENDO_TICK_SECRET`, `VENDO_BASE_URL`, `VENDO_POSTHOG_KEY`, and the
-`VENDO_BOX_*` knobs are implementation-level environment configuration. The
-frozen contracts define the corresponding bearer, route origin, and telemetry
-seams without requiring those names from custom compositions.
-
-The `auth` presets read their provider's own environment rather than a
-Vendo-named variable — `AUTH_SECRET` for Auth.js, `CLERK_SECRET_KEY` for
-Clerk, `SUPABASE_JWT_SECRET` / `SUPABASE_URL` for Supabase,
-`AUTH0_DOMAIN` (or `AUTH0_ISSUER_BASE_URL`) for Auth0. `jwt()` has no vendor
-env to read and always takes an explicit secret. See
-[actAs presets](/deploy/auth) for the full table.
-
-## App machine environment
-
-The machine lifecycle injects these values into every box at provision, and
-re-injects the current set (through the in-box agent control port, with an
-app restart) before every in-box edit; an ordinary wake resumes the
-snapshot's environment:
-
-| Variable | Contents |
-| --- | --- |
-| `PORT` | port on which the app server must listen (default 8080) |
-| `VENDO_STORE_URL` | base URL of the durable-rows callback surface (the wire's `/box` mount on the host origin) |
-| `VENDO_HOST_URL` | base URL of the host-tools callback surface (same mount) |
-| `VENDO_APP_TOKEN` | per-app bearer minted at provision; authenticates every `/box` call |
-| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model door (absent when no inference is configured) |
-| `VENDO_INFERENCE_MODEL` | optional model choice the box harness reads |
-| declared secret names | real values, injected only for secrets the owner granted to this app |
-
-The `buildEnv` boundary names (all of the above except
-`VENDO_INFERENCE_MODEL`, which the composition adds beside them) are
-reserved; a declared secret named like one of them is a validation error. The box does its own outbound requests directly, against
-the provider-enforced domain allowlist. See
-[Generated UI and apps](/capabilities/generated-ui#secrets-and-outbound-requests).
-
-The `/box` callback surface authenticates every request with
-`Authorization: Bearer $VENDO_APP_TOKEN` and exposes:
-
-| Path | Methods | Purpose |
+| Variable | What it does | Set where |
 | --- | --- | --- |
-| `/box/rows/<collection>` | GET | list durable rows with `refs.<key>=<value>`, `limit`, and `cursor` filters |
-| `/box/rows/<collection>/<id>` | GET · PUT · DELETE | read or write one durable row; PUT body is `{data, refs?}` (JSON, 256 KB cap) |
-| `/box/tools/<name>` | POST | host tool call through the guard (policy, grants, approvals, audit); body is `{args}` |
+| `VENDO_API_KEY` | Authenticates Vendo Cloud; fills any adapter slot you left unset. | `.env.local`, written by init |
+| `VENDO_BASE_URL` | This deployment's full public URL, path prefix included. | deploy platform · init seeds `.env.example` |
+| `VENDO_MCP_BROKER_URL` | Your tenant's broker endpoint; setting it turns on broker mode. | deploy platform |
+| `VENDO_MCP_FEDERATION_SECRET` | Secret a broker signs its login-federation handshake with. | deploy platform |
+| `VENDO_CLOUD_URL` | Overrides the Vendo Cloud base URL for runtime and CLI. Default `https://console.vendo.run`. | deploy platform |
+| `VENDO_TELEMETRY_DISABLED=1` | Disables build and development telemetry. | shell or CI |
+| `VENDO_TICK_SECRET` | Bearer secret required by `POST /tick`. | deploy platform |
+| `VENDO_HOST_API_URL` | The host API's base when it answers on another origin. | deploy platform |
+| `VENDO_LOGIN_URL` | Where a sessionless caller is sent to sign in. | deploy platform |
+| `VENDO_SERVICE_KEY` | The docs' name for an MCP service key you pass explicitly. | `.env.local`, generated by init |
+| `VENDO_URL` | Base URL `vendo doctor` and `vendo sync` probe. Default `http://localhost:3000/api/vendo`. | shell · `--url` per run |
+| `VENDO_POSTHOG_KEY` `VENDO_POSTHOG_HOST` | Override the telemetry project key and capture host. | shell or CI |
+| `DO_NOT_TRACK=1` | Disables telemetry; also honored by Scarf. | shell or CI |
+| `CI` | Disables telemetry. | set by your CI |
+| `NODE_ENV` | Gates the dev-server telemetry collector and the local store's plaintext-secret allowance. Unset fails closed on both. | deploy platform |
+| `E2B_API_KEY` | Credential the E2B SDK reads. Selects nothing. | deploy platform |
+| `VENDO_BOX_TEMPLATE` | Base template a provisioned e2b machine boots from. The Cloud pool ships its own image. | deploy platform |
+| `VENDO_BOX_EDIT_TIMEOUT_MS` | Long-poll budget for one in-box agent edit. Default 8 minutes. | deploy platform |
+| `VENDO_BOX_EDIT_POLL_MS` | Poll interval while an in-box agent edit runs. | deploy platform |
+| `VENDO_E2B_TIMEOUT_MS` | E2B machine lifetime. Unset, a raised edit budget implies a matching lifetime. | deploy platform |
+| `VENDO_INFERENCE_URL` `VENDO_INFERENCE_KEY` | The in-box agent's model endpoint and key. Both halves or neither. | deploy platform |
+| `VENDO_INFERENCE_MODEL` | Optional model choice passed through to the box harness. | deploy platform |
+| `VENDO_APP_BUILD_WATCHDOG_MS` | How long one app build may run. Default 4 minutes. | deploy platform |
+| `VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE` | Knowledge-search calls one principal may make per minute. Default 60. | deploy platform |
+| `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default local store encrypts secrets with. | `.env.local` |
+| `VENDO_AWAY_TOKEN_SECRET` | Default shared secret for the away-token preset. | deploy platform |
+| `VENDO_MODEL` `VENDO_MODEL_APPS` `VENDO_MODEL_REVIEW` `VENDO_MODEL_JUDGE` `VENDO_MODEL_EXTRACT` | Model name pins, one per seat plus the CLI's extraction engine. They never select a provider. | deploy platform |
+| `VENDO_DEV_CREDENTIAL` | Pins a dev-mode credential ladder rung. | internal · not a host knob |
+| `ANTHROPIC_API_KEY` `OPENAI_API_KEY` `GOOGLE_GENERATIVE_AI_API_KEY` | Credentials for the provider you pass in `models`. Select nothing. | `.env.local` · deploy platform |
+| `VERCEL` `CF_PAGES` `AWS_LAMBDA_FUNCTION_NAME` | Block the default PGlite store on an ephemeral filesystem. | set by the platform |
+| `RAILWAY_ENVIRONMENT` `RENDER` `FLY_APP_NAME` `DYNO` | Mark the PGlite data directory ephemeral, so boot says so once. | set by the platform |
+| `NEXT_RUNTIME` | How the boot event learns this deployment runs on Next. | set by the platform |
 
-## Peer configuration
+## App machine
 
-Vendo receives an AI SDK `LanguageModel`; model provider keys are configured by
-that provider, not selected by a Vendo environment-variable ladder. Connector
-keys are passed to connector constructors. The Cloud hosted sandbox adapter
-(`cloudSandbox`, exported from `@vendoai/vendo/server`) never reads the
-environment itself; `createVendo` passes it `VENDO_API_KEY` and
-`VENDO_CLOUD_URL` when it fills the unset sandbox slot. See
-[Vendo Cloud](/deploy/vendo-cloud) for the full setup.
+Vendo injects these into every box at provision, and re-injects the current set before every in-box edit. An ordinary wake resumes the snapshot's environment.
 
-The store receives its Postgres URL through `createStore({ url })` and its
-PGlite directory through `createStore({ dataDir })`. Those option names are the
-contract; V0 does not define storage environment-variable aliases.
+| Variable | What it does | Set where |
+| --- | --- | --- |
+| `PORT` | Port the app server must listen on. Default 8080. | at provision |
+| `VENDO_STORE_URL` | Base URL of the durable-rows callback surface. | at provision |
+| `VENDO_HOST_URL` | Base URL of the host-tools callback surface. | at provision |
+| `VENDO_APP_TOKEN` | Per-app bearer that authenticates every `/box` call. | at provision |
+| `VENDO_INFERENCE_URL` `VENDO_INFERENCE_KEY` | The in-box agent's model door. Absent when none is configured. | at provision |
+| `VENDO_INFERENCE_MODEL` | Optional model choice the box harness reads. | at provision |
+| declared secret names | Real values, only for secrets the owner granted this app. | at provision, if granted |
+
+Every name above except `VENDO_INFERENCE_MODEL` is reserved. A declared secret named like one of them fails composition with a validation error.
+
+## Auth presets
+
+Each preset reads its vendor's own variables rather than a Vendo-named one.
+
+| Preset | Variables |
+| --- | --- |
+| `authJs()` | `AUTH_SECRET`, or `NEXTAUTH_SECRET` |
+| `clerk()` | `CLERK_JWT_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL` |
+| `supabase()` | `SUPABASE_JWT_SECRET`, `SUPABASE_URL` |
+| `auth0()` | `AUTH0_DOMAIN` or `AUTH0_ISSUER_BASE_URL`, plus `AUTH0_AUDIENCE` when set |
+| `jwt()` | none; it takes an explicit `secret` |
+
+<Note>
+  `vendo init` writes the local ones. `VENDO_API_KEY` and `VENDO_SERVICE_KEY` land in `.env.local`. Every other value is yours to set, production ones on your deploy platform.
+</Note>
+
+Vendo also reads internal test seams and harness markers. They are not contract and can change without notice.

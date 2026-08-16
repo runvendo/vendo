@@ -1,30 +1,22 @@
 ---
-title: "Headless hooks"
+title: "Hooks"
 sidebarTitle: "Hooks"
-description: "React hooks from @vendoai/ui: the shared read shape (a named collection plus error, isLoading, refresh), opt-in polling, and the per-hook write callbacks for threads, apps, approvals, grants, and connections."
+description: "Every headless React hook from @vendoai/ui: the shared read shape, opt-in polling, the per-hook write verbs, and the context accessors."
 ---
 
-`@vendoai/ui` exposes headless React hooks that read from the same wire the
-built-in chrome uses. Pair them with your own UI when you need a bespoke
-surface, or drop them next to `VendoOverlay` to power an inline widget.
-
-Every hook on this page is exported from the package root:
+Headless React hooks that read from the same wire the built-in chrome uses. Pair them with your own UI, or drop them beside `VendoOverlay` to power an inline widget.
 
 ```ts
 import { useThreads, useApprovals, useVendoThread } from "@vendoai/ui";
 ```
 
+Every hook here is also re-exported from `@vendoai/vendo/react`, which is the import that needs no direct `@vendoai/ui` dependency.
+
 ## The shared read shape
 
-The collection hooks all return the same read fields, so you can render
-loading, error, and empty states with one pattern across the whole surface.
-Each hook names its collection after what it holds — `threads`, `apps`,
-`pending`, `grants`, `connections`, `automations`, `events`.
+Collection hooks all return the same read fields, so one pattern renders loading, error, and empty states across the whole surface.
 
 ```ts
-// The shape every collection hook spreads, shown for useThreads. The type
-// itself is internal — name it through the hook
-// (ReturnType<typeof useThreads>) rather than importing it.
 {
   threads: ThreadSummary[];      // seeded, never undefined: [] before the first read lands
   error: Error | undefined;      // last fetch error, or undefined when the read succeeded
@@ -33,55 +25,63 @@ Each hook names its collection after what it holds — `threads`, `apps`,
 }
 ```
 
-Two details matter when you write against it:
+The collection is seeded, not `undefined`. So `threads.length === 0` means empty or not loaded yet, and `isLoading` is what tells those apart.
 
-- **The collection is seeded, not `undefined`.** A collection hook starts at
-  `[]`, so `threads.length === 0` means "empty *or* not loaded yet" — read
-  `isLoading` to tell those apart. `useApp` is the exception: it returns a
-  single document, so its `app` is `AppDocument | undefined`.
-- **`error` is `undefined`, not `null`,** when the read succeeded. A failed
-  read keeps the last good collection, so you can render a retry affordance
-  without blanking the surface.
+`error` is `undefined`, not `null`, when the read succeeded. A failed read keeps the last good collection, so you can render a retry affordance without blanking the surface.
 
-`isLoading` is `true` only for the first fetch. Subsequent `refresh()` calls
-and background polls do not flip it back to `true`, so a spinner shown on
-first mount does not flash on every update.
+`isLoading` is `true` only for the first fetch. Later `refresh()` calls and background polls do not flip it back, so a first-mount spinner does not flash on every update.
 
-## Available hooks
+`useApp` is the exception. It returns a single document, so its `app` is `AppDocument | undefined`.
+
+## Every hook
 
 | Hook | Returns | Polling |
 | --- | --- | --- |
-| `useThreads(options?)` | `threads`: `ThreadSummary[]`, plus `get(id)` and `remove(id)` | `pollMs` |
-| `useApp(appId)` | `app`: `AppDocument \| undefined`, `surface`, plus `call(ref, args)`, `edit(instruction)`, `history` | — |
-| `useApps(options?)` | `apps`: `AppDocument[]`, plus `create`, `remove`, `fork`, `exportApp`, `importApp` | `pollMs` |
-| `useApprovals(options?)` | `pending`: `ApprovalRequest[]`, plus `decide(ids, decision, options?)` | `pollMs` |
-| `useGrants(options?)` | `grants`: `PermissionGrant[]`, plus `revoke(id)` | `pollMs` |
-| `useConnections(options?)` | `connections`: `ConnectionAccount[]`, plus `disconnect(id, connector?)` | `pollMs` |
-| `useConnectorCatalog()` | `{ options, resolved, explicit, failed, retry }` — the connect dock's effective catalog | — |
-| `useAutomations(options?)` | `automations`: `AutomationEntry[]`, plus `enable`, `disable`, `runs`, `dryRun`, `stopRun` | `pollMs` |
-| `useActivity(options?)` | `events`: `AuditEvent[]`, plus `hasMore` and `loadMore()` | `pollMs` |
-| `useSlotApp(slotId, options?)` | `{ appId, error, isLoading, refresh }` — the app currently placed in a slot | on by default |
-| `useVendoStatus()` | `{ posture, connected }` | — |
-| `useVendoThread(threadId?)` | the streaming conversation — see [Threads](#threads) | — |
-| `useVendoOverlay(options?)` | `VendoOverlayController` — see [Overlay control](#overlay-control-usevendooverlay) | — |
-| `useMobileTakeover()` | `{ active, keyboardInset, style }` — the full-bleed mobile breakpoint | — |
-| `useApprovalSheetPresentation()` | `boolean` — whether an in-thread consent presents as the bottom sheet | — |
-| `useApprovalModal()` | `{ onParked, modal }` — mount the screen-initiated approval modal on a custom surface. See [Approval modal](#approval-modal-useapprovalmodal) | — |
+| `useThreads(options?)` | `threads: ThreadSummary[]`, plus `get(id)` and `remove(id)` | `pollMs` |
+| `useApp(appId, options?)` | `app`, `surface`, plus `call(ref, args)`, `edit(instruction)`, `history` | |
+| `useApps(options?)` | `apps: AppDocument[]`, plus `create`, `remove`, `fork`, `exportApp`, `importApp` | `pollMs` |
+| `useApprovals(options?)` | `pending: ApprovalRequest[]`, plus `decide(ids, decision, options?)` | `pollMs` |
+| `useAttention(options?)` | everything `useApprovals` returns, plus `askCount`, `asks`, `unseenResults`, `lastResult`, `markResultsSeen()` | `pollMs` |
+| `useGrants(options?)` | `grants: PermissionGrant[]`, plus `revoke(id)` | `pollMs` |
+| `useConnections(options?)` | `connections: ConnectionAccount[]`, plus `disconnect(id, connector?)` | `pollMs` |
+| `useConnectorCatalog()` | `{ options, resolved, explicit, failed, retry }`, the connect dock's effective catalog | |
+| `useAutomations(options?)` | `automations: AutomationEntry[]`, plus `enable`, `disable`, `runs`, `dryRun`, `stopRun` | `pollMs` |
+| `useActivity(options?)` | `events: AuditEvent[]`, plus `hasMore` and `loadMore()` | `pollMs` |
+| `useSlots(options?)` | `slots: SlotEntry[]`, the caller's registered slots | `pollMs` |
+| `useSlotApp(slotId, options?)` | `{ appId, status, error, isLoading, refresh }` | on by default |
+| `useVendoThread(threadId?)` | the streaming conversation. See [Threads](#threads) | |
+| `useVendoStatus()` | `{ posture, connected, memberships }` | |
+| `useVendoContext(data)` | nothing. Publishes `data` into the situation channel while mounted | |
+| `useVendoOverlay(options?)` | `VendoOverlayController`. See [Overlay control](#overlay-control) | |
+| `useMobileTakeover()` | `{ active, keyboardInset, style }`, the full-bleed mobile breakpoint | |
+| `useApprovalSheetPresentation()` | `boolean`, whether an in-thread consent presents as the bottom sheet | |
+| `useApprovalModal()` | `{ onParked, modal }`. See [Approval modal](#approval-modal) | |
 
-**There is no generic `execute` callback.** Hooks that write name their
-verbs: `decide`, `revoke`, `disconnect`, `enable`, `disable`, `create`,
-`remove`, `fork`, `importApp`, `edit`, `dryRun`, `stopRun`. Each returns a
-promise, and the ones that change the collection refresh it when they
-resolve. `exportApp` is the exception — it is a pure read and refreshes
-nothing. Either way the hook's `isLoading` still tracks only the first read,
-so drive mutation-pending UI from your own `await`.
+There is no generic `execute` callback. Hooks that write name their verbs: `decide`, `revoke`, `disconnect`, `enable`, `disable`, `create`, `remove`, `fork`, `importApp`, `edit`, `dryRun`, `stopRun`.
+
+Each returns a promise, and the ones that change the collection refresh it when they resolve. `exportApp` is the exception, being a pure read that refreshes nothing.
+
+A hook's `isLoading` still tracks only the first read, so drive mutation-pending UI from your own `await`.
+
+## Context accessors
+
+| Hook | Returns |
+| --- | --- |
+| `useVendoProvider()` | the whole `VendoContextValue`. Throws outside a `<VendoProvider>` |
+| `useVendoTheme()` | the resolved `VendoTheme` |
+| `useVendoThemeOrDefault()` | the same, falling back to the default theme |
+| `useVendoTools()` | the `ToolMetaMap` a host passed as `<VendoProvider tools>` |
+| `useVendoClientOrNone()` | the client, or `undefined` outside a provider |
+| `useVendoDiscoverability()` | the discoverability config |
+| `useVendoGreeting()` | the configured greeting, or `undefined` |
+| `useVendoRoutes()` | the `VendoRouteMap` |
+| `useVendoNavigate()` | the host's `onNavigate`, or `undefined` |
+
+There is no `useVendo`. `useVendoProvider` is the context accessor, because `useVendoContext(data)` owns the situation-channel name.
 
 ## Polling
 
-Pass `pollMs` to the hooks marked above to keep the value fresh without a
-manual refresh. Polls are self-scheduling rather than interval-driven: the
-next tick is armed only after the current refresh settles, so a slow server
-never stacks overlapping requests.
+Pass `pollMs` to keep a value fresh without a manual refresh. Polls are self-scheduling rather than interval-driven, so the next tick arms only after the current refresh settles and a slow server never stacks requests.
 
 ```tsx
 "use client";
@@ -98,25 +98,17 @@ export function ApprovalBadge() {
 }
 ```
 
-Omit `pollMs` for a one-shot fetch on mount. Polling does not pause when the
-tab is hidden — a hidden tab keeps fetching on the cadence you set, so pick a
-number you are willing to pay for in the background, or call `refresh()` from
-your own trigger instead.
+Omit `pollMs` for a one-shot fetch on mount. Polling does not pause when the tab is hidden, so pick a cadence you are willing to pay for in the background.
 
-`useApp` and `useVendoStatus` take no options and never poll. `useApp` still
-returns `refresh()`, so you can re-read it on demand; `useVendoStatus` returns
-only `{ posture, connected }` — it reads once per mount, and remounting is the
-only way to re-read it. `useSlotApp` is the
-opposite: it polls every 5 seconds by default, because a placement made in
-the conversation surface has to appear in the slot on its own. Pass
-`{ pollMs }` to change the cadence, or `{ enabled: false }` to stand the
-discovery down entirely.
+`useApp` and `useVendoStatus` never poll. `useApp` still returns `refresh()`; `useVendoStatus` reads once per mount, and remounting is the only way to re-read it.
+
+`useSlotApp` is the opposite: it polls every 5 seconds by default, because a placement made in the conversation surface has to appear in the slot on its own. Pass `{ pollMs }` to change the cadence, or `{ enabled: false }` to stand it down.
+
+`useApprovals` and `useSlotApp` each share one poller per client across every mounted instance, so a page with ten slots still makes one request.
 
 ## Threads
 
-`useThreads` reads the same thread summaries `VendoOverlay` uses, so you can
-build a custom conversation list without giving up parity with the shipped
-chrome.
+`useThreads` reads the same summaries `VendoOverlay` uses, so a custom conversation list keeps parity with the shipped chrome.
 
 ```tsx
 "use client";
@@ -142,37 +134,32 @@ export function ThreadList({ onSelect }: { onSelect: (id: string) => void }) {
 }
 ```
 
-`ThreadSummary.title` is always a string — no `?? "Untitled"` fallback
-needed.
+`ThreadSummary.title` is always a string, so no `?? "Untitled"` fallback is needed.
 
-Pair with `useVendoThread(threadId)` to drive the streaming turn for the
-selected conversation. It wraps the AI SDK's `useChat`, so its vocabulary is
-the AI SDK's:
+Pair it with `useVendoThread(threadId)` to drive the streaming turn. It wraps the AI SDK's `useChat`, so its vocabulary is the AI SDK's.
 
 ```ts
 const {
   threadId,      // the effective id: yours, or the one the server minted on the first turn
   messages,      // UIMessage[]
-  sendMessage,   // send a turn — NOT `send`
-  status,        // the AI SDK chat status ("ready" | "submitted" | "streaming" | "error")
+  beats,         // the turn's status beats
+  sendMessage,   // send a turn; the name is not `send`
+  steer,         // land a mid-turn correction on the running turn
+  status,        // "ready" | "submitted" | "streaming" | "error"
   error,
   approvals,     // the turn's pending approval parts, ready to render
   addToolApprovalResponse,
   stop,
+  resumeStream,
   setMessages,
   regenerate,
   clearError,
 } = useVendoThread(selectedThreadId);
 ```
 
-The argument is named `selectedThreadId` above on purpose: the hook also
-*returns* `threadId`, so destructuring into that name while passing it in is a
-use-before-declaration error.
+The argument is named `selectedThreadId` on purpose. The hook also returns `threadId`, so destructuring into that name while passing it in is a use-before-declaration error.
 
-`setMessages` is what an edit-last affordance is built on: drop the last user
-turn (and anything after) from the transcript, then refill your input from
-that message so re-sending amends the turn instead of duplicating it. This is
-the same flow the shipped chrome's **Edit** affordance uses.
+`setMessages` is what an edit-last affordance is built on: drop the last user turn and anything after it, then refill your input from that message. This is the flow the shipped chrome's Edit affordance uses.
 
 ```tsx
 "use client";
@@ -193,17 +180,13 @@ export function EditLastButton() {
 }
 ```
 
-The hook does **not** queue sends. Calling `sendMessage` mid-stream hands the
-message straight to the AI SDK. The "type while it is answering, and it sends
-when the reply lands" behavior belongs to the shipped chrome's composer,
-which holds the draft and re-sends it on the busy edge — reproduce that in
-your own composer by watching `status` if you want it.
+The hook does not queue sends. Calling `sendMessage` mid-stream hands the message straight to the AI SDK.
+
+The "type while it is answering, and it sends when the reply lands" behavior belongs to the shipped chrome's composer, which holds the draft and re-sends it on the busy edge. Reproduce it by watching `status`.
 
 ## Apps export and import
 
-`useApps` exposes `exportApp(appId)` and `importApp(bytes)` alongside the read
-fields so a custom apps drawer can round-trip an `AppDocument` through the
-wire without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
+`useApps` exposes `exportApp(appId)` and `importApp(bytes)` beside the read fields, so a custom drawer can round-trip an `AppDocument` without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
 
 ```tsx
 "use client";
@@ -222,42 +205,29 @@ export function AppsDrawer() {
     await importApp(new Uint8Array(await file.arrayBuffer()));
     // importApp already refreshed the list
   }
-
-  // …render list, use error/isLoading as with any read hook
 }
 ```
 
-Import mints a fresh `app_` id and does not carry over data, grants, or
-authority; see [Generated UI and apps](/capabilities/generated-ui) for the
-ownership model.
+Import mints a fresh `app_` id and carries over no data, grants, or authority.
 
-## Overlay control (useVendoOverlay)
+## Overlay control
 
-`useVendoOverlay` gives your own chrome programmatic control over
-`VendoOverlay` (the ready-made surface from `@vendoai/ui/chrome`). The
-component's open state is uncontrolled by default and can be seeded with its
-`defaultOpen` prop, or fully controlled with `open` and `onOpenChange`; the
-hook wraps that controlled pair for you. Spread `overlayProps` onto the
-component and call `open`, `close`, or `toggle` from your own shortcut or nav
-button.
+`useVendoOverlay` gives your own chrome programmatic control over `VendoOverlay`.
 
 ```ts
 export interface VendoOverlayController {
-  isOpen: boolean;          // whether the overlay is currently open
+  isOpen: boolean;
   open(): void;
   close(): void;
   toggle(): void;
-  newConversation(): void;  // discard the current conversation, start fresh
-  // Spread onto <VendoOverlay /> to hand it this controller's state:
+  newConversation(): void;
   overlayProps: { open: boolean; onOpenChange(open: boolean): void; conversationKey: number };
 }
 ```
 
-`useVendoOverlay(options?)` accepts one option, `defaultOpen?: boolean`, and
-returns the controller above. Pair it with `launcher="none"` when your host
-owns the trigger, as with this Cmd/Ctrl+K shortcut:
+`useVendoOverlay(options?)` accepts one option, `defaultOpen?: boolean`. Spread `overlayProps` onto the component and call `open`, `close`, or `toggle` from your own shortcut.
 
-```tsx
+```tsx {13,20}
 "use client";
 
 import { useEffect } from "react";
@@ -282,23 +252,15 @@ export function Assistant() {
 }
 ```
 
-The panel itself is portaled to `document.body`, locks page scroll, marks the
-page behind the scrim `inert`, and restores focus to the invoking element on
-close. Closing the overlay hides the panel without discarding the
-conversation, so reopening within the same page session restores the prior
-messages and thread. To start fresh, call `overlay.newConversation()`, use
-the new-conversation button in the panel header, or bump the
-`conversationKey` prop from your own state.
+The panel portals to `document.body`, locks page scroll, marks the page behind the scrim `inert`, and restores focus to the invoking element on close.
 
-## Approval modal (useApprovalModal)
+Closing hides the panel without discarding the conversation, so reopening within the same page session restores the prior messages. Call `overlay.newConversation()` to start fresh.
 
-`useApprovalModal` is the mount seam for the screen-initiated approval
-modal — the centered ask a person sees when a button inside a generated
-view parks on the guard. The shipped chrome already mounts it on
-`VendoSlot`, on in-thread app cards and the workspace stage they expand
-onto, on the [BYO chat embeds](/existing-agents/embeds), and on mounted
-remix forks. Reach for the hook when you render a `TreeView`, `AppFrame`,
-or a bespoke slot yourself.
+## Approval modal
+
+`useApprovalModal` is the mount seam for the screen-initiated approval modal, the centered ask a person sees when a button inside a generated view parks on the guard.
+
+The shipped chrome already mounts it on `VendoSlot`, on in-thread app cards and the workspace stage, on the chat embeds, and on mounted remix forks. Reach for the hook when you render a `TreeView`, `AppFrame`, or a bespoke slot yourself.
 
 ```ts
 export function useApprovalModal(): {
@@ -312,12 +274,9 @@ export interface ParkedPress {
 }
 ```
 
-Wire it in two lines: pass `approval.onParked` down to whichever component
-fires it, and render `approval.modal` alongside. The modal portals to
-`document.body` with its own theme boundary, so it lifts out of any host
-stacking context.
+Wire it in two lines. Pass `approval.onParked` down to whichever component fires it, and render `approval.modal` alongside.
 
-```tsx
+```tsx {12,13}
 "use client";
 
 import { AppFrame, useApprovalModal } from "@vendoai/ui/chrome";
@@ -337,21 +296,13 @@ export function CustomStage({ surface, components }: {
 }
 ```
 
-Presses queue by design: pressing multiple guarded buttons raises multiple
-approvals, and exactly one modal is on screen at a time. Approve or Deny
-spends the decision; Esc and the scrim close the modal without deciding, so
-a dismissed ask stays pending. An ask decided on another surface (the
-thread, another tab) never gets a turn just to say it was already handled.
+Presses queue by design. Pressing several guarded buttons raises several approvals, and exactly one modal is on screen at a time.
 
-`ParkedPress` is re-exported from `@vendoai/ui/chrome` beside `VendoSlot`
-because it is the shape of that component's `onParked` prop.
+Approve or Deny spends the decision. Esc and the scrim close the modal without deciding, so a dismissed ask stays pending.
 
-### refusalCopy
+### `refusalCopy`
 
-`refusalCopy(reason)` maps an error from `approvals.decide` to the same
-user-voice sentence the built-in approval card renders when a decision
-fails to land. Use it in your own error state so a custom surface and a
-shipped card never say different things about the same refusal.
+`refusalCopy(reason)` maps an error from `approvals.decide` to the same user-voice sentence the built-in approval card renders when a decision fails to land.
 
 ```ts
 import { refusalCopy } from "@vendoai/ui/chrome";
@@ -363,22 +314,12 @@ try {
 }
 ```
 
-## BYO-agent embeds
+## Hooks or chrome
 
-If you run your own agent loop and spread in the
-[guarded tool pack](/existing-agents/overview), a separate set of components
-(`VendoToolResult`, `VendoAppEmbed`, `VendoApprovalEmbed`) renders Vendo
-inside that chat instead of these hooks. Import them from
-`@vendoai/vendo/react`, which re-exports them — reaching for `@vendoai/ui`
-directly works too, but only if you add that package as a direct dependency.
-See [Embeds and envelopes](/existing-agents/embeds) for the full reference.
+Reach for `VendoOverlay` and the other chrome components when you want the shipped surface with brand tokens applied.
 
-## When to use hooks vs. chrome
-
-- Reach for `VendoOverlay` and the other chrome components when you want the
-  shipped surface with brand tokens applied.
-- Reach for hooks when you need to place counts, badges, or lists inside
-  your own layout, or when your chrome needs to react to Vendo state without
-  rendering the overlay at all.
+Reach for hooks when you need counts, badges, or lists inside your own layout, or when your chrome has to react to Vendo state without rendering the overlay at all.
 
 Both paths speak the same wire, so mixing them in one app is safe.
+
+If you run your own agent loop and spread in the guarded tool pack, a separate set of components renders Vendo inside that chat instead: `VendoToolResult`, `VendoAppEmbed`, and `VendoApprovalEmbed`, all on [Embeds and envelopes](/existing-agent/embeds).

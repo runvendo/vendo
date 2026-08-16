@@ -1,0 +1,54 @@
+---
+title: "E-MCP-004"
+sidebarTitle: "E-MCP-004"
+description: "server.json does not meet MCP registry discovery requirements."
+---
+
+# E-MCP-004
+
+<Warning>
+**what doctor prints** (broken)
+
+server.json is invalid: &lt;the exact schema errors doctor found&gt;
+</Warning>
+
+Your repo has published a `server.json`, and it fails validation against the
+MCP registry's schema.
+
+`check mcp/server-json` · `error_code E-MCP-004` · `doctor exits 1`
+
+## What you're seeing
+
+Doctor only runs this check when a `server.json` file exists at the repo
+root. `server.json` is the official MCP registry artifact: the document that
+lets a registry list your door as a discoverable server.
+
+## Why
+
+Doctor parses the file and validates it against the registry's schema. Every
+field the schema rejects is named in the printed message, one after another,
+so the line after `server.json is invalid:` is never generic. A file that
+predates a schema change, or one hand-edited into an invalid shape, fails
+here.
+
+## The fix
+
+Regenerate the file from the live door instead of hand-patching individual
+fields:
+
+```bash
+npx vendo mcp server-json --domain your-app.example.com \
+  --url https://your-app.example.com/api/vendo/mcp \
+  --force
+```
+
+If you maintain `server.json` by hand, fix the fields the message lists and
+re-run doctor.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-005" href="/production/troubleshooting/e-mcp-005">server.json remote mismatch</Card>
+  <Card title="E-MCP-006" href="/production/troubleshooting/e-mcp-006">server.json invalid JSON</Card>
+  <Card title="E-MCP-003" href="/production/troubleshooting/e-mcp-003">server card</Card>
+</CardGroup>

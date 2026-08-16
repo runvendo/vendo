@@ -1,13 +1,12 @@
 /** Sheet — the same dialog pinned to an edge, for detail that sits beside the
  *  screen rather than on top of it. */
 import type { CSSProperties } from "react";
-import { DialogShell, EXTENT, type DialogProps, type OverlaySize } from "./dialog.js";
+import { DialogShell, EXTENT, type DialogEngineProps, type DialogProps, type OverlaySize } from "./dialog.js";
 
 export type SheetSide = "left" | "right" | "top" | "bottom";
 
-export interface SheetProps extends DialogProps {
-  side?: SheetSide;
-}
+/** Plus any Base UI `<Dialog.Popup>` prop, handed straight to the popup. */
+export type SheetProps = DialogProps & DialogEngineProps & { side?: SheetSide };
 
 /** Where the panel sits, and which way `size` measures it: an edge sheet fills
  *  the two sides it is pinned to and takes its extent from the third. */

@@ -1,11 +1,11 @@
 /** Input — themed text field; onChange reports the value (W2 §The Kit). */
 import { Input as Base } from "@base-ui/react/input";
-import type { ReactNode } from "react";
-import { control, t } from "../tokens.js";
+import type { ComponentProps, ReactNode } from "react";
+import { control, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
-export interface InputProps {
+interface InputOwnProps extends KitStyled {
   label?: string;
   value?: string;
   placeholder?: string;
@@ -22,7 +22,11 @@ export interface InputProps {
   onChange?: (value: string) => void;
 }
 
-export function Input({ label, value, placeholder, type = "text", hint, error, disabled, required, prefix, suffix, onChange }: InputProps) {
+/** Plus any Base UI `<Input>` prop, handed straight to the field. `style` stays
+ *  the Kit's own — it dresses the ROOT the label and hint share, not the box. */
+export type InputProps = InputOwnProps & KitEngine<ComponentProps<typeof Base>, InputOwnProps>;
+
+export function Input({ label, value, placeholder, type = "text", hint, error, disabled, required, prefix, suffix, onChange, style, children, pending, ...engine }: InputProps & KitRendered) {
   const { fieldId, helpId } = useFieldIds("input");
   // A screen owns its value (kit/handler.ts): controlled, and the change reaches
   // the screen's handler as the event its source was written against.
@@ -35,15 +39,16 @@ export function Input({ label, value, placeholder, type = "text", hint, error, d
     // Base UI's Input is a real `<input>` that registers itself with a Form, so
     // a submit can validate it and focus the first field that failed.
     <Base
-      id={fieldId}
       data-kit="Input"
       type={type}
-      {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
       placeholder={placeholder}
       disabled={disabled}
       required={required}
       aria-invalid={error ? true : undefined}
       aria-describedby={error || hint ? helpId : undefined}
+      {...given(engine)}
+      id={fieldId}
+      {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
       onValueChange={(next) => screen === null
         ? onChange?.(next)
         : screen({ target: { value: next } })}
@@ -57,7 +62,7 @@ export function Input({ label, value, placeholder, type = "text", hint, error, d
     />
   );
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} error={error}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} error={error} style={style}>
       {affixed ? (
         <span
           data-kit-affix=""

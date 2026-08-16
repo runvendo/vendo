@@ -1,0 +1,130 @@
+---
+title: "Doctor error codes"
+sidebarTitle: "All error codes"
+description: "Every error code vendo doctor can print, grouped by the area it checks, with the page that fixes each one."
+---
+
+Every check `vendo doctor` runs prints a stable code when it fails, like
+`E-WIRE-003`. Each code below has its own page with the symptom, the cause,
+and the fix.
+
+Find yours by area below. Codes are never renumbered or reused, so an old code
+always names the same failure.
+
+## Wiring
+
+| Code | What doctor found |
+| --- | --- |
+| [E-WIRE-001](/production/troubleshooting/e-wire-001) | No `createVendo` server wiring in an Express host |
+| [E-WIRE-002](/production/troubleshooting/e-wire-002) | No `<VendoProvider>` in an Express host's client |
+| [E-WIRE-003](/production/troubleshooting/e-wire-003) | No Next.js catch-all route at `app/api/vendo/[...vendo]/route.ts` |
+| [E-WIRE-004](/production/troubleshooting/e-wire-004) | No layout or `_app` file mounts `<VendoProvider>` |
+| [E-WIRE-005](/production/troubleshooting/e-wire-005) | Neither `@vendoai/vendo` nor the `vendoai` alias is declared |
+| [E-WIRE-006](/production/troubleshooting/e-wire-006) | Nothing visible is mounted, so users cannot open the agent |
+| [E-WIRE-007](/production/troubleshooting/e-wire-007) | No `createVendo` wiring on a host doctor cannot pattern-match |
+| [E-WIRE-008](/production/troubleshooting/e-wire-008) | No `<VendoProvider>` on a host doctor cannot pattern-match |
+| [E-WIRE-009](/production/troubleshooting/e-wire-009) | Server actions exist but are not registered into `createVendo` |
+| [E-WIRE-010](/production/troubleshooting/e-wire-010) | The host still names the removed `<VendoRoot>` |
+| [E-WIRE-011](/production/troubleshooting/e-wire-011) | The `vendoai` alias resolves but `@vendoai/vendo` does not |
+
+## Config files
+
+| Code | What doctor found |
+| --- | --- |
+| [E-CFG-001](/production/troubleshooting/e-cfg-001) | A required `.vendo/` file is missing |
+| [E-CFG-002](/production/troubleshooting/e-cfg-002) | `.vendo/data/.gitignore` is missing, risking a committed store |
+| [E-CFG-003](/production/troubleshooting/e-cfg-003) | The OpenAPI server mount and `VENDO_BASE_URL`'s path prefix disagree |
+
+## Store persistence
+
+| Code | What doctor found |
+| --- | --- |
+| [E-STORE-001](/production/troubleshooting/e-store-001) | The store's data directory sits on disk the platform wipes |
+
+## Host dependencies
+
+| Code | What doctor found |
+| --- | --- |
+| [E-DEP-001](/production/troubleshooting/e-dep-001) | The installed `ai` package is a major version Vendo does not support |
+| [E-DEP-002](/production/troubleshooting/e-dep-002) | The running wire and this CLI serve different `@vendoai/vendo` versions |
+| [E-DEP-003](/production/troubleshooting/e-dep-003) | The installed `zod` predates 3.25 and the subpaths the AI SDK imports |
+
+## Ejected UI
+
+| Code | What doctor found |
+| --- | --- |
+| [E-UI-001](/production/troubleshooting/e-ui-001) | An ejected surface came from an older `@vendoai/ui` than the installed one |
+
+## Dev server
+
+| Code | What doctor found |
+| --- | --- |
+| [E-DEV-001](/production/troubleshooting/e-dev-001) | The dev server doctor offered to start never answered in time |
+
+## Composition and status
+
+| Code | What doctor found |
+| --- | --- |
+| [E-LIVE-001](/production/troubleshooting/e-live-001) | `/status` answered, but not with a valid composition response |
+| [E-LIVE-002](/production/troubleshooting/e-live-002) | `/status` got no answer, so nothing is listening at the wire base |
+| [E-LIVE-003](/production/troubleshooting/e-live-003) | `/status` returned an execution venue doctor does not recognize |
+| [E-LIVE-004](/production/troubleshooting/e-live-004) | No execution venue is configured, so server-tier apps cannot run |
+| [E-LIVE-005](/production/troubleshooting/e-live-005) | The host predates the execution venue field in `/status` |
+| [E-LIVE-006](/production/troubleshooting/e-live-006) | The app's root page crashes for real users while the wire answers |
+| [E-LIVE-007](/production/troubleshooting/e-live-007) | Retired: `E2B_API_KEY` alone no longer selects an execution venue |
+| [E-LIVE-008](/production/troubleshooting/e-live-008) | Retired: the store family this warning covered has been replaced |
+
+## Credentials
+
+| Code | What doctor found |
+| --- | --- |
+| [E-AUTH-001](/production/troubleshooting/e-auth-001) | The present-credential probe's cookies and bearer never reached your API |
+| [E-AUTH-002](/production/troubleshooting/e-auth-002) | The present-credential probe threw instead of answering |
+| [E-AUTH-003](/production/troubleshooting/e-auth-003) | The present-credential probe cannot run while the dev server is down |
+| [E-AUTH-004](/production/troubleshooting/e-auth-004) | An `actAs` credential minted, and your principal resolver refused it |
+| [E-AUTH-005](/production/troubleshooting/e-auth-005) | The `actAs` probe threw instead of answering |
+| [E-AUTH-006](/production/troubleshooting/e-auth-006) | The `actAs` probe cannot run while the dev server is down |
+| [E-AUTH-007](/production/troubleshooting/e-auth-007) | No `actAs` seam is configured, so away calls carry no credential |
+| [E-AUTH-008](/production/troubleshooting/e-auth-008) | The `actAs` seam is configured and declined doctor's synthetic principal |
+
+## MCP door
+
+| Code | What doctor found |
+| --- | --- |
+| [E-MCP-001](/production/troubleshooting/e-mcp-001) | Protected-resource metadata did not resolve at the door's well-known path |
+| [E-MCP-002](/production/troubleshooting/e-mcp-002) | Authorization-server metadata did not resolve for the door |
+| [E-MCP-003](/production/troubleshooting/e-mcp-003) | The MCP server card did not parse |
+| [E-MCP-004](/production/troubleshooting/e-mcp-004) | `server.json` does not meet MCP registry discovery requirements |
+| [E-MCP-005](/production/troubleshooting/e-mcp-005) | The `server.json` remote does not match the live door |
+| [E-MCP-006](/production/troubleshooting/e-mcp-006) | `server.json` is invalid JSON |
+| [E-MCP-007](/production/troubleshooting/e-mcp-007) | The local MCP registry auth challenge is malformed |
+| [E-MCP-008](/production/troubleshooting/e-mcp-008) | The live MCP registry auth challenge is malformed |
+| [E-MCP-009](/production/troubleshooting/e-mcp-009) | The door is wired but `VENDO_BASE_URL` is not set |
+
+## Schedules
+
+| Code | What doctor found |
+| --- | --- |
+| [E-SCHED-001](/production/troubleshooting/e-sched-001) | A declared schedule has no caller authorized to trigger it |
+
+## Model turn
+
+| Code | What doctor found |
+| --- | --- |
+| [E-TURN-001](/production/troubleshooting/e-turn-001) | One real model turn went to the wire and no reply text came back |
+| [E-TURN-002](/production/troubleshooting/e-turn-002) | The live model turn cannot run while the dev server is down |
+
+## Vendo Cloud key
+
+| Code | What doctor found |
+| --- | --- |
+| [E-CLOUD-001](/production/troubleshooting/e-cloud-001) | `VENDO_API_KEY` is set but not usable |
+
+## Tool catalog
+
+| Code | What doctor found |
+| --- | --- |
+| [E-TOOLS-001](/production/troubleshooting/e-tools-001) | Every extracted host tool is disabled or excluded |
+| [E-TOOLS-002](/production/troubleshooting/e-tools-002) | The extracted tool surface is empty |
+| [E-TOOLS-003](/production/troubleshooting/e-tools-003) | Part of the tool catalog is ungraded, so it asks on every call |
+| [E-TOOLS-004](/production/troubleshooting/e-tools-004) | Part of the tool catalog declares no request or response shape |

@@ -1,0 +1,115 @@
+---
+title: "Your own agent"
+description: "Wire the door into an agent you already run: one stock MCP client, one bearer, one session per conversation."
+sidebarTitle: "Your own agent"
+---
+
+Nothing here imports Vendo. The door speaks MCP over streamable HTTP, so an
+agent you already run reaches it with the client SDK you already have.
+
+## The connection
+
+One URL and one header. The URL is your app's, derived from `VENDO_BASE_URL`,
+and the header carries the user-bound token from the exchange.
+
+```js acme-agent.mjs focus={7}
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client({ name: "acme-agent", version: "1.0.0" });
+await client.connect(new StreamableHTTPClientTransport(
+  new URL("https://app.maple.com/api/vendo/mcp"),
+  { requestInit: { headers: { authorization: `Bearer ${accessToken}` } } },
+));
+```
+
+The path is fixed at `/api/vendo/mcp` under your own origin. It never points at
+the broker, so switching posture later invalidates nothing you configured here.
+
+## Getting the token
+
+Your backend mints one token per user it is acting for. The exchange is a form
+post, so any HTTP client does it.
+
+```ts token.ts focus={8-9}
+export async function tokenFor(userId: string): Promise<string> {
+  const response = await fetch("https://maple.mcp.vendo.run/token", {
+    method: "POST",
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      client_id: "vendo-service",
+      client_secret: process.env.VENDO_SERVICE_KEY!,
+      subject_token: userId,
+      subject_token_type: "urn:vendo:params:oauth:token-type:user-id",
+    }),
+  });
+  const { access_token } = await response.json();
+  return access_token;
+}
+```
+
+`subject_token` is one of *your* user ids, spelled the way your product spells
+it. Everything the agent does with the token is attributed to that person.
+
+## One session per conversation
+
+Connect once and keep the client for the whole conversation. The door pins each
+MCP session to the subject and client id that opened it, and answers
+`404 Session not found` if either moves.
+
+This matters most for approvals. A parked call resumes only when the retry
+lands on the same session, so an agent that reconnects per call parks forever.
+
+## Reading the result
+
+The door never fails a tool call as a protocol error, because a retry on a
+protocol error would re-execute a write that already happened. Everything
+arrives in-band.
+
+```js focus={3-6}
+const result = await client.callTool({ name: "host_setCardLimit", arguments: args });
+
+if (result.isError) {
+  // "This action needs approval. Approval apr_… is waiting in Maple's
+  // Vendo approvals queue — resolve it there, then retry."
+  return result.content[0].text;
+}
+return result.structuredContent;
+```
+
+Hand that text back to your model as the tool result. It already says what
+happened and what the next move is, which is enough for the model to retry or
+to tell the person.
+
+Successful calls carry the output twice: as text for the model, and as
+`structuredContent` for your own code.
+
+## When ten minutes runs out
+
+A token lasts ten minutes and has no refresh path. An expired one answers `401`
+with a `WWW-Authenticate` challenge on the next request.
+
+Exchange again and reconnect. For work that runs longer than one token,
+mint per unit of work rather than holding one open.
+
+## The whole loop
+
+List the tools, hand them to your model, call what it picks, feed the result
+back. The only Vendo-shaped part is the bearer.
+
+```js acme-agent.mjs focus={1-2}
+const accessToken = await tokenFor("user_1904");
+const client = await connect(accessToken);
+
+const { tools } = await client.listTools();
+const step = await model.decide({ task, tools });
+
+const result = await client.callTool({
+  name: step.name,
+  arguments: step.arguments,
+});
+task.push(result.isError ? result.content[0].text : result.structuredContent);
+```
+
+What the agent may call, and what happens to a call on the way to your API, is
+in [How the door works](/outside-agents/how-the-door-works).

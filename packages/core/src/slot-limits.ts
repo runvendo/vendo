@@ -10,6 +10,11 @@ export const SLOT_ID_MAX_CHARS = 256;
 /** Longest slot label a report may carry. */
 export const SLOT_LABEL_MAX_CHARS = 256;
 
+/** Longest slot description a report may carry. Roomier than a label because it
+ *  is a sentence of intent for the MODEL to read ("main dashboard area, where
+ *  users keep KPI views"), not a word a person picks from a menu. */
+export const SLOT_DESCRIPTION_MAX_CHARS = 1024;
+
 /** Most slots one report may carry — no page mounts more than this. */
 export const SLOTS_REPORT_MAX = 200;
 

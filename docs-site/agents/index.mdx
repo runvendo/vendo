@@ -52,7 +52,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    scaffolded path: pass `--framework custom` in step 4 and init writes a
    runtime-neutral `vendo/server.ts` exporting `handleVendoRequest(request,
    env)`, which your runtime mounts in one line
-   ([Edge runtimes](/deploy/edge-runtimes)).
+   ([Edge runtimes](/production/edge-runtimes)).
 
    **Workspace repos: pick the app package first.** A root `package.json`
    with a `workspaces` field (or a `pnpm-workspace.yaml`) means the framework
@@ -120,7 +120,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    writes the minted key to `.env.local` **in the directory it runs from** —
    a login at a workspace root lands the key where the framework never loads
    it, and everything afterward silently behaves keyless. Answer auth
-   ([which preset?](/deploy/auth)) and the model-key question explicitly:
+   ([which preset?](/production/auth)) and the model-key question explicitly:
 
    ```bash
    # Recommended — Vendo Cloud: run the `vendo login` loop below first
@@ -183,9 +183,9 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    with an `Agent tail:` block listing the exact files this run left for you;
    typically: wrap the root layout (or client entry) in the printed
    `<VendoProvider>` lines, mount a visible surface, pass real host
-   components to the provider ([tools and catalog](/customize/host-components)),
+   components to the provider ([tools and catalog](/generated/host-components)),
    replace the `.vendo/brief.md` placeholder, and add the auth line if none
-   was wired ([host auth](/deploy/auth)). Follow the tail, not memory;
+   was wired ([host auth](/production/auth)). Follow the tail, not memory;
    it is derived from what init actually wrote in this repo.
 
    The surface matters: `VendoProvider` is provider-only and renders NOTHING
@@ -210,7 +210,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    ```
 
    Every failing or warning check carries an `error_code` and a `fix_ref` URL
-   into the [verify page](/deploy/troubleshooting). Fix, re-run, repeat until exit 0.
+   into the [verify page](/production/troubleshooting). Fix, re-run, repeat until exit 0.
 
 7. **Show it running.** Doctor green is the gate, but your human should SEE
    the install, not take your word for it. Leave the dev server running,
@@ -250,7 +250,7 @@ path asks; 3 is always yours.
    demo `principal` and no oauth seam, so the door stays shut until that seam is
    filled. An `auth` preset owns the seam: a separately passed `oauth` is
    ignored whenever `auth` is set. Which preset:
-   [host auth](/deploy/auth).
+   [host auth](/production/auth).
 
    ```ts
    export const vendo = createVendo({
@@ -279,9 +279,9 @@ path asks; 3 is always yours.
 
    Leave `actAs` out. A stub returning empty headers is worse than an absent
    seam: doctor then runs its live mint-and-verify round-trip and FAILS
-   [`E-AUTH-004`](/deploy/troubleshooting#E-AUTH-004), because a fixed demo principal can
+   [`E-AUTH-004`](/production/troubleshooting/e-auth-004), because a fixed demo principal can
    never echo the probe's own subject. Absent, doctor warns
-   [`E-AUTH-007`](/deploy/troubleshooting#E-AUTH-007) and step 6's gate still passes — the
+   [`E-AUTH-007`](/production/troubleshooting/e-auth-007) and step 6's gate still passes — the
    price is that your own route-bound tools answer `not-implemented` over the
    door, while `vendo_make` and the apps tools work. Every client acts as that
    one person: a demo or an internal tool, not a multi-user product.
@@ -317,7 +317,7 @@ path asks; 3 is always yours.
 
    `--base-url` only writes it into `.env.example`; setting it where the host
    deploys stays your human's. Doctor FAILS
-   [`E-MCP-009`](/deploy/troubleshooting#E-MCP-009) on an MCP-wired project with neither
+   [`E-MCP-009`](/production/troubleshooting/e-mcp-009) on an MCP-wired project with neither
    this variable nor `mcp: { baseUrl }`.
 
 4. **`serviceAuth` — only when asked for.** Skip it unless the HOST's own
@@ -331,14 +331,14 @@ path asks; 3 is always yours.
    broker-fronted door serves no token endpoint of its own, so the key is the
    console's to create there. Third-party agents need none of it; they run
    the per-user OAuth the door already serves. Recipe:
-   [MCP door](/reference/mcp-door).
+   [MCP door](/outside-agents/how-the-door-works).
 
 5. **Verify — step 6's gate, nothing new.** Doctor reads the door's posture off
    the running composition, so the dev server must be up for the MCP checks to
    run at all. The registry checks grade `server.json` and the challenge only
    when those files already exist — publishing to the MCP registry is a separate
    job, not part of reaching green. Every `E-MCP` code with its exact fix:
-   [verify](/deploy/troubleshooting#E-MCP-001).
+   [verify](/production/troubleshooting/e-mcp-001).
 
 ## Rules of engagement
 
@@ -350,7 +350,7 @@ path asks; 3 is always yours.
 - **Never invent props or tools outside the catalog.** Only components
   registered in `vendo/registry.tsx` exist, and only with the props their
   schemas declare. Only tools in `.vendo/tools.json` exist. Copy real names
-  from source; see [tools and catalog](/customize/host-components).
+  from source; see [tools and catalog](/generated/host-components).
 - **Doctor green is the only definition of done.** `vendo doctor --json`
   exiting 0 (no `broken` checks) is complete; anything less is not, and
   nothing more is required.
@@ -368,11 +368,11 @@ path asks; 3 is always yours.
 
 ## The leaves
 
-- [Host auth](/deploy/auth): detect the host's auth provider, wire the
+- [Host auth](/production/auth): detect the host's auth provider, wire the
   right preset, know when to ask the human.
 - [API tools](/capabilities/api-tools): expose the host API as tools, and what
   the extractor reads to find them.
-- [Troubleshooting](/deploy/troubleshooting): every doctor error code: symptom,
+- [Troubleshooting](/production/troubleshooting): every doctor error code: symptom,
   cause, exact fix.
 
 ## Agent surfaces reference

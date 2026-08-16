@@ -88,6 +88,23 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
   });
 
+  it("says how to reach the assistant when the press has nowhere to go", () => {
+    // The third arm of the press, and the only runtime-detected one: no
+    // onAuthor, no overlay, no palette. The button used to swallow the press.
+    render(<VendoProvider client={client}><VendoSlot id="net-worth-card" /></VendoProvider>);
+    fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
+    expect(screen.getByRole("status").textContent)
+      .toBe("Ask your assistant to build something for this spot. Net worth card");
+    // The button that had nowhere to go goes with it — nothing left that lies.
+    expect(screen.queryByRole("button", { name: /design a view/i })).toBeNull();
+  });
+
+  it("keeps the hint away when the press had somewhere to go", () => {
+    render(<VendoProvider client={client}><VendoSlot id="hero" onAuthor={vi.fn()} /></VendoProvider>);
+    fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("mounts a pinned component in the slot, in place of the host children", async () => {
     render(
       <VendoProvider client={client}>

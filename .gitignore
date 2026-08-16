@@ -25,6 +25,12 @@ corpus/.repos/
 .playwright-mcp/
 *.png
 
+# ...except the public docs site's images, which are SHIPPED assets, not review
+# artifacts. The blanket `*.png` above swallowed ten of them silently: they sat
+# on disk, the local Mintlify server served them, and they would have 404'd in
+# production. Every check passed because it asked disk, not git.
+!docs-site/images/**/*.png
+
 # ...except RAW MEASUREMENT DATA under docs/verification: logs, counters, and
 # sample sets are small, they diff, and a lane's claims are worthless without
 # them. Without this negation every lane has to remember `git add -f` and the

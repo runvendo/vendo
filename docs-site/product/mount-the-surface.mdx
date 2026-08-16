@@ -1,0 +1,318 @@
+---
+title: "Mount the surface"
+description: "The provider, the overlay, the command palette, slots, triggers, and the bare thread: what each one renders and the props that move it."
+sidebarTitle: "Mount the surface"
+---
+
+One provider carries the wire and your brand. Everything below renders inside
+it and re-themes from the same token file.
+
+## The provider
+
+`vendo init` never writes a client file. It prints one paste at the end of the
+run, naming your layout and the exact lines.
+
+<CodeGroup>
+
+```tsx App Router
+// app/layout.tsx
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
+import type { VendoTheme } from "@vendoai/vendo";
+import theme from "../.vendo/theme.json";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+  {children}
+  <VendoOverlay />
+</VendoProvider>
+```
+
+```tsx Pages Router
+// pages/_app.tsx
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
+import type { VendoTheme } from "@vendoai/vendo";
+import theme from "../.vendo/theme.json";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+  <Component {...pageProps} />
+  <VendoOverlay />
+</VendoProvider>
+```
+
+</CodeGroup>
+
+`baseUrl` is where the route is mounted, path prefix included. A deployment
+served under `/maple` passes `baseUrl="/maple/api/vendo"`.
+
+The `theme` cast narrows TypeScript's widened JSON string literals. If init
+also wrote `.vendo/fonts.css`, import it beside the theme so generated screens
+carry your brand font wherever your own stylesheet does not reach.
+
+### The props
+
+| Prop | What it does |
+| --- | --- |
+| `baseUrl` | The wire mount, path prefix included. Default `/api/vendo`. |
+| `theme` | Your brand tokens, merged over Vendo's defaults. |
+| `components` | Your own React components the agent may render. See [host components](/generated/host-components). |
+| `pinSlot` | Which slot a pin lands in. Set it and the panel's pin button writes the placement for you. |
+| `tools` | Friendly labels and field formatting for tool chips and approval cards. |
+| `routes` · `onNavigate` | Your pages by name, and your router doing the moving when a generated link is pressed. |
+| `intl` | Display currency and locale for every formatter. Defaults to USD and `en-US`. |
+| `greeting` · `discoverability` | The first-run intro and starter prompts, or `"quiet"` to stand them down. |
+| `captureScreen` | `false` stops the page snapshot riding each send. See [how it works](/product/how-it-works#what-the-agent-can-see). |
+
+<Warning>
+  A component registry has to live in a `"use client"` file. Declaring it in a
+  Server Component layout crashes React Server Components serialization once
+  the registry holds real components, and every page 500s.
+</Warning>
+
+## The overlay
+
+The default drop-in: a launcher pill in the corner that opens the conversation
+panel. On phones it becomes a full-bleed takeover below 768px.
+
+The pill is white-label. It reads "AI agent" until you give it your own label
+and mark.
+
+```tsx
+<VendoOverlay
+  launcher={{
+    position: "bottom-right",
+    label: "Ask Maple",
+    icon: <MapleMark />,
+  }}
+/>
+```
+
+<Frame>
+  <img
+    src="/images/maple/launcher-at-rest.png"
+    alt="The Maple overview page at rest with the branded Ask Maple launcher pill in the bottom right corner"
+    width="1280"
+    height="400"
+  />
+</Frame>
+
+`position` takes any viewport corner. `offset` nudges the whole cluster inward
+when your own UI already lives in that corner, and `launcher="none"` hides the
+pill so you can drive the panel yourself.
+
+### Where the panel sits
+
+`placement="center"` is the default: a centered box over a scrim, with the
+page behind it inert.
+
+<Frame caption="The default placement. Maple's home is still there, dimmed and out of reach behind the panel.">
+  <img
+    src="/images/maple/panel-on-home.png"
+    alt="Maple's home page dimmed behind a centered Vendo panel, which holds a generated spending by category screen with the month's total and a bar for each category"
+    width="1280"
+    height="900"
+  />
+</Frame>
+
+`placement="dock"` is the side-panel posture. The panel holds the right edge
+full height and your page reflows beside it, staying visible and clickable.
+
+```tsx
+<VendoOverlay placement="dock" dockWidth={460} />
+```
+
+`dockWidth` is also the amount the page reflows by, so the two can never
+disagree. It defaults to 420.
+
+### Conversations survive
+
+A reload resumes the conversation the user was in, mid-stream replies
+included. The panel's header lists earlier conversations to pick back up.
+
+None of that needs wiring. A remembered conversation that no longer exists
+falls back to a fresh start on its own.
+
+### Drive it yourself
+
+`useVendoOverlay` gives you open, close, toggle, and a fresh conversation,
+plus the props to hand back to the overlay.
+
+```tsx
+const overlay = useVendoOverlay();
+
+<button onClick={overlay.toggle}>Ask</button>
+<VendoOverlay {...overlay.overlayProps} launcher="none" />
+```
+
+The `thread` prop is the one sanctioned injection point. Pass your own thread
+component and the overlay stays the shell: portal, scrim, focus, and the
+mobile sheet.
+
+## The command palette
+
+`⌘K` on macOS, `Ctrl+K` elsewhere, opens the same conversation panel in its
+compact form.
+
+```tsx
+import { VendoPalette } from "@vendoai/ui/chrome";
+
+<VendoPalette />
+```
+
+Mount it beside the overlay, which is where the palette opens. Its commands
+render on the chip strip above the composer: a new conversation, each of the
+user's own apps, and their activity.
+
+Pass `onCommand` and every chip activation routes through you instead. Typed
+text that matches no command is simply the message.
+
+The binding is a singleton no matter how many palettes mount, and it never
+steals a keystroke from a focused input of yours. Pass a chord
+(`hotkey={{ key: "j", meta: true }}`), a matcher function, or `false` to wire
+your own.
+
+<Frame>
+  <img
+    src="/images/maple/panel-compact.png"
+    alt="The compact panel open over Maple, showing the greeting, five suggestion cards, and the composer"
+    width="652"
+    height="532"
+  />
+</Frame>
+
+## Slots
+
+A slot is a place in your own page that a generated view can occupy. It ships
+in `@vendoai/ui`, so add that package to the app.
+
+```tsx
+"use client";
+
+import { VendoSlot } from "@vendoai/ui/chrome";
+
+<VendoSlot
+  id="spend-breakdown"
+  emptyState={{
+    suggestions: [
+      "Show my spending by category",
+      "Track my savings goals",
+    ],
+  }}
+>
+  <YourOwnCard />
+</VendoSlot>
+```
+
+Empty, it renders an invitation: a skeleton, up to three prompt chips that
+prefill the composer, and a button that opens the panel. Filled, the view
+mounts in place. If that view throws, your own `children` come back, never a
+blank hole.
+
+<Columns cols={2}>
+  <Frame>
+    <img
+      src="/images/maple/slot-empty.png"
+      alt="An empty slot in the Maple overview grid, showing a skeleton, three prompt chips, and a button that opens the panel"
+      width="500"
+      height="390"
+    />
+  </Frame>
+  <Frame>
+    <img
+      src="/images/maple/slot-filled.png"
+      alt="The same Maple slot holding a generated spend by category view with a donut chart and a category list"
+      width="496"
+      height="671"
+    />
+  </Frame>
+</Columns>
+
+Every mounted slot reports itself to the server, which is how the panel knows
+which places exist. `label` is what a person reads when they pick one, and it
+defaults to the id read as words.
+
+To make a pin land somewhere, name the destination on the provider with
+`pinSlot`. With one slot the panel shows **Pin to dashboard**; with several,
+the same button becomes a picker of your slots.
+
+## Triggers
+
+A button anywhere in your product that hands one task to the agent. It fills
+the composer and never sends, so it is safe on any prompt.
+
+```tsx
+import { VendoTrigger } from "@vendoai/ui/chrome";
+
+<VendoTrigger
+  prompt="Walk me through this month's spending."
+  context={`This month by category: ${summary}`}
+>
+  Ask about this month
+</VendoTrigger>
+```
+
+`context` rides along so the agent starts oriented on what is on screen. For
+your own element instead of this button, call `openVendoConversation({ prompt })`.
+
+## The bare thread
+
+`VendoThread` is the conversation with no shell: composer, streaming replies,
+tool chips, approval cards, and generated views arriving inline. Use it when
+the conversation belongs inside your own layout.
+
+```tsx
+import { VendoThread } from "@vendoai/ui/chrome";
+
+<VendoThread
+  greeting="What can I help you build?"
+  suggestions={["Show my overdue invoices", "Draft this month's summary"]}
+/>
+```
+
+The same wire is available headless through [the
+hooks](/reference/hooks), for a conversation UI you draw yourself.
+
+## Tool labels
+
+Chrome renders a chip every time the agent calls a tool, and an approval card
+when a call needs a decision. Without configuration it prettifies the raw id,
+so `host_email_send` reads as "Email send".
+
+Pass your own copy through the provider's `tools` prop for user-facing
+surfaces.
+
+```tsx
+const tools: ToolMetaMap = {
+  host_transferMoney: {
+    label: "Send money",
+    description: "Move money between your accounts.",
+    formatField: (key, value) =>
+      key === "amount" && typeof value === "number" ? usd(value) : undefined,
+  },
+};
+```
+
+`formatField` is display only. The raw arguments still drive the decision, so
+formatting a field cannot change what the user is approving.
+
+## Approvals on a generated screen
+
+When someone presses a button inside a generated view and that press needs
+approval, the ask arrives as a modal centered over the page.
+
+Presses queue, and exactly one modal is on screen at a time. Escape and the
+scrim close it without deciding, so the ask comes back on the next press.
+
+The modal is mounted for you inside `VendoSlot`, in-thread app cards, and the
+panel. The decision itself is server-side: see
+[what stops a call](/product/how-it-works#what-stops-a-call).
+
+<CardGroup cols={2}>
+  <Card title="Theming" icon="palette" href="/customize/theming">
+    The token file every surface above reads, and how init fills it from your
+    own brand.
+  </Card>
+  <Card title="Generated apps" icon="layout-dashboard" href="/generated/apps">
+    What a generated view can do, who owns it, and how it gets its data.
+  </Card>
+</CardGroup>

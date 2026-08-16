@@ -6,12 +6,12 @@
  * that is actually hard to get right.
  */
 import { Popover } from "@base-ui/react/popover";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { applyFormat, getKitIntl } from "../format.js";
-import { control, font, microLabel, popup, popupMotion, t, transitionFor } from "../tokens.js";
+import { control, font, microLabel, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
-export interface DateRangeProps {
+interface DateRangeOwnProps extends KitStyled {
   label?: string;
   /** ISO yyyy-mm-dd. */
   start?: string;
@@ -24,6 +24,10 @@ export interface DateRangeProps {
   /** Bound change handler; receives `{ start, end }` as ISO dates. */
   onChange?: (range: { start: string; end: string }) => void;
 }
+
+/** Plus any Base UI `<Popover.Root>` prop, handed straight to the popover.
+ *  `style` stays the Kit's own — it dresses the ROOT the label and hint share. */
+export type DateRangeProps = DateRangeOwnProps & KitEngine<ComponentProps<typeof Popover.Root>, DateRangeOwnProps>;
 
 /** UTC throughout: a local-midnight Date shifts the day west of Greenwich. */
 const iso = (date: Date): string => date.toISOString().slice(0, 10);
@@ -50,7 +54,7 @@ const label = (date: Date, options: Intl.DateTimeFormatOptions): string =>
 /** Sunday-first weekday initials, in the host's locale. Jan 2024 opens on one. */
 const WEEKDAYS = Array.from({ length: 7 }, (_, i) => label(new Date(Date.UTC(2024, 0, 7 + i)), { weekday: "narrow" }));
 
-export function DateRange({ label: fieldLabel, start, end, min, max, placeholder = "Pick a range", hint, disabled, onChange }: DateRangeProps) {
+export function DateRange({ label: fieldLabel, start, end, min, max, placeholder = "Pick a range", hint, disabled, onChange, style, children, pending, ...engine }: DateRangeProps & KitRendered) {
   const { fieldId, helpId } = useFieldIds("date-range");
   const [month, setMonth] = useState(() => parse(start) ?? new Date());
   // The half-made range: set on the first click, cleared by the second — or by
@@ -73,8 +77,8 @@ export function DateRange({ label: fieldLabel, start, end, min, max, placeholder
   const shown = `${applyFormat(start, "date") ?? ""}${end ? ` – ${applyFormat(end, "date")}` : ""}`;
 
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={fieldLabel} hint={hint}>
-      <Popover.Root onOpenChange={(next) => { if (!next) setAnchor(undefined); }}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={fieldLabel} hint={hint} style={style}>
+      <Popover.Root {...given(engine)} onOpenChange={(next) => { if (!next) setAnchor(undefined); }}>
         <Popover.Trigger
           id={fieldId}
           data-kit="DateRange"

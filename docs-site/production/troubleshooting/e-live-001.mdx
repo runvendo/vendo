@@ -1,0 +1,51 @@
+---
+title: "E-LIVE-001"
+sidebarTitle: "E-LIVE-001"
+description: "Doctor's /status probe answered, but not with a valid Vendo composition response."
+---
+
+```text live/status
+broken: /status returned an invalid composition response (<status>: <detail>)
+— check the dev server log for the [vendo] wire error
+```
+
+`<status>` is the HTTP status `/status` answered with; `<detail>` is the
+wire's own `error.code: error.message` when the body carried one, and is
+dropped entirely when it didn't. A body that isn't JSON at all prints a
+different line for the same code: `/status answered HTTP <status> but the
+body is not JSON`.
+
+`check: live/status` · `error_code: E-LIVE-001` · `doctor exits: 1`
+
+## What you're seeing
+
+The live checks reach `/status`, but the response is not a valid Vendo
+composition body. Everything before this check can be green.
+
+## Why
+
+Something answered at the wire base, but not with the shape doctor expects:
+`posture`, `version`, and `blocks`. Two different bodies produce this same
+code.
+
+A JSON error body means the wire is mounted but failing; check the dev
+server log for the matching `[vendo]` wire error. A non-JSON body means
+another handler owns the path, the mount is wrong, or the base URL points at
+the wrong app.
+
+## The fix
+
+For a JSON error body, read the carried error message and the dev server
+log. They name what broke, often a failing principal resolver or a missing
+adapter.
+
+For a non-JSON body, confirm the Vendo handler is mounted at the probed
+base: `app/api/vendo/[...vendo]/route.ts` on Next.js, or
+`app.use("/api/vendo", mountVendo())` on Express. Confirm `--url` or
+`VENDO_URL` points at that same base, then re-run `npx vendo doctor`.
+
+## Related errors
+
+- [E-LIVE-002](/production/troubleshooting/e-live-002) — the fetch itself never answered, one rung below this
+- [E-WIRE-003](/production/troubleshooting/e-wire-003) — the Next.js route this check expects mounted
+- [E-WIRE-001](/production/troubleshooting/e-wire-001) — the Express wiring this check expects mounted

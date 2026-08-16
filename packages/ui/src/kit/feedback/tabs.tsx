@@ -9,8 +9,8 @@
  *  are present.
  */
 import { Tabs as Base } from "@base-ui/react/tabs";
-import { Children, type ReactNode } from "react";
-import { font, hairline, t, transitionFor } from "../tokens.js";
+import { Children, type ComponentProps, type ReactNode } from "react";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 export type TabItem = string | number | {
   value?: string | number;
@@ -20,7 +20,7 @@ export type TabItem = string | number | {
   content?: ReactNode;
 };
 
-export interface TabsProps {
+interface TabsOwnProps extends KitStyled {
   tabs: TabItem[];
   /** The initially selected tab's `value` (the wire dialect's selector). */
   value?: string | number;
@@ -31,6 +31,9 @@ export interface TabsProps {
   /** Kit elements at the end of the tab row — what the whole set does. */
   actions?: ReactNode;
 }
+
+/** Plus any Base UI `<Tabs.Root>` prop, handed straight to the tab set. */
+export type TabsProps = TabsOwnProps & KitEngine<ComponentProps<typeof Base.Root>, TabsOwnProps>;
 
 const text = (value: string | number | undefined): string =>
   value === undefined || value === null ? "" : String(value);
@@ -54,7 +57,7 @@ const normalize = (item: TabItem): NormalTab => {
   };
 };
 
-export function Tabs({ tabs, value, defaultIndex = 0, actions, children }: TabsProps) {
+export function Tabs({ tabs, value, defaultIndex = 0, actions, children, style, pending, ...engine }: TabsProps & KitRendered) {
   const panels = Children.toArray(children);
   const items = (tabs ?? []).map(normalize);
   // Tabs are addressed by INDEX, because two items may carry the same `value`
@@ -71,8 +74,9 @@ export function Tabs({ tabs, value, defaultIndex = 0, actions, children }: TabsP
   return (
     <Base.Root
       data-kit="Tabs"
+      {...given(engine)}
       defaultValue={start}
-      style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
+      style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)", ...style }}
     >
       {/* The list keeps its fit-content width; the row around it is what lets
           `actions` sit at the far end instead of under the tabs. */}

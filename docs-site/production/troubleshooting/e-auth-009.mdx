@@ -1,0 +1,42 @@
+---
+title: "E-AUTH-009"
+sidebarTitle: "E-AUTH-009"
+description: "supabase() is wired but neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set."
+---
+
+```text wiring/supabase-env
+warning: supabase() verifies sessions with SUPABASE_JWT_SECRET (HS256,
+offline) and/or SUPABASE_URL (ES256 via GoTrue's JWKS) — server-side names,
+not the NEXT_PUBLIC_* pair. Neither is set — the first signed-in turn fails
+loud until one lands in .env.local.
+```
+
+`check: wiring/supabase-env` · `error_code: E-AUTH-009` · `doctor exits: 0`
+
+## What you're seeing
+
+A warning: your composition wires the `supabase()` auth preset, and neither
+of the env names it verifies sessions with is set.
+
+## Why
+
+Init detects the Supabase family from your dependencies — often a host that
+carries only the `NEXT_PUBLIC_SUPABASE_*` pair — but the preset verifies
+sessions server-side: `SUPABASE_JWT_SECRET` (HS256, offline) and/or
+`SUPABASE_URL` (ES256 logins via GoTrue's JWKS). Without one, every static
+check passes and the first signed-in turn fails with "supabase() has no way
+to verify sessions".
+
+## The fix
+
+Add either name to `.env.local` (both is fine). For a Supabase Cloud
+project, `SUPABASE_URL` is the project URL and the JWT secret lives in the
+project's API settings. For `supabase start`, use the local stack's printed
+`API_URL` and `JWT_SECRET`. A warning, not a failure: production-only env
+kept outside your local files is legitimate — but then verify with a real
+signed-in turn where that env exists.
+
+## Related errors
+
+- [E-AUTH-001](/production/troubleshooting/e-auth-001) — the live-probe face of the same gap: credentials that cannot be verified never reach the host API
+- [E-AUTH-007](/production/troubleshooting/e-auth-007) — the away-run seam (`actAs`) unconfigured, a different identity gap

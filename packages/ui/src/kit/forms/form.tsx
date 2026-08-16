@@ -1,10 +1,10 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
 import { Form as Base } from "@base-ui/react/form";
-import type { FormEvent, PropsWithChildren, ReactNode } from "react";
-import { font, t } from "../tokens.js";
+import type { ComponentProps, FormEvent, ReactNode } from "react";
+import { font, t, type KitEngine, type KitRendered, type KitStyled, given } from "../tokens.js";
 import { Button } from "./button.js";
 
-export interface FormProps {
+interface FormOwnProps extends KitStyled {
   /** Bound host-tool submit action (renderer-supplied). */
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   submitLabel?: string;
@@ -17,7 +17,11 @@ export interface FormProps {
   footer?: ReactNode;
 }
 
-export function Form({ onSubmit, submitLabel = "Submit", disabled, header, actions, footer, children }: PropsWithChildren<FormProps>) {
+/** Plus any Base UI `<Form>` prop, handed straight to the root — here the root
+ *  IS the Base element, so the Kit's `style` dresses that same one. */
+export type FormProps = FormOwnProps & KitEngine<ComponentProps<typeof Base>, FormOwnProps>;
+
+export function Form({ onSubmit, submitLabel = "Submit", disabled, header, actions, footer, style, children, pending, ...engine }: FormProps & KitRendered) {
   return (
     // Base UI's Form validates the fields that registered with it and focuses
     // the first one that failed before ever reaching `onSubmit` — the half a
@@ -34,7 +38,8 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, header, actio
         e.preventDefault();
         onSubmit?.(e);
       }}
-      style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
+      {...given(engine)}
+      style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)", ...style }}
     >
       {header}
       {children}

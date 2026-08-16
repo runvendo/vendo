@@ -1,97 +1,118 @@
 ---
-title: "Automations and webhooks"
+title: "Automations"
 sidebarTitle: "Automations"
-description: "How Vendo drives UTC cron schedules and duration timers, ingests host events, and verifies external webhook triggers for the automations block."
+description: "The same tools, fired on a schedule or by an event, with nobody there to watch."
 ---
 
-Vendo fires automations on a schedule, in response to a host event, or from
-a verified external webhook.
+## How one gets made
 
-Zero config: the block mounts unless you pass `automations: false`, and host
-events work immediately. `vendo.emit(...)` runs the matching automations in
-your own process, with no key and no cron. Schedules are the one trigger that
-needs a firing authority, and you pick one: `automations.start()` in a
-long-lived process (it polls every 60s by default), or an external cron
-against the tick route below.
+The user asks for it in words. There is no separate automations tool and no form to fill in.
 
-## Schedules
-
-Long-lived hosts can call `automations.start()`. Serverless hosts schedule:
-
-```http
-POST /api/vendo/tick
-Authorization: Bearer <secret>
+```text
+"Every weekday at 8am, email me the invoices that went overdue overnight."
 ```
 
-Schedules support exactly one of a five-field `cron`, a duration such as
-`15m`, or a one-shot UTC timestamp. Cron evaluates in UTC. If the host misses
-a window, the next tick fires once and never back-fills.
+Vendo builds the app with that trigger attached, and arms it in the same turn. One app can hold several triggers, so a second schedule is added the same way.
 
-The bearer is the host-configured `VENDO_TICK_SECRET`. Point any external
-cron at it (Vercel cron, a GitHub Actions schedule, or crontab) as often as
-you like: firing is idempotent within a cron window, so a double-hit never
-double-runs anything.
+<Frame caption="The receipt is a card in the thread, not a config screen.">
+  <img
+    src="/images/maple/automation-card.png"
+    alt="An automation card in a Maple thread reading Every Friday at 5:00 PM, prepare a digest of that week's spending by category, drafted and ready for you to send"
+    width="563"
+    height="120"
+  />
+</Frame>
 
-## Machine app schedules
+## The three triggers
 
-The same tick drives graduated apps' machines. An app whose box ships a
-`vendo.json` manifest declaring schedules:
+A trigger is one of three shapes. Each carries what to run alongside when to run it.
 
-```json
-{ "schedules": [{ "cron": "0 8 * * *", "fn": "chaseInvoices" }] }
+<CardGroup cols={3}>
+  <Card title="Schedule" icon="clock">
+    A five-field cron, a plain interval, or a one-shot timestamp.
+
+    `cron` · `every` · `at`
+  </Card>
+  <Card title="Host event" icon="bolt">
+    Your own product event, emitted from the code path that owns it.
+
+    `vendo.emit(...)`
+  </Card>
+  <Card title="Outside delivery" icon="inbox">
+    A signed webhook from a connected service.
+
+    `connector` · `event`
+  </Card>
+</CardGroup>
+
+```ts trigger shapes
+{ kind: "schedule", cron: "0 8 * * 1-5" }
+{ kind: "schedule", every: "15m" }
+{ kind: "schedule", at: "2026-09-01T09:00:00Z" }
+{ kind: "host-event", event: "invoice.paid" }
+{ kind: "external", connector: "gmail", event: "message.new" }
 ```
 
-gets each due target fired as `POST /fn/<name>` on its machine: the tick
-wakes the machine, posts the fn as the app owner's away execution, records
-last-fired state, and the machine goes back to sleep on the normal idle
-policy. Due-ness is computed from store-cached state, so a tick never wakes a
-machine with nothing due. The response's additive `schedules` field reports
-what fired.
+A schedule carries exactly one of `cron`, `every`, or `at`. Cron is five fields and evaluates in UTC.
 
-The host learns a box's schedules by reading `vendo.json` over the machine
-door whenever the machine is awake at tick time (and once, on the first tick
-after graduation). A manifest edited while the machine sleeps is picked up the
-next time it is awake. `vendo doctor` reports machine-bearing apps, whether a
-schedule caller is configured, and last-fired times.
+<Note>
+  A missed window never back-fills. The next fire happens once, from now.
+</Note>
 
-## Host events
+## Who fires it
 
-Emit from the host code path that owns the event:
+Under a Cloud key, Cloud's scheduler is the firing authority. Your deployment does not run a cron, and the local engine stands down so nothing double-runs.
+
+Host events are different: they fire in your own process, on the code path that emitted them.
 
 ```ts
 await vendo.emit("invoice.paid", invoice, principal);
 ```
 
-This runs enabled automations for that principal whose host-event name matches.
+That runs every armed automation listening for `invoice.paid`, for this user and for the orgs they belong to. It answers with the run ids it started.
 
-## External deliveries
+<Note>
+  A dev server fires its own schedules. Cloud's scheduler cannot reach localhost, so development never waits on it.
+</Note>
 
-Mount `POST /webhooks/:source`. Connector sources use their own signature
-scheme. Self-minted sources sign HMAC-SHA256 over
-`id.timestamp.rawBody`, place signature, timestamp, and delivery id in headers,
-and accept only a five-minute clock window.
+## Permissions before the first fire
 
-Vendo rejects unverified deliveries before principal resolution or dispatch.
-Delivery ids are deduplicated, so at-least-once retries do not double-run an
-automation. Secrets never travel in the URL.
+A run happens with nobody there to approve anything, so the permissions are settled when the automation is turned on.
 
-## Stopping a run
+Arming answers with the asks it still needs. Once those are granted, the automation runs as the person who armed it, every time.
 
-Cancel an in-flight automation run when a schedule fires against stale state,
-an agent is looping on a bad plan, or a user asks to abort. Post to the run
-under its owning principal:
+Two things stop a trigger on their own: editing what it does, and the sponsor losing access to the app. The run stops before any tool call, and the list carries the reason.
 
-```http
-POST /api/vendo/runs/:id/stop
-Content-Type: application/json
+## Watching runs
+
+Every fire writes a run. One hook carries the panel you build around them.
+
+```tsx
+const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutomations();
 ```
 
-The engine signals cancellation cooperatively: the current step finishes,
-outstanding tool calls are drained, and the run transitions to a cancelled
-terminal state. Parked approvals attached to the run are dropped rather than
-resumed. Stopping a run that has already reached a terminal state is a no-op
-and returns 200.
+- `dryRun` shows the plan a fire would follow, without firing it.
+- `stopRun` cancels a run that is still going. A run that already finished answers with a conflict.
+- `rerun` starts a fresh run of the same automation on the same triggering event. It is the second half of grant-and-retry.
 
-Cancellation is idempotent and audit-logged. The engine uses the store's
-atomic compare-and-set primitive on the run record, so concurrent stop
-requests and scheduler ticks cannot race a run into a resurrected state.
+## Where to go next
+
+An automation calls the same tools a live turn does.
+
+<CardGroup cols={3}>
+  <Card title="API tools" href="/capabilities/api-tools">
+    Your own routes, extracted into a guarded tool set.
+
+    API tools →
+  </Card>
+  <Card title="Connected accounts" href="/capabilities/connected-accounts">
+    Each user connects their own Gmail, Slack, or GitHub once.
+
+    Connected accounts →
+  </Card>
+  <Card title="Guard" href="/how-vendo-works">
+    Risk grade, approval, and an audit line on every call.
+
+    How Vendo works →
+  </Card>
+</CardGroup>

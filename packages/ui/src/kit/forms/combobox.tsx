@@ -3,12 +3,13 @@
  * Select's shape for a list too long to scan; the same labelField/valueField.
  */
 import { Combobox as Base } from "@base-ui/react/combobox";
-import { control, popup, popupMotion, t, transitionFor } from "../tokens.js";
+import type { ComponentProps } from "react";
+import { control, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 import { choices, type KitChoice, type KitOption } from "./options.js";
 
-export interface ComboboxProps {
+interface ComboboxOwnProps extends KitStyled {
   label?: string;
   /** Raw items — primitives or objects. */
   options: KitOption[];
@@ -22,19 +23,26 @@ export interface ComboboxProps {
   onChange?: (value: string) => void;
 }
 
-export function Combobox({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, onChange }: ComboboxProps) {
+/** Plus any Base UI `<Combobox.Root>` prop, handed straight to the combobox.
+ *  `style` stays the Kit's own — it dresses the ROOT the label and hint share.
+ *  Pinned to `KitChoice`: unpinned, the Root's item generic resolves to
+ *  `unknown` and the spread drags the whole element's inference down with it. */
+export type ComboboxProps = ComboboxOwnProps & KitEngine<ComponentProps<typeof Base.Root<KitChoice>>, ComboboxOwnProps>;
+
+export function Combobox({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, onChange, style, children, pending, ...engine }: ComboboxProps & KitRendered) {
   const { fieldId, helpId } = useFieldIds("combobox");
   const options = choices(rawOptions, labelField, valueField);
   const screen = controlledHandler(value !== undefined, onChange);
   const selected = options.find((option) => option.value === value) ?? null;
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} style={style}>
       <Base.Root
         items={options}
+        disabled={disabled}
+        {...given(engine)}
         // `{value,label}` items: Base UI reads the label for the input text and
         // the value for the selection, so neither needs a mapping function.
         {...(screen === null ? { defaultValue: selected } : { value: selected })}
-        disabled={disabled}
         onValueChange={(next: KitChoice | null) => {
           const one = next?.value ?? "";
           return screen === null ? onChange?.(one) : screen({ target: { value: one } });

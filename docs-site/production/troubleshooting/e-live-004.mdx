@@ -1,0 +1,41 @@
+---
+title: "E-LIVE-004"
+sidebarTitle: "E-LIVE-004"
+description: "Doctor found no execution venue configured, so server-tier user apps cannot run."
+---
+
+```text live/venue
+warning: pass sandbox: to createVendo (e.g. sandbox: e2bSandbox(), which
+reads E2B_API_KEY as its credential), or set VENDO_API_KEY for the managed
+Cloud sandbox; without one, server apps (rungs 2-4) return sandbox-unavailable
+```
+
+`check: live/venue` · `error_code: E-LIVE-004` · `doctor exits: 0`
+
+## What you're seeing
+
+A warning, not a failure. `/status` reports no execution venue at all.
+
+## Why
+
+The composition has no sandbox adapter. Tree-only apps still render fine,
+but any user app that needs a server, rungs 2 through 4, answers
+`sandbox-unavailable`.
+
+## The fix
+
+Set `VENDO_API_KEY` and Vendo fills the sandbox slot with the managed Cloud
+sandbox automatically, no `sandbox` option needed.
+
+```bash
+export VENDO_API_KEY=vnd_live_...
+```
+
+Restart the dev server and re-run `npx vendo doctor`; `blocks.sandbox`
+should now report `cloud`.
+
+## Related errors
+
+- [E-LIVE-005](/production/troubleshooting/e-live-005) — the field is missing outright instead of unset
+- [E-LIVE-003](/production/troubleshooting/e-live-003) — the field came back with a value doctor cannot read
+- [E-TURN-001](/production/troubleshooting/e-turn-001) — the same VENDO_API_KEY covers the model seat too

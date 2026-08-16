@@ -1,0 +1,49 @@
+---
+title: "E-WIRE-008"
+sidebarTitle: "E-WIRE-008"
+description: "Doctor warns when no <VendoProvider> is found on an unrecognized-framework host."
+---
+
+```text wiring/client
+warning: no <VendoProvider> found in the host source — the @vendoai/ui hooks
+and embeds need it; ignore this if the host renders a fully custom surface
+```
+
+`check: wiring/client` · `error_code: E-WIRE-008` · `doctor exits: 0`
+
+## What you're seeing
+
+This is a warning, not a failure. Doctor still exits 0 for it; nothing here
+blocks an install.
+
+## Why
+
+Your host isn't recognized as Next.js or Express, so doctor scanned your
+source generically for a `<VendoProvider` element and found none. The
+`@vendoai/ui` hooks and embeds throw at runtime without that context, so
+doctor flags its absence.
+
+## The fix
+
+If you use `@vendoai/ui` hooks or embeds anywhere, wrap the client app in
+`<VendoProvider>`.
+
+```tsx client/main.tsx {1,5}
+import { VendoProvider } from "@vendoai/vendo/react";
+
+export function Root() {
+  return (
+    <VendoProvider baseUrl="/api/vendo">
+      <App />
+    </VendoProvider>
+  );
+}
+```
+
+If your host drives a fully custom surface without `@vendoai/ui` at all,
+this warning is safe to ignore.
+
+## Related errors
+
+- [E-WIRE-007](/production/troubleshooting/e-wire-007): the server-side counterpart on the same unrecognized framework
+- [E-WIRE-006](/production/troubleshooting/e-wire-006): the same "nothing visible mounted" problem on Next.js and Express hosts

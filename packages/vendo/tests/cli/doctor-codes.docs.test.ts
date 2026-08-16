@@ -1,49 +1,51 @@
+import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { doctorErrorCodes } from "../../src/cli/doctor-codes.js";
 
 /**
  * Registry-rot gate (agent-install DX design §Error handling): every code
- * doctor can emit must have a matching anchor on the troubleshooting page,
- * and every code the page documents must exist in the registry. The docs
- * live in this repo, so this is a plain test against the docs-site source —
- * it runs in the normal `pnpm test` suite.
+ * doctor can emit must have a troubleshooting page, and every troubleshooting
+ * page must name a code that exists in the registry. The docs live in this
+ * repo, so this is a plain test against the docs-site source — it runs in the
+ * normal `pnpm test` suite.
  *
- * `VERIFY_URL` (src/cli/doctor-codes.ts) still prints `/agents/verify`, and
- * every released CLI builds its fix links from it, so docs.json permanently
- * redirects that slug here. The anchors are the contract, not the path.
+ * The Cloud restructure retired the one long `deploy/troubleshooting` page for
+ * a page per code under `production/troubleshooting/`, so the contract moved
+ * from anchors on one file to the directory itself: the file name is the code,
+ * lowercased, and the frontmatter title is the code as doctor prints it. Both
+ * halves are asserted, because a page whose name and title disagree is a page a
+ * `fix_ref` cannot reach.
  */
 
-const VERIFY_PAGE = new URL("../../../../docs-site/deploy/troubleshooting.mdx", import.meta.url);
+const TROUBLESHOOTING_DIR = new URL("../../../../docs-site/production/troubleshooting/", import.meta.url);
 
-/** A troubleshooting section heading: `## E-AREA-NNN {#E-AREA-NNN}` (Mintlify custom
- *  heading IDs — the {#...} id is what doctor's fix_ref fragment resolves to,
- *  case-sensitively). */
-const ANCHORED_HEADING = /^#{2,4}\s+(E-[A-Z]+-\d{3})\s+\{#(E-[A-Z]+-\d{3})\}\s*$/gm;
-/** Any heading that names an error code, anchored or not — catches a section
- *  someone added without the custom id (whose auto-slug would be lowercase
- *  and break the fix_ref fragment). */
-const CODE_HEADING = /^#{2,4}\s+(E-[A-Z]+-\d{3})\b.*$/gm;
+/** `title: "E-AREA-NNN"` in a page's Mintlify frontmatter. */
+const TITLE = /^title: "(E-[A-Z]+-\d{3})"$/m;
 
-describe("troubleshooting.mdx stays 1:1 with the doctor error-code registry", () => {
-  it("anchors every registered code and registers every anchored code", async () => {
-    const page = await readFile(VERIFY_PAGE, "utf8");
+/** Every code page in the directory. `index.mdx` is the group's own landing
+ *  page — it lists all the codes rather than documenting one, so it carries no
+ *  code title. It exists because doctor's `fix_ref` puts the code in a URL
+ *  FRAGMENT, which never reaches the server: every already-installed CLI links
+ *  at `/agents/verify#E-WIRE-003`, so the redirect has to land on a page that
+ *  lists all of them. The 1:1 contract below is unchanged. */
+const pageFiles = (): string[] =>
+  readdirSync(TROUBLESHOOTING_DIR).filter((file) => file.endsWith(".mdx") && file !== "index.mdx");
 
-    const anchored = new Map<string, string>();
-    for (const match of page.matchAll(ANCHORED_HEADING)) {
-      const [, heading, anchor] = match;
-      expect(anchor, `heading ${heading} must anchor its own code`).toBe(heading);
-      expect(anchored.has(heading!), `duplicate section for ${heading}`).toBe(false);
-      anchored.set(heading!, anchor!);
+describe("the troubleshooting pages stay 1:1 with the doctor error-code registry", () => {
+  it("gives every registered code a page and every page a registered code", async () => {
+    const documented: string[] = [];
+
+    for (const file of pageFiles()) {
+      const text = await readFile(new URL(file, TROUBLESHOOTING_DIR), "utf8");
+      const title = TITLE.exec(text)?.[1];
+      expect(title, `${file} must carry a "title: \\"E-AREA-NNN\\"" frontmatter line`).toBeDefined();
+      // Doctor's fix link ends in the code, and the page's own slug is the file
+      // name. A title that does not match its file name is unreachable.
+      expect(file, `${file} must be named for the code it documents`).toBe(`${title!.toLowerCase()}.mdx`);
+      documented.push(title!);
     }
 
-    // Every code heading must carry the exact {#CODE} custom id.
-    const headings = [...page.matchAll(CODE_HEADING)].map((match) => match[1]!);
-    for (const heading of headings) {
-      expect(anchored.has(heading), `heading for ${heading} is missing its {#${heading}} anchor`).toBe(true);
-    }
-
-    // 1:1 both ways: registry → page and page → registry.
-    expect([...anchored.keys()].sort()).toEqual([...doctorErrorCodes].sort());
+    expect(documented.sort()).toEqual([...doctorErrorCodes].sort());
   });
 });

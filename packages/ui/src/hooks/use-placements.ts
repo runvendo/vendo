@@ -18,6 +18,7 @@
 import {
   log,
   SLOTS_REPORT_MAX,
+  SLOT_DESCRIPTION_MAX_CHARS,
   SLOT_ID_MAX_CHARS,
   SLOT_LABEL_MAX_CHARS,
   SLOT_REPORT_REFRESH_MS,
@@ -53,7 +54,14 @@ interface Poller {
   error(): Error | undefined;
   loading(): boolean;
   refresh(): Promise<void>;
-  report(slot: string, label: string): void;
+  report(slot: string, label: string, description?: string): void;
+}
+
+/** One slot, as a page reports it. */
+interface Reported {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 const pollers = new WeakMap<VendoClient, Poller>();
@@ -78,16 +86,19 @@ function createPoller(client: VendoClient): Poller {
    *  back-navigation re-reports a slot; the write is idempotent, so that costs
    *  one request and changes nothing. */
   const reported = new Map<string, number>();
-  let queued: Array<{ id: string; label: string }> = [];
+  let queued: Reported[] = [];
   let flushing = false;
 
-  const keyOf = (id: string, label: string): string => JSON.stringify([id, label]);
+  // The whole entry, not a tuple: `JSON.stringify` writes an absent array slot
+  // as `null`, so a tuple key parses back with `description: null` and the
+  // renewal below re-reports garbage. An omitted object key just stays omitted.
+  const keyOf = (entry: Reported): string => JSON.stringify(entry);
   /** Un-remember entries that never reached the registry. `reported` is keyed by
    *  the CLIENT and outlives the React tree, so a key left behind here silences
    *  that slot until the refresh window — which is what the source used to promise
    *  it did not do ("another chance from the next page that mounts it"). */
-  const forget = (entries: readonly { id: string; label: string }[]): void => {
-    for (const { id, label } of entries) reported.delete(keyOf(id, label));
+  const forget = (entries: readonly Reported[]): void => {
+    for (const entry of entries) reported.delete(keyOf(entry));
   };
 
   const announce = (): void => {
@@ -122,8 +133,8 @@ function createPoller(client: VendoClient): Poller {
     const stale = Date.now() - SLOT_REPORT_REFRESH_MS;
     for (const [key, at] of [...reported]) {
       if (at > stale) continue;
-      const [id, label] = JSON.parse(key) as [string, string];
-      if (listeners.has(id)) poller.report(id, label);
+      const { id, label, description } = JSON.parse(key) as Reported;
+      if (listeners.has(id)) poller.report(id, label, description);
     }
   };
 
@@ -187,7 +198,7 @@ function createPoller(client: VendoClient): Poller {
     error: () => error,
     loading: () => !loaded,
     refresh: read,
-    report(slot, label) {
+    report(slot, label, description) {
       // The route validates the batch ALL-OR-NOTHING, and a page reports every
       // slot it mounts in one batch, so a single over-long host prop would take
       // the whole page out of the "Add to…" picker. The client cleans its own
@@ -202,17 +213,27 @@ function createPoller(client: VendoClient): Poller {
         }
         return;
       }
-      // Clamped, not skipped: a verbose label is still a real destination.
-      const trimmed = label.slice(0, SLOT_LABEL_MAX_CHARS);
+      // Clamped, not skipped: a verbose label is still a real destination, and
+      // so is a slot whose developer wrote a paragraph of intent.
+      const entry: Reported = {
+        id: slot,
+        label: label.slice(0, SLOT_LABEL_MAX_CHARS),
+        // An empty string is left off entirely: the route reads a description
+        // as a NON-EMPTY string and refuses the whole batch over one, so a
+        // `description=""` on one slot would unregister the entire page.
+        ...(description === undefined || description.length === 0
+          ? {}
+          : { description: description.slice(0, SLOT_DESCRIPTION_MAX_CHARS) }),
+      };
       // JSON, not a separator join: a space (or any other delimiter) is legal
-      // in both halves, so `${slot} ${label}` merges ("sales report", "Q3")
+      // in every half, so `${slot} ${label}` merges ("sales report", "Q3")
       // with ("sales", "report Q3") and the second slot never reaches the
       // registry — it is a destination the picker can never offer.
-      const key = keyOf(slot, trimmed);
+      const key = keyOf(entry);
       const at = reported.get(key);
       if (at !== undefined && Date.now() - at < SLOT_REPORT_REFRESH_MS) return;
       reported.set(key, Date.now());
-      queued.push({ id: slot, label: trimmed });
+      queued.push(entry);
       if (flushing) return;
       flushing = true;
       // The same deferral the first placements read uses: every slot mounting in
@@ -276,10 +297,10 @@ export function usePlacements(slotId: string, enabled = true): SlotPlacement {
 /** Tell the registry this slot exists, so a surface that is NOT on this page
  *  (the "Add to…" picker) can offer it as a destination. Effect-time only, so
  *  an SSR render reports nothing; deduped and batched by the shared poller. */
-export function useReportSlot(slotId: string, label: string, enabled: boolean): void {
+export function useReportSlot(slotId: string, label: string, enabled: boolean, description?: string): void {
   const { client } = useVendoProvider();
   useEffect(() => {
     if (!enabled) return;
-    pollerFor(client).report(slotId, label);
-  }, [client, enabled, label, slotId]);
+    pollerFor(client).report(slotId, label, description);
+  }, [client, description, enabled, label, slotId]);
 }

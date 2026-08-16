@@ -1,0 +1,49 @@
+---
+title: "E-STORE-001"
+sidebarTitle: "E-STORE-001"
+description: "Doctor warns when the store's data directory sits on disk a platform wipes on every redeploy."
+---
+
+```text store/persistence
+warning: the store's data directory "<dataDir>" is on ephemeral disk —
+<platform> wipes it on every redeploy and your users' apps and data go with
+it.
+```
+
+`<dataDir>` is the local path the store resolved (`.vendo/data` unless you
+passed a custom one), and `<platform>` names what doctor detected: Railway,
+Render, Fly.io, Heroku, or a generic `/tmp` mount.
+
+`check: store/persistence` · `error_code: E-STORE-001` · `doctor exits: 0`
+
+## What you're seeing
+
+This is a warning, not a failure; doctor still exits 0. The app runs fine
+today. The risk is the next redeploy, which wipes every app your users built
+and all of their data with it.
+
+## Why
+
+Without a `VENDO_API_KEY`, the store defaults to PGlite, which writes to a
+directory on the local container filesystem. That's the right default on a
+laptop or a machine with a real disk. On a platform that recreates its
+container filesystem on every deploy, it's a data-loss bug waiting for the
+next release.
+
+## The fix
+
+Set `VENDO_API_KEY` to move onto Vendo Cloud's hosted store, which survives
+redeploys by default.
+
+```bash .env.local
+VENDO_API_KEY=vnd_...
+```
+
+Run `vendo login` if you don't have a key yet; it mints one and writes it to
+`.env.local` for you. This check only runs while no key is set, so once
+Cloud is wired, it stops firing.
+
+## Related errors
+
+- [E-CFG-002](/production/troubleshooting/e-cfg-002): the gitignore that keeps this same data directory out of git
+- [E-CFG-001](/production/troubleshooting/e-cfg-001): a missing `.vendo/` config file

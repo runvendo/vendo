@@ -4,7 +4,7 @@
 // the host's own markup untouched. Nothing below stubs the report path: the
 // slots write through the real client to the real wire fixture, and the
 // assertions read that server's own state back.
-import { SLOT_REPORT_REFRESH_MS } from "@vendoai/core";
+import { SLOT_DESCRIPTION_MAX_CHARS, SLOT_REPORT_REFRESH_MS } from "@vendoai/core";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
@@ -71,6 +71,60 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
         { id: "sidebar_feed", label: "Sidebar feed" },
         { id: "net-worth-card", label: "Net worth card" },
       ],
+    });
+  });
+
+  it("carries the host's description, clamped rather than dropped when it runs long", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="dashboard.main" label="Dashboard" description="main dashboard area, where users keep KPI views" />
+        <VendoSlot id="verbose" description={"x".repeat(SLOT_DESCRIPTION_MAX_CHARS + 50)} />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(reports()).toHaveLength(1));
+    expect(reports()[0]?.body).toEqual({
+      slots: [
+        { id: "dashboard.main", label: "Dashboard", description: "main dashboard area, where users keep KPI views" },
+        // Clamped, like the label beside it: a wordy slot is still a real
+        // destination, and the whole page's report is all-or-nothing at the route.
+        { id: "verbose", label: "Verbose", description: "x".repeat(SLOT_DESCRIPTION_MAX_CHARS) },
+      ],
+    });
+  });
+
+  it("leaves an EMPTY description off the wire, so the page it is on still registers", async () => {
+    // The route refuses a zero-length string and refuses the WHOLE batch with
+    // it, so one `description=""` on one slot would take every slot on the page
+    // out of the registry — no pin destinations at all.
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero" description="" />
+        <VendoSlot id="sidebar" description="the right rail" />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(reports()).toHaveLength(1));
+    expect(reports()[0]?.body).toEqual({
+      slots: [
+        { id: "hero", label: "Hero" },
+        { id: "sidebar", label: "Sidebar", description: "the right rail" },
+      ],
+    });
+    expect(wire.state.slots).toEqual([
+      { id: "sidebar", label: "Sidebar", description: "the right rail", lastSeen: expect.any(String) },
+      { id: "hero", label: "Hero", lastSeen: expect.any(String) },
+    ]);
+  });
+
+  it("re-reports the same slot under a NEW description", async () => {
+    const page = (description: string) => (
+      <VendoProvider client={client}><VendoSlot id="hero" description={description} /></VendoProvider>
+    );
+    const { rerender } = render(page("the top of the page"));
+    await waitFor(() => expect(reports()).toHaveLength(1));
+    rerender(page("the top of the page, above the fold"));
+    await waitFor(() => expect(reports()).toHaveLength(2));
+    expect(reports()[1]?.body).toMatchObject({
+      slots: [{ description: "the top of the page, above the fold" }],
     });
   });
 

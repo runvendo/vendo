@@ -4,12 +4,13 @@
  */
 import { Radio as Base } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
-import { font, hairline, t, transitionFor } from "../tokens.js";
+import type { ComponentProps } from "react";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 import { choices, type KitOption } from "./options.js";
 
-export interface RadioProps {
+interface RadioOwnProps extends KitStyled {
   label?: string;
   /** Raw items — primitives or objects. */
   options: KitOption[];
@@ -22,17 +23,22 @@ export interface RadioProps {
   onChange?: (value: string) => void;
 }
 
-export function Radio({ label, options: rawOptions, labelField, valueField, value, hint, disabled, onChange }: RadioProps) {
+/** Plus any Base UI `<RadioGroup>` prop, handed straight to the group. `style`
+ *  stays the Kit's own — it dresses the ROOT the label and hint share. */
+export type RadioProps = RadioOwnProps & KitEngine<ComponentProps<typeof RadioGroup>, RadioOwnProps>;
+
+export function Radio({ label, options: rawOptions, labelField, valueField, value, hint, disabled, onChange, style, children, pending, ...engine }: RadioProps & KitRendered) {
   const { fieldId, helpId } = useFieldIds("radio");
   const options = choices(rawOptions, labelField, valueField);
   const screen = controlledHandler(value !== undefined, onChange);
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} style={style}>
       <RadioGroup
         data-kit="Radio"
-        {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
         disabled={disabled}
         aria-describedby={hint ? helpId : undefined}
+        {...given(engine)}
+        {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
         onValueChange={(next) => screen === null
           ? onChange?.(String(next))
           : screen({ target: { value: String(next) } })}

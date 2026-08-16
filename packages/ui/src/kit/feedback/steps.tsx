@@ -2,14 +2,14 @@
  *  (W2 §The Kit). Everything before `active` reads as done. */
 import type { ReactNode } from "react";
 import { Icon } from "../icon.js";
-import { font, hairline, t } from "../tokens.js";
+import { font, hairline, t, type KitStyled } from "../tokens.js";
 
 export interface StepItem {
   label: string;
   description?: string;
 }
 
-export interface StepsProps {
+export interface StepsProps extends KitStyled {
   /** The steps, in order. */
   items: StepItem[];
   /** Index of the current step. */
@@ -21,7 +21,7 @@ export interface StepsProps {
 
 type StepState = "done" | "current" | "todo";
 
-export function Steps({ items = [], active = 0, orientation = "horizontal", marker }: StepsProps) {
+export function Steps({ items = [], active = 0, orientation = "horizontal", marker, style }: StepsProps) {
   const vertical = orientation === "vertical";
   return (
     <ol
@@ -35,6 +35,7 @@ export function Steps({ items = [], active = 0, orientation = "horizontal", mark
         listStyle: "none",
         margin: 0,
         padding: 0,
+        ...style,
       }}
     >
       {items.map((item, index) => {

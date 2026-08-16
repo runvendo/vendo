@@ -1849,6 +1849,19 @@ function SlotPickerScenario() {
   );
 }
 
+/** The empty-press fallback with NO conversation overlay and NO palette on the
+ *  page: the first slot's press has nowhere to go, the second has onAuthor. */
+function SlotHintScenario() {
+  const [authored, setAuthored] = useState<string>();
+  return (
+    <div style={{ display: "grid", gap: 24 }}>
+      <VendoSlot id="net-worth-card" description="the money summary at the top of the dashboard" />
+      <VendoSlot id="spending-card" label="Spending" onAuthor={setAuthored} />
+      <output data-testid="authored">{authored ?? "nothing authored"}</output>
+    </div>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
@@ -1888,6 +1901,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/consent-marks": return { title: "Consent surfaces — no shield", content: <ConsentMarksScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
+    case "/slot-hint": return { title: "Inline slot — no chat surface", theme: mapleTheme, content: <SlotHintScenario /> };
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };

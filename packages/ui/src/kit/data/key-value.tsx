@@ -2,7 +2,7 @@
 import { Fragment, type ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { font, hairline, microLabel, numeric, t } from "../tokens.js";
+import { font, hairline, microLabel, numeric, t, type KitStyled } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface KeyValueItem {
@@ -18,7 +18,7 @@ export interface KeyValueItem {
   cell?: ReactNode;
 }
 
-export interface KeyValueProps {
+export interface KeyValueProps extends KitStyled {
   /** The record being described, from a tool call. */
   record: Record<string, unknown>;
   /** The fields to show, in order. */
@@ -27,7 +27,7 @@ export interface KeyValueProps {
   dividers?: boolean;
 }
 
-export function KeyValue({ record, items = [], dividers = false }: KeyValueProps) {
+export function KeyValue({ record, items = [], dividers = false, style }: KeyValueProps) {
   return (
     // One provider for the whole list — a row's slot reads its field off it.
     <RowContext.Provider value={record}>
@@ -41,6 +41,7 @@ export function KeyValue({ record, items = [], dividers = false }: KeyValueProps
           columnGap: "var(--vendo-density-content-gap, 10px)",
           rowGap: "var(--vendo-density-field-gap, 6px)",
           margin: 0,
+          ...style,
         }}
       >
         {items.map((item, index) => {
