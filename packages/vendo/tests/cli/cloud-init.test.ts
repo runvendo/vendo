@@ -76,7 +76,11 @@ describe("runCloudStep", () => {
     expect(result.wroteEnvLocal).toBe(false);
     const joined = messages.logs.join("\n");
     expect(joined).not.toContain(AUTH_MD_URL);
-    expect(joined).toContain("vendo login"); // the calm human pointer stays
+    // --byo is the ANSWER: the step says what their own key needs and stops.
+    // It never points back at `vendo login`, which read as a detour past the
+    // path they just chose.
+    expect(joined).toContain("set ANTHROPIC_API_KEY");
+    expect(joined).not.toContain("vendo login");
   });
 
   it("an unshown (non-TTY) decline emits the agent pointer; a real TTY decline stays calm", async () => {
