@@ -187,6 +187,7 @@ describe("mcpConnector", () => {
   it("initializes a session, paginates tools, parses SSE, and maps call results", async () => {
     const methods: string[] = [];
     const sessionHeaders: Array<string | undefined> = [];
+    const lookupOutput = { type: "object", properties: { found: { type: "boolean" } } };
     const server = await startServer(async (req, res) => {
       const body = await jsonBody(req);
       const method = body.method as string;
@@ -216,7 +217,13 @@ describe("mcpConnector", () => {
             id,
             result: {
               tools: [
-                { name: "lookup", description: "Lookup", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } },
+                {
+                  name: "lookup",
+                  description: "Lookup",
+                  inputSchema: { type: "object" },
+                  outputSchema: lookupOutput,
+                  annotations: { readOnlyHint: true },
+                },
                 { name: "explode", description: "Explode", inputSchema: {}, annotations: { destructiveHint: true } },
               ],
               nextCursor: "next",
@@ -256,7 +263,12 @@ describe("mcpConnector", () => {
     const connector = mcpConnector({ url: server.url, name: "warehouse", headers: { authorization: "Bearer test" } });
     const descriptors = await connector.descriptors();
     expect(descriptors[0]).toMatchObject({ name: "mcp_warehouse_lookup", risk: "read" });
+    // The server's advertised result shape survives the listing; a tool that
+    // declares none carries no key, so surfaces print "shape unknown" instead of
+    // an empty schema that reads as "returns nothing".
+    expect(descriptors[0]?.outputSchema).toEqual(lookupOutput);
     expect(descriptors[1]).toMatchObject({ name: "mcp_warehouse_explode", risk: "destructive" });
+    expect(descriptors[1] && "outputSchema" in descriptors[1]).toBe(false);
     expect(descriptors[2]?.name).toHaveLength(64);
     expect(descriptors[2]?.risk).toBe("write");
 

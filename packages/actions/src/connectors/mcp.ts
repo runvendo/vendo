@@ -13,6 +13,7 @@ interface McpTool {
   name?: unknown;
   description?: unknown;
   inputSchema?: unknown;
+  outputSchema?: unknown;
   annotations?: { readOnlyHint?: unknown; destructiveHint?: unknown };
 }
 
@@ -51,6 +52,12 @@ function joinedText(content: unknown): string {
     .filter((item) => item.type === "text" && typeof item.text === "string")
     .map((item) => item.text as string)
     .join("\n");
+}
+
+/** A schema the wire advertised, or nothing: arrays and scalars are not schemas. */
+function objectSchema(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
 }
 
 function parseSseEvent(event: string, id: number): JsonRpcResponse | undefined {
@@ -256,13 +263,15 @@ export function mcpConnector(config: {
           nextNormalizedToRaw.set(name, item.name);
           const destructive = item.annotations?.destructiveHint === true;
           const readOnly = item.annotations?.readOnlyHint === true;
+          // The server's own declared result shape, when it advertises one — the
+          // model reads field names off the listing instead of calling once to
+          // learn them. Advisory: results are never checked against it.
+          const outputSchema = objectSchema(item.outputSchema);
           descriptors.push({
             name,
             description: typeof item.description === "string" ? item.description : item.name,
-            inputSchema:
-              item.inputSchema && typeof item.inputSchema === "object" && !Array.isArray(item.inputSchema)
-                ? (item.inputSchema as Record<string, unknown>)
-                : {},
+            inputSchema: objectSchema(item.inputSchema) ?? {},
+            ...(outputSchema === undefined ? {} : { outputSchema }),
             risk: destructive ? "destructive" : readOnly ? "read" : "write",
           });
         }

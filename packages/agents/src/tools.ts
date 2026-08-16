@@ -26,6 +26,10 @@ export interface ToolConfig {
   /** The dev's label is FINAL; unlabeled = ungraded = asks at call time. */
   risk?: RiskLabel;
   inputSchema: JsonSchema;
+  /** The tool's DECLARED result shape. Surfaces print it, so generated UI can
+   *  bind to fields before any call; nothing validates a result against it, so a
+   *  stale schema never fails a working tool. */
+  outputSchema?: JsonSchema;
   execute(input: Json, ctx: RunContext, call: ToolCall): Promise<Json> | Json;
 }
 
@@ -49,6 +53,7 @@ export function tool(config: ToolConfig): HostTool {
       name: config.name,
       description: config.description ?? "",
       inputSchema: config.inputSchema,
+      ...(config.outputSchema === undefined ? {} : { outputSchema: config.outputSchema }),
       risk: config.risk ?? "ungraded",
     },
     execute: config.execute,

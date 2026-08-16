@@ -34,6 +34,14 @@ describe("tool()", () => {
     expect(t.descriptor.risk).toBe("destructive");
   });
 
+  it("carries the declared result shape, and has no key at all without one", () => {
+    const outputSchema = { type: "object" as const, properties: { balance: { type: "number" } } };
+    const declared = tool({ name: "balance", inputSchema: { type: "object" }, outputSchema, execute: () => ({}) });
+    expect(declared.descriptor.outputSchema).toEqual(outputSchema);
+    const silent = tool({ name: "ping", inputSchema: { type: "object" }, execute: () => ({}) });
+    expect("outputSchema" in silent.descriptor).toBe(false);
+  });
+
   it("rejects a name the registry could never carry", () => {
     expect(() => tool({ name: "not a name!", inputSchema: { type: "object" }, execute: () => ({}) }))
       .toThrow(/must match/);

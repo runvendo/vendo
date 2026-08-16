@@ -31,6 +31,10 @@ export const support = agent({
         properties: { orderId: { type: "string" } },
         required: ["orderId"],
       },
+      outputSchema: {
+        type: "object",
+        properties: { refunded: { type: "string" } },
+      },
       execute: async (input, ctx) => {
         const { orderId } = input as { orderId: string };
         await refundOrder(orderId, { owner: ctx.principal.subject });

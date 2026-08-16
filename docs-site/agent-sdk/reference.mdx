@@ -206,10 +206,18 @@ export function tool(config: ToolConfig): HostTool;
 forwarding behind the origin gate, and `actAs` for away runs
 (`{ dir?, actAs?, baseUrl?, untrustedOriginPolicy?, fetch? }`).
 
-`tool()` takes `{ name, description?, risk?, inputSchema, execute }`.
+`tool()` takes `{ name, description?, risk?, inputSchema, outputSchema?, execute }`.
 **`risk` is your call and it is final** — `read`, `write`, or `destructive`.
 Omit it and the tool is `ungraded`, which the guard treats like `destructive`
 and asks about, which unattended means denied.
+
+`outputSchema` is the tool's **declared result shape**, in JSON Schema. Surfaces
+print it beside the tool, so the model — and a generated screen binding to
+fields — knows what comes back before any call. Omit it and those surfaces say
+*"result shape unknown — pass the whole output through; do not bind to guessed
+field names"*, which costs a throwaway call to learn the fields. It is advisory
+only: nothing checks a result against it, so a schema that drifts from the code
+never fails a working tool.
 
 ## Adapters
 
