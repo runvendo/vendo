@@ -86,12 +86,18 @@ export function createLimiter({ callback, ops }: {
       const ask = async (): Promise<{ verdict: LimitVerdict; observed: UsageObservation[] }> => {
         // Kept as the QUERY that produced it, not the number alone: `claim`
         // re-asks the identical question, so a mismatch can only mean the meter
-        // moved. Keyed so a policy that asks the same thing twice stakes it once.
+        // moved.
         const seen = new Map<string, UsageObservation>();
         const observe = async (query: UsageCountQuery): Promise<number> => {
           const counted = await ops.count(query);
           const key = JSON.stringify([query.action, query.subject, query.poolKey, query.since.valueOf(), query.until?.valueOf()]);
-          seen.set(key, { query, count: counted });
+          // A repeated question stakes its FIRST answer, never its latest. The
+          // policy's decision rests on everything it read, so the stake has to
+          // span from the earliest read to the write — keeping the latest would
+          // narrow the window to the last `await` and quietly accept a meter
+          // that moved while the policy was still deciding on it. Same-window
+          // counts only grow, so the first answer is also the strictest.
+          if (!seen.has(key)) seen.set(key, { query, count: counted });
           return counted;
         };
         // Pre-bound to THIS subject: a policy never names one, so it can never

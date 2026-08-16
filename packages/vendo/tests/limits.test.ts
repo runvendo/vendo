@@ -10,7 +10,7 @@
  * OPEN stops limiting silently, which is strictly worse than refusing a turn:
  * the host believes they have a cap, and every user is unlimited.
  */
-import { setLogger, type LimitUser, type RunContext, type StoreOps, type VendoLogEvent } from "@vendoai/core";
+import { setLogger, type LimitUser, type RunContext, type StoreOps, type UsageObservation, type VendoLogEvent } from "@vendoai/core";
 import { memoryStoreOps } from "@vendoai/core/conformance";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
@@ -267,6 +267,37 @@ describe("admission — the verdict and the write are one step", () => {
     await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: false });
     expect(events.filter((event) => event.code === "limits.admission_contended")).toHaveLength(1);
     expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(0);
+  });
+
+  /** A policy that reads one window twice stakes the FIRST answer. Keeping the
+      latest would narrow the stake to the last `await` and admit on a meter
+      that moved while the policy was still deciding on it — the decision rests
+      on everything it read, so the stake has to span from the earliest read. */
+  it("stakes a repeated question's FIRST answer, not its latest", async () => {
+    const usage = meter();
+    const staked: UsageObservation[][] = [];
+    let intrudes = true;
+    const limiter = createLimiter({
+      callback: async ({ count }) => {
+        await count("message");
+        if (intrudes) {
+          // Another request lands mid-decision, exactly where the policy's own
+          // awaits leave room for one. Once only, so the second pass can settle.
+          intrudes = false;
+          await usage.record({ subject: "mia", action: "message", at: new Date() });
+        }
+        await count("message");
+        return true;
+      },
+      ops: { ...usage, claim: async (event, observed) => { staked.push([...observed]); return await usage.claim!(event, observed); } },
+    });
+
+    await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: true });
+
+    // The first pass read 0 and then 1. Staking the LATEST would have staked 1
+    // and been admitted on a count the decision never rested on; staking the
+    // first loses, and the policy is asked again on numbers that hold.
+    expect(staked.map((one) => one.map((obs) => obs.count))).toEqual([[0], [1]]);
   });
 
   it("stakes NOTHING for a policy that never read the meter", async () => {

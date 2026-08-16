@@ -2384,13 +2384,24 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const held = await usage.count(mine);
         assert(held === 1, `the meter must hold exactly the one admitted action, it holds ${held}`);
 
-        // The write-target leg, SEQUENCED rather than raced: which caller wins a
-        // race is the scheduler's business, so a race cannot say whether the
-        // loser was re-checked or merely late. A sequence can. The contender is
-        // a DIFFERENT person who never counts the pool — it only draws the
-        // bucket down — so an implementation that re-checks the observed
-        // targets and nothing else never notices its row, and admits an
-        // observer that was judged on a bucket the contender has since filled.
+        // The write-target leg, SEQUENCED rather than raced. The contender is a
+        // DIFFERENT person who never counts the pool — it only draws the bucket
+        // down — so an implementation that re-checks the OBSERVED targets and
+        // nothing else never notices its row, and admits an observer that was
+        // judged on a bucket the contender has since filled.
+        //
+        // Sequenced because the raced form of this has no sound assertion.
+        // Fire the two at once and BOTH orders are legal: contender-first
+        // refuses the observer (pool 1, one admission), observer-first admits
+        // both (pool 2, two admissions) — and the second is also what an
+        // implementation with no lock at all produces, so no post-hoc count
+        // tells the two apart. That is the boundary of this case, and it is a
+        // real one: it pins that the re-check SPANS the pool, and it cannot pin
+        // that the implementation also serializes on what it WRITES. The lock
+        // covering the event's own targets is asserted by construction in the
+        // backend and by nothing here — PGlite has one connection and the
+        // memory reference one thread, so neither can exhibit the interleaving
+        // that would catch its absence.
         const pool: UsageCountQuery = { poolKey: "conf_claim_pool", action: "generation", since };
         assert(
           await claim(
