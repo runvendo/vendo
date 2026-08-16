@@ -44,7 +44,7 @@ const PNG = Buffer.from(
  *  back, and what the browser shot of it. */
 const OUTCOME: RunOutcome = { artifact: `<screen id="transfers"/>`, blocking: [], snapshots: [], settledMs: 2_000 };
 
-const SHOT: Shot = { png: PNG, visibleText: "3 pending transfers", renders: true, consoleErrors: [] };
+const SHOT: Shot = { png: PNG, visibleText: "3 pending transfers", dom: "", renders: true, consoleErrors: [] };
 
 const PASSING: FloorResult = {
   delivered: true,

@@ -175,7 +175,7 @@ describe("a legitimate operation no closed allowlist can express", () => {
    * before this contract; nothing about the check is stubbed but the model.
    */
   it("passes the floor's honesty check, so the floor itself passes", async () => {
-    const shot = { png: Buffer.alloc(0), visibleText: SCREEN, renders: true, consoleErrors: [] };
+    const shot = { png: Buffer.alloc(0), visibleText: SCREEN, dom: "", renders: true, consoleErrors: [] };
     const floor = runFloor({ world, artifact: "<Stack/>", blocking: [], trace: [], shot });
     expect(floor.honestData.pass).toBe(false);
 
@@ -389,7 +389,7 @@ describe("what the anti-cheat must not convict", () => {
       ],
     };
     const SCREEN = "Job J-2444 · quoted $24.44";
-    const shot = { png: Buffer.alloc(0), visibleText: SCREEN, renders: true, consoleErrors: [] };
+    const shot = { png: Buffer.alloc(0), visibleText: SCREEN, dom: "", renders: true, consoleErrors: [] };
 
     const settled = await auditFloor(
       runFloor({ world: jobs, artifact: "<Stack/>", blocking: [], trace: [], shot }),
@@ -826,7 +826,7 @@ describe("what it costs", () => {
  * a waiver nobody can read is a waiver nobody can overturn.
  */
 describe("the honesty check, end to end", () => {
-  const shotOf = (visibleText: string) => ({ png: Buffer.alloc(0), visibleText, renders: true, consoleErrors: [] });
+  const shotOf = (visibleText: string) => ({ png: Buffer.alloc(0), visibleText, dom: "", renders: true, consoleErrors: [] });
   const floorFor = (visibleText: string) =>
     runFloor({ world, artifact: "<Stack/>", blocking: [], trace: [], shot: shotOf(visibleText) });
 

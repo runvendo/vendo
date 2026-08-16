@@ -442,11 +442,15 @@ async function main(argv: readonly string[]): Promise<number> {
         ? ungraded(testCase.pass, scoped.style)
         : await judge({
             screenshot: shot.png,
-            // The PAGE, for every column. Vendo's artifact is a TSX document and
-            // both baselines' is HTML, so sending each column its own artifact
-            // handed the judge a perfect classifier for which one was the
-            // vendor's — under a prompt that says the format is not evidence.
-            artifact: page ?? "",
+            // The RENDERED DOM, for every column. Vendo's artifact is a TSX
+            // document and both baselines' is HTML, so sending each column its
+            // own artifact handed the judge a perfect classifier for which one
+            // was the vendor's — under a prompt that says the format is not
+            // evidence. Sending the page FILE instead fixed that and lost the
+            // column anyway: vendo's inlines the whole runtime, so its every
+            // case died at `prompt is too long`. What the browser holds once
+            // the screen settled is one format for everyone and small with it.
+            artifact: shot.dom,
             trace,
             caseLines: testCase.pass,
             styleLines: scoped.style,

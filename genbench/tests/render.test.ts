@@ -1,6 +1,6 @@
 /**
- * The two promises the contract makes about the page, held against what the
- * shooter actually does.
+ * What the shooter really does with a page: the two promises the contract makes
+ * about it, and the DOM it hands the judge.
  *
  * `HARNESS_CONTRACT` is the one text every page-writing contender is graded
  * against, so a sentence in it that the harness does not enforce is a rule
@@ -12,8 +12,13 @@
  *
  * A real browser, because both claims are about what Chromium did.
  */
+import { MockLanguageModelV3 } from "ai/test";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { HARNESS_CONTRACT, openBrowser, type Shooter } from "../src/render.js";
+import { judge } from "../src/judge.js";
+import { authoredPage, HARNESS_CONTRACT, openBrowser, type Shooter } from "../src/render.js";
+import { loadWorld } from "../src/world.js";
 
 let shooter: Shooter;
 beforeAll(async () => {
@@ -86,4 +91,84 @@ describe("the shot is the frame the contract names", () => {
     expect(HARNESS_CONTRACT).toContain("settled two frames after the page loads");
     expect(HARNESS_CONTRACT).not.toContain("window.__settled = true");
   });
+});
+
+// --------------------------------------------- what the judge is given to read
+
+/**
+ * A page that carries a runtime inside it, which is what the product's own page
+ * IS: a root, the case's data, and the whole renderer bundled in beside them.
+ */
+const INLINES_A_RUNTIME = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>spending</title>
+<style>h1{font-size:20px}</style></head>
+<body><h1>Spending this month</h1>
+<button onclick="window.vendo.callTool('cancel_transfer', { id: 'tr_1' })">Cancel transfer</button>
+<script>window.__runtime = ${JSON.stringify("compiled".repeat(125_000))};</script>
+</body></html>`;
+
+/** A judge that answers the one line it is asked. Nothing reaches a provider:
+ *  the claim is about what the judge is SENT, not about what it says back. */
+const answering = (): MockLanguageModelV3 =>
+  new MockLanguageModelV3({
+    doGenerate: async () => ({
+      content: [{ type: "text" as const, text: JSON.stringify({ verdicts: [{ verdict: "pass", note: "a header" }] }) }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: {
+        inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 0, text: 0, reasoning: 0 },
+      },
+      warnings: [],
+    }),
+  });
+
+/**
+ * The SOURCE the judge grades on is the settled DOM, and never the page file.
+ *
+ * Every column is sent the same channel so the artifact's format cannot classify
+ * it — but the FILE could not be that channel, because the page the product
+ * renders inlines its whole runtime. The live run said so: `prompt is too long:
+ * 1791560 tokens > 1000000 maximum`, on every one of that column's cases, while
+ * the baselines' hand-written pages were graded normally. What the browser holds
+ * once the screen has settled is the same format for everyone, is small because
+ * the script bodies have already run, and is better evidence besides — it is
+ * what painted, not what was meant.
+ */
+describe("the source the judge is given", () => {
+  it("is the settled DOM, so a page that inlines a runtime is still small and script-free", async () => {
+    const world = await loadWorld(join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds", "maple"));
+    const html = authoredPage(INLINES_A_RUNTIME, world, "vendo-sonnet");
+    const visit = await shooter.visit(html);
+    try {
+      const { dom, png } = await visit.shot();
+
+      expect(dom).toContain("Spending this month");
+      expect(dom).not.toContain("<script");
+      expect(dom.length).toBeLessThan(html.length / 10);
+
+      // Through the real judge, because the whole failure was in the prompt it
+      // assembles rather than in anything it answered.
+      const model = answering();
+      await judge(
+        {
+          screenshot: png,
+          artifact: dom,
+          trace: [],
+          caseLines: ["shows the month's spending"],
+          styleLines: [],
+          caseHash: "settled-dom",
+        },
+        { model },
+      );
+      const sent = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+
+      expect(sent).toContain("Spending this month");
+      expect(sent).not.toContain("window.__runtime");
+      // And the name is still struck out of it: the DOM says who wrote the page
+      // in every handler on it, which is the tell blinding exists to take.
+      expect(sent).toContain("host.callTool");
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
 });

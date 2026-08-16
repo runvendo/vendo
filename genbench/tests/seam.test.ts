@@ -212,7 +212,7 @@ const resultFor = (contender: string): CaseResult => ({
   agentSdkVersion: "0.0.0",
 });
 
-const SHOT: Shot = { png: PNG, visibleText: "", renders: true, consoleErrors: [] };
+const SHOT: Shot = { png: PNG, visibleText: "", dom: "", renders: true, consoleErrors: [] };
 
 /** Every identity the feed is showing, top row first. */
 type Rows = Array<{ who: string; tool: string }>;

@@ -200,6 +200,14 @@ export interface Shot {
    *  every contender, which is what makes the fabrication check comparable
    *  across artifact formats. */
   readonly visibleText: string;
+  /** The document as the browser holds it once the screen has settled, minus
+   *  the script bodies — the judge's SOURCE evidence, in one format whoever
+   *  wrote the page. The saved FILE cannot be that channel: the page the
+   *  product renders inlines its whole runtime, so every one of that column's
+   *  cases reached the judge as `prompt is too long: 1791560 tokens > 1000000
+   *  maximum` and was failed for it, while the baselines' authored pages graded
+   *  fine. What painted is smaller than what was saved, and better evidence. */
+  readonly dom: string;
   /** Something took up space AND the browser reported no errors doing it. */
   readonly renders: boolean;
   readonly consoleErrors: readonly string[];
@@ -252,7 +260,7 @@ export async function openBrowser(): Promise<Shooter> {
       return {
         page,
         async shot() {
-          const { visibleText, mounted } = await page.evaluate((selector: string) => {
+          const { visibleText, dom, mounted } = await page.evaluate((selector: string) => {
             // `visibility`, not `display`: Chrome's `innerText` reports SVG text
             // in a `display:none` subtree, and reports it correctly hidden here.
             const scaffolding = [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
@@ -293,8 +301,15 @@ export async function openBrowser(): Promise<Shooter> {
             }
             const visibleText = parts.join("");
             scaffolding.forEach((element, index) => (element.style.visibility = was[index]!));
+            // A clone, because the page is probed after this and must keep
+            // everything it has. The scripts go because they have already run:
+            // what they built is the markup around them, and the bytes are the
+            // one part of a page that can be megabytes long.
+            const shell = document.documentElement.cloneNode(true) as HTMLElement;
+            for (const script of shell.querySelectorAll("script")) script.remove();
             return {
               visibleText,
+              dom: shell.outerHTML,
               // Anywhere in the body, not just under `#root`: a contender that
               // wrote its own document has no root to mount into, and grading it
               // as blank for that would be measuring the harness.
@@ -310,6 +325,7 @@ export async function openBrowser(): Promise<Shooter> {
             // handed the judge a screen no person was ever shown.
             png: await page.screenshot(),
             visibleText,
+            dom,
             renders: mounted && consoleErrors.length === 0,
             consoleErrors: [...consoleErrors],
           };
