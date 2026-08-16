@@ -130,11 +130,13 @@ function ThreadConnect({ ask, live, sendMessage }: {
     so there is always something to read.
 
     A LIMIT is the one notice here that is NOT a failure: the cap the host set
-    was reached and nothing ran, so it keeps the beat's ordinary muted register
-    — no ✕, no danger colour, and a polite status rather than an alert. Same
-    ruling as the step-limit beat below. `.fl-buildfail` stays its class: the
-    name is a marker the suites select on, and the geometry (a wrapping headline
-    over an indented line) is what every notice here needs. */
+    was reached and nothing ran, so it carries NO mark at all — a polite status
+    rather than an alert, the same bare register as the step-limit beat below.
+    It had its own ⊖, which put a second mark under the refused call's ✕ and
+    read as two things going wrong; the refusal owns the mark, and this block
+    is what that refusal MEANS. `.fl-buildfail` stays its class: the name is a
+    marker the suites select on, and the geometry (a wrapping headline over an
+    indented line) is what every notice here needs. */
 function ThreadNoticeBlock({ marker, headline, detail }: {
   /** The data attribute the E2E and a host's own styling select on, so it stays
       per-notice rather than collapsing into one shared name. */
@@ -146,10 +148,14 @@ function ThreadNoticeBlock({ marker, headline, detail }: {
   return (
     <div className="fl-buildfail" {...{ [marker]: "" }}>
       <div className={failed ? "fl-beat fl-beat-error" : "fl-beat"}>
+        {/* Empty for a limit, and kept: the span is the beat's mark column, so
+            the headline stays aligned with the detail under it. */}
         <span className={failed ? "fl-beat-ic fl-beat-x" : "fl-beat-ic"} aria-hidden="true">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            {failed ? <path d="M18 6 6 18M6 6l12 12" /> : <><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></>}
-          </svg>
+          {failed ? (
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          ) : null}
         </span>
         <span className="fl-beat-label">{headline}</span>
       </div>
