@@ -29,6 +29,7 @@ import {
   testWorkspace,
   unusedModels,
   userMessage,
+  type TestGuard,
 } from "../src/test-doubles.test-util.js";
 
 const THREAD = "thr_stale" as ThreadId;
@@ -334,5 +335,176 @@ describe("2 — every approval raised in a turn is abandoned, whichever path min
     );
     expect(abandoned).toEqual([]);
     expect(guard.pending()).toHaveLength(1);
+  });
+});
+
+/**
+ * 3. The same law as (1), for the refusals §1.4 mints when the CONSENT is
+ *    missing: nobody was here to tap, the check could not run, or the guard asked
+ *    a second time. None of them is a person's no, and none of them has an
+ *    approval on the tool part — so writing them as the ai-SDK's `output-denied`
+ *    (whose conversion reads `approval.reason`) left a transcript that THREW on
+ *    every later turn in the thread. An automation that hits a standing grant
+ *    dies from then on, which is exactly the case (1) exists for.
+ */
+describe("3 — a refusal nobody was asked about leaves a transcript the next turn can send", () => {
+  /** The prompt the NEXT turn assembles from what this one persisted — the loop's
+   *  own path, which is where an unconvertible part throws. */
+  async function nextTurnPairing(stored: UIMessage[]): Promise<{ calls: number; results: number }> {
+    const { messages } = await turnModelMessages({
+      messages: [...stored, userMessage("m_next", "and now?")],
+      system: "system",
+    });
+    const content = messages.flatMap((message): readonly ContentPart[] =>
+      Array.isArray(message.content) ? message.content : []);
+    return {
+      calls: content.filter((part) => part.type === "tool-call").length,
+      results: content.filter((part) => part.type === "tool-result").length,
+    };
+  }
+
+  /** One real turn whose single call is refused, and what it left behind. */
+  async function refusedTurn(options: {
+    guard: TestGuard;
+    interactive: boolean;
+    /** The guard the REGISTRY is bound to, when the case needs the real
+     *  dispatching check to disagree with the preview. */
+    registryGuard?: TestGuard;
+  }): Promise<{ stored: UIMessage[]; reason: string }> {
+    const transcript = testTranscript();
+    const tools = { pay: { descriptor: readTool("pay", "destructive"), execute: () => 1 } };
+    const runtime = createHarnessRuntime({
+      tools: boundRegistry(tools, options.registryGuard ?? options.guard),
+      guard: options.guard,
+      skills: testSkills(),
+      transcript,
+      approvalWaitMs: 15,
+    });
+    let reason = "";
+    await readSse(
+      await runtime.run({
+        harness: defineHarness({
+          name: "payer",
+          async *run(turn) {
+            const result = await turn.tools.call("pay", { amount: 10 });
+            if (result.status === "denied") reason = result.reason;
+            // The turn CARRIES ON past the refusal, in words, exactly as it did
+            // before — that much always worked, and this is what made the next
+            // turn's death so quiet.
+            yield { type: "text", delta: `refused: ${reason}` };
+          },
+        }),
+        threadId: THREAD,
+        messages: [userMessage("m1", "pay")],
+        ctx: ctx(),
+        workspace: testWorkspace(),
+        models: unusedModels(),
+        interactive: options.interactive,
+      }),
+    );
+    return { stored: await transcript.list(PRINCIPAL, THREAD), reason };
+  }
+
+  /** The one settled tool part the turn left, and what it settled as. */
+  const settled = (stored: UIMessage[]): { state?: string; output?: { status?: string; reason?: string } } =>
+    stored.flatMap((message) => message.parts)
+      .find((part) => part.type === "dynamic-tool") as never;
+
+  it("the unattended park: the card stands, and the thread is still sendable", async () => {
+    const guard = testGuard({ pay: "ask" });
+    // Nobody is here to tap — the automation case.
+    const { stored, reason } = await refusedTurn({ guard, interactive: false });
+
+    expect(reason).toBe("This needs your approval, and nobody is here to give it.");
+    // THE symptom first: the next turn's own prompt assembly, over what this
+    // turn persisted.
+    await expect(nextTurnPairing(stored)).resolves.toEqual({ calls: 1, results: 1 });
+    expect(settled(stored)).toMatchObject({
+      state: "output-available",
+      output: { status: "blocked", reason },
+    });
+    // The grant "Grant & re-run" collects is the GUARD's, and it still stands:
+    // nothing about it was ever read off the tool part.
+    expect(guard.pending()).toHaveLength(1);
+  });
+
+  it("the check that could not run: no id to wait on, still sendable", async () => {
+    const guard = testGuard({ pay: "ask" });
+    // The guard fails closed and mints no approval at all (tool-bridge.ts).
+    guard.previewCheck = async () => {
+      throw new Error("the guard is down");
+    };
+    const { stored, reason } = await refusedTurn({ guard, interactive: true });
+
+    expect(reason).toBe("This needs approval, and the check could not run.");
+    // THE symptom first: the next turn's own prompt assembly, over what this
+    // turn persisted.
+    await expect(nextTurnPairing(stored)).resolves.toEqual({ calls: 1, results: 1 });
+    expect(settled(stored)).toMatchObject({
+      state: "output-available",
+      output: { status: "blocked", reason },
+    });
+  });
+
+  it("the guard asking twice for one tap: still sendable", async () => {
+    // The PREVIEW says run; the real dispatching check asks (a breaker or a
+    // presence boundary), and refusing to raise a second card is the honest
+    // answer — but it is still nobody's decline.
+    const guard = testGuard();
+    guard.previewCheck = async () => ({ action: "run", decidedBy: "default" });
+    const { stored, reason } = await refusedTurn({
+      guard,
+      interactive: true,
+      registryGuard: testGuard({ pay: "ask" }),
+    });
+
+    expect(reason).toBe("This still needs approval.");
+    // THE symptom first: the next turn's own prompt assembly, over what this
+    // turn persisted.
+    await expect(nextTurnPairing(stored)).resolves.toEqual({ calls: 1, results: 1 });
+    expect(settled(stored)).toMatchObject({
+      state: "output-available",
+      output: { status: "blocked", reason },
+    });
+  });
+
+  it("a person's own no is untouched — that IS what output-denied means", async () => {
+    const guard = testGuard({ pay: "ask" });
+    // The card is raised, and the person turns it down.
+    guard.onApprovalDecision(() => undefined);
+    const transcript = testTranscript();
+    const runtime = createHarnessRuntime({
+      tools: boundRegistry({ pay: { descriptor: readTool("pay", "destructive"), execute: () => 1 } }, guard),
+      guard,
+      skills: testSkills(),
+      transcript,
+      approvalWaitMs: 5_000,
+    });
+    const turn = readSse(
+      await runtime.run({
+        harness: defineHarness({
+          name: "payer",
+          async *run(turn) {
+            const result = await turn.tools.call("pay", { amount: 10 });
+            yield { type: "text", delta: result.status === "denied" ? result.reason : "ran" };
+          },
+        }),
+        threadId: THREAD,
+        messages: [userMessage("m1", "pay")],
+        ctx: ctx(),
+        workspace: testWorkspace(),
+        models: unusedModels(),
+        interactive: true,
+      }),
+    );
+    await vi.waitFor(() => expect(guard.pending()).toHaveLength(1));
+    guard.decide(guard.pending()[0]!.id, false);
+    const chunks = await turn;
+
+    expect(chunks.some((chunk) => chunk.type === "tool-output-denied")).toBe(true);
+    const stored = await transcript.list(PRINCIPAL, THREAD);
+    expect(settled(stored)).toMatchObject({ state: "output-denied" });
+    // And it converts, because the ask it answers is on the part beside it.
+    await expect(nextTurnPairing(stored)).resolves.toEqual({ calls: 1, results: 1 });
   });
 });
