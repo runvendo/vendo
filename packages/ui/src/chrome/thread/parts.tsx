@@ -1,4 +1,4 @@
-import { riskLabelSchema, VENDO_MAKE_TOOL, type AppId, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { riskLabelSchema, VENDO_MAKE_TOOL, type AppId, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -26,6 +26,7 @@ import {
   appTitle,
   buildFailureNotice,
   isAgentContext,
+  limitNotice,
   narratedByAppCard,
   partData,
   toolCallIsContent,
@@ -122,29 +123,43 @@ function ThreadConnect({ ask, live, sendMessage }: {
   );
 }
 
-/** The shape both of a turn's terminal failures wear (spec §15 — the ✕ stays in
-    the record): the failed tool call's own beat vocabulary — chrome, not the
+/** The shape a turn's terminal notices wear (spec §15 — the ✕ stays in the
+    record): the failed tool call's own beat vocabulary — chrome, not the
     agent's prose — plus the line saying what happened. The line is the real
     message when there is one and the chrome's own third-person notice otherwise,
-    so there is always something to read. */
-function ThreadErrorBlock({ marker, headline, detail }: {
+    so there is always something to read.
+
+    A LIMIT is the one notice here that is NOT a failure: the cap the host set
+    was reached and nothing ran, so it carries NO mark at all — a polite status
+    rather than an alert, the same bare register as the step-limit beat below.
+    It had its own ⊖, which put a second mark under the refused call's ✕ and
+    read as two things going wrong; the refusal owns the mark, and this block
+    is what that refusal MEANS. `.fl-buildfail` stays its class: the name is a
+    marker the suites select on, and the geometry (a wrapping headline over an
+    indented line) is what every notice here needs. */
+function ThreadNoticeBlock({ marker, headline, detail }: {
   /** The data attribute the E2E and a host's own styling select on, so it stays
-      per-failure rather than collapsing into one shared name. */
-  marker: "data-vendo-build-failed" | "data-vendo-turn-error";
+      per-notice rather than collapsing into one shared name. */
+  marker: "data-vendo-build-failed" | "data-vendo-turn-error" | "data-vendo-limit";
   headline: ReactNode;
   detail: ReactNode;
 }) {
+  const failed = marker !== "data-vendo-limit";
   return (
     <div className="fl-buildfail" {...{ [marker]: "" }}>
-      <div className="fl-beat fl-beat-error">
-        <span className="fl-beat-ic fl-beat-x" aria-hidden="true">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
+      <div className={failed ? "fl-beat fl-beat-error" : "fl-beat"}>
+        {/* Empty for a limit, and kept: the span is the beat's mark column, so
+            the headline stays aligned with the detail under it. */}
+        <span className={failed ? "fl-beat-ic fl-beat-x" : "fl-beat-ic"} aria-hidden="true">
+          {failed ? (
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          ) : null}
         </span>
         <span className="fl-beat-label">{headline}</span>
       </div>
-      <div className="fl-approval-more" role="alert">{detail}</div>
+      <div className="fl-approval-more" role={failed ? "alert" : "status"}>{detail}</div>
     </div>
   );
 }
@@ -336,7 +351,7 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     const data = partData(part) as Partial<VendoBuildFailedPart>;
     if (typeof data.reason !== "string" || data.reason.length === 0) return null;
     return (
-      <ThreadErrorBlock
+      <ThreadNoticeBlock
         marker="data-vendo-build-failed"
         headline={<>Couldn&apos;t build the app</>}
         detail={buildFailureNotice(data.reason)}
@@ -357,10 +372,26 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // chrome says what it knows in its own third-person voice instead.
     const message = turnErrorSentence(data.message);
     return (
-      <ThreadErrorBlock
+      <ThreadNoticeBlock
         marker="data-vendo-turn-error"
         headline={<>The response didn&rsquo;t finish</>}
         detail={message ?? TURN_FAILURE_NOTICE}
+      />
+    );
+  }
+  if (part.type === "data-vendo-limit") {
+    // The host's limits policy turned this request away — the message at the
+    // door, or the generation mid-turn. The person is told by the SURFACE,
+    // because the agent never ran to tell them itself, and the host's own
+    // sentence is what they read when the policy wrote one (limitNotice).
+    // Unlike the failures above there is nothing to validate: a denial with no
+    // sentence is the ordinary case, and the card is exactly what it is for.
+    const data = partData(part) as Partial<VendoLimitPart>;
+    return (
+      <ThreadNoticeBlock
+        marker="data-vendo-limit"
+        headline={<>You&rsquo;ve reached your limit</>}
+        detail={limitNotice(data.message)}
       />
     );
   }

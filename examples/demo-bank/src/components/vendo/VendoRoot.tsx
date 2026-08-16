@@ -1,9 +1,11 @@
 "use client";
 
 import { type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { VendoProvider, type ToolMetaMap } from "@vendoai/vendo/react";
 import { withBasePath } from "@/lib/base-path";
 import { mapleRegistry } from "@/vendo/registry";
+import { mapleRoutes } from "@/vendo/routes";
 import { mapleTheme } from "@/vendo/theme";
 
 const usd = (cents: number) =>
@@ -25,6 +27,7 @@ export function VendoRoot({
 }: {
   children: ReactNode;
 }) {
+  const router = useRouter();
   return (
     <VendoProvider
       // The Vendo door under the mount point. The provider's default is the
@@ -36,6 +39,11 @@ export function VendoRoot({
       // write, so naming the slot is the whole wiring.
       pinSlot="home-hero"
       tools={mapleToolMeta}
+      // Maple's own pages, and Maple's own router doing the moving: a generated
+      // <Link to="account"> resolves against this map, and `push` adds the
+      // `/maple` basePath that a bare href never would.
+      routes={mapleRoutes}
+      onNavigate={(nav) => router.push(nav.path)}
     >
       {children}
     </VendoProvider>

@@ -30,7 +30,7 @@ import {
   type Principal,
 } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
-import type { ComponentRegistry, VendoTheme } from "@vendoai/apps/contract";
+import type { ComponentRegistry, VendoRouteMap, VendoTheme } from "@vendoai/apps/contract";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
@@ -242,7 +242,7 @@ async function tempStore(dir: string): Promise<VendoStore> {
 /** One composed deployment in a temp `.vendo` root, walked end to end.
  *  `brief` absent means the file is never written — the before/after of the gap
  *  this slice closes. */
-async function walk(options: { brief?: string } = {}): Promise<Walked> {
+async function walk(options: { brief?: string; routes?: VendoRouteMap } = {}): Promise<Walked> {
   vi.stubEnv("E2B_API_KEY", "");
   vi.stubEnv("VENDO_API_KEY", "");
   vi.stubEnv("VENDO_BASE_URL", "http://briefing.test");
@@ -266,6 +266,7 @@ async function walk(options: { brief?: string } = {}): Promise<Walked> {
     store: await tempStore(join(root, "store")),
     theme: THEME,
     catalog: CATALOG,
+    ...(options.routes === undefined ? {} : { routes: options.routes }),
     sandbox: fakeBox(box),
     harness: defineHarness({
       name: "briefing-probe",
@@ -326,6 +327,26 @@ describe("the briefing pack reaches both rungs", () => {
     // The semantics-annotated shape card, in this host's own units.
     expect(fromScreen).toContain("maple_spend_summary");
     expect(fromScreen).toContain(":money.cents");
+  }, 60_000);
+
+  it("carries the host's ROUTES to both rungs — the names only, never a path", async () => {
+    const walked = await walk({
+      routes: { accounts: { path: "/accounts", description: "Every account, with its balance." } },
+    });
+
+    const fromScreen = briefingSection(walked.screenPrompt);
+    expect(fromScreen).toBe(briefingSection(walked.boxContext));
+    expect(fromScreen).toContain("ROUTES (this product's own pages");
+    expect(fromScreen).toContain("- accounts: Every account, with its balance.");
+    // THE security property. A writer picks a page by what it IS; the address is
+    // the host's alone, spelled by its own router in `onNavigate`. A path in the
+    // prompt is a URL for a model to copy, so no prompt on either rung carries one.
+    expect(walked.screenPrompt).not.toContain("/accounts");
+    expect(walked.boxContext).not.toContain("/accounts");
+  }, 60_000);
+
+  it("says nothing about routes when the host registered none", async () => {
+    expect(briefingSection((await walk()).screenPrompt)).not.toContain("ROUTES");
   }, 60_000);
 
   it("keeps the INSTRUCTIONS per-rung — the split did not collapse", async () => {

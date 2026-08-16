@@ -10,7 +10,7 @@
  * pins the two in step).
  */
 import { z } from "zod";
-import { config, copy, data, type KitComponentSpec, type PropClass, type PropSpec } from "./schema.js";
+import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropClass, type PropSpec } from "./schema.js";
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
@@ -474,6 +474,94 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ['<Checkbox label="Include paid"/>'],
   },
   {
+    name: "Switch",
+    group: "forms",
+    summary: "An instant on/off setting — it applies the moment it is flipped. A choice a Form submits is a Checkbox.",
+    props: {
+      label: copy(z.string(), "field label"),
+      checked: config(z.boolean(), "the current state (controlled)"),
+      onChange: config(action, "called on flip"),
+    },
+    examples: ['<Switch label="Notify me" checked={notify} onChange={(e) => setNotify(e.target.checked)}/>'],
+  },
+  {
+    name: "Radio",
+    group: "forms",
+    summary: "One choice out of a few, all of them visible. Takes a RAW array of tool output through labelField/valueField, exactly as Select does; past about six options use Select.",
+    props: {
+      options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
+      label: copy(z.string(), "field label"),
+      labelField: config(z.string(), "object field for the visible label"),
+      valueField: config(z.string(), "object field for the value"),
+      value: config(z.string(), "the selected value (controlled)"),
+      onChange: config(action, "called on change"),
+    },
+    examples: ['<Radio label="Speed" options={plans.data} labelField="name" valueField="id" value={plan} onChange={(e) => setPlan(e.target.value)}/>'],
+  },
+  {
+    name: "Slider",
+    group: "forms",
+    summary: "A number picked along a range, by dragging or by arrow key. Use it where the exact figure matters less than where it sits between two ends.",
+    props: {
+      label: copy(z.string(), "field label"),
+      value: config(z.number(), "the current number (controlled)"),
+      min: config(z.number(), "range start, default 0"),
+      max: config(z.number(), "range end, default 100"),
+      step: config(z.number().positive(), "granularity, default 1"),
+      showValue: config(z.boolean(), "show the current number"),
+      onChange: config(action, "called on change"),
+    },
+    examples: ['<Slider label="Budget" min={0} max={5000} step={50} showValue value={budget} onChange={(e) => setBudget(e.target.value)}/>'],
+  },
+  {
+    name: "SegmentedControl",
+    group: "forms",
+    summary: "A few mutually exclusive choices as one bar — the filter switch that changes what is SHOWN. Radio is the form field; Tabs is for whole panels.",
+    props: {
+      items: config(
+        z.array(z.union([
+          z.string(),
+          z.object({ value: z.string().optional(), label: z.string(), disabled: z.boolean().optional() }),
+        ])),
+        "segment labels, or {value,label} items",
+        { required: true },
+      ),
+      value: config(z.string(), "the selected segment's value"),
+      onChange: config(action, "called on change"),
+    },
+    examples: ['<SegmentedControl items={["Week","Month","Year"]} value={range} onChange={(e) => setRange(e.target.value)}/>'],
+  },
+  {
+    name: "Combobox",
+    group: "forms",
+    summary: "A type-to-filter dropdown over a RAW array of tool output — Select's shape, for a list too long to scan.",
+    props: {
+      options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
+      label: copy(z.string(), "field label"),
+      labelField: config(z.string(), "object field for the visible label"),
+      valueField: config(z.string(), "object field for the value"),
+      value: config(z.string(), "the selected value (controlled)"),
+      placeholder: copy(z.string(), "empty-field text"),
+      onChange: config(action, "called on change"),
+    },
+    examples: ['<Combobox label="Client" options={clients.data} labelField="name" valueField="id" value={clientId} onChange={(e) => setClientId(e.target.value)}/>'],
+  },
+  {
+    name: "DateRange",
+    group: "forms",
+    summary: "A start and an end picked from one calendar. Reports `{start, end}` as ISO dates; one date is a DatePicker.",
+    props: {
+      label: copy(z.string(), "field label"),
+      start: config(z.string(), "the current start, ISO yyyy-mm-dd"),
+      end: config(z.string(), "the current end, ISO yyyy-mm-dd"),
+      min: config(z.string(), "earliest selectable date"),
+      max: config(z.string(), "latest selectable date"),
+      placeholder: copy(z.string(), "text before a range is picked"),
+      onChange: config(action, "called with {start, end} once both are picked"),
+    },
+    examples: ['<DateRange label="Period" start={from} end={to} onChange={(range) => setPeriod(range)}/>'],
+  },
+  {
     name: "Button",
     group: "forms",
     summary: "A button. `onClick` takes a function; calling a tool in it is the only way the UI changes anything, and the runtime routes that call through the guard + approval pipe.",
@@ -484,6 +572,18 @@ const BASE_SPECS: KitComponentSpec[] = [
       disabled: config(z.boolean(), "disabled state"),
     },
     examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+  },
+  {
+    name: "Link",
+    takesChildren: true,
+    group: "forms",
+    summary: "Sends someone to a page of the host product. `to` NAMES a route the host registered — never a URL. A name the host did not register renders as plain text and goes nowhere, so link only where the host said you may.",
+    props: {
+      to: config(z.string(), "the registered route's name", { required: true }),
+      params: config(z.record(z.string(), z.string()), "values for the route path's :params"),
+      label: copy(z.string(), "link text; or nest the content as children"),
+    },
+    examples: ['<Link to="account" params={{id: accounts.data[0].id}} label="View account"/>'],
   },
   {
     name: "Form",
@@ -556,6 +656,39 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ["<Accordion items={[{label:\"Terms\",content:<Text .../>}]}/>"],
   },
   {
+    name: "Menu",
+    takesChildren: true,
+    group: "feedback",
+    summary: "Actions behind one trigger, for the row of buttons that would not fit. Give `items` and one `onSelect`, or nest an entry per line as children.",
+    props: {
+      label: copy(z.string(), "the trigger's text", { required: true }),
+      items: config(
+        z.array(z.object({
+          label: z.string(),
+          value: z.string().optional(),
+          icon: z.string().optional(),
+          disabled: z.boolean().optional(),
+        })),
+        "the entries; value is what onSelect receives, icon is a lucide name",
+      ),
+      onSelect: config(action, "called with the chosen entry's value; call a tool in it"),
+    },
+    examples: ['<Menu label="Actions" items={[{label:"Send reminder",value:"remind",icon:"send"},{label:"Void",value:"void"}]} onSelect={(e) => tools.invoice_action({ id, action: e.target.value })}/>'],
+  },
+  {
+    name: "Tooltip",
+    takesChildren: true,
+    group: "feedback",
+    summary: "A hint on hover or focus for the one control nested inside it. For a notice that must be read without hovering, use Callout.",
+    props: {
+      label: copy(z.string(), "the hint, as plain text"),
+      // Code-only, exactly like `Tabs.tabs[].content`: a slot holds an ELEMENT,
+      // and a wire attribute cannot. Optional is what keeps Tooltip wire-usable.
+      content: config(z.unknown(), "code-only: Kit elements rendered as the hint instead of label"),
+    },
+    examples: ['<Tooltip label="Sent 3 days ago"><Icon name="clock"/></Tooltip>'],
+  },
+  {
     name: "EmptyState",
     takesChildren: true,
     group: "feedback",
@@ -582,11 +715,62 @@ const BASE_SPECS: KitComponentSpec[] = [
   },
 ];
 
+/**
+ * THE SLOTS — every place the Kit takes an ELEMENT instead of a value, in one
+ * table. The generated prompt teaches from it and the nesting check enforces
+ * it: an element under a key that is NOT declared here is refused rather than
+ * dropped at render, which is the silent-breakage class this floor exists for.
+ * A slot's key is the last segment of where the element sits, so `columns[].cell`
+ * and `marker` are the slots `cell` and `marker`.
+ *
+ * THE LAW: a slot is declared here only when the React component RENDERS it —
+ * a `ReactNode` prop it actually paints (`@vendoai/ui`). Teaching a slot the Kit
+ * does not implement is worse than teaching none: the prompt tells the model to
+ * write it, every check passes it, and the renderer drops it in silence. That is
+ * the same silent-breakage this table exists to refuse, arriving through the
+ * table itself. `@vendoai/ui`'s `test/kit/slot-drift.test.tsx` puts a probe in
+ * every slot declared here and fails unless it finds it in the DOM, so the two
+ * move together at every merge.
+ *
+ * Vocabulary: no `content` means the read-only value tier
+ * (`KIT_SLOT_CONTENT_NAMES`) — right for a slot painted per row, which is
+ * written ONCE for every row and so has no row of its own to act on. A REGION
+ * is a place, and holds whatever the Kit holds; a MARK is one glyph, pill or
+ * word beside something else.
+ */
+const region: readonly string[] = BASE_SPECS.map((spec) => spec.name);
+const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"];
+
+const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
+  DataTable: {
+    cell: { doc: "Kit value components composed for ONE row, in place of the column's plain text", perRow: true, at: "columns" },
+  },
+  CardList: {
+    cell: { doc: "Kit value components composed for ONE item, in place of the field's plain text", perRow: true, at: "fields" },
+  },
+  KeyValue: { cell: { doc: "Kit value components composed for the record, in place of the field's plain text", perRow: true, at: "items" } },
+  Timeline: {
+    cell: { doc: "Kit components rendered as ONE entry's body", perRow: true },
+    marker: { doc: "a glyph drawn in place of the entry's dot", content: mark },
+  },
+  Tabs: { content: { doc: "ONE tab's panel, written inline instead of as a child", content: region, at: "tabs" } },
+  Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
+};
+
+/** Where a slot's element sits, as ONE comparable string: `columns[].cell` for a
+ *  field of a description object, `marker` for a slot that is a prop of its own.
+ *  The prompt teaches this string and the nesting check matches on it, so the
+ *  place a component READS and the place the floor admits are the same place. */
+export const kitSlotPath = (name: string, slot: KitSlotSpec): string =>
+  slot.at === undefined ? name : `${slot.at}[].${name}`;
+
 /** Every spec, with each shared adjective folded into the components that read
  *  it — so validation, the wire's allowed-prop set and the screen typings admit
- *  it exactly where it lands, and refuse it where it would be dropped. */
+ *  it exactly where it lands, and refuse it where it would be dropped — and its
+ *  slots, which the same consumers read. */
 export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => ({
   ...spec,
+  slots: SLOTS[spec.name],
   props: {
     ...spec.props,
     ...Object.fromEntries(SHARED_PROPS
@@ -615,9 +799,10 @@ export const KIT_CHILDLESS_NAMES: readonly string[] = KIT_SPECS
   .filter((spec) => spec.takesChildren !== true)
   .map((spec) => spec.name);
 
-/** What a `cell` slot may hold: the value tier, plus the two arrangers. A cell
- *  is read, never operated — an interactive control in one has no row to act
- *  on and no room to be pressed. */
+/** What a slot that declares no vocabulary of its own may hold: the value tier,
+ *  plus the two arrangers. It is the tier every PER-ROW slot keeps — a cell is
+ *  read, never operated, and an interactive control in one has no row to act on
+ *  and no room to be pressed. */
 export const KIT_SLOT_CONTENT_NAMES: readonly string[] = [
   "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress",
   "Stack", "Row",

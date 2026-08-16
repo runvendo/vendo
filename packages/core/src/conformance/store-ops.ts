@@ -3,7 +3,7 @@ import { ENGINE_ALLOWLIST_VERSION, engineAppHistory } from "../engine-collection
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema, type IsoDateTime } from "../ids.js";
 import { STORE_WIRE_APPEND_MESSAGES_OPS, STORE_WIRE_PATHS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
-import type { AuditQuery, CollectionFootprint, StoreOps } from "../store.js";
+import type { AuditQuery, CollectionFootprint, StoreOps, UsageCountQuery } from "../store.js";
 import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
 import { omitted, type ConformanceCase, type ConformanceOmission, type ConformanceSuite } from "./index.js";
 
@@ -141,6 +141,9 @@ const APPEND_ABSENT =
 
 /** {@link APPEND_ABSENT}'s twin for the other optional family. */
 const RETENTION_ABSENT = "this mount omits the retention family (optional — an engine with nowhere to quarantine to leaves it off)";
+
+/** ...and for the meter, optional on the same rule. */
+const USAGE_ABSENT = "this mount omits the usage family (optional — a store with nowhere to meter leaves it off, and a limits policy is refused at composition rather than enforced against a meter that reads zero)";
 
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
@@ -2201,6 +2204,108 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(destroyed.purged === ids.length, `the purge should report the ${ids.length} rows it destroyed, reported ${destroyed.purged}`);
         const again = await retention.purge(collection, past);
         assert(again.purged === 0, `a second purge reported ${again.purged} rows a first one had already destroyed`);
+      }),
+
+      // =====================================================================
+      // usage — OPTIONAL (01 §12) on `retention`'s rule, and reported the same
+      // way: a store with nowhere to meter says so by omitting the family, and
+      // a case that returned early instead would make "this mount has no meter"
+      // and "this mount's meter is correct" one green line.
+      // =====================================================================
+
+      /** The meter's whole job: what went in comes back as a number, for the
+          window the caller drew and no other. The EDGES are the load-bearing
+          half — `since` inclusive and `until` exclusive is what lets two
+          adjacent periods tile a timeline without counting the instant they
+          share twice or dropping it. */
+      opsCase(opts, "usage.count answers one subject's window, taking since inclusively and until exclusively", async (ops) => {
+        const usage = ops.usage;
+        if (usage === undefined) return omitted(USAGE_ABSENT);
+        const at = (minute: number): Date => new Date(Date.UTC(2026, 0, 1, 12, minute));
+        const counts = async (query: UsageCountQuery, expected: number, why: string): Promise<void> => {
+          const actual = await usage.count(query);
+          assert(actual === expected, `${why}: expected ${expected}, counted ${actual}`);
+        };
+        for (const minute of [0, 1, 2]) await usage.record({ subject: "conf_meter", action: "message", at: at(minute) });
+        await usage.record({ subject: "conf_meter", action: "generation", at: at(1) });
+        await usage.record({ subject: "conf_meter_neighbour", action: "message", at: at(1) });
+
+        const mine = { subject: "conf_meter", action: "message" } as const;
+        await counts({ ...mine, since: at(0) }, 3, "a window over every recorded action should count them all");
+        await counts({ ...mine, since: at(1) }, 2, "`since` is inclusive, so an action AT the floor is inside the window");
+        await counts({ ...mine, since: at(0), until: at(2) }, 2, "`until` is exclusive, so an action AT the ceiling is outside the window");
+        await counts({ ...mine, since: at(1), until: at(1) }, 0, "an empty window counts nothing");
+        await counts({ ...mine, since: at(3) }, 0, "a window past every action counts nothing");
+        // Both narrowings hold: neither another action nor another person's
+        // usage may land in a number a policy is about to decide on.
+        await counts({ subject: "conf_meter", action: "generation", since: at(0) }, 1, "the count is one action's, not the subject's whole meter");
+        await counts({ subject: "conf_meter_absent", action: "message", since: at(0) }, 0, "a subject who has done nothing counts zero");
+      }),
+
+      /** A pool count is the shared bucket's, and it is answered off the keys
+          the ROW carries — copied off the user when the action happened. That
+          is what keeps a departed member's usage counted against the team it
+          was spent in, and what stops a new member's history from arriving with
+          them. */
+      opsCase(opts, "usage.count answers a pool by the keys its rows were written with, never the member's own", async (ops) => {
+        const usage = ops.usage;
+        if (usage === undefined) return omitted(USAGE_ABSENT);
+        const since = new Date(Date.UTC(2026, 0, 1));
+        const at = new Date(Date.UTC(2026, 0, 2));
+        await usage.record({ subject: "conf_pool_a", action: "message", at, poolKeys: ["conf_team", "conf_org"] });
+        await usage.record({ subject: "conf_pool_b", action: "message", at, poolKeys: ["conf_org"] });
+        await usage.record({ subject: "conf_pool_c", action: "message", at });
+        const counted = async (poolKey: string): Promise<number> => await usage.count({ poolKey, action: "message", since });
+
+        assert(await counted("conf_org") === 2, `the org pool holds two members' actions, counted ${await counted("conf_org")}`);
+        assert(await counted("conf_team") === 1, `a row draws down EVERY key it carries, and only those it carries: counted ${await counted("conf_team")}`);
+        assert(await counted("conf_pool_a") === 0, "a subject is not a pool — a pool count matched a subject id");
+        assert(
+          await usage.count({ subject: "conf_pool_a", action: "message", since }) === 1,
+          "a subject's own count must not swell to the pool's",
+        );
+      }),
+
+      /** The operator's read: every subject's number over one window, in one
+          call rather than a count per user. Subjects with nothing in the window
+          are OMITTED, because a group-by answers with the groups that exist,
+          and the rows are sorted so two implementations answer alike. */
+      opsCase(opts, "usage.tally groups a window by subject and action, sorted, omitting what the window does not hold", async (ops) => {
+        const usage = ops.usage;
+        if (usage === undefined) return omitted(USAGE_ABSENT);
+        const at = (day: number): Date => new Date(Date.UTC(2026, 0, day));
+        await usage.record({ subject: "conf_tally_b", action: "message", at: at(2) });
+        await usage.record({ subject: "conf_tally_a", action: "message", at: at(2) });
+        await usage.record({ subject: "conf_tally_a", action: "message", at: at(3) });
+        await usage.record({ subject: "conf_tally_a", action: "generation", at: at(3) });
+
+        assertDeepEqual(
+          await usage.tally({ since: at(1) }),
+          [
+            { subject: "conf_tally_a", action: "generation", count: 1 },
+            { subject: "conf_tally_a", action: "message", count: 2 },
+            { subject: "conf_tally_b", action: "message", count: 1 },
+          ],
+          "the tally is one row per (subject, action) actually in the window, sorted by subject then action",
+        );
+        assertDeepEqual(
+          await usage.tally({ since: at(3) }),
+          [
+            { subject: "conf_tally_a", action: "generation", count: 1 },
+            { subject: "conf_tally_a", action: "message", count: 1 },
+          ],
+          "a narrower window still counted actions outside it, or kept a subject it no longer holds",
+        );
+        assertDeepEqual(
+          await usage.tally({ since: at(1), action: "generation" }),
+          [{ subject: "conf_tally_a", action: "generation", count: 1 }],
+          "narrowing to one action did not narrow the tally",
+        );
+        assertDeepEqual(
+          await usage.tally({ since: at(1), subject: "conf_tally_b" }),
+          [{ subject: "conf_tally_b", action: "message", count: 1 }],
+          "narrowing to one subject did not narrow the tally",
+        );
       }),
 
       // =====================================================================

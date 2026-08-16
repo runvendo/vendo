@@ -76,6 +76,9 @@ export function createContextResolver(
     // user, refreshed per request (decision 2; the preset shares the session
     // decode with `principal`, so this costs no second verify).
     const user = deps.userFacts === undefined ? undefined : await deps.userFacts(req);
+    // The shared meters this user's usage also counts into, refreshed per
+    // request for the same reason and off the same decode.
+    const pools = deps.userPools === undefined ? undefined : await deps.userPools(req);
     return {
       principal,
       venue,
@@ -84,6 +87,7 @@ export function createContextResolver(
       requestHeaders: requestHeaders(req),
       ...(memberships === undefined ? {} : { memberships }),
       ...(user === undefined ? {} : { user }),
+      ...(pools === undefined ? {} : { pools }),
     };
   };
 }

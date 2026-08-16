@@ -59,6 +59,21 @@ export function buildFailureNotice(reason: string | undefined): string {
   return detail.length === 0 ? "This view couldn’t be built — nothing was changed." : detail;
 }
 
+/**
+ * What a person is told when the host's limits policy denies them: the host's
+ * own sentence, verbatim.
+ *
+ * The host set the cap, so the host is the only one who can say what it is, or
+ * when it lifts — the same reason `buildFailureNotice` above passes the
+ * runtime's classified line through rather than replacing it with one canned
+ * sentence. A policy that returned no message gets the chrome's own line, which
+ * claims nothing it cannot know: only that the request never ran.
+ */
+export function limitNotice(message: string | undefined): string {
+  const detail = (message ?? "").trim();
+  return detail.length === 0 ? "This request wasn’t run — nothing was changed." : detail;
+}
+
 // A stable placeholder for the in-thread synthesized ApprovalRequest's required
 // `createdAt`: the wire approval part carries no timestamp, and the value is
 // never displayed (the card hides the context byline in-thread). Fixed, not
@@ -260,12 +275,22 @@ export function toolCallParked(part: UIMessage["parts"][number]): boolean {
   return isToolUIPart(part) && part.state === "approval-requested";
 }
 
-/** A failed or declined call is CONTENT, not progress: its beat stays visible
-    after the turn folds, and it never counts as a thing the agent did.
+/** A call the HOST's OWN RULES refused — a policy block, a usage limit — which
+    settles carrying the `blocked` outcome (harnesses/src/wire.ts). Distinct from
+    `output-denied`, which the ai-SDK reserves for an approval the PERSON turned
+    down: nobody asked them about this one, so the beat must not say they said
+    no. */
+export function toolCallRefused(part: UIMessage["parts"][number]): boolean {
+  return isToolUIPart(part) && part.state === "output-available"
+    && (part.output as { status?: unknown } | null | undefined)?.status === "blocked";
+}
+
+/** A failed, refused or declined call is CONTENT, not progress: its beat stays
+    visible after the turn folds, and it never counts as a thing the agent did.
     Everything else is progress, and progress folds into the summary. */
 export function toolCallIsContent(part: UIMessage["parts"][number]): boolean {
   return isToolUIPart(part)
-    && (part.state === "output-error" || part.state === "output-denied");
+    && (part.state === "output-error" || part.state === "output-denied" || toolCallRefused(part));
 }
 
 /** The app-building call this turn's app card is narrating. The card bar

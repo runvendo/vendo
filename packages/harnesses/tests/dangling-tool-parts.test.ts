@@ -149,7 +149,8 @@ describe("an unpaired tool part never reaches the transcript", () => {
       }),
     );
     const stored = await transcript.list({ kind: "user", subject: "u1" }, THREAD);
-    // The denial is recorded (output-denied), and nothing was silently pruned.
+    // The refusal is recorded (a settled `blocked` outcome — nobody was here to
+    // decline it), and nothing was silently pruned.
     expect(stored.at(-1)!.parts.some((part) => part.type === "dynamic-tool")).toBe(true);
   });
 });

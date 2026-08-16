@@ -19,17 +19,22 @@ import {
   type TreeNode,
 } from "@vendoai/core";
 import {
+  DISPLAY_TAG_NAMES,
   KIT_CHILDLESS_NAMES,
   KIT_SLOT_CONTENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   checkBindingShapes,
   checkExpr,
+  kitSlotPath,
   kitSpec,
   isExprBinding,
   validateAppDocument,
   validateTree,
+  vendoRouteParams,
+  type KitSlotSpec,
   type NormalizedCatalog,
   type Tree,
+  type VendoRouteMap,
 } from "../../contract/index.js";
 import type {
   AppDocument,
@@ -419,17 +424,19 @@ export const catalogIssues = async (
 };
 
 const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
-const SLOT_CONTENT: ReadonlySet<string> = new Set(KIT_SLOT_CONTENT_NAMES);
+/** The one brick that takes a route (`kit/specs.ts`). Pinned to its spec by the
+ *  route check's own test, so renaming the brick cannot leave this behind. */
+const KIT_LINK = "Link";
 
-/** A Kit element sitting in a PROP — what a `cell` slot holds. The screen VM
+/** A Kit element sitting in a PROP — what a slot holds. The screen VM
  *  stamps the SLOT's own element `$element` and leaves the ones nested under it
  *  bare (genui/component/vm-program.ts `emitValue`), and the renderer reifies on
  *  exactly that (`packages/ui` renderer.tsx `reifyElement`) — so this reads the
  *  sigil at the slot and a `component` name below it, and a data row that merely
  *  carries a "component" field is never mistaken for an element. */
-const asElement = (value: unknown, sigil: boolean): { component: string; children?: unknown } | undefined =>
+const asElement = (value: unknown, sigil: boolean): { component: string; props?: unknown; children?: unknown } | undefined =>
   isRecord(value) && typeof value.component === "string" && (!sigil || value.$element === true)
-    ? (value as { component: string; children?: unknown })
+    ? (value as { component: string; props?: unknown; children?: unknown })
     : undefined;
 
 /**
@@ -450,42 +457,152 @@ const asElement = (value: unknown, sigil: boolean): { component: string; childre
 export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   const issues: FactIssue[] = [];
 
-  /** One `cell` slot: the element it holds, and every element nested in that
-   *  one. */
-  const checkSlot = (nodeId: string, path: string, value: unknown, sigil = true): void => {
+  /** One slot: the element it holds, and every element nested in that one. A
+   *  slot with no declared vocabulary takes the read-only value tier, and a
+   *  per-row one says WHY that tier is the one it takes.
+   *
+   *  A DISPLAY BRICK passes every slot, and is stated here rather than added to
+   *  each vocabulary: these lists gate BEHAVIOR — what may sort, submit or call a
+   *  tool where there is no row to act on — and a brick has none to gate. It is
+   *  arrangement and typography, `style` and children and nothing else
+   *  (`contract/kit/display.ts`), so it can no more break the per-row rule than a
+   *  word can. */
+  const checkSlot = (nodeId: string, path: string, name: string, slot: KitSlotSpec, value: unknown, sigil = true): void => {
     const element = asElement(value, sigil);
     if (element === undefined) return;
-    if (!SLOT_CONTENT.has(element.component)) {
-      issues.push(atProp(nodeId, path, `holds <${element.component}> in a cell slot — a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`));
+    const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
+    if (!allowed.includes(element.component) && !DISPLAY_TAG_NAMES.includes(element.component)) {
+      const why = slot.perRow === true && slot.content === undefined
+        ? `a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${allowed.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`
+        : `this slot may hold: ${allowed.join(", ")}.`;
+      issues.push(atProp(nodeId, path, `holds <${element.component}> in a ${name} slot — ${why}`));
     }
+    // What sits in a slot is a component in its own right, with its own slots
+    // and its own childless contract. Measuring it only against the OUTER
+    // slot's vocabulary passes `<Stack header={<Text/>}/>` and a `<DataTable>`
+    // handed children — both dropped by the renderer, which is the whole class
+    // this check exists to refuse.
+    checkKitElement(nodeId, path, element.component, element.props, element.children);
     if (Array.isArray(element.children)) {
-      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, child, false));
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, name, slot, child, false));
     }
   };
 
-  /** The `cell` slots inside one prop — a column/field description carries one,
-   *  and the descriptions are an array. */
-  const findSlots = (nodeId: string, path: string, key: string, value: unknown): void => {
-    if (key === "cell") {
-      checkSlot(nodeId, path, value);
+  /** The slots inside one prop. The walk carries the SHAPE of where it stands —
+   *  `columns[].cell`, `rows[].cell` — and a slot matches only its own declared
+   *  path (`kitSlotPath`). Matching a bare key at any depth admitted
+   *  `rows[].cell` on a DataTable that reads `columns[].cell` and nothing else:
+   *  legal to the floor, dropped by the component. An element off the declared
+   *  paths is a place the renderer paints nothing. */
+  const findSlots = (
+    nodeId: string,
+    component: string,
+    slots: ReadonlyMap<string, readonly [string, KitSlotSpec]>,
+    path: string,
+    shape: string,
+    value: unknown,
+  ): void => {
+    const slot = slots.get(shape);
+    if (slot !== undefined) {
+      checkSlot(nodeId, path, slot[0], slot[1], value);
+      return;
+    }
+    const stray = asElement(value, true);
+    if (stray !== undefined) {
+      const has = slots.size === 0
+        ? `<${component}> takes no element in its props`
+        : `the slots on <${component}> are: ${[...slots.keys()].join(", ")}`;
+      issues.push(atProp(nodeId, path, `holds <${stray.component}>, but "${shape}" is not a slot — ${has}. An element written anywhere else is dropped at render.`));
       return;
     }
     if (Array.isArray(value)) {
-      value.forEach((item, index) => findSlots(nodeId, `${path}[${index}]`, "", item));
+      value.forEach((item, index) => findSlots(nodeId, component, slots, `${path}[${index}]`, `${shape}[]`, item));
       return;
     }
     if (isRecord(value)) {
-      for (const [name, item] of Object.entries(value)) findSlots(nodeId, `${path}.${name}`, name, item);
+      for (const [name, item] of Object.entries(value)) {
+        findSlots(nodeId, component, slots, `${path}.${name}`, `${shape}.${name}`, item);
+      }
+    }
+  };
+
+  /** One Kit element measured against ITS OWN spec — a tree node, or an element
+   *  written into a slot, which is the same thing in a different place. `at` is
+   *  where it sits ("" for a node), so a nested component's findings are
+   *  anchored at the prop path that leads to it. */
+  const checkKitElement = (
+    nodeId: string,
+    at: string,
+    component: string,
+    props: unknown,
+    children: unknown,
+  ): void => {
+    const nested = Array.isArray(children) ? children.length : 0;
+    if (nested > 0 && CHILDLESS.has(component)) {
+      const message = `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`;
+      issues.push(at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message));
+    }
+    const spec = kitSpec(component);
+    if (spec === undefined || !isRecord(props)) return;
+    // A Map, not the record: a prop key is model-written, and `slots["toString"]`
+    // on a plain object answers with Object's own.
+    const slots = new Map(Object.entries(spec.slots ?? {})
+      .map(([name, slot]) => [kitSlotPath(name, slot), [name, slot] as const]));
+    for (const [prop, value] of Object.entries(props)) {
+      findSlots(nodeId, component, slots, at === "" ? prop : `${at}.${prop}`, prop, value);
     }
   };
 
   for (const node of tree.nodes) {
     if (node.source === "host" || node.source === "generated") continue;
-    const nested = node.children?.length ?? 0;
-    if (nested > 0 && CHILDLESS.has(node.component)) {
-      issues.push(atNode(node.id, `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${node.component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${node.component}> in a <Stack>, or give <${node.component}> what it showed through its own props.`));
+    checkKitElement(node.id, "", node.component, node.props ?? {}, node.children);
+  }
+  return issues;
+};
+
+/**
+ * A `<Link to>` that will never move anybody.
+ *
+ * `resolveVendoRoute` answers `undefined` two ways — a name the host never
+ * registered, and a registered path whose `:params` the link left unfilled — and
+ * the brick renders the SAME dead text for both. That is a silent break of
+ * exactly the kind the nesting rule above exists to catch: the model wrote a way
+ * out of the screen, the person got dead words, and generation said it passed.
+ * So both refusals move to where they can be repaired, and they move together:
+ * catching one and not the other would leave a hole precisely where a reader
+ * would assume there is none.
+ *
+ * One function, both artifacts, for the reason `kitNestingIssues` is: a wire tree
+ * and the tree a `.tsx` screen paints reach the same renderer.
+ *
+ * Both messages hand over what the repair needs — the registered names for the
+ * first, the unfilled param names for the second — because a link SELECTS from
+ * the host's registry and fills its blanks; it never writes a URL.
+ */
+export const routeIssues = (tree: Tree, routes: VendoRouteMap | undefined): FactIssue[] => {
+  if (routes === undefined) return [];
+  const names = Object.keys(routes);
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    if (node.component !== KIT_LINK) continue;
+    // Own keys only: `to` is model-written, and `routes["toString"]` on a plain
+    // object answers with Object's own (the a1-slots reading of the same risk).
+    const to = node.props?.to;
+    if (typeof to !== "string") continue;
+    const route = Object.prototype.hasOwnProperty.call(routes, to) ? routes[to] : undefined;
+    if (route === undefined) {
+      issues.push(atProp(node.id, "to", `names route "${to}" on <${KIT_LINK}>, which this host never registered — it would render as plain text and go nowhere. ${names.length === 0 ? "This host registered no routes at all, so nothing may link out of a screen; drop the link." : `The registered routes are: ${names.join(", ")}. A link NAMES one of these; it never writes a URL.`}`));
+      continue;
     }
-    for (const [prop, value] of Object.entries(node.props ?? {})) findSlots(node.id, prop, prop, value);
+    // Read "filled" the way the RESOLVER reads it (`params?.[key] === undefined`),
+    // so the floor and the render can never disagree about which links work. The
+    // lookup keys come from the host's own path, not from the model.
+    const given = node.props?.params as Record<string, unknown> | undefined;
+    const takes = vendoRouteParams(route.path);
+    const missing = takes.filter((key) => given?.[key] === undefined);
+    if (missing.length > 0) {
+      issues.push(atProp(node.id, "params", `names route "${to}" on <${KIT_LINK}> but leaves ${missing.map((key) => `"${key}"`).join(", ")} unfilled — that route's path takes ${takes.map((key) => `:${key}`).join(", ")}, and a link missing one of them renders as plain text and goes nowhere. Write params={{ ${missing.map((key) => `${key}: …`).join(", ")} }} beside to="${to}".`));
+    }
   }
   return issues;
 };
@@ -608,6 +725,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...hostReshapeIssues(tree, deps),
   ]),
   treeCheck("kit-nesting", (tree) => kitNestingIssues(tree)),
+  treeCheck("routes-exist", (tree) => routeIssues(tree, deps.routes)),
   treeCheck("expressions-compute", (tree) => exprIssues(tree)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),

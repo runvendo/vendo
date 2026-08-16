@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AuditEvent } from "./audit.js";
 import type { CollectionKind } from "./engine-collections.js";
 import { isoDateTimeSchema, type IsoDateTime, type Json } from "./ids.js";
+import type { LimitAction } from "./limits.js";
 
 const requiredJsonValueSchema = z.unknown().refine(
   (value) => value !== undefined,
@@ -343,6 +344,59 @@ export interface AuditTallyRow {
 }
 
 // ---------------------------------------------------------------------------
+// usage.record / usage.count / usage.tally — the meter per-user limits read
+// ---------------------------------------------------------------------------
+
+/** One metered action, as it happened. `at` is the instant, not an
+    {@link IsoDateTime}: nothing about this row is ever rendered or compared as
+    text — it is written, bucketed by time, and counted.
+
+    `poolKeys` are the shared buckets this one action ALSO draws down, copied
+    off the user's pools at write time rather than looked up at read time: a
+    user who leaves a team must not retroactively drain its quota, and the row
+    is the only place that membership was ever true. */
+export interface UsageEvent {
+  subject: string;
+  action: LimitAction;
+  at: Date;
+  poolKeys?: string[];
+}
+
+/** What to count, over what stretch. Exactly ONE of `subject` or `poolKey`
+    ({@link EraseTarget}'s rule): a count is either a person's or a pool's, and
+    a query carrying both is two different numbers with one name.
+
+    `since` is INCLUSIVE and REQUIRED for {@link AuditTallyQuery}'s reason — it
+    is the only bound that keeps a call off a drawer that only ever grows.
+    `until` is optional and exclusive, for a policy counting a closed period
+    (last calendar month) rather than a lookback. */
+export type UsageCountQuery = {
+  action: LimitAction;
+  since: Date;
+  until?: Date;
+} & ({ subject: string; poolKey?: never } | { poolKey: string; subject?: never });
+
+/** The same window, counted per subject instead of for one — the read behind an
+    operator's "who is using this" table, in one call rather than a count per
+    user. Narrowing to a `subject` or an `action` is optional here precisely
+    because the answer names both. */
+export interface UsageTallyQuery {
+  since: Date;
+  until?: Date;
+  action?: LimitAction;
+  subject?: string;
+}
+
+/** One counted group. Subjects with nothing in the window are OMITTED (a
+    group-by answers with the groups that exist), and rows are sorted by
+    `subject` then `action`, ascending. */
+export interface UsageTallyRow {
+  subject: string;
+  action: LimitAction;
+  count: number;
+}
+
+// ---------------------------------------------------------------------------
 // footprint — what the store is holding
 // ---------------------------------------------------------------------------
 
@@ -374,13 +428,14 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 45 store operations across 12 families.
+/** The typed contract for all 48 store operations across 13 families.
     Lean by design — this is the CONTRACT interface, not the implementation.
 
-    Two members are OPTIONAL, and both mean the same thing: an implementation
-    that cannot serve the family says so by OMITTING it, never by accepting the
-    call and doing something else (`transcripts.appendMessages` and `retention`,
-    following `RecordStore.claim`/`atomic`). Everything else is required. */
+    Three members are OPTIONAL, and all three mean the same thing: an
+    implementation that cannot serve the family says so by OMITTING it, never by
+    accepting the call and doing something else (`transcripts.appendMessages`,
+    `retention` and `usage`, following `RecordStore.claim`/`atomic`). Everything
+    else is required. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
       effects, and the automations and guard drawers — reached through seven
@@ -491,6 +546,23 @@ export interface StoreOps {
     /** Matching events counted per UTC hour, split by outcome and decidedBy —
         the grouped read a decision tally is, in one call. */
     tally(query: AuditTallyQuery): Promise<AuditTallyRow[]>;
+  };
+  /** The usage meter behind per-user limits (a host's `LimitsCallback`) — a
+      write and the two reads it exists to serve.
+
+      Three verbs and not two for `audit`'s reason plus one: a policy's question
+      is a single number for one user, an operator's is every user's number over
+      a window, and neither is the other's answer sliced. The write is here and
+      not on `engine` because a meter row is only ever counted, never listed.
+
+      OPTIONAL (`retention`'s rule): a store with nowhere to meter says so by
+      omitting the family. A configured `LimitsCallback` then has no
+      counts to decide on, so it is refused at composition — never enforced
+      against a meter that reads zero. */
+  usage?: {
+    record(event: UsageEvent): Promise<void>;
+    count(query: UsageCountQuery): Promise<number>;
+    tally(query: UsageTallyQuery): Promise<UsageTallyRow[]>;
   };
   /** The store's secret vault — the values a host's connectors authenticate
       with, kept where the rest of its data is kept.

@@ -303,10 +303,15 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     expect(said).toBe("This needs your approval, and nobody is here to give it.");
     expect(said).not.toContain("retry");
     // The card STANDS for "Grant & re-run" (§1.4) and the mirror shows the
-    // denial — the run failed loudly on the user's own thread, not silently in a
-    // box, and not with an executed row.
+    // refusal — the run failed loudly on the user's own thread, not silently in a
+    // box, and not with an executed row. It settles carrying the refusal's own
+    // words, not as `output-denied`: nobody was here to decline anything, and a
+    // part in that state with no approval beside it cannot be converted into the
+    // next turn's prompt at all (harnesses/src/turn-tools.ts).
     expect(stream).toContain("data-vendo-approval");
-    expect(mirroredToolParts(stream)).toContain(`tool-output-denied:${WRITE_TOOL}`);
+    expect(mirroredToolParts(stream)).toContain(`tool-output-available:${WRITE_TOOL}`);
+    expect(mirroredToolParts(stream)).not.toContain(`tool-output-denied:${WRITE_TOOL}`);
+    expect(stream).toContain("nobody is here to give it");
     expect((await toolRows(doorHost.store, WRITE_TOOL)).every((row) => row.outcome !== "ok")).toBe(true);
     // The listing came from the turn's OWN ctx (divergence 5) — `descriptors(ctx)`
     // is where §12 withholds, and the curated loadout decides the rest.

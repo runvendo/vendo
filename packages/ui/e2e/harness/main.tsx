@@ -439,6 +439,60 @@ const buildFailedThread: Thread = {
   ],
 };
 
+/** The host's limits policy denying two requests in one thread: the first with
+ *  a sentence of the host's own, the second with none — the two states of the
+ *  limit card, side by side. The chat keeps going past both. */
+const limitThread: Thread = {
+  id: "thr_limit",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "msg_limit_user",
+      role: "user",
+      parts: [{ type: "text", text: "build me a spending breakdown for last quarter" }],
+    },
+    {
+      id: "msg_limit_host",
+      role: "assistant",
+      parts: [
+        // The refused build itself, in the shape the runtime really persists for
+        // it (harnesses/src/wire.ts): the typed `blocked` outcome. The fixture
+        // used to carry the card ALONE, which is why the beat above it could say
+        // "you declined it" over a card explaining a limit — nothing in a browser
+        // ever rendered the two together.
+        {
+          type: "dynamic-tool",
+          toolName: "vendo_make",
+          toolCallId: "call_limit_build",
+          state: "output-available",
+          input: { request: "a spending breakdown for last quarter" },
+          output: {
+            status: "blocked",
+            reason: "The app was not built: this user has reached a limit the host's own policy sets.",
+          },
+        },
+        {
+          type: "data-vendo-limit",
+          id: "vendo-limit:1",
+          data: { message: "You've used all 50 requests on the Free plan. Your allowance resets on the 1st." },
+        },
+      ] as Thread["messages"][number]["parts"],
+    },
+    {
+      id: "msg_limit_user_2",
+      role: "user",
+      parts: [{ type: "text", text: "just a plain list of last month's charges then" }],
+    },
+    {
+      id: "msg_limit_default",
+      role: "assistant",
+      parts: [{ type: "data-vendo-limit", id: "vendo-limit:2", data: {} }],
+    },
+  ],
+};
+
 function threadClient(client: VendoClient, thread: Thread): VendoClient {
   // A thread that get() serves must also appear in list(): useVendoThread only
   // adopts a supplied threadId after confirming it exists in list() (the ENG-211
@@ -1003,6 +1057,16 @@ function BuildFailedScenario() {
   return (
     <VendoProvider client={threadClient(baseClient, buildFailedThread)} components={components}>
       <VendoThread threadId="thr_build_failed" />
+    </VendoProvider>
+  );
+}
+
+/** Both limit cards in one thread: the host's own sentence, and the chrome's
+ *  line for a policy that wrote none. */
+function LimitScenario() {
+  return (
+    <VendoProvider client={threadClient(baseClient, limitThread)} components={components}>
+      <VendoThread threadId="thr_limit" />
     </VendoProvider>
   );
 }
@@ -1819,6 +1883,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
+    case "/limit": return { title: "Usage limit — the host's policy denied the request", content: <LimitScenario />, ownProvider: true };
     case "/thread-forming": return { title: "Thread — the build's first seconds", content: <FormingScenario />, ownProvider: true };
     case "/consent-marks": return { title: "Consent surfaces — no shield", content: <ConsentMarksScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };

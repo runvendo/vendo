@@ -10,6 +10,7 @@ import { useVendoProvider } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { memberSchema, type CardFieldRow } from "./field-rows.js";
 import { argValue, humanizeToolName, toolTitle, type ToolMeta } from "./humanize.js";
+import { toolCallRefused } from "./thread/message-data.js";
 import type { VendoBeat } from "./run-activity.js";
 
 /**
@@ -547,9 +548,12 @@ export function BuildBeat({
   // heartbeat: without this, a declined call's beat sat in the finished turn
   // still saying "…", as if it were about to happen.
   const declined = part.state === "output-denied";
+  // The host's own rules saying no, which is nobody's decline: the person was
+  // never asked, so the line has to name the rules instead of them.
+  const refused = toolCallRefused(part);
   const label = toolTitle(name, tools[name]);
-  const result = done ? toolResultSummary(part.output) : undefined;
-  const mark: BeatMark = error ? "error" : declined ? "declined" : done ? "done"
+  const result = done && !refused ? toolResultSummary(part.output) : undefined;
+  const mark: BeatMark = error ? "error" : declined || refused ? "declined" : done ? "done"
     : waiting ? "waiting" : "working";
   const state = mark === "error" ? "fl-beat-error"
     : mark === "done" || mark === "declined" ? "fl-beat-done"
@@ -565,6 +569,7 @@ export function BuildBeat({
         mark={mark}
         label={waiting ? `${label} — waiting for your approval`
           : error ? `${label} — couldn't finish`
+          : refused ? `${label} — wasn't allowed`
           : declined ? `${label} — you declined it`
           : done ? label
           : `${label}…`}

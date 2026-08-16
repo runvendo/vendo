@@ -25,7 +25,7 @@ const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined =>
 export const wireDepsFor = (composition: VendoComposition): WireDeps => {
   const { config, store, ops, guard, apps, actionsConfig, appTokens, automations } = composition;
   const { boundTools, byoApprovals, connections, sandbox, inference, doctor, door } = composition;
-  const { resolvePrincipal, membershipsSeam, userFactsSeam, ready } = composition;
+  const { resolvePrincipal, membershipsSeam, userFactsSeam, userPoolsSeam, ready } = composition;
   const { appsMounted, automationsMounted } = composition;
   const { runSweep, sweepEnabled, hostedStoreComposed, doorWellKnown, harnessDoor } = composition;
   const { configuredBaseUrl, isDevelopmentEnv } = composition;
@@ -51,6 +51,7 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     principal: resolvePrincipal,
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
     ...(userFactsSeam === undefined ? {} : { userFacts: userFactsSeam }),
+    ...(userPoolsSeam === undefined ? {} : { userPools: userPoolsSeam }),
     ready,
     trustedBaseIsHttps,
     get sessionId() { return sessionId(); },
@@ -128,9 +129,24 @@ export const vendoInstance = (
   handler: (request: Request) => Promise<Response>,
 ): Vendo => {
   const { automationsMounted, ready, automations, guard, byoApprovals } = composition;
-  const { apps, actions, selectedConnections, store, harnessDoor, channelDoor } = composition;
+  const { apps, actions, selectedConnections, store, harnessDoor, channelDoor, ops } = composition;
   return {
     handler,
+    async usage(query) {
+      // Loud, not silent, exactly like `emit` below: a store with no meter
+      // recorded nothing and never will, so an empty tally would read as "this
+      // deployment's users are idle" to the billing job asking.
+      if (ops?.usage === undefined) {
+        throw new VendoError(
+          "not-implemented",
+          "vendo.usage() reads the store's meter, and this deployment's store has no usage meter: "
+          + "every tally would come back empty. Use the default store (or any store on schema v10+ — "
+          + "Vendo Cloud, your own Postgres via createStore).",
+        );
+      }
+      await ready();
+      return ops.usage.tally(query);
+    },
     async emit(event, payload, principal) {
       // Loud, not silent: a host still calling `emit` after unmounting
       // automations is a wiring mistake, and answering `[]` would hide it

@@ -17,18 +17,24 @@ export interface DisplayBrickProps {
 }
 
 /**
- * What a screen may paint with is a DEFAULT-DENY property allowlist, not a
- * value denylist: a property not named here is dropped whatever its value, so a
- * fetching property nobody predicted (`maskImage`, `borderImage`, `content`) is
- * gone by default. Every name here is inert — none can carry a URL — so it
- * passes with any value; the properties that CAN fetch are handled below.
+ * What a screen may paint with is a DEFAULT-DENY property allowlist and NOTHING
+ * ELSE: `safeStyle` keeps a declaration iff its property is named here, whatever
+ * its value. No value is ever inspected — so there is no CSS spelling for a model
+ * to bypass. The list holds only properties that cannot fetch: a `color` takes a
+ * URL nowhere, but `background`, `backgroundImage`, `filter`, `backdropFilter`
+ * and `cursor` all can (`url()`, `image-set()`), so they are simply absent and
+ * drop by default alongside `maskImage`, `borderImage` and `content`. Themed fills
+ * use `backgroundColor`; gradients/blur are not available to a raw brick (a
+ * host-controlled kit token could reintroduce them later, out of scope here).
+ * `position` is allowed: `SURFACE_CONTAINMENT` clips even `fixed`/`sticky` to the
+ * box, so no value check is needed to hold a screen inside its surface.
  */
 const ALLOWED_STYLE: ReadonlySet<string> = new Set([
   // layout
   "display", "flexDirection", "flexWrap", "flex", "flexGrow", "flexShrink", "flexBasis",
   "alignItems", "alignSelf", "justifyContent", "justifyItems", "justifySelf",
   "gap", "rowGap", "columnGap", "gridTemplateColumns", "gridTemplateRows",
-  "gridColumn", "gridRow", "gridAutoFlow", "inset", "top", "right", "bottom", "left",
+  "gridColumn", "gridRow", "gridAutoFlow", "position", "inset", "top", "right", "bottom", "left",
   "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
   "overflow", "overflowX", "overflowY", "boxSizing",
   // spacing
@@ -53,78 +59,13 @@ const ALLOWED_STYLE: ReadonlySet<string> = new Set([
   "transition", "transitionProperty", "transitionDuration", "transitionTimingFunction",
 ]);
 
-/** `position` can fold a screen out of its box, so only the in-flow values
- *  survive — `fixed`/`sticky` would escape `SURFACE_CONTAINMENT` and are dropped. */
-const POSITION_KEEP: ReadonlySet<string> = new Set(["static", "relative", "absolute"]);
-
-/**
- * The dual-use properties: each holds both an inert value (a gradient, a blur)
- * and a fetching one (`url()`, `image-set()`). Kept, but only when every CSS
- * function its value calls is on the property's list — `cursor` calls none
- * (keyword cursors only), so a `url()` cursor is dropped like any other fetch.
- */
-const GRADIENTS = ["linear-gradient", "radial-gradient", "conic-gradient",
-  "repeating-linear-gradient", "repeating-radial-gradient", "repeating-conic-gradient"];
-const FILTERS = ["blur", "brightness", "contrast", "grayscale", "hue-rotate",
-  "invert", "opacity", "saturate", "sepia", "drop-shadow"];
-const VALUE_RESTRICTED: Record<string, ReadonlySet<string>> = {
-  background: new Set(GRADIENTS),
-  backgroundImage: new Set(GRADIENTS),
-  filter: new Set(FILTERS),
-  backdropFilter: new Set(FILTERS),
-  cursor: new Set(),
-};
-
-/**
- * A CSS escape: `\` then 1–6 hex digits with one trailing whitespace consumed,
- * or `\` then a literal character. The tokenizer unescapes BEFORE it decides
- * what a token is, so `\75 rl(` is the function `url(` however the raw string
- * reads — and `var()` substitutes whole tokens, so a custom property carries the
- * spelling through intact.
- */
-const ESCAPE = /\\(?:([0-9a-f]{1,6})[ \t\r\n\f]?|(.))/giu;
-
-/**
- * CSS input preprocessing (Syntax §3.3), the stage that runs BEFORE any escape
- * is read: CRLF, a lone CR and a form feed each collapse to ONE newline, and
- * NUL and lone surrogates become the replacement character. That first stage is
- * why `\75` + CRLF is `u` + a single newline by the time the escape claims its
- * one trailing whitespace — leaving `url(`.
- */
-const preprocessed = (value: string): string =>
-  value.replace(/\r\n?|\f/gu, "\n").replace(/[\0\ud800-\udfff]/gu, "�");
-
-/** The escapes resolved, for the DECISION only — the brick still paints the
- *  original value. Code points past the Unicode range are the tokenizer's
- *  replacement character, not a throw. */
-const unescaped = (value: string): string =>
-  value.replace(ESCAPE, (_, hex: string | undefined, literal: string) =>
-    hex === undefined ? literal
-      : Number.parseInt(hex, 16) > 0x10ffff ? "�"
-        : String.fromCodePoint(Number.parseInt(hex, 16)));
-
-/** Every CSS function a value calls, escapes resolved the way the browser
- *  resolves them so `\75 rl(` reads as `url(`. Vendor spellings ride the hyphen
- *  (`-webkit-image-set`); one name off the property's list drops the whole
- *  declaration. */
-const FUNCTION = /([-\w]+)\s*\(/gu;
-const functionsCalled = (value: string): string[] =>
-  [...unescaped(preprocessed(value)).matchAll(FUNCTION)].map(([, name]) => name!.toLowerCase());
-
-const keep = (property: string, value: unknown): boolean => {
-  if (property === "position") return POSITION_KEEP.has(String(value).trim().toLowerCase());
-  const allowed = VALUE_RESTRICTED[property];
-  if (allowed !== undefined) return functionsCalled(String(value)).every((name) => allowed.has(name));
-  return ALLOWED_STYLE.has(property);
-};
-
 /** The style a brick actually paints with: the model's, minus every declaration
- *  the allowlist does not admit. Dropping the DECLARATION (never rewriting the
- *  value) keeps this a filter with no CSS parser in it. */
+ *  whose property is not on the allowlist. A pure key filter — no value is read,
+ *  so there is no CSS parser and nothing to bypass. */
 export function safeStyle(style: CSSProperties | undefined): CSSProperties | undefined {
   if (style === undefined) return undefined;
   return Object.fromEntries(
-    Object.entries(style).filter(([property, value]) => keep(property, value)),
+    Object.entries(style).filter(([property]) => ALLOWED_STYLE.has(property)),
   );
 }
 
@@ -154,9 +95,9 @@ export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactN
 
 /**
  * A screen paints inside its own box and nowhere else. Capability-shaped, like
- * the fetch filter: `contain: paint` makes this element the containing block for
- * every fixed and absolutely positioned descendant, so `position: fixed;
- * width: 200vw` is held by the BOX — nothing had to read the word "fixed".
+ * the property allowlist: `contain: paint` makes this element the containing
+ * block for every fixed and absolutely positioned descendant, so `position:
+ * fixed; width: 200vw` is held by the BOX — nothing had to read the word "fixed".
  */
 export const SURFACE_CONTAINMENT: CSSProperties = {
   contain: "layout paint",

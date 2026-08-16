@@ -24,6 +24,9 @@ export {
   useVendoTools,
   type ConnectorOption,
   type HostComponentsInput,
+  // routes.ts
+  useVendoNavigate,
+  useVendoRoutes,
   // chrome/discoverability.ts
   defaultVendoGreeting,
   type VendoDiscoverability,

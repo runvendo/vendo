@@ -6,8 +6,9 @@
 import { control } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
+import { choices, type KitOption } from "./options.js";
 
-export type SelectOption = string | number | Record<string, unknown>;
+export type SelectOption = KitOption;
 
 export interface SelectProps {
   label?: string;
@@ -28,20 +29,9 @@ export interface SelectProps {
   onChange?: (value: string | string[]) => void;
 }
 
-function optionValue(opt: SelectOption, valueField?: string): string {
-  if (opt !== null && typeof opt === "object") return String(valueField ? opt[valueField] : JSON.stringify(opt));
-  return String(opt);
-}
-
-function optionLabel(opt: SelectOption, labelField?: string): string {
-  if (opt !== null && typeof opt === "object") return String(labelField ? opt[labelField] : optionValue(opt));
-  return String(opt);
-}
-
 export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
   const { fieldId, helpId } = useFieldIds("select");
-  // W3 — fail SOFT on missing data (a failed query resolves to undefined).
-  const options = Array.isArray(rawOptions) ? rawOptions : [];
+  const options = choices(rawOptions, labelField, valueField);
   // Single choice only: `value` is one string, and a controlled `multiple` select
   // needs a list, so a multi-select on a screen keeps the uncontrolled DOM.
   const screen = controlledHandler(value !== undefined && multiple !== true, onChange);
@@ -67,14 +57,11 @@ export function Select({ label, options: rawOptions, labelField, valueField, val
         style={{ ...control, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1 }}
       >
         {placeholder !== undefined && !multiple ? <option value="">{placeholder}</option> : null}
-        {options.map((opt, i) => {
-          const v = optionValue(opt, valueField);
-          return (
-            <option key={`${v}-${i}`} value={v}>
-              {optionLabel(opt, labelField)}
-            </option>
-          );
-        })}
+        {options.map((option, i) => (
+          <option key={`${option.value}-${i}`} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </select>
     </FieldShell>
   );

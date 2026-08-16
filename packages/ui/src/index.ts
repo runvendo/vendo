@@ -7,6 +7,7 @@ export {
   type VendoClientConfig,
 } from "./client.js";
 export { VendoProvider, hostComponentMap, useVendoProvider, useVendoDiscoverability, useVendoGreeting, useVendoTheme, useVendoThemeOrDefault, useVendoTools, type ConnectorOption, type HostComponentsInput } from "./context.js";
+export { useVendoNavigate, useVendoRoutes } from "./routes.js";
 export { defaultVendoGreeting, type VendoDiscoverability, type VendoGreeting } from "./chrome/discoverability.js";
 export type { ToolMeta, ToolMetaMap } from "./chrome/humanize.js";
 export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedState, VendoToolResultProps } from "./embeds.js";

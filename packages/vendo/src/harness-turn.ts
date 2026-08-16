@@ -19,6 +19,7 @@ import {
   hostSkillFiles,
   isUnattended,
   situationPromptBlock,
+  toVendoWirePart,
   type FilesAdapter,
   type Harness,
   type Membership,
@@ -59,7 +60,8 @@ import {
   type ToolBridgeOptions,
 } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
-import type { LanguageModel, UIMessage } from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
+import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
   /** The resolved harness. Composition (server.ts) resolves the default —
@@ -136,6 +138,9 @@ export interface HarnessTurnsConfig {
   /** The host's own MCP door, for a harness whose thinker runs on a MACHINE and
    *  therefore reaches `turn.tools` over the wire rather than in process. */
   toolDoor?: ToolDoorPort;
+  /** The host's `limits` policy, bound to the meter (limits.ts). Unset — the
+   *  host set no policy — and the turn below costs one undefined check. */
+  limiter?: Limiter;
 }
 
 export interface HarnessTurns {
@@ -193,6 +198,20 @@ function modelFamilyOf(models: ResolvedModels<LanguageModel>): string | null {
   const id = (model as { modelId?: unknown } | undefined)?.modelId;
   return typeof id === "string" ? id : null;
 }
+
+/** The whole of a message the host's policy refused: the card the chat surface
+ *  renders, and nothing else. No thread row, no transcript, no model call — the
+ *  point of the choke is that a denied message costs nothing. */
+const limitResponse = (message: string | undefined): Response => createUIMessageStreamResponse({
+  stream: createUIMessageStream<UIMessage>({
+    execute: ({ writer }) => {
+      writer.write(toVendoWirePart({
+        type: "data-vendo-limit",
+        ...(message === undefined ? {} : { message }),
+      }) as never);
+    },
+  }),
+});
 
 export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   const threads = new ThreadRepository(config.store);
@@ -337,6 +356,11 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
 
     async stream(input) {
       validateMessage(input?.message);
+      // The message choke (limits.ts owns the counting, the policy and the
+      // recording): asked BEFORE the thread is resolved, so a refused message
+      // costs no read, no write and no model call.
+      const verdict = await config.limiter?.gate("message", input.ctx);
+      if (verdict?.allow === false) return limitResponse(verdict.message);
       // The thread is resolved through the SHIPPED repository: same id pattern,
       // same "already in use" refusal for a foreign thread, same title
       // derivation — and `thread.messages` is the canonical transcript read back

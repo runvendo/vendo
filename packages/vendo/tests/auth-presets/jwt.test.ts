@@ -164,6 +164,26 @@ describe("jwt() facts seam (spec 2026-08-05 §1)", () => {
   });
 });
 
+describe("jwt() pools seam", () => {
+  const poolsResolver = (subject: string) => {
+    const user = users[subject];
+    return user === undefined ? null : { ...user, pools: { workspace: "ws_maple" } };
+  };
+
+  it("resolves the user resolver's pools off the request's session", async () => {
+    const preset = jwt({ secret, user: poolsResolver });
+    await expect(preset.pools?.(await bearerRequest("host_yousef")))
+      .resolves.toEqual({ workspace: "ws_maple" });
+  });
+
+  it("resolves undefined for a sessionless request and for a resolver without pools", async () => {
+    const preset = jwt({ secret, user: poolsResolver });
+    await expect(preset.pools?.(new Request("https://host.test/api/vendo/threads"))).resolves.toBeUndefined();
+    const poolless = jwt({ secret, user: userResolver });
+    await expect(poolless.pools?.(await bearerRequest("host_yousef"))).resolves.toBeUndefined();
+  });
+});
+
 describe("jwt() oauth login redirect (authJs parity)", () => {
   it("redirects a sessionless door request to /login on the public origin carrying returnTo", async () => {
     vi.stubEnv("VENDO_BASE_URL", "https://public.example.com");

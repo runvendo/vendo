@@ -368,7 +368,7 @@ describe("THE CONSTRAINT — TurnRunInput.messages is store-sourced", () => {
    *
    * Seeded through the real store door rather than produced by a first turn,
    * because `approval-requested` is a `createAgent`-authored part: the harness
-   * runtime mirrors a refused call as `tool-output-denied`. So this fixture IS
+   * runtime settles a refused call instead of parking it. So this fixture IS
    * the harness-swap case — a thread whose earlier turn ran on the shipped agent,
    * resumed by a harness turn.
    */
@@ -729,5 +729,87 @@ describe("rail parity: find_tools, the loadout, the menu, capability miss", () =
     // journey to the sink is the shipped, separately-tested half, and both
     // thinkers are handed the SAME `capabilityMiss` config value by composition.
     expect(reported).toEqual({ reported: true });
+  });
+});
+
+describe("an UNATTENDED turn's refusal does not end the thread", () => {
+  /**
+   * The automation shape, end to end on the real `vendo()` brain: `presence:
+   * "away"` through `vendo.harness.stream` (the chat wire always mints
+   * "present", so it cannot produce this). A parked call with nobody to tap it
+   * is refused and the card STANDS for "Grant & re-run" — and the turn after it
+   * has to rebuild that history for the provider.
+   *
+   * This is the case that used to die silently: the refusal was written as the
+   * ai-SDK's `output-denied`, whose conversion reads the words off an `approval`
+   * a refusal nobody was asked about never had. Turn two threw, and so did every
+   * turn after it — a thread an automation can never use again.
+   */
+  const unattended = (vendo: Vendo, threadId: string, id: string, text: string): Promise<Response> =>
+    vendo.harness.stream({
+      threadId: threadId as never,
+      message: userMessage(id, text),
+      ctx: {
+        principal,
+        venue: "automation",
+        presence: "away",
+        sessionId: "s_unattended",
+      } as never,
+    });
+
+  it("parks the call, stands the card, and still answers the NEXT turn", async () => {
+    const model = scriptedModel([
+      // Turn one: the brain calls the parked tool, then speaks about the refusal.
+      toolCallTurn("maple_invoices_list", {}),
+      textTurn("I need permission for that first."),
+      // Turn two: the thread is still usable.
+      textTurn("Nothing new since then."),
+    ]);
+    const { vendo, host } = await compose({
+      models: { default: model as unknown as LanguageModel },
+      guard: { policy: { rules: [{ match: { tool: "maple_invoices_list" }, action: "ask" }] } },
+    } as Partial<Parameters<typeof createVendo>[0]>);
+
+    const first = await unattended(vendo, "thr_away", "m1", "check the invoices");
+    const firstBody = await first.text();
+    // Nothing ran, and the standing card is on the wire for the grant surface.
+    expect(host.calls).toHaveLength(0);
+    expect(firstBody).toContain("data-vendo-approval");
+    expect(firstBody).toContain("I need permission for that first.");
+
+    // THE symptom: the turn after the refusal, on the same thread.
+    const second = await unattended(vendo, "thr_away", "m2", "anything new?");
+    const secondBody = await second.text();
+
+    expect(secondBody).toContain("Nothing new since then.");
+    expect(secondBody).not.toContain('"type":"error"');
+    expect(secondBody).not.toContain("data-vendo-turn-error");
+    expect(model.calls).toBe(3);
+    // …because the refusal settled as the typed outcome, never as a person's
+    // answer — which is also what keeps its words in the record, for the
+    // transcript and for the next turn's prompt.
+    expect(firstBody).not.toContain("tool-output-denied");
+    expect(firstBody).toContain("nobody is here to give it");
+    expect(JSON.stringify(model.prompts[2])).toContain("nobody is here to give it");
+
+    // The grant a person still has to give is the GUARD's, and it survived both
+    // turns — the half "Grant & re-run" collects.
+    const pending = await vendo.handler(new Request("https://host.test/api/vendo/approvals"));
+    const queue = await pending.json() as Array<{ id: string; call?: { tool?: string } }>;
+    expect(queue.map((entry) => entry.call?.tool)).toEqual(["maple_invoices_list"]);
+
+    // …and it is still ANSWERABLE from there, over the wire the grant button
+    // calls: the refusal neither consumed the ask nor left it undecidable.
+    // (What a granted permission then authorizes for an AWAY run is the guard's
+    // own law — `presenceMatches` requires an automation's app+trigger-bound
+    // grant — and the automations engine owns that half; it never passes through
+    // this mirror.)
+    const granted = await vendo.handler(request("/approvals/decide", {
+      ids: [queue[0]!.id],
+      decision: { approve: true, remember: { scope: { kind: "tool" }, duration: "standing" } },
+    }));
+    expect(granted.ok).toBe(true);
+    const after = await vendo.handler(new Request("https://host.test/api/vendo/approvals"));
+    expect(await after.json()).toEqual([]);
   });
 });

@@ -24,11 +24,18 @@ import { DonutChart } from "./charts/donut.js";
 import { Sparkline } from "./charts/sparkline.js";
 import { Progress } from "./charts/progress.js";
 import { Button } from "./forms/button.js";
+import { Link } from "./link.js";
 import { Input } from "./forms/input.js";
 import { Select } from "./forms/select.js";
 import { DatePicker } from "./forms/date-picker.js";
 import { Textarea } from "./forms/textarea.js";
 import { Checkbox } from "./forms/checkbox.js";
+import { Switch } from "./forms/switch.js";
+import { Radio } from "./forms/radio.js";
+import { Slider } from "./forms/slider.js";
+import { SegmentedControl } from "./forms/segmented-control.js";
+import { Combobox } from "./forms/combobox.js";
+import { DateRange } from "./forms/date-range.js";
 import { Form } from "./forms/form.js";
 import { Disclaimer } from "./forms/disclaimer.js";
 import { Tabs } from "./feedback/tabs.js";
@@ -36,6 +43,8 @@ import { Callout } from "./feedback/callout.js";
 import { Accordion } from "./feedback/accordion.js";
 import { EmptyState } from "./feedback/empty-state.js";
 import { Steps } from "./feedback/steps.js";
+import { Menu } from "./feedback/menu.js";
+import { Tooltip } from "./feedback/tooltip.js";
 
 export {
   KIT_SPECS,
@@ -49,6 +58,7 @@ export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string
   Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
   DataTable, CardList, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
-  Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,
-  Tabs, Callout, Accordion, EmptyState, Steps,
+  Input, Select, DatePicker, Textarea, Checkbox, Button, Link, Form, Disclaimer,
+  Switch, Radio, Slider, SegmentedControl, Combobox, DateRange,
+  Tabs, Callout, Accordion, EmptyState, Steps, Menu, Tooltip,
 } as unknown as Record<string, ComponentType<Record<string, never>>>;

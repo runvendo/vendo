@@ -7,6 +7,7 @@ import {
   vendoAutomationPartSchema,
   vendoCitationsPartSchema,
   vendoKnowledgeCitationSchema,
+  vendoLimitPartSchema,
   vendoViewPart,
   vendoViewPartSchema,
   isVendoAppsTool,
@@ -25,13 +26,22 @@ import {
   type VendoCitationsPart,
   type UIPayload,
   type VendoConnectPart,
+  type VendoLimitPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
   type VendoViewStreamUpdate,
 } from "@vendoai/core";
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 
-type VendoPart = VendoApprovalPart | VendoAutomationPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
+type VendoPart = VendoApprovalPart | VendoAutomationPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoLimitPart | VendoViewPart;
+
+/** One schema per publishable part type, so nothing can publish a shape it did
+ *  not declare — and a new part joins by being named here. */
+const STREAMED_PART_SCHEMAS = {
+  "data-vendo-view": vendoViewPartSchema,
+  "data-vendo-automation": vendoAutomationPartSchema,
+  "data-vendo-limit": vendoLimitPartSchema,
+} as const;
 
 /** An observer of one guarded call: invoked before the gate, returning the
  *  finisher that receives the model-visible outcome. */
@@ -226,13 +236,9 @@ export async function guardedCall(
   const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
   if (descriptor.name === VENDO_MAKE_TOOL && options.writer !== undefined) {
     Object.defineProperty(call, VENDO_VIEW_STREAM, {
-      // The producer names the part; this only decides whether to believe it. One
-      // schema per type, so nothing can publish a part shape it did not declare.
+      // The producer names the part; this only decides whether to believe it.
       value: (update: VendoViewStreamUpdate) => {
-        const schema = update.part.type === "data-vendo-view"
-          ? vendoViewPartSchema
-          : vendoAutomationPartSchema;
-        const part = schema.safeParse(update.part);
+        const part = STREAMED_PART_SCHEMAS[update.part.type].safeParse(update.part);
         if (part.success) writePart(options.writer, part.data, update.id);
       },
     });

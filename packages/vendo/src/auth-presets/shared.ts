@@ -33,6 +33,11 @@ export interface HostAuthPreset {
       which the prompt renders as the `[User]` block; absent/undefined → no
       block. Preset-only: the raw per-seam `principal` trio has no facts channel. */
   facts?: (req: Request) => Promise<Record<string, Json> | undefined>;
+  /** The named shared meters this request's user's usage ALSO counts into,
+      resolved from the SAME session decode as `principal`. The wire stashes the
+      result as `ctx.pools`, which the limits policy reads; absent/undefined →
+      the user's own meter only. Preset-only, like `facts`. */
+  pools?: (req: Request) => Promise<Record<string, string> | undefined>;
 }
 
 /** What a host's subject→user resolver returns. `display` names the resolved
@@ -44,6 +49,10 @@ export interface HostAuthPresetUser {
       Server-trust and MODEL-VISIBLE: they flow to `ctx.user` and render as the
       prompt's `[User]` block every turn — data only, never secrets. */
   facts?: Record<string, Json>;
+  /** Named shared meters this user's usage also counts into, pool name → the
+      id it accrues to (`{ workspace: "ws_maple" }`). They flow to `ctx.pools`
+      for the limits policy — never rendered to the model. */
+  pools?: Record<string, string>;
 }
 
 /** Optional subject→user resolver for custom logic (09 §2.1). `claims` carries

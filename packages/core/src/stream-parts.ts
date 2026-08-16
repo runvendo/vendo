@@ -81,9 +81,9 @@ const wirePartSchema = <Type extends string, Data extends z.ZodRawShape>(
  */
 export const VENDO_VIEW_STREAM = Symbol.for("@vendoai/core/vendo-view-stream");
 
-/** What a tool execution may publish: the screen, and the automation card an
- *  armed automation raises. */
-export type VendoStreamedPart = VendoViewPart | VendoAutomationPart;
+/** What a tool execution may publish: the screen, the automation card an armed
+ *  automation raises, and the limit card a refused generation raises. */
+export type VendoStreamedPart = VendoViewPart | VendoAutomationPart | VendoLimitPart;
 
 export interface VendoViewStreamUpdate {
   id: string;
@@ -229,6 +229,24 @@ export const vendoBuildFailedPartSchema = z.object({
   toolCallId: z.string(),
   reason: z.string().min(1),
 }).passthrough() satisfies z.ZodType<VendoBuildFailedPart>;
+
+/** Streamed when the host's limits policy DENIES a request — a message turned
+ *  away before the turn starts, or an app generation refused mid-turn — so the
+ *  thread says the cap was reached instead of answering with silence.
+ *  `message` is the host policy's own sentence when it returned one: the host
+ *  set the cap, so only the host can say what it is or when it lifts, and a
+ *  policy that says nothing gets the chrome's own line instead. Consumers that
+ *  don't recognize it ignore it (§15 forward-compat). */
+export interface VendoLimitPart {
+  type: "data-vendo-limit";
+  /** The host policy's own explanation, when it gave one. */
+  message?: string;
+}
+
+export const vendoLimitPartSchema = z.object({
+  type: z.literal("data-vendo-limit"),
+  message: z.string().optional(),
+}).passthrough() satisfies z.ZodType<VendoLimitPart>;
 
 /** Streamed when a turn creates or arms an automation, so the thread can
  *  render the automation AS an automation — name, trigger →

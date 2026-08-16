@@ -1,5 +1,6 @@
 import type {
   ApprovalId,
+  DeniedNeeds,
   Guard,
   Harness,
   Json,
@@ -269,7 +270,9 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
       mirror({ kind: "call", toolCallId, name, args });
       const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
         mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
-        if (outcome?.status === "blocked") guard = "block";
+        // `ask` is the truer fact where it is already set — the guard asked and
+        // the ask went unanswered — so a refusal below does not overwrite it.
+        if (outcome?.status === "blocked" && guard !== "ask") guard = "block";
         emitWorkbench(options.ctx.turnId, at.agent, {
           kind: "tool",
           step: at.step,
@@ -283,6 +286,26 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         });
         return result;
       };
+      /**
+       * A call refused because the CONSENT for it is missing — §1.4's presence
+       * boundaries: nobody was here to tap, the check could not run, or the guard
+       * asked a second time. Nobody said no to any of them.
+       *
+       * So it settles as a typed `blocked` outcome, exactly like a policy block,
+       * and never as the ai-SDK's `output-denied` (`wire.ts`): that state is the
+       * terminal state of an approval a PERSON turned down, its conversion takes
+       * the refusal's words off the part's `approval`, and a refusal nobody was
+       * asked about carries none — so the part could not be converted into the
+       * NEXT turn's prompt, and one refused call killed the thread from then on.
+       * The card such a refusal leaves standing is the GUARD's (§1.4's "Grant &
+       * re-run" collects it from there, and the `data-vendo-approval` part beside
+       * this one carries its id); nothing about the grant reads this state.
+       */
+      const refused = (reason: string, needs?: DeniedNeeds): ToolResult =>
+        finish(
+          { status: "denied", reason, ...(needs === undefined ? {} : { needs }) },
+          { status: "blocked", reason },
+        );
 
       try {
         // The miss reporter first, and NOT through the guard: it never reaches
@@ -326,20 +349,14 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           if (!options.interactive) {
             // Nobody is here to tap, so the run fails loudly and the card stands
             // as the grant "Grant & re-run" will collect.
-            return finish({
-              status: "denied",
-              reason: "This needs your approval, and nobody is here to give it.",
-              ...(approvalId === undefined
-                ? {}
-                : { needs: { kind: "approval" as const, approvalId } }),
-            });
+            return refused(
+              "This needs your approval, and nobody is here to give it.",
+              approvalId === undefined ? undefined : { kind: "approval", approvalId },
+            );
           }
           if (approvalId === undefined) {
             // The guard failed closed and minted no id to wait on.
-            return finish({
-              status: "denied",
-              reason: "This needs approval, and the check could not run.",
-            });
+            return refused("This needs approval, and the check could not run.");
           }
           // Raise the card BEFORE blocking: the tap that resolves this wait can
           // only come from a surface that knows the call is parked.
@@ -367,10 +384,9 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           waiter.raise(outcome.approvalId, { standing: !options.interactive });
           // The guard asked twice for one tap; refusing to loop is the honest
           // answer (a second card for the same call would be a trap).
-          return finish({
-            status: "denied",
-            reason: "This still needs approval.",
-            needs: { kind: "approval", approvalId: outcome.approvalId },
+          return refused("This still needs approval.", {
+            kind: "approval",
+            approvalId: outcome.approvalId,
           });
         }
         return finish(toToolResult(outcome), outcome);

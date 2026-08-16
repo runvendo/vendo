@@ -66,6 +66,7 @@ import { composePrompt } from "./compose-prompt.js";
 import { composeSurfaces } from "./compose-surfaces.js";
 import { composeSweep } from "./compose-sweep.js";
 import { composeTools, emitDeploymentBoot } from "./compose-tools.js";
+import { composeLimits, type Limiter } from "./limits.js";
 import type { ConfigSurfaceName } from "./config-surface.js";
 import type { ResolvedSweep } from "./compose-config.js";
 import type { ChannelDoor, ChannelsService } from "./channels.js";
@@ -122,8 +123,14 @@ export interface VendoComposition {
    *  automations engine and the MCP door all resolve the SAME answer through. */
   membershipsSeam: HostAuthPreset["memberships"];
   userFactsSeam: HostAuthPreset["facts"];
+  userPoolsSeam: HostAuthPreset["pools"];
   sweepConfig: ResolvedSweep;
   sweepNow: () => number;
+
+  // ── limits.ts ──────────────────────────────────────────────────────────────
+  /** The host's `limits` policy, bound to the store's meter — `undefined` when
+   *  the host set no policy, which is what every choke point checks. */
+  limiter: Limiter | undefined;
 
   // ── compose-adapters.ts ────────────────────────────────────────────────────
   store: VendoStore;
@@ -281,6 +288,9 @@ export const createComposition = (input: CreateVendoConfig): VendoComposition =>
   const composition = {} as VendoComposition;
   Object.assign(composition, composeConfig(input));
   Object.assign(composition, composeAdapters(composition));
+  // Right after the store it needs, so a `limits` policy against a meterless
+  // store refuses before anything else is constructed.
+  Object.assign(composition, composeLimits(composition));
   Object.assign(composition, composeReady(composition));
   Object.assign(composition, composeGuard(composition));
   Object.assign(composition, composeActions(composition));

@@ -16,6 +16,7 @@ import {
   storeWireErrorSchema,
   type StoreWireStatus,
   storeWireStatusSchema,
+  type UsageTallyRow,
   VendoError,
   type VendoRecord,
   vendoRecordSchema,
@@ -79,7 +80,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 45-op named-operation surface over the same mount and the same key —
+  /** The 48-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
    * above are built ON these ops: engine for Vendo's own collections, appData
    * for an app's own drawers. */
@@ -165,7 +166,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
-  // The StoreAdapter façade rides the SAME 45 ops as `ops` below — it has no
+  // The StoreAdapter façade rides the SAME 48 ops as `ops` below — it has no
   // doors of its own since the generic records family left the wire. A
   // collection (or blob namespace) either names an app's own drawer, which the
   // appData family serves with the owner stamped on, or it names one of Vendo's
@@ -282,15 +283,15 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 45-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 48-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 45 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 48 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
 /** Measurement instrument, not a feature: with VENDO_STORE_TRACE set, every
- * call through the store client below — the 45 ops AND the StoreAdapter façade,
+ * call through the store client below — the 48 ops AND the StoreAdapter façade,
  * which rides the same client — emits one greppable stderr line naming the op,
  * its path, the round trip in milliseconds (the body read included, since that
  * is what the caller waits for), the response size in bytes and the outcome.
@@ -317,6 +318,13 @@ const traceOutcome = (error: unknown): string => {
  * replay is the only reason the server can tell "do it again" from "you
  * already did it"; a fresh key per attempt would double-apply the write. */
 const newIdempotencyKey = (): string => `idm_${globalThis.crypto.randomUUID()}`;
+
+/** Both meter reads bound their window the same way, and a Date is not a wire
+ * type: the instants cross as the ISO datetimes the request schemas validate. */
+const bounds = (query: { since: Date; until?: Date }): { since: string; until?: string } => ({
+  since: query.since.toISOString(),
+  ...(query.until === undefined ? {} : { until: query.until.toISOString() }),
+});
 
 /** Blob bytes are base64 on the wire (storeWireBlobsPutRequestSchema) —
  * Buffer-free so the client stays runnable on edge runtimes. */
@@ -356,7 +364,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 45-op store contract, speaking
+ * The Cloud client for the whole 48-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -798,6 +806,29 @@ function storeWireClient(
       async tally(query) {
         const payload = await post("audit.tally", P["audit.tally"], { ...query });
         return field<AuditTallyRow[]>(payload, "rows", "invalid audit tally", Array.isArray);
+      },
+    },
+    // The meter behind per-user limits. Served here even though the family is
+    // OPTIONAL on StoreOps, for `retention`'s reason: this is the protocol's
+    // client, not a mount's mirror. The write is KEYED — a retried record that
+    // counted twice is a limit the user hits early — and both reads send their
+    // instants as the ISO datetimes the wire schemas validate.
+    usage: {
+      async record(event) {
+        await mutate("usage.record", P["usage.record"], {
+          subject: event.subject,
+          action: event.action,
+          at: event.at.toISOString(),
+          ...(event.poolKeys === undefined ? {} : { poolKeys: event.poolKeys }),
+        });
+      },
+      async count(query) {
+        const payload = await post("usage.count", P["usage.count"], { ...query, ...bounds(query) });
+        return field<number>(payload, "count", "invalid usage count", (value) => typeof value === "number");
+      },
+      async tally(query) {
+        const payload = await post("usage.tally", P["usage.tally"], { ...query, ...bounds(query) });
+        return field<UsageTallyRow[]>(payload, "rows", "invalid usage tally", Array.isArray);
       },
     },
     // `get` is the one read in this protocol that answers with a CREDENTIAL. The

@@ -59,8 +59,16 @@ import type { Db } from "./db-postgres.js";
     than a column on every collection because the rows come from thirty-odd
     tables with nothing in common but their id, and a `quarantined_at` column
     apiece would mean every read in the store growing a `WHERE quarantined_at IS
-    NULL` it can never be trusted to remember. Same load-bearing bump. */
-export const SCHEMA_VERSION = 9;
+    NULL` it can never be trusted to remember. Same load-bearing bump.
+
+    v10 adds `vendo_usage` (01 §12 `StoreOps.usage`): the meter a host's
+    `LimitsCallback` decides on. One row per metered action, keeping its own
+    instant — never a pre-bucketed count, because a policy authors its own
+    window ("20 messages an hour", "3 generations today") and a bucket can only
+    answer the periods whoever chose it happened to pick. It is engine-owned
+    like `vendo_quarantine`: no collection maps to it and no door lists it, so a
+    meter row is only ever counted. Same load-bearing bump. */
+export const SCHEMA_VERSION = 10;
 
 /** 02-store §2 */
 export const DDL = [
@@ -247,6 +255,19 @@ export const DDL = [
   // The erase cascade's two selectors (§5).
   "CREATE INDEX IF NOT EXISTS vendo_quarantine_subject_idx ON vendo_quarantine (subject)",
   "CREATE INDEX IF NOT EXISTS vendo_quarantine_app_idx ON vendo_quarantine (app_id)",
+  // v10 (01 §12 `StoreOps.usage`): the meter. One row per metered action, and
+  // `pool_keys` is the shared buckets that action ALSO drew down, copied off
+  // the user at write time — a member who leaves a team must not retroactively
+  // drain its quota, and the row is the only place that membership was true.
+  `CREATE TABLE IF NOT EXISTS vendo_usage (
+    id text PRIMARY KEY, subject text NOT NULL, action text NOT NULL,
+    at timestamptz NOT NULL, pool_keys text[]
+  )`,
+  // The count's two shapes, one index each: a person's window is an equality on
+  // (subject, action) with a range on `at`, and a pool's is a containment test
+  // the btree cannot serve at all.
+  "CREATE INDEX IF NOT EXISTS vendo_usage_subject_action_at_idx ON vendo_usage (subject, action, at)",
+  "CREATE INDEX IF NOT EXISTS vendo_usage_pool_keys_idx ON vendo_usage USING GIN (pool_keys)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2

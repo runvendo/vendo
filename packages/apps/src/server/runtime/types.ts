@@ -37,6 +37,7 @@ import type {
   BriefingPack,
   NormalizedCatalog,
   ScreenAssembler,
+  VendoRouteMap,
   VendoTheme,
   AppFloor,
 } from "../../contract/index.js";
@@ -177,6 +178,11 @@ export interface AppsConfig {
    *  umbrella can back it with a first-request cloud read without doing I/O at
    *  compose time. */
   catalog: NormalizedCatalog;
+  /** The pages a generated `<Link to>` may name (`CreateVendoConfig.routes`),
+   *  for the FLOOR: a screen naming a route the host never registered is refused
+   *  at generation, not left to render as dead text. What a WRITER is told about
+   *  them rides {@link briefing}, like everything else it must know. */
+  routes?: VendoRouteMap;
   /** The host's brand, for the SERVED-app handoff alone: a machine-served app
    *  is themed through the `?vendoTheme=` query param the proxy forwards
    *  (runtime-context.ts). What a WRITER is told about the brand rides

@@ -239,6 +239,7 @@ const harnessTurnConfig = (
     // Build contract §9.1/§9.7 — the same host org query the wire resolves per
     // request, so a harness turn's façade mounts the team's files too.
     ...(membershipsSeam === undefined ? {} : { memberships: membershipsSeam }),
+    ...(composition.limiter === undefined ? {} : { limiter: composition.limiter }),
     ...harnessTurnDoorSeams(composition),
   };
 };

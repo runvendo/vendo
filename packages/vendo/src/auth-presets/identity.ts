@@ -222,6 +222,9 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
   const facts = async (request: Request): Promise<Record<string, Json> | undefined> =>
     (await resolveSession(request))?.user.facts;
 
+  const pools = async (request: Request): Promise<Record<string, string> | undefined> =>
+    (await resolveSession(request))?.user.pools;
+
   const oauth: HostOAuthAdapter = {
     async session(request, { returnTo }) {
       const session = await resolveSession(request);
@@ -238,6 +241,7 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
     name: opts.name,
     principal,
     facts,
+    pools,
     actAs: opts.actAs,
     oauth,
     ...(opts.memberships === undefined ? {} : { memberships: opts.memberships }),

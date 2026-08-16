@@ -245,6 +245,38 @@ describe("the transcript's beats", () => {
     expect(document.querySelector(".fl-beatsummary")?.textContent).toBe("Did 1 thing");
   });
 
+  // The HOST's own rules refusing a call is not the person declining one. The
+  // beat used to read "you declined it" directly above the card explaining they
+  // had hit a limit — the two lines contradicting each other about who said no.
+  it("attributes a refusal by the host's rules to the rules, not to the person", async () => {
+    await mount([
+      {
+        type: "dynamic-tool",
+        toolName: "vendo_make",
+        toolCallId: "call_limited",
+        state: "output-available",
+        input: { request: "a spending dashboard" },
+        output: {
+          status: "blocked",
+          reason: "The app was not built: this user has reached a limit the host's own policy sets.",
+        },
+      },
+      { type: "data-vendo-limit", data: { message: "Maple Free builds one app a month." } },
+    ] as unknown as Thread["messages"][number]["parts"]);
+    const refused = document.querySelector("[data-vendo-tool='vendo_make']");
+    expect(refused?.textContent).toContain("wasn't allowed");
+    expect(refused?.textContent).not.toContain("you declined it");
+    // Settled and quiet, like any other refusal — never a failure, and never a
+    // ✓ for a build that did not happen.
+    expect(refused?.className).toBe("fl-beat fl-beat-done");
+    expect(refused?.querySelector(".fl-beat-tick")).toBeNull();
+    // A refusal is content, not progress: the beat stays in the record instead
+    // of folding into "Did 1 thing".
+    expect(document.querySelector(".fl-beatsummary")).toBeNull();
+    // The card the person actually reads is still beside it.
+    expect(document.querySelector("[data-vendo-limit]")?.textContent).toContain("one app a month");
+  });
+
   // Spec §15 — failure is conversation. The ✕ beat stays in the record even
   // while the turn is folded, and NOTHING else appears: no retry button, no
   // chip, no card. The recovery is the agent's own next sentence (a text part),

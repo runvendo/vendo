@@ -40,52 +40,49 @@ describe("display bricks", () => {
     expect(box.getAttribute("class")).toBeNull();
   });
 
-  it("keeps the allowlisted properties, whatever inert value they hold", () => {
+  it("keeps an allowlisted property whatever its value — no value is inspected", () => {
+    // A themed fill rides `backgroundColor` (a color cannot fetch); the value is
+    // passed straight through, never parsed.
     expect(safeStyle({
       padding: "8px",
       color: "var(--vendo-color-accent)",
-      background: "linear-gradient(90deg, red, blue)",
+      backgroundColor: "var(--vendo-surface)",
       transform: "translateX(4px)",
     })).toEqual({
       padding: "8px",
       color: "var(--vendo-color-accent)",
-      background: "linear-gradient(90deg, red, blue)",
+      backgroundColor: "var(--vendo-surface)",
       transform: "translateX(4px)",
     });
     expect(safeStyle(undefined)).toBeUndefined();
+  });
+
+  it("drops the fetch-capable properties whatever their value", () => {
+    // These carry `url()`/`image-set()`, so they are off the allowlist and drop
+    // wholesale — even a plain gradient or blur, which are no longer available to
+    // a raw brick. Nothing reads the value; there is no spelling to bypass.
+    expect(safeStyle({ background: "linear-gradient(red, blue)" })).toEqual({});
+    expect(safeStyle({ background: "url(https://evil/x)" })).toEqual({});
+    expect(safeStyle({ backgroundImage: "linear-gradient(red, blue)" })).toEqual({});
+    expect(safeStyle({ filter: "blur(4px)" })).toEqual({});
+    expect(safeStyle({ backdropFilter: "blur(4px)" })).toEqual({});
+    expect(safeStyle({ cursor: "pointer" })).toEqual({});
   });
 
   it("drops every property the allowlist does not name", () => {
     expect(safeStyle({
       WebkitMaskImage: "url(https://evil/x)",
       content: "url(https://evil/y)",
-      position: "fixed",
       color: "red",
     } as CSSProperties)).toEqual({ color: "red" });
-    // `position` keeps only its in-flow values.
+  });
+
+  it("allows position and leans on the surface box to contain it", () => {
+    // Option (b): no value check on `position`. `SURFACE_CONTAINMENT` clips even
+    // fixed/sticky to the box (see "paints the surface inside its own box"), so
+    // the value passes through and the box, not a string scan, holds it in.
+    expect(safeStyle({ position: "fixed" })).toEqual({ position: "fixed" });
     expect(safeStyle({ position: "relative" })).toEqual({ position: "relative" });
-  });
-
-  it("keeps a dual-use property's inert value and drops its fetching one", () => {
-    expect(safeStyle({ background: "url(https://evil/x)" })).toEqual({});
-    expect(safeStyle({ background: "linear-gradient(red, blue)" }))
-      .toEqual({ background: "linear-gradient(red, blue)" });
-    expect(safeStyle({ filter: "blur(4px)" })).toEqual({ filter: "blur(4px)" });
-    expect(safeStyle({ filter: "url(#x)" })).toEqual({});
-    // `image-set()` and a `url()` cursor go the same way — a fetch is a fetch.
-    expect(safeStyle({ backgroundImage: "image-set('https://evil/y' 1x)" })).toEqual({});
-    expect(safeStyle({ cursor: "url(https://evil/z), auto" })).toEqual({});
-    expect(safeStyle({ cursor: "pointer" })).toEqual({ cursor: "pointer" });
-  });
-
-  it("drops a fetch however its escapes spell the function", () => {
-    // The CSS tokenizer unescapes before it decides what a token is, so each of
-    // these IS `url(` to the browser whatever the raw string reads.
-    expect(safeStyle({ background: "\\75 rl(https://evil/x)" })).toEqual({});
-    expect(safeStyle({ background: "u\\72 l(https://evil/y)" })).toEqual({});
-    // A custom property is not on the allowlist, so a `var()` that would smuggle
-    // one in has nothing to resolve to — both declarations go.
-    expect(safeStyle({ "--x": "url(/pixel)", background: "var(--x)" } as CSSProperties)).toEqual({});
   });
 
   it("paints the surface inside its own box", () => {

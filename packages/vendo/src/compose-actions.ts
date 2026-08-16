@@ -22,6 +22,7 @@ import type { VendoActionsConfig, VendoComposition } from "./compose-context.js"
 import { selectConnectors } from "./compose-selection.js";
 import { selectHostTools } from "./dot-vendo.js";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
+import { limitGenerations } from "./limits.js";
 import {
   DOCTOR_ACT_AS_APP_ID,
   DOCTOR_ACT_AS_PRINCIPAL,
@@ -156,7 +157,7 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   "configuredBaseUrl" | "urls" | "isDevelopmentEnv" | "connectorToolkits" | "resolvedConnectors"
   | "actionsConfig" | "actions" | "doctor" | "connectGate" | "boundTools" | "byoApprovals"
   | "parkedCallTtlMs"> => {
-  const { config, guard, ops } = composition;
+  const { config, guard, ops, limiter } = composition;
   const posture = baseUrlPosture();
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
@@ -189,7 +190,12 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   // here — the one place the deployment's whole registry is assembled — and it
   // fires the instant the descriptor set first resolves, which is the earliest
   // this is knowable (createVendo is synchronous; descriptors are not).
-  const boundTools = withUniqueToolTitles(connectGate.bind(guard.bind(actions)));
+  const guardedTools = withUniqueToolTitles(connectGate.bind(guard.bind(actions)));
+  // The generation choke (limits.ts): ONE wrap on THE registry, so every door
+  // that can build — chat, the MCP door, automations — rides the same check.
+  // Only a deployment that set `limits` wraps at all; the rest execute the
+  // registry they always executed.
+  const boundTools = limiter === undefined ? guardedTools : limitGenerations(guardedTools, limiter);
   // 04 §6: compound steps route through the guard binding — grants, approvals,
   // breakers, and audit see every real call; there is no second
   // execution path. createActions reads invokeTool at execution time (same

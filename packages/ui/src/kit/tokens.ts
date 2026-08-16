@@ -101,6 +101,30 @@ export const control: CSSProperties = {
   transition: transitionFor("border-color"),
 };
 
+/** A floating surface — the menu/tooltip/calendar layer, and the one place the
+ *  Kit is allowed to be elevated. */
+export const popup: CSSProperties = {
+  ...font,
+  border: hairline,
+  borderRadius: t.radiusMedium,
+  background: t.surface,
+  boxShadow: t.shadowSmall,
+  padding: "var(--vendo-density-inline-gap, 7px)",
+  // Base UI publishes the trigger's corner here, so the surface grows out of
+  // what was pressed rather than out of its own middle.
+  transformOrigin: "var(--transform-origin)",
+  transition: transitionFor("opacity", "transform"),
+};
+
+/** A popup's enter/exit, read off Base UI's own transition status: there is no
+ *  document stylesheet here to hang `[data-starting-style]` on. Never from
+ *  `scale(0)` — the surface shrinks toward its trigger, it does not come out of
+ *  nothing. */
+export const popupMotion = ({ transitionStatus }: { transitionStatus?: string }): CSSProperties =>
+  transitionStatus === "starting" || transitionStatus === "ending"
+    ? { opacity: 0, transform: "scale(0.97)" }
+    : { opacity: 1, transform: "scale(1)" };
+
 // ---------------------------------------------------------------------------
 // The two adjectives (2026-08-13). One `tone` vocabulary and one `density`
 // vocabulary, shared by every component that has an opinion about either, and

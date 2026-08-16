@@ -272,11 +272,13 @@ const isElementNode = (value: unknown): value is ElementBinding =>
 const isElementBinding = (value: unknown): value is ElementBinding =>
   isElementNode(value) && (value as { $element?: unknown }).$element === true;
 
-/** That element, back as an element: the Kit component it names, its own props
- *  bound the same way, its children in order. An unknown name renders nothing
- *  rather than throwing — a slot fails soft, like every other node here. */
+/** That element, back as an element: the Kit component or display brick it
+ *  names — resolved exactly as `builtinContent` resolves a node, so a slot and a
+ *  child admit the same vocabulary — its own props bound the same way, its
+ *  children in order. An unknown name renders nothing rather than throwing —
+ *  a slot fails soft, like every other node here. */
 function reifyElement(node: ElementBinding, bind: (value: unknown) => unknown): ReactNode {
-  const Implementation = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
+  const Implementation = (KIT_COMPONENTS[node.component] ?? DISPLAY_BRICKS[node.component]) as ComponentType<Record<string, unknown>> | undefined;
   if (Implementation === undefined) return null;
   // Only the prop's own element carries the sigil; the ones under it are nodes.
   const children = node.children?.map((child, index) => typeof child === "string"

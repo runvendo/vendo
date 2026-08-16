@@ -6,7 +6,7 @@
  */
 import { defineHarness } from "../src/define.js";
 import { SSE_KEEPALIVE_FRAME, type Harness, type HarnessEvent, type ThreadId, type Turn } from "@vendoai/core";
-import type { UIMessage } from "ai";
+import { convertToModelMessages, type UIMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { createHarnessRuntime, type TurnRunInput } from "../src/runtime.js";
 import { memoryHarnessStateStore } from "../src/harness-state.js";
@@ -360,11 +360,18 @@ describe("mirroring — tool calls are the runtime's job, never a yield", () => 
     expect(last.parts.some((part) => part.type === "text")).toBe(true);
   });
 
-  it("mirrors a denied call as denied, not as an output", async () => {
+  it("mirrors a REFUSED call as the typed outcome, and the transcript it leaves still converts", async () => {
     const f = fixture({ guard: testGuard({ maple_invoices_list: "block" }), tools });
     const parts = await f.run(callingHarness());
-    expect(parts.some((part) => part.type === "tool-output-denied")).toBe(true);
-    expect(parts.some((part) => part.type === "tool-output-available")).toBe(false);
+    // Never the ai-SDK's `output-denied`: that is the terminal state of an
+    // approval a PERSON turned down, and its provider conversion takes the
+    // refusal's words off the `approval` such a part carries. A refusal nobody
+    // was asked about has none, so a thread with one in it could not be sent
+    // again — every turn after it died on the rebuild.
+    expect(parts.some((part) => part.type === "tool-output-denied")).toBe(false);
+    expect(parts.find((part) => part.type === "tool-output-available"))
+      .toMatchObject({ output: { status: "blocked", reason: "blocked" } });
+    await expect(convertToModelMessages(await persisted(f))).resolves.toBeDefined();
   });
 
   it("mirrors an errored call as an error", async () => {

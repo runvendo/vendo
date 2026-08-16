@@ -1,4 +1,5 @@
 /** Shared field chrome (label + hint/error) for Kit form controls. */
+import { Field } from "@base-ui/react/field";
 import { useId, type PropsWithChildren, type ReactNode } from "react";
 import { font, t } from "../tokens.js";
 
@@ -21,7 +22,12 @@ export interface FieldShellProps {
 export function FieldShell({ fieldId, helpId, label, hint, error, inline, children }: PropsWithChildren<FieldShellProps>) {
   const message = error ?? hint;
   return (
-    <div
+    // A Base UI Field, not a bare div: it is the context through which a
+    // control REGISTERS with the Form above it. Without it a submit validates
+    // nothing and focuses nobody — the whole point of the Form migration. The
+    // ids stay explicit, so the controls that are still native (Select,
+    // Textarea, Checkbox) keep the label wiring they already had.
+    <Field.Root
       data-kit-field=""
       style={{
         ...font,
@@ -42,6 +48,6 @@ export function FieldShell({ fieldId, helpId, label, hint, error, inline, childr
           {message}
         </span>
       ) : null}
-    </div>
+    </Field.Root>
   );
 }

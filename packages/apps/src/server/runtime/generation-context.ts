@@ -25,6 +25,7 @@ export const generationDependencies = (
   return {
     model,
     catalog: config.catalog,
+    ...(config.routes === undefined ? {} : { routes: config.routes }),
     ...(semantics === undefined ? {} : { semantics }),
     ...toolContext,
     ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),

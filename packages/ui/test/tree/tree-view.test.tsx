@@ -423,6 +423,43 @@ describe("TreeView bindings and outcomes", () => {
     expect(document.body.innerHTML).not.toContain("$element");
   });
 
+  /** A slot resolved only the Kit, while the CHILDREN path resolved the Kit and
+   *  the display bricks (`builtinContent`) — so a brick tag written into a slot
+   *  painted nothing at all. Both paths read the same two registries now. */
+  it("reifies a display brick in a prop, with its style and its Kit children", () => {
+    render(
+      <TreeView
+        tree={tree([{
+          id: "root",
+          component: "Accordion",
+          props: {
+            defaultOpen: [0],
+            items: [{
+              label: "Status",
+              content: {
+                $element: true,
+                component: "blockquote",
+                props: { style: { paddingLeft: "8px" } },
+                children: [
+                  { component: "EnumBadge", props: { value: { $path: "/invoice/status" } }, children: [] },
+                  "flagged",
+                ],
+              },
+            }],
+          },
+        }])}
+        data={{ invoice: { status: "past_due" } }}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    const brick = document.querySelector("blockquote");
+    expect(brick?.style.paddingLeft).toBe("8px");
+    expect(brick?.textContent).toBe("Past dueflagged");
+    expect(screen.getByText("Past due").getAttribute("data-kit")).toBe("EnumBadge");
+  });
+
   it("renders nothing for an unknown component in a slot, and never throws", () => {
     render(
       <TreeView

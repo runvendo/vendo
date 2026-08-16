@@ -11,6 +11,7 @@ import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
 import { namedHarness } from "./proof-harness";
 import { mapleRegistry } from "./registry";
+import { mapleRoutes } from "./routes";
 
 const composioApiKey = process.env.COMPOSIO_API_KEY;
 
@@ -109,6 +110,8 @@ export const vendo = createVendo({
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
+  // The same route map <VendoRoot> gives the provider — one registry, both sides.
+  routes: mapleRoutes,
   // The Maple voice (03 §3) — rides the agent prompt every turn.
   instructions: [
     "You are Maple's money assistant. Speak calmly and plainly; no hype.",

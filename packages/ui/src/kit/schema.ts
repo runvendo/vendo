@@ -12,6 +12,7 @@ export {
   propsSchema,
   validateProps,
   type KitComponentSpec,
+  type KitSlotSpec,
   type PropClass,
   type PropSpec,
 } from "@vendoai/apps/contract";

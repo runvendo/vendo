@@ -23,6 +23,7 @@ import type {
   Harness,
   Json,
   KnowledgeAdapter,
+  LimitsCallback,
   Principal,
   RunContext,
   RunId,
@@ -30,11 +31,14 @@ import type {
   Skill,
   ToolDefinition,
   ToolRegistry,
+  UsageTallyQuery,
+  UsageTallyRow,
   VendoLogger,
 } from "@vendoai/core";
 import type {
   ComponentCatalog,
   ComponentRegistry,
+  VendoRouteMap,
   VendoTheme,
 } from "@vendoai/apps/contract";
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
@@ -72,6 +76,17 @@ export interface Vendo {
       keep neither the transcript nor the workspace raises the not-implemented
       refusal on the turn rather than degrading to a lesser engine. */
   harness: HarnessTurns;
+  /** What the meter recorded, per subject and action, over one window — the
+      read a host's own backend job does (an overage sweep, a usage table).
+      The window's `since` is required for the same reason the store's is: it
+      is the only bound that keeps a call off a drawer that only ever grows.
+
+      This is the OPERATOR's read; a policy asks its own bound `count` instead
+      (`limits`), and never names a subject. A deployment whose store has no
+      meter is refused here rather than answered with an empty tally: nothing
+      was recorded and nothing ever will be, and a billing sweep reading "no
+      usage" would bill nobody. */
+  usage(query: UsageTallyQuery): Promise<UsageTallyRow[]>;
 }
 
 export interface CreateVendoConfig {
@@ -141,6 +156,11 @@ export interface CreateVendoConfig {
       each entry's `component` reference) or the array form. Entry names must
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
+  /** The host's own pages a generated view may link to, keyed by the name a
+      `<Link to>` reaches for. Each entry's `description` is what picks between
+      them. The SAME object goes to <VendoProvider>, which resolves a link
+      target against it and refuses any name that is not here. */
+  routes?: VendoRouteMap;
   /** Programmatic override for the theme surface. An explicit
       theme wins over `.vendo/theme.json` (config-surface precedence). A
       structural, boot-once surface: it is resolved once at compose (feeds app
@@ -222,6 +242,20 @@ export interface CreateVendoConfig {
       not an instance. Unset composes the same unconfigured-posture guard it
       always did. */
   guard?: VendoGuard | GuardRules;
+  /** Per-user limits, in the host's own logic: Vendo counts, this decides.
+
+      Called once before each metered action (a user message, an app
+      generation) with the resolved user, the action, and a `count` reader
+      already bound to that user. Answer `false` — or `{ allow: false, message }`
+      to say why in your own words — and the action is refused and never
+      counted; anything else allows it and the meter records it.
+
+      The counting is Vendo's: it needs a store with a `usage` meter, so a
+      policy against a store that has none is REFUSED at composition rather
+      than enforced against counts that are all zero. A policy that throws
+      DENIES (and logs `limits.callback_error`) — a limits system that fails
+      open stops limiting silently. Unset wires nothing at all. */
+  limits?: LimitsCallback;
   secrets?: SecretsProvider;
   /** Where everything Vendo says out loud goes (core's `log.ts`): one structured
       event per line Vendo would have written to the console, so a host can route

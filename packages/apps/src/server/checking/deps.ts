@@ -15,6 +15,7 @@ import type {
 } from "@vendoai/core";
 import type {
   NormalizedCatalog,
+  VendoRouteMap,
 } from "../../contract/index.js";
 import type { LanguageModel } from "ai";
 
@@ -78,6 +79,10 @@ export interface FloorDependencies {
   toolShapes?: Readonly<Record<string, ShapeType>>;
   /** The host tools a query may name. Absent → `tools-exist` stays silent. */
   tools?: readonly HostToolInfo[];
+  /** The pages a `<Link to>` may name (`CreateVendoConfig.routes`). Absent → the
+   *  host registered no registry at all and `routes-exist` stays silent, exactly
+   *  as `tools` does; an EMPTY registry is a registry, and refuses every link. */
+  routes?: VendoRouteMap;
   /**
    * The island smoke-render gate: every island renders once in a headless DOM
    * before it ships, so a crashing island never reaches a screen. ON unless

@@ -4,7 +4,7 @@
  * W3 wires this into the engine's wire contract (engine.ts).
  */
 import { DISPLAY_TAG_NAMES } from "./display.js";
-import { KIT_SHARED_PROP_NAMES, KIT_SPECS } from "./specs.js";
+import { KIT_SHARED_PROP_NAMES, KIT_SPECS, kitSlotPath } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 
 export interface KitPromptOptions {
@@ -115,6 +115,20 @@ function renderSpec(spec: KitComponentSpec): string {
     for (const [name, prop] of props) {
       const req = prop.required ? " (required)" : "";
       lines.push(`- \`${name}\` [${classTag(prop.cls)}]${req} — ${prop.doc}`);
+    }
+    lines.push("");
+  }
+  // The slots, from the same declaration the nesting check enforces: a place
+  // that takes an ELEMENT is unguessable from a prop list, and one written where
+  // no slot was declared is refused.
+  const slots = Object.entries(spec.slots ?? {});
+  if (slots.length > 0) {
+    lines.push("Slots:");
+    for (const [name, slot] of slots) {
+      // The PATH, not the bare name: a component reads its slot at exactly one
+      // place, so teaching `cell` where the table reads `columns[].cell` is
+      // teaching a value the renderer drops.
+      lines.push(`- \`${kitSlotPath(name, slot)}\` [slot]${slot.perRow === true ? " (per row)" : ""} — ${slot.doc}`);
     }
     lines.push("");
   }

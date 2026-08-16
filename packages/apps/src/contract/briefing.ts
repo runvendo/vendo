@@ -15,7 +15,7 @@
  * This file renders knowledge, never instructions.
  */
 import { z } from "zod";
-import { vendoThemeSchema, type VendoTheme } from "./catalog.js";
+import { vendoRouteMapSchema, vendoRouteParams, vendoThemeSchema, type VendoRouteMap, type VendoTheme } from "./catalog.js";
 
 /** One host component, as a writer needs to know about it: the name it may use
  *  and the FIRST line of its description — `catalogThemeSummary`'s existing
@@ -35,6 +35,9 @@ export interface BriefingPack {
   brief?: string;
   /** The host's own components, one line each. */
   catalog: readonly CatalogSummaryEntry[];
+  /** The pages this product registered — the whole vocabulary a `<Link to>` may
+   *  name. Absent when the host registered none, which is "nothing may link". */
+  routes?: VendoRouteMap;
   /** The semantics-annotated tool shape card: what every tool a binding may
    *  name really returns, in this host's own units. */
   hostSemantics: string;
@@ -50,6 +53,7 @@ export const briefingPackSchema: z.ZodType<BriefingPack> = z.object({
   designRules: z.string().optional(),
   brief: z.string().optional(),
   catalog: z.array(catalogSummaryEntrySchema).readonly(),
+  routes: vendoRouteMapSchema.optional(),
   hostSemantics: z.string(),
 });
 
@@ -77,6 +81,21 @@ export function renderBriefingPack(pack: BriefingPack): string {
   if (pack.catalog.length > 0) {
     const lines = pack.catalog.map((entry) => `- ${entry.name}: ${entry.description}`.trimEnd());
     sections.push(`Host components (usable in generated views beside the built-in primitives)\n${lines.join("\n")}`);
+  }
+  const routes = Object.entries(pack.routes ?? {});
+  if (routes.length > 0) {
+    // NAMES and descriptions only, never the paths. A writer picks a page by
+    // what it IS, and a path in the prompt is a URL to copy — the one thing
+    // generated output must never author. The `:params` a path takes are named
+    // because a link has to fill them, but their values are substituted into
+    // the host's own path and encoded there (`resolveVendoRoute`).
+    const lines = routes.map(([name, route]) => {
+      const params = vendoRouteParams(route.path);
+      return `- ${name}: ${route.description}${params.length === 0 ? "" : ` (fill params: ${params.join(", ")})`}`;
+    });
+    sections.push("ROUTES (this product's own pages — what a <Link to=\"…\"> may send someone to)."
+      + " The NAME is the whole vocabulary: a link selects one of these, it never writes a URL,"
+      + ` and a name that is not on this list is refused.\n${lines.join("\n")}`);
   }
   const semantics = pack.hostSemantics.trim();
   if (semantics !== "") sections.push(semantics);

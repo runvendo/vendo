@@ -932,6 +932,74 @@ export default function Ledger() {
     expect(result.issues[0]?.message).toContain('prop "columns[0].cell.children[1]" holds <Button> in a cell slot');
   });
 
+  /** A slot's vocabulary gates BEHAVIOR — what may sort, submit or call a tool
+   *  where there is no row to act on. A display brick has none to gate: it is
+   *  `style` and children and nothing else, so it passes the same per-row cell
+   *  that refuses a Button, and the renderer builds it back
+   *  (`packages/ui` renderer.tsx `reifyElement`). Whole gauntlet, real compiler. */
+  it("passes a display brick in a per-row cell — arrangement is not behavior", async () => {
+    const result = await painted(`import { DataTable, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return (
+    <DataTable
+      rows={[{ id: "r1", status: "past_due" }]}
+      columns={[{ key: "status", cell: <div style={{ display: "flex" }}><Text field="status" /></div> }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a cell written on a ROW — the table reads columns[].cell and nothing else", async () => {
+    // Whole gauntlet, real compiler. The VM stamps this element exactly as it
+    // stamps a column's, so matching the bare key admitted a `cell` the table
+    // never looks at: green all the way through, blank on the screen.
+    const result = await painted(`import { Badge, DataTable } from "@vendo/screen";
+
+export default function Invoices() {
+  return (
+    <DataTable
+      rows={[{ id: "r1", cell: <Badge label="late" /> }]}
+      columns={[{ key: "id" }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain('prop "rows[0].cell" holds <Badge>');
+    expect(message).toContain('"rows[].cell" is not a slot');
+    expect(message).toContain("the slots on <DataTable> are: columns[].cell");
+  });
+
+  it("follows a slot's component into its OWN contract — a slot is not a blind spot", async () => {
+    // A Sparkline is legal in a cell, so the outer check passed and stopped
+    // there. It renders nothing nested inside it, and the compiler cannot say
+    // so — every Kit component's typings carry `children?: any` — so this note
+    // reached the renderer and vanished. The nesting check is its only reader.
+    const result = await painted(`import { DataTable, Sparkline } from "@vendo/screen";
+
+export default function Invoices() {
+  return (
+    <DataTable
+      rows={[{ id: "r1" }]}
+      columns={[{ key: "id", cell: <Sparkline data={[1, 2, 3]}>trend</Sparkline> }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain('prop "columns[0].cell" nests 1 node inside <Sparkline>');
+    expect(message).toContain("renders nothing nested inside it");
+  });
+
   it("reads the sigil, not the shape — row data that describes a component is data", async () => {
     // A "cell" column whose value happens to name a component and carry a
     // children list. The VM stamps `$element` on what a screen wrote as an
