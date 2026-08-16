@@ -402,6 +402,16 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
+      # Tripwire for the truncated-bundle flake (2026-08-16): pglite's 6MB wasm
+      # bundle intermittently read back SHORT mid-job (`Invalid FS bundle size`),
+      # and the writer is not in this repo — Node's readFile provably cannot
+      # short-read a complete file, so the file itself was briefly truncated.
+      # The store now boot-retries through it; these two stats exist so a
+      # recurrence names the moment: short BEFORE tests = the pnpm store cache
+      # restored a truncated entry (bust the cache key); good before + changed
+      # inode/mtime after = something rewrote it during the run.
+      - name: pglite bundle tripwire (before)
+        run: stat -c '%n size=%s inode=%i links=%h mtime=%Y' node_modules/.pnpm/@electric-sql+pglite@*/node_modules/@electric-sql/pglite/dist/pglite.data
       # --continue so ONE red package cannot hide every other package's result;
       # --concurrency=2 bounds turbo's cross-package parallelism, and the
       # VITEST_MIN/MAX pair above bounds the SECOND layer (the worker pool
@@ -409,6 +419,9 @@ jobs:
       # the live-Next-server suites flake (PR #340).
       - name: Test with coverage (PGlite + PostgreSQL)
         run: pnpm turbo run test:coverage --continue --concurrency=2 $CONE --filter=!@vendoai/vendo --filter=!@vendoai/store --filter=!@vendoai/ui
+      - name: pglite bundle tripwire (after)
+        if: always()
+        run: stat -c '%n size=%s inode=%i links=%h mtime=%Y' node_modules/.pnpm/@electric-sql+pglite@*/node_modules/@electric-sql/pglite/dist/pglite.data
 
   # The per-package coverage floors (vendo 78 / store 84 / ui 90, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
