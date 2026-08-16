@@ -157,7 +157,18 @@ jobs:
       - run: pnpm turbo run typecheck $CONE
       # Neither guard is a turbo task and neither is package-scoped — they walk
       # the whole tree in seconds. They always run.
-      - run: node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs
+      - run: node scripts/dependency-guard.mjs
+      # portability-gate reads BUILT output — packages/{vendo,store,actions,
+      # vendo-telemetry,apps,harnesses}/dist — and used to get it for free from
+      # the unconditional `pnpm build` that stood here. Under a cone that build
+      # can produce nothing, and the gate died on a missing
+      # packages/vendo/dist/server.js. So it now asks for exactly what it reads:
+      # these three roots pull the other three in as workspace deps, and the
+      # whole thing is a remote-cache replay because main's full build filled
+      # the cache. Explicit beats the old implicit ordering, which was one
+      # `pnpm build` away from this same failure at any time.
+      - run: pnpm turbo run build --filter=@vendoai/vendo --filter=@vendoai/apps --filter=@vendoai/harnesses
+      - run: node scripts/portability-gate.mjs
       # `//#lint:packages` is a ROOT task (one eslint over all of packages/), so
       # it has no place in a package cone. Run unfiltered: turbo caches it on
       # its own declared inputs, so an untouched packages/ replays in seconds,
