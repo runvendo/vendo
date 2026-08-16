@@ -1,5 +1,37 @@
 # @vendoai/ui
 
+## 0.24.0
+
+### Minor Changes
+
+- 42b2b78: The Kit implements the 34 slots the table was shrunk to leave out.
+
+  `SLOTS` shipped at what the React Kit actually painted — two of thirty-seven — because a declared slot the component drops is worse than no slot at all: the prompt teaches it, every check admits it, and the person gets a blank. The rest were deferred, not descoped. They land here, table entry and implementation together, and `slot-drift.test.tsx` renders a probe into every one of them and fails unless it finds it in the DOM.
+
+  New places to write an element: a `header` and `footer` on Surface, Card and (with `actions`) Form; a `toolbar`, per-row `rowActions` and `empty` on DataTable; `actions` and `empty` on CardList; `empty` on Timeline; `empty`, `legend` and a per-point `tooltip` on LineChart, BarChart and DonutChart; `icon` on Stat; `marker` on Steps; `actions` on Tabs; `prefix`, `suffix` and `hint` on Input; `hint` and a `footer` on Textarea; `hint` on DatePicker; `label` on Divider. Four props widen from a scalar to take an element as well as the value they took before — `Progress.label`, `EmptyState.icon` (still a lucide name when it is a string), `DonutChart.legend` (still `false` to take the built-in key away), and each control's `hint`.
+
+  A chart's `tooltip` publishes the hovered point on `RowContext`, so the value components inside name their field exactly as a table cell's do — the cell contract, per point. It renders through a function rather than as a bare element, because recharts clones whatever element it is handed with eighteen of its own internal props and React writes every one of them onto the DOM node.
+
+  An `empty` slot replaces the container's dashed box rather than its text: what goes in one is an `EmptyState`, which draws that frame itself, and nested it read as a box inside a box.
+
+  Every slot also gets its entry in the component's `props`, the way `Timeline.cell` and `Timeline.marker` already had one. The screen typings and the wire's allowed-prop set are printed from `props` alone, so a slot declared only in `SLOTS` is one the catalog teaches and `components-exist` then refuses by name. **This fixes `Modal.header`, `Modal.footer`, `Sheet.header` and `Sheet.footer`, which are in that state on `main` today** — declared, taught, painted, and blocked at the floor. A new sweep pins the rule for every slot there will ever be.
+
+  `Select.hint` is the one slot from the worklist not implemented here.
+
+- b4dd54d: The ui test suite comes under the typechecker.
+
+  `packages/ui` was the only package of fourteen whose tests never typechecked. `tsconfig.test.json` existed but its `include` was scoped to the `*.test-d.tsx` type-level suites, because the runtime tests under `test/` carried 135 pre-existing errors. The include now covers all of `test/`, and `pnpm typecheck` is clean over it — so a ui test can no longer be quietly wrong about the API it exercises.
+
+  The errors were fixed, not silenced: no `any`, no `@ts-ignore`, no `@ts-expect-error`. Six kinds of debt came out of it — fixtures that never learned about a field the type gained (`risks`, `triggerId`, `Trigger.id`, `ToolDescriptor.description`, `VendoAppRef.status`), fixtures still naming a field the type had dropped or renamed (`GrantSetPermission.description`, `ToolDescriptor.critical` → `confirmEach`), imports pointing at the wrong module (`Thread`, `VENDO_TREE_FORMAT`, `InClientVenue`), tree fixtures declaring themselves `UIPayload` while being handed to `TreeView`'s `WalkTree` prop, DOM reads that ignored `noUncheckedIndexedAccess`, and helpers whose parameter types had been inferred from one call site. No assertion changed meaning and no test was added or removed; all 1206 still pass.
+
+  One type widened as a result. `HostComponentsInput` was `Record<string, ComponentType> | ComponentRegistry`, which rejected every host component that declares required props — `ComponentType` defaults its props to `{}` — and could not express a map mixing a plain component with a registry entry, which is exactly what `hostComponentMap` has always read per entry. It is now `Record<string, ComponentType<never> | ComponentRegistryEntry>`. Purely a widening: everything that typechecked before still does, and nothing at runtime changed.
+
+### Patch Changes
+
+- Updated dependencies [42b2b78]
+  - @vendoai/apps@0.24.0
+  - @vendoai/core@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes
