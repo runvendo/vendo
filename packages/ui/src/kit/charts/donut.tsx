@@ -1,8 +1,9 @@
 /** DonutChart — recharts Pie internals, data props only (W2 §The Kit). */
+import type { ReactNode } from "react";
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
-import { font, hairline, numeric, seriesColor, t } from "../tokens.js";
-import { ChartEmpty, ChartFrame } from "./sanitize.js";
+import { font, numeric, seriesColor, t } from "../tokens.js";
+import { ChartEmpty, ChartFrame, slotTooltip, tooltipSurface } from "./sanitize.js";
 
 export interface DonutChartProps {
   data: Array<Record<string, unknown>>;
@@ -14,10 +15,16 @@ export interface DonutChartProps {
   format?: ValueFormat;
   /** false renders a full pie. */
   donut?: boolean;
-  /** Name + value under the ring. On by default. */
-  legend?: boolean;
+  /** Name + value under the ring, on by default; `false` takes it away, and Kit
+   *  elements replace it. */
+  legend?: boolean | ReactNode;
   height?: number;
   emptyState?: string;
+  /** Kit elements shown in place of `emptyState` when there is nothing to plot. */
+  empty?: ReactNode;
+  /** Kit value components composed for the hovered slice, in place of the
+   *  default tooltip; the slice's row rides on `RowContext`. */
+  tooltip?: ReactNode;
 }
 
 export function DonutChart({
@@ -29,14 +36,21 @@ export function DonutChart({
   legend = true,
   height = 220,
   emptyState = "No data to chart",
+  empty,
+  tooltip,
 }: DonutChartProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined),
   // the same guard the other Kit charts get via sanitizeSeries.
+  // The whole row rides along under the slice's own two keys, so a `tooltip`
+  // slot reads the same fields here as it does on a line or a bar.
   const slices = (Array.isArray(data) ? data : [])
-    .map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
+    .map((row) => ({ ...row, name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    // The slot replaces the dashed box, not its TEXT: what goes in one is an
+    // EmptyState, which draws that same frame itself — nested, it read as a
+    // box inside a box.
+    return empty ?? <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
@@ -62,14 +76,18 @@ export function DonutChart({
                 <Cell key={i} fill={seriesColor(i)} />
               ))}
             </Pie>
-            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: t.radiusSmall, border: hairline, background: t.surface, color: t.text, fontSize: 12, boxShadow: t.shadowSmall }} />
+            <Tooltip
+              formatter={(v) => fmt(v)}
+              content={tooltip === undefined ? undefined : slotTooltip(tooltip)}
+              contentStyle={tooltipSurface}
+            />
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>
       {/* An unlabelled ring says NOTHING in a screenshot — a hover tooltip is
           not a label (genbench spend-overview, 2026-08-11). Every slice is
           named and valued on the page itself. */}
-      {legend ? (
+      {legend === false ? null : legend !== true ? legend : (
         <ul
           data-kit="DonutLegend"
           style={{
@@ -97,7 +115,7 @@ export function DonutChart({
             </li>
           ))}
         </ul>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -123,7 +123,11 @@ const BASE_SPECS: KitComponentSpec[] = [
     takesChildren: true,
     group: "layout",
     summary: "A bordered, elevated container with an optional title.",
-    props: { title: copy(z.string(), "container heading") },
+    props: {
+      title: copy(z.string(), "container heading"),
+      header: config(slot, "elements beside the title"),
+      footer: config(slot, "the buttons under the content"),
+    },
     examples: ["<Surface title=\"Overdue\"><DataTable .../></Surface>"],
   },
   {
@@ -134,14 +138,16 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       title: copy(z.string(), "card heading"),
       description: copy(z.string(), "one-line subheading under the title"),
+      header: config(slot, "elements beside the title"),
+      footer: config(slot, "the buttons under the content"),
     },
     examples: ['<Card title="Overdue" description="Worst first"><DataTable rows={invoices.data} columns={[{key:"client"}]}/></Card>'],
   },
   {
     name: "Divider",
     group: "layout",
-    summary: "A horizontal rule between blocks.",
-    props: {},
+    summary: "A horizontal rule between blocks. A label turns it into a section break.",
+    props: { label: config(slot, "a word centred in the rule") },
     examples: ["<Divider/>"],
   },
 
@@ -243,7 +249,10 @@ const BASE_SPECS: KitComponentSpec[] = [
       searchable: config(z.boolean(), "show a search box across all columns"),
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
+      empty: config(slot, "elements shown instead of that text"),
       caption: copy(z.string(), "table caption"),
+      toolbar: config(slot, "elements beside the search and the filters"),
+      rowActions: config(slot, "the controls at the end of every row"),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
@@ -260,6 +269,8 @@ const BASE_SPECS: KitComponentSpec[] = [
       fields: config(z.array(cardField), "label/value rows on each card; cell is a slot"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
+      empty: config(slot, "elements shown instead of that text"),
+      actions: config(slot, "the buttons above the cards"),
     },
     examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
   },
@@ -273,6 +284,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
       format: config(valueFormat, "value tier format"),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
+      icon: config(slot, "a glyph beside the metric name"),
     },
     examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents / 100} format="money" trend="+12% MoM"/>'],
   },
@@ -308,6 +320,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       cell: config(slot, "Kit elements rendered as each entry's body; the components inside name their field"),
       marker: config(slot, "a Kit element drawn in place of the dot"),
       emptyState: copy(z.string(), "text when there are no entries"),
+      empty: config(slot, "elements shown instead of that text"),
     },
     examples: [
       '<Timeline entries={payments.list({}).data} titleField="description" timeField="paidAt" timeAlign="end"/>',
@@ -348,6 +361,9 @@ const BASE_SPECS: KitComponentSpec[] = [
       format: config(valueFormat, "y-axis + tooltip format"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
+      empty: config(slot, "elements shown instead of that text"),
+      tooltip: config(slot, "elements for the hovered point"),
+      legend: config(slot, "a series key under the chart"),
     },
     examples: ['<LineChart data={revenue.byMonth({}).data} xKey="month" series={["amount"]} format="money"/>'],
   },
@@ -364,6 +380,9 @@ const BASE_SPECS: KitComponentSpec[] = [
       horizontal: config(z.boolean(), "horizontal bars"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
+      empty: config(slot, "elements shown instead of that text"),
+      tooltip: config(slot, "elements for the hovered bar"),
+      legend: config(slot, "a series key under the chart"),
     },
     examples: ['<BarChart data={sales.byRegion} xKey="region" series={["unitsSold"]} horizontal/>'],
   },
@@ -377,9 +396,11 @@ const BASE_SPECS: KitComponentSpec[] = [
       valueKey: config(z.string(), "slice-value field", { required: true }),
       format: config(valueFormat, "legend + tooltip format"),
       donut: config(z.boolean(), "false renders a full pie"),
-      legend: config(z.boolean(), "on by default; turn it off only when labels already sit beside the chart"),
+      legend: config(slot, "on by default; false hides it, elements replace it"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
+      empty: config(slot, "elements shown instead of that text"),
+      tooltip: config(slot, "elements for the hovered slice"),
     },
     examples: ['<DonutChart data={spend.byCategory({}).data} categoryKey="category" valueKey="amount" format="money"/>'],
   },
@@ -401,7 +422,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       value: data(z.number(), "ratio 0..1, or a raw value with max"),
       max: data(z.number(), "denominator when value is raw"),
-      label: copy(z.string(), "caption"),
+      label: copy(slot, "caption — a word, or Kit marks"),
       showValue: config(z.boolean(), "show the percentage"),
     },
     examples: ["<Progress value={goal.saved} max={goal.target} label=\"Savings goal\" showValue/>"],
@@ -417,6 +438,9 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: config(z.string(), "the current value (controlled)"),
       placeholder: copy(z.string(), "placeholder text"),
       type: config(z.enum(["text", "email", "number", "password", "search", "tel", "url"]), "input type"),
+      hint: copy(slot, "the help line under the field"),
+      prefix: config(slot, "a unit or glyph inside the field, before the text"),
+      suffix: config(slot, "a unit or glyph inside the field, after the text"),
       onChange: config(action, "called on change"),
     },
     examples: ['<Input label="Find a client" onChange="host_search_clients"/>'],
@@ -445,6 +469,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: config(z.string(), "the current ISO date (controlled)"),
       min: config(z.string(), "earliest date"),
       max: config(z.string(), "latest date"),
+      hint: copy(slot, "the help line under the field"),
       onChange: config(action, "called on change"),
     },
     examples: ['<DatePicker label="Due date"/>'],
@@ -458,6 +483,8 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: config(z.string(), "the current value (controlled)"),
       placeholder: copy(z.string(), "placeholder text"),
       rows: config(z.number().int().positive(), "visible rows"),
+      hint: copy(slot, "the help line under the field"),
+      footer: config(slot, "a row under the box — a counter, a hint action"),
       onChange: config(action, "called on change"),
     },
     examples: ['<Textarea label="Note" rows={4}/>'],
@@ -593,6 +620,9 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       onSubmit: config(action, "called on submit; call a tool in it"),
       submitLabel: copy(z.string(), "submit button text"),
+      header: config(slot, "elements above the fields"),
+      actions: config(slot, "buttons beside the submit"),
+      footer: config(slot, "fine print under the actions"),
     },
     examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
   },
@@ -632,6 +662,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       ),
       value: config(z.string(), "the initially selected tab's value"),
       defaultIndex: config(z.number().int().nonnegative(), "initially selected tab, by position"),
+      actions: config(slot, "elements at the end of the tab row"),
     },
     examples: ['<Tabs tabs={["Overview","Detail"]}><Stat label="Open" value={x.count}/><DataTable rows={x.data} columns={[{key:"client"}]}/></Tabs>'],
   },
@@ -694,7 +725,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "feedback",
     summary: "The designed nothing-here for a whole region, with the action that fixes it nested inside. A component with its own emptyState prop (DataTable, CardList) already has one.",
     props: {
-      icon: config(z.string(), "lucide icon name in kebab-case"),
+      icon: config(slot, "a lucide icon name in kebab-case, or a Kit mark"),
       title: copy(z.string(), "the headline", { required: true }),
       description: copy(z.string(), "one line of why it is empty, or what to do"),
     },
@@ -710,6 +741,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       items: config(z.array(z.object({ label: z.string(), description: z.string().optional() })), "the steps in order", { required: true }),
       active: config(z.number().int().nonnegative(), "index of the current step, default 0"),
       orientation: config(z.enum(["horizontal", "vertical"]), "layout, default horizontal"),
+      marker: config(slot, "a glyph in place of the numbered disc"),
     },
     examples: ['<Steps items={[{label:"Details"},{label:"Review"},{label:"Done"}]} active={1}/>'],
   },
@@ -788,30 +820,71 @@ const BASE_SPECS: KitComponentSpec[] = [
 const region: readonly string[] = BASE_SPECS.map((spec) => spec.name);
 const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"];
 
+/** The two a container draws, written once: every one of them sits beside a
+ *  title and under the content, so restating the pair six times would be six
+ *  chances for them to drift apart in the prompt. */
+const header: KitSlotSpec = { doc: "elements along the top edge, beside the title", content: region };
+const footer: KitSlotSpec = { doc: "the buttons under the content", content: region };
+/** What a container paints in place of its `emptyState` TEXT — an EmptyState
+ *  with the action that fixes it, where a sentence used to be. */
+const empty = (nothing: string): KitSlotSpec => ({ doc: `what to show in place of emptyState when there are no ${nothing}`, content: region });
+/** A chart's hovered point, on the cell contract: written ONCE and painted for
+ *  whichever point is under the pointer, which is why it takes the read tier. */
+const tooltip: KitSlotSpec = { doc: "Kit value components composed for the hovered point, in place of the default tooltip", perRow: true };
+/** The help line under a form control. */
+const hint: KitSlotSpec = { doc: "the help line under the field, as elements instead of text", content: mark };
+
 const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
+  // No `at` on any of these pairs: a container reads its header and footer as
+  // props of its own, the way Timeline reads `marker`.
+  Surface: { header, footer },
+  Card: { header, footer },
+  Divider: { label: { doc: "a word centred in the rule", content: mark } },
   DataTable: {
     cell: { doc: "Kit value components composed for ONE row, in place of the column's plain text", perRow: true, at: "columns" },
+    // The one per-row slot that may be OPERATED: it is written for the row it
+    // sits on, so it has a row to act on — the thing a `cell` has not got.
+    rowActions: { doc: "the controls at the end of EVERY row, acting on that row", perRow: true, content: ["Button", "Icon", "Row"] },
+    toolbar: { doc: "elements in the controls row, beside the search and the filters", content: region },
+    empty: empty("rows"),
   },
   CardList: {
     cell: { doc: "Kit value components composed for ONE item, in place of the field's plain text", perRow: true, at: "fields" },
+    actions: { doc: "the buttons above the cards", content: region },
+    empty: empty("items"),
   },
   KeyValue: { cell: { doc: "Kit value components composed for the record, in place of the field's plain text", perRow: true, at: "items" } },
   Timeline: {
     cell: { doc: "Kit components rendered as ONE entry's body", perRow: true },
     marker: { doc: "a glyph drawn in place of the entry's dot", content: mark },
+    empty: empty("entries"),
   },
-  Tabs: { content: { doc: "ONE tab's panel, written inline instead of as a child", content: region, at: "tabs" } },
+  Stat: { icon: { doc: "a glyph beside the metric name", content: mark } },
+  LineChart: { tooltip, legend: { doc: "a series key drawn under the chart", content: region }, empty: empty("points to plot") },
+  BarChart: { tooltip, legend: { doc: "a series key drawn under the chart", content: region }, empty: empty("bars to plot") },
+  DonutChart: { tooltip, legend: { doc: "false hides the built-in key under the ring; an element replaces it", content: region }, empty: empty("slices to plot") },
+  Progress: { label: { doc: "the caption over the bar, as elements instead of text", content: mark } },
+  Input: {
+    hint,
+    prefix: { doc: "a unit or glyph inside the field, before the text", content: mark },
+    suffix: { doc: "a unit or glyph inside the field, after the text", content: mark },
+  },
+  DatePicker: { hint },
+  Textarea: { hint, footer: { doc: "a row under the box — a counter, a hint action", content: region } },
+  Form: {
+    header: { doc: "elements above the fields", content: region },
+    actions: { doc: "buttons beside the submit — a cancel, a secondary", content: region },
+    footer: { doc: "fine print under the actions", content: region },
+  },
+  Tabs: {
+    content: { doc: "ONE tab's panel, written inline instead of as a child", content: region, at: "tabs" },
+    actions: { doc: "elements at the end of the tab row", content: region },
+  },
   Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
-  // No `at` on either pair: a dialog reads its header and footer as props of
-  // its own, the way Timeline reads `marker`.
-  Modal: {
-    header: { doc: "elements along the top edge, beside the title", content: region },
-    footer: { doc: "the buttons under the content", content: region },
-  },
-  Sheet: {
-    header: { doc: "elements along the top edge, beside the title", content: region },
-    footer: { doc: "the buttons under the content", content: region },
-  },
+  EmptyState: { icon: { doc: "a Kit mark drawn in the disc instead of a lucide name", content: mark } },
+  Steps: { marker: { doc: "a glyph drawn in place of the step's numbered disc", content: mark } },
+  Modal: { header, footer },
+  Sheet: { header, footer },
 };
 
 /** Where a slot's element sits, as ONE comparable string: `columns[].cell` for a

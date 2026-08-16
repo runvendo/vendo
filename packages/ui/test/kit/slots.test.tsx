@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { DonutChart } from "../../src/kit/charts/donut.js";
+import { slotTooltip } from "../../src/kit/charts/sanitize.js";
 import { CardList } from "../../src/kit/data/card-list.js";
 import { DataTable } from "../../src/kit/data/data-table.js";
 import { Stat } from "../../src/kit/data/stat.js";
-import { Stack } from "../../src/kit/layout.js";
-import { EnumBadge, Text } from "../../src/kit/values.js";
+import { Button } from "../../src/kit/forms/button.js";
+import { Divider, Stack } from "../../src/kit/layout.js";
+import { EnumBadge, Money, Text } from "../../src/kit/values.js";
 
 // A slot holds an ELEMENT, not a function of the row: the screen VM would
 // serialize a function prop as a `$handler` door. So the container renders the
@@ -90,5 +93,67 @@ describe("cell slots", () => {
     const child = within(tile).getByText("last 30 days");
     // DOCUMENT_POSITION_FOLLOWING — "under" is document order, not just nesting.
     expect(value.compareDocumentPosition(child) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+/**
+ * The half `slot-drift.test.tsx` cannot see. That guard proves a probe put in a
+ * slot reaches the DOM, once; these are the slots that promise something MORE
+ * than landing — a per-row painting, a three-way prop, a rule that had to bend
+ * to let a slot in.
+ */
+describe("what a slot promises beyond landing", () => {
+  it("paints rowActions once per row, against THAT row", () => {
+    render(<DataTable rows={rows} columns={[{ key: "number" }]} rowActions={<Text field="client.name" />} />);
+    const [first, second] = screen.getAllByRole("row").slice(1);
+    // One element, two rows, two different values — the cell contract, on the
+    // half of it that may be operated.
+    expect(within(first!).getByText("Hartwell")).toBeTruthy();
+    expect(within(second!).getByText("Acme")).toBeTruthy();
+  });
+
+  it("keeps the actions column out of the fold measurement", () => {
+    // The trailing column never folds, so counting it as a data column left the
+    // natural edges unmeasured and NOTHING folded — the columns past the width
+    // would have gone back to scrolling out of sight.
+    render(<DataTable rows={rows} columns={columns} rowActions={<Button label="Pay" />} />);
+    const [header] = screen.getAllByRole("row");
+    // Two data columns, plus the actions column — and the header cells still
+    // line up with the body's.
+    expect(within(header!).getAllByRole("columnheader")).toHaveLength(3);
+    expect(within(screen.getAllByRole("row")[1]!).getAllByRole("cell")).toHaveLength(3);
+  });
+
+  it("composes a chart tooltip against the hovered point", () => {
+    // recharts hands its `content` the payload of whatever is under the pointer;
+    // the slot reads it through `field`, exactly as a table cell reads its row.
+    const Hover = slotTooltip(<Money field="amount" />);
+    render(<Hover payload={[{ payload: { month: "Mar", amount: 1250 } }]} />);
+    expect(screen.getByText("$1,250.00")).toBeTruthy();
+  });
+
+  it("lets a donut's legend be taken away, or replaced", () => {
+    const data = [{ label: "Rent", value: 900 }];
+    const props = { data, categoryKey: "label", valueKey: "value" } as const;
+
+    // Three states, one prop: the built-in key, no key, and one of your own.
+    const { rerender } = render(<DonutChart {...props} />);
+    expect(screen.getByText("Rent")).toBeTruthy();
+
+    rerender(<DonutChart {...props} legend={false} />);
+    expect(screen.queryByText("Rent")).toBeNull();
+
+    rerender(<DonutChart {...props} legend={<Text text="Rent only" />} />);
+    expect(screen.getByText("Rent only")).toBeTruthy();
+    expect(screen.queryByText("$900.00")).toBeNull();
+  });
+
+  it("labels a divider without hiding it from the reading order", () => {
+    // The plain rule is decoration and stays `aria-hidden`; a labelled one is a
+    // section break, and a break nobody can hear is not one.
+    const { container } = render(<Divider label={<Text text="Earlier" />} />);
+    expect(screen.getByRole("separator")).toBeTruthy();
+    expect(screen.getByText("Earlier")).toBeTruthy();
+    expect(container.querySelector("[aria-hidden]")).toBeNull();
   });
 });

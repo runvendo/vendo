@@ -16,6 +16,8 @@ export interface StatProps {
   tone?: KitTone | "default";
   /** Spacing scale for this tile. */
   density?: KitDensity;
+  /** A Kit mark beside the metric name. */
+  icon?: ReactNode;
   /** Kit value components rendered under the number — a Sparkline, an EnumBadge. */
   children?: ReactNode;
 }
@@ -25,7 +27,7 @@ export interface StatProps {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", trend, tone, density, children }: StatProps) {
+export function Stat({ label, value, format = "text", trend, tone, density, icon, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
   const formatted = applyFormat(value, format);
@@ -58,7 +60,12 @@ export function Stat({ label, value, format = "text", trend, tone, density, chil
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
       }}
     >
-      <span style={microLabel}>{label}</span>
+      {/* A row whether or not a glyph came: with one child it lays out exactly
+          as the plain label did, so the slot costs no branch. */}
+      <span style={{ ...microLabel, display: "flex", alignItems: "center", gap: "var(--vendo-density-field-gap, 6px)" }}>
+        {icon}
+        {label}
+      </span>
       <strong
         {...(empty ? { "data-empty": "", title: "No data yet" } : overflow ? { title: formatted } : {})}
         style={{

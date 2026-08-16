@@ -18,25 +18,66 @@
  */
 import type { ComponentType, ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { KIT_COMPONENTS, KIT_SPECS } from "../../src/kit/registry.js";
 import type { KitSlotSpec } from "../../src/kit/schema.js";
 
 afterEach(cleanup);
+
+/** jsdom has no layout engine, so every box it reports is 0×0 — and recharts
+ *  refuses to draw into one, which would leave a chart's slots unprobeable for
+ *  a reason that has nothing to do with whether they are wired. This supplies
+ *  the measurement and nothing else: the chart, the slot and the component are
+ *  all the real ones. */
+beforeAll(() => {
+  globalThis.ResizeObserver = class {
+    constructor(private readonly report: (entries: unknown[]) => void) {}
+    observe(target: Element) {
+      this.report([{ target, contentRect: { width: 400, height: 200, top: 0, left: 0, x: 0, y: 0 } }]);
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
 
 /** The minimum a component needs to paint at all, BESIDE its slot: `props` for
  *  the component, `item` to seed the description object a nested slot rides in.
  *  The slot's PLACEMENT is deliberately not written here — it comes from the
  *  `at` declaration, so the path this renders through is the same path
  *  `kit-nesting` admits. Point `at` somewhere the component does not read and
- *  this test goes red. */
+ *  this test goes red.
+ *
+ *  Keyed by `Component.slot` where ONE slot needs a different world from the
+ *  rest of its component's, and by `Component` for the rest: an `empty` slot is
+ *  the case, since it paints only where there is no data and every other slot
+ *  on the same component needs some. */
 const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<string, unknown> }> = {
+  Surface: { props: {} },
+  Card: { props: {} },
+  Divider: { props: {} },
   DataTable: { props: { rows: [{ k: "v" }] }, item: { key: "k" } },
+  "DataTable.empty": { props: { rows: [] } },
   CardList: { props: { items: [{ k: "v" }] }, item: { key: "k" } },
+  "CardList.empty": { props: { items: [] } },
   KeyValue: { props: { record: { k: "v" } }, item: { key: "k" } },
   Timeline: { props: { entries: [{ id: "1" }] } },
+  "Timeline.empty": { props: { entries: [] } },
+  Stat: { props: { label: "Open", value: 1 } },
+  LineChart: { props: { data: [{ x: "Jan", v: 1 }], xKey: "x", series: ["v"] } },
+  "LineChart.empty": { props: { data: [], xKey: "x", series: ["v"] } },
+  BarChart: { props: { data: [{ x: "Jan", v: 1 }], xKey: "x", series: ["v"] } },
+  "BarChart.empty": { props: { data: [], xKey: "x", series: ["v"] } },
+  DonutChart: { props: { data: [{ k: "A", v: 1 }], categoryKey: "k", valueKey: "v" } },
+  "DonutChart.empty": { props: { data: [], categoryKey: "k", valueKey: "v" } },
+  Progress: { props: { value: 0.5 } },
+  Input: { props: {} },
+  DatePicker: { props: {} },
+  Textarea: { props: {} },
+  Form: { props: {} },
   Tabs: { props: {}, item: { label: "One" } },
   Accordion: { props: { defaultOpen: [0] }, item: { label: "One" } },
+  EmptyState: { props: { title: "Nothing yet" } },
+  Steps: { props: { items: [{ label: "One" }] } },
   // A dialog paints nothing at all while it is down, so the probe would never
   // land no matter how faithfully the slot is wired. `open` is the truth these
   // two follow; raise them and the slots are on the same footing as everyone
@@ -65,7 +106,7 @@ describe("every declared slot renders what it promises", () => {
 
     for (const [component, name, slot] of declared) {
       const at = `${component}.${slot.at === undefined ? name : `${slot.at}[].${name}`}`;
-      const context = CONTEXT[component];
+      const context = CONTEXT[`${component}.${name}`] ?? CONTEXT[component];
       expect(context, `${at} is declared in SLOTS with no context here — implement the slot in @vendoai/ui and add one, or drop it from the table`).toBeTypeOf("object");
       const Implementation = KIT_COMPONENTS[component] as ComponentType<Record<string, unknown>>;
       render(<Implementation {...propsFor(context!, name, slot, <span data-testid="probe">probe</span>)} />);

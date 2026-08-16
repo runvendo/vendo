@@ -1,5 +1,6 @@
 /** Textarea — themed multiline input (W2 §The Kit). */
-import { control } from "../tokens.js";
+import type { ReactNode } from "react";
+import { control, t } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
@@ -8,13 +9,15 @@ export interface TextareaProps {
   value?: string;
   placeholder?: string;
   rows?: number;
-  hint?: string;
+  hint?: ReactNode;
   disabled?: boolean;
   required?: boolean;
+  /** Kit elements in a row under the box — a counter, a hint action. */
+  footer?: ReactNode;
   onChange?: (value: string) => void;
 }
 
-export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, required, onChange }: TextareaProps) {
+export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, required, footer, onChange }: TextareaProps) {
   const { fieldId, helpId } = useFieldIds("textarea");
   const screen = controlledHandler(value !== undefined, onChange);
   return (
@@ -33,6 +36,20 @@ export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, 
           : screen({ target: { value: e.target.value } })}
         style={{ ...control, resize: "vertical", minHeight: undefined, opacity: disabled ? 0.55 : 1 }}
       />
+      {footer === undefined ? null : (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: "var(--vendo-density-inline-gap, 7px)",
+            color: t.muted,
+            fontSize: "0.82em",
+          }}
+        >
+          {footer}
+        </div>
+      )}
     </FieldShell>
   );
 }

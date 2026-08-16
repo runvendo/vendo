@@ -1,6 +1,6 @@
 /** Layout tier — themed containers (W2 §The Kit). */
-import type { CSSProperties, PropsWithChildren } from "react";
-import { densityVars, font, hairline, resolveTone, t, toneColor, type KitDensity, type KitTone } from "./tokens.js";
+import type { CSSProperties, PropsWithChildren, ReactNode } from "react";
+import { densityVars, font, hairline, microLabel, resolveTone, t, toneColor, type KitDensity, type KitTone } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
@@ -109,14 +109,33 @@ export function Grid({ columns = 2, minChildWidth = 0, gap, density, children }:
   );
 }
 
+/** The two rows a container's slots ride in — the title's, which `header`
+ *  shares, and the one under the content that `footer` fills. The same two a
+ *  dialog draws (overlay/dialog.tsx). */
+const headerRow: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: "var(--vendo-density-inline-gap, 7px)",
+};
+const footerRow: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: "var(--vendo-density-inline-gap, 7px)",
+};
+
 export interface SurfaceProps {
   title?: string;
   tone?: KitTone;
   density?: KitDensity;
+  /** Kit elements along the top edge, beside the title. */
+  header?: ReactNode;
+  /** Kit elements under the content — the buttons a region ends with. */
+  footer?: ReactNode;
 }
 
 /** A bordered, elevated container; optional title. */
-export function Surface({ title, tone, density, children }: PropsWithChildren<SurfaceProps>) {
+export function Surface({ title, tone, density, header, footer, children }: PropsWithChildren<SurfaceProps>) {
   return (
     <section
       data-kit="Surface"
@@ -133,19 +152,23 @@ export function Surface({ title, tone, density, children }: PropsWithChildren<Su
         padding: "var(--vendo-density-card-padding, 16px)",
       }}
     >
-      {title ? (
-        <div
-          style={{
-            fontFamily: t.headingFamily,
-            fontSize: "calc(var(--vendo-font-size, 15px) * 1.05)",
-            fontWeight: t.weightEmphasis,
-            lineHeight: t.lineHeightHeading,
-          }}
-        >
-          {title}
+      {title || header ? (
+        <div style={headerRow}>
+          <div
+            style={{
+              fontFamily: t.headingFamily,
+              fontSize: "calc(var(--vendo-font-size, 15px) * 1.05)",
+              fontWeight: t.weightEmphasis,
+              lineHeight: t.lineHeightHeading,
+            }}
+          >
+            {title}
+          </div>
+          {header}
         </div>
       ) : null}
       {children}
+      {footer === undefined ? null : <div style={footerRow}>{footer}</div>}
     </section>
   );
 }
@@ -155,10 +178,14 @@ export interface CardProps {
   description?: string;
   tone?: KitTone;
   density?: KitDensity;
+  /** Kit elements along the top edge, beside the title. */
+  header?: ReactNode;
+  /** Kit elements under the content — the buttons a card ends with. */
+  footer?: ReactNode;
 }
 
 /** A titled content block; Surface is the untitled/plain container. */
-export function Card({ title, description, tone, density, children }: PropsWithChildren<CardProps>) {
+export function Card({ title, description, tone, density, header, footer, children }: PropsWithChildren<CardProps>) {
   return (
     <article
       data-kit="Card"
@@ -175,33 +202,59 @@ export function Card({ title, description, tone, density, children }: PropsWithC
         padding: "var(--vendo-density-card-padding, 16px)",
       }}
     >
-      {title ? (
-        <div
-          style={{
-            fontFamily: t.headingFamily,
-            fontSize: "calc(var(--vendo-font-size, 15px) * 1.08)",
-            fontWeight: t.weightEmphasis,
-            lineHeight: t.lineHeightHeading,
-          }}
-        >
-          {title}
+      {title || header ? (
+        <div style={headerRow}>
+          <div
+            style={{
+              fontFamily: t.headingFamily,
+              fontSize: "calc(var(--vendo-font-size, 15px) * 1.08)",
+              fontWeight: t.weightEmphasis,
+              lineHeight: t.lineHeightHeading,
+            }}
+          >
+            {title}
+          </div>
+          {header}
         </div>
       ) : null}
       {description ? (
         <div style={{ color: t.muted, fontSize: "0.9em" }}>{description}</div>
       ) : null}
       {children}
+      {footer === undefined ? null : <div style={footerRow}>{footer}</div>}
     </article>
   );
 }
 
+export interface DividerProps {
+  /** A Kit mark centred in the rule, which then reads as a section break
+   *  rather than as decoration. */
+  label?: ReactNode;
+}
+
 /** A horizontal rule. */
-export function Divider() {
+export function Divider({ label }: DividerProps) {
+  // An `<hr>` is void, so a labelled rule is two rules around the label — and it
+  // carries meaning, so it is NOT hidden from the reading order the way the
+  // plain one is.
+  if (label === undefined) {
+    return (
+      <hr
+        data-kit="Divider"
+        aria-hidden="true"
+        style={{ width: "100%", margin: 0, border: 0, borderTop: hairline }}
+      />
+    );
+  }
   return (
-    <hr
+    <div
       data-kit="Divider"
-      aria-hidden="true"
-      style={{ width: "100%", margin: 0, border: 0, borderTop: hairline }}
-    />
+      role="separator"
+      style={{ ...font, display: "flex", alignItems: "center", gap: "var(--vendo-density-inline-gap, 7px)", width: "100%" }}
+    >
+      <span style={{ flex: 1, borderTop: hairline }} />
+      <span style={microLabel}>{label}</span>
+      <span style={{ flex: 1, borderTop: hairline }} />
+    </div>
   );
 }

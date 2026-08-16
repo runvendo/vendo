@@ -1,5 +1,6 @@
 /** DatePicker — themed native date control (W2 §The Kit). */
 import { Input as Base } from "@base-ui/react/input";
+import type { ReactNode } from "react";
 import { control } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
@@ -10,7 +11,7 @@ export interface DatePickerProps {
   value?: string;
   min?: string;
   max?: string;
-  hint?: string;
+  hint?: ReactNode;
   disabled?: boolean;
   required?: boolean;
   onChange?: (value: string) => void;

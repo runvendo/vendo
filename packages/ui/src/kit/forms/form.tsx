@@ -1,7 +1,7 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
 import { Form as Base } from "@base-ui/react/form";
-import type { FormEvent, PropsWithChildren } from "react";
-import { font } from "../tokens.js";
+import type { FormEvent, PropsWithChildren, ReactNode } from "react";
+import { font, t } from "../tokens.js";
 import { Button } from "./button.js";
 
 export interface FormProps {
@@ -9,9 +9,15 @@ export interface FormProps {
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   submitLabel?: string;
   disabled?: boolean;
+  /** Kit elements above the fields. */
+  header?: ReactNode;
+  /** Kit elements beside the submit — a cancel, a secondary action. */
+  actions?: ReactNode;
+  /** The fine print under the actions. */
+  footer?: ReactNode;
 }
 
-export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: PropsWithChildren<FormProps>) {
+export function Form({ onSubmit, submitLabel = "Submit", disabled, header, actions, footer, children }: PropsWithChildren<FormProps>) {
   return (
     // Base UI's Form validates the fields that registered with it and focuses
     // the first one that failed before ever reaching `onSubmit` — the half a
@@ -30,10 +36,17 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: P
       }}
       style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
     >
+      {header}
       {children}
-      <div>
+      {/* A row rather than a bare div, so the submit keeps its natural width in
+          a stretched column and `actions` sits beside it. */}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--vendo-density-inline-gap, 7px)" }}>
         <Button type="submit" label={submitLabel} disabled={disabled} />
+        {actions}
       </div>
+      {footer === undefined ? null : (
+        <div style={{ color: t.muted, fontSize: "0.82em" }}>{footer}</div>
+      )}
     </Base>
   );
 }

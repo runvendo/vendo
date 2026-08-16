@@ -1,13 +1,14 @@
 /** EmptyState — the designed nothing-here, with the action that fixes it
  *  nested inside (W2 §The Kit). Same dashed frame the charts' empty state uses,
  *  so an empty region reads as intentional rather than broken. */
-import type { PropsWithChildren } from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 import { Icon } from "../icon.js";
 import { font, t } from "../tokens.js";
 
 export interface EmptyStateProps {
-  /** A lucide icon name in kebab-case; an unknown one draws nothing. */
-  icon?: string;
+  /** A lucide icon name in kebab-case (an unknown one draws nothing), or a Kit
+   *  mark drawn in the disc instead. */
+  icon?: ReactNode;
   /** The headline. */
   title: string;
   /** One line of why it is empty, or what to do about it. */
@@ -31,7 +32,10 @@ export function EmptyState({ icon, title, description, children }: PropsWithChil
         textAlign: "center",
       }}
     >
-      {icon ? (
+      {/* The disc is what gives a bare lucide GLYPH a presence — a Kit mark
+          brings its own shape, and boxing a pill in a 38px circle only
+          distorted the circle. */}
+      {typeof icon === "string" ? (
         <span
           style={{
             display: "inline-flex",
@@ -47,7 +51,7 @@ export function EmptyState({ icon, title, description, children }: PropsWithChil
         >
           <Icon name={icon} size={19} />
         </span>
-      ) : null}
+      ) : icon}
       <span style={{ fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, letterSpacing: "-0.015em" }}>{title}</span>
       {description ? (
         <span style={{ color: t.muted, fontSize: "0.9em", lineHeight: 1.45, maxWidth: "44ch" }}>{description}</span>

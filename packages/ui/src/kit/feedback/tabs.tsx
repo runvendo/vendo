@@ -28,6 +28,8 @@ export interface TabsProps {
   defaultIndex?: number;
   /** One panel per tab, in tab order. Wins over an item's `content`. */
   children?: ReactNode;
+  /** Kit elements at the end of the tab row — what the whole set does. */
+  actions?: ReactNode;
 }
 
 const text = (value: string | number | undefined): string =>
@@ -52,7 +54,7 @@ const normalize = (item: TabItem): NormalTab => {
   };
 };
 
-export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
+export function Tabs({ tabs, value, defaultIndex = 0, actions, children }: TabsProps) {
   const panels = Children.toArray(children);
   const items = (tabs ?? []).map(normalize);
   // Tabs are addressed by INDEX, because two items may carry the same `value`
@@ -72,49 +74,54 @@ export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
       defaultValue={start}
       style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
     >
-      <Base.List
-        style={{
-          display: "flex",
-          gap: "var(--vendo-density-inline-gap, 7px)",
-          width: "fit-content",
-          maxWidth: "100%",
-          overflowX: "auto",
-          border: hairline,
-          borderRadius: t.radiusMedium,
-          background: t.surfaceRaised,
-          padding: "var(--vendo-density-tabs-padding, 4px)",
-        }}
-      >
-        {items.map((tab, i) => (
-          <Base.Tab
-            key={`${tab.value}-${i}`}
-            value={i}
-            disabled={tab.disabled}
-            // Base UI hands the state to `style`, so the selected look is
-            // painted with no stylesheet to select `[data-active]` on.
-            style={({ active }) => ({
-              ...font,
-              minHeight: "var(--vendo-density-tab-height, 30px)",
-              border: active ? hairline : `${t.borderWidth} solid transparent`,
-              borderRadius: t.radiusSmall,
-              // Accent marks the ACTIVE state — the tablist's one brand pixel.
-              color: active ? t.accent : t.muted,
-              background: active ? t.surface : "transparent",
-              cursor: tab.disabled ? "not-allowed" : "pointer",
-              fontSize: "0.88em",
-              fontWeight: active ? t.weightEmphasis : t.weightNormal,
-              opacity: tab.disabled ? 0.5 : 1,
-              padding: "var(--vendo-density-tab-padding, 6px 10px)",
-              whiteSpace: "nowrap",
-              // The indicator glide: the fill and the rule travel to the tab
-              // that was pressed instead of jumping.
-              transition: transitionFor("background-color", "border-color", "color"),
-            })}
-          >
-            {tab.label}
-          </Base.Tab>
-        ))}
-      </Base.List>
+      {/* The list keeps its fit-content width; the row around it is what lets
+          `actions` sit at the far end instead of under the tabs. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--vendo-density-inline-gap, 7px)" }}>
+        <Base.List
+          style={{
+            display: "flex",
+            gap: "var(--vendo-density-inline-gap, 7px)",
+            width: "fit-content",
+            maxWidth: "100%",
+            overflowX: "auto",
+            border: hairline,
+            borderRadius: t.radiusMedium,
+            background: t.surfaceRaised,
+            padding: "var(--vendo-density-tabs-padding, 4px)",
+          }}
+        >
+          {items.map((tab, i) => (
+            <Base.Tab
+              key={`${tab.value}-${i}`}
+              value={i}
+              disabled={tab.disabled}
+              // Base UI hands the state to `style`, so the selected look is
+              // painted with no stylesheet to select `[data-active]` on.
+              style={({ active }) => ({
+                ...font,
+                minHeight: "var(--vendo-density-tab-height, 30px)",
+                border: active ? hairline : `${t.borderWidth} solid transparent`,
+                borderRadius: t.radiusSmall,
+                // Accent marks the ACTIVE state — the tablist's one brand pixel.
+                color: active ? t.accent : t.muted,
+                background: active ? t.surface : "transparent",
+                cursor: tab.disabled ? "not-allowed" : "pointer",
+                fontSize: "0.88em",
+                fontWeight: active ? t.weightEmphasis : t.weightNormal,
+                opacity: tab.disabled ? 0.5 : 1,
+                padding: "var(--vendo-density-tab-padding, 6px 10px)",
+                whiteSpace: "nowrap",
+                // The indicator glide: the fill and the rule travel to the tab
+                // that was pressed instead of jumping.
+                transition: transitionFor("background-color", "border-color", "color"),
+              })}
+            >
+              {tab.label}
+            </Base.Tab>
+          ))}
+        </Base.List>
+        {actions}
+      </div>
       {items.map((tab, i) => (
         <Base.Panel key={`${tab.value}-${i}`} value={i}>
           {panels.length > 0 ? panels[i] : tab.content}

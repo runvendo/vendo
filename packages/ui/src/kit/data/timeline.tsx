@@ -21,6 +21,8 @@ export interface TimelineProps {
   marker?: ReactNode;
   /** Text shown when there are no entries. */
   emptyState?: string;
+  /** Kit elements shown in place of `emptyState` when there are no entries. */
+  empty?: ReactNode;
 }
 
 /** A timestamp field is a date most of the time and a plain label the rest of
@@ -37,11 +39,13 @@ export function Timeline({
   cell,
   marker,
   emptyState = "No activity",
+  empty,
 }: TimelineProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const entries = Array.isArray(rawEntries) ? rawEntries : [];
   if (entries.length === 0) {
-    return (
+    // The slot replaces the dashed box, not its TEXT — see CardList.
+    return empty !== undefined ? <div data-kit="Timeline">{empty}</div> : (
       <div
         data-kit="Timeline"
         style={{

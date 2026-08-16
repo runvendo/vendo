@@ -1,5 +1,6 @@
 /** Steps — a progress trail: what is done, what is happening, what is left
  *  (W2 §The Kit). Everything before `active` reads as done. */
+import type { ReactNode } from "react";
 import { Icon } from "../icon.js";
 import { font, hairline, t } from "../tokens.js";
 
@@ -14,11 +15,13 @@ export interface StepsProps {
   /** Index of the current step. */
   active?: number;
   orientation?: "horizontal" | "vertical";
+  /** A Kit mark drawn in place of every step's numbered disc. */
+  marker?: ReactNode;
 }
 
 type StepState = "done" | "current" | "todo";
 
-export function Steps({ items = [], active = 0, orientation = "horizontal" }: StepsProps) {
+export function Steps({ items = [], active = 0, orientation = "horizontal", marker }: StepsProps) {
   const vertical = orientation === "vertical";
   return (
     <ol
@@ -53,27 +56,29 @@ export function Steps({ items = [], active = 0, orientation = "horizontal" }: St
                 : { flex: "1 1 0", borderBlockStart: rule, paddingBlockStart: 8 }),
             }}
           >
-            <span
-              aria-hidden="true"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                border: state === "current" ? `calc(${t.borderWidth} * 2) solid ${t.accent}` : hairline,
-                background: state === "done" ? t.accent : "transparent",
-                color: state === "done" ? t.accentText : state === "current" ? t.accent : t.muted,
-                fontSize: "0.68em",
-                fontWeight: t.weightEmphasis,
-                fontVariantNumeric: "tabular-nums",
-                lineHeight: 1,
-              }}
-            >
-              {state === "done" ? <Icon name="check" size={12} /> : index + 1}
-            </span>
+            {marker ?? (
+              <span
+                aria-hidden="true"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  border: state === "current" ? `calc(${t.borderWidth} * 2) solid ${t.accent}` : hairline,
+                  background: state === "done" ? t.accent : "transparent",
+                  color: state === "done" ? t.accentText : state === "current" ? t.accent : t.muted,
+                  fontSize: "0.68em",
+                  fontWeight: t.weightEmphasis,
+                  fontVariantNumeric: "tabular-nums",
+                  lineHeight: 1,
+                }}
+              >
+                {state === "done" ? <Icon name="check" size={12} /> : index + 1}
+              </span>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
               <span
                 style={{

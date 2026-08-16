@@ -51,8 +51,16 @@ export interface DataTableProps {
   paginate?: number;
   /** Text shown when there are no rows (the named-query empty state). */
   emptyState?: string;
+  /** Kit elements shown in place of `emptyState` when there are no rows. */
+  empty?: ReactNode;
   /** Optional table caption. */
   caption?: string;
+  /** Kit elements in the controls row, beside the search box and the filters. */
+  toolbar?: ReactNode;
+  /** Kit controls in a trailing column, rendered once per row with that row
+   *  published on `RowContext` — the cell contract, for the half of it that may
+   *  be OPERATED because it has a row of its own to act on. */
+  rowActions?: ReactNode;
   /** Spacing scale for this table's subtree. */
   density?: KitDensity;
 }
@@ -105,7 +113,10 @@ export function DataTable(props: DataTableProps) {
     searchable = false,
     paginate,
     emptyState = "No data",
+    empty,
     caption,
+    toolbar,
+    rowActions,
     density,
   } = props;
 
@@ -249,9 +260,13 @@ export function DataTable(props: DataTableProps) {
     if (node === null || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const headers = headRow.current?.children;
-      if (headers !== undefined && headers.length === columns.length) {
+      // `>=`, and only the data columns are measured: the actions column is a
+      // trailing extra that never folds, so counting it would leave the natural
+      // edges unmeasured and nothing would ever fold at all.
+      if (headers !== undefined && headers.length >= columns.length) {
         let edge = 0;
-        naturalEdges.current = [...headers].map((th) => (edge += (th as HTMLElement).offsetWidth));
+        naturalEdges.current = [...headers].slice(0, columns.length)
+          .map((th) => (edge += (th as HTMLElement).offsetWidth));
       }
       const edges = naturalEdges.current;
       if (edges.length === 0) return;
@@ -273,7 +288,7 @@ export function DataTable(props: DataTableProps) {
       data-kit="DataTable"
       style={{ ...font, ...numeric, ...densityVars(density), display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
     >
-      {(searchable || (filterableBy && filterableBy.length > 0)) && (
+      {(searchable || (filterableBy && filterableBy.length > 0) || toolbar !== undefined) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--vendo-density-inline-gap, 7px)", alignItems: "center" }}>
           {searchable && (
             <input
@@ -326,6 +341,13 @@ export function DataTable(props: DataTableProps) {
               ))}
             </select>
           ))}
+          {/* Pushed to the far end: the controls that READ the table lead the
+              row, and the ones that act on it end it. */}
+          {toolbar === undefined ? null : (
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--vendo-density-inline-gap, 7px)", marginInlineStart: "auto" }}>
+              {toolbar}
+            </div>
+          )}
         </div>
       )}
 
@@ -369,6 +391,9 @@ export function DataTable(props: DataTableProps) {
                     </th>
                   );
                 })}
+                {rowActions === undefined ? null : (
+                  <th scope="col" aria-label="Actions" style={{ borderBottom: hairline, padding: cellPad, width: 0 }} />
+                )}
               </tr>
             ))}
           </thead>
@@ -376,10 +401,10 @@ export function DataTable(props: DataTableProps) {
             {bodyRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={Math.max(1, shown(columns).length)}
+                  colSpan={Math.max(1, shown(columns).length) + (rowActions === undefined ? 0 : 1)}
                   style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
-                  {emptyState}
+                  {empty ?? emptyState}
                 </td>
               </tr>
             ) : (
@@ -441,6 +466,18 @@ export function DataTable(props: DataTableProps) {
                         </td>
                       );
                     })}
+                    {rowActions === undefined ? null : (
+                      <td
+                        style={{
+                          borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
+                          padding: cellPad,
+                          textAlign: "right",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {rowActions}
+                      </td>
+                    )}
                   </RowContext.Provider>
                 </tr>
               ))

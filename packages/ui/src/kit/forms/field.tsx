@@ -12,7 +12,8 @@ export interface FieldShellProps {
   fieldId: string;
   helpId: string;
   label?: string;
-  hint?: string;
+  /** The help line: a sentence, or Kit marks composed into one. */
+  hint?: ReactNode;
   error?: string;
   /** Render as a row (checkbox) rather than a stacked label. */
   inline?: boolean;

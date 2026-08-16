@@ -27,15 +27,22 @@ export interface CardListProps {
   columns?: number;
   /** Text shown when there are no items. */
   emptyState?: string;
+  /** Kit elements shown in place of `emptyState` when there are no items. */
+  empty?: ReactNode;
+  /** Kit elements in a row above the cards — what the list as a whole does. */
+  actions?: ReactNode;
   /** Spacing scale for this list's subtree. */
   density?: KitDensity;
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", density }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", empty, actions, density }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
-    return (
+    // The slot replaces the dashed box, not its TEXT: what goes in one is an
+    // EmptyState, which draws that same frame itself — nested, it read as a
+    // box inside a box.
+    return empty !== undefined ? <div data-kit="CardList">{empty}</div> : (
       <div
         data-kit="CardList"
         style={{
@@ -54,7 +61,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
   const gridTemplate = columns
     ? `repeat(${Math.max(1, Math.floor(columns))}, minmax(0, 1fr))`
     : "repeat(auto-fill, minmax(220px, 1fr))";
-  return (
+  const grid = (
     <div
       data-kit="CardList"
       style={{ ...densityVars(density), display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-content-gap, 10px)" }}
@@ -103,6 +110,14 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
           </RowContext.Provider>
         );
       })}
+    </div>
+  );
+  // The grid IS the list when nothing acts on it — the column above only exists
+  // to carry the actions row.
+  return actions === undefined ? grid : (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--vendo-density-inline-gap, 7px)" }}>{actions}</div>
+      {grid}
     </div>
   );
 }

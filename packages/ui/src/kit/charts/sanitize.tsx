@@ -4,8 +4,10 @@
  * them. A designed empty/invalid state is shown when nothing is left to plot.
  */
 import type { CSSProperties, ReactNode } from "react";
+import type { TooltipContentProps } from "recharts";
 import { isRenderableNumber } from "../format.js";
-import { font, t } from "../tokens.js";
+import { RowContext } from "../row.js";
+import { font, hairline, t } from "../tokens.js";
 
 /** Replace non-finite values in the given series keys with `null`. */
 export function sanitizeSeries<T extends Record<string, unknown>>(
@@ -74,3 +76,35 @@ export function ChartEmpty({ height = 220, children }: { height?: number; childr
   };
   return <div data-kit="ChartEmpty">{<div style={style}>{children}</div>}</div>;
 }
+
+/** The hover surface all three charts share — recharts paints its own content
+ *  into it through `contentStyle`, and a `tooltip` slot gets the same one so a
+ *  branded tooltip is not a bare row of text floating over the plot. */
+export const tooltipSurface: CSSProperties = {
+  borderRadius: t.radiusSmall,
+  border: hairline,
+  background: t.surface,
+  color: t.text,
+  fontSize: 12,
+  boxShadow: t.shadowSmall,
+};
+
+/**
+ * A `tooltip` slot, as recharts' `content`.
+ *
+ * A FUNCTION, never the element itself: recharts clones whatever element it is
+ * handed with its own eighteen internal props, which React then writes onto the
+ * slot's DOM node as attributes (`allowescapeviewbox="[object Object]"`) and
+ * warns about, one line apiece. The function is called with the same props and
+ * hands back the slot untouched.
+ *
+ * The hovered point rides on `RowContext`, so the value components inside name
+ * their field exactly as a table cell's do — the same contract, per point
+ * instead of per row.
+ */
+export const slotTooltip = (tooltip: ReactNode) =>
+  ({ payload }: Pick<TooltipContentProps<number, string>, "payload">) => (
+    <RowContext.Provider value={payload?.[0]?.payload ?? {}}>
+      <div style={{ ...font, ...tooltipSurface, padding: "6px 9px" }}>{tooltip}</div>
+    </RowContext.Provider>
+  );

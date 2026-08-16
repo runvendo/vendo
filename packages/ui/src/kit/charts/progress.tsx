@@ -1,5 +1,6 @@
 /** Progress — a themed progress bar; ratio or value/max (W2 §The Kit). */
 import { Progress as Base } from "@base-ui/react/progress";
+import type { ReactNode } from "react";
 import { isRenderableNumber } from "../format.js";
 import { useFieldValue } from "../row.js";
 import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitTone } from "../tokens.js";
@@ -9,7 +10,8 @@ export interface ProgressProps {
   value?: number;
   /** When set, `value/max` is the ratio. */
   max?: number;
-  label?: string;
+  /** The caption over the bar: a word, or Kit marks composed into one. */
+  label?: ReactNode;
   /** Show the percentage text. */
   showValue?: boolean;
   tone?: KitTone;
