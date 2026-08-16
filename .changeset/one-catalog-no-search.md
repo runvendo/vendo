@@ -1,7 +1,7 @@
 ---
-"@vendoai/apps": major
-"@vendoai/core": major
-"@vendoai/vendo": major
+"@vendoai/apps": minor
+"@vendoai/core": minor
+"@vendoai/vendo": minor
 ---
 
 The whole catalog is in the prompt, so `search_components` is deleted.

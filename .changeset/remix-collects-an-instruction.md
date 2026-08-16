@@ -1,8 +1,8 @@
 ---
-"@vendoai/core": major
-"@vendoai/apps": major
-"@vendoai/ui": major
-"@vendoai/vendo": major
+"@vendoai/core": minor
+"@vendoai/apps": minor
+"@vendoai/ui": minor
+"@vendoai/vendo": minor
 ---
 
 The ✦ gesture collects an instruction, and mints a screen. There are no bare forks: ✦ asks what the person wants BEFORE it fires, and the fork plus that first edit are ONE operation whose output is an ordinary screen app (`app.tsx`, through the ordinary edit door) carrying the remix's provenance — component, baseline, and the instruction, verbatim.

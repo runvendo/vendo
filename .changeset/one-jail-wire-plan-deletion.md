@@ -1,7 +1,7 @@
 ---
-"@vendoai/apps": major
-"@vendoai/harnesses": major
-"@vendoai/vendo": major
+"@vendoai/apps": minor
+"@vendoai/harnesses": minor
+"@vendoai/vendo": minor
 ---
 
 The wire format (`app.vendo`) and the plan dialect (`plan.vendo`) are gone. One

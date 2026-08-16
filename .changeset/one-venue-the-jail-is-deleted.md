@@ -1,6 +1,6 @@
 ---
-"@vendoai/apps": major
-"@vendoai/ui": major
+"@vendoai/apps": minor
+"@vendoai/ui": minor
 "@vendoai/actions": patch
 "@vendoai/mcp": patch
 ---
