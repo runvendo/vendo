@@ -2,14 +2,16 @@ import { CLI_VERSION } from "./shared.js";
 
 /**
  * Agent-install DX (design 2026-07-19 §CLI-3) — the doctor error-code
- * registry. Every failure mode doctor can report (static and live) has one
- * stable, grep-able code here: E-<AREA>-<NNN>, where the area groups related
- * checks (WIRE wiring, CFG config files, STORE store persistence, DEP host dependency versions, UI
- * eject drift, DEV probe server, LIVE composition/status, AUTH credentials,
- * MCP door, TURN model turn, CLOUD key). Codes are append-only: never renumber or reuse one — the
- * verify page anchors (`fix_ref`) and agents' remediation notes depend on
- * them staying put. A check that goes away leaves its entry behind, marked
- * RETIRED, for the same reason.
+ * registry. Every failure mode doctor can report has one stable, grep-able
+ * code here: E-<AREA>-<NNN>, where the area groups related checks (WIRE
+ * wiring, CFG config files, STORE store persistence, DEP host dependency
+ * versions, UI eject drift, MCP door, CLOUD key, TOOLS catalog). Codes are
+ * append-only: never renumber or reuse one — the verify page anchors
+ * (`fix_ref`) and agents' remediation notes depend on them staying put. A
+ * check that goes away leaves its entry behind, marked RETIRED, for the same
+ * reason. Doctor reads only what is on disk, so every code that needed a
+ * running app to observe (DEV, LIVE, AUTH, TURN, SCHED and the fetched half
+ * of MCP) is retired below.
  *
  * This is the ONE module a CI check enumerates to assert every code has a
  * matching verify-page anchor (no registry rot).
@@ -31,16 +33,16 @@ export const DOCTOR_ERROR_CODES = {
   "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
   "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
-  "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
+  "E-DEP-002": "RETIRED — doctor no longer reads a running wire's version",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
   "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
-  "E-DEV-001": "the dev server could not be started for the probe",
-  "E-LIVE-001": "/status returned an invalid composition response",
-  "E-LIVE-002": "/status is unreachable",
-  "E-LIVE-003": "/status returned an invalid execution venue",
-  "E-LIVE-004": "no execution venue is configured",
-  "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
-  "E-LIVE-006": "the app's root page returns a server error while the wire answers",
+  "E-DEV-001": "RETIRED — doctor no longer starts a dev server",
+  "E-LIVE-001": "RETIRED — doctor no longer reads /status",
+  "E-LIVE-002": "RETIRED — doctor no longer reads /status",
+  "E-LIVE-003": "RETIRED — doctor no longer reads /status",
+  "E-LIVE-004": "RETIRED — doctor no longer reads the execution venue off /status",
+  "E-LIVE-005": "RETIRED — doctor no longer reads the execution venue off /status",
+  "E-LIVE-006": "RETIRED — doctor no longer requests the app's root page",
   // RETIRED 2026-08-11 (the selection law): E2B_API_KEY no longer selects a
   // venue, so no host can be handed an e2b venue it did not ask for. An explicit
   // `sandbox: e2bSandbox()` refuses at boot when the SDK does not resolve, which
@@ -48,27 +50,27 @@ export const DOCTOR_ERROR_CODES = {
   // append-only and the verify page anchors on it.
   "E-LIVE-007": "RETIRED — doctor no longer emits this; E2B_API_KEY does not select an execution venue",
   "E-LIVE-008": "the host still calls store ops the wire has deprecated and will remove",
-  "E-AUTH-001": "present credentials did not reach the host API",
-  "E-AUTH-002": "the present credential probe is unreachable",
-  "E-AUTH-003": "the present credential probe cannot run while the dev server is down",
-  "E-AUTH-004": "actAs mint + host verification failed",
-  "E-AUTH-005": "the actAs probe is unreachable",
-  "E-AUTH-006": "the actAs probe cannot run while the dev server is down",
-  "E-AUTH-007": "actAs is not configured",
-  "E-AUTH-008": "actAs is configured but declined the doctor probe's synthetic principal",
+  "E-AUTH-001": "RETIRED — doctor no longer probes present credentials",
+  "E-AUTH-002": "RETIRED — doctor no longer probes present credentials",
+  "E-AUTH-003": "RETIRED — doctor no longer probes present credentials",
+  "E-AUTH-004": "RETIRED — doctor no longer probes actAs",
+  "E-AUTH-005": "RETIRED — doctor no longer probes actAs",
+  "E-AUTH-006": "RETIRED — doctor no longer probes actAs",
+  "E-AUTH-007": "RETIRED — doctor no longer probes actAs",
+  "E-AUTH-008": "RETIRED — doctor no longer probes actAs",
   "E-AUTH-009": "supabase() is wired but neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set",
-  "E-MCP-001": "MCP protected-resource metadata did not resolve",
-  "E-MCP-002": "MCP authorization-server metadata did not resolve",
-  "E-MCP-003": "the MCP server card did not parse",
+  "E-MCP-001": "RETIRED — doctor no longer fetches MCP discovery documents",
+  "E-MCP-002": "RETIRED — doctor no longer fetches MCP discovery documents",
+  "E-MCP-003": "RETIRED — doctor no longer fetches the MCP server card",
   "E-MCP-004": "server.json does not meet MCP registry discovery requirements",
-  "E-MCP-005": "the server.json remote does not match the live MCP door",
+  "E-MCP-005": "RETIRED — doctor no longer compares server.json against a live door",
   "E-MCP-006": "server.json is invalid JSON",
   "E-MCP-007": "the local MCP registry auth challenge is malformed",
-  "E-MCP-008": "the live MCP registry auth challenge is malformed",
+  "E-MCP-008": "RETIRED — doctor no longer fetches the live registry auth challenge",
   "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
-  "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
-  "E-TURN-001": "the live model turn did not answer",
-  "E-TURN-002": "the live model turn cannot run while the dev server is down",
+  "E-SCHED-001": "RETIRED — doctor no longer reads machines and schedules off a running app",
+  "E-TURN-001": "RETIRED — doctor no longer runs a model turn",
+  "E-TURN-002": "RETIRED — doctor no longer runs a model turn",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",

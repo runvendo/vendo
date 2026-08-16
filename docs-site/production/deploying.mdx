@@ -1,7 +1,7 @@
 ---
 title: "Production checklist"
 sidebarTitle: "Deploying"
-description: "The eight things that must be true before your users meet Vendo in production, and the one command that checks all eight."
+description: "The eight things that must be true before your users meet Vendo in production, and the command that checks your wiring."
 ---
 
 Eight things must be true before your users meet Vendo in production.
@@ -63,33 +63,29 @@ Checks 1, 3, and 8 come with your Cloud key. The other five are yours to wire.
 
 ---
 
-## One command checks all eight
+## One command checks your wiring
 
-Point `vendo doctor` at the running app. It walks the same list and ends on a
-real model turn.
+`vendo doctor` reads your repo and your environment. It never calls the
+deployed app, so run it where your source lives.
 
 ```bash Terminal highlight={1}
-$ npx vendo doctor --url https://app.example.com/api/vendo
+$ npx vendo doctor
 
+ok: createVendo server wiring found
+ok: a visible agent surface is mounted (<VendoOverlay /> or an equivalent)
 ok: model credential: VENDO_API_KEY (Vendo Cloud)
 ok: the OpenAPI server mount and VENDO_BASE_URL agree on "/api/vendo"
-ok: /status live round-trip (0.23.0, rules)
-ok: execution venue: cloud
 ok: catalog: all 34 tools graded
-ok: present credentials reach the host API
-ok: actAs mint round-trip verified by the composition's own principal resolver
-ok: schedule caller configured (VENDO_TICK_SECRET)
-ok: live model turn answered over VENDO_API_KEY (Vendo Cloud) (1240ms)
 ok: Vendo Cloud key present and well-formed
 ```
 
-Exit 0 means a real user would have gotten an answer. A check that fails prints
-`broken:` instead, and a soft one prints `warning:`.
+Exit 0 means every check passed. A check that fails prints `broken:` instead,
+and a soft one prints `warning:`.
 
 Add `--json` and doctor prints one object with a `checks` array. Each entry
 carries a `status`, and a failing one also carries its `error_code` and a
 `fix_ref` URL, for example
-[`E-TURN-001`](/production/troubleshooting/e-turn-001).
+[`E-WIRE-004`](/production/troubleshooting/e-wire-004).
 
 ---
 

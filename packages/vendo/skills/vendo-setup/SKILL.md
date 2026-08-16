@@ -87,19 +87,18 @@ fetch it when you need more detail than this skill carries.
    provider works — pass the host's own model into
    `createVendo({ model })` when one exists.
 
-5. Verify. Start the dev server, then:
+5. Verify:
 
    ```bash
    npx vendo doctor
    ```
 
-   Doctor checks wiring plus one live `/status` round-trip against
-   `http://localhost:3000/api/vendo` (override with `--url` or `VENDO_URL`).
+   Doctor reads the repo: wiring, the `.vendo/` files, the tool catalog, and
+   the model credential in your environment. It needs no running app.
    Exit 0 = green; exit 1 prints each `broken:` line. Fix and re-run until 0.
-   Common fixes: dev server not running (start it), missing `.vendo/*` file
-   (re-run `npx vendo init`), layout not wrapped (`E-WIRE-004` — paste the
-   exact import + wrap lines doctor prints into the named file; init will
-   never make that edit for you).
+   Common fixes: missing `.vendo/*` file (re-run `npx vendo init`), layout not
+   wrapped (`E-WIRE-004` — paste the exact import + wrap lines doctor prints
+   into the named file; init will never make that edit for you).
 
 ## Stage 2 — review and keep extraction fresh
 
@@ -133,9 +132,9 @@ fetch it when you need more detail than this skill carries.
 - **MCP door** (agents like Claude/ChatGPT use the product's tools): a host
   decision, never a default. Needs a `HostOAuthAdapter` and
   `createVendo({ mcp: true, oauth })`, then `npx vendo mcp server-json` and
-  `npx vendo mcp verify-domain`. Doctor validates the discovery documents.
-- **Sandbox / connectors / voice / persistence on Postgres**: doctor's final
-  ladder line names what each remaining block unlocks; see
+  `npx vendo mcp verify-domain`. Doctor checks `server.json` and the domain
+  verification file.
+- **Sandbox / connectors / voice / persistence on Postgres**: see
   https://docs.vendo.run for each capability.
 - **Vendo Cloud**: sharing, org overlays, and hosted automations activate
   with `VENDO_API_KEY` (`npx vendo login`).
@@ -146,5 +145,4 @@ fetch it when you need more detail than this skill carries.
   explicitly asked for unattended setup.
 - Do not hand-edit generated files (`.vendo/tools.json`, theme regeneration);
   use `overrides.json` and re-run sync.
-- Done means `npx vendo doctor` exits 0 against a running dev server, not
-  merely that files exist.
+- Done means `npx vendo doctor` exits 0, not merely that files exist.

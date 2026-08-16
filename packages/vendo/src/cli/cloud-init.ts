@@ -3,8 +3,8 @@ import { realpath } from "node:fs/promises";
 import { stdin, stdout } from "node:process";
 import { dirname, join, relative, resolve } from "node:path";
 import { ENV_KEY_VARS, type DevCredential } from "../dev-creds/resolve.js";
+import { cloudDoctor, type CloudDoctorResult } from "./cloud/client.js";
 import { runDeviceLogin } from "./cloud/device-login.js";
-import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
 import type { SelectOption } from "./pretty.js";
 import {
   askYesNo,

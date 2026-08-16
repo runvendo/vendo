@@ -1,31 +1,30 @@
 ---
 title: "E-TURN-002"
 sidebarTitle: "E-TURN-002"
-description: "Doctor's live model turn cannot run while the dev server is down."
+description: "Retired: doctor no longer needs a running app, so the model turn is never blocked."
 ---
 
-```text turn/model
-broken: live model turn cannot run; start the dev server at <base> and retry
+```text retired
+E-TURN-002 — retired, doctor no longer emits this code
 ```
 
-`check: turn/model` · `error_code: E-TURN-002` · `doctor exits: 1`
+`error_code: E-TURN-002` · `status: retired`
 
 ## What you're seeing
 
-This check never got to run at all.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-It follows directly from a failed `/status` round trip. See
-[E-LIVE-002](/production/troubleshooting/e-live-002) for why the dev server
-was unreachable.
+This code marked the live model turn as skipped because your app was not
+answering. Doctor runs no model turn at all now, so nothing is skipped.
 
 ## The fix
 
-Start the dev server at the probed base, then re-run `npx vendo doctor`.
+Nothing to do.
 
 ## Related errors
 
-- [E-LIVE-002](/production/troubleshooting/e-live-002) — the root cause this check inherits
-- [E-TURN-001](/production/troubleshooting/e-turn-001) — the same probe, once the dev server answers
-- [E-AUTH-003](/production/troubleshooting/e-auth-003) — the present-credential probe, blocked by the same dead server
+- [E-TURN-001](/production/troubleshooting/e-turn-001) — what that turn used to catch, and how to check it by hand
+- [E-CLOUD-001](/production/troubleshooting/e-cloud-001) — the `VENDO_API_KEY` check doctor still runs

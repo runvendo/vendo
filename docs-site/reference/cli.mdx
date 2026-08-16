@@ -10,7 +10,7 @@ The `@vendoai/vendo` package owns the `vendo` bin. `vendo --version` prints the 
 | --- | --- |
 | [`init [dir]`](#vendo-init-dir) | Wire the handler, extract tools and theme, resolve a model key |
 | [`login`](#vendo-login) | Claim a Vendo Cloud key; it lands in `.env.local` |
-| [`doctor [dir]`](#vendo-doctor) | Verify the install: wiring, live probes, one real model turn |
+| [`doctor [dir]`](#vendo-doctor) | Verify the install from the files on disk: wiring, config, tools, deps |
 | [`sync [dir]`](#vendo-sync) | Re-extract tools and baselines, then judge what moved |
 | [`eject <surface> [dir]`](#vendo-eject) | Copy a shipped chrome surface's source into your repo |
 | [`knowledge <verb>`](#vendo-knowledge) | Sync local docs into the product knowledge base |
@@ -89,38 +89,24 @@ The pending claim persists to `~/.vendo/pending-claim.json` (mode `0600`), so a 
 
 ## `vendo doctor`
 
-Checks wiring, makes one live `/status` round trip, GETs the app's root page, and sends one seeded message through `POST /threads` to prove the wired model answers.
+Reads the repo and reports what is wired and what is missing: wiring markers, the `.vendo/` files, store persistence, surface ownership, the model credential in your environment, the tool catalog, ejected-surface drift, installed `ai` and `zod` versions, and the MCP discovery files.
+
+Doctor never starts a server and never makes a request. Run it with your app stopped.
 
 It fails unless a visible surface is mounted somewhere. `<VendoProvider>` alone renders nothing a user can reach.
 
 | Flag | Effect |
 | --- | --- |
-| `--url <url>` | override `VENDO_URL` for the probe target |
-| `--yes` | start the dev server for the probe without asking. Ignored under `--json` |
 | `--json` | print exactly one report object on stdout and suppress every other line |
 
-The `--json` object is `{ vendo, version, wired, exit, checks, liveTurn, cloud, summary }`. `wired` is true when no static or HTTP check failed, and `exit` is `wired ? 0 : 1`.
-
-A `--json` run never starts the dev server, even with `--yes`. Start it yourself before an agent or CI run.
-
-### Live probes
-
-| Probe | What it proves |
-| --- | --- |
-| Present-mode forwarding | `POST /doctor/present` executes a synthetic same-origin tool; the echo reports booleans only, never credential values |
-| actAs mint and verify | `POST /doctor/act-as` mints auth material and the host's own resolver accepts it. Unconfigured `actAs` warns rather than fails |
-| Machine and schedule report | `GET /doctor/machines` lists which apps carry a machine and each schedule's last-fired state. Reporting only |
-
-The `/doctor/*` routes are mounted only in a development composition. Every other deployment answers `404` because the route is not in its table.
-
-`GET /doctor/base-url` is the one exception and answers everywhere. It reports whether `VENDO_BASE_URL` is set, which reveals no secret.
+The `--json` object is `{ vendo, version, wired, exit, checks, cloud, summary }`. `wired` is true when no check failed, and `exit` is `wired ? 0 : 1`.
 
 ### Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| `0` | wiring, HTTP checks, and the live model turn all passed |
-| `1` | broken wiring, a failed HTTP probe, or an unanswered live turn |
+| `0` | every check passed |
+| `1` | at least one check failed |
 
 Every check's symptom, cause, and fix is on its own [troubleshooting page](/production/troubleshooting/e-wire-001).
 

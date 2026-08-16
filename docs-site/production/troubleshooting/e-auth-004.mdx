@@ -1,46 +1,38 @@
 ---
 title: "E-AUTH-004"
 sidebarTitle: "E-AUTH-004"
-description: "Doctor minted an actAs credential and the host's own principal resolver did not accept it."
+description: "Retired: doctor no longer mints an actAs credential or verifies it against your host."
 ---
 
-```text auth/act-as
-broken: actAs mint + host verification failed; check createVendo({ actAs }),
-its verifier middleware, and the host principal resolver
+```text retired
+E-AUTH-004 — retired, doctor no longer emits this code
 ```
 
-When the wire's own mint threw, the message names that error in place of the
-generic check list above.
-
-`check: auth/act-as` · `error_code: E-AUTH-004` · `doctor exits: 1`
+`error_code: E-AUTH-004` · `status: retired`
 
 ## What you're seeing
 
-Doctor minted an away credential through your composition's `actAs` seam,
-and the composition's own principal resolver did not accept it back over the
-wire.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-Either the mint itself errored, or the resolver rejected a credential it
-should have accepted. This probe only verifies against the composition's own
-resolver; it never touches your host app's separate session middleware, so a
-pass here still depends on that middleware verifying real away calls
-correctly.
+This code fired when doctor minted an away credential through your `actAs`
+seam and your principal resolver refused it. Doctor only reads files now, so
+it mints nothing and verifies nothing.
 
 ## The fix
 
-Start from the reason doctor's own line carries; it often names the exact
-failure, a missing module or the mint's own error. Then check
-`createVendo({ auth })` (or a hand-wired `actAs`), the verifier middleware on
-your host API, and the host's principal resolver.
+The seam can still be broken, and you check it yourself now. Trigger one
+real away action and read the dev server log; a broken mint or a refused
+credential shows up there with its own error.
 
-For Clerk or Auth0, confirm `VENDO_AWAY_TOKEN_SECRET` is the same value on
-both sides. See [Host auth](/production/auth) for how the three auth seams fit
-together.
+Check `createVendo({ auth })` (or a hand-wired `actAs`), the verifier
+middleware on your host API, and the host's principal resolver. For Clerk or
+Auth0, confirm `VENDO_AWAY_TOKEN_SECRET` is the same value on both sides.
+See [Host auth](/production/auth) for how the three auth seams fit together.
 
 ## Related errors
 
-- [E-AUTH-005](/production/troubleshooting/e-auth-005) — the same probe, unreachable instead of rejected
-- [E-AUTH-007](/production/troubleshooting/e-auth-007) — no actAs seam configured at all
-- [E-AUTH-008](/production/troubleshooting/e-auth-008) — a seam that is configured and declines on purpose
+- [E-AUTH-007](/production/troubleshooting/e-auth-007) — no `actAs` seam configured at all, also retired
+- [E-CFG-001](/production/troubleshooting/e-cfg-001) — a config check doctor still runs

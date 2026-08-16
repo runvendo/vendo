@@ -137,7 +137,7 @@ export async function checkModelResolution(run: DoctorRun): Promise<void> {
   if (modelCredential.rung !== "none") {
     run.pass("model/credential", `model credential: ${describeDevCredential(modelCredential)}`);
   } else {
-    run.note("model credential: none found — the live turn check below carries the honest failure");
+    run.note("model credential: none found — set a model key or VENDO_API_KEY, or the agent cannot answer");
   }
   const activePins = Object.values(SLOT_PIN_ENV)
     .map((name) => ({ name, value: env[name]?.trim() }))

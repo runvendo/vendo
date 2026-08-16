@@ -2425,7 +2425,7 @@ describe("the five questions", () => {
     expect(await readFile(join(skipped, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:3000");
   });
 
-  it("offers the live check only when nothing is left to paste, and never changes the exit code", async () => {
+  it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {
     // A run that still owes the mount paste: doctor would grade that paste,
     // so offering the check would fail a run that did nothing wrong.
     const owing = await fixture();
@@ -2446,7 +2446,7 @@ describe("the five questions", () => {
       confirmCheck: async (question) => { asked.push(question); return true; },
       runCheck: async () => { throw new Error("doctor exploded"); },
     })).toBe(0);
-    expect(asked).toEqual(["Start your dev server and run a live check now?"]);
+    expect(asked).toEqual(["Check the install now?"]);
   });
 });
 

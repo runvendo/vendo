@@ -5,7 +5,6 @@ import { VendoError } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { liveModelTurn } from "../src/cli/doctor-live.js";
 import { DevModelController, NO_CREDENTIAL_MESSAGE, vendoModel } from "../src/dev-creds/model.js";
 import { createVendo } from "../src/server.js";
 
@@ -162,7 +161,7 @@ describe("a rejected key names the rung it was rejected on", () => {
 });
 
 describe("end to end: a keyless turn through the real composed door", () => {
-  it("streams the fix on the thread error frame, and doctor's live-turn check prints it", async () => {
+  it("streams the fix on the thread error frame", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-onboarding-rails-"));
@@ -194,11 +193,5 @@ describe("end to end: a keyless turn through the real composed door", () => {
     const framed = JSON.stringify(`Vendo: ${NO_CREDENTIAL_MESSAGE} (validation)`).slice(1, -1);
     expect(stream).toContain(framed);
     expect(stream).not.toContain("An error occurred while generating the response.");
-
-    // The same frame, read by `vendo doctor`'s live-turn check.
-    const turn = await liveModelTurn({ base: "http://live.test/api/vendo", fetchImpl, env: {} });
-    expect(turn.ok).toBe(false);
-    expect(turn.error).toBe(`${NO_CREDENTIAL_MESSAGE} (validation)`);
-    expect(turn.error).not.toBe("the turn returned an error frame");
   });
 });

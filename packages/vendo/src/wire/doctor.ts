@@ -2,10 +2,11 @@ import type { ExtractedTool } from "@vendoai/actions";
 import { principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
 import { BASE_PATH, environment, json, route, type RouteEntry } from "./shared.js";
 
-/** The doctor probe surface (CLI `vendo doctor` targets a running dev server):
-    the synthetic credential/actAs round-trip constants and tool descriptors,
-    and the /doctor wire routes. server.ts keeps only the deps.doctor
-    probe-executor wiring (the probes run through a real createActions). */
+/** The composition probe surface, for anything that wants to check a running
+    deployment over HTTP: the synthetic credential/actAs round-trip constants
+    and tool descriptors, and the /doctor wire routes. server.ts keeps only the
+    deps.doctor probe-executor wiring (the probes run through a real
+    createActions). `vendo doctor` reads files and does not call these. */
 
 const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
 const DOCTOR_PRESENT_COOKIE = "vendo_doctor_present=1";
@@ -55,9 +56,9 @@ export const doctorBaseUrlRoutes: RouteEntry[] = [
   }),
 ];
 
-/** The doctor PROBE surface — `vendo doctor` targets a running dev server, so
-    a composition that did not say it is development never gets these routes at
-    all (server.ts mounts the group behind `deps.development`). Mounting is the
+/** The PROBE surface — a composition that did not say it is development never
+    gets these routes at all (server.ts mounts the group behind
+    `deps.development`). Mounting is the
     only thing standing between them and an unauthenticated caller: none takes a
     principal, `/doctor/machines` reports every machine-bearing app in the
     deployment across every subject, and POST `/doctor/act-as` makes the

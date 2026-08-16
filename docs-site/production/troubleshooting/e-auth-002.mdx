@@ -1,40 +1,30 @@
 ---
 title: "E-AUTH-002"
 sidebarTitle: "E-AUTH-002"
-description: "Doctor's present-credential probe threw instead of answering."
+description: "Retired: doctor no longer runs the present-credential probe, so it cannot be unreachable."
 ---
 
-```text auth/present
-broken: present credential probe is unreachable at <base>/doctor/present;
-restart the dev server and verify VENDO_BASE_URL
+```text retired
+E-AUTH-002 — retired, doctor no longer emits this code
 ```
 
-`check: auth/present` · `error_code: E-AUTH-002` · `doctor exits: 1`
+`error_code: E-AUTH-002` · `status: retired`
 
 ## What you're seeing
 
-`/status` answered, but the follow-up POST to `<base>/doctor/present` threw
-instead of returning a response.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-The dev server died mid-run, or a proxy in front of it blocks doctor's
-routes.
+This code fired when the POST to `<base>/doctor/present` threw instead of
+answering. Doctor sends no requests now, so there is no probe to fail.
 
 ## The fix
 
-Restart the dev server, then re-run doctor.
-
-```bash
-npm run dev
-npx vendo doctor
-```
-
-Verify `VENDO_BASE_URL` points at the running host origin, and remove any
-proxy rule that blocks `/doctor/*` paths.
+Nothing to do.
 
 ## Related errors
 
-- [E-AUTH-001](/production/troubleshooting/e-auth-001) — the same probe, answering but stripping credentials
-- [E-LIVE-002](/production/troubleshooting/e-live-002) — the earlier check this one depends on
-- [E-AUTH-005](/production/troubleshooting/e-auth-005) — the actAs probe's equivalent unreachable case
+- [E-AUTH-001](/production/troubleshooting/e-auth-001) — the same probe's real failure, also retired, with a by-hand check
+- [E-CFG-003](/production/troubleshooting/e-cfg-003) — the `VENDO_BASE_URL` check doctor still runs

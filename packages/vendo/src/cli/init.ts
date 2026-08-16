@@ -246,9 +246,9 @@ export interface InitOptions {
   selectUseCase?: (question: string, options: SelectOption[]) => Promise<string>;
   /** Test seam: the free-text asks (the base URL). "" is a decline. */
   askText?: (question: string, hint?: string) => Promise<string>;
-  /** Test seam: the live-check offer. Mirrors the auth confirm's shape. */
+  /** Test seam: the doctor-check offer. Mirrors the auth confirm's shape. */
   confirmCheck?: (question: string, defaultYes: boolean) => Promise<boolean>;
-  /** Test seam: the live check itself (default: `vendo doctor`). */
+  /** Test seam: the check itself (default: `vendo doctor`). */
   runCheck?: (root: string) => Promise<boolean>;
   /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
   themeReview?: (summary: ThemeSummary) => Promise<Record<string, string>>;
@@ -886,12 +886,12 @@ async function planMcpScaffold(input: {
   return mcp;
 }
 
-/** The live check — `vendo doctor`, the one thing that turns "wired" into
- *  "proven". It only OFFERS itself when the run owes no hand step: doctor
- *  grades whether the <VendoProvider> paste landed, and the paste happens
- *  after init exits, so offering it on a run that still owes one would fail a
- *  run that did nothing wrong. Nothing here can change init's exit code. */
-async function offerLiveCheck(input: {
+/** The install check — `vendo doctor`, reading what init just wrote. It only
+ *  OFFERS itself when the run owes no hand step: doctor grades whether the
+ *  <VendoProvider> paste landed, and the paste happens after init exits, so
+ *  offering it on a run that still owes one would fail a run that did nothing
+ *  wrong. Nothing here can change init's exit code. */
+async function offerDoctorCheck(input: {
   root: string;
   options: InitOptions;
   output: Output;
@@ -907,16 +907,16 @@ async function offerLiveCheck(input: {
           ? undefined
           : (pretty === null ? askYesNo : pretty.confirm));
       if (confirm === undefined) return false;
-      if (!(await confirm("Start your dev server and run a live check now?", true))) return false;
+      if (!(await confirm("Check the install now?", true))) return false;
     }
-    pretty?.spin("vendo doctor — starting dev server…");
+    pretty?.spin("vendo doctor — checking the install…");
     const check = options.runCheck ?? (async (target: string) =>
-      (await runDoctor({ targetDir: target, yes: true, output })) === 0);
+      (await runDoctor({ targetDir: target, output })) === 0);
     const passed = await check(root);
     pretty?.stopSpin();
     output.log(passed
-      ? "Live turn passed — your door answers"
-      : "The live check did not pass — `npx vendo doctor` prints what is missing.");
+      ? "Doctor passed — your install is wired"
+      : "Doctor did not pass — `npx vendo doctor` prints what is missing.");
     return passed;
   } catch {
     // Best-effort by design: init already succeeded.
@@ -1695,7 +1695,7 @@ async function ensureHostDeps(input: {
 
 /** The run's ending, as its own phase — the same reason wireAndScaffold and
  *  resolveModelCredential are their own functions. The last question, then
- *  everything still the user's to paste, then the live check on the runs that
+ *  everything still the user's to paste, then the doctor check on the runs that
  *  owe nothing, and finally the stats the footer carries. Returns those stats;
  *  it never decides the exit code. */
 async function finishRun(input: {
@@ -1749,10 +1749,10 @@ async function finishRun(input: {
     } else pretty.block("Steps that are yours", mcpStepLines(mcp), "◇");
   }
 
-  // The live check offers itself ONLY when nothing is left to paste: doctor
+  // The check offers itself ONLY when nothing is left to paste: doctor
   // grades the paste, and the paste happens after init exits.
   const checkPassed = handSteps.length === 0
-    && await offerLiveCheck({ root, options, output, pretty, interactive });
+    && await offerDoctorCheck({ root, options, output, pretty, interactive });
 
   // The receipt: agent mode's LAST line, and the whole of its ending. Same
   // facts as the prose tail below, shaped so the caller can act on them without

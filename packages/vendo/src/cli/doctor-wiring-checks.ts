@@ -181,7 +181,7 @@ async function checkVendoResolvable(run: DoctorRun): Promise<void> {
     run.pass("wiring/vendo-resolvable", "host source can resolve @vendoai/vendo");
   } else if (await installedVersion(root, "vendoai") !== null) {
     run.fail("wiring/vendo-resolvable", "E-WIRE-011",
-      `the vendoai alias is installed but @vendoai/vendo is not resolvable from this app — the alias keeps its copy nested, so under pnpm every \`@vendoai/vendo/*\` import in your wiring fails to compile ("Module not found") and the route 500s before any live check can mean anything. Fix: ${await vendoPackageInvocation(root)} (keep the alias; both names ship the same wire).`);
+      `the vendoai alias is installed but @vendoai/vendo is not resolvable from this app — the alias keeps its copy nested, so under pnpm every \`@vendoai/vendo/*\` import in your wiring fails to compile ("Module not found") and the route 500s before anything can run. Fix: ${await vendoPackageInvocation(root)} (keep the alias; both names ship the same wire).`);
   }
 }
 

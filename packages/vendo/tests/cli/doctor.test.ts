@@ -1,47 +1,21 @@
-import { once } from "node:events";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ActAs, PermissionGrant, Principal } from "@vendoai/core";
-import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import { extractServerActions } from "@vendoai/actions/sync";
-import type { VendoStore } from "@vendoai/store";
-import type { LanguageModel } from "ai";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createVendo, type Vendo } from "../../src/server.js";
+import { afterEach, describe, expect, it } from "vitest";
 import { doctorErrorCodes, doctorFixRef } from "../../src/cli/doctor-codes.js";
 import { runDoctor } from "../../src/cli/doctor.js";
 import { CLI_VERSION } from "../../src/cli/shared.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  vi.unstubAllEnvs();
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
 });
 
-/** Existing checks are about static wiring + the HTTP probes, not the new
- *  live-turn/cloud/dev-server-probe surface (those get dedicated tests below).
- *  This wrapper stubs the new seams so the legacy assertions stay focused:
- *  a canned successful live turn, no cloud key, non-interactive. */
+/** Doctor is static: the only seam the suite holds is the environment, which
+ *  it pins empty so no stray .env file or shell variable decides a check. */
 async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number> {
-  return runDoctor({
-    env: {},
-    interactive: false,
-    liveTurn: async () => ({
-      attempted: true,
-      ok: true,
-      rung: "env-key",
-      credential: "explicit ANTHROPIC_API_KEY (anthropic)",
-      reply: "ok",
-      elapsedMs: 1,
-    }),
-    cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] }),
-    // No registry round-trip from the suite: the npm-latest hint is its own
-    // test (doctor-version-skew.test.ts).
-    npmLatest: async () => null,
-    ...options,
-  });
+  return runDoctor({ env: {}, ...options });
 }
 
 async function healthy(base?: string): Promise<string> {
@@ -128,111 +102,11 @@ function output(): { logs: string[]; errors: string[]; sink: { log(message: stri
   };
 }
 
-function successfulProbeFetch(
-  blocks: Record<string, unknown> = { store: true, sandbox: "cloud" },
-): ReturnType<typeof vi.fn> {
-  return vi.fn(async (input: string | URL | Request) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith("/status")) {
-      return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks });
-    }
-    if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-    if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-    if (url.endsWith("/doctor/machines")) {
-      return Response.json({ scheduleCallerConfigured: false, machines: [] });
-    }
-    return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-  });
-}
-
-async function bridge(vendo: Vendo, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(req.headers)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) for (const item of value) headers.append(name, item);
-    else headers.set(name, value);
-  }
-  const body = chunks.length === 0 ? undefined : Buffer.concat(chunks);
-  const response = await vendo.handler(new Request(`http://${req.headers.host}${req.url ?? "/"}`, {
-    method: req.method,
-    headers,
-    ...(body === undefined ? {} : { body }),
-  }));
-  res.statusCode = response.status;
-  response.headers.forEach((value, name) => res.setHeader(name, value));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}
-
-async function liveHost(options: { configureBaseUrl?: boolean; actAs?: boolean } = {}): Promise<{
-  root: string;
-  url: string;
-  actAs: ReturnType<typeof vi.fn<ActAs>>;
-}> {
-  const root = await healthy();
-  const memory = memoryStoreAdapter();
-  const store: VendoStore = {
-    ...memory,
-    async close() {},
-    raw: () => undefined,
-  };
-  let vendo: Vendo | undefined;
-  const server = createServer((req, res) => {
-    if (vendo === undefined) {
-      res.statusCode = 503;
-      res.end("Vendo is starting");
-      return;
-    }
-    void bridge(vendo, req, res).catch((error: unknown) => {
-      res.statusCode = 500;
-      res.end(error instanceof Error ? error.message : "bridge failed");
-    });
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("doctor fixture did not bind TCP");
-  const origin = `http://127.0.0.1:${address.port}`;
-  if (options.configureBaseUrl !== false) vi.stubEnv("VENDO_BASE_URL", origin);
-  else vi.stubEnv("VENDO_BASE_URL", "");
-
-  const minted = new Map<string, string>();
-  const actAs = vi.fn<ActAs>(async (principal) => {
-    const token = `Bearer doctor-${principal.subject}`;
-    minted.set(token, principal.subject);
-    return { headers: { authorization: token } };
-  });
-  const principal = async (request: Request): Promise<Principal> => ({
-    kind: "user",
-    subject: minted.get(request.headers.get("authorization") ?? "") ?? "user_doctor",
-  });
-  vendo = createVendo({
-    models: { default: {} as LanguageModel },
-    principal,
-    store,
-    // This fixture stands in for the dev server `vendo doctor` targets, and the
-    // probes it drives are mounted only in a development composition. `next dev`
-    // sets NODE_ENV=development, which sets this; vitest sets NODE_ENV=test, so
-    // the fixture says it outright.
-    development: true,
-    ...(options.actAs === false ? {} : { actAs }),
-  });
-  cleanup.push(async () => {
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-    await store.close();
-  });
-  return { root, url: `${origin}/api/vendo`, actAs };
-}
-
 describe("vendo doctor", () => {
   it("checks Express server and client wiring instead of Next files", async () => {
-    const fetchImpl = successfulProbeFetch();
     const messages = output();
     expect(await doctor({
       targetDir: await expressHost(true),
-      fetchImpl,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -246,7 +120,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: await expressHost(false),
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -260,7 +133,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: await customHost(true),
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -274,7 +146,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: await customHost(false),
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -294,7 +165,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -307,7 +177,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -329,7 +198,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -356,7 +224,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -388,7 +255,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -424,7 +290,6 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -456,399 +321,26 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.errors).toEqual([]);
   });
 
-  it("checks wiring and performs one live status round-trip", async () => {
-    const fetchImpl = successfulProbeFetch();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      output: { log() {}, error() {} },
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(fetchImpl).toHaveBeenCalledTimes(5);
-    expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/api/vendo/status");
-    // The render gate rides the same live pass: one GET of the app origin.
-    expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/");
-    expect(fetchImpl.mock.calls[2]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/present");
-    expect(fetchImpl.mock.calls[3]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/act-as");
-    expect(fetchImpl.mock.calls[4]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/machines");
-  });
-
-  it("a declined actAs mint warns E-AUTH-008 instead of claiming actAs is unconfigured (#873)", async () => {
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) {
-        return Response.json(
-          { ok: false, error: { code: "act-as-declined", message: "the host declined away execution for this action" } },
-          { status: 409 },
-        );
-      }
-      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    const messages = output();
-    // A declined synthetic principal is a correctly wired host, not a failure:
-    // warn, keep exit 0.
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    const everything = [...messages.logs, ...messages.errors].join("\n");
-    expect(everything).toContain("declined the doctor's synthetic principal");
-    expect(everything).not.toContain("actAs is not configured");
-  });
-
-  it("E-AUTH-004 carries the wire's own failure message instead of a generic line (#873)", async () => {
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) {
-        return Response.json(
-          { ok: false, error: { code: "act-as-verification-failed", message: "actAs round-trip failed: the mint exploded with boom-detail" } },
-          { status: 409 },
-        );
-      }
-      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    const everything = [...messages.logs, ...messages.errors].join("\n");
-    expect(everything).toContain("actAs mint + host verification failed");
-    expect(everything).toContain("boom-detail");
-  });
-
-  // execution-v2 Lane D — machine/schedule reporting (dev-only wire surface).
-  it("reports machine-bearing apps and warns when schedules have no caller", async () => {
-    const fetchImpl = successfulProbeFetch();
-    fetchImpl.mockImplementation(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/machines")) {
-        return Response.json({
-          scheduleCallerConfigured: false,
-          machines: [{
-            appId: "app_cron",
-            name: "Cron app",
-            awake: false,
-            schedules: [{ cron: "0 8 * * *", fn: "chase" }],
-          }],
-        });
-      }
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0); // reporting only — a missing caller warns, never fails
-    expect(messages.logs).toContain("ok: 1 machine-bearing app");
-    expect(messages.logs.join("\n")).toContain("0 8 * * * -> POST /fn/chase");
-    expect(messages.errors.join("\n")).toContain("set VENDO_TICK_SECRET");
-  });
-
-  it("passes the schedule-caller check when the tick secret is configured", async () => {
-    const fetchImpl = successfulProbeFetch();
-    fetchImpl.mockImplementation(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/machines")) {
-        return Response.json({ scheduleCallerConfigured: true, machines: [{ appId: "app_cron", name: "Cron app", awake: true, schedules: [] }] });
-      }
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.errors).toEqual([]);
-    expect(messages.logs.join("\n")).toContain("schedule caller configured");
-  });
-
-  it.each(["cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox }),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs).toContain(`ok: execution venue: ${sandbox}`);
-  });
-
-  // 0.4.4 defect C used to be doctor's problem: E2B_API_KEY selected the venue,
-  // so a host could be handed an e2b venue it never asked for, and doctor had to
-  // second-guess it (E-LIVE-007, now RETIRED). The selection law removed the
-  // question — nothing but explicit config produces an e2b box, and an explicit
-  // `e2bSandbox()` refuses at BOOT when the SDK does not resolve, which is
-  // earlier and louder than any probe. So an "e2b" venue on the wire (only older
-  // wires still send one) is simply reported, with no usability verdict attached.
-  it("reports an e2b execution venue from an older wire without second-guessing it", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
-      env: {},
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs).toContain("ok: execution venue: e2b");
-    // No E2B key, no e2b install check, no failure: the venue is not doctor's to
-    // re-derive any more.
-    expect(messages.errors.join("\n")).not.toContain("unusable sandbox");
-  });
-
-  it("warns with actionable guidance when the execution venue is dark", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox: false }),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    // Both ways out, in the order the law states them: explicit config first,
-    // then VENDO_API_KEY. "set E2B_API_KEY" is deliberately NOT one of them any
-    // more — it selects nothing, so offering it would send the reader in circles.
-    expect(messages.errors).toContain(
-      "warning: pass sandbox: to createVendo (e.g. sandbox: e2bSandbox(), which reads E2B_API_KEY as its credential), or set VENDO_API_KEY for the managed Cloud sandbox; without one, server apps (rungs 2-4) return sandbox-unavailable",
-    );
-    expect(messages.logs).toContain(
-      "Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.",
-    );
-  });
-
-  it("warns instead of failing when an older host omits the execution venue", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true }),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.errors).toContain(
-      "warning: host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check",
-    );
-  });
-
-  it("says nothing about store-op deprecations, even against a mount that still advertises them", async () => {
-    // The generic records family is gone, so there is no deprecation window
-    // left to narrate. An older mount still sending `deprecated` on its
-    // handshake is read and ignored, never echoed as a warning.
-    const messages = output();
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({
-          posture: "unconfigured",
-          version: CLI_VERSION,
-          blocks: { store: true, sandbox: "cloud" },
-          deprecated: ["records.get", "records.put"],
-        });
-      }
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.errors.some((line) => line.includes("E-LIVE-008"))).toBe(false);
-    expect(messages.errors.some((line) => line.includes("has deprecated them"))).toBe(false);
-  });
-
-  it("fails when /status reports an unknown execution venue", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox: "mainframe" }),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors).toContain("broken: /status returned an invalid execution venue");
-  });
-
-  it("returns one for broken wiring or an unreachable live handler", async () => {
+  it("returns one for broken wiring", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-broken-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
-    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     const messages = output();
-    expect(await doctor({ targetDir: root, fetchImpl, output: messages.sink })).toBe(1);
-    expect(messages.errors).toEqual(expect.arrayContaining([
-      expect.stringContaining("start the dev server"),
-      expect.stringContaining("cannot probe actAs"),
-    ]));
-  });
-
-  it("proves present credentials and actAs mint+verify over a real booted server", async () => {
-    const host = await liveHost();
-    const messages = output();
-    expect(await doctor({
-      targetDir: host.root,
-      url: host.url,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs).toEqual(expect.arrayContaining([
-      "ok: present credentials reach the host API",
-      "ok: actAs mint round-trip verified by the composition's own principal resolver — host middleware is not exercised, real away calls still depend on it",
-    ]));
-    expect(host.actAs).toHaveBeenCalledOnce();
-    const [syntheticPrincipal, syntheticGrant] = host.actAs.mock.calls[0] as [Principal, PermissionGrant];
-    expect(syntheticPrincipal.subject).toContain("vendo_doctor");
-    expect(syntheticGrant).toMatchObject({
-      subject: syntheticPrincipal.subject,
-      source: "automation",
-      scope: { kind: "tool" },
-    });
-  });
-
-  it("fails actionably when VENDO_BASE_URL leaves present credentials disabled", async () => {
-    const host = await liveHost({ configureBaseUrl: false });
-    const messages = output();
-    expect(await doctor({
-      targetDir: host.root,
-      url: host.url,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors).toContain(
-      "broken: present credentials did not reach the host API; set VENDO_BASE_URL to the running host origin and restart the dev server",
-    );
-  });
-
-  it("warns actionably when actAs is not configured without breaking present-only hosts", async () => {
-    const host = await liveHost({ actAs: false });
-    const messages = output();
-    expect(await doctor({
-      targetDir: host.root,
-      url: host.url,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.errors).toContain(
-      "warning: actAs is not configured; pass createVendo({ actAs }) before enabling away host actions",
-    );
-  });
-
-  it("validates server.json and its remote against the live MCP door", async () => {
-    const root = await healthy();
-    await writeFile(join(root, "server.json"), JSON.stringify({
-      $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-      name: "com.example/maple",
-      description: "Maple banking tools",
-      version: "1.2.3",
-      remotes: [{ type: "streamable-http", url: "https://mcp.example.com/api/vendo/mcp" }],
-    }));
-    const messages = output();
-
-    expect(await doctor({
-      targetDir: root,
-      url: "https://mcp.example.com/api/vendo",
-      fetchImpl: discoveryFetch(),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs).toContain("ok: server.json matches MCP registry discovery requirements");
-    expect(messages.logs).toContain("ok: server.json remote agrees with the live MCP door");
-  });
-
-  it("reports invalid registry structure and a remote mounted at the wrong URL", async () => {
-    const root = await healthy();
-    await writeFile(join(root, "server.json"), JSON.stringify({
-      $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-      name: "com.example/maple",
-      description: "x".repeat(101),
-      version: "1.2.3",
-      remotes: [{ type: "streamable-http", url: "https://mcp.example.com/wrong" }],
-    }));
-    const messages = output();
-
-    expect(await doctor({
-      targetDir: root,
-      url: "https://mcp.example.com/api/vendo",
-      fetchImpl: discoveryFetch(),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors.join("\n")).toContain("server.json is invalid");
-    expect(messages.errors).toContain("broken: server.json remote does not match the live MCP door https://mcp.example.com/api/vendo/mcp");
-  });
-
-  it("validates a registry auth challenge when the live host serves one", async () => {
-    const root = await healthy();
-    const messages = output();
-
-    expect(await doctor({
-      targetDir: root,
-      url: "https://mcp.example.com/api/vendo",
-      fetchImpl: discoveryFetch("not-an-mcp-challenge"),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors).toContain("broken: MCP registry auth challenge must start with v=MCPv1");
+    expect(await doctor({ targetDir: root, output: messages.sink })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("no createVendo server wiring found");
   });
 });
 
-/** Probe fetch that also answers the live-turn POST /threads with a UI-message
- *  SSE stream. `reply` "" simulates a turn that produces no text. */
-function probeFetchWithTurn(reply = "I can respond.", options: { errorFrame?: boolean } = {}): ReturnType<typeof vi.fn> {
-  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-    if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-    if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-    if (url.endsWith("/threads") && init?.method === "POST") {
-      const frames: string[] = [];
-      if (options.errorFrame) frames.push('data: {"type":"error"}\n\n');
-      else if (reply.length > 0) frames.push(`data: ${JSON.stringify({ type: "text-delta", delta: reply })}\n\n`);
-      frames.push("data: [DONE]\n\n");
-      return new Response(frames.join(""), { headers: { "content-type": "text/event-stream" } });
-    }
-    return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-  });
-}
-
-describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () => {
+describe("vendo doctor (model credentials + --json + cloud)", () => {
   it("states the winning model credential rung and any active VENDO_MODEL_* pins — nothing more", async () => {
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: probeFetchWithTurn(),
       env: {
         // The rung doctor reports is the one the RUNTIME would ride. Since the
         // selection law a bare provider key rides nothing (asserted below), so a
@@ -858,9 +350,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
         VENDO_MODEL: "claude-opus-4-8",
         VENDO_MODEL_REVIEW: "claude-haiku-4-5",
       },
-      interactive: false,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -872,11 +361,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const bare = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: probeFetchWithTurn(),
       env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-test" },
-      interactive: false,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
       output: bare.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -892,59 +377,20 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: probeFetchWithTurn(),
       env: { ANTHROPIC_API_KEY: "sk-test" },
-      interactive: false,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.logs).toContain(
-      "model credential: none found — the live turn check below carries the honest failure",
+      "model credential: none found — set a model key or VENDO_API_KEY, or the agent cannot answer",
     );
     expect(messages.logs.some((line) => line.startsWith("ok: model credential:"))).toBe(false);
-  });
-
-  it("runs one real model turn over the wired route and exits 0 when it answers", async () => {
-    const fetchImpl = probeFetchWithTurn("Yes, I can respond.");
-    const messages = output();
-    expect(await runDoctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      env: { ANTHROPIC_API_KEY: "sk-test" },
-      interactive: false,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(fetchImpl.mock.calls.some(([u]) => String(u).endsWith("/threads"))).toBe(true);
-    expect(messages.logs.some((line) => line.startsWith("ok: live model turn answered"))).toBe(true);
-    expect(messages.logs.join("\n")).toContain("Yes, I can respond.");
-  });
-
-  it("exits nonzero when the live turn produces no answer", async () => {
-    const fetchImpl = probeFetchWithTurn("", { errorFrame: true });
-    const messages = output();
-    expect(await runDoctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      env: { ANTHROPIC_API_KEY: "sk-test" },
-      interactive: false,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors.some((line) => line.startsWith("broken: live model turn did not answer"))).toBe(true);
   });
 
   it("emits one machine-readable JSON object a script can consume", async () => {
     const logs: string[] = [];
     const exit = await doctor({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
       json: true,
       output: { log: (m) => logs.push(m), error: () => {} },
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
@@ -954,13 +400,12 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const report = JSON.parse(logs[0]!) as {
       vendo: string; wired: boolean; exit: number;
       checks: Array<{ status: string; message: string }>;
-      liveTurn: { ok: boolean }; cloud: { present: boolean };
+      cloud: { present: boolean };
       summary: { failures: number; warnings: number };
     };
     expect(report.vendo).toBe("doctor");
     expect(report.exit).toBe(exit);
     expect(report.wired).toBe(true);
-    expect(report.liveTurn.ok).toBe(true);
     expect(report.cloud.present).toBe(false);
     expect(report.checks.some((c) => c.status === "ok")).toBe(true);
     expect(report.summary.failures).toBe(0);
@@ -972,25 +417,21 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const logs: string[] = [];
     const exit = await doctor({
       targetDir: root,
-      fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
       json: true,
-      liveTurn: undefined, // exercise the real skip path (server unreachable)
       output: { log: (m) => logs.push(m), error: () => {} },
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
-    const report = JSON.parse(logs[0]!) as { exit: number; wired: boolean; liveTurn: { attempted: boolean } };
+    const report = JSON.parse(logs[0]!) as { exit: number; wired: boolean };
     expect(exit).toBe(1);
     expect(report.exit).toBe(1);
     expect(report.wired).toBe(false);
-    expect(report.liveTurn.attempted).toBe(false);
   });
 
   it("reports a present, well-formed VENDO_API_KEY", async () => {
     const messages = output();
     expect(await doctor({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
-      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
+      env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}` },
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -1001,102 +442,23 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const messages = output();
     await doctor({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
-      cloudProbe: async () => ({ present: true, ok: false, unlocks: ["x"], error: "revoked" }),
+      env: { VENDO_API_KEY: "vnd_nope" },
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
-    expect(messages.errors).toContain("warning: VENDO_API_KEY is set but not usable: revoked");
+    expect(messages.errors).toContain(
+      "warning: VENDO_API_KEY is set but not usable: VENDO_API_KEY is malformed (expected vnd_ + 40 hex chars)",
+    );
   });
 
   it("prints what Cloud unlocks when no key is set", async () => {
     const messages = output();
     await doctor({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance", "team sharing"] }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
-    expect(messages.logs.some((l) => l.includes("A key unlocks a starter allowance; team sharing"))).toBe(true);
-  });
-
-  it("offers (consent) to start the dev server when nothing is listening", async () => {
-    let serverUp = false;
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/status")) {
-        if (!serverUp) throw new Error("connection refused");
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      if (url.endsWith("/threads") && init?.method === "POST") {
-        return new Response('data: {"type":"text-delta","delta":"hi"}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
-      }
-      return Response.json({ error: { message: "unexpected" } }, { status: 404 });
-    });
-    const stop = vi.fn();
-    const startDevServer = vi.fn(async () => { serverUp = true; return { ok: true, stop }; });
-    const confirm = vi.fn(async () => true);
-    const messages = output();
-    expect(await runDoctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      env: { ANTHROPIC_API_KEY: "sk-test" },
-      interactive: true,
-      confirm,
-      startDevServer,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(startDevServer).toHaveBeenCalledOnce();
-    expect(messages.logs).toContain("ok: started the dev server for the probe");
-    expect(stop).toHaveBeenCalledOnce();
-  });
-
-  it("--yes auto-starts the dev server without a prompt in non-interactive runs", async () => {
-    // The flag's documented purpose (quickstart: "pass --yes to start it
-    // non-interactively") — agents and CI run with piped stdio, so the
-    // auto-start must not require a TTY.
-    let serverUp = false;
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/status")) {
-        if (!serverUp) throw new Error("connection refused");
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      if (url.endsWith("/threads") && init?.method === "POST") {
-        return new Response('data: {"type":"text-delta","delta":"hi"}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
-      }
-      return Response.json({ error: { message: "unexpected" } }, { status: 404 });
-    });
-    const stop = vi.fn();
-    const startDevServer = vi.fn(async () => { serverUp = true; return { ok: true, stop }; });
-    const confirm = vi.fn(async () => { throw new Error("--yes must not prompt"); });
-    const messages = output();
-    expect(await runDoctor({
-      targetDir: await healthy(),
-      fetchImpl,
-      env: { ANTHROPIC_API_KEY: "sk-test" },
-      interactive: false,
-      yes: true,
-      confirm,
-      startDevServer,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      npmLatest: async () => null,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(confirm).not.toHaveBeenCalled();
-    expect(startDevServer).toHaveBeenCalledOnce();
-    expect(messages.logs).toContain("ok: started the dev server for the probe");
-    expect(stop).toHaveBeenCalledOnce();
+    expect(messages.logs.some((l) => l.includes("A key unlocks a free starter model allowance"))).toBe(true);
   });
 
   // §4 customization ladder — ejected chrome is the host's code; doctor only
@@ -1116,7 +478,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const messages = output();
     const code = await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
@@ -1141,7 +502,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const messages = output();
     const code = await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
@@ -1164,7 +524,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     const messages = output();
     await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
@@ -1202,8 +561,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     cleanup.push(() => rm(root, { recursive: true, force: true }));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
-      liveTurn: undefined, // exercise the real skip path (server unreachable)
     });
     expect(exit).toBe(1);
     expect(report.exit).toBe(1);
@@ -1215,7 +572,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       expect(doctorErrorCodes).toContain(check.error_code);
       expect(check.fix_ref).toBe(`https://docs.vendo.run/agents/verify?v=${CLI_VERSION}#${check.error_code}`);
     }
-    // The remediation surface is broad: wiring, config, live probes, auth, turn.
+    // The remediation surface is broad: wiring, config, deps, tools.
     const codes = new Set(failures.map((check) => check.error_code));
     expect(codes.size).toBeGreaterThan(4);
   });
@@ -1223,13 +580,12 @@ describe("vendo doctor error codes + fix_refs", () => {
   /** #1153: the alias-only install. `vendoai` DEPENDS on @vendoai/vendo, so
       under pnpm's strict node_modules the host cannot resolve the
       `@vendoai/vendo/*` imports its own wiring makes: the route fails to
-      compile, every request 500s with an HTML error page, and the live probes
-      can only call that "unreachable" (E-LIVE-002 / E-AUTH-002 name none of
-      it). The static check is where the cause gets named. */
+      compile and every request 500s with an HTML error page. The static check
+      is where the cause gets named. */
   it("names the unresolvable @vendoai/vendo behind a vendoai-alias-only install", async () => {
     const root = await healthy();
     await installedPackage(root, "vendoai");
-    const { exit, report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { exit, report } = await jsonChecks({ targetDir: root });
     const check = report.checks.find((candidate) => candidate.id === "wiring/vendo-resolvable");
     expect(check?.status).toBe("broken");
     expect(check?.error_code).toBe("E-WIRE-011");
@@ -1241,7 +597,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     const root = await healthy();
     await installedPackage(root, "vendoai");
     await installedPackage(root, "@vendoai/vendo");
-    const { exit, report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { exit, report } = await jsonChecks({ targetDir: root });
     expect(report.checks.find((candidate) => candidate.id === "wiring/vendo-resolvable")?.status).toBe("ok");
     expect(exit).toBe(0);
   });
@@ -1249,7 +605,6 @@ describe("vendo doctor error codes + fix_refs", () => {
   it("keeps passing checks lean: id always, no error_code or fix_ref", async () => {
     const { exit, report } = await jsonChecks({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(0);
     expect(report.wired).toBe(true);
@@ -1262,127 +617,10 @@ describe("vendo doctor error codes + fix_refs", () => {
     }
   });
 
-  /** A composition that never declared itself development does not mount the
-      doctor probes at all (that is the fix in #989), so both auth probes come
-      back 404. Doctor used to read that 404 as a credential failure and told
-      the reader to set VENDO_BASE_URL or to go check createVendo({ actAs }) —
-      both false, and both send them to fix something that is not broken. What
-      makes the undeclared composition IDENTIFIABLE is /doctor/base-url still
-      answering: every composition mounts it, only a development one mounts the
-      probes beside it. */
-  it("blames the unmounted probe surface, not VENDO_BASE_URL or actAs, when the composition never declared development", async () => {
-    const unmountedProbes = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      // Mounted in every environment, development or not — so the wire IS here.
-      if (url.endsWith("/doctor/base-url")) return Response.json({ ok: true });
-      // What the real wire answers for a route that is not in the table.
-      return Response.json({ error: { code: "not-found", message: "unknown Vendo route" } }, { status: 404 });
-    });
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: unmountedProbes });
-
-    const present = report.checks.find((check) => check.id === "auth/present");
-    expect(present?.status).toBe("broken");
-    expect(present?.message).toContain("development");
-    expect(present?.message).not.toContain("VENDO_BASE_URL");
-
-    const actAs = report.checks.find((check) => check.id === "auth/act-as");
-    expect(actAs?.status).toBe("broken");
-    expect(actAs?.message).toContain("development");
-    expect(actAs?.message).not.toContain("verifier middleware");
-  });
-
-  /** The mirror image, and the reason the message above may not be asserted
-      from a bare 404: a base URL with the wrong origin or path prefix — behind
-      a proxy whose route rule matched /status but not /doctor/* — serves a
-      valid /status while every doctor path 404s. Telling that reader to pass
-      development: true is the same wrong-advice bug pointed the other way. The
-      tell is /doctor/base-url not answering like a wire: no composition leaves
-      that route out, so the wire is not at this URL and the development gate
-      is not the story. */
-  it("does not blame the development gate when /doctor/base-url 404s alongside the probes", async () => {
-    const wrongBase = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      return Response.json({ error: { code: "not-found", message: "no route" } }, { status: 404 });
-    });
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: wrongBase });
-
-    for (const id of ["auth/present", "auth/act-as"]) {
-      const check = report.checks.find((entry) => entry.id === id);
-      expect(check?.status).toBe("broken");
-      expect(check?.message).toContain("/doctor/base-url");
-      // The undeclared-composition advice is the one thing it must NOT say.
-      expect(check?.message).not.toContain("development: true");
-      expect(check?.message).not.toContain("NODE_ENV=development");
-    }
-  });
-
-  /** Reading "not a 404" as "the wire is here" is the same mistake a third
-      time. An HTML catch-all, an auth layer or a proxy error page answers 200,
-      401, 302 or 500 at any path on the origin without a Vendo route table
-      behind it — so the wrong-wire-base diagnosis has to survive those, not
-      just a clean 404. Only a Vendo-SHAPED body ({ ok }, which the route
-      answers in every environment) is evidence the wire is there at all. */
-  it.each([
-    ["an HTML catch-all", new Response("<!doctype html><html></html>", { status: 200, headers: { "content-type": "text/html" } })],
-    ["an auth layer", new Response("<html>sign in</html>", { status: 401, headers: { "content-type": "text/html" } })],
-    ["a proxy error page", new Response("<html>bad gateway</html>", { status: 500, headers: { "content-type": "text/html" } })],
-  ])("keeps the wrong-wire-base diagnosis when /doctor/base-url is answered by %s", async (_label, answer) => {
-    const intermediary = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/base-url")) return answer.clone();
-      return Response.json({ error: { code: "not-found", message: "no route" } }, { status: 404 });
-    });
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: intermediary });
-
-    for (const id of ["auth/present", "auth/act-as"]) {
-      const check = report.checks.find((entry) => entry.id === id);
-      expect(check?.status).toBe("broken");
-      expect(check?.message).not.toContain("development: true");
-      expect(check?.message).not.toContain("NODE_ENV=development");
-    }
-  });
-
-  /** Neither message may ASSERT a cause, because no observable response
-      separates them: a real Vendo deployment that is simply not the one you
-      meant — a stale base URL pointing at staging — answers /status and
-      /doctor/base-url perfectly and 404s the development-only probes, byte for
-      byte identical to your own dev server with the gate closed. Doctor cannot
-      know which deployment the reader meant, so it reports what it saw and
-      tells them how to separate the two themselves. */
-  it("names both causes and how to separate them rather than asserting one", async () => {
-    const wireAnswers = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      }
-      if (url.endsWith("/doctor/base-url")) return Response.json({ ok: true });
-      return Response.json({ error: { code: "not-found", message: "unknown Vendo route" } }, { status: 404 });
-    });
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: wireAnswers });
-
-    const message = report.checks.find((check) => check.id === "auth/present")?.message ?? "";
-    // Both candidate causes, and the step that tells them apart.
-    expect(message).toContain("development: true");
-    expect(message).toContain("not the dev server you meant");
-    expect(message).toContain("re-run");
-    // No bare assertion that the composition is the undeclared one.
-    expect(message).not.toContain("this composition did not declare itself development");
-  });
-
   it("stamps warnings with codes too without flipping the exit", async () => {
     const { exit, report } = await jsonChecks({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
-      cloudProbe: async () => ({ present: true, ok: false, unlocks: ["x"], error: "revoked" }),
+      env: { VENDO_API_KEY: "vnd_nope" },
     });
     expect(exit).toBe(0);
     const warning = report.checks.find((check) => check.status === "warning");
@@ -1406,7 +644,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     const blindRoot = await healthy();
     await writeFile(join(blindRoot, ".vendo", "tools.json"),
       JSON.stringify(tool({ inputSchemaSource: "declared", outputSchemaSource: "unknown" })));
-    const blind = await jsonChecks({ targetDir: blindRoot, fetchImpl: successfulProbeFetch() });
+    const blind = await jsonChecks({ targetDir: blindRoot });
     const warning = blind.report.checks.find((check) => check.id === "tools/schemas");
     expect(warning).toMatchObject({ status: "warning", error_code: "E-TOOLS-004" });
     expect(warning?.message).toContain("inputs 1/1 · outputs 0/1");
@@ -1415,7 +653,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     const coveredRoot = await healthy();
     await writeFile(join(coveredRoot, ".vendo", "tools.json"),
       JSON.stringify(tool({ inputSchemaSource: "declared", outputSchemaSource: "declared" })));
-    const covered = await jsonChecks({ targetDir: coveredRoot, fetchImpl: successfulProbeFetch() });
+    const covered = await jsonChecks({ targetDir: coveredRoot });
     expect(covered.report.checks.find((check) => check.error_code === "E-TOOLS-004")).toBeUndefined();
     expect(covered.report.checks.find((check) => check.id === "tools/schemas"))
       .toMatchObject({ status: "ok", message: "catalog: inputs 1/1 · outputs 1/1" });
@@ -1426,14 +664,11 @@ describe("vendo doctor error codes + fix_refs", () => {
     // ambiguous — every check in one run must be individually addressable.
     const healthyRun = await jsonChecks({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
     });
     const brokenRoot = await mkdtemp(join(tmpdir(), "vendo-doctor-ids-broken-"));
     cleanup.push(() => rm(brokenRoot, { recursive: true, force: true }));
     const brokenRun = await jsonChecks({
       targetDir: brokenRoot,
-      fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
-      liveTurn: undefined, // exercise the real skip path (server unreachable)
     });
     for (const { report } of [healthyRun, brokenRun]) {
       const ids = report.checks.map((check) => check.id);
@@ -1443,7 +678,7 @@ describe("vendo doctor error codes + fix_refs", () => {
   });
 
   it("reports per-surface ownership with the overrides enablement note (#557 landed)", async () => {
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: await healthy() });
     const ownership = report.checks.find((check) => check.id === "config/ownership");
     expect(ownership).toBeDefined();
     expect(ownership!.message.toLowerCase()).toContain("enablement");
@@ -1460,7 +695,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "7.0.2" }));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
@@ -1481,7 +715,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "6.0.28" }));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(0);
     const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
@@ -1494,7 +727,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     // turn — an absent node_modules/ai must not break (or even mention) this.
     const { exit, report } = await jsonChecks({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(0);
     expect(report.checks.some((entry) => entry.id === "deps/ai-sdk-major")).toBe(false);
@@ -1509,7 +741,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "5.0.59" }));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
@@ -1534,7 +765,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     const root = await healthy(join(workspace, "apps", "web"));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
@@ -1556,7 +786,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.23.8" }));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
@@ -1577,7 +806,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version }));
       const { exit, report } = await jsonChecks({
         targetDir: root,
-        fetchImpl: successfulProbeFetch(),
       });
       expect(exit).toBe(0);
       const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
@@ -1600,7 +828,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     const root = await healthy(join(workspace, "apps", "web"));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
@@ -1617,7 +844,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     // A host without its own zod resolves ai's copy, which always satisfies.
     const { exit, report } = await jsonChecks({
       targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(0);
     expect(report.checks.some((entry) => entry.id === "deps/zod-floor")).toBe(false);
@@ -1628,7 +854,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await rm(join(root, ".vendo", "brief.md"));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     expect(report.wired).toBe(false);
@@ -1649,9 +874,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await rm(join(root, ".vendo", "brief.md"));
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       env: { VENDO_API_KEY: "vnd_test_key" },
-      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
     });
     expect(exit).toBe(1);
     for (const id of ["config/tools.json", "config/brief.md"]) {
@@ -1660,43 +883,6 @@ describe("vendo doctor error codes + fix_refs", () => {
         error_code: "E-CFG-001",
       });
     }
-  });
-
-  // FINDINGS F7c (linkwarden baseline): a wire that ANSWERED with an error
-  // body was reported with the body thrown away, and an answered non-JSON
-  // error page was mislabeled "unreachable" — both pointed at the wrong fix.
-  it("carries the wire's own error body into E-LIVE-001 with the dev-server-log hint", async () => {
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.endsWith("/status")) {
-        return Response.json({ error: { code: "not-implemented", message: "principal resolution failed: boom" } }, { status: 501 });
-      }
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    const { exit, report } = await jsonChecks({ targetDir: await healthy(), fetchImpl });
-    expect(exit).toBe(1);
-    const check = report.checks.find((entry) => entry.id === "live/status");
-    expect(check).toMatchObject({ status: "broken", error_code: "E-LIVE-001" });
-    expect(check?.message).toContain("501");
-    expect(check?.message).toContain("not-implemented");
-    expect(check?.message).toContain("principal resolution failed: boom");
-    expect(check?.message).toContain("dev server log");
-  });
-
-  it("reports an answered non-JSON /status as E-LIVE-001 with its status, never as unreachable", async () => {
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.endsWith("/status")) {
-        return new Response("<html>Internal Server Error</html>", { status: 500, headers: { "content-type": "text/html" } });
-      }
-      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
-    });
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl });
-    const check = report.checks.find((entry) => entry.id === "live/status");
-    expect(check).toMatchObject({ status: "broken", error_code: "E-LIVE-001" });
-    expect(check?.message).toContain("500");
-    expect(check?.message).toContain("not JSON");
-    expect(report.checks.some((entry) => entry.error_code === "E-LIVE-002")).toBe(false);
   });
 
   /** Spec 2026-08-06 §B1: the path prefix has ONE home, VENDO_BASE_URL. A spec
@@ -1711,7 +897,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
     const { report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       env: { VENDO_BASE_URL: "https://site.com" },
     });
     expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({
@@ -1728,7 +913,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
     const { report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       env: {},
     });
     expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({
@@ -1742,7 +926,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
     const { report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       env: { VENDO_BASE_URL: "https://site.com/maple" },
     });
     expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({ status: "ok" });
@@ -1760,7 +943,7 @@ describe("vendo doctor error codes + fix_refs", () => {
   it("warns E-AUTH-009 when supabase() is wired and neither server env name is set", async () => {
     const root = await healthy();
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), supabaseRoute);
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({
       status: "warning",
       error_code: "E-AUTH-009",
@@ -1772,7 +955,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), supabaseRoute);
     const { report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       env: { SUPABASE_URL: "http://127.0.0.1:54321" },
     });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({ status: "ok" });
@@ -1780,7 +962,7 @@ describe("vendo doctor error codes + fix_refs", () => {
 
   it("says nothing about supabase env on a host that does not wire supabase()", async () => {
     const root = await healthy();
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toBeUndefined();
   });
 
@@ -1795,7 +977,7 @@ describe("vendo doctor error codes + fix_refs", () => {
   it("warns E-AUTH-009 on an Express host wiring supabase() with no server env", async () => {
     const root = await expressHost(true);
     await writeFile(join(root, "src", "server.ts"), supabaseServerModule);
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({
       status: "warning",
       error_code: "E-AUTH-009",
@@ -1807,7 +989,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "src", "server.ts"), supabaseServerModule);
     const { report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       env: { SUPABASE_JWT_SECRET: "local-jwt-secret" },
     });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({ status: "ok" });
@@ -1816,7 +997,7 @@ describe("vendo doctor error codes + fix_refs", () => {
   it("warns E-AUTH-009 on a custom-runtime host wiring supabase() with no server env", async () => {
     const root = await customHost(true);
     await writeFile(join(root, "src", "worker.ts"), supabaseServerModule);
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({
       status: "warning",
       error_code: "E-AUTH-009",
@@ -1832,7 +1013,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       `import { supabase } from "${aliasSpecifier}";\n` +
       'import { createVendo } from "@vendoai/vendo/server";\n' +
       "createVendo({ auth: supabase(), models: { default: model }, principal });\n");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toMatchObject({
       status: "warning",
       error_code: "E-AUTH-009",
@@ -1845,7 +1026,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       '// import { supabase } from "@vendoai/vendo/auth/supabase";\n' +
       'import { createVendo } from "@vendoai/vendo/server";\n' +
       "createVendo({ models: { default: model }, principal });\n");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toBeUndefined();
   });
 
@@ -1861,7 +1042,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "src", "server.ts"),
       `import { createVendo } from "${aliasServer}";\n` +
       "createVendo({ models: { default: model }, principal });\n");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/express-server")).toMatchObject({ status: "ok" });
   });
 
@@ -1871,7 +1052,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "src", "worker.ts"),
       `import { createVendo } from "${aliasServer}";\n` +
       "export const vendo = createVendo({ models: { default: model }, principal });\n");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/server")).toMatchObject({ status: "ok" });
   });
 
@@ -1883,7 +1064,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "src", "client.tsx"),
       `import { VendoRoot } from "${aliasReact}";\n` +
       "export const App = () => <VendoProvider><VendoRoot /><main /><VendoOverlay /></VendoProvider>;\n");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
     expect(report.checks.find((check) => check.id === "wiring/vendo-root")).toMatchObject({
       status: "warning",
       error_code: "E-WIRE-010",
@@ -1899,7 +1080,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -1920,7 +1100,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({});\nexport const { GET } = vendo;\n');
     const { exit, report } = await jsonChecks({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
     });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "wiring/server-actions");
@@ -1938,12 +1117,12 @@ describe("vendo doctor error codes + fix_refs", () => {
       'export const serverActions = {\n  "app/actions/later.ts#later": async () => 1,\n};\n');
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       'import { createVendo } from "@vendoai/vendo/server";\nimport { serverActions } from "./vendo-actions";\nconst vendo = createVendo({ serverActions });\nexport const { GET } = vendo;\n');
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: root });
     expect(report.checks.find((entry) => entry.id === "wiring/server-actions")).toMatchObject({ status: "ok" });
   });
 
   it("says nothing about server actions in a host that has none", async () => {
-    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: await healthy() });
     expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
   });
 
@@ -1960,7 +1139,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       'export const serverActions = {\n  "app/actions/later.ts#later": async () => 1,\n};\n');
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       'import { createVendo } from "@vendoai/vendo/server";\nimport { serverActions } from "./vendo-actions";\nconst vendo = createVendo({});\nexport const { GET } = vendo;\n');
-    const { exit, report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { exit, report } = await jsonChecks({ targetDir: root });
     expect(exit).toBe(1);
     const check = report.checks.find((entry) => entry.id === "wiring/server-actions");
     expect(check).toMatchObject({ status: "broken", error_code: "E-WIRE-009" });
@@ -1979,7 +1158,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       'import { createVendo } from "@vendoai/vendo/server";\nconst serverActions = { later: async () => 1 };\nconst vendo = createVendo({ serverActions });\nexport const { GET } = vendo;\n');
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: root });
     expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
   });
 
@@ -2005,7 +1184,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       const root = await splitHost('import { createVendo } from "@vendoai/vendo/server";\nimport { serverActions } from "./vendo-actions";\nexport const vendo = createVendo({ serverActions, mcp: true });\n');
       const { report } = await jsonChecks({
         targetDir: root,
-        fetchImpl: successfulProbeFetch(),
         env: { VENDO_BASE_URL: "https://app.acme.com" },
       });
       expect(report.checks.find((entry) => entry.id === "wiring/next-route")).toMatchObject({ status: "ok" });
@@ -2016,7 +1194,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       const root = await splitHost('import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: true });\n');
       const { report } = await jsonChecks({
         targetDir: root,
-        fetchImpl: successfulProbeFetch(),
         env: { VENDO_BASE_URL: "https://app.acme.com" },
       });
       const check = report.checks.find((entry) => entry.id === "wiring/server-actions");
@@ -2039,7 +1216,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     it("fails, and exits 1", async () => {
       const { exit, report } = await jsonChecks({
         targetDir: await mcpHost(wired),
-        fetchImpl: successfulProbeFetch(),
       });
       expect(exit).toBe(1);
       const check = report.checks.find((entry) => entry.id === "mcp/base-url");
@@ -2050,7 +1226,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     it("passes once VENDO_BASE_URL is set", async () => {
       const { report } = await jsonChecks({
         targetDir: await mcpHost(wired),
-        fetchImpl: successfulProbeFetch(),
         env: { VENDO_BASE_URL: "https://app.acme.com" },
       });
       expect(report.checks.find((entry) => entry.id === "mcp/base-url")).toMatchObject({ status: "ok" });
@@ -2061,13 +1236,12 @@ describe("vendo doctor error codes + fix_refs", () => {
     it("passes on mcp: { baseUrl } with no variable at all", async () => {
       const { report } = await jsonChecks({
         targetDir: await mcpHost('import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: { baseUrl: "https://app.acme.com" } });\n'),
-        fetchImpl: successfulProbeFetch(),
       });
       expect(report.checks.find((entry) => entry.id === "mcp/base-url")).toMatchObject({ status: "ok" });
     });
 
     it("says nothing at all when no door is wired", async () => {
-      const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+      const { report } = await jsonChecks({ targetDir: await healthy() });
       expect(report.checks.some((entry) => entry.id === "mcp/base-url")).toBe(false);
     });
 
@@ -2084,7 +1258,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     ])("passes with %s — order must not decide the verdict", async (_label, mcp) => {
       const { report } = await jsonChecks({
         targetDir: await mcpHost(`import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: ${mcp} });\n`),
-        fetchImpl: successfulProbeFetch(),
       });
       expect(report.checks.find((entry) => entry.id === "mcp/base-url")).toMatchObject({ status: "ok" });
     });
@@ -2094,10 +1267,48 @@ describe("vendo doctor error codes + fix_refs", () => {
     it("still fails when the only baseUrl sits inside a nested option", async () => {
       const { report } = await jsonChecks({
         targetDir: await mcpHost('import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: { remoteAs: { issuer: "https://i", audience: "https://a", baseUrl: "https://nope" } } });\n'),
-        fetchImpl: successfulProbeFetch(),
       });
       expect(report.checks.find((entry) => entry.id === "mcp/base-url"))
         .toMatchObject({ status: "broken", error_code: "E-MCP-009" });
+    });
+  });
+
+  // The registry artifacts a published host keeps on disk. Absent files say
+  // nothing; present ones are graded, with no registry round-trip.
+  describe("the MCP registry artifacts on disk", () => {
+    it("fails E-MCP-004 when server.json does not meet the registry requirements", async () => {
+      const root = await healthy();
+      await writeFile(join(root, "server.json"), JSON.stringify({
+        $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        name: "com.example/maple",
+        description: "x".repeat(101),
+        version: "1.2.3",
+        remotes: [{ type: "streamable-http", url: "https://mcp.example.com/api/vendo/mcp" }],
+      }));
+      const { exit, report } = await jsonChecks({ targetDir: root });
+      expect(exit).toBe(1);
+      const check = report.checks.find((entry) => entry.id === "mcp/server-json");
+      expect(check).toMatchObject({ status: "broken", error_code: "E-MCP-004" });
+      expect(check?.message).toContain("server.json is invalid");
+    });
+
+    it("fails E-MCP-006 when server.json is not valid JSON", async () => {
+      const root = await healthy();
+      await writeFile(join(root, "server.json"), "{not json");
+      const { exit, report } = await jsonChecks({ targetDir: root });
+      expect(exit).toBe(1);
+      expect(report.checks.find((entry) => entry.id === "mcp/server-json"))
+        .toMatchObject({ status: "broken", error_code: "E-MCP-006" });
+    });
+
+    it("fails E-MCP-007 when the local registry auth challenge does not start with v=MCPv1", async () => {
+      const root = await healthy();
+      await mkdir(join(root, "public", ".well-known"), { recursive: true });
+      await writeFile(join(root, "public", ".well-known", "mcp-registry-auth"), "not-an-mcp-challenge\n");
+      const { exit, report } = await jsonChecks({ targetDir: root });
+      expect(exit).toBe(1);
+      expect(report.checks.find((entry) => entry.id === "mcp/registry-auth-local"))
+        .toMatchObject({ status: "broken", error_code: "E-MCP-007" });
     });
   });
 
@@ -2112,7 +1323,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     // Nothing registered, nothing wired — the state that fails without overrides.
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({});\nexport const { GET } = vendo;\n');
-    const broken = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const broken = await jsonChecks({ targetDir: root });
     expect(broken.report.checks.find((entry) => entry.id === "wiring/server-actions")?.status).toBe("broken");
 
     const { tools } = await extractServerActions(root);
@@ -2121,7 +1332,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       tools: Object.fromEntries(tools.map((tool) => [tool.name, { disabled: true }])),
       remix: { ignoreSlots: [] },
     }));
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: root });
     expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
   });
 
@@ -2133,7 +1344,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await mkdir(join(root, "vendo"), { recursive: true });
     await writeFile(join(root, "vendo", "vendo-root.tsx"),
       "\"use client\";\nexport function VendoRoot({children}) { return <VendoProvider>{children}<VendoOverlay /></VendoProvider>; }");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: root });
     expect(report.checks.find((check) => check.id === "wiring/vendo-root")).toMatchObject({
       status: "warning",
       error_code: "E-WIRE-010",
@@ -2154,7 +1365,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     await writeFile(join(root, "app", "layout.tsx"),
       "import { VendoRoot } from \"@/components/VendoRoot\";\n"
       + "export default ({children}) => <VendoRoot>{children}<VendoOverlay /></VendoRoot>;");
-    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const { report } = await jsonChecks({ targetDir: root });
     expect(report.checks.find((check) => check.id === "wiring/vendo-root")).toBeUndefined();
   });
 
@@ -2167,7 +1378,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       "export default () => <VendoToolResult output={null} />;");
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: output().sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -2185,7 +1395,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       "export default ({children}) => <VendoProvider>{children}<VendoOverlay /></VendoProvider>;");
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: output().sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -2203,7 +1412,6 @@ describe("vendo doctor error codes + fix_refs", () => {
       "export default ({Component, pageProps}) => <VendoProvider><Component {...pageProps} /><VendoOverlay /></VendoProvider>;");
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: output().sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -2218,7 +1426,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -2242,7 +1449,6 @@ describe("vendo doctor error codes + fix_refs", () => {
     const messages = output();
     expect(await doctor({
       targetDir: root,
-      fetchImpl: successfulProbeFetch(),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -2250,171 +1456,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(wire004).toContain(join("app", "[locale]", "layout.tsx"));
     expect(wire004).not.toContain(join("app", "[locale]", "(routes)", "layout.tsx"));
   });
-
-  // Render gate (0.4.1 E2E cert M3): the certified invoify install had every
-  // page 500ing while doctor exited 0 — a live wire proves nothing about the
-  // pages users load.
-  it("fails E-LIVE-006 and exits 1 when the app's root page 500s while the wire answers", async () => {
-    const root = await healthy();
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url === "http://localhost:3000/") return new Response("boom", { status: 500 });
-      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      return Response.json({}, { status: 404 });
-    });
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors.join("\n")).toContain("root page returned 500");
-  });
-
-  // The other half of the render gate: it fails on 5xx and blessed EVERYTHING
-  // else, so `ok: the app's root page renders (HTTP 404)` was the line every
-  // healthy run printed. A 404 is the one status that means the opposite — no
-  // page is served at `/` — which the catch below already calls none of doctor's
-  // business. So the probe may report the status it saw; it may not claim a
-  // render it never observed.
-  it("does not claim the root page renders when the origin answers 404", async () => {
-    const root = await healthy();
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      fetchImpl: successfulProbeFetch() as unknown as typeof fetch,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    const rootLines = [...messages.logs, ...messages.errors].filter((line) => line.includes("root page"));
-    expect(rootLines.join("\n")).toContain("404");
-    expect(rootLines.some((line) => line.startsWith("ok:"))).toBe(false);
-    expect(rootLines.join("\n")).not.toContain("renders");
-  });
-
-  // A 2xx proves the server answered, not that the page is correct — so the pass
-  // says what was observed rather than asserting a render doctor cannot see.
-  it("reports the observed status when the root page answers 200", async () => {
-    const root = await healthy();
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url === "http://localhost:3000/") return new Response("<html></html>", { status: 200 });
-      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      return Response.json({}, { status: 404 });
-    });
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs.join("\n")).toContain("ok: the app's root page answered HTTP 200");
-  });
-
-  // Split-brain guard (0.4.2 re-run): a direct @vendoai/vendo dep pinned to
-  // an older range beats the vendoai umbrella's for the app import, so the
-  // CLI upgrades while /status silently serves the old runtime.
-  it("fails E-DEP-002 with the exact fix when the wire's version disagrees with the CLI", async () => {
-    const root = await healthy();
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: "0.4.1", blocks: { store: true, sandbox: "cloud" } });
-      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-      return Response.json({}, { status: 404 });
-    });
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    const errors = messages.errors.join("\n");
-    expect(errors).toContain(`serves @vendoai/vendo 0.4.1 but this CLI is ${CLI_VERSION}`);
-    expect(errors).toContain(`npm install @vendoai/vendo@${CLI_VERSION}`);
-    expect(errors).toContain("restart the dev server");
-  });
-
-  it("passes the version-skew check when CLI and wire agree", async () => {
-    const root = await healthy();
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      fetchImpl: successfulProbeFetch(),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs.join("\n")).toContain(`CLI and running wire agree on @vendoai/vendo ${CLI_VERSION}`);
-  });
-
-  // Exit-code honesty (3b): a failing live model turn is a broken: line AND
-  // a nonzero exit — never a green verdict with broken output.
-  it("a broken live model turn prints broken: and exits 1", async () => {
-    const root = await healthy();
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      fetchImpl: successfulProbeFetch(),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-      liveTurn: async () => ({
-        attempted: true,
-        ok: false,
-        rung: "none",
-        credential: "no credential",
-        error: "no reply text arrived",
-        elapsedMs: 5,
-      }),
-    })).toBe(1);
-    expect(messages.errors.join("\n")).toContain("broken: live model turn did not answer");
-  });
-
-  // --url copy (D8): a wrong --url should name the wire base it expects.
-  it("the unreachable-/status failure names the wire base --url expects", async () => {
-    const root = await healthy();
-    const messages = output();
-    expect(await doctor({
-      targetDir: root,
-      url: "http://localhost:4999",
-      fetchImpl: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")) as unknown as typeof fetch,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors.join("\n")).toContain("e.g. http://localhost:3000/api/vendo");
-  });
 });
-
-function discoveryFetch(challenge?: string): typeof fetch {
-  return vi.fn(async (input: string | URL | Request) => {
-    const url = String(input);
-    if (url.endsWith("/api/vendo/status")) {
-      return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { mcp: true, sandbox: "cloud" } });
-    }
-    if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
-    if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
-    if (url.includes("/.well-known/oauth-protected-resource/")) return Response.json({ resource: "mcp" });
-    if (url.includes("/.well-known/oauth-authorization-server/")) return Response.json({ issuer: "auth" });
-    if (url.endsWith("/.well-known/mcp/server-card.json")) {
-      return Response.json({
-        name: "maple",
-        transports: [{ type: "streamable-http", url: "https://mcp.example.com/api/vendo/mcp" }],
-      });
-    }
-    if (url.endsWith("/.well-known/mcp-registry-auth")) {
-      return challenge === undefined
-        ? new Response("not found", { status: 404 })
-        : new Response(challenge, { status: 200 });
-    }
-    throw new Error(`Unexpected URL: ${url}`);
-  }) as typeof fetch;
-}
 
 describe("readEnvFiles — the CLI's one env reader (doctor and config read it too)", () => {
   it("reads .env.local over .env, parses quotes/comments, never overrides process env at the merge site", async () => {

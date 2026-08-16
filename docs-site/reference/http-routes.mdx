@@ -144,9 +144,9 @@ These answer only in a development composition (`createVendo({ development })`, 
 
 `/sync/impact` takes no principal and its counts are deployment-wide, which is exactly why a deployment that did not opt in must not carry it.
 
-### Doctor probes
+### Doctor routes
 
-`vendo doctor` drives these against a running dev server. None takes a principal, so mounting is the whole access control.
+These answer on a running dev server, for anything that wants to check the composition over HTTP. `vendo doctor` does not call them. None takes a principal, so mounting is the whole access control.
 
 | Route | Method | Purpose |
 | --- | --- | --- |

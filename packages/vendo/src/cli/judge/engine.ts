@@ -107,7 +107,7 @@ export async function resolveJudgmentEngine(
   const credential = await resolve({ env: options.env });
   // resolveDevCredential answers a DIFFERENT question — what can serve a
   // product turn at runtime — and real API keys are the only answer to that
-  // one (doctor, doctor-live and dev-creds/model.ts all read it, so it must
+  // one (doctor and dev-creds/model.ts both read it, so it must
   // stay that way). A coding agent is not a product turn: Claude Code also
   // runs on an interactive OAuth token or a corporate endpoint, none of which
   // is a key. Without this widening, `vendo sync --ai` on an incremental run —

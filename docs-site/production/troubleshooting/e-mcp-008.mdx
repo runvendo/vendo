@@ -1,46 +1,32 @@
 ---
 title: "E-MCP-008"
 sidebarTitle: "E-MCP-008"
-description: "The live MCP registry auth challenge is malformed."
+description: "Retired: doctor no longer fetches the deployed registry auth challenge."
 ---
 
-# E-MCP-008
+```text retired
+E-MCP-008 — retired, doctor no longer emits this code
+```
 
-<Warning>
-**what doctor prints** (broken)
-
-MCP registry auth challenge must start with v=MCPv1
-</Warning>
-
-The deployed copy of your domain-verification file does not match what a
-registry expects, even if the local copy in your repo is fine.
-
-`check mcp/registry-auth-live` · `error_code E-MCP-008` · `doctor exits 1`
+`error_code: E-MCP-008` · `status: retired`
 
 ## What you're seeing
 
-Doctor GETs `<origin>/.well-known/mcp-registry-auth` on the live deployment
-and checks that the response body starts with `v=MCPv1`. This probe is
-optional: doctor only reports it when the origin actually answers, since some
-registries verify ownership over DNS instead of HTTP.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-A deployed challenge file can drift from the one in your repo: a stale build,
-a hand-edited copy on the server, or a CDN caching an old version. Whatever
-the cause, the registry reads what is actually being served, not what is in
-your working tree.
+This code fired when the deployed copy of `/.well-known/mcp-registry-auth`
+did not start with `v=MCPv1`. Doctor fetched that file from the live origin
+over HTTP, and it no longer makes any request.
 
 ## The fix
 
-Redeploy the file `npx vendo mcp verify-domain` generates (see
-[E-MCP-007](/production/troubleshooting/e-mcp-007)) so the live origin serves
-the same challenge as your repo. If you verify ownership over DNS instead,
-this HTTP proof is not required.
+Nothing to do. Doctor still checks the copy in your repo, and that check
+reports as [E-MCP-007](/production/troubleshooting/e-mcp-007).
 
 ## Related errors
 
-<CardGroup cols={2}>
-  <Card title="E-MCP-007" href="/production/troubleshooting/e-mcp-007">local auth challenge malformed</Card>
-  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
-</CardGroup>
+- [E-MCP-007](/production/troubleshooting/e-mcp-007) — the same challenge file, checked on disk
+- [E-MCP-004](/production/troubleshooting/e-mcp-004) — `server.json` registry validation, also checked on disk

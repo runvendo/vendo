@@ -1,37 +1,40 @@
 ---
 title: "E-SCHED-001"
 sidebarTitle: "E-SCHED-001"
-description: "Doctor found a declared machine schedule with no caller authorized to trigger it."
+description: "Retired: doctor no longer reads the live machines route to see whether a schedule caller exists."
 ---
 
-```text machines/schedule-caller
-warning: apps declare vendo.json schedules but no schedule caller is
-configured — set VENDO_TICK_SECRET and point an external cron (Vercel cron,
-GitHub Actions, crontab) at POST /api/vendo/tick
+```text retired
+E-SCHED-001 — retired, doctor no longer emits this code
 ```
 
-`check: machines/schedule-caller` · `error_code: E-SCHED-001` · `doctor exits: 0`
+`error_code: E-SCHED-001` · `status: retired`
 
 ## What you're seeing
 
-A warning: at least one app declares a schedule in its `vendo.json`, but
-nothing is authorized to trigger it.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-`VENDO_TICK_SECRET` is not set, so nothing can call the authenticated
-`POST /api/vendo/tick` route, and the app's schedules never fire.
+This warning fired when apps declared `vendo.json` schedules and no caller
+was authorized to trigger them. Doctor read that from the live
+`/doctor/machines` route. It reads files only now, so it never sees the
+running app's schedules.
 
 ## The fix
 
-Set `VENDO_TICK_SECRET` to a random secret in the server environment.
+The gap is still real, and you check it yourself now. If any app's
+`vendo.json` declares a schedule, `VENDO_TICK_SECRET` has to be set in the
+server environment, or nothing can call `POST /api/vendo/tick` and the
+schedules never fire.
 
 ```bash .env.local
 VENDO_TICK_SECRET=<a random secret>
 ```
 
-Point an external cron, Vercel cron, a GitHub Actions schedule, or plain
-crontab, at the tick route with that secret as a bearer token:
+Point an external cron (Vercel cron, a GitHub Actions schedule, plain
+crontab) at the tick route with that secret as a bearer token:
 
 ```bash {2}
 curl -X POST https://your-app.com/api/vendo/tick \
@@ -43,4 +46,5 @@ from an overlapping cron is a safe no-op.
 
 ## Related errors
 
-- [E-LIVE-004](/production/troubleshooting/e-live-004) — the execution venue those scheduled apps run on
+- [E-CFG-001](/production/troubleshooting/e-cfg-001) — a missing `.vendo/` file, still checked on disk
+- [E-LIVE-004](/production/troubleshooting/e-live-004) — the execution venue scheduled apps run on, also retired

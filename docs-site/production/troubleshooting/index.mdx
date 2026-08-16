@@ -11,6 +11,10 @@ and the fix.
 Find yours by area below. Codes are never renumbered or reused, so an old code
 always names the same failure.
 
+Doctor reads what is on disk. It never starts your app and never calls it, so
+every code that needed a live probe is retired. Retired codes stay listed here,
+with their page, so an older report still resolves.
+
 ## Wiring
 
 | Code | What doctor found |
@@ -46,7 +50,7 @@ always names the same failure.
 | Code | What doctor found |
 | --- | --- |
 | [E-DEP-001](/production/troubleshooting/e-dep-001) | The installed `ai` package is a major version Vendo does not support |
-| [E-DEP-002](/production/troubleshooting/e-dep-002) | The running wire and this CLI serve different `@vendoai/vendo` versions |
+| [E-DEP-002](/production/troubleshooting/e-dep-002) | Retired: the version skew between the running wire and the CLI was read live |
 | [E-DEP-003](/production/troubleshooting/e-dep-003) | The installed `zod` predates 3.25 and the subpaths the AI SDK imports |
 
 ## Ejected UI
@@ -59,18 +63,18 @@ always names the same failure.
 
 | Code | What doctor found |
 | --- | --- |
-| [E-DEV-001](/production/troubleshooting/e-dev-001) | The dev server doctor offered to start never answered in time |
+| [E-DEV-001](/production/troubleshooting/e-dev-001) | Retired: doctor never starts a dev server |
 
 ## Composition and status
 
 | Code | What doctor found |
 | --- | --- |
-| [E-LIVE-001](/production/troubleshooting/e-live-001) | `/status` answered, but not with a valid composition response |
-| [E-LIVE-002](/production/troubleshooting/e-live-002) | `/status` got no answer, so nothing is listening at the wire base |
-| [E-LIVE-003](/production/troubleshooting/e-live-003) | `/status` returned an execution venue doctor does not recognize |
-| [E-LIVE-004](/production/troubleshooting/e-live-004) | No execution venue is configured, so server-tier apps cannot run |
-| [E-LIVE-005](/production/troubleshooting/e-live-005) | The host predates the execution venue field in `/status` |
-| [E-LIVE-006](/production/troubleshooting/e-live-006) | The app's root page crashes for real users while the wire answers |
+| [E-LIVE-001](/production/troubleshooting/e-live-001) | Retired: `/status` answered with an invalid composition response |
+| [E-LIVE-002](/production/troubleshooting/e-live-002) | Retired: `/status` was unreachable |
+| [E-LIVE-003](/production/troubleshooting/e-live-003) | Retired: `/status` returned an unrecognized execution venue |
+| [E-LIVE-004](/production/troubleshooting/e-live-004) | Retired: the missing execution venue was read from live `/status` |
+| [E-LIVE-005](/production/troubleshooting/e-live-005) | Retired: the host predated the execution venue field in `/status` |
+| [E-LIVE-006](/production/troubleshooting/e-live-006) | Retired: the app's root page returned a server error when doctor loaded it |
 | [E-LIVE-007](/production/troubleshooting/e-live-007) | Retired: `E2B_API_KEY` alone no longer selects an execution venue |
 | [E-LIVE-008](/production/troubleshooting/e-live-008) | Retired: the store family this warning covered has been replaced |
 
@@ -78,41 +82,41 @@ always names the same failure.
 
 | Code | What doctor found |
 | --- | --- |
-| [E-AUTH-001](/production/troubleshooting/e-auth-001) | The present-credential probe's cookies and bearer never reached your API |
-| [E-AUTH-002](/production/troubleshooting/e-auth-002) | The present-credential probe threw instead of answering |
-| [E-AUTH-003](/production/troubleshooting/e-auth-003) | The present-credential probe cannot run while the dev server is down |
-| [E-AUTH-004](/production/troubleshooting/e-auth-004) | An `actAs` credential minted, and your principal resolver refused it |
-| [E-AUTH-005](/production/troubleshooting/e-auth-005) | The `actAs` probe threw instead of answering |
-| [E-AUTH-006](/production/troubleshooting/e-auth-006) | The `actAs` probe cannot run while the dev server is down |
-| [E-AUTH-007](/production/troubleshooting/e-auth-007) | No `actAs` seam is configured, so away calls carry no credential |
-| [E-AUTH-008](/production/troubleshooting/e-auth-008) | The `actAs` seam is configured and declined doctor's synthetic principal |
+| [E-AUTH-001](/production/troubleshooting/e-auth-001) | Retired: the present-credential probe's cookies and bearer never reached your API |
+| [E-AUTH-002](/production/troubleshooting/e-auth-002) | Retired: the present-credential probe was unreachable |
+| [E-AUTH-003](/production/troubleshooting/e-auth-003) | Retired: the present-credential probe was skipped with the app down |
+| [E-AUTH-004](/production/troubleshooting/e-auth-004) | Retired: an `actAs` credential minted and your principal resolver refused it |
+| [E-AUTH-005](/production/troubleshooting/e-auth-005) | Retired: the `actAs` probe was unreachable |
+| [E-AUTH-006](/production/troubleshooting/e-auth-006) | Retired: the `actAs` probe was skipped with the app down |
+| [E-AUTH-007](/production/troubleshooting/e-auth-007) | Retired: the missing `actAs` seam was reported by the live probe |
+| [E-AUTH-008](/production/troubleshooting/e-auth-008) | Retired: the `actAs` seam declined doctor's synthetic principal |
 
 ## MCP door
 
 | Code | What doctor found |
 | --- | --- |
-| [E-MCP-001](/production/troubleshooting/e-mcp-001) | Protected-resource metadata did not resolve at the door's well-known path |
-| [E-MCP-002](/production/troubleshooting/e-mcp-002) | Authorization-server metadata did not resolve for the door |
-| [E-MCP-003](/production/troubleshooting/e-mcp-003) | The MCP server card did not parse |
+| [E-MCP-001](/production/troubleshooting/e-mcp-001) | Retired: protected-resource metadata was fetched over HTTP |
+| [E-MCP-002](/production/troubleshooting/e-mcp-002) | Retired: authorization-server metadata was fetched over HTTP |
+| [E-MCP-003](/production/troubleshooting/e-mcp-003) | Retired: the MCP server card was fetched over HTTP |
 | [E-MCP-004](/production/troubleshooting/e-mcp-004) | `server.json` does not meet MCP registry discovery requirements |
-| [E-MCP-005](/production/troubleshooting/e-mcp-005) | The `server.json` remote does not match the live door |
+| [E-MCP-005](/production/troubleshooting/e-mcp-005) | Retired: the `server.json` remote was compared against the live door |
 | [E-MCP-006](/production/troubleshooting/e-mcp-006) | `server.json` is invalid JSON |
 | [E-MCP-007](/production/troubleshooting/e-mcp-007) | The local MCP registry auth challenge is malformed |
-| [E-MCP-008](/production/troubleshooting/e-mcp-008) | The live MCP registry auth challenge is malformed |
+| [E-MCP-008](/production/troubleshooting/e-mcp-008) | Retired: the deployed MCP registry auth challenge was fetched over HTTP |
 | [E-MCP-009](/production/troubleshooting/e-mcp-009) | The door is wired but `VENDO_BASE_URL` is not set |
 
 ## Schedules
 
 | Code | What doctor found |
 | --- | --- |
-| [E-SCHED-001](/production/troubleshooting/e-sched-001) | A declared schedule has no caller authorized to trigger it |
+| [E-SCHED-001](/production/troubleshooting/e-sched-001) | Retired: the missing schedule caller was read from the live machines route |
 
 ## Model turn
 
 | Code | What doctor found |
 | --- | --- |
-| [E-TURN-001](/production/troubleshooting/e-turn-001) | One real model turn went to the wire and no reply text came back |
-| [E-TURN-002](/production/troubleshooting/e-turn-002) | The live model turn cannot run while the dev server is down |
+| [E-TURN-001](/production/troubleshooting/e-turn-001) | Retired: one real model turn went to the wire and no reply came back |
+| [E-TURN-002](/production/troubleshooting/e-turn-002) | Retired: the live model turn was skipped with the app down |
 
 ## Vendo Cloud key
 

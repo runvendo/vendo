@@ -1,41 +1,44 @@
 ---
 title: "E-LIVE-004"
 sidebarTitle: "E-LIVE-004"
-description: "Doctor found no execution venue configured, so server-tier user apps cannot run."
+description: "Retired: doctor no longer reads the configured execution venue from /status."
 ---
 
-```text live/venue
-warning: pass sandbox: to createVendo (e.g. sandbox: e2bSandbox(), which
-reads E2B_API_KEY as its credential), or set VENDO_API_KEY for the managed
-Cloud sandbox; without one, server apps (rungs 2-4) return sandbox-unavailable
+```text retired
+E-LIVE-004 — retired, doctor no longer emits this code
 ```
 
-`check: live/venue` · `error_code: E-LIVE-004` · `doctor exits: 0`
+`error_code: E-LIVE-004` · `status: retired`
 
 ## What you're seeing
 
-A warning, not a failure. `/status` reports no execution venue at all.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-The composition has no sandbox adapter. Tree-only apps still render fine,
-but any user app that needs a server, rungs 2 through 4, answers
-`sandbox-unavailable`.
+This warning fired when the live `/status` route reported no execution venue
+at all. Doctor reads your files now and never asks the running app what it
+composed, so it cannot tell which venue you ended up with.
 
 ## The fix
 
+The gap is still real, and you check it yourself now. Read your `createVendo`
+call. If the `sandbox` slot is unset and `VENDO_API_KEY` is not in your
+server environment, you have no venue: tree-only apps render fine, and any
+app that needs a server (rungs 2 through 4) answers `sandbox-unavailable`.
+
 Set `VENDO_API_KEY` and Vendo fills the sandbox slot with the managed Cloud
-sandbox automatically, no `sandbox` option needed.
+sandbox, no `sandbox` option needed.
 
 ```bash
 export VENDO_API_KEY=vnd_live_...
 ```
 
-Restart the dev server and re-run `npx vendo doctor`; `blocks.sandbox`
-should now report `cloud`.
+Or pass your own adapter, for example `sandbox: e2bSandbox()`, which reads
+`E2B_API_KEY` as its credential.
 
 ## Related errors
 
-- [E-LIVE-005](/production/troubleshooting/e-live-005) — the field is missing outright instead of unset
-- [E-LIVE-003](/production/troubleshooting/e-live-003) — the field came back with a value doctor cannot read
-- [E-TURN-001](/production/troubleshooting/e-turn-001) — the same VENDO_API_KEY covers the model seat too
+- [E-CLOUD-001](/production/troubleshooting/e-cloud-001) — `VENDO_API_KEY` set but not usable, which doctor still catches
+- [E-TURN-001](/production/troubleshooting/e-turn-001) — the model seat, filled by the same key

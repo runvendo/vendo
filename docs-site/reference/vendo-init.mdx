@@ -111,7 +111,7 @@ There is no interview. An interactive run stops only for Enter-to-accept decisio
 - a `zod` bump when your pin is below 3.25
 - an uncertain theme slot
 - whether your own backend will call tools machine-to-machine (`--use-case mcp`)
-- whether to start the dev server for a closing live check
+- whether to run `vendo doctor` on the way out
 
 `--yes` answers all of them and ends with an `Agent tail:` block naming the files left to hand-edit.
 
@@ -182,13 +182,13 @@ Re-run init when the detected surface changes in a way sync cannot scaffold for,
 
 ## Verify
 
-Init does not run a live turn. `vendo doctor` owns verification.
+`vendo doctor` owns verification.
 
 ```bash
 npx vendo doctor
 ```
 
-Doctor checks wiring, makes one live `/status` round trip, and sends one real model turn. `vendo doctor --json` is the machine-readable gate agents loop on.
+Doctor reads the repo: wiring, the `.vendo/` files, the tool catalog, and the model credential in your environment. It needs no running app. `vendo doctor --json` is the machine-readable gate agents loop on.
 
 <Note>
   Right after a release, package managers with a cooldown hold the new version back. pnpm 11 fails loud with "no versions available"; npm's opt-in `min-release-age` instead resolves silently to an older version, which init then pins.

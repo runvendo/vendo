@@ -23,9 +23,6 @@ export interface DoctorRun {
   root: string;
   env: Record<string, string | undefined>;
   json: boolean;
-  /** The wire base every live probe hangs off: origin + mount path. */
-  statusUrl: string;
-  fetchImpl: typeof fetch;
   checks: DoctorCheck[];
   failures: number;
   warnings: number;
@@ -39,8 +36,6 @@ export function createDoctorRun(input: {
   root: string;
   env: Record<string, string | undefined>;
   json: boolean;
-  statusUrl: string;
-  fetchImpl: typeof fetch;
   output: Output;
 }): DoctorRun {
   const { json, output } = input;
@@ -48,8 +43,6 @@ export function createDoctorRun(input: {
     root: input.root,
     env: input.env,
     json,
-    statusUrl: input.statusUrl,
-    fetchImpl: input.fetchImpl,
     checks: [],
     failures: 0,
     warnings: 0,
@@ -63,18 +56,4 @@ export function createDoctorRun(input: {
     warn: (id: string, code: DoctorErrorCode, message: string): void => { run.warnings += 1; run.checks.push({ id, status: "warning", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`warning: ${message}`); },
   };
   return run;
-}
-
-interface DoctorProbeBody {
-  ok?: unknown;
-  error?: { code?: unknown; message?: unknown };
-}
-
-export async function probeBody(response: Response): Promise<DoctorProbeBody> {
-  try {
-    const body = await response.json() as unknown;
-    return typeof body === "object" && body !== null ? body as DoctorProbeBody : {};
-  } catch {
-    return {};
-  }
 }

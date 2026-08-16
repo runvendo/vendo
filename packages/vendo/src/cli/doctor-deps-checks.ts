@@ -1,7 +1,6 @@
-import { installedAiVersion, installedZodVersion, isOlderVersion, npmLatestVersion } from "./dep-versions.js";
+import { installedAiVersion, installedZodVersion } from "./dep-versions.js";
 import { aiBelowPeerFloor, aiBumpInvocation, zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
 import type { DoctorRun } from "./doctor-report.js";
-import { CLI_VERSION, type Output } from "./shared.js";
 
 /** #478 short-term — @vendoai/vendo speaks AI SDK v6 to the host's `ai`
  *  package (peer `ai >=6 <7`), but npm installs the peer conflict anyway:
@@ -36,31 +35,8 @@ async function checkZodFloor(run: DoctorRun): Promise<void> {
   }
 }
 
-/** Self-serve audit F1 — npm release-cooldown configs (`min-release-age`)
- *  resolve an old @vendoai/vendo silently, and Vendo ships often enough that
- *  those users stay permanently behind with nothing ever saying so. A hint,
- *  not a check: it has no fix_ref registry code and never changes the exit
- *  code, and an unreachable registry says nothing at all. Skipped outright
- *  under --json, so an agent run never pays for a lookup it cannot see. */
-async function noteVersionBehindLatest(
-  run: DoctorRun,
-  output: Output,
-  npmLatest: (() => Promise<string | null>) | undefined,
-): Promise<void> {
-  if (run.json) return;
-  const latestPublished = await (npmLatest ?? (() => npmLatestVersion("@vendoai/vendo")))();
-  if (latestPublished !== null && isOlderVersion(CLI_VERSION, latestPublished)) {
-    output.error(`warning: installed @vendoai/vendo ${CLI_VERSION} is behind latest ${latestPublished} — npm install @vendoai/vendo@latest (release-cooldown npm configs like min-release-age resolve old versions silently)`);
-  }
-}
-
 /** What the target project actually has installed beside Vendo. */
-export async function checkInstalledDeps(
-  run: DoctorRun,
-  output: Output,
-  npmLatest: (() => Promise<string | null>) | undefined,
-): Promise<void> {
+export async function checkInstalledDeps(run: DoctorRun): Promise<void> {
   await checkAiSdkMajor(run);
   await checkZodFloor(run);
-  await noteVersionBehindLatest(run, output, npmLatest);
 }

@@ -1,60 +1,41 @@
 ---
 title: "E-MCP-002"
 sidebarTitle: "E-MCP-002"
-description: "MCP authorization-server metadata did not resolve for the door."
+description: "Retired: doctor no longer fetches the door's authorization-server metadata over HTTP."
 ---
 
-# E-MCP-002
+```text retired
+E-MCP-002 — retired, doctor no longer emits this code
+```
 
-<Warning>
-**what doctor prints** (broken)
-
-MCP authorization-server metadata resolves (404)
-</Warning>
-
-Callers can find the door's protected resource, but not the authorization
-server that is supposed to issue tokens for it.
-
-`check mcp/authorization-server` · `error_code E-MCP-002` · `doctor exits 1`
+`error_code: E-MCP-002` · `status: retired`
 
 ## What you're seeing
 
-Doctor's next probe after the protected-resource document, checking whether
-the door's authorization server answers with a valid RFC 8414 metadata
-document.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-The check runs differently depending on how the door is fronted. In local
-mode, doctor fetches
-`<origin>/.well-known/oauth-authorization-server<mount>/mcp` directly and
-expects an `issuer` string back.
-
-In broker mode (`VENDO_MCP_BROKER_URL` set, or `mcp.remoteAs` configured), the
-door names an external authorization server inside its protected-resource
-document instead of serving its own. Doctor reads that
-`authorization_servers[0]` entry and resolves metadata from the named server.
-Two extra failures are possible here: the field can be missing, or it can
-name a value that is not a parseable URL, in which case doctor never attempts
-a fetch at all.
+This code fired when the door's authorization-server metadata did not
+resolve, so callers could not find where tokens come from. Doctor fetched
+that document over HTTP and no longer makes any request.
 
 ## The fix
 
-In local mode, this is the same wiring problem as
-[E-MCP-001](/production/troubleshooting/e-mcp-001): make sure the
-`.well-known` routes are reachable at the origin and the probed URL matches
-the real mount.
+The document still has to resolve, and you check it yourself now.
 
-In broker mode, confirm `VENDO_MCP_BROKER_URL` (or `mcp.remoteAs`) points at a
-broker that is actually reachable, and that its own
-`/.well-known/oauth-authorization-server` document names itself as `issuer`.
-A broker that is down or misconfigured breaks this check even when your own
-door is fine.
+```bash
+curl -s https://your-app.example.com/.well-known/oauth-authorization-server/api/vendo/mcp
+```
+
+A correct response is JSON with an `issuer` string. In broker mode
+(`VENDO_MCP_BROKER_URL` set, or `mcp.remoteAs` configured), your door names
+an external server in `authorization_servers[0]` instead; curl that server's
+own `/.well-known/oauth-authorization-server` and confirm it names itself as
+`issuer`. A broker that is down breaks this even when your door is fine.
 
 ## Related errors
 
-<CardGroup cols={2}>
-  <Card title="E-MCP-001" href="/production/troubleshooting/e-mcp-001">protected-resource metadata</Card>
-  <Card title="E-MCP-003" href="/production/troubleshooting/e-mcp-003">server card</Card>
-  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">missing VENDO_BASE_URL</Card>
-</CardGroup>
+- [E-MCP-009](/production/troubleshooting/e-mcp-009) — the door wired without `VENDO_BASE_URL`, which doctor still catches
+- [E-MCP-001](/production/troubleshooting/e-mcp-001) — the protected-resource document, also retired
