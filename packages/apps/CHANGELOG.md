@@ -1,5 +1,344 @@
 # @vendoai/apps
 
+## 0.21.0
+
+### Minor Changes
+
+- 6856b4f: A screen mounts only once its build is terminal.
+
+  A screen saves as it goes, so its app ROW lands at the first save that paints — and the mandatory reviewer pass and its one repair round run after that. Every surface that mounts from the row stops looking the moment `open()` answers, so a person could be left in front of a draft — a wrong NUMBER included — while the server already held the corrected version, with nothing but a page reload to fix it.
+
+  `AppDocument.building` (`@vendoai/core`, optional, server-written) is that window made durable: the first painting save of a build stamps it, and `open()` answers the same not-found the app gave a moment earlier with no row at all — which the wire's build window already turns into the `{kind:"pending"}` every embed keeps polling on. So there are no client changes: `useApp` and `VendoAppEmbed` both branch on it today, and `VendoSlot` gets "building" off the placement read. The trade is deliberate: first paint waits for the repair.
+
+  `buildInFlight(building)` is new on `@vendoai/apps/contract`, and it is time-bounded on purpose — past the UI build deadline either the watchdog landed a terminal record or the build's process died, and a flag that never cleared would leave the app unmountable forever.
+
+  The window is wired ONCE, around `assemble` itself, so the two doors that run an assembler cannot disagree about when a build ends, and a `finally` settles a run that threw or escalated. A harness writing `app.tsx` straight through the workspace is untouched — there is no build behind that save to be unfinished.
+
+- 6856b4f: Display bricks — the HTML a screen may write, contained by its box.
+
+  A screen had exactly one vocabulary: the Kit. Every arrangement it could not express had to be faked with a container that was never meant for it, and `<div>` was a type error. A screen now has ~21 display-only tags beside the Kit — `div`, `span`, `section`, `header`, `footer`, `aside`, `h1`–`h6`, `p`, `strong`, `em`, `small`, `code`, `blockquote`, `ul`, `ol`, `li` — each taking children and an inline `style`, and nothing else. Free CSS, off the host's own theme variables.
+
+  `DISPLAY_SPECS` and `DISPLAY_TAG_NAMES` are new on `@vendoai/apps/contract` (kit) and are the single source: the renderer resolves bricks beside `KIT_COMPONENTS`, the screen typings print them as the ONLY `JSX.IntrinsicElements` (so `<img>` and `<script>` stay errors, and `className` is an error on the tag), the type-check refusal names the legal tags, the tree's catalog check skips them like a text run, and the prompt and format reference teach them.
+
+  Security stays capability-shaped, never content-inspected. There is no style validator and no provenance scanner:
+
+  - Each brick is written out by hand and destructures exactly `style` and `children`. No spread, so `className`/`id`/`on*`/`data-*`/`aria-*`/`dangerouslySetInnerHTML` cannot arrive — not because a list refuses them, but because nothing carries them.
+  - ONE trusted-side filter drops the declarations that would FETCH (`url()`, `src()`, `image-set()`). A screen has no network; a beacon is a beacon whatever the URL says. The filter normalizes before it tests, the way the CSS tokenizer does: input preprocessing (CRLF, lone CR and form feed to one newline; NUL and lone surrogates to U+FFFD) and then escape resolution, so `\75 rl(`, `u\72 l(`, the fully-escaped spelling and every one of those routed through a custom property are caught — all reproduced fetching in real Chromium first. Honest framing: this closes every bypass we can demonstrate. It is a normalization pass, not a proof of completeness.
+  - The surface root paints inside its own box: `contain: layout paint; overflow: clip; position: relative; isolation: isolate`. `contain: paint` makes it the containing block for fixed descendants, so `position: fixed; width: 200vw` is held by geometry — nothing read the word "fixed".
+
+  One inert value changes side: `url\9 (` never fetched (whitespace between the ident and `(` is no function token), and normalizing puts a tab where the escape was, which the filter's `\s*` takes. It is pinned as dropped — buying it back would cost a second mechanism for a value that paints nothing.
+
+- 46aee4a: Host fonts become bytes, not just a name.
+
+  Theme extraction learned that the brand font is called "Inter". That name is
+  enough for the host's own pages and useless everywhere else: a generated screen
+  renders inside surfaces the host's stylesheet never reaches, where "Inter"
+  resolves to whatever the surface happens to have — normally nothing.
+
+  - **`vendo sync` now writes `.vendo/fonts.css`** — the theme's families resolved
+    to real files and inlined as data-URI `@font-face` rules. Three sources, in
+    order of how much each proves about what the host actually ships: next/font's
+    build output, the host's own `@font-face` rules pointing under `public/`, then
+    the Google Fonts css2 API. The first and last are re-resolved on every run and
+    never recorded — next/font's filenames carry a per-build hash and gstatic's
+    carry a font version, so a stored path is a path that rots. Written with
+    `theme.json` and only then (install, and any sync where the brand actually
+    moved), because resolving a face can reach the network and `sync` runs from
+    `predev`. `init` prints the one-line import beside the `<VendoProvider>` paste.
+  - **`theme.json` gets metadata, never bytes** — `typography.fonts` names each
+    face's family/weight/style/source. The file is a bundle import and rides the
+    `?vendoTheme=` query string, where a base64 face would blow past every proxy's
+    request-line limit.
+  - **A host's real mono font is learned instead of discarded.** The body-stack
+    derivation found the mono binding, filtered it out of the sans candidates and
+    dropped it, so a host shipping Geist Mono still got the generic system stack.
+    It is now derived on its own and stored as `typography.monoFamily`, falling
+    back to `monospace` rather than `sans-serif` — a code font that fails to load
+    must fall back to another code font.
+  - **`VendoProvider` takes a `fonts` string** and the chrome injects it beside
+    its own sheet, as a guarded `<style data-vendo-fonts>`. Kept separate from
+    `ensureChromeStyles` on purpose: the faces and the chrome are wanted
+    independently — a surface rendering inside someone else's client needs the
+    faces and none of the chrome.
+
+  - **Sync no longer captures its own output.** The root layout now imports
+    `.vendo/fonts.css`, and the seed-baseline style capture would have read that
+    sheet straight back in — ~65 KB of base64 copied into every remixable seed and
+    host-component bundle, on every run. `.vendo/` is sync's output, never host
+    source, and the capture skips it.
+
+  Only latin is taken, and only because both sources already publish per-subset
+  files. No glyph-subsetting machinery ships, and there is no license logic.
+
+- 83aec51: The Kit gets an `Icon`. Generated screens have had no way to draw a glyph, so
+  every affordance has been a word — and the models reach for `lucide-react`
+  anyway, which the jail cannot resolve.
+
+  `<Icon name="arrow-up-right"/>` renders an inline stroked SVG that inherits the
+  surrounding text's color. 227 names, in lucide's own kebab-case, are extracted
+  at build time by `pnpm --filter @vendoai/ui build:icons` into the committed
+  `src/kit/icons.gen.ts`; lucide itself is a devDependency, so the runtime carries
+  the path data and never the package. A name outside the set renders nothing and
+  marks itself `data-kit-missing-icon` — a guessed glyph leaves a gap, never a
+  crash and never a broken-glyph box.
+
+- 01e225c: Overlay bricks — Modal, Sheet and Toast — plus the Kit's first stylesheet.
+
+  The three bricks paint outside the screen's own box, on Base UI's Dialog and
+  Toast, so the focus trap, Esc and the page's scroll lock come from the library
+  rather than from hand-rolled listeners. `KitOverlaySpec` names the open/close
+  pair that makes an overlay an overlay, and `KIT_OVERLAY_SPECS` is how a consumer
+  routes one without matching on a component name.
+
+  The renderer reads that map: an overlay node paints on the body-level host, so
+  its box in the tree generates nothing, and the Stack it was written in no longer
+  carries an empty gap where the overlay used to sit.
+
+  `KIT_CSS` is the Kit's first document-level stylesheet, and it carries nothing
+  but pseudo-class state — hover, focus-visible and the press, keyed on `data-kit`.
+  Everything themable stays inline on the brick. The sheet is injected from the
+  tree surface itself, so every generated screen has hover and focus states —
+  not only the ones that happen to raise an overlay.
+
+- d9b7c8d: The Kit's `cell` slot generalizes: a component now DECLARES its slots, and the
+  checks floor reads that declaration instead of one hard-coded prop name.
+
+  `KitComponentSpec` gains `slots?: Record<string, KitSlotSpec>` — a doc, an
+  optional `content` vocabulary and a `perRow` flag per slot — and one table in
+  `specs.ts` states every place the Kit takes an element instead of a value:
+  `cell` where it already lived (a DataTable column, a CardList field, a KeyValue
+  field), `cell` and `marker` on Timeline, and the `content` on a Tabs panel and an
+  Accordion section. Every other component declares none, and takes no element at
+  all.
+
+  The table states only what the React Kit RENDERS. A slot the components do not
+  implement is worse than no slot: the prompt teaches the model to write it, every
+  check passes it, and the renderer drops it in silence — the same breakage the
+  table exists to refuse, arriving through the table. `@vendoai/ui`'s `test/kit/slot-drift.test.tsx` puts a probe in every
+  declared slot and fails unless it finds it in the DOM, so the declaration and
+  the implementation move together.
+
+  The `kit-nesting` check reads that table: an element in a declared slot is
+  measured against the slot's own vocabulary — the read-only value tier by
+  default, so a Button in a per-row `cell` is refused exactly as before — and an
+  element under a key no slot declares is refused by name instead of reaching a
+  renderer that would drop it. Tabs' and Accordion's element-valued `content`,
+  unchecked until now, goes through the same gate. `kitPrompt` prints the slots
+  from the same declaration, so the model is taught the table the floor enforces.
+
+  A slot is read at its DECLARED path and nowhere else. Each entry says where it
+  sits (`at: "columns"` → `columns[].cell`), and both the prompt and the check use
+  that one string — so a `cell` field on a ROW, which a DataTable never looks at,
+  is refused by name instead of being admitted as if it were the column's.
+
+  A component sitting in a slot is measured against its OWN spec, not just the
+  outer slot's vocabulary. It is a component in its own right: an element in a
+  prop it has no slot for, and children under a component that renders none, are
+  now refused inside a slot exactly as they are at the top of the tree. Both had
+  passed clean while the renderer dropped the descendant.
+
+  The renderer closes the matching gap: an element in a slot resolved only the
+  Kit, while the CHILDREN path resolved the Kit and the display bricks, so a brick
+  tag written into a slot painted nothing at all. `reifyElement` now reads the
+  same two registries `builtinContent` does.
+
+- 5932631: Six static bricks join the Kit, for the shapes a screen could only fake with a
+  Stack and a Text: `KeyValue`, `Timeline`, `Avatar`, `CodeBlock`, `EmptyState`
+  and `Steps`.
+
+  `<KeyValue record items/>` lays ONE record out as label/value rows — the detail
+  a table row expands into — and `<Timeline entries/>` runs a record history down
+  a dotted spine. Both take a `cell` slot on the DataTable contract: the slot
+  holds an element, the container publishes the record, and the components inside
+  name their field. `<Avatar name/>` draws initials in a tint hashed off the name,
+  so one person is one color everywhere, and adjacent avatars in a `Row` stack.
+  `<CodeBlock code language/>` shows a payload verbatim — no highlighting, no copy
+  button. `<EmptyState icon title description>` is the designed nothing-here with
+  the action that fixes it nested inside, and `<Steps items active/>` is the
+  progress trail, horizontal or vertical.
+
+  Every one is themed through the host's own `--vendo-*` variables and reads the
+  new `--vendo-border-width`, `--vendo-mono-family` and `--vendo-color-surface-raised`
+  tokens through a fallback, so an unthemed host is unchanged.
+
+- 491a2fa: The whole catalog is in the prompt, so `search_components` is deleted.
+
+  `references/format.md` now carries `catalogPrompt()` instead of `kitPrompt()`:
+  one line per component — name, summary, props by class with `!` on the required
+  ones, then its slots — plus the 227-name icon vocabulary no prompt has ever
+  carried. Measured on this base it costs 13,313 characters against the 20,819 the
+  per-brick sections cost for one fewer brick and no icons. A writer that can read
+  every component it may use, and every host component by name in its brief, has
+  nothing left to search for.
+
+  Removed: the `search_components` tool and its `VENDO_TOOL_TITLES` entry,
+  `VendoVerbPorts.searchComponents`, `searchRuntimeCatalog` and
+  `CatalogSearchMatch` from `@vendoai/vendo`, and `ScreenSurface.hasComponents` /
+  `ScreenAssemblerDeps.hasComponents` — the flag existed only to take the verb off
+  the loadout for a deployment with an empty catalog. `VENDO_VERB_TOOLS` is
+  `["validate", "schedule"]`.
+
+  Also gone: `catalogThemeSummary` — but only the half of it that duplicated. It
+  rendered two things. The host COMPONENT list was a second rendering of what
+  `renderBriefingPack` already hands the screen agent, and that half is deleted;
+  the pack is now the one and only rendering of that list. The one-line theme
+  summary was never a copy of anything — the pack hands the screen agent the theme
+  TOKENS verbatim, as JSON, for the rung that renders — so it stays, as
+  `themeSummary`, and the `system.catalog` prompt slot is renamed `system.theme`,
+  venue-gated exactly as before. A configured theme still reaches the system prompt
+  as `Theme: <density> density, <motion> motion, <font> typography.`
+
+- 6856b4f: The wire format (`app.vendo`) and the plan dialect (`plan.vendo`) are gone. One
+  artifact writes a screen now — `app.tsx`, a React component through the sealed
+  screen engine — so there is one security model, one execution engine and one
+  renderer. The tree stays: it is still the JSON currency the renderer paints.
+
+  Removed from `@vendoai/apps/contract`: `compileWire`, `WireCompileOptions`,
+  `WireCompileResult`, `expandInlineRefs`, `InlineRefsResult`, `WIRE_ISSUE_CODES`,
+  `WIRE_ADVISORY_ISSUE_CODES`, `isAdvisoryWireIssue`, `WireIssue`, `WireIssueCode`,
+  `printWire`, `WirePrintInput`, `WirePrintOptions`, `compilePlan`,
+  `PlanCompileResult`, `PlanFacts`, `planTabs`, `PLAN_DISPLAYS`, `AppPlan`,
+  `PlanDisplay`, `PlanGroup`, `PlanLeaf`, `PlanQuery`, `PlanServer`, and the
+  island-derived-values surface. `checkBindingShapes` and `BindingShapeError` stay
+  — they moved to `genui/shape-check.ts` and still serve the screen's
+  bindings-fit check. `evaluateExpr` and the brace grammar stay: the renderer
+  evaluates them.
+
+  Renamed, because "wire" no longer names anything: `KIT_WIRE_UNSAFE_NAMES` is
+  `KIT_NON_SCREEN_NAMES` and `KIT_WIRE_COMPONENT_NAMES` is
+  `KIT_SCREEN_COMPONENT_NAMES`. The `WIRE_COMPONENT_NAMES` alias is deleted.
+
+  Removed from `@vendoai/apps`: `skeletonFromPlan`, `checkoutApp`,
+  `AppsRuntime.authored` (`authoredScreen` is the screen's counterpart and stays),
+  `AppsConfig.escalatedPlan`, `create({plan})`, `RenderSeamOptions.authoredApp`,
+  `RenderSeamOptions.facts`, `AppFloor.compile` and `AppFloor.check` — the floor
+  has one method, `component()`. `HOT_PATH_FILES` is `["app.tsx"]`, so the render
+  seam watches, checks and paints exactly one file. `validateWrittenApps` no longer
+  takes a `workspace` and no longer has a `{document}` door — a screen's mechanical
+  half already ran as its paint gate, so the gate's one call is `validate({appId})`
+  — and the `validate` verb itself takes `{ appId }` only.
+
+  Escalation stays and is re-shaped. The screen agent's `escalate` hand takes one
+  plain sentence — why assembly cannot serve this ask — and the builder is handed
+  the person's ORIGINAL prompt beside it. Nothing pre-plans the build and nothing
+  pre-declares the box's interface. The cost is the instant outline: an escalated
+  build now shows a plain building state until the box has something real to show.
+
+  Two consequences of the plan's removal, both visible to a host:
+
+  - A box that reported no interface is now a FAILED create/edit rather than a
+    warning. It used to be reported only for a plan that required a served
+    surface, because a layer-2 failure still left the plan's skeleton standing —
+    and there is no skeleton now, so a silent success would be an empty app
+    declared ready.
+  - The 2→3 served-surface flip has no trigger left. `<Server served>` was its
+    only source, so an app can no longer BECOME a served app; everything about one
+    that already is (`ui: "http"`) — the serve door, ping, fork refusal, box-path
+    edits — is untouched.
+
+- 6856b4f: One venue — the island jail and its apparatus are deleted.
+
+  Model-written code runs in the QuickJS empty room; host-written or human-reviewed code runs native. The double-iframe jail was a third answer, so it goes, and with it its runtime bundle, the ambient island scope, the esm.sh escape hatch, the smoke-render gate and the island syntax gate.
+
+  **Removed from `@vendoai/ui/tree`:** `JailedComponent` and `JailedComponentProps`. The renderer keeps ONE venue: a granted `source: "generated"` node mounts in the host page, an ungranted one drops back to a contained notice. With one venue left, `BoundMode` is gone from `bindValue`/`bindProps`, and the per-island tool manifest and `themeVars` go with the frame that read them.
+
+  **Renamed on `@vendoai/ui/tree`:** `JailFurnishing`, `JailSubSource` and `JailStyle` are `InClientFurnishing`, `InClientSubSource` and `InClientStyle` — minus `packages`, which only ever fed the CDN loader.
+
+  **Removed from `@vendoai/apps/contract`, outright:** `JAIL_PACKAGE_CDN_ORIGIN`, `jailPackageUrl`, `ISLAND_AMBIENT_NAMES`, `ISLAND_AMBIENT_REACT_NAMES`, `ISLAND_AMBIENT_KIT_NAMES`, `ISLAND_AMBIENT_HELPER_NAMES`, `IslandAmbientName`, `ISLAND_STRIPPED_SPECIFIERS`, `ISLAND_RESOLVABLE_SPECIFIERS`, `IslandResolvableModule`, `isStrippedIslandSpecifier`, `IslandImportStrip`, `stripIslandImports`, `blankNonCode`, `islandVendoActionNames`, `islandNetworkViolations` and `islandToolFallbackManifest`.
+
+  **Renamed on `@vendoai/apps/contract`:** `JAIL_ALLOWED_MODULES` is `IN_CLIENT_ALLOWED_MODULES`, `JailModule` is `InClientModule`, `JAIL_BUNDLED_PACKAGES` is `IN_CLIENT_BUNDLED_PACKAGES`, `JailBundledPackage` is `InClientBundledPackage`, and `isPinnedJailPackage` is `isPinnedPackage`. `isIslandResolvableSpecifier`, `scanIslandTools`, `IslandToolScan` and `resolveIslandToolName` stay: `contract/island-ambient.ts` became `contract/screen-tools-scan.ts`, trimmed to the `tools` literal-access scan the tsx door runs and the resolvable-specifier set sync capture asks about. `contract/jail-modules.ts` became `contract/inclient-modules.ts`.
+
+  Two files behind the gate go with it — `server/checking/islands.ts` and `server/checking/smoke-render.ts` — and so do the relocations you should not notice: `jail/viewport-css.ts` to `tree/viewport-css.ts`, `jail/zod-shim.ts` to `tree/inclient-zod-shim.ts` (`JailZodShimError` is `ZodShimError`; both are internal).
+
+  **One fix rides along.** The jail applied `themeVars` from React context, so a generated screen was themed by where its PROVIDER was, not by where its DOM was. With the jail gone, theming rides DOM ancestry — and a bare `<AppFrame>` mounted outside chrome resolved every `--vendo-*` to the empty string and fell back to the porcelain defaults. The surface root is already a boundary, so it declares the theme too, through the same `themeCssVariables()` mapping chrome, the overlay, the approval sheet and the toasts use. Nested in chrome it restates identical values, so there is one mapping and nothing that can disagree.
+
+  `@vendoai/actions` only follows the rename in its closure capture — `CapturedClosure` and `previewBlockingSpecifiers` are unchanged. `@vendoai/mcp` ships its regenerated shim artifact, 4.09 MB down to 3.05 MB.
+
+- 6856b4f: The ✦ gesture collects an instruction, and mints a screen. There are no bare forks: ✦ asks what the person wants BEFORE it fires, and the fork plus that first edit are ONE operation whose output is an ordinary screen app (`app.tsx`, through the ordinary edit door) carrying the remix's provenance — component, baseline, and the instruction, verbatim.
+
+  **Breaking, and it reaches data already on disk.** `AppSeed.instruction` is now REQUIRED (`appSeedSchema`, `@vendoai/core`). A remix seed written before this release does not have one, so its app document fails schema validation and that app will not load. There is no migration in this release. A deployment carrying remixes either backfills `seed.instruction` on those rows with the text the remix was made for, or deletes them and lets people remix again. Apps that were never remixes are untouched.
+
+  Two doors change shape with it, both refusing a call that used to be legal:
+
+  - `seedFrom({ component, slot?, instruction })` — `instruction` is required on `VendoClient.apps.seedFrom` (`@vendoai/ui`) and on `SeedFromInput` (`@vendoai/apps`).
+  - `POST /apps/seed` (`@vendoai/vendo`) requires `instruction` in the body and answers `validation` — `instruction must be a non-empty string` — without it.
+
+  Nothing copies the captured host source into the document any more, and nothing evaluates one: `applySeedFork`/`seededBundle` are gone from the generation engine, `seedOnto` from the seed surface, and the wire save's seeded carry-forward from `authoredDocument`. All three were internal. "Is this remix edited?" is one field read now — `doc.source["app.tsx"] !== undefined`.
+
+  A re-seed is RE-IMAGINED rather than kept. When the host ships a new baseline, `reseed` replays the RECORDED INSTRUCTION against it instead of swapping in a pristine copy, so a remix survives its component's redesign as the thing the person asked for. Dedupe per (subject, component) is unchanged, and so is the review lane.
+
+  Three dead ends that used to lie now tell the truth:
+
+  - **A remix still generating is "not ready", not "broken".** Against a real model the first edit takes 9–38s; `open` answered that window with a validation failure, `useApp` spent its three retries in ~900ms, and nothing asked again — the pill sat on "Remixing…" until someone reloaded the page. A seeded app with no screen now answers the same not-found every app gives before its build lands, which the wire's existing build window turns into `{kind:"pending"}`, and `useApp` keeps asking on the embed's cadence until the screen lands or the ONE shared build deadline runs out. A genuinely tree-less app keeps its validation failure. The ✦ badge reads "Remixing…" off the open payload — the same signal the mount below waits on — so the label and the screen change together instead of the label arriving four seconds early.
+  - **A fork the build gave up on says so.** A terminal `{kind:"failed"}` lands in the chrome's existing "Didn't load" state, with the server's own reason, instead of reading "Remixed" and "Sandboxed — only you see this" over a page that never got a screen.
+  - **A failed remix edit never advances the baseline it did not reach.** `edit()` RETURNS `failedEdit` on its common failure path rather than throwing, and both remix doors read only the throw. A re-seed now replays BEFORE it writes the rebased `seed.baseline`, so a refused replay no longer answers 200 with the old screen and the new baseline. A failed first edit leaves the same terminal `buildFailed` marker a failed build leaves, so `open()` answers with the reason and `list()` skips the row — the next tap mints a fresh app instead of being handed the dead one forever.
+
+- 730ac8f: Theme v2 — nineteen more brand tokens, every one optional.
+
+  `VendoTheme` carried eight colors, two type fields, three radii and two enums.
+  Everything the Kit and the chrome needed beyond that was a literal somewhere in
+  our source: the green and amber the pills paint, the mono stack, the three
+  shadows, the chart ramp, the border width, the chrome's own motion pair. A host
+  could not reach any of them. Now it can.
+
+  ```ts
+  theme: {
+    colors: { …, success: "#0a7d55", warning: "#c98a00", surfaceRaised: "#fafafa" },
+    typography: { …, monoFamily: "Berkeley Mono, monospace", weightEmphasis: "650", lineHeightBody: "1.6" },
+    shadow: { small: "…", medium: "…", large: "…" },
+    borderWidth: "1px",
+    chartPalette: ["#1d4ed8", "#0891b2", "#7c3aed"],
+    motionDuration: "120ms",
+    motionEasing: "cubic-bezier(.2,.8,.2,1)",
+  }
+  ```
+
+  - **Every addition is OPTIONAL.** A theme file that fails to parse is discarded
+    whole, so one required field would have blanked the brand of every host whose
+    theme predates it. A pre-v2 theme parses and renders exactly as before.
+  - **The variable NAMES stay one fixed set — 52 of them.** Three transports
+    (the chrome's style object, the MCP door's `style` attribute, the MCP Apps
+    shim's `:root{}`) serialize the same mapping and compare their output against
+    each other, and the shim's reverse read throws on a name outside the published
+    list. So `themeCssVariables` resolves each optional field against a default
+    and emits every name for every theme, rather than emitting a name only for
+    hosts that set it.
+  - **The Kit reads them.** `success`/`warning` stop being Kit-only literals, a
+    control's edge is `var(--vendo-border-width)`, and `chartSeries` reads
+    `--vendo-chart-1..6` with the accent-derived OKLCH ramp — unchanged — as the
+    per-entry fallback. One definition of that ramp now, shared by the emitter and
+    the Kit.
+  - **Three chrome tokens re-anchor onto the contract.** `--vendo-border` keeps
+    the derived ~8% hairline as its DEFAULT but a host that states `colors.border`
+    finally wins instead of being ignored; the `--vendo-ok`/`--vendo-warn` family
+    reads `colors.success`/`colors.warning`; and `--vendo-duration`/`--vendo-ease`
+    derive from the theme's motion pair (the chrome keeps its slower feel through
+    a multiplier), so one host knob moves the chrome and generated views together.
+
+  `defaultVendoTheme` is deliberately unchanged: it is the shape the MCP Apps shim
+  reconstructs a theme back INTO, and a field the reader cannot recover would make
+  a theme round-trip into a different theme. The fill-in values live beside it as
+  `themeDefaults`, which the Kit reads for its unthemed fallbacks — so each value
+  still has exactly one definition.
+
+### Patch Changes
+
+- 6856b4f: A screen cannot forge the tree it hands back.
+
+  The screen's own code evaluates inside the VM the engine already set up, so every name the engine still reached for AFTERWARDS was the screen's to redefine underneath it. A screen that assigned `JSON.stringify` handed the host a whole tree it never rendered, and the gauntlet passed it.
+
+  The engine now holds the intrinsics it uses after that point — `stringify`, `keys`, `isArray`, `create` — in closure variables taken before the screen's first line. `__vendo` is installed non-writable and frozen, and the module space moved onto it, so `__vendo_modules` and `__vendo_require` are no longer globals and `installSource` freezes the space before the screen runs.
+
+  The emitter reads OWN keys onto a null-prototype object and never emits `__proto__`, `prototype` or `constructor`; the host's `JSON.parse` reviver drops the same three as a second lock. And serialization measures what it is about to hand over — core's `TREE_MAX_NODES`, a depth cap and a size cap — inside the VM, because the host's gate on the other side of `JSON.parse` is one parse too late.
+
+  No API changes. One refusal message changed: the paint budget says it measures UTF-16 code units, which is what `json.length` reads — a CJK-heavy paint could reach ~3x the 512 KiB the sentence used to claim. The node and depth caps bound the tree independently, so the sentence was corrected rather than the check.
+
+- Updated dependencies [6856b4f]
+- Updated dependencies [491a2fa]
+- Updated dependencies [37ed821]
+- Updated dependencies [6856b4f]
+  - @vendoai/core@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes

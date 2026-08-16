@@ -1,5 +1,456 @@
 # @vendoai/ui
 
+## 0.21.0
+
+### Minor Changes
+
+- 6856b4f: Display bricks — the HTML a screen may write, contained by its box.
+
+  A screen had exactly one vocabulary: the Kit. Every arrangement it could not express had to be faked with a container that was never meant for it, and `<div>` was a type error. A screen now has ~21 display-only tags beside the Kit — `div`, `span`, `section`, `header`, `footer`, `aside`, `h1`–`h6`, `p`, `strong`, `em`, `small`, `code`, `blockquote`, `ul`, `ol`, `li` — each taking children and an inline `style`, and nothing else. Free CSS, off the host's own theme variables.
+
+  `DISPLAY_SPECS` and `DISPLAY_TAG_NAMES` are new on `@vendoai/apps/contract` (kit) and are the single source: the renderer resolves bricks beside `KIT_COMPONENTS`, the screen typings print them as the ONLY `JSX.IntrinsicElements` (so `<img>` and `<script>` stay errors, and `className` is an error on the tag), the type-check refusal names the legal tags, the tree's catalog check skips them like a text run, and the prompt and format reference teach them.
+
+  Security stays capability-shaped, never content-inspected. There is no style validator and no provenance scanner:
+
+  - Each brick is written out by hand and destructures exactly `style` and `children`. No spread, so `className`/`id`/`on*`/`data-*`/`aria-*`/`dangerouslySetInnerHTML` cannot arrive — not because a list refuses them, but because nothing carries them.
+  - ONE trusted-side filter drops the declarations that would FETCH (`url()`, `src()`, `image-set()`). A screen has no network; a beacon is a beacon whatever the URL says. The filter normalizes before it tests, the way the CSS tokenizer does: input preprocessing (CRLF, lone CR and form feed to one newline; NUL and lone surrogates to U+FFFD) and then escape resolution, so `\75 rl(`, `u\72 l(`, the fully-escaped spelling and every one of those routed through a custom property are caught — all reproduced fetching in real Chromium first. Honest framing: this closes every bypass we can demonstrate. It is a normalization pass, not a proof of completeness.
+  - The surface root paints inside its own box: `contain: layout paint; overflow: clip; position: relative; isolation: isolate`. `contain: paint` makes it the containing block for fixed descendants, so `position: fixed; width: 200vw` is held by geometry — nothing read the word "fixed".
+
+  One inert value changes side: `url\9 (` never fetched (whitespace between the ident and `(` is no function token), and normalizing puts a tab where the escape was, which the filter's `\s*` takes. It is pinned as dropped — buying it back would cost a second mechanism for a value that paints nothing.
+
+- 6fd3bfa: Dock the conversation panel beside the product — opt-in.
+
+  `VendoOverlay` takes a `placement` prop. `"dock"` parks the panel against the
+  right edge at full height and reflows the host page into the remaining width,
+  so the surface being reshaped stays visible and clickable while the panel is
+  open. `dockWidth` (default `420`) sets the panel width and, with it, how far
+  the page reflows. Below the mobile breakpoint both still collapse to the
+  full-bleed takeover.
+
+  `placement` defaults to `"center"`, the centered modal that has always
+  shipped, so this release changes nothing for an existing host: the scrim, the
+  body scroll-lock, `inertBehind` and `aria-modal` are all still there unless a
+  host asks for `placement="dock"`.
+
+  Docked is deliberately NON-modal — no scrim, no body scroll-lock, no
+  `inertBehind`, no focus trap, and no `aria-modal` — because a modal that
+  covers the page is the wrong shape for a tool whose job is editing that page.
+  The page reflows via a width reduction on `documentElement` (not `body`,
+  whose width is usually author-controlled), torn down on close, unmount, and
+  placement flips. Host chrome that is itself `position: fixed` is anchored to
+  the viewport rather than to `documentElement`, so it does not reflow with
+  this; such elements can read `--vendo-dock-w` to inset themselves.
+
+  The reflow is owned centrally and refcounted: `data-vendo-dock` and
+  `--vendo-dock-w` live on the one `documentElement` every overlay shares, so
+  closing one of two open docked panels no longer hands the page back its full
+  width while the other is still open.
+
+  The workspace expander stays a centered-placement feature — a full-height rail
+  has nowhere to grow a stage into — so it is hidden while docked. For the same
+  reason a docked conversation does not auto-stage a built app: staging on the
+  user's behalf there would strand an app they could neither see nor collapse.
+  The embed still lands in the rail.
+
+  **An indeterminate progress bar** sweeps along the top edge of the framed page
+  while a turn runs, driven by the existing cross-tree run-activity store. No
+  percentage: `RunActivity`'s `done`/`total` count steps already begun, not a
+  forecast, and inventing a completion estimate would break the same "no fake
+  percentage, no completion jump" rule the app-boot hairline already follows.
+
+  Public API added: `placement` and `dockWidth` on `VendoOverlay`.
+
+- 46aee4a: Host fonts become bytes, not just a name.
+
+  Theme extraction learned that the brand font is called "Inter". That name is
+  enough for the host's own pages and useless everywhere else: a generated screen
+  renders inside surfaces the host's stylesheet never reaches, where "Inter"
+  resolves to whatever the surface happens to have — normally nothing.
+
+  - **`vendo sync` now writes `.vendo/fonts.css`** — the theme's families resolved
+    to real files and inlined as data-URI `@font-face` rules. Three sources, in
+    order of how much each proves about what the host actually ships: next/font's
+    build output, the host's own `@font-face` rules pointing under `public/`, then
+    the Google Fonts css2 API. The first and last are re-resolved on every run and
+    never recorded — next/font's filenames carry a per-build hash and gstatic's
+    carry a font version, so a stored path is a path that rots. Written with
+    `theme.json` and only then (install, and any sync where the brand actually
+    moved), because resolving a face can reach the network and `sync` runs from
+    `predev`. `init` prints the one-line import beside the `<VendoProvider>` paste.
+  - **`theme.json` gets metadata, never bytes** — `typography.fonts` names each
+    face's family/weight/style/source. The file is a bundle import and rides the
+    `?vendoTheme=` query string, where a base64 face would blow past every proxy's
+    request-line limit.
+  - **A host's real mono font is learned instead of discarded.** The body-stack
+    derivation found the mono binding, filtered it out of the sans candidates and
+    dropped it, so a host shipping Geist Mono still got the generic system stack.
+    It is now derived on its own and stored as `typography.monoFamily`, falling
+    back to `monospace` rather than `sans-serif` — a code font that fails to load
+    must fall back to another code font.
+  - **`VendoProvider` takes a `fonts` string** and the chrome injects it beside
+    its own sheet, as a guarded `<style data-vendo-fonts>`. Kept separate from
+    `ensureChromeStyles` on purpose: the faces and the chrome are wanted
+    independently — a surface rendering inside someone else's client needs the
+    faces and none of the chrome.
+
+  - **Sync no longer captures its own output.** The root layout now imports
+    `.vendo/fonts.css`, and the seed-baseline style capture would have read that
+    sheet straight back in — ~65 KB of base64 copied into every remixable seed and
+    host-component bundle, on every run. `.vendo/` is sync's output, never host
+    source, and the capture skips it.
+
+  Only latin is taken, and only because both sources already publish per-subset
+  files. No glyph-subsetting machinery ships, and there is no license logic.
+
+- 83aec51: The Kit gets an `Icon`. Generated screens have had no way to draw a glyph, so
+  every affordance has been a word — and the models reach for `lucide-react`
+  anyway, which the jail cannot resolve.
+
+  `<Icon name="arrow-up-right"/>` renders an inline stroked SVG that inherits the
+  surrounding text's color. 227 names, in lucide's own kebab-case, are extracted
+  at build time by `pnpm --filter @vendoai/ui build:icons` into the committed
+  `src/kit/icons.gen.ts`; lucide itself is a devDependency, so the runtime carries
+  the path data and never the package. A name outside the set renders nothing and
+  marks itself `data-kit-missing-icon` — a guessed glyph leaves a gap, never a
+  crash and never a broken-glyph box.
+
+- 01e225c: Overlay bricks — Modal, Sheet and Toast — plus the Kit's first stylesheet.
+
+  The three bricks paint outside the screen's own box, on Base UI's Dialog and
+  Toast, so the focus trap, Esc and the page's scroll lock come from the library
+  rather than from hand-rolled listeners. `KitOverlaySpec` names the open/close
+  pair that makes an overlay an overlay, and `KIT_OVERLAY_SPECS` is how a consumer
+  routes one without matching on a component name.
+
+  The renderer reads that map: an overlay node paints on the body-level host, so
+  its box in the tree generates nothing, and the Stack it was written in no longer
+  carries an empty gap where the overlay used to sit.
+
+  `KIT_CSS` is the Kit's first document-level stylesheet, and it carries nothing
+  but pseudo-class state — hover, focus-visible and the press, keyed on `data-kit`.
+  Everything themable stays inline on the brick. The sheet is injected from the
+  tree surface itself, so every generated screen has hover and focus states —
+  not only the ones that happen to raise an overlay.
+
+- 0c27a89: Quiet Precision — every Kit brick restyled against the theme v2 tokens.
+
+  The Kit had its taste written in literals: `1px solid`, `fontWeight: 650`, four
+  different hand-rolled `box-shadow` blurs, `letterSpacing: "-0.011em"` copied
+  into six files. A host that set `borderWidth`, `weightEmphasis` or `shadow.small`
+  changed nothing, because nothing read them.
+
+  Now one edge, one lift, one type ramp, and all three come off the host's theme:
+
+  - `hairline` is the ONE edge — `--vendo-border-width` over `--vendo-color-border`.
+    Borders do the work shadows used to, so Card, Surface, CardList and the tabs
+    indicator are flat. The single remaining lift is a filled Button, and it paints
+    `--vendo-shadow-small` rather than a literal.
+  - `microLabel` is the ONE micro-label — letterspaced uppercase, for the things
+    that are chrome and not content: a column header, a table caption, a Stat's
+    metric name, a Progress label, `<Text variant="label">`. Caption text stays
+    sentence-case; it carries model-authored sentences.
+  - Weights, line-heights and letter-spacing come from
+    `--vendo-font-weight-normal/-emphasis`, `--vendo-line-height(-heading)` and
+    `--vendo-letter-spacing`, so a brand's type voice reaches the Kit.
+  - Figures are tabular everywhere — the whole DataTable, not just its formatted
+    columns.
+  - `transitionFor()` builds every transition on `--vendo-motion-duration` and
+    `--vendo-motion-easing`, so `motion: "reduced"` (which emits `0ms`) collapses
+    the tabs glide, the accordion chevron and the progress fill with no branch.
+  - A neutral Stat loses its 3px rule: `toneColor("neutral")` is the foreground
+    itself, and a near-black bar on every resting tile is the opposite of quiet.
+    A toned tile keeps it.
+  - Chart tooltips and axis ticks read the tokens instead of re-spelling them.
+
+  No prop changed on any brick. The `fluidkit` and `motion` dependencies, the
+  vitest alias that stubbed them and `test/mocks/fluidkit.tsx` are deleted — the
+  last import of either was gone.
+
+- d9b7c8d: The Kit's `cell` slot generalizes: a component now DECLARES its slots, and the
+  checks floor reads that declaration instead of one hard-coded prop name.
+
+  `KitComponentSpec` gains `slots?: Record<string, KitSlotSpec>` — a doc, an
+  optional `content` vocabulary and a `perRow` flag per slot — and one table in
+  `specs.ts` states every place the Kit takes an element instead of a value:
+  `cell` where it already lived (a DataTable column, a CardList field, a KeyValue
+  field), `cell` and `marker` on Timeline, and the `content` on a Tabs panel and an
+  Accordion section. Every other component declares none, and takes no element at
+  all.
+
+  The table states only what the React Kit RENDERS. A slot the components do not
+  implement is worse than no slot: the prompt teaches the model to write it, every
+  check passes it, and the renderer drops it in silence — the same breakage the
+  table exists to refuse, arriving through the table. `@vendoai/ui`'s `test/kit/slot-drift.test.tsx` puts a probe in every
+  declared slot and fails unless it finds it in the DOM, so the declaration and
+  the implementation move together.
+
+  The `kit-nesting` check reads that table: an element in a declared slot is
+  measured against the slot's own vocabulary — the read-only value tier by
+  default, so a Button in a per-row `cell` is refused exactly as before — and an
+  element under a key no slot declares is refused by name instead of reaching a
+  renderer that would drop it. Tabs' and Accordion's element-valued `content`,
+  unchecked until now, goes through the same gate. `kitPrompt` prints the slots
+  from the same declaration, so the model is taught the table the floor enforces.
+
+  A slot is read at its DECLARED path and nowhere else. Each entry says where it
+  sits (`at: "columns"` → `columns[].cell`), and both the prompt and the check use
+  that one string — so a `cell` field on a ROW, which a DataTable never looks at,
+  is refused by name instead of being admitted as if it were the column's.
+
+  A component sitting in a slot is measured against its OWN spec, not just the
+  outer slot's vocabulary. It is a component in its own right: an element in a
+  prop it has no slot for, and children under a component that renders none, are
+  now refused inside a slot exactly as they are at the top of the tree. Both had
+  passed clean while the renderer dropped the descendant.
+
+  The renderer closes the matching gap: an element in a slot resolved only the
+  Kit, while the CHILDREN path resolved the Kit and the display bricks, so a brick
+  tag written into a slot painted nothing at all. `reifyElement` now reads the
+  same two registries `builtinContent` does.
+
+- 5932631: Six static bricks join the Kit, for the shapes a screen could only fake with a
+  Stack and a Text: `KeyValue`, `Timeline`, `Avatar`, `CodeBlock`, `EmptyState`
+  and `Steps`.
+
+  `<KeyValue record items/>` lays ONE record out as label/value rows — the detail
+  a table row expands into — and `<Timeline entries/>` runs a record history down
+  a dotted spine. Both take a `cell` slot on the DataTable contract: the slot
+  holds an element, the container publishes the record, and the components inside
+  name their field. `<Avatar name/>` draws initials in a tint hashed off the name,
+  so one person is one color everywhere, and adjacent avatars in a `Row` stack.
+  `<CodeBlock code language/>` shows a payload verbatim — no highlighting, no copy
+  button. `<EmptyState icon title description>` is the designed nothing-here with
+  the action that fixes it nested inside, and `<Steps items active/>` is the
+  progress trail, horizontal or vertical.
+
+  Every one is themed through the host's own `--vendo-*` variables and reads the
+  new `--vendo-border-width`, `--vendo-mono-family` and `--vendo-color-surface-raised`
+  tokens through a fallback, so an unthemed host is unchanged.
+
+- 89f2843: Tabs runs on Base UI.
+
+  `@base-ui/react` (pinned `1.7.0`) is now a dependency of the Kit, and `Tabs` is
+  the first brick built on it: `Tabs.Root` / `List` / `Tab` / `Panel` replace the
+  hand-rolled tablist, so the roving tab order, the arrow/Home/End walk and the
+  tab↔panel `aria-controls` / `aria-labelledby` wiring come from the library
+  instead of from ~40 lines of this repo's own keyboard code.
+
+  `TabsProps` is unchanged to the byte, and so is the rendering: the Quiet
+  Precision inline styles moved onto Base UI's parts through its `style`-as-state
+  callback, which is how the selected tab's accent, fill and rule survive with no
+  stylesheet. Before/after screenshots of the bar in a real Chromium are
+  pixel-identical.
+
+  One behavior moved. A disabled tab is now reachable with the arrow keys (Base
+  UI marks it `aria-disabled` and leaves it in the roving order, for
+  discoverability) where the old bar skipped over it. It still cannot be
+  selected, by click or by Enter.
+
+  `Checkbox` and `Select` stay on their native elements — see the PR for why.
+
+- 6856b4f: One venue — the island jail and its apparatus are deleted.
+
+  Model-written code runs in the QuickJS empty room; host-written or human-reviewed code runs native. The double-iframe jail was a third answer, so it goes, and with it its runtime bundle, the ambient island scope, the esm.sh escape hatch, the smoke-render gate and the island syntax gate.
+
+  **Removed from `@vendoai/ui/tree`:** `JailedComponent` and `JailedComponentProps`. The renderer keeps ONE venue: a granted `source: "generated"` node mounts in the host page, an ungranted one drops back to a contained notice. With one venue left, `BoundMode` is gone from `bindValue`/`bindProps`, and the per-island tool manifest and `themeVars` go with the frame that read them.
+
+  **Renamed on `@vendoai/ui/tree`:** `JailFurnishing`, `JailSubSource` and `JailStyle` are `InClientFurnishing`, `InClientSubSource` and `InClientStyle` — minus `packages`, which only ever fed the CDN loader.
+
+  **Removed from `@vendoai/apps/contract`, outright:** `JAIL_PACKAGE_CDN_ORIGIN`, `jailPackageUrl`, `ISLAND_AMBIENT_NAMES`, `ISLAND_AMBIENT_REACT_NAMES`, `ISLAND_AMBIENT_KIT_NAMES`, `ISLAND_AMBIENT_HELPER_NAMES`, `IslandAmbientName`, `ISLAND_STRIPPED_SPECIFIERS`, `ISLAND_RESOLVABLE_SPECIFIERS`, `IslandResolvableModule`, `isStrippedIslandSpecifier`, `IslandImportStrip`, `stripIslandImports`, `blankNonCode`, `islandVendoActionNames`, `islandNetworkViolations` and `islandToolFallbackManifest`.
+
+  **Renamed on `@vendoai/apps/contract`:** `JAIL_ALLOWED_MODULES` is `IN_CLIENT_ALLOWED_MODULES`, `JailModule` is `InClientModule`, `JAIL_BUNDLED_PACKAGES` is `IN_CLIENT_BUNDLED_PACKAGES`, `JailBundledPackage` is `InClientBundledPackage`, and `isPinnedJailPackage` is `isPinnedPackage`. `isIslandResolvableSpecifier`, `scanIslandTools`, `IslandToolScan` and `resolveIslandToolName` stay: `contract/island-ambient.ts` became `contract/screen-tools-scan.ts`, trimmed to the `tools` literal-access scan the tsx door runs and the resolvable-specifier set sync capture asks about. `contract/jail-modules.ts` became `contract/inclient-modules.ts`.
+
+  Two files behind the gate go with it — `server/checking/islands.ts` and `server/checking/smoke-render.ts` — and so do the relocations you should not notice: `jail/viewport-css.ts` to `tree/viewport-css.ts`, `jail/zod-shim.ts` to `tree/inclient-zod-shim.ts` (`JailZodShimError` is `ZodShimError`; both are internal).
+
+  **One fix rides along.** The jail applied `themeVars` from React context, so a generated screen was themed by where its PROVIDER was, not by where its DOM was. With the jail gone, theming rides DOM ancestry — and a bare `<AppFrame>` mounted outside chrome resolved every `--vendo-*` to the empty string and fell back to the porcelain defaults. The surface root is already a boundary, so it declares the theme too, through the same `themeCssVariables()` mapping chrome, the overlay, the approval sheet and the toasts use. Nested in chrome it restates identical values, so there is one mapping and nothing that can disagree.
+
+  `@vendoai/actions` only follows the rename in its closure capture — `CapturedClosure` and `previewBlockingSpecifiers` are unchanged. `@vendoai/mcp` ships its regenerated shim artifact, 4.09 MB down to 3.05 MB.
+
+- 37ed821: Per-user limits: Vendo counts, the host decides.
+
+  `createVendo({ limits })` takes one callback, asked once before each metered
+  action — a user message, an app generation — with the resolved user, the action,
+  and a `count(action, window?)` reader already bound to THAT user. Return `false`,
+  or `{ allow: false, message }` to say why in your own words, and the action is
+  refused and never counted; anything else allows it and the meter records it.
+
+  ```ts
+  createVendo({
+    limits: async ({ user, action, count }) =>
+      user.facts?.plan === "pro" || (await count(action, { days: 1 })) < 20,
+  });
+  ```
+
+  `count` is a callback and not a number because most policies read the meter
+  once, for one window, and pre-computing every window a policy might ask about
+  would be a query per action per call. `window` ANDs `days`/`hours`/`minutes`
+  into one lookback, or takes a `since` instant, or names a `pool`.
+
+  **Pools** are the shared meters a user's usage ALSO counts into — a seat pool, a
+  team, an org. The auth preset grows a `pools` seam beside `facts`, resolved off
+  the same session decode, and its answer rides `ctx.pools` to the policy;
+  `count(action, { pool: "workspace" })` then counts the whole bucket rather than
+  the one person, and an allow accrues to every pool the user is in. Counting a
+  pool the user is NOT in throws rather than answering `0` — a zero from a meter
+  that was never resolved silently under-counts every limit written against it.
+
+  **A denied message costs nothing.** The message choke sits at turn entry, before
+  the thread is resolved, so a refused message performs no read, no write and no
+  model call. The turn's whole response is the limit card.
+
+  **A denied generation lets the turn carry on.** The generation choke wraps
+  `vendo_make`, the one door an app is built through, and answers the agent with
+  the same `blocked` outcome every other refusal on that registry uses — so the
+  agent can say what happened in its own words — while raising the card the person
+  reads on the call's own stream.
+
+  A refusal nobody was asked about — a limit, a guard rule, an unattended park, a
+  guard that could not run its check — now settles on the wire as that typed
+  `blocked` outcome rather than as the ai-SDK's `output-denied`. That state is the
+  terminal state of an approval a PERSON turned down: its provider conversion takes
+  the refusal's words off the part's `approval`, so a refusal that has none used to
+  write history that could not be sent again, and the thread died on the turn after
+  one — including an unattended thread whose call is waiting on a standing grant.
+  The refusal's own words are now kept in the record too, and the beat says who
+  refused: "wasn't allowed", not "you declined it". A person's actual no is
+  unchanged, and is the only thing `output-denied` now means.
+
+  Both raise `data-vendo-limit`, and the chat surface renders it as a card in the
+  beat's ordinary muted register: a cap reached is not a failure, so no ✕, no
+  danger colour, and a polite `status` rather than an `alert`. The host's own
+  sentence is what the person reads when the policy wrote one — the host set the
+  cap, so only the host can say what it is or when it lifts — and a policy that
+  said nothing gets the chrome's line, which claims only that the request never
+  ran.
+
+  **A policy that throws DENIES**, and logs `limits.callback_error`. A limits
+  system that fails open stops limiting silently, so the host keeps believing they
+  have a cap while every user is unlimited — strictly worse than a turn that was
+  refused and said so.
+
+  **A `limits` policy against a store with no usage meter is refused at
+  composition.** `StoreOps.usage` is optional, and a store that cannot count reads
+  every user as zero, so no limit would ever be reached and every user would be
+  unlimited. It throws where the deployment is built rather than enforcing against
+  counts that are all zero.
+
+  `vendo.usage(query)` is the operator's read of the same meter — per subject and
+  action, over one window — for a host's own backend job: an overage sweep, a
+  usage table. A policy never uses it; a policy asks its own bound `count` and
+  never names a subject. On a meterless store it refuses for the same reason
+  `emit` does, because a billing sweep reading "no usage" would bill nobody.
+
+  Unset, `limits` wires nothing: no limiter is composed, the tool registry is the
+  same object it always was, and each choke point costs one `undefined` check.
+
+- 6856b4f: The ✦ gesture collects an instruction, and mints a screen. There are no bare forks: ✦ asks what the person wants BEFORE it fires, and the fork plus that first edit are ONE operation whose output is an ordinary screen app (`app.tsx`, through the ordinary edit door) carrying the remix's provenance — component, baseline, and the instruction, verbatim.
+
+  **Breaking, and it reaches data already on disk.** `AppSeed.instruction` is now REQUIRED (`appSeedSchema`, `@vendoai/core`). A remix seed written before this release does not have one, so its app document fails schema validation and that app will not load. There is no migration in this release. A deployment carrying remixes either backfills `seed.instruction` on those rows with the text the remix was made for, or deletes them and lets people remix again. Apps that were never remixes are untouched.
+
+  Two doors change shape with it, both refusing a call that used to be legal:
+
+  - `seedFrom({ component, slot?, instruction })` — `instruction` is required on `VendoClient.apps.seedFrom` (`@vendoai/ui`) and on `SeedFromInput` (`@vendoai/apps`).
+  - `POST /apps/seed` (`@vendoai/vendo`) requires `instruction` in the body and answers `validation` — `instruction must be a non-empty string` — without it.
+
+  Nothing copies the captured host source into the document any more, and nothing evaluates one: `applySeedFork`/`seededBundle` are gone from the generation engine, `seedOnto` from the seed surface, and the wire save's seeded carry-forward from `authoredDocument`. All three were internal. "Is this remix edited?" is one field read now — `doc.source["app.tsx"] !== undefined`.
+
+  A re-seed is RE-IMAGINED rather than kept. When the host ships a new baseline, `reseed` replays the RECORDED INSTRUCTION against it instead of swapping in a pristine copy, so a remix survives its component's redesign as the thing the person asked for. Dedupe per (subject, component) is unchanged, and so is the review lane.
+
+  Three dead ends that used to lie now tell the truth:
+
+  - **A remix still generating is "not ready", not "broken".** Against a real model the first edit takes 9–38s; `open` answered that window with a validation failure, `useApp` spent its three retries in ~900ms, and nothing asked again — the pill sat on "Remixing…" until someone reloaded the page. A seeded app with no screen now answers the same not-found every app gives before its build lands, which the wire's existing build window turns into `{kind:"pending"}`, and `useApp` keeps asking on the embed's cadence until the screen lands or the ONE shared build deadline runs out. A genuinely tree-less app keeps its validation failure. The ✦ badge reads "Remixing…" off the open payload — the same signal the mount below waits on — so the label and the screen change together instead of the label arriving four seconds early.
+  - **A fork the build gave up on says so.** A terminal `{kind:"failed"}` lands in the chrome's existing "Didn't load" state, with the server's own reason, instead of reading "Remixed" and "Sandboxed — only you see this" over a page that never got a screen.
+  - **A failed remix edit never advances the baseline it did not reach.** `edit()` RETURNS `failedEdit` on its common failure path rather than throwing, and both remix doors read only the throw. A re-seed now replays BEFORE it writes the rebased `seed.baseline`, so a refused replay no longer answers 200 with the old screen and the new baseline. A failed first edit leaves the same terminal `buildFailed` marker a failed build leaves, so `open()` answers with the reason and `list()` skips the row — the next tap mints a fresh app instead of being handed the dead one forever.
+
+- 730ac8f: Theme v2 — nineteen more brand tokens, every one optional.
+
+  `VendoTheme` carried eight colors, two type fields, three radii and two enums.
+  Everything the Kit and the chrome needed beyond that was a literal somewhere in
+  our source: the green and amber the pills paint, the mono stack, the three
+  shadows, the chart ramp, the border width, the chrome's own motion pair. A host
+  could not reach any of them. Now it can.
+
+  ```ts
+  theme: {
+    colors: { …, success: "#0a7d55", warning: "#c98a00", surfaceRaised: "#fafafa" },
+    typography: { …, monoFamily: "Berkeley Mono, monospace", weightEmphasis: "650", lineHeightBody: "1.6" },
+    shadow: { small: "…", medium: "…", large: "…" },
+    borderWidth: "1px",
+    chartPalette: ["#1d4ed8", "#0891b2", "#7c3aed"],
+    motionDuration: "120ms",
+    motionEasing: "cubic-bezier(.2,.8,.2,1)",
+  }
+  ```
+
+  - **Every addition is OPTIONAL.** A theme file that fails to parse is discarded
+    whole, so one required field would have blanked the brand of every host whose
+    theme predates it. A pre-v2 theme parses and renders exactly as before.
+  - **The variable NAMES stay one fixed set — 52 of them.** Three transports
+    (the chrome's style object, the MCP door's `style` attribute, the MCP Apps
+    shim's `:root{}`) serialize the same mapping and compare their output against
+    each other, and the shim's reverse read throws on a name outside the published
+    list. So `themeCssVariables` resolves each optional field against a default
+    and emits every name for every theme, rather than emitting a name only for
+    hosts that set it.
+  - **The Kit reads them.** `success`/`warning` stop being Kit-only literals, a
+    control's edge is `var(--vendo-border-width)`, and `chartSeries` reads
+    `--vendo-chart-1..6` with the accent-derived OKLCH ramp — unchanged — as the
+    per-entry fallback. One definition of that ramp now, shared by the emitter and
+    the Kit.
+  - **Three chrome tokens re-anchor onto the contract.** `--vendo-border` keeps
+    the derived ~8% hairline as its DEFAULT but a host that states `colors.border`
+    finally wins instead of being ignored; the `--vendo-ok`/`--vendo-warn` family
+    reads `colors.success`/`colors.warning`; and `--vendo-duration`/`--vendo-ease`
+    derive from the theme's motion pair (the chrome keeps its slower feel through
+    a multiplier), so one host knob moves the chrome and generated views together.
+
+  `defaultVendoTheme` is deliberately unchanged: it is the shape the MCP Apps shim
+  reconstructs a theme back INTO, and a field the reader cannot recover would make
+  a theme round-trip into a different theme. The fill-in values live beside it as
+  `themeDefaults`, which the Kit reads for its unthemed fallbacks — so each value
+  still has exactly one definition.
+
+### Patch Changes
+
+- 7eecc29: Four polish passes on the chat chrome's cards.
+
+  - **An approval settles where it was asked.** The approval→notification morph is
+    an AUTOMATION's ask only: a person answering their own live conversation is
+    already looking at the answer, so flying the card into a corner pill narrated a
+    handoff that never happened. In-thread asks carry venue `chat`, so nothing in
+    the thread morphs — the venue is the rule, not a switch.
+  - **The shield glyph comes off every consent surface** — the modal, the
+    standing-access card, the resolved card — matching the in-chat approval card,
+    which has been iconless for a while.
+  - **The conversation blurs under a generated view in flight.** An opaque embed
+    card travelling over a razor-sharp transcript read as two competing layers
+    instead of one thing moving; the rail softens for the flight and clears as it
+    lands, and stays sharp under `prefers-reduced-motion`, where a blur that cannot
+    fade is just a flash.
+  - **The app card arrives with the BUILD, not with the first view bytes.** It only
+    mounted on the first `data-vendo-view` part, so the whole window between the
+    ask and the first bytes rendered nothing build-specific. The card now arrives
+    empty, in the place the view will fill, and stands down the moment the first
+    partial lands.
+
+- 2285394: Four pieces of thread polish. The transcript now follows streamed text without flicker: the stick-to-bottom scroll moved pre-paint, so the growth and the scroll that answers it land in the same frame instead of painting each burst once with the newest wrapped line below the fold, and the list carries a 26px bottom cushion under a matching scroll-edge fade so that line is never clipped and never dimmed. The follow also watches the list's actual size from the moment the list exists, not only from the thread's first render: a conversation that starts on its landing has no transcript to observe yet, and without that the first turn followed the wire's deltas alone while the paced reveal typed on between them — a live streamed turn spent about a quarter of its painted frames with the newest line below the fold. New replies is a floating centered pill above the composer rather than a full-width bar docked onto it — the bar had to square the composer's top corners to hide its seam, which read as a second permanent bar growing out of the input; the composer keeps its own shape, the pill is the single form at every width (it was already the phone and takeover clothing), and pressing it travels to the latest turn instead of teleporting. The citation snippet card portals to `document.body` like every other floating surface in the chrome: it was the last one living inside the scrolling transcript, cropped by the list's overflow and capped under its stacking context, and it now places itself against its chip's live rect — below by default, flipped above when it would run off the bottom, clamped inside either side edge — with click-to-pin, hover grace, Escape and outside-click unchanged. And a tool step in flight is a hairline ring spinner at the settled tick's size, so a step settling swaps one glyph for another without nudging its label; a step parked on the reader keeps the accent arc, and the build rail's separate pulsing pip is gone, leaving one vocabulary for "still going".
+- Updated dependencies [6856b4f]
+- Updated dependencies [6856b4f]
+- Updated dependencies [6856b4f]
+- Updated dependencies [46aee4a]
+- Updated dependencies [83aec51]
+- Updated dependencies [01e225c]
+- Updated dependencies [d9b7c8d]
+- Updated dependencies [5932631]
+- Updated dependencies [491a2fa]
+- Updated dependencies [6856b4f]
+- Updated dependencies [6856b4f]
+- Updated dependencies [37ed821]
+- Updated dependencies [6856b4f]
+- Updated dependencies [730ac8f]
+  - @vendoai/apps@0.21.0
+  - @vendoai/core@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes

@@ -1,5 +1,255 @@
 # @vendoai/vendo
 
+## 0.21.0
+
+### Minor Changes
+
+- 46aee4a: Host fonts become bytes, not just a name.
+
+  Theme extraction learned that the brand font is called "Inter". That name is
+  enough for the host's own pages and useless everywhere else: a generated screen
+  renders inside surfaces the host's stylesheet never reaches, where "Inter"
+  resolves to whatever the surface happens to have — normally nothing.
+
+  - **`vendo sync` now writes `.vendo/fonts.css`** — the theme's families resolved
+    to real files and inlined as data-URI `@font-face` rules. Three sources, in
+    order of how much each proves about what the host actually ships: next/font's
+    build output, the host's own `@font-face` rules pointing under `public/`, then
+    the Google Fonts css2 API. The first and last are re-resolved on every run and
+    never recorded — next/font's filenames carry a per-build hash and gstatic's
+    carry a font version, so a stored path is a path that rots. Written with
+    `theme.json` and only then (install, and any sync where the brand actually
+    moved), because resolving a face can reach the network and `sync` runs from
+    `predev`. `init` prints the one-line import beside the `<VendoProvider>` paste.
+  - **`theme.json` gets metadata, never bytes** — `typography.fonts` names each
+    face's family/weight/style/source. The file is a bundle import and rides the
+    `?vendoTheme=` query string, where a base64 face would blow past every proxy's
+    request-line limit.
+  - **A host's real mono font is learned instead of discarded.** The body-stack
+    derivation found the mono binding, filtered it out of the sans candidates and
+    dropped it, so a host shipping Geist Mono still got the generic system stack.
+    It is now derived on its own and stored as `typography.monoFamily`, falling
+    back to `monospace` rather than `sans-serif` — a code font that fails to load
+    must fall back to another code font.
+  - **`VendoProvider` takes a `fonts` string** and the chrome injects it beside
+    its own sheet, as a guarded `<style data-vendo-fonts>`. Kept separate from
+    `ensureChromeStyles` on purpose: the faces and the chrome are wanted
+    independently — a surface rendering inside someone else's client needs the
+    faces and none of the chrome.
+
+  - **Sync no longer captures its own output.** The root layout now imports
+    `.vendo/fonts.css`, and the seed-baseline style capture would have read that
+    sheet straight back in — ~65 KB of base64 copied into every remixable seed and
+    host-component bundle, on every run. `.vendo/` is sync's output, never host
+    source, and the capture skips it.
+
+  Only latin is taken, and only because both sources already publish per-subset
+  files. No glyph-subsetting machinery ships, and there is no license logic.
+
+- 491a2fa: The whole catalog is in the prompt, so `search_components` is deleted.
+
+  `references/format.md` now carries `catalogPrompt()` instead of `kitPrompt()`:
+  one line per component — name, summary, props by class with `!` on the required
+  ones, then its slots — plus the 227-name icon vocabulary no prompt has ever
+  carried. Measured on this base it costs 13,313 characters against the 20,819 the
+  per-brick sections cost for one fewer brick and no icons. A writer that can read
+  every component it may use, and every host component by name in its brief, has
+  nothing left to search for.
+
+  Removed: the `search_components` tool and its `VENDO_TOOL_TITLES` entry,
+  `VendoVerbPorts.searchComponents`, `searchRuntimeCatalog` and
+  `CatalogSearchMatch` from `@vendoai/vendo`, and `ScreenSurface.hasComponents` /
+  `ScreenAssemblerDeps.hasComponents` — the flag existed only to take the verb off
+  the loadout for a deployment with an empty catalog. `VENDO_VERB_TOOLS` is
+  `["validate", "schedule"]`.
+
+  Also gone: `catalogThemeSummary` — but only the half of it that duplicated. It
+  rendered two things. The host COMPONENT list was a second rendering of what
+  `renderBriefingPack` already hands the screen agent, and that half is deleted;
+  the pack is now the one and only rendering of that list. The one-line theme
+  summary was never a copy of anything — the pack hands the screen agent the theme
+  TOKENS verbatim, as JSON, for the rung that renders — so it stays, as
+  `themeSummary`, and the `system.catalog` prompt slot is renamed `system.theme`,
+  venue-gated exactly as before. A configured theme still reaches the system prompt
+  as `Theme: <density> density, <motion> motion, <font> typography.`
+
+- 6856b4f: The wire format (`app.vendo`) and the plan dialect (`plan.vendo`) are gone. One
+  artifact writes a screen now — `app.tsx`, a React component through the sealed
+  screen engine — so there is one security model, one execution engine and one
+  renderer. The tree stays: it is still the JSON currency the renderer paints.
+
+  Removed from `@vendoai/apps/contract`: `compileWire`, `WireCompileOptions`,
+  `WireCompileResult`, `expandInlineRefs`, `InlineRefsResult`, `WIRE_ISSUE_CODES`,
+  `WIRE_ADVISORY_ISSUE_CODES`, `isAdvisoryWireIssue`, `WireIssue`, `WireIssueCode`,
+  `printWire`, `WirePrintInput`, `WirePrintOptions`, `compilePlan`,
+  `PlanCompileResult`, `PlanFacts`, `planTabs`, `PLAN_DISPLAYS`, `AppPlan`,
+  `PlanDisplay`, `PlanGroup`, `PlanLeaf`, `PlanQuery`, `PlanServer`, and the
+  island-derived-values surface. `checkBindingShapes` and `BindingShapeError` stay
+  — they moved to `genui/shape-check.ts` and still serve the screen's
+  bindings-fit check. `evaluateExpr` and the brace grammar stay: the renderer
+  evaluates them.
+
+  Renamed, because "wire" no longer names anything: `KIT_WIRE_UNSAFE_NAMES` is
+  `KIT_NON_SCREEN_NAMES` and `KIT_WIRE_COMPONENT_NAMES` is
+  `KIT_SCREEN_COMPONENT_NAMES`. The `WIRE_COMPONENT_NAMES` alias is deleted.
+
+  Removed from `@vendoai/apps`: `skeletonFromPlan`, `checkoutApp`,
+  `AppsRuntime.authored` (`authoredScreen` is the screen's counterpart and stays),
+  `AppsConfig.escalatedPlan`, `create({plan})`, `RenderSeamOptions.authoredApp`,
+  `RenderSeamOptions.facts`, `AppFloor.compile` and `AppFloor.check` — the floor
+  has one method, `component()`. `HOT_PATH_FILES` is `["app.tsx"]`, so the render
+  seam watches, checks and paints exactly one file. `validateWrittenApps` no longer
+  takes a `workspace` and no longer has a `{document}` door — a screen's mechanical
+  half already ran as its paint gate, so the gate's one call is `validate({appId})`
+  — and the `validate` verb itself takes `{ appId }` only.
+
+  Escalation stays and is re-shaped. The screen agent's `escalate` hand takes one
+  plain sentence — why assembly cannot serve this ask — and the builder is handed
+  the person's ORIGINAL prompt beside it. Nothing pre-plans the build and nothing
+  pre-declares the box's interface. The cost is the instant outline: an escalated
+  build now shows a plain building state until the box has something real to show.
+
+  Two consequences of the plan's removal, both visible to a host:
+
+  - A box that reported no interface is now a FAILED create/edit rather than a
+    warning. It used to be reported only for a plan that required a served
+    surface, because a layer-2 failure still left the plan's skeleton standing —
+    and there is no skeleton now, so a silent success would be an empty app
+    declared ready.
+  - The 2→3 served-surface flip has no trigger left. `<Server served>` was its
+    only source, so an app can no longer BECOME a served app; everything about one
+    that already is (`ui: "http"`) — the serve door, ping, fork refusal, box-path
+    edits — is untouched.
+
+- 37ed821: Per-user limits: Vendo counts, the host decides.
+
+  `createVendo({ limits })` takes one callback, asked once before each metered
+  action — a user message, an app generation — with the resolved user, the action,
+  and a `count(action, window?)` reader already bound to THAT user. Return `false`,
+  or `{ allow: false, message }` to say why in your own words, and the action is
+  refused and never counted; anything else allows it and the meter records it.
+
+  ```ts
+  createVendo({
+    limits: async ({ user, action, count }) =>
+      user.facts?.plan === "pro" || (await count(action, { days: 1 })) < 20,
+  });
+  ```
+
+  `count` is a callback and not a number because most policies read the meter
+  once, for one window, and pre-computing every window a policy might ask about
+  would be a query per action per call. `window` ANDs `days`/`hours`/`minutes`
+  into one lookback, or takes a `since` instant, or names a `pool`.
+
+  **Pools** are the shared meters a user's usage ALSO counts into — a seat pool, a
+  team, an org. The auth preset grows a `pools` seam beside `facts`, resolved off
+  the same session decode, and its answer rides `ctx.pools` to the policy;
+  `count(action, { pool: "workspace" })` then counts the whole bucket rather than
+  the one person, and an allow accrues to every pool the user is in. Counting a
+  pool the user is NOT in throws rather than answering `0` — a zero from a meter
+  that was never resolved silently under-counts every limit written against it.
+
+  **A denied message costs nothing.** The message choke sits at turn entry, before
+  the thread is resolved, so a refused message performs no read, no write and no
+  model call. The turn's whole response is the limit card.
+
+  **A denied generation lets the turn carry on.** The generation choke wraps
+  `vendo_make`, the one door an app is built through, and answers the agent with
+  the same `blocked` outcome every other refusal on that registry uses — so the
+  agent can say what happened in its own words — while raising the card the person
+  reads on the call's own stream.
+
+  A refusal nobody was asked about — a limit, a guard rule, an unattended park, a
+  guard that could not run its check — now settles on the wire as that typed
+  `blocked` outcome rather than as the ai-SDK's `output-denied`. That state is the
+  terminal state of an approval a PERSON turned down: its provider conversion takes
+  the refusal's words off the part's `approval`, so a refusal that has none used to
+  write history that could not be sent again, and the thread died on the turn after
+  one — including an unattended thread whose call is waiting on a standing grant.
+  The refusal's own words are now kept in the record too, and the beat says who
+  refused: "wasn't allowed", not "you declined it". A person's actual no is
+  unchanged, and is the only thing `output-denied` now means.
+
+  Both raise `data-vendo-limit`, and the chat surface renders it as a card in the
+  beat's ordinary muted register: a cap reached is not a failure, so no ✕, no
+  danger colour, and a polite `status` rather than an `alert`. The host's own
+  sentence is what the person reads when the policy wrote one — the host set the
+  cap, so only the host can say what it is or when it lifts — and a policy that
+  said nothing gets the chrome's line, which claims only that the request never
+  ran.
+
+  **A policy that throws DENIES**, and logs `limits.callback_error`. A limits
+  system that fails open stops limiting silently, so the host keeps believing they
+  have a cap while every user is unlimited — strictly worse than a turn that was
+  refused and said so.
+
+  **A `limits` policy against a store with no usage meter is refused at
+  composition.** `StoreOps.usage` is optional, and a store that cannot count reads
+  every user as zero, so no limit would ever be reached and every user would be
+  unlimited. It throws where the deployment is built rather than enforcing against
+  counts that are all zero.
+
+  `vendo.usage(query)` is the operator's read of the same meter — per subject and
+  action, over one window — for a host's own backend job: an overage sweep, a
+  usage table. A policy never uses it; a policy asks its own bound `count` and
+  never names a subject. On a meterless store it refuses for the same reason
+  `emit` does, because a billing sweep reading "no usage" would bill nobody.
+
+  Unset, `limits` wires nothing: no limiter is composed, the tool registry is the
+  same object it always was, and each choke point costs one `undefined` check.
+
+- 6856b4f: The ✦ gesture collects an instruction, and mints a screen. There are no bare forks: ✦ asks what the person wants BEFORE it fires, and the fork plus that first edit are ONE operation whose output is an ordinary screen app (`app.tsx`, through the ordinary edit door) carrying the remix's provenance — component, baseline, and the instruction, verbatim.
+
+  **Breaking, and it reaches data already on disk.** `AppSeed.instruction` is now REQUIRED (`appSeedSchema`, `@vendoai/core`). A remix seed written before this release does not have one, so its app document fails schema validation and that app will not load. There is no migration in this release. A deployment carrying remixes either backfills `seed.instruction` on those rows with the text the remix was made for, or deletes them and lets people remix again. Apps that were never remixes are untouched.
+
+  Two doors change shape with it, both refusing a call that used to be legal:
+
+  - `seedFrom({ component, slot?, instruction })` — `instruction` is required on `VendoClient.apps.seedFrom` (`@vendoai/ui`) and on `SeedFromInput` (`@vendoai/apps`).
+  - `POST /apps/seed` (`@vendoai/vendo`) requires `instruction` in the body and answers `validation` — `instruction must be a non-empty string` — without it.
+
+  Nothing copies the captured host source into the document any more, and nothing evaluates one: `applySeedFork`/`seededBundle` are gone from the generation engine, `seedOnto` from the seed surface, and the wire save's seeded carry-forward from `authoredDocument`. All three were internal. "Is this remix edited?" is one field read now — `doc.source["app.tsx"] !== undefined`.
+
+  A re-seed is RE-IMAGINED rather than kept. When the host ships a new baseline, `reseed` replays the RECORDED INSTRUCTION against it instead of swapping in a pristine copy, so a remix survives its component's redesign as the thing the person asked for. Dedupe per (subject, component) is unchanged, and so is the review lane.
+
+  Three dead ends that used to lie now tell the truth:
+
+  - **A remix still generating is "not ready", not "broken".** Against a real model the first edit takes 9–38s; `open` answered that window with a validation failure, `useApp` spent its three retries in ~900ms, and nothing asked again — the pill sat on "Remixing…" until someone reloaded the page. A seeded app with no screen now answers the same not-found every app gives before its build lands, which the wire's existing build window turns into `{kind:"pending"}`, and `useApp` keeps asking on the embed's cadence until the screen lands or the ONE shared build deadline runs out. A genuinely tree-less app keeps its validation failure. The ✦ badge reads "Remixing…" off the open payload — the same signal the mount below waits on — so the label and the screen change together instead of the label arriving four seconds early.
+  - **A fork the build gave up on says so.** A terminal `{kind:"failed"}` lands in the chrome's existing "Didn't load" state, with the server's own reason, instead of reading "Remixed" and "Sandboxed — only you see this" over a page that never got a screen.
+  - **A failed remix edit never advances the baseline it did not reach.** `edit()` RETURNS `failedEdit` on its common failure path rather than throwing, and both remix doors read only the throw. A re-seed now replays BEFORE it writes the rebased `seed.baseline`, so a refused replay no longer answers 200 with the old screen and the new baseline. A failed first edit leaves the same terminal `buildFailed` marker a failed build leaves, so `open()` answers with the reason and `list()` skips the row — the next tap mints a fresh app instead of being handed the dead one forever.
+
+### Patch Changes
+
+- Updated dependencies [6856b4f]
+- Updated dependencies [6856b4f]
+- Updated dependencies [7eecc29]
+- Updated dependencies [6856b4f]
+- Updated dependencies [6fd3bfa]
+- Updated dependencies [46aee4a]
+- Updated dependencies [83aec51]
+- Updated dependencies [01e225c]
+- Updated dependencies [0c27a89]
+- Updated dependencies [d9b7c8d]
+- Updated dependencies [5932631]
+- Updated dependencies [89f2843]
+- Updated dependencies [491a2fa]
+- Updated dependencies [6856b4f]
+- Updated dependencies [6856b4f]
+- Updated dependencies [37ed821]
+- Updated dependencies [6856b4f]
+- Updated dependencies [730ac8f]
+- Updated dependencies [2285394]
+  - @vendoai/apps@0.21.0
+  - @vendoai/core@0.21.0
+  - @vendoai/ui@0.21.0
+  - @vendoai/actions@0.21.0
+  - @vendoai/harnesses@0.21.0
+  - @vendoai/mcp@0.21.0
+  - @vendoai/store@0.21.0
+  - @vendoai/agents@0.21.0
+  - @vendoai/automations@0.21.0
+  - @vendoai/guard@0.21.0
+  - @vendoai/knowledge@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes
