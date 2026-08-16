@@ -39,10 +39,12 @@ export const SURFACE_MARKERS: readonly string[] = [
 ];
 
 /** A `VendoRoot` named in an import from a Vendo package — the removed export
-    taken from the package, the one spelling that can no longer resolve. (The
-    specifier is not spelled out in prose here: the dependency guard reads a
-    literal one as a real cross-package import.) */
-const LEGACY_ROOT_IMPORT = /import\s*\{[^}]*\bVendoRoot\b[^}]*\}\s*from\s*["']@vendoai\//;
+    taken from the package, the one spelling that can no longer resolve. Both
+    the scoped packages and the unscoped `vendoai` alias count: the alias
+    re-exported VendoRoot too while it existed. (Specifiers are not spelled out
+    in prose here: the dependency guard reads a literal one as a real
+    cross-package import.) */
+const LEGACY_ROOT_IMPORT = /import\s*\{[^}]*\bVendoRoot\b[^}]*\}\s*from\s*["'](?:@vendoai\/|vendoai["'/])/;
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
 const SOURCE_SCAN_MAX_FILES = 2_000;
@@ -88,6 +90,11 @@ export async function workspaceHostCandidates(root: string): Promise<string[]> {
     LEGACY_ROOT_IMPORT above). */
 export const SUPABASE_PRESET_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/auth\/supabase["']/;
 
+/** Both supported spellings of the server entry, for the same reason: an
+    alias-wired host (`createVendo` imported from the unscoped package's
+    /server) is WIRED, and reading it as bare misdiagnosed it E-WIRE-001/007. */
+const SERVER_ENTRY_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/server["']/;
+
 /** Whether any host source imports the Supabase auth preset. Import marker
     only, comments stripped: outside a known Vendo composition file a bare
     `supabase(` call is the host's OWN Supabase client, not the preset
@@ -115,7 +122,7 @@ export async function detectVendoWiring(root: string): Promise<VendoWiring> {
   for (const file of files) {
     const source = await readFile(file, "utf8").catch(() => "");
     const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    if (code.includes("@vendoai/vendo/server") && /\bcreateVendo\s*\(/.test(code)) server = true;
+    if (SERVER_ENTRY_IMPORT.test(code) && /\bcreateVendo\s*\(/.test(code)) server = true;
     if (code.includes("<VendoProvider")) provider = true;
     if (code.includes("<VendoRoot")) legacyTag = true;
     if (LEGACY_ROOT_IMPORT.test(code)) legacyImport = true;

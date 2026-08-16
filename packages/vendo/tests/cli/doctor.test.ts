@@ -1849,6 +1849,47 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toBeUndefined();
   });
 
+  // The unscoped vendoai alias ships the same wire, so wiring detection must
+  // read both spellings — #1374 fixed the supabase preset marker; these pin
+  // the server and legacy-root markers, which had the same blindness (an
+  // alias-wired host read as not wired at all). Alias specifiers assembled at
+  // runtime: an import-shaped literal here would read as a real cross-package
+  // import to the dependency guard.
+  it("reads an alias-wired Express server as wired, never E-WIRE-001", async () => {
+    const root = await expressHost(true);
+    const aliasServer = ["vendoai", "server"].join("/");
+    await writeFile(join(root, "src", "server.ts"),
+      `import { createVendo } from "${aliasServer}";\n` +
+      "createVendo({ models: { default: model }, principal });\n");
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/express-server")).toMatchObject({ status: "ok" });
+  });
+
+  it("reads an alias-wired custom-runtime server as wired, never E-WIRE-007", async () => {
+    const root = await customHost(true);
+    const aliasServer = ["vendoai", "server"].join("/");
+    await writeFile(join(root, "src", "worker.ts"),
+      `import { createVendo } from "${aliasServer}";\n` +
+      "export const vendo = createVendo({ models: { default: model }, principal });\n");
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/server")).toMatchObject({ status: "ok" });
+  });
+
+  it("flags a VendoRoot import from the alias as legacy, E-WIRE-010", async () => {
+    const root = await expressHost(true);
+    const aliasReact = ["vendoai", "react"].join("/");
+    // A provider is also mounted, so the tag-only fallback (legacyTag with no
+    // provider) cannot mask a miss in the import marker.
+    await writeFile(join(root, "src", "client.tsx"),
+      `import { VendoRoot } from "${aliasReact}";\n` +
+      "export const App = () => <VendoProvider><VendoRoot /><main /><VendoOverlay /></VendoProvider>;\n");
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch(), env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/vendo-root")).toMatchObject({
+      status: "warning",
+      error_code: "E-WIRE-010",
+    });
+  });
+
   // Visible-surface gate (0.4.1 E2E cert B3): green must mean a user can SEE
   // the agent — <VendoProvider> alone is a provider that renders nothing.
   it("fails E-WIRE-006 when nothing visible is mounted, and exits 1", async () => {
