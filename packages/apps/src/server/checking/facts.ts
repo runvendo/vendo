@@ -25,6 +25,7 @@ import {
   KIT_SCREEN_COMPONENT_NAMES,
   checkBindingShapes,
   checkExpr,
+  kitSlotPath,
   kitSpec,
   isExprBinding,
   validateAppDocument,
@@ -428,9 +429,9 @@ const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
  *  exactly that (`packages/ui` renderer.tsx `reifyElement`) — so this reads the
  *  sigil at the slot and a `component` name below it, and a data row that merely
  *  carries a "component" field is never mistaken for an element. */
-const asElement = (value: unknown, sigil: boolean): { component: string; children?: unknown } | undefined =>
+const asElement = (value: unknown, sigil: boolean): { component: string; props?: unknown; children?: unknown } | undefined =>
   isRecord(value) && typeof value.component === "string" && (!sigil || value.$element === true)
-    ? (value as { component: string; children?: unknown })
+    ? (value as { component: string; props?: unknown; children?: unknown })
     : undefined;
 
 /**
@@ -461,7 +462,7 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
    *  arrangement and typography, `style` and children and nothing else
    *  (`contract/kit/display.ts`), so it can no more break the per-row rule than a
    *  word can. */
-  const checkSlot = (nodeId: string, path: string, key: string, slot: KitSlotSpec, value: unknown, sigil = true): void => {
+  const checkSlot = (nodeId: string, path: string, name: string, slot: KitSlotSpec, value: unknown, sigil = true): void => {
     const element = asElement(value, sigil);
     if (element === undefined) return;
     const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
@@ -469,52 +470,87 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
       const why = slot.perRow === true && slot.content === undefined
         ? `a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${allowed.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`
         : `this slot may hold: ${allowed.join(", ")}.`;
-      issues.push(atProp(nodeId, path, `holds <${element.component}> in a ${key} slot — ${why}`));
+      issues.push(atProp(nodeId, path, `holds <${element.component}> in a ${name} slot — ${why}`));
     }
+    // What sits in a slot is a component in its own right, with its own slots
+    // and its own childless contract. Measuring it only against the OUTER
+    // slot's vocabulary passes `<Stack header={<Text/>}/>` and a `<DataTable>`
+    // handed children — both dropped by the renderer, which is the whole class
+    // this check exists to refuse.
+    checkKitElement(nodeId, path, element.component, element.props, element.children);
     if (Array.isArray(element.children)) {
-      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, key, slot, child, false));
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, name, slot, child, false));
     }
   };
 
-  /** The slots inside one prop — a slot is the prop itself (`marker`) or a field
-   *  of the description objects a prop holds (`columns[].cell`), so the walk
-   *  matches on the KEY at any depth. An element anywhere else is a place the
-   *  renderer paints nothing. */
-  const findSlots = (node: TreeNode, slots: ReadonlyMap<string, KitSlotSpec>, path: string, key: string, value: unknown): void => {
-    const slot = slots.get(key);
+  /** The slots inside one prop. The walk carries the SHAPE of where it stands —
+   *  `columns[].cell`, `rows[].cell` — and a slot matches only its own declared
+   *  path (`kitSlotPath`). Matching a bare key at any depth admitted
+   *  `rows[].cell` on a DataTable that reads `columns[].cell` and nothing else:
+   *  legal to the floor, dropped by the component. An element off the declared
+   *  paths is a place the renderer paints nothing. */
+  const findSlots = (
+    nodeId: string,
+    component: string,
+    slots: ReadonlyMap<string, readonly [string, KitSlotSpec]>,
+    path: string,
+    shape: string,
+    value: unknown,
+  ): void => {
+    const slot = slots.get(shape);
     if (slot !== undefined) {
-      checkSlot(node.id, path, key, slot, value);
+      checkSlot(nodeId, path, slot[0], slot[1], value);
       return;
     }
     const stray = asElement(value, true);
     if (stray !== undefined) {
       const has = slots.size === 0
-        ? `<${node.component}> takes no element in its props`
-        : `the slots on <${node.component}> are: ${[...slots.keys()].join(", ")}`;
-      issues.push(atProp(node.id, path, `holds <${stray.component}>, but "${key}" is not a slot — ${has}. An element written anywhere else is dropped at render.`));
+        ? `<${component}> takes no element in its props`
+        : `the slots on <${component}> are: ${[...slots.keys()].join(", ")}`;
+      issues.push(atProp(nodeId, path, `holds <${stray.component}>, but "${shape}" is not a slot — ${has}. An element written anywhere else is dropped at render.`));
       return;
     }
     if (Array.isArray(value)) {
-      value.forEach((item, index) => findSlots(node, slots, `${path}[${index}]`, "", item));
+      value.forEach((item, index) => findSlots(nodeId, component, slots, `${path}[${index}]`, `${shape}[]`, item));
       return;
     }
     if (isRecord(value)) {
-      for (const [name, item] of Object.entries(value)) findSlots(node, slots, `${path}.${name}`, name, item);
+      for (const [name, item] of Object.entries(value)) {
+        findSlots(nodeId, component, slots, `${path}.${name}`, `${shape}.${name}`, item);
+      }
+    }
+  };
+
+  /** One Kit element measured against ITS OWN spec — a tree node, or an element
+   *  written into a slot, which is the same thing in a different place. `at` is
+   *  where it sits ("" for a node), so a nested component's findings are
+   *  anchored at the prop path that leads to it. */
+  const checkKitElement = (
+    nodeId: string,
+    at: string,
+    component: string,
+    props: unknown,
+    children: unknown,
+  ): void => {
+    const nested = Array.isArray(children) ? children.length : 0;
+    if (nested > 0 && CHILDLESS.has(component)) {
+      const message = `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`;
+      issues.push(at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message));
+    }
+    const spec = kitSpec(component);
+    if (spec === undefined || !isRecord(props)) return;
+    // A Map, not the record: a prop key is model-written, and `slots["toString"]`
+    // on a plain object answers with Object's own.
+    const slots = new Map(Object.entries(spec.slots ?? {})
+      .map(([name, slot]) => [kitSlotPath(name, slot), [name, slot] as const]));
+    for (const [prop, value] of Object.entries(props)) {
+      findSlots(nodeId, component, slots, at === "" ? prop : `${at}.${prop}`, prop, value);
     }
   };
 
   for (const node of tree.nodes) {
     if (node.source === "host" || node.source === "generated") continue;
-    const nested = node.children?.length ?? 0;
-    if (nested > 0 && CHILDLESS.has(node.component)) {
-      issues.push(atNode(node.id, `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${node.component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${node.component}> in a <Stack>, or give <${node.component}> what it showed through its own props.`));
-    }
-    const spec = kitSpec(node.component);
-    if (spec === undefined) continue;
-    // A Map, not the record: a prop key is model-written, and `slots["toString"]`
-    // on a plain object answers with Object's own.
-    const slots = new Map(Object.entries(spec.slots ?? {}));
-    for (const [prop, value] of Object.entries(node.props ?? {})) findSlots(node, slots, prop, prop, value);
+    checkKitElement(node.id, "", node.component, node.props ?? {}, node.children);
   }
   return issues;
 };

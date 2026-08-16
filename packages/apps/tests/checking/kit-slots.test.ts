@@ -15,13 +15,22 @@ import {
   KIT_COMPONENT_NAMES,
   KIT_SLOT_CONTENT_NAMES,
   KIT_SPECS,
+  kitSlotPath,
+  type KitSlotSpec,
   type Tree,
 } from "../../src/contract/index.js";
 import { kitNestingIssues } from "../../src/server/checking/facts.js";
 
 /** An element as the screen VM stamps one into a prop (vm-program.ts). */
-const element = (component: string): Record<string, unknown> =>
-  ({ $element: true, component, props: {}, children: [] });
+const element = (component: string, over: Record<string, unknown> = {}): Record<string, unknown> =>
+  ({ $element: true, component, props: {}, children: [], ...over });
+
+/** The props that put a value at a slot's DECLARED path, built from the
+ *  declaration itself: a nested slot sits in its prop's description objects, a
+ *  top-level one is the prop. Placement is what these tests are about, so it is
+ *  derived rather than written out per component. */
+const propsAt = (name: string, slot: KitSlotSpec, value: unknown): Record<string, unknown> =>
+  slot.at === undefined ? { [name]: value } : { [slot.at]: [{ [name]: value }] };
 
 /** One Kit node's props, measured by the check the floor runs. */
 const issuesFor = (component: string, props: Record<string, unknown>): string[] =>
@@ -36,11 +45,30 @@ describe("the Kit's slots", () => {
     for (const spec of KIT_SPECS) {
       for (const [name, slot] of Object.entries(spec.slots ?? {})) {
         const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
-        const at = `${spec.name}.${name}`;
+        const at = `${spec.name}.${kitSlotPath(name, slot)}`;
         // A vocabulary naming something the Kit does not have is a slot nothing
         // can legally fill.
         expect(allowed.filter((held) => !KIT_COMPONENT_NAMES.includes(held)), at).toEqual([]);
-        expect(issuesFor(spec.name, { [name]: element(allowed[0]!) }), at).toEqual([]);
+        expect(issuesFor(spec.name, propsAt(name, slot, element(allowed[0]!))), at).toEqual([]);
+      }
+    }
+  });
+
+  /** THE CLASS, swept from the table: a component reads its slot at exactly one
+   *  place, so the floor must admit it there and refuse it everywhere else. A
+   *  checker that takes an element the component never looks at is the same
+   *  silent drop as a catalog that teaches a slot the Kit does not paint. */
+  it("reads every slot at its declared path, and refuses the same name off it", () => {
+    for (const spec of KIT_SPECS) {
+      for (const [name, slot] of Object.entries(spec.slots ?? {})) {
+        const at = `${spec.name}.${kitSlotPath(name, slot)}`;
+        const held = element((slot.content ?? KIT_SLOT_CONTENT_NAMES)[0]!);
+        expect(issuesFor(spec.name, propsAt(name, slot, held)), at).toEqual([]);
+        // The generic wrong place, derived from the declaration: a slot read out
+        // of its prop's items is not read as a bare prop of the same name.
+        if (slot.at !== undefined) {
+          expect(issuesFor(spec.name, { [name]: held })[0], at).toContain(`"${name}" is not a slot`);
+        }
       }
     }
   });
@@ -51,9 +79,51 @@ describe("the Kit's slots", () => {
     const [message] = issuesFor("DataTable", { header: element("Text") });
 
     expect(message).toContain('node "n1" prop "header" holds <Text>, but "header" is not a slot');
-    expect(message).toContain("the slots on <DataTable> are: cell");
+    // The message names WHERE the real slot is read, not just its bare name —
+    // a model told "cell" would write it on a row.
+    expect(message).toContain("the slots on <DataTable> are: columns[].cell");
     // …while a slot the Kit really renders admits its own vocabulary.
     expect(issuesFor("Timeline", { marker: element("Icon") })).toEqual([]);
+  });
+
+  it("refuses a slot's own name at a path the component never reads", () => {
+    // DataTable renders `columns[].cell` and nothing else. A `cell` field on a
+    // ROW is a value it never looks at — and matching the bare key at any depth
+    // admitted it as if it were the column's, so the floor passed an element
+    // the table drops.
+    const [message] = issuesFor("DataTable", {
+      rows: [{ id: "r1", cell: element("Badge") }],
+      columns: [{ key: "id" }],
+    });
+
+    expect(message).toContain('prop "rows[0].cell" holds <Badge>');
+    expect(message).toContain('"rows[].cell" is not a slot');
+    expect(message).toContain("the slots on <DataTable> are: columns[].cell");
+    // The declared path still passes, so this narrows placement and nothing else.
+    expect(issuesFor("DataTable", { rows: [], columns: [{ key: "id", cell: element("Badge") }] })).toEqual([]);
+  });
+
+  it("measures a component in a slot against its OWN contract, not just the slot's", () => {
+    // What sits in a slot is a component in its own right. Checked only against
+    // the outer slot's vocabulary, both of these passed clean while the renderer
+    // dropped the descendant: an element in a prop <Stack> has no slot for, and
+    // children under a component that renders none.
+    const [header] = issuesFor("Accordion", {
+      items: [{ label: "Status", content: element("Stack", { props: { header: element("Text") } }) }],
+    });
+    expect(header).toContain('prop "items[0].content.header" holds <Text>');
+    expect(header).toContain("<Stack> takes no element in its props");
+
+    const [childless] = issuesFor("Accordion", {
+      items: [{ label: "Rows", content: element("DataTable", { children: [element("Text")] }) }],
+    });
+    expect(childless).toContain('prop "items[0].content" nests 1 node inside <DataTable>');
+    expect(childless).toContain("renders nothing nested inside it");
+
+    // …and a legal component in the same slot still passes, contract and all.
+    expect(issuesFor("Accordion", {
+      items: [{ label: "Rows", content: element("Timeline", { props: { marker: element("Icon") } }) }],
+    })).toEqual([]);
   });
 
   it("says so when the component takes no element at all", () => {

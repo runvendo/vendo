@@ -20,35 +20,50 @@ import type { ComponentType, ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { KIT_COMPONENTS, KIT_SPECS } from "../../src/kit/registry.js";
+import type { KitSlotSpec } from "../../src/kit/schema.js";
 
 afterEach(cleanup);
 
-/** Where each declared slot sits in its component's props, with the minimum
- *  other props that component needs to paint at all. Keyed `Component.slot`. */
-const PROBES: Record<string, (probe: ReactNode) => Record<string, unknown>> = {
-  "DataTable.cell": (probe) => ({ rows: [{ k: "v" }], columns: [{ key: "k", cell: probe }] }),
-  "CardList.cell": (probe) => ({ items: [{ k: "v" }], fields: [{ key: "k", cell: probe }] }),
-  "KeyValue.cell": (probe) => ({ record: { k: "v" }, items: [{ key: "k", cell: probe }] }),
-  "Timeline.cell": (probe) => ({ entries: [{ id: "1" }], cell: probe }),
-  "Timeline.marker": (probe) => ({ entries: [{ id: "1" }], marker: probe }),
-  "Tabs.content": (probe) => ({ tabs: [{ label: "One", content: probe }] }),
-  "Accordion.content": (probe) => ({ items: [{ label: "One", content: probe }], defaultOpen: [0] }),
+/** The minimum a component needs to paint at all, BESIDE its slot: `props` for
+ *  the component, `item` to seed the description object a nested slot rides in.
+ *  The slot's PLACEMENT is deliberately not written here — it comes from the
+ *  `at` declaration, so the path this renders through is the same path
+ *  `kit-nesting` admits. Point `at` somewhere the component does not read and
+ *  this test goes red. */
+const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<string, unknown> }> = {
+  DataTable: { props: { rows: [{ k: "v" }] }, item: { key: "k" } },
+  CardList: { props: { items: [{ k: "v" }] }, item: { key: "k" } },
+  KeyValue: { props: { record: { k: "v" } }, item: { key: "k" } },
+  Timeline: { props: { entries: [{ id: "1" }] } },
+  Tabs: { props: {}, item: { label: "One" } },
+  Accordion: { props: { defaultOpen: [0] }, item: { label: "One" } },
 };
 
+/** The probe at the slot's DECLARED path: a nested slot sits in its prop's
+ *  description objects, a top-level one is the prop itself. */
+const propsFor = (
+  context: { props: Record<string, unknown>; item?: Record<string, unknown> },
+  name: string,
+  slot: KitSlotSpec,
+  probe: ReactNode,
+): Record<string, unknown> => slot.at === undefined
+  ? { ...context.props, [name]: probe }
+  : { ...context.props, [slot.at]: [{ ...context.item, [name]: probe }] };
+
 describe("every declared slot renders what it promises", () => {
-  it("paints a probe put in each slot the catalog teaches", () => {
+  it("paints a probe put at each slot's declared path", () => {
     const declared = KIT_SPECS.flatMap((spec) =>
-      Object.keys(spec.slots ?? {}).map((slot) => [spec.name, slot] as const));
+      Object.entries(spec.slots ?? {}).map(([name, slot]) => [spec.name, name, slot] as const));
     // The table is the subject: an empty sweep would pass this test in silence.
     expect(declared.length).toBeGreaterThan(0);
 
-    for (const [component, slot] of declared) {
-      const key = `${component}.${slot}`;
-      const probe = PROBES[key];
-      expect(probe, `${key} is declared in SLOTS with no probe here — implement the slot in @vendoai/ui and probe it, or drop it from the table`).toBeTypeOf("function");
+    for (const [component, name, slot] of declared) {
+      const at = `${component}.${slot.at === undefined ? name : `${slot.at}[].${name}`}`;
+      const context = CONTEXT[component];
+      expect(context, `${at} is declared in SLOTS with no context here — implement the slot in @vendoai/ui and add one, or drop it from the table`).toBeTypeOf("object");
       const Implementation = KIT_COMPONENTS[component] as ComponentType<Record<string, unknown>>;
-      render(<Implementation {...probe(<span data-testid="probe">probe</span>)} />);
-      expect(screen.queryByTestId("probe"), `<${component}> declares a "${slot}" slot and does not render it — the prompt would teach a place the renderer drops`).toBeTruthy();
+      render(<Implementation {...propsFor(context!, name, slot, <span data-testid="probe">probe</span>)} />);
+      expect(screen.queryByTestId("probe"), `<${component}> declares its "${name}" slot at ${at} and does not render what is put there`).toBeTruthy();
       cleanup();
     }
   });

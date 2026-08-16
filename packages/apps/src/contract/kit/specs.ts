@@ -731,19 +731,26 @@ const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"]
 
 const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   DataTable: {
-    cell: { doc: "Kit value components composed for ONE row, in place of the column's plain text", perRow: true },
+    cell: { doc: "Kit value components composed for ONE row, in place of the column's plain text", perRow: true, at: "columns" },
   },
   CardList: {
-    cell: { doc: "Kit value components composed for ONE item, in place of the field's plain text", perRow: true },
+    cell: { doc: "Kit value components composed for ONE item, in place of the field's plain text", perRow: true, at: "fields" },
   },
-  KeyValue: { cell: { doc: "Kit value components composed for the record, in place of the field's plain text", perRow: true } },
+  KeyValue: { cell: { doc: "Kit value components composed for the record, in place of the field's plain text", perRow: true, at: "items" } },
   Timeline: {
     cell: { doc: "Kit components rendered as ONE entry's body", perRow: true },
     marker: { doc: "a glyph drawn in place of the entry's dot", content: mark },
   },
-  Tabs: { content: { doc: "ONE tab's panel, written inline instead of as a child", content: region } },
-  Accordion: { content: { doc: "ONE section's body", content: region } },
+  Tabs: { content: { doc: "ONE tab's panel, written inline instead of as a child", content: region, at: "tabs" } },
+  Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
 };
+
+/** Where a slot's element sits, as ONE comparable string: `columns[].cell` for a
+ *  field of a description object, `marker` for a slot that is a prop of its own.
+ *  The prompt teaches this string and the nesting check matches on it, so the
+ *  place a component READS and the place the floor admits are the same place. */
+export const kitSlotPath = (name: string, slot: KitSlotSpec): string =>
+  slot.at === undefined ? name : `${slot.at}[].${name}`;
 
 /** Every spec, with each shared adjective folded into the components that read
  *  it — so validation, the wire's allowed-prop set and the screen typings admit

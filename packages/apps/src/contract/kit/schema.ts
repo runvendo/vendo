@@ -45,9 +45,9 @@ export function data(schema: ZodTypeAny, doc: string, options?: PropOptions): Pr
 
 /**
  * A SLOT — a named place inside a component that holds an ELEMENT instead of a
- * value (a table column's `cell`, a Card's `header`). The key is the prop the
- * element sits under, or the field inside the description object a prop holds:
- * `columns[].cell` and `header` are both the slot named by their last segment.
+ * value (a table column's `cell`, a Timeline's `marker`). It is a prop of its
+ * own, or a field of the description objects one prop holds; `at` says which,
+ * and `kitSlotPath` writes the two as one comparable string.
  */
 export interface KitSlotSpec {
   /** 1-line "what goes here". */
@@ -58,6 +58,15 @@ export interface KitSlotSpec {
   /** Painted once per row/entry rather than once for the component — so what
    *  is written in it has no row of its own to act on. */
   perRow?: boolean;
+  /** The PROP whose description objects carry this slot as a field, so the slot
+   *  lives at `<at>[].<name>` (`columns[].cell`). Absent means the slot is a
+   *  prop of its own (`marker`).
+   *
+   *  Load-bearing, not documentation: a component reads its slot at exactly one
+   *  place, so a same-named field anywhere else (`rows[].cell` on a DataTable
+   *  that only renders `columns[].cell`) is a value nothing paints. The nesting
+   *  check matches on this path and refuses the rest. */
+  at?: string;
 }
 
 export interface KitComponentSpec {
