@@ -49,23 +49,23 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `apps` | `false` unmounts app generation entirely. See [below](#apps) |
 | `automations` | `false` unmounts automations: `/automations`, `/runs`, and `/webhooks` answer not-found and `vendo.emit` refuses |
 | `channels` | `{ text: true }` opens the text channel. Needs `VENDO_API_KEY`; the phone-to-user binding stays in your store |
-| `model` | **Deprecated** alias of `models.default`. Setting both is a boot error, not a precedence puzzle |
-| `paint` | **Deprecated**: the model half moved to `models.fill`. `disabled` remains the single switch for app generation |
 
-Passing a key that was removed throws at boot naming its new home: `brief` became `instructions`, `policy` / `judge` / `approvals` moved inside `guard({ … })`, and `connectorApps` became `connectors`.
+Passing a key that was removed throws at boot naming its new home: `model` became `models.default`, `paint` split into `models.apps` and `apps: false`, `brief` became `instructions`, `policy` / `judge` / `approvals` moved inside `guard({ … })`, and `connectorApps` became `connectors`.
 
 ## `models`
 
+One seat per job that actually runs. A seat is a job, not a model, so the same model may fill several and swapping one never renames the others.
+
 | Seat | Default | Feeds |
 | --- | --- | --- |
-| `default` | the credential ladder | the agent and app generation |
-| `reviewer` | borrows `default` | the AI reviewer |
-| `fill` | a family fast pick when `default` rode the ladder, else `default` | app generation and paint |
-| `judge` | borrows `default` | a judge you wired from a string. No judge runs by default |
+| `default` | the credential ladder | chat, compaction, subagents, and automations |
+| `apps` | `default`'s object, or its own rung pick when `default` rode the ladder | the agent that writes generated apps |
+| `review` | the same, and on a provider key the rung pick is its fast model | the AI reviewer that grades finished apps |
+| `judge` | the same, and on a provider key the rung pick is its fast model | a judge you wired from a string. No judge runs by default |
 
 Each seat takes a model-name string, resolved through the credential ladder, or an explicit AI SDK `LanguageModel` object, which wins as-is.
 
-A name string is pinnable per seat with `VENDO_MODEL`, `VENDO_MODEL_PAINT`, and `VENDO_MODEL_JUDGE`. A key that is not a seat throws `models.<key> is not a model seat`.
+A name string is pinnable per seat with `VENDO_MODEL`, `VENDO_MODEL_APPS`, `VENDO_MODEL_REVIEW`, and `VENDO_MODEL_JUDGE`. A key that is not a seat throws `models.<key> is not a model seat`.
 
 ## `guard`
 

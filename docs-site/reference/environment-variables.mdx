@@ -38,7 +38,7 @@ Every variable a host developer sets. Keys are credentials; config selects.
 | `VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE` | Knowledge-search calls one principal may make per minute. Default 60. | deploy platform |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default local store encrypts secrets with. | `.env.local` |
 | `VENDO_AWAY_TOKEN_SECRET` | Default shared secret for the away-token preset. | deploy platform |
-| `VENDO_MODEL` `VENDO_MODEL_PAINT` `VENDO_MODEL_JUDGE` `VENDO_MODEL_EXTRACT` | Per-slot model name pins. They never select a provider. `VENDO_EXTRACTION_MODEL` is the older spelling of the last one. | deploy platform |
+| `VENDO_MODEL` `VENDO_MODEL_APPS` `VENDO_MODEL_REVIEW` `VENDO_MODEL_JUDGE` `VENDO_MODEL_EXTRACT` | Model name pins, one per seat plus the CLI's extraction engine. They never select a provider. | deploy platform |
 | `VENDO_DEV_CREDENTIAL` | Pins a dev-mode credential ladder rung. | internal · not a host knob |
 | `ANTHROPIC_API_KEY` `OPENAI_API_KEY` `GOOGLE_GENERATIVE_AI_API_KEY` | Credentials for the provider you pass in `models`. Select nothing. | `.env.local` · deploy platform |
 | `VERCEL` `CF_PAGES` `AWS_LAMBDA_FUNCTION_NAME` | Block the default PGlite store on an ephemeral filesystem. | set by the platform |

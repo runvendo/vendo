@@ -80,7 +80,7 @@ export default nextConfig;
 
 `esbuild` syntax-checks generated apps and PGlite backs persistence. The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
 
-## Two model seats, one key
+## Two models, one key
 
 Your loop and Vendo's own turns each call a model. `vendoModel()` resolves through the Cloud gateway on your `VENDO_API_KEY`, and the builds behind `vendo_make` resolve the same way while `createVendo`'s `models` block is unset.
 
