@@ -18,6 +18,7 @@ import { markHandlerCallback } from "../../src/kit/handler.js";
 import { Accordion } from "../../src/kit/feedback/accordion.js";
 import { Menu } from "../../src/kit/feedback/menu.js";
 import { Tooltip } from "../../src/kit/feedback/tooltip.js";
+import { Checkbox } from "../../src/kit/forms/checkbox.js";
 import { Combobox } from "../../src/kit/forms/combobox.js";
 import { DateRange } from "../../src/kit/forms/date-range.js";
 import { Radio } from "../../src/kit/forms/radio.js";
@@ -56,6 +57,19 @@ function Screen<T>({ initial, render: renderControl }: {
     }));
   return <>{renderControl(value, fire)}</>;
 }
+
+describe("Checkbox", () => {
+  it("is a checkbox by role, and a screen-bound one keeps toggling", () => {
+    render(<Screen initial={false} render={(on, fire) => <Checkbox label="Paid" checked={on} onChange={fire} />} />);
+    const box = () => screen.getByRole("checkbox", { name: "Paid" });
+
+    fireEvent.click(box());
+    expect(box().getAttribute("aria-checked")).toBe("true");
+    // The toggle BACK is the freeze detector.
+    fireEvent.click(box());
+    expect(box().getAttribute("aria-checked")).toBe("false");
+  });
+});
 
 describe("Switch", () => {
   it("is a switch by role, and a screen-bound one keeps flipping", () => {
