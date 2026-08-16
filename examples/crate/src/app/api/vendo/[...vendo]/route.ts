@@ -2,7 +2,7 @@ import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { clerk } from "@vendoai/vendo/auth/clerk";
 import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
 import { clerkEnabled } from "@/server/clerk-config";
-import { findStaff, staffFacts, staffForSubject } from "@/server/staff";
+import { primaryStaff, staffFacts, staffForSubject } from "@/server/staff";
 import { crateKnowledgeDocs } from "@/vendo/knowledge";
 
 // One preset fills all three identity seams: the request→principal resolver,
@@ -38,25 +38,33 @@ const crateAuth = clerk({
       admin: user.role === "admin",
     }];
   },
-  // The directory seam: Vendo holds no roster, so this is the only reason the
-  // Share dialog can offer to share with a named person. Crate answers its own
-  // staff and nobody else — never a customer, who is a record here, not a user.
-  resolvePerson: async (query, asker) => {
-    if (!(await staffForSubject(asker.subject))) return null;
-    const user = findStaff(query);
-    return user ? { subject: user.subject, display: user.display } : null;
-  },
 });
 
 const vendo = createVendo({
-  // ⚠️ Composed only when Clerk is actually configured. `clerk()` THROWS on any
-  // request carrying an `Authorization: Bearer …` header when CLERK_SECRET_KEY
-  // is unset, and the throw surfaces as a 501 "Internal Vendo error" for the
-  // whole wire — which is the state `vendo init --auth clerk` leaves you in
-  // before you have pasted your keys. Unverifiable tokens return null two lines
-  // below it in the same preset; a missing key ought to do the same. Until it
-  // does, this is the host's half of the workaround. See ENG-415.
-  ...(clerkEnabled ? { auth: crateAuth } : {}),
+  // ⚠️ The Clerk preset is composed only when Clerk is actually configured.
+  // `clerk()` THROWS on any request carrying an `Authorization: Bearer …`
+  // header when CLERK_SECRET_KEY is unset, and the throw surfaces as a 501
+  // "Internal Vendo error" for the whole wire — which is the state
+  // `vendo init --auth clerk` leaves you in before you have pasted your keys.
+  // Unverifiable tokens return null two lines below it in the same preset; a
+  // missing key ought to do the same. Until it does, this is the host's half
+  // of the workaround. See ENG-415.
+  //
+  // The keyless branch is NOT "no identity" — Vendo no longer mints anonymous
+  // sessions, so a composition without one refuses to build at all. Crate says
+  // out loud what it was previously getting by default: with Clerk off, every
+  // caller is the seeded shop owner. That is the same actor `resolveActor()`
+  // returns for a keyless HTTP request, so the agent and the screens agree on
+  // who is asking instead of disagreeing silently.
+  ...(clerkEnabled
+    ? { auth: crateAuth }
+    : {
+        principal: async () => ({
+          kind: "user" as const,
+          subject: primaryStaff().subject,
+          display: primaryStaff().display,
+        }),
+      }),
   // .vendo/policy.json: destructive asks, reads run. The grades themselves are
   // authored in .vendo/overrides.json — refunds and cancellations are
   // destructive, and the demo reset never reaches the agent at all.
