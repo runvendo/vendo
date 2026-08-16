@@ -69,10 +69,12 @@ describe("screenTypings", () => {
     expect(dts).toContain("declare const DataTable: (props: { rows: Array<Record<string, any>> | VendoBinding;");
     // Stat.format is an enum — the literal union is what makes format=\"huge\" a type error.
     expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "text"');
-    // A cell slot holds an ELEMENT, which no schema describes — `any` is its
-    // faithful type, and without it the catalog's own DataTable example would
-    // not compile.
-    expect(dts).toContain("cell?: any }> | VendoBinding");
+    // A cell slot holds an ELEMENT, which no schema describes. A STORED
+    // document's is a serialized one, so the wire's slot stays permissive — the
+    // alias, not a shape — and without that the catalog's own DataTable example
+    // would not compile.
+    expect(dts).toContain("cell?: VendoSlot }> | VendoBinding");
+    expect(dts).toContain("declare type VendoSlot = any;");
   });
 
   /**

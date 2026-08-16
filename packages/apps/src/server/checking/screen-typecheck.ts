@@ -17,7 +17,7 @@
  */
 import { DISPLAY_TAG_NAMES } from "../../contract/index.js";
 import { diagnosticLine, translateDiagnostic, type ScreenProgram } from "./screen-program.js";
-import { SCREEN_MODULE } from "./screen-typings.js";
+import { SCREEN_MODULE, SLOT_TYPE } from "./screen-typings.js";
 import type { ComponentScreenIssue } from "./component-screen.js";
 import type TS from "typescript";
 
@@ -44,6 +44,29 @@ const MISSING_MODULE = new Set([2307, 2792]);
 const BAD_CALL = new Set([2345, 2769, 2353]);
 
 const INTRINSIC_ELEMENT = /Property '([^']+)' does not exist on type 'JSX\.IntrinsicElements'/u;
+
+/** Where a value written into a SLOT sits, as the screen wrote it: the property holding it
+ *  (`cell`, `rowActions`) and, when it rides in a column or field description,
+ *  that description's own `key`. The compiler's sentence names the type it
+ *  refused and nothing at all about where it stands. */
+const slotLocus = (
+  ts: typeof TS,
+  file: TS.SourceFile,
+  node: TS.Node,
+): { name: string; key?: string } | undefined => {
+  for (let at: TS.Node | undefined = node; at !== undefined; at = at.parent) {
+    if (ts.isJsxAttribute(at)) return { name: at.name.getText(file) };
+    if (!ts.isPropertyAssignment(at)) continue;
+    const key = ts.isObjectLiteralExpression(at.parent)
+      ? at.parent.properties.find((property) => property.name?.getText(file) === "key")
+      : undefined;
+    return {
+      name: at.name.getText(file),
+      ...(key !== undefined && ts.isPropertyAssignment(key) ? { key: key.initializer.getText(file) } : {}),
+    };
+  }
+  return undefined;
+};
 
 /** The deepest node covering a diagnostic — the same descent screen-tsc.ts uses
  *  to anchor its own findings. */
@@ -140,6 +163,24 @@ const typeIssue = (
   if (BAD_CALL.has(diagnostic.code)) {
     const payload = badPayloadMessage(ts, file, checker, diagnostic, sentence);
     if (payload !== undefined) return at(payload);
+  }
+
+  // A slot handed something that is not an element, which in practice is a
+  // FUNCTION: the VM serializes a function prop as a `$handler` door
+  // (`genui/component/vm-program.ts` `emitValue`), so the slot receives a
+  // callback the renderer cannot paint and the cell renders BLANK with every
+  // gate green — how a generated screen shipped a column of empty cells.
+  const slot = sentence.includes(SLOT_TYPE) ? slotLocus(ts, file, node) : undefined;
+  if (slot !== undefined) {
+    return at(`writes ${/^Type '([^']+)'/u.exec(sentence)?.[1] ?? "a value that is not an element"} in the "${slot.name}" slot`
+      + `${slot.key === undefined ? "" : ` of ${slot.key}`}`
+      + " — a slot holds ELEMENTS, and a function prop serializes as a callback the renderer cannot paint, so the slot renders blank."
+      + (slot.key === undefined
+        ? " Write the element itself."
+        // `Text` reads any field, so the example is right whatever the column
+        // holds; a value component (Money, EnumBadge) is the better answer where
+        // the field's type is one it formats.
+        : ` Write the element itself; the components inside a slot name their own row's field: ${slot.name}={<Text field=${slot.key}/>}.`));
   }
 
   if (MISSING_PROPERTY.has(diagnostic.code) || BAD_CALL.has(diagnostic.code) || diagnostic.code === 2322) {

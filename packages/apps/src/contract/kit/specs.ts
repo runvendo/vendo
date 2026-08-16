@@ -32,8 +32,13 @@ const seriesInput = z.array(z.union([z.string(), z.object({ key: z.string(), lab
  * `$handler` callback (`genui/component/vm-program.ts` `emitValue`), so the
  * table would be handed an async door, not something it may call while it
  * paints. An element serializes; a closure does not.
+ *
+ * The DESCRIPTION is the marker a slot is known by: `z.unknown()` prints as
+ * `any` and `any` admitted exactly that function, so the component screen's
+ * typings print a described slot as an element type instead and the compiler
+ * refuses the closure (`checking/screen-typings.ts` `SLOT_PROP_DESCRIPTION`).
  */
-const slot = z.unknown();
+const slot = z.unknown().describe("holds Kit elements");
 const tableColumn = z.object({
   key: z.string(),
   label: z.string().optional(),

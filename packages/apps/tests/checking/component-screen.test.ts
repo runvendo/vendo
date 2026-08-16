@@ -915,6 +915,34 @@ export default function Ledger() {
     expect(message).toContain("A cell may hold: Text, Money, DateTime, Percent, Num, EnumBadge, Badge, Sparkline, Progress, Stack, Row");
   });
 
+  /**
+   * The BLANK CELL class, and the whole reason a slot is typed rather than left
+   * `any`: a function in a cell serializes as a `$handler` door (vm-program.ts
+   * `emitValue`), so the table is handed a callback it cannot paint and the
+   * column renders empty. A generated screen shipped exactly this past compile,
+   * types, paint and tree with every gate green.
+   */
+  it("refuses a function in a cell slot, and names the column it sits in", async () => {
+    const result = await painted(`import { DataTable, Money } from "@vendo/screen";
+
+export default function Ledger() {
+  return (
+    <DataTable
+      rows={[{ id: "tr_1", amount: 4200 }]}
+      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain('in the "cell" slot of "amount"');
+    expect(message).toContain("a slot holds ELEMENTS");
+    // …and the repair is the element, with the column's own key in it.
+    expect(message).toContain('cell={<Text field="amount"/>}');
+  });
+
   it("follows a control nested INSIDE a legal slot component", async () => {
     const result = await painted(`import { Button, DataTable, Stack, Text, tools } from "@vendo/screen";
 
