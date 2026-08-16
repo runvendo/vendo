@@ -112,23 +112,41 @@ export const channelRoutes: RouteEntry[] = [
     // off the router transcript and has no text and no conversation of its own;
     // anything else is a message. Dispatching on the field rather than on a
     // second route keeps the frozen contract one URL and one bearer.
-    runInboundDetached(deps.channels, body["kind"] === "link"
-      ? {
-        eventId: string(body["eventId"], "eventId"),
-        channel: "text",
-        kind: "link",
-        from: string(body["from"], "from"),
-        code: string(body["code"], "code"),
-        receivedAt: string(body["receivedAt"], "receivedAt"),
+    if (body["kind"] === "link") {
+      // AWAITED, unlike a turn. Cloud relays the link and then the person's first
+      // text, and it waits for this response in between — so answering 202 before
+      // the binding is persisted is what makes the two race. The text would find
+      // no link, be served as a stranger's, and vanish: the exact message the
+      // one-text flow exists to answer. A claim is a handful of store writes with
+      // no model in the path, so it is cheap enough to hold the delivery open for,
+      // and a failure answers 503 so the queue redelivers instead of dropping it.
+      try {
+        await deps.channels.inbound({
+          eventId: string(body["eventId"], "eventId"),
+          channel: "text",
+          kind: "link",
+          from: string(body["from"], "from"),
+          code: string(body["code"], "code"),
+          receivedAt: string(body["receivedAt"], "receivedAt"),
+        });
+      } catch (error) {
+        log({
+          code: "vendo.channel-link-failed",
+          level: "error",
+          message: `[vendo] inbound link failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        return json({ error: { code: "unavailable", message: "could not claim the link" } }, 503);
       }
-      : {
-        eventId: string(body["eventId"], "eventId"),
-        channel: "text",
-        from: string(body["from"], "from"),
-        text: string(body["text"], "text"),
-        conversationId: string(body["conversationId"], "conversationId"),
-        receivedAt: string(body["receivedAt"], "receivedAt"),
-      });
+      return json({ ok: true }, 202);
+    }
+    runInboundDetached(deps.channels, {
+      eventId: string(body["eventId"], "eventId"),
+      channel: "text",
+      from: string(body["from"], "from"),
+      text: string(body["text"], "text"),
+      conversationId: string(body["conversationId"], "conversationId"),
+      receivedAt: string(body["receivedAt"], "receivedAt"),
+    });
     return json({ ok: true }, 202);
   }),
 

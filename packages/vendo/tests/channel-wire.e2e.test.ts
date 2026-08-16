@@ -342,6 +342,30 @@ describe("one-text linking — the router's connect tail, relayed ahead", () => 
     expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due." });
   }, 120_000);
 
+  it("answers the text that arrives immediately behind the link", async () => {
+    // THE RACE THIS PINS: Cloud relays the link, waits for its response, then
+    // relays the text. If the door ACKs the link before the binding is persisted,
+    // the text finds no link, is served as a stranger's, and VANISHES — which is
+    // precisely the first message the one-text flow exists to answer. No polling
+    // between the two sends here on purpose: back to back is the real sequence.
+    const page = await (await get(vendo, "/channels/text/link", "Macintosh")).text();
+    const code = /connect @maple ([23456789A-Z]{6})/.exec(page)![1]!;
+
+    await inboundLink(vendo, { eventId: "evt_link_race", code });
+    // NO polling here, deliberately: the ACK itself has to mean the binding is
+    // persisted, because Cloud sends the text the moment it has this response. If
+    // the claim is still in flight when the 202 goes out, the text behind it reads
+    // an unlinked phone.
+    expect(await vendo.channels.text.status(principal)).toEqual({
+      linked: true,
+      phone: "+1 ••• ••• 0123",
+    });
+
+    await inbound(vendo, { eventId: "evt_text_race", text: "what do I owe?" });
+    await waitFor(() => cloud.sent.length === 1);
+    expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due." });
+  }, 120_000);
+
   it("ignores a link delivery whose code is not live, and stays a stranger", async () => {
     // A connect tail Cloud read from an OLD transcript entry, or one meant for
     // another deployment: nothing binds, and the phone is still served nothing.
