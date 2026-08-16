@@ -21,7 +21,12 @@ Removed: the `search_components` tool and its `VENDO_TOOL_TITLES` entry,
 the loadout for a deployment with an empty catalog. `VENDO_VERB_TOOLS` is
 `["validate", "schedule"]`.
 
-Also removed: `catalogThemeSummary` and the `system.catalog` prompt slot behind
-it. It was a second rendering of the host component list and the theme, aimed at
-a thinker that renders nothing; `renderBriefingPack` is the one rendering, and
-it hands the screen agent the theme tokens verbatim rather than a summary line.
+Also gone: `catalogThemeSummary` — but only the half of it that duplicated. It
+rendered two things. The host COMPONENT list was a second rendering of what
+`renderBriefingPack` already hands the screen agent, and that half is deleted;
+the pack is now the one and only rendering of that list. The one-line theme
+summary was never a copy of anything — the pack hands the screen agent the theme
+TOKENS verbatim, as JSON, for the rung that renders — so it stays, as
+`themeSummary`, and the `system.catalog` prompt slot is renamed `system.theme`,
+venue-gated exactly as before. A configured theme still reaches the system prompt
+as `Theme: <density> density, <motion> motion, <font> typography.`
