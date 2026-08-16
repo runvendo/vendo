@@ -451,7 +451,7 @@ interface FlowNotes {
  * rebuilding it every `npm run dev` would buy a request per run and a
  * committed artifact that churns.
  */
-async function writeFonts(
+export async function writeFonts(
   root: string,
   vendoDir: string,
   theme: unknown,

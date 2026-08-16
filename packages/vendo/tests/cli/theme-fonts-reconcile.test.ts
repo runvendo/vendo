@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Output } from "../../src/cli/shared.js";
+import { runInit } from "../../src/cli/init.js";
 import { runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "../../src/cli/sync-flow.js";
 
 /**
@@ -169,4 +170,51 @@ describe("a pinned family is the family that gets embedded", () => {
       { family: "Pinned Face", weight: "400", style: "normal", source: "public" },
     ]);
   }, 30_000);
+});
+
+describe("an overridden family is the family that ships", () => {
+  it("re-embeds when a --theme answer replaces the extracted brand at install", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-fonts-answer-"));
+    dirs.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await mkdir(join(root, "public", "fonts"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host", dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+    }));
+    await writeFile(join(root, "public", "fonts", "app.woff2"), Buffer.from("wOF2-app", "utf8"));
+    await writeFile(join(root, "public", "fonts", "chosen.woff2"), Buffer.from("wOF2-chosen", "utf8"));
+    await writeFile(join(root, "app", "layout.tsx"),
+      'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n');
+    await writeFile(join(root, "app", "globals.css"),
+      "@font-face { font-family: 'App Face'; font-weight: 400; src: url('/fonts/app.woff2') format('woff2'); }\n"
+      + "@font-face { font-family: 'Chosen Face'; font-weight: 400; src: url('/fonts/chosen.woff2') format('woff2'); }\n"
+      + ":root { --primary: #0f766e; --background: #ffffff; --radius: 8px; --font-sans: 'App Face', sans-serif; }\n",
+      "utf8");
+
+    // The human overrides the family AFTER extraction resolved the app's own.
+    expect(await runInit({
+      targetDir: root,
+      output: silent,
+      env: {},
+      cloud: { cloudProbe: async () => ({ present: false, ok: false, unlocks: [] as readonly string[] }) },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      yes: true,
+      // Both stacks, so the document selects ONE family and the sheet has
+      // exactly one right answer. (Overriding only the body font would leave
+      // headingFamily selecting the app's face, and embedding it would then
+      // be correct.)
+      themeAnswers: { fontFamily: "Chosen Face, sans-serif", headingFamily: "Chosen Face, sans-serif" },
+    })).toBe(0);
+
+    const theme = await readTheme(root);
+    expect(theme.typography.fontFamily).toBe("Chosen Face, sans-serif");
+    // The bytes on disk must be the typeface the host chose. Shipping the one
+    // they overrode is a font file they never picked, with nothing to say so.
+    const sheet = await readSheet(root);
+    expect(sheet).toContain("font-family: 'Chosen Face'");
+    expect(sheet).not.toContain("App Face");
+    expect(theme.typography.fonts).toEqual([
+      { family: "Chosen Face", weight: "400", style: "normal", source: "public" },
+    ]);
+  }, 60_000);
 });
