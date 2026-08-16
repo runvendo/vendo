@@ -17,9 +17,9 @@
 import type { PropsWithChildren } from "react";
 import { resolveVendoRoute } from "@vendoai/apps/contract";
 import { useVendoNavigate, useVendoRoutes } from "../routes.js";
-import { font, t, transitionFor } from "./tokens.js";
+import { font, t, transitionFor, type KitStyled } from "./tokens.js";
 
-export interface LinkProps {
+export interface LinkProps extends KitStyled {
   /** The registered route's name. */
   to?: string;
   /** Values for the route path's `:params`. */
@@ -27,13 +27,13 @@ export interface LinkProps {
   label?: string;
 }
 
-export function Link({ to, params, label, children }: PropsWithChildren<LinkProps>) {
+export function Link({ to, params, label, style, children }: PropsWithChildren<LinkProps>) {
   const routes = useVendoRoutes();
   const navigate = useVendoNavigate();
   const nav = to === undefined ? undefined : resolveVendoRoute(routes, to, params);
   const content = label ?? children;
   if (nav === undefined || navigate === undefined) {
-    return <span data-kit="Link" style={font}>{content}</span>;
+    return <span data-kit="Link" style={{ ...font, ...style }}>{content}</span>;
   }
   return (
     <a
@@ -52,6 +52,7 @@ export function Link({ to, params, label, children }: PropsWithChildren<LinkProp
         textDecoration: "underline",
         textUnderlineOffset: "2px",
         transition: transitionFor("color"),
+        ...style,
       }}
     >
       {content}

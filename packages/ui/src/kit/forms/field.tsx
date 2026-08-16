@@ -1,14 +1,14 @@
 /** Shared field chrome (label + hint/error) for Kit form controls. */
 import { Field } from "@base-ui/react/field";
 import { useId, type PropsWithChildren, type ReactNode } from "react";
-import { font, t } from "../tokens.js";
+import { font, t, type KitStyled } from "../tokens.js";
 
 export function useFieldIds(prefix: string): { fieldId: string; helpId: string } {
   const id = useId().replace(/:/g, "");
   return { fieldId: `vendo-${prefix}-${id}`, helpId: `vendo-${prefix}-${id}-help` };
 }
 
-export interface FieldShellProps {
+export interface FieldShellProps extends KitStyled {
   fieldId: string;
   helpId: string;
   label?: string;
@@ -20,7 +20,7 @@ export interface FieldShellProps {
   labelNode?: ReactNode;
 }
 
-export function FieldShell({ fieldId, helpId, label, hint, error, inline, children }: PropsWithChildren<FieldShellProps>) {
+export function FieldShell({ fieldId, helpId, label, hint, error, inline, style, children }: PropsWithChildren<FieldShellProps>) {
   const message = error ?? hint;
   return (
     // A Base UI Field, not a bare div: it is the context through which a
@@ -36,6 +36,7 @@ export function FieldShell({ fieldId, helpId, label, hint, error, inline, childr
         flexDirection: inline ? "row" : "column",
         alignItems: inline ? "center" : "stretch",
         gap: inline ? "var(--vendo-density-inline-gap, 7px)" : "var(--vendo-density-field-gap, 6px)",
+        ...style,
       }}
     >
       {label ? (

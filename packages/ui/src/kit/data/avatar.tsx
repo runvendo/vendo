@@ -1,9 +1,9 @@
 /** Avatar — initials in a tint derived from the name (W2 §The Kit). No image:
  *  a host's avatar URL is not something the Kit fetches. */
 import type { CSSProperties } from "react";
-import { font, seriesColor, t } from "../tokens.js";
+import { font, seriesColor, t, type KitStyled } from "../tokens.js";
 
-export interface AvatarProps {
+export interface AvatarProps extends KitStyled {
   /** The person or account this stands for; both the initials and the tint
    *  come from it, so the same name is the same disc everywhere. */
   name?: string;
@@ -38,7 +38,7 @@ function tint(name: string): string {
   return seriesColor(hash);
 }
 
-export function Avatar({ name = "", size = "md" }: AvatarProps) {
+export function Avatar({ name = "", size = "md", style }: AvatarProps) {
   const px = SIZES[size] ?? SIZES.md;
   const seed = tint(name);
   return (
@@ -68,6 +68,7 @@ export function Avatar({ name = "", size = "md" }: AvatarProps) {
           letterSpacing: "0.02em",
           lineHeight: 1,
           userSelect: "none",
+          ...style,
         } as CSSProperties}
       >
         {initials(name)}

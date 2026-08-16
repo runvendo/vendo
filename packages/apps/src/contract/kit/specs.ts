@@ -16,7 +16,13 @@ import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropC
 const rows = z.array(z.record(z.string(), z.unknown()));
 const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "text"]);
 const align = z.enum(["start", "center", "end"]);
-const seriesInput = z.array(z.union([z.string(), z.object({ key: z.string(), label: z.string().optional() })]));
+/** A series descriptor stays OPEN: what is written beside `key` and `label` is
+ *  passed to that one series' engine element, so per-line colors are a property
+ *  of the line rather than of the whole chart. */
+const seriesInput = z.array(z.union([
+  z.string(),
+  z.object({ key: z.string(), label: z.string().optional() }).passthrough(),
+]));
 
 /**
  * A CELL SLOT — Kit value components composed for one record.
@@ -82,6 +88,35 @@ const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly s
 /** The shared adjectives' names, so `kitPrompt` can leave them out of every
  *  component's prop list and teach them once. */
 export const KIT_SHARED_PROP_NAMES: readonly string[] = SHARED_PROPS.map(({ name }) => name);
+
+/**
+ * THE STYLE PROP — on every component, not just the ones that read it, because
+ * every one of them merges it onto its own root. The theme is still the default
+ * and still what an unstyled screen paints from; this is the escape hatch for
+ * when the person asked for a particular look.
+ */
+const STYLE_PROP = "style";
+const style = config(
+  z.record(z.string(), z.union([z.string(), z.number()])),
+  "inline CSS on the component's root; your values win over the theme's",
+);
+
+/** What the PREAMBLE teaches, so neither prompt spends a line on it per
+ *  component: the shared adjectives, and `style`, which every component takes. */
+export const KIT_PREAMBLE_PROP_NAMES: readonly string[] = [...KIT_SHARED_PROP_NAMES, STYLE_PROP];
+
+/**
+ * Who RENDERS a third-party engine, and which one — the fact `kitPrompt`, the
+ * wire's allowed-prop set and the screen typings all read to let that engine's
+ * own props through (`KitComponentSpec.engine`).
+ */
+const ENGINES: Readonly<Record<string, string>> = {
+  BarChart: "recharts", DonutChart: "recharts", LineChart: "recharts", Sparkline: "recharts",
+  Accordion: "Base UI", Combobox: "Base UI", DatePicker: "Base UI", DateRange: "Base UI",
+  Form: "Base UI", Input: "Base UI", Menu: "Base UI", Modal: "Base UI", Progress: "Base UI",
+  Radio: "Base UI", SegmentedControl: "Base UI", Sheet: "Base UI", Slider: "Base UI",
+  Switch: "Base UI", Tabs: "Base UI", Toast: "Base UI", Tooltip: "Base UI",
+};
 
 // ---- specs ---------------------------------------------------------------
 const BASE_SPECS: KitComponentSpec[] = [
@@ -904,9 +939,11 @@ export const kitSlotPath = (name: string, slot: KitSlotSpec): string =>
  *  slots, which the same consumers read. */
 export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => ({
   ...spec,
+  engine: ENGINES[spec.name],
   slots: SLOTS[spec.name],
   props: {
     ...spec.props,
+    [STYLE_PROP]: style,
     ...Object.fromEntries(SHARED_PROPS
       .filter(({ on }) => on.includes(spec.name))
       .map(({ name, spec: prop }) => [name, prop])),

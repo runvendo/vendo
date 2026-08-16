@@ -31,8 +31,8 @@ import {
   KIT_COMPONENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   kitSpec,
+  type KitComponentSpec,
   type NormalizedCatalog,
-  type PropSpec,
 } from "../../contract/index.js";
 import { z, type ZodTypeAny } from "zod";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
@@ -113,6 +113,10 @@ const zodTypeText = (schema: ZodTypeAny, depth = 0, note?: TypeNote): string => 
         const optional = inner.typeName === z.ZodFirstPartyTypeKind.ZodOptional;
         return `${name}${optional ? "?" : ""}: ${zodTypeText(optional ? inner.innerType as ZodTypeAny : field, depth + 1, at(note, name))}`;
       });
+      // A passthrough object keeps what it does not declare, and the printer must
+      // say so: a chart's series descriptor carries that one series' engine props
+      // beside `key`, and a closed type makes writing one an excess-property error.
+      if ((def as { unknownKeys?: string }).unknownKeys === "passthrough") fields.push(ENGINE_INDEX);
       return fields.length === 0 ? "{}" : `{ ${fields.join("; ")} }`;
     }
     case z.ZodFirstPartyTypeKind.ZodOptional:
@@ -216,6 +220,13 @@ const objectTypeText = (schema: Record<string, unknown>, reading: SchemaReading,
  *  whose fill honestly failed keeps it (facts.ts `prewiredPropsIssues`). */
 const AMBIENT_PROPS = "children?: any; pending?: any";
 
+/** What OPENS a component that renders an engine (`KitComponentSpec.engine`):
+ *  the engine's prop vocabulary is the engine's, so the type check stops
+ *  measuring against a list we would have to keep in step with it. The cost is
+ *  the excess-property gate on that component, which is the trade the upgrade
+ *  posture already made. */
+const ENGINE_INDEX = "[prop: string]: any";
+
 const componentDeclaration = (name: string, propsText: string): string =>
   `declare const ${name}: (props: ${propsText}) => JSX.Element;`;
 
@@ -239,10 +250,11 @@ const BINDING_TYPE = "VendoBinding";
 const BINDING_DECLARATION =
   `declare type ${BINDING_TYPE} = { $path: string } | { $state: string } | { $expr: string };`;
 
-const propsTextFrom = (props: Record<string, PropSpec>): string => {
-  const fields = Object.entries(props).map(([name, spec]) =>
-    `${name}${spec.required === true ? "" : "?"}: ${zodTypeText(spec.schema)} | ${BINDING_TYPE}`);
-  return `{ ${[...fields, AMBIENT_PROPS].join("; ")} }`;
+const propsTextFrom = (spec: KitComponentSpec): string => {
+  const fields = Object.entries(spec.props).map(([name, prop]) =>
+    `${name}${prop.required === true ? "" : "?"}: ${zodTypeText(prop.schema)} | ${BINDING_TYPE}`);
+  const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
+  return `{ ${[...fields, AMBIENT_PROPS, ...engine].join("; ")} }`;
 };
 
 /** The frame elements a screen file is made of. Not components: the compiler
@@ -288,7 +300,7 @@ export function screenTypings(input: ScreenTypingsInput): string {
   // catalog (facts.ts `catalogIssues`). V4: the Kit specs are the only source.
   for (const name of KIT_SCREEN_COMPONENT_NAMES) {
     const spec = kitSpec(name);
-    if (spec !== undefined) push(name, propsTextFrom(spec.props));
+    if (spec !== undefined) push(name, propsTextFrom(spec));
   }
   for (const entry of input.catalog) {
     push(entry.name, entry.propsJsonSchema === undefined
@@ -462,14 +474,15 @@ const REACT_MODULE = `declare module "react" {
   export default React;
 }`;
 
-const componentPropsText = (props: Record<string, PropSpec>, note?: TypeNote): string => {
-  const fields = Object.entries(props).map(([name, spec]) => {
-    const text = spec.schema.description === ACTION_PROP_DESCRIPTION
+const componentPropsText = (spec: KitComponentSpec, note?: TypeNote): string => {
+  const fields = Object.entries(spec.props).map(([name, prop]) => {
+    const text = prop.schema.description === ACTION_PROP_DESCRIPTION
       ? HANDLER_TYPE
-      : zodTypeText(spec.schema, 0, at(note, `prop "${name}"`));
-    return `${name}${spec.required === true ? "" : "?"}: ${text}`;
+      : zodTypeText(prop.schema, 0, at(note, `prop "${name}"`));
+    return `${name}${prop.required === true ? "" : "?"}: ${text}`;
   });
-  return `{ ${[...fields, "children?: any"].join("; ")} }`;
+  const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
+  return `{ ${[...fields, "children?: any", ...engine].join("; ")} }`;
 };
 
 /** A HOST component's props, from the one schema the composition derived for it.
@@ -526,7 +539,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
     const spec = kitSpec(name);
     const schema = typeof entry === "string" ? undefined : entry.propsJsonSchema;
     const propsText = spec !== undefined
-      ? componentPropsText(spec.props, at(note, `<${name}>`))
+      ? componentPropsText(spec, at(note, `<${name}>`))
       : schema === undefined
         // Schema-less, and legal: the model infers the props and nothing here can
         // check them. The skill's "a guessed prop is a failed app" is true of every
