@@ -1,16 +1,14 @@
 ---
-title: "Vendo product changelog"
-description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
+title: "Changelog"
+sidebarTitle: "Changelog"
+description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
 <Update label="July 17, 2026" description="Week of July 14 – July 20">
 
 ## New features
 
-**Configurable palette keybinding.** `VendoPalette` now accepts an optional
-`hotkey` prop so hosts can retune or hand off the keyboard opener. Pass a
-chord (`{ key: "k", meta: true }`), a custom matcher `(e) => boolean`, or
-`false` to disable the built-in opener entirely and wire your own:
+**Configurable palette keybinding.** `VendoPalette` accepts an optional `hotkey` prop so hosts can retune or hand off the keyboard opener. Pass a chord, a custom matcher, or `false` to disable the built-in opener and wire your own.
 
 ```tsx
 import { VendoPalette } from "@vendoai/ui/chrome";
@@ -22,40 +20,27 @@ import { VendoPalette } from "@vendoai/ui/chrome";
 <VendoPalette hotkey={false} />
 ```
 
-All mounted palettes now share a single `keydown` listener, and the keystroke
-routes to the most-recently-mounted palette. Mounting the palette in more
-than one place no longer double-toggles on a single press. While the palette
-is closed, the shortcut is also ignored when focus is in a host `input`,
-`textarea`, `select`, or `contenteditable`, so your app keeps its own ⌘K
-inside its own fields.
+All mounted palettes share a single `keydown` listener, and the keystroke routes to the most recently mounted palette. Mounting the palette in more than one place no longer double-toggles on a single press.
 
-**Humanized tool chips and approval cards.** `@vendoai/ui` chrome now shows
-friendly labels and readable argument previews instead of raw tool slugs,
-ai-SDK lifecycle strings, or raw JSON. `VendoProvider` accepts an optional
-`tools` prop (`ToolMetaMap`) with per-tool `label`, `description`, and
-`formatField(key, value)`; the new `useVendoTools()` hook exposes the same map to
-custom surfaces. Chrome falls back to prettified ids and `Key: value`
-previews when no metadata is supplied, collapses consecutive identical
-chips into a single entry with an `×N` count, and no longer prints a
-fabricated context byline on the in-thread approval card. See
-[Tool labels](/customize/surfaces#tool-labels).
+While the palette is closed the shortcut is ignored when focus is in a host `input`, `textarea`, `select`, or `contenteditable`, so your app keeps its own ⌘K inside its own fields.
+
+**Humanized tool chips and approval cards.** `@vendoai/ui` chrome now shows friendly labels and readable argument previews instead of raw tool slugs, AI SDK lifecycle strings, or raw JSON.
+
+`VendoProvider` accepts an optional `tools` prop (`ToolMetaMap`) with per-tool `label`, `description`, and `formatField(key, value)`. The new `useVendoTools()` hook exposes the same map to custom surfaces.
+
+Chrome falls back to prettified ids and `Key: value` previews when no metadata is supplied, and collapses consecutive identical chips into one entry with an `×N` count. See [Mount the surface](/product/mount-the-surface).
 
 ## Fixes
 
-**Thread sidebar refreshes on new conversation.** The chat sidebar in the
-`VendoPage` console surfaces and highlights a conversation started via **New
-conversation** as soon as the server mints its `thr_` id. (`VendoPage` has
-since been removed from `@vendoai/ui`.) `VendoThread` also gains an
-optional `onThreadId` callback that fires with the effective thread id, so
-headless hosts can mirror the same refresh into their own UI:
+**Thread sidebar refreshes on new conversation.** The chat sidebar surfaces and highlights a conversation started via **New conversation** as soon as the server mints its `thr_` id.
+
+`VendoThread` also gains an optional `onThreadId` callback that fires with the effective thread id, so headless hosts can mirror the same refresh into their own UI:
 
 ```tsx
 <VendoThread onThreadId={(id) => console.log("active thread", id)} />
 ```
 
-An explicit selection is now immune to the default-select effect, so the
-first turn after **New conversation** always posts against the newly minted
-thread instead of the previously selected one.
+An explicit selection is now immune to the default-select effect, so the first turn after **New conversation** always posts against the newly minted thread.
 
 </Update>
 
@@ -63,26 +48,19 @@ thread instead of the previously selected one.
 
 ## New features
 
-**Uniform headless hooks.** Every read hook in `@vendoai/ui` now returns
-`{ data, error, isLoading, refresh }` and accepts an optional `pollMs` for
-serialized background polling that pauses in hidden tabs. `useThreads`
-brings headless parity with `VendoOverlay`, and `useApps` gains
-`export(appId)` and `import(bytes)` for round-tripping an `AppDocument`
-through the wire. See [Headless hooks](/reference/hooks).
+**Uniform headless hooks.** Every read hook in `@vendoai/ui` returns `{ data, error, isLoading, refresh }` and accepts an optional `pollMs` for serialized background polling.
 
-**Composer autogrow, type-while-streaming, edit, and regenerate.** The
-shipped chrome composer now grows with its content up to a 200px cap, then
-scrolls internally, so a long paste is no longer clipped to one line. The
-textarea stays enabled while a turn is streaming — a Send issued mid-turn
-shows as a cancelable **Queued** pill above the input and auto-sends the
-instant the reply finishes. Stop remains the explicit interrupt. Because
-the textarea no longer disables mid-turn, focus stays put and Escape and
-the overlay focus trap keep working. An **Edit** affordance on the last
-user turn drops that turn (and anything after) and refills the composer, so
-re-sending amends instead of duplicates. A **Regenerate** affordance on the
-last assistant turn re-issues from the preserved user message.
-Headless callers of `useVendoThread` get a new `setMessages` on the hook
-return that backs the same edit flow. See [Headless hooks](/reference/hooks#threads).
+`useThreads` brings headless parity with `VendoOverlay`, and `useApps` gains `export(appId)` and `import(bytes)` for round-tripping an `AppDocument` through the wire. See [Hooks](/reference/hooks).
+
+**Composer autogrow, type-while-streaming, edit, and regenerate.** The shipped chrome composer grows with its content up to a 200px cap, then scrolls internally, so a long paste is no longer clipped to one line.
+
+The textarea stays enabled while a turn is streaming. A Send issued mid-turn shows as a cancelable **Queued** pill above the input and auto-sends the instant the reply finishes.
+
+Because the textarea no longer disables mid-turn, focus stays put and Escape and the overlay focus trap keep working. Stop remains the explicit interrupt.
+
+An **Edit** affordance on the last user turn drops that turn and anything after it and refills the composer, so re-sending amends instead of duplicates. A **Regenerate** affordance on the last assistant turn re-issues from the preserved user message.
+
+Headless callers of `useVendoThread` get a new `setMessages` on the hook return that backs the same edit flow. See [Hooks](/reference/hooks#threads).
 
 </Update>
 
@@ -90,108 +68,63 @@ return that backs the same edit flow. See [Headless hooks](/reference/hooks#thre
 
 ## New features
 
-**Progressive app generation.** Create and open now stream the generated
-tree as the model produces it. Complete nodes paint as soon as they close,
-and embedded queries resolve concurrently with per-query error containment.
-Later partial updates reconcile into the same view under a single stable
-`data-vendo-view` part id, so the stock ai-SDK client replaces the payload
-in place instead of appending duplicates. Nodes whose generated source has
-not arrived yet render as skeletons and swap in when their source closes.
-You do not need to change your client. See
-[Generated UI and apps](/capabilities/generated-ui#progressive-generation).
+**Progressive app generation.** Create and open stream the generated tree as the model produces it. Complete nodes paint as soon as they close, and embedded queries resolve concurrently with per-query error containment.
 
-**Pin drift detection and rebase.** When you update a host component and run
-`vendo sync`, user forks of that remixable slot are now marked drifted
-everywhere they surface: the tree renderer shows an in-surface notice, the
-`open()` payload carries a server-authoritative `pinDrift`, edit results
-include `driftedPins`, and the sync report names each drifted slot. The new
-`vendo_apps_rebase_pin` agent tool (risk `write`) and
-`POST /api/vendo/apps/:id/rebase-pin` route re-fork the pin from the new
-baseline and replay the recorded edit trail through the model, producing one
-new version. Rebase is all-or-nothing and requires an explicit user or host
-ask — nothing auto-rebases. The new version invalidates any in-client
-approval that was granted against the pre-rebase content. See
-[Host components](/customize/host-components#drift-and-rebase) and the
-[HTTP routes reference](/reference/http-routes).
+Later partial updates reconcile into the same view under a single stable `data-vendo-view` part id, so the stock AI SDK client replaces the payload in place instead of appending duplicates.
 
-**Anonymous sessions carry into sign-in.** The first authenticated request
-with a valid anonymous cookie now adopts that session's threads, apps
-(with their records and blobs), and state into the signed-in user, then
-retires the cookie. Grants, approvals, connected accounts, and history
-are deliberately kept where they were. Nothing on the host side changes —
-as long as your `principal(req)` returns `null` before sign-in and a real
-principal after, Vendo does the merge. See
-[Principals and organizations](/deploy/auth).
+Nodes whose generated source has not arrived yet render as skeletons and swap in when their source closes. You do not need to change your client. See [Generated apps](/generated/apps).
 
-**Reserved `vendo:` subject namespace.** Webhook deliveries now execute
-under `vendo:webhook:<source>`. `principal(req)` resolvers that return a
-`vendo:*` subject or `kind: "org"` are rejected at the wire — those
-identities are Vendo-owned. Update audit readers that filter on the bare
-`webhook:<source>` form to match the new prefix. See
-[Principals and organizations](/deploy/auth).
+**Pin drift detection and rebase.** When you update a host component and run `vendo sync`, user forks of that remixable slot are marked drifted everywhere they surface.
 
-**Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
-in-flight run cooperatively — the current step finishes, outstanding tool
-calls drain, and the run reaches a cancelled terminal state. Parked
-approvals attached to the run are dropped. Repeated stops are idempotent.
-See [Scheduler and webhooks](/capabilities/automations) and the
-[HTTP routes reference](/reference/http-routes).
+The tree renderer shows an in-surface notice, the `open()` payload carries a server-authoritative `pinDrift`, edit results include `driftedPins`, and the sync report names each drifted slot.
 
-**actAs presets for common providers.** `@vendoai/actions/presets` ships
-one-line `actAs` wiring for Auth.js, Supabase, Clerk, Auth0, and any HS256
-JWT provider. Auth.js and Supabase mint provider-native sessions offline;
-Clerk and Auth0 sign a short-lived host-owned `VendoAway` token and ship a
-Next.js and Express verify middleware that swaps it for injected identity
-headers on your host API. All presets cache tokens until expiry with a
-safety margin, key cache entries by a secret fingerprint so rotation
-invalidates immediately, and route through the new impersonation guard —
-`grant.subject` mismatches with the current principal fail closed with an
-`act-as-subject-mismatch` outcome before any outbound call. See
-[actAs presets](/deploy/auth).
+A new agent tool and route re-fork the pin from the new baseline and replay the recorded edit trail through the model, producing one new version. Rebase is all-or-nothing and requires an explicit ask; nothing auto-rebases.
 
-**Loud credential-forwarding traps.** Two silent misconfigurations now
-surface loudly. `vendo init` writes `VENDO_BASE_URL=http://localhost:3000`
-into `.env.example` with a note that present-mode credential forwarding is
-disabled without it. `vendo doctor` runs two live HTTP probes against the
-running dev server: `POST /doctor/present` verifies that `authorization`
-and `cookie` reached the host on a synthetic same-origin call, and
-`POST /doctor/act-as` verifies that `createVendo({ actAs })` mints material
-the host principal resolver accepts. Both echo booleans only — no
-credential values are printed or persisted — and the routes return 404 in
-production. When present auth exists but is not forwarded, the composition
-emits one structured `present-credentials-not-forwarded` audit event
-(reason `untrusted-host-origin` or `cross-origin-binding`) per boot; a
-failing audit sink never blocks the host call. See the
-[CLI reference](/reference/cli#vendo-doctor-dir) and
-[Troubleshooting](/deploy/troubleshooting).
+The new version invalidates any in-client approval granted against the pre-rebase content. See [Host components](/generated/host-components).
 
-**Compare-and-set on the store contract.** Record stores can expose
-`records(name).claim(expected, replacement?)` — `true` for the single caller
-whose read of `expected` still matched — plus `atomic.insertIfAbsent` and
-`atomic.compareAndSwap`, so concurrent workers coordinate without external
-locks. Both are optional capabilities: check for the method before use. See
-[Persistence](/deploy/persistence).
+**Anonymous sessions carry into sign-in.** The first authenticated request with a valid anonymous cookie adopts that session's threads, apps (with their records and blobs), and state into the signed-in user, then retires the cookie.
 
-**Invisible graduation to rung 4.** Tree apps can now graduate to a
-machine-served HTTP app without a visible UI change. On graduation, the
-runtime writes a served-app scaffold that renders the identical kept tree,
-starts its static server, snapshots, then flips the document to
-`ui: "http"`. `fn:<name>` references become `POST /fn/<name>` on the
-graduated app's own server. Host-source components degrade to a contained
-"unknown component" notice on the served page; prewired and generated
-components render identically. If any step fails, the previous rung keeps
-serving and the document is untouched. See
-[Generated UI and apps](/capabilities/generated-ui#graduation).
+Grants, approvals, connected accounts, and history are deliberately kept where they were. Nothing on the host side changes, as long as your `principal(req)` returns `null` before sign-in and a real principal after. See [Auth](/production/auth).
 
-**Visible error surface and retry in the thread.** A failed send, a
-mid-stream network drop, or any other transport error in the conversation
-now renders a friendly banner with a Retry button in the shipped chrome,
-instead of surfacing only through the accessibility-only status region.
-Retry re-issues the failed turn from the preserved user message, so
-nothing is duplicated. Headless callers of `useVendoThread` get matching
-`regenerate()` and `clearError()` methods on the hook return, alongside
-the existing `error` field, so custom surfaces can wire the same recovery
-flow:
+**Reserved `vendo:` subject namespace.** Webhook deliveries execute under `vendo:webhook:<source>`. `principal(req)` resolvers that return a `vendo:*` subject or `kind: "org"` are rejected at the wire, because those identities are Vendo-owned.
+
+Update audit readers that filter on the bare `webhook:<source>` form to match the new prefix. See [Auth](/production/auth).
+
+**Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an in-flight run cooperatively: the current step finishes, outstanding tool calls drain, and the run reaches a cancelled terminal state.
+
+Parked approvals attached to the run are dropped, and repeated stops are idempotent. See [Automations](/capabilities/automations) and [HTTP routes](/reference/http-routes).
+
+**actAs presets for common providers.** One-line `actAs` wiring ships for Auth.js, Supabase, Clerk, Auth0, and any HS256 JWT provider.
+
+Auth.js and Supabase mint provider-native sessions offline. Clerk and Auth0 sign a short-lived host-owned token and ship Next.js and Express verify middleware that swaps it for injected identity headers on your host API.
+
+All presets cache tokens until expiry with a safety margin, and key cache entries by a secret fingerprint so rotation invalidates immediately.
+
+They also route through the impersonation guard: a `grant.subject` mismatch with the current principal fails closed with an `act-as-subject-mismatch` outcome before any outbound call. See [Auth](/production/auth).
+
+**Loud credential-forwarding traps.** Two silent misconfigurations now surface loudly. `vendo init` writes `VENDO_BASE_URL=http://localhost:3000` into `.env.example` with a note that present-mode credential forwarding is disabled without it.
+
+`vendo doctor` runs two live HTTP probes against the running dev server. `POST /doctor/present` verifies that `authorization` and `cookie` reached the host on a synthetic same-origin call, and `POST /doctor/act-as` verifies that `createVendo({ actAs })` mints material the host principal resolver accepts.
+
+Both echo booleans only, so no credential values are printed or persisted, and the routes return `404` in production.
+
+When present auth exists but is not forwarded, the composition emits one structured `present-credentials-not-forwarded` audit event per boot. A failing audit sink never blocks the host call. See [`vendo doctor`](/reference/cli#vendo-doctor).
+
+**Compare-and-set on the store contract.** Record stores can expose `records(name).claim(expected, replacement?)`, which answers `true` for the single caller whose read of `expected` still matched.
+
+They can also expose `atomic.insertIfAbsent` and `atomic.compareAndSwap`, so concurrent workers coordinate without external locks. Both are optional capabilities, so check for the method before use. See [Persistence](/production/persistence).
+
+**Invisible graduation to a served app.** Tree apps can graduate to a machine-served HTTP app with no visible UI change.
+
+On graduation the runtime writes a served-app scaffold that renders the identical kept tree, starts its static server, snapshots, then flips the document to `ui: "http"`. `fn:<name>` references become `POST /fn/<name>` on the graduated app's own server.
+
+Host-source components degrade to a contained "unknown component" notice on the served page; prewired and generated components render identically. If any step fails, the previous rung keeps serving and the document is untouched. See [Generated apps](/generated/apps).
+
+**Visible error surface and retry in the thread.** A failed send, a mid-stream network drop, or any other transport error now renders a banner with a Retry button in the shipped chrome, instead of surfacing only through the accessibility-only status region.
+
+Retry re-issues the failed turn from the preserved user message, so nothing is duplicated.
+
+Headless callers of `useVendoThread` get matching `regenerate()` and `clearError()` methods alongside the existing `error` field:
 
 ```tsx
 import { useVendoThread } from "@vendoai/ui";
@@ -215,28 +148,19 @@ function Composer() {
 
 ## Updates
 
-**Raw-IP egress fails closed on the Modal adapter.** When an app has a
-domain egress policy, the Modal adapter now pins an empty CIDR allowlist
-so raw-IP requests are blocked, matching the E2B adapter and what the
-docs already promised. Apps with no egress policy remain unrestricted.
-See [Deploying Vendo](/deploy/deploying).
+**Raw-IP egress fails closed on the Modal adapter.** When an app has a domain egress policy, the Modal adapter pins an empty CIDR allowlist so raw-IP requests are blocked, matching the E2B adapter.
 
-**App servers must listen on `$PORT` and answer `/fn/<name>`.** The
-runtime now confirms the app's server is serving before it snapshots a
-rung 2 or rung 3 edit. Server code is booted from `/app/start.sh` when
-present, otherwise `/app/server.js`. If nothing listens, the edit fails
-and the previous rung keeps serving. See
-[Generated UI and apps](/capabilities/generated-ui#graduation).
+Apps with no egress policy remain unrestricted. See [Deploying](/production/deploying).
 
-**Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
-the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call
-time. Create is always read-class because it produces a jailed rung 1
-document. Edit is downgraded to read-class only when the app is
-owner-scoped, is a tree app, and the instruction does not require server
-code. Server-flavored edits, host writes, destructive actions, and egress
-keep their approval cards, and a tree-classified edit that unexpectedly
-emits server code fails closed before persistence. Chat, SSE, and the MCP
-door share the same decision. See [Tools and safety](/concepts/tools-and-safety#effective-risk-resolution).
+**App servers must listen on `$PORT` and answer `/fn/<name>`.** The runtime confirms the app's server is serving before it snapshots a machine-backed edit.
+
+Server code boots from `/app/start.sh` when present, otherwise `/app/server.js`. If nothing listens, the edit fails and the previous rung keeps serving. See [Generated apps](/generated/apps).
+
+**Tree-only UI creates and edits skip approval.** Guard resolves the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call time.
+
+Create is always read-class, because it produces a jailed tree document. Edit is downgraded to read-class only when the app is owner-scoped, is a tree app, and the instruction does not require server code.
+
+Server-flavored edits, host writes, destructive actions, and egress keep their approval cards. A tree-classified edit that unexpectedly emits server code fails closed before persistence. See [How Vendo works](/how-vendo-works).
 
 </Update>
 
@@ -244,29 +168,19 @@ door share the same decision. See [Tools and safety](/concepts/tools-and-safety#
 
 ## New features
 
-**Chat context controls.** `createVendo({ agent })` now accepts
-`toolOutputCap`, `maxOutputTokens`, and `historyWindow` so hosts can bound
-what the chat loop sends to the model. `toolOutputCap` defaults to 32,000
-characters (pass `0` to disable) and truncates a single runaway tool result
-before it reaches the model; the stored thread is untouched. `historyWindow`
-caps the last N whole messages re-sent per turn without splitting
-tool-call/result pairs. See [Handler options](/reference/handler-options#turn-context).
+**Chat context controls.** Hosts can bound what the chat loop sends to the model with `toolOutputCap`, `maxOutputTokens`, and `historyWindow`.
+
+`toolOutputCap` defaults to 32,000 characters, and `0` disables it. It truncates a single runaway tool result before it reaches the model, leaving the stored thread untouched.
+
+`historyWindow` caps the last N whole messages re-sent per turn without splitting tool-call and result pairs. See [Handler options](/reference/handler-options#turn-context).
 
 ## Updates
 
-**Anthropic prompt-cache breakpoints.** The agent now marks cache
-breakpoints on the static system prompt and the stable history prefix, so
-Anthropic models reuse cached tokens across turns. Other providers ignore
-the hints — behavior is unchanged there.
+**Anthropic prompt-cache breakpoints.** The agent marks cache breakpoints on the static system prompt and the stable history prefix, so Anthropic models reuse cached tokens across turns. Other providers ignore the hints, and behavior is unchanged there.
 
-**Faster automations tick.** The scheduler now fetches only
-schedule-triggered apps, batches cursor reads, and runs fired automations
-with bounded parallelism so one hung tenant can't block the interval.
-`/tick` return semantics are unchanged.
+**Faster automations tick.** The scheduler fetches only schedule-triggered apps, batches cursor reads, and runs fired automations with bounded parallelism, so one hung tenant cannot block the interval. `/tick` return semantics are unchanged.
 
-**Faster thread listing.** Thread summaries derive titles from a stored
-column instead of loading every thread's full message array, so
-`GET /threads` scales with the list size, not the messages inside it.
+**Faster thread listing.** Thread summaries derive titles from a stored column instead of loading every thread's full message array, so `GET /threads` scales with the list size rather than the messages inside it.
 
 </Update>
 
@@ -274,54 +188,32 @@ column instead of loading every thread's full message array, so
 
 ## New features
 
-**MCP door for Claude, ChatGPT, and other MCP clients.** Turn on the MCP
-door with `createVendo({ mcp: true, oauth })` to serve your host tools out
-to MCP clients. Discovery, OAuth registration, and token endpoints mount
-alongside the existing wire, and are routed ahead of the CSRF gate so
-form-encoded OAuth requests reach the door cleanly. See [Connectors](/capabilities/connected-accounts#connectors)
-and the [quickstart](/vendo-agent/quickstart) for setup.
+**The MCP door.** Turn on the door with `createVendo({ mcp: true, oauth })` to serve your host tools out over MCP.
 
-**Authenticated host tool calls from MCP.** MCP clients have no host
-browser session, so host tools now authenticate through the same `actAs`
-seam that powers automations. Grants are consent-keyed against the door's
-consent evidence. Tool calls made from a Claude or ChatGPT session run as
-the connected user, and the door never forwards the inbound MCP bearer. Missing consent fails closed with a clean not-implemented tool
-error. See [Server API reference](/reference/server-api).
+Discovery, OAuth registration, and token endpoints mount alongside the existing wire, and are routed ahead of the CSRF gate so form-encoded OAuth requests reach the door cleanly. See the [outside-agents quickstart](/outside-agents/quickstart).
+
+**Authenticated host tool calls from the door.** An outside caller has no host browser session, so host tools authenticate through the same `actAs` seam that powers automations.
+
+Grants are consent-keyed against the door's consent evidence, so a tool call runs as the connected user and the door never forwards the inbound bearer.
+
+Missing consent fails closed with a clean not-implemented tool error. See [Server API](/reference/server-api).
 
 ## Updates
 
-**Approval replay for one-off MCP calls.** When an MCP client retries an
-identical destructive call in the same session, the door reuses the parked
-`ToolCall` id so a one-off (no-remember) approval authorizes the retry
-instead of silently re-parking it. A third attempt re-asks. Consent-source
-projections never persist. See [Tools and safety](/concepts/tools-and-safety).
+**Approval replay for one-off door calls.** When a caller retries an identical destructive call in the same session, the door reuses the parked `ToolCall` id, so a one-off approval authorizes the retry instead of silently re-parking it.
 
-**Cold-start door mount hint.** `McpDoorConfig.mount` lets a cold-composed
-umbrella advertise its door path on the server card. Learned paths never
-override the configured mount, so MCP clients discover the door on the
-first request. See [Server API reference](/reference/server-api).
+A third attempt re-asks, and consent-source projections never persist. See [How Vendo works](/how-vendo-works).
 
-**`/status` and `doctor` report MCP posture.** The `mcp` flag now lives
-under `blocks.mcp`. `vendo doctor` verifies discovery documents when the
-door is enabled. See the [CLI reference](/reference/cli) and
-[Deploying](/deploy/deploying).
+**Cold-start door mount hint.** `McpDoorConfig.mount` lets a cold-composed umbrella advertise its door path on the server card. Learned paths never override the configured mount, so a caller discovers the door on the first request.
 
-**`vendo_apps_open` over MCP.** The apps registry keeps the same
-descriptor and execution path; the door attaches MCP-Apps `_meta` and
-unwraps the OpenSurface envelope into a shim-renderable payload for MCP
-clients. See [Host components](/customize/host-components).
+**`/status` and doctor report MCP posture.** The `mcp` flag lives under `blocks.mcp`, and `vendo doctor` verifies discovery documents when the door is open. See the [CLI reference](/reference/cli) and [Deploying](/production/deploying).
+
+**`vendo_apps_open` over the door.** The apps registry keeps the same descriptor and execution path. The door attaches MCP-Apps `_meta` and unwraps the `OpenSurface` envelope into a shim-renderable payload. See [Host components](/generated/host-components).
 
 ## Bug fixes
 
-- **Unauthenticated host calls from `vendo_apps_call` over the door.**
-  Actions now routes to the `actAs` path on the door's consent evidence,
-  which survives apps' venue re-contextualization. Host calls made from
-  apps over MCP no longer land as anonymous requests.
-- **Well-known path shadowing.** The door's isDoorPath check is now
-  restricted to its four exact well-known paths, so it no longer shadows
-  host OAuth or OIDC metadata routes.
-- **Missing OAuth discovery on origin root.** Origin-root well-known
-  discovery is now mounted ahead of the wire's CSRF JSON gate, so MCP
-  clients can complete registration and token exchange.
+- **Unauthenticated host calls from `vendo_apps_call` over the door.** Actions now routes to the `actAs` path on the door's consent evidence, which survives apps' venue re-contextualization.
+- **Well-known path shadowing.** The door's path check is restricted to its exact well-known paths, so it no longer shadows host OAuth or OIDC metadata routes.
+- **Missing OAuth discovery on origin root.** Origin-root well-known discovery is mounted ahead of the wire's CSRF JSON gate, so registration and token exchange complete.
 
 </Update>
