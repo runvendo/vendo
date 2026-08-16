@@ -53,7 +53,7 @@ function rangeMajor(range: string | undefined): number | undefined {
   return match === null ? undefined : Number(match[1]);
 }
 
-/** The one caveat detection can attach today: next-auth v4 wired to the
+/** One of two caveats detection can attach: next-auth v4 wired to the
     v5-speaking authJs() preset. Wiring proceeds (the composition is correct
     for a future v5 upgrade) but the consequences are named, not discovered. */
 function nextAuthV4Advisory(range: string): string {
@@ -63,10 +63,56 @@ function nextAuthV4Advisory(range: string): string {
     "Details: docs/act-as-presets.md.";
 }
 
+const SUPABASE_SERVER_ENV = ["SUPABASE_JWT_SECRET", "SUPABASE_URL"] as const;
+
+/** Env files a Next/Node host actually loads in development, checked in the
+    same spirit the login flow writes `.env.local`: presence anywhere counts. */
+const HOST_ENV_FILES = [".env", ".env.local", ".env.development", ".env.development.local"];
+
+/** True when either server-side name is in the process env or any host env
+    file. Shared by init's advisory and doctor's E-AUTH-009 — the two must
+    never disagree about whether a supabase() host can verify sessions. */
+export async function supabaseServerEnvSatisfied(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<boolean> {
+  if (SUPABASE_SERVER_ENV.some((name) => Boolean(env[name]))) return true;
+  for (const file of HOST_ENV_FILES) {
+    const body = await readOptional(join(root, file));
+    if (body !== null && SUPABASE_SERVER_ENV.some((name) => new RegExp(`^\\s*${name}\\s*=`, "m").test(body))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The wire's own remediation copy, verbatim-adjacent: doctor and the first
+    failing turn teach the same fix. */
+export const SUPABASE_ENV_GUIDANCE =
+  "supabase() verifies sessions with SUPABASE_JWT_SECRET (HS256, offline) and/or " +
+  "SUPABASE_URL (ES256 via GoTrue's JWKS) — server-side names, not the NEXT_PUBLIC_* pair.";
+
+/** The second caveat: supabase() verifies sessions with server-side env the
+    NEXT_PUBLIC_* pair does not cover — a host detected FROM that pair wires
+    cleanly and then fails its first signed-in turn (ENG-422, field:
+    expense.fyi). Attached only when neither name is in the process env or any
+    host env file; a present name means the host already knows. */
+async function supabaseEnvAdvisory(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<string | undefined> {
+  if (await supabaseServerEnvSatisfied(root, env)) return undefined;
+  return `Auth: ${SUPABASE_ENV_GUIDANCE} ` +
+    "Neither is set; add one to .env.local before the first signed-in turn (the wire fails loud until then).";
+}
+
 /** Silent auth-preset detection from the host's package.json (zero-question
     contract): one unambiguous family gets wired; none or several stay
     anonymous and become one advisory line (detection-as-advice). */
-export async function detectAuthPreset(root: string): Promise<AuthDetection> {
+export async function detectAuthPreset(
+  root: string,
+  env: Record<string, string | undefined> = process.env,
+): Promise<AuthDetection> {
   let dependencies: string[] = [];
   let versions: Record<string, string> = {};
   try {
@@ -87,6 +133,11 @@ export async function detectAuthPreset(root: string): Promise<AuthDetection> {
       : undefined;
     return [{ preset, dependency, ...(advisory === undefined ? {} : { advisory }) }];
   });
+  const supabase = matches.find((match) => match.preset === "supabase");
+  if (supabase !== undefined && supabase.advisory === undefined) {
+    const advisory = await supabaseEnvAdvisory(root, env);
+    if (advisory !== undefined) supabase.advisory = advisory;
+  }
   return { wired: matches.length === 1 ? matches[0]! : null, matches };
 }
 
@@ -184,8 +235,9 @@ export async function resolveScaffoldAuth(
   authAnswer: AuthPresetName | "jwt" | "none" | undefined,
   confirmAuth: ConfirmAuth | undefined,
   selectAuth: SelectAuth | undefined,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<{ wired: AuthMatch | null; advice: string | null }> {
-  const detection = await detectAuthPreset(root);
+  const detection = await detectAuthPreset(root, env);
   // --auth answers the confirm AND the picker in one flag: route it through
   // the picker path so a flag answer and an interactive pick wire identically
   // (detection-accept, install hint, jwt recipe, none advisory).

@@ -56,6 +56,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-AUTH-006": "the actAs probe cannot run while the dev server is down",
   "E-AUTH-007": "actAs is not configured",
   "E-AUTH-008": "actAs is configured but declined the doctor probe's synthetic principal",
+  "E-AUTH-009": "supabase() is wired but neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set",
   "E-MCP-001": "MCP protected-resource metadata did not resolve",
   "E-MCP-002": "MCP authorization-server metadata did not resolve",
   "E-MCP-003": "the MCP server card did not parse",

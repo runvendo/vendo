@@ -733,6 +733,25 @@ that is the fail-closed behavior working; real away runs depend on the
 resolver accepting real subjects. If the reason names a missing secret,
 set it (`AUTH_SECRET` / the preset's documented variable) and re-run.
 
+#### E-AUTH-009 {#E-AUTH-009}
+
+**Symptom (warning):** `supabase()` is wired but neither `SUPABASE_JWT_SECRET`
+nor `SUPABASE_URL` is set.
+
+**Cause:** Init detects the Supabase family from your dependencies — often a
+host that only carries the `NEXT_PUBLIC_SUPABASE_*` pair — but the preset
+verifies sessions with the **server-side** names: `SUPABASE_JWT_SECRET`
+(HS256, offline) and/or `SUPABASE_URL` (ES256 logins via GoTrue's JWKS).
+Without one, every static check passes and the first signed-in turn fails
+with "supabase() has no way to verify sessions".
+
+**Fix:** Add either name to `.env.local` (both is fine). For a Supabase Cloud
+project, `SUPABASE_URL` is the project URL; the JWT secret lives in the
+project's API settings. For `supabase start`, use the local stack's printed
+`API_URL` and `JWT_SECRET`. A warning, not a failure: production-only env
+kept outside your local files is legitimate — but then verify with a real
+signed-in turn where that env exists.
+
 ### MCP door
 
 These checks run only when the composition reports `blocks.mcp: true`. Wiring

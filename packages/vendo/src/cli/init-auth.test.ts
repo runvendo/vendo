@@ -84,3 +84,47 @@ describe("next-auth v4 advisory (#871)", () => {
     expect(auth.advice).toBeNull();
   });
 });
+
+describe("supabase server-env advisory (ENG-422 / #1370)", () => {
+  const SUPABASE = { dependencies: { "@supabase/supabase-js": "^2.39.3" } };
+
+  it("detection carries the advisory when neither server env name is anywhere", async () => {
+    const root = await hostRoot(SUPABASE);
+    const detection = await detectAuthPreset(root, {});
+    expect(detection.wired?.preset).toBe("supabase");
+    expect(detection.wired?.advisory).toContain("SUPABASE_JWT_SECRET");
+    expect(detection.wired?.advisory).toContain("SUPABASE_URL");
+  });
+
+  it("an env file carrying either name silences it", async () => {
+    const root = await hostRoot(SUPABASE);
+    await writeFile(join(root, ".env.local"), 'SUPABASE_URL="http://127.0.0.1:54321"\n', "utf8");
+    const detection = await detectAuthPreset(root, {});
+    expect(detection.wired?.preset).toBe("supabase");
+    expect(detection.wired?.advisory).toBeUndefined();
+  });
+
+  it("the process env carrying either name silences it", async () => {
+    const root = await hostRoot(SUPABASE);
+    const detection = await detectAuthPreset(root, { SUPABASE_JWT_SECRET: "s" });
+    expect(detection.wired?.advisory).toBeUndefined();
+  });
+
+  it("a NEXT_PUBLIC_-only host still gets the advisory — the pair the preset reads is server-side", async () => {
+    const root = await hostRoot(SUPABASE);
+    await writeFile(
+      join(root, ".env"),
+      'NEXT_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321"\nNEXT_PUBLIC_SUPABASE_ANON_KEY="anon"\n',
+      "utf8",
+    );
+    const detection = await detectAuthPreset(root, {});
+    expect(detection.wired?.advisory).toContain("NEXT_PUBLIC_");
+  });
+
+  it("the silent (non-interactive) path surfaces it as advice", async () => {
+    const root = await hostRoot(SUPABASE);
+    const auth = await resolveScaffoldAuth(root, COMPOSITION, undefined, undefined, undefined, {});
+    expect(auth.wired?.preset).toBe("supabase");
+    expect(auth.advice).toContain("SUPABASE_JWT_SECRET");
+  });
+});

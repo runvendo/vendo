@@ -5,6 +5,7 @@ import { detectFramework, detectVendoWiring, type VendoWiring } from "./framewor
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
+import { SUPABASE_ENV_GUIDANCE, supabaseServerEnvSatisfied } from "./init-auth.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { walk } from "./theme/walk.js";
 import { clientRoot, exists, readOptional, stripBom } from "./shared.js";
@@ -184,6 +185,27 @@ async function checkVendoResolvable(run: DoctorRun): Promise<void> {
   }
 }
 
+/** ENG-422 (field: expense.fyi): a composition wiring supabase() with neither
+ *  server-side env name set passes every static check and then fails its FIRST
+ *  signed-in turn — init detects the family from the NEXT_PUBLIC_* pair, but
+ *  the preset verifies sessions with the server-side names. Same helper as
+ *  init's advisory, so the two can never disagree. Warn, not fail: a host may
+ *  keep production-only env outside the local files doctor can read. */
+async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
+  const { root } = run;
+  const routePath = await nextRoutePath(root);
+  if (routePath === null) return;
+  const { source } = await compositionOf(routePath);
+  const wiresSupabase = source.includes("@vendoai/vendo/auth/supabase") || /[^\w.]supabase\s*\(/.test(source);
+  if (!wiresSupabase) return;
+  if (await supabaseServerEnvSatisfied(root, run.env)) {
+    run.pass("wiring/supabase-env", "supabase() has a server-side session secret (SUPABASE_JWT_SECRET and/or SUPABASE_URL)");
+  } else {
+    run.warn("wiring/supabase-env", "E-AUTH-009",
+      `${SUPABASE_ENV_GUIDANCE} Neither is set — the first signed-in turn fails loud until one lands in .env.local.`);
+  }
+}
+
 /** The static half of doctor: is this host wired at all, does anything visible
  *  reach the agent, and is the dependency declared. No network. */
 export async function checkWiring(run: DoctorRun): Promise<void> {
@@ -207,6 +229,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   // Static, so it fires on a project nobody has started yet — which is exactly
   // when a missing base URL is still cheap to fix.
   await checkMcpBaseUrl(run);
+  await checkSupabasePresetEnv(run);
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else run.fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");
