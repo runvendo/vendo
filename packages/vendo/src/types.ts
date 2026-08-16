@@ -141,7 +141,7 @@ export interface CreateVendoConfig {
       each entry's `component` reference) or the array form. Entry names must
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
-  /** cse lane 3 — programmatic override for the theme surface. An explicit
+  /** Programmatic override for the theme surface. An explicit
       theme wins over `.vendo/theme.json` (config-surface precedence). A
       structural, boot-once surface: it is resolved once at compose (feeds app
       generation and the system-prompt summary), so unlike design-rules/brief
@@ -213,7 +213,7 @@ export interface CreateVendoConfig {
 
       `guard({ policy, judge, approvals })` from `@vendoai/guard` declares the
       host's RULES and lets this composition finish them: the store, the app/
-      service risk resolver, the org-policy layer and the cloud policy fallback
+      service risk resolver and the org-policy layer
       are plumbing only a venue can supply, so they are never on the spec (the
       same standalone-value-completed-by-the-venue shape `vendo()` and `agent()`
       already use). A built `VendoGuard` — `createGuard({ store, … })` — is
@@ -272,7 +272,7 @@ export interface CreateVendoConfig {
       on disk; the longer-standing explicit
       `policy` knob wins over it (the `apps.designRules` discipline), and
       when the piece applies it feeds the guard inline, replacing the
-      file/cloud legs entirely. `designRules` is a convenience alias for
+      file leg entirely. `designRules` is a convenience alias for
       `apps.designRules` — one seam, so a host composing everything from one
       profile object doesn't have to split it; when both are set the
       longer-standing `apps.designRules` knob wins, and either fixes the rules

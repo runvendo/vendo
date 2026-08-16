@@ -157,41 +157,6 @@ const record = await vendo.apps.publish(appId, ctx);
 `version`, `createdAt`). Both responses are validated against the frozen wire
 schemas (`shareSnapshotSchema`, `publishRecordSchema`) before they resolve.
 
-## Console-managed config
-
-The console can own five `.vendo/` surfaces instead of your repo: `brief.md`,
-`policy.json`, `theme.json`, `overrides.json`, and `design-rules.md`
-([the `.vendo` reference](/reference/dot-vendo)). Push a local file into the
-console draft, publish it there, and the deployment resolves it from Cloud:
-
-```bash
-npx vendo config status            # who owns each surface: file, cloud, unset
-npx vendo config push brief.md     # copy the local file into the console draft
-npx vendo config pull theme.json   # take the published value back into the repo
-```
-
-<Warning>
-  **Publishing does not override a local file.** Per surface, resolution is
-  explicit `createVendo` value → local `.vendo/` file → console-published
-  value — the local file's existence is the switch, and nothing warns at
-  runtime when it shadows a publish. Because `vendo init` scaffolds
-  `brief.md`, `policy.json`, `overrides.json`, and `theme.json`, a default
-  install is file-owned on four of the five surfaces: a console publish will
-  not reach that deployment until the local file is gone. `vendo config push
-  <surface>` offers to delete the file after copying it into the draft
-  (`--yes` deletes without asking); `vendo config status` tells you the
-  owner per surface at any time.
-</Warning>
-
-Push writes the console **draft** — publishing it live stays a console
-action. Once a surface is cloud-owned, a publish reaches the deployment on
-its own schedule: `brief.md` applies on the next agent turn and
-`design-rules.md` on the next app generation (the config snapshot refreshes
-about every 30 seconds); `theme.json` and the tool-enablement half of
-`overrides.json` resolve boot-once, so they apply on the next restart —
-generation semantics from `overrides.json` are live. A cloud-owned
-`policy.json` is consulted live per guard check.
-
 ## Automations run in Cloud automatically
 
 There is nothing to deploy. With `VENDO_API_KEY` set, the automations you

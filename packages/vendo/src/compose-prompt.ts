@@ -9,14 +9,13 @@
 import type { CapabilityMissConfig } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { catalogThemeSummary } from "@vendoai/apps/contract";
-import type { CloudConfig } from "./cloud-config.js";
 import type { VendoComposition } from "./compose-context.js";
 import { selectConfigSurface } from "./config-surface.js";
 
 /** The prompt inputs and the discovery rails, for the one thinker. */
 export const composePrompt = (composition: VendoComposition): Pick<VendoComposition,
   "system" | "capabilityMiss" | "toolSearch"> => {
-  const { config, composed, configCloud, readSurfaceFile } = composition;
+  const { config, composed, readSurfaceFile } = composition;
   const { catalog, theme, knowledgeIndex, missSurface, missCapture, actions } = composition;
   // AGENT-1/2 — 03 §3: ONE prose story. `instructions` and the
   // `.vendo/brief.md` surface behind it are the deployment's own words about
@@ -24,28 +23,17 @@ export const composePrompt = (composition: VendoComposition): Pick<VendoComposit
   // Product section) beside the catalog+theme summary (only where trees
   // render). `brief:` and `agent.instructions` were two names for this and are
   // gone.
-  // cse lane 3 — a prompt-family surface, so it resolves LIVE: with a key
-  // present, product is a RESOLVER (file → cloud) re-read per turn by
-  // assembleSystemPrompt, so a console publish applies to the next turn with no
-  // restart. Without a key, product is the compose-time file/explicit value (no
-  // snapshot read → no I/O at compose). Programmatic `instructions` wins over
-  // the file either way; an adopted agent's own `instructions` is the same slot
-  // (AGENT_OWNED_KEYS refuses both at once). Task 15a: the in-memory
-  // profile.brief sits between them — below the explicit knob, above the
-  // file/cloud surface — and an explicitly empty one means "no brief" (it never
-  // falls through to disk).
-  const resolveInstructions = (cloud?: CloudConfig): string | undefined => {
-    const explicit = (config.instructions ?? composed?.instructions)?.trim();
-    if (explicit) return explicit;
-    if (config.profile?.brief !== undefined) return config.profile.brief.trim() || undefined;
-    return selectConfigSurface("brief.md", {
-      readFile: readSurfaceFile,
-      ...(cloud === undefined ? {} : { cloud }),
-    }).value?.trim() || undefined;
-  };
-  const product: string | (() => string | undefined) | undefined = configCloud === undefined
-    ? resolveInstructions()
-    : () => resolveInstructions(configCloud);
+  // Programmatic `instructions` wins over the file; an adopted agent's own
+  // `instructions` is the same slot (AGENT_OWNED_KEYS refuses both at once).
+  // Task 15a: the in-memory profile.brief sits between them — below the
+  // explicit knob, above the file surface — and an explicitly empty one means
+  // "no brief" (it never falls through to disk).
+  const explicit = (config.instructions ?? composed?.instructions)?.trim();
+  const product: string | undefined = explicit
+    ? explicit
+    : config.profile?.brief !== undefined
+      ? config.profile.brief.trim() || undefined
+      : selectConfigSurface("brief.md", { readFile: readSurfaceFile }).value?.trim() || undefined;
   const promptCatalog = catalogThemeSummary(catalog, theme);
   const system = product !== undefined || promptCatalog !== undefined || knowledgeIndex !== undefined
     ? {

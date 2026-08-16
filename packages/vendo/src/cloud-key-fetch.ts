@@ -56,5 +56,8 @@ export async function cloudKeyFetch<T = unknown>(path: string, options: CloudKey
   if (!response.ok) {
     throw new Error(`Vendo Cloud ${path} answered ${response.status}`);
   }
+  // 204 is an answer with no body to parse; `.json()` on it throws, and a
+  // route that says No Content (the config report) would look undelivered.
+  if (response.status === 204) return undefined as T;
   return await response.json() as T;
 }

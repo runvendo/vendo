@@ -4,7 +4,7 @@ import { join, relative, sep } from "node:path";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ExtractedTool, type ToolJudgment, type ToolsFile } from "@vendoai/actions";
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
-import { CONFIG_SURFACES, isConfigSurface, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
+import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
@@ -15,18 +15,12 @@ import { walk } from "./theme/walk.js";
 import { exists, readOptional } from "./shared.js";
 
 export async function checkConfigFiles(run: DoctorRun): Promise<void> {
-  const { root, env } = run;
-  // FINDINGS F14 — a console-managed deployment keeps the cloud-resolvable
-  // surfaces PUBLISHED, not on disk: file → cloud precedence (config-surface
-  // seam) makes a missing local file a resolution mode there, not a broken
-  // install. tools.json is a generation input with no cloud leg, so its
-  // absence stays fatal; keyless, all five stay fatal as before.
-  const cloudKeyPresent = typeof env["VENDO_API_KEY"] === "string" && env["VENDO_API_KEY"].trim() !== "";
+  const { root } = run;
+  // Config resolves in code or from disk, and nowhere else, so a missing file
+  // is a missing file for every deployment — keyed or not.
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
     if (await exists(join(root, ".vendo", file))) {
       run.pass(`config/${file}`, `.vendo/${file}`);
-    } else if (cloudKeyPresent && isConfigSurface(file)) {
-      run.warn(`config/${file}`, "E-CFG-001", `.vendo/${file} is absent locally — with VENDO_API_KEY set it resolves from the console's published config at runtime (a local file wins when present); \`vendo config status\` shows which layer owns each surface`);
     } else {
       run.fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
     }
@@ -122,16 +116,14 @@ export async function checkMountAgreement(run: DoctorRun): Promise<void> {
   }
 }
 
-/** cse lane 3 — per-surface OWNERSHIP: for each cloud-resolvable content
- *  surface, is the local file the source of truth, or is it resolved at
- *  runtime (from hosted config when VENDO_API_KEY is set, else unset)? Local
- *  only (no console call) — `vendo config status` does the cloud-aware view.
- *  A programmatic `explicit` override in createVendo is not observable here. */
+/** Per-surface OWNERSHIP: for each content surface, is the local file the
+ *  source of truth, or is it unset on disk? A value passed to createVendo in
+ *  code wins over the file and is not observable here. */
 export async function checkSurfaceOwnership(run: DoctorRun): Promise<void> {
   const surfaceOwners = await Promise.all(
-    CONFIG_SURFACES.map(async (surface) => `${surface}=${(await exists(join(run.root, ".vendo", surface))) ? "file" : "runtime"}`),
+    CONFIG_SURFACES.map(async (surface) => `${surface}=${(await exists(join(run.root, ".vendo", surface))) ? "file" : "unset"}`),
   );
-  run.pass("config/ownership", `surface ownership (file = local source of truth; runtime = resolved from hosted config or unset): ${surfaceOwners.join(", ")}. ${OVERRIDES_ENABLEMENT_NOTE}`);
+  run.pass("config/ownership", `surface ownership (file = local source of truth; unset = passed in code or not set at all): ${surfaceOwners.join(", ")}. ${OVERRIDES_ENABLEMENT_NOTE}`);
 }
 
 /** Models spec 2026-07-22 — exactly two honest model facts, resolver-based

@@ -338,17 +338,10 @@ of `tools.json`, `overrides.json`, `policy.json`, `brief.md`, `theme.json`.
 **Cause:** `vendo init` was never run in this directory, or the file was
 deleted.
 
-With `VENDO_API_KEY` set, a missing `overrides.json`, `policy.json`,
-`brief.md`, or `theme.json` is a **warning**, not a failure: those surfaces
-are cloud-resolvable, so a console-managed deployment legitimately keeps them
-published instead of on disk (a local file wins when present). `tools.json`
-has no cloud leg and its absence is always a failure.
-
 **Fix:** Run `npx vendo init`; it recreates missing `.vendo/` files and never
 overwrites existing ones. A missing `tools.json` alone can also be regenerated
-with `npx vendo sync`. On a keyed deployment where the warning is expected,
-`npx vendo config status` shows which layer — local file or published cloud
-config — owns each surface.
+with `npx vendo sync`. `npx vendo config status` shows which surfaces are on
+disk and which are unset.
 
 #### E-CFG-002 {#E-CFG-002}
 

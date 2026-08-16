@@ -6,10 +6,10 @@
 import { selectSandbox } from "@vendoai/apps";
 import { isGuardInstance } from "@vendoai/guard";
 import { bindVendoModelSlots } from "#dev-creds/model";
-import { cloudConfig, type CloudConfig } from "./cloud-config.js";
 import { cloudKeyOptions, selectSecrets } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
 import { selectStore } from "./compose-store.js";
+import { createConfigReporter } from "./config-report.js";
 import type { ConfigSurfaceName } from "./config-surface.js";
 import { dotVendoFile, dotVendoRoot } from "./dot-vendo.js";
 import { resolveModels } from "./models-config.js";
@@ -31,7 +31,7 @@ import { cloudSandbox } from "./sandbox.js";
 /** 09-vendo §2 — the adapter rule, applied at the one seam that may read the
  *  environment. */
 export const composeAdapters = (composition: VendoComposition): Pick<VendoComposition,
-  "store" | "files" | "ops" | "sandbox" | "secrets" | "inference" | "configCloud"
+  "store" | "files" | "ops" | "sandbox" | "secrets" | "inference" | "reportConfig"
   | "surfaceRoot" | "readSurfaceFile" | "memoizeOnce"> => {
   const { config, composed } = composition;
   // Persistence, selected by the adapter rule at this composition seam
@@ -70,18 +70,6 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
     isGuardInstance(config.guard) ? undefined : config.guard?.judge?.model,
     config.models,
   );
-  // cse lane 3 — the Cloud hosted-config adapter, selected at THIS composition
-  // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
-  // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
-  // only, no fetch). It is READ only from LAZY call sites — the block provider
-  // seams (design-rules/theme/semantics thunks, the brief resolver, the
-  // guard policy fallback, the actions overrides injection) — never at compose,
-  // so createVendo stays I/O-free at module init (portability-gate). The
-  // snapshot warms on its first (cold) read and revalidates in the background,
-  // so a host that resolves no cloud surface makes no config call at all.
-  const configCloudOptions = cloudKeyOptions();
-  const configCloud: CloudConfig | undefined =
-    configCloudOptions === undefined ? undefined : cloudConfig(configCloudOptions);
   // The .vendo surface reader, bound to the pinned compose-time root so the
   // LATER lazy reads (per-generation, per-turn) see the same project every
   // other .vendo input came from (a host that chdirs mid-run). Task 15a: an
@@ -91,6 +79,30 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   const surfaceRoot = config.profileDir ?? dotVendoRoot();
   const readSurfaceFile = (name: ConfigSurfaceName): string | undefined =>
     dotVendoFile(name, surfaceRoot);
+  // The five surfaces as this deployment set them IN CODE, each rendered as the
+  // bytes its `.vendo` file would have carried. Every block still reads its own
+  // knob; this table exists so the REPORT (config-report.ts) names the same
+  // five surfaces the resolution seam does, from the one place that can see
+  // them all. Reporting only — nothing resolves through it.
+  const codeSurface: Record<ConfigSurfaceName, unknown> = {
+    "design-rules.md": config.apps?.designRules ?? config.profile?.designRules,
+    "brief.md": config.instructions ?? composed?.instructions ?? config.profile?.brief,
+    "theme.json": config.theme ?? config.profile?.theme,
+    "policy.json": isGuardInstance(config.guard) ? undefined : config.guard?.policy ?? config.profile?.policy,
+    "overrides.json": config.profile?.overrides,
+  };
+  // The one-way config report, selected at THIS composition seam from
+  // VENDO_API_KEY (adapter rule: nothing downstream reads the key;
+  // cloudKeyOptions lives only here). Keyless, `reportConfig` is a no-op.
+  const reportConfig = createConfigReporter({
+    cloud: cloudKeyOptions(),
+    readFile: readSurfaceFile,
+    codeValue: (name) => {
+      const value = codeSurface[name];
+      if (value === undefined) return undefined;
+      return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    },
+  });
   // Memoize the first DEFINED resolution of a BOOT-ONCE surface (theme,
   // overrides): the surface locks to its first resolved value and never
   // hot-reloads, yet a cold cloud snapshot (warming in the background) still
@@ -116,7 +128,7 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
     sandbox,
     secrets,
     inference,
-    configCloud,
+    reportConfig,
     surfaceRoot,
     readSurfaceFile,
     memoizeOnce,

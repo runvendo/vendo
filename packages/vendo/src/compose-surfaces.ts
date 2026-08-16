@@ -30,7 +30,7 @@ import {
   runtimeCatalogFromJson,
 } from "./catalog.js";
 import type { VendoComposition } from "./compose-context.js";
-import { selectConfigSurface } from "./config-surface.js";
+import { selectConfigSurface, type ConfigSurfaceName } from "./config-surface.js";
 import {
   dotVendoFile,
   dotVendoSeedBaselines,
@@ -40,35 +40,40 @@ import {
   selectHostTools,
 } from "./dot-vendo.js";
 
-/** cse lane 3 — the config surfaces, resolved to the shapes app generation and
- *  the system prompt read them through. */
+/** The config surfaces, resolved to the shapes app generation and the system
+ *  prompt read them through. */
 export const composeSurfaces = (composition: VendoComposition): Pick<VendoComposition,
   "theme" | "themeProvider" | "designRules" | "briefing" | "seedBaselines"
   | "hostSemanticsProvider" | "capability" | "catalog"> => {
-  const { config, configCloud, readSurfaceFile, surfaceRoot, memoizeOnce } = composition;
-  // Theme surface (cse lane 3, boot-once/next-load STRUCTURAL): explicit config
-  // wins; else the in-memory profile piece (Task 15a); else file → cloud. The
-  // compose-time `theme` value (config/profile/file only, no cloud) still feeds
-  // the wire and the system-prompt catalog summary — they read a value at
-  // compose. The cloud-aware boot-once PROVIDER feeds app GENERATION through
-  // the apps thunk seam so a console theme publish is honored on the next-load
-  // lock without a compose-time fetch.
+  const { config, readSurfaceFile, surfaceRoot, memoizeOnce, reportConfig } = composition;
+  // Every lazy surface read is a resolution CYCLE: re-hash the five resolved
+  // surfaces and push a report only if they moved (config-report.ts). Boot
+  // sends the first one; this is how a mid-run `.vendo` edit reaches the
+  // console without a heartbeat.
+  const resolve = (name: ConfigSurfaceName): string | undefined => {
+    reportConfig();
+    return selectConfigSurface(name, { readFile: readSurfaceFile }).value;
+  };
+  // Theme surface (boot-once/next-load STRUCTURAL): explicit config
+  // wins; else the in-memory profile piece (Task 15a); else the file. The
+  // compose-time `theme` value feeds the wire and the system-prompt catalog
+  // summary — they read a value at compose. The boot-once PROVIDER feeds app
+  // GENERATION through the apps thunk seam.
   const configTheme = config.theme ?? config.profile?.theme;
   const theme = configTheme ?? parseVendoTheme(readSurfaceFile("theme.json"));
   const themeProvider: () => VendoTheme | undefined = configTheme !== undefined
     ? () => configTheme
-    : memoizeOnce(() => parseVendoTheme(selectConfigSurface("theme.json", { readFile: readSurfaceFile, cloud: configCloud }).value));
-  // App design rules (spec 2026-07-20 + cse lane 3): explicit config wins;
-  // otherwise a PER-GENERATION resolution — local file → cloud published value
-  // → unset — so both file edits and a console publish apply to the next
-  // create/edit without a restart (LIVE, re-resolved every generation).
+    : memoizeOnce(() => parseVendoTheme(resolve("theme.json")));
+  // App design rules (spec 2026-07-20): explicit config wins; otherwise a
+  // PER-GENERATION resolution — local file → unset — so a file edit applies to
+  // the next create/edit without a restart (LIVE, re-resolved every generation).
   // Task 15a: profile.designRules is a convenience alias into this SAME seam —
   // a non-blank apps.designRules wins over it (the longer-standing knob), and
   // a non-blank value from either fixes the rules for the instance lifetime.
   const configDesignRules = config.apps?.designRules?.trim() || config.profile?.designRules?.trim();
   const designRules = configDesignRules
     ? configDesignRules
-    : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
+    : () => resolve("design-rules.md");
   /**
    * THE briefing pack, and the ONLY place one is assembled (contract §2.5).
    *
@@ -85,7 +90,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
    *
    * `brief` reads the SAME resolution the deployment's own prompt does
    * (`compose-prompt.ts`'s `product` — explicit `instructions`, then the
-   * in-memory profile, then `.vendo/brief.md` file → cloud). A second reader of
+   * in-memory profile, then the `.vendo/brief.md` file). A second reader of
    * that file is how the two would start to disagree about what the product is.
    * Read lazily because compose-prompt runs after this lane, exactly as the
    * apps-runtime thunk below is.
@@ -108,17 +113,13 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
     };
   };
   const seedBaselines = dotVendoSeedBaselines(config.profileDir);
-  // W3 + cse lane 3 — field semantics from the merged .vendo
-  // pair (generated tools.json overlaid by overrides.json). The OVERRIDES
-  // surface resolves file → cloud; tools.json stays a
-  // local generation input (not a cloud surface). Resolved LIVE per generation
-  // (NOT memoized) — the apps block's own "re-read per generation" contract:
-  // memoizing would lock a local-only merge on a cold cloud snapshot (whenever a
-  // local tools.json makes the first merge defined) and drop cloud-owned
-  // overrides for the process lifetime (#557 review). A tools.json read +
-  // JSON.parse per generation is negligible against generation cost. Malformed
-  // → loud + absent, same stance as catalog.json. Task 15a: each in-memory
-  // profile piece replaces its file/cloud leg of the merge, per piece.
+  // W3 — field semantics from the merged .vendo
+  // pair (generated tools.json overlaid by overrides.json). Resolved LIVE per
+  // generation (NOT memoized) — the apps block's own "re-read per generation"
+  // contract. A tools.json read + JSON.parse per generation is negligible
+  // against generation cost. Malformed → loud + absent, same stance as
+  // catalog.json. Task 15a: each in-memory profile piece replaces its file leg
+  // of the merge, per piece.
   const hostSemanticsProvider = (): ReturnType<typeof mergedHostSemantics> => {
     const parsedFile = (name: string): unknown => {
       const raw = dotVendoFile(name, surfaceRoot);
@@ -126,14 +127,14 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
     };
     const overridesRaw = config.profile?.overrides !== undefined
       ? undefined
-      : selectConfigSurface("overrides.json", { readFile: readSurfaceFile, cloud: configCloud }).value;
+      : resolve("overrides.json");
     try {
       return mergedHostSemantics({
         tools: selectHostTools(config) !== undefined
           ? { format: VENDO_TOOLS_FORMAT, tools: selectHostTools(config) }
           : parsedFile("tools.json"),
         // The AI layer's semantics, read live off the same local disk leg as
-        // tools.json: judgments.json is not a cloud config surface, and there
+        // tools.json: judgments.json is not a content surface, and there
         // is no in-memory profile piece for it.
         judgments: parsedFile("judgments.json"),
         overrides: config.profile?.overrides

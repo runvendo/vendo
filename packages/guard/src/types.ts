@@ -222,11 +222,6 @@ export interface CreateGuardConfig extends GuardRules {
    *  record doors, which is what a host's BYO `StoreAdapter` gets. */
   ops?: StoreOps;
   resolveRisk?: RiskResolver;
-  /** A source for a cloud-published policy.json body, consulted
-   *  by the PolicyResolver STRICTLY AFTER the local file and only when policy
-   *  is already configured (opt-in). The umbrella backs it with the hosted
-   *  config snapshot; this block never reads the key. Unset = no change. */
-  policyCloudFallback?: () => string | undefined;
   /** Build contract §9.10 — the org-admin policy layer, resolved per check from
    *  the caller's asserted orgs (composition reads `/orgs/<orgId>/policy.json`
    *  and unions the rules). Applied as a post-pipeline strictness clamp that can

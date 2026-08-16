@@ -52,7 +52,6 @@ import type { createByoApprovals } from "./byo-approvals.js";
 import type { CapabilitySurfaceSnapshot } from "./capability-misses.js";
 import type { MergedCapability } from "./capability/index.js";
 import type { mergeRuntimeCatalog } from "./catalog.js";
-import type { CloudConfig } from "./cloud-config.js";
 import { composeActions } from "./compose-actions.js";
 import { composeApps } from "./compose-apps.js";
 import { composeAutomations } from "./compose-automations.js";
@@ -88,9 +87,8 @@ import type { HostAuthPreset } from "./auth-presets/index.js";
 export interface VendoActionsConfig {
   dir: string;
   tools?: ExtractedTool[];
-  /** The in-memory doc (profile.overrides) OR the cloud enablement provider
-   *  (#557) ride the same registry seam — both resolve through loadHost to the
-   *  same disabled/audience enablement path. */
+  /** The in-memory doc (profile.overrides); otherwise the registry reads
+   *  `.vendo/overrides.json` off `dir` itself. */
   overrides?: OverridesFile | (() => Promise<OverridesFile | undefined>);
   connectors?: Connector[];
   actAs?: ActAs;
@@ -138,8 +136,9 @@ export interface VendoComposition {
   sandbox: ReturnType<typeof selectSandbox>;
   secrets: SecretsProvider;
   inference: ReturnType<typeof resolveModels>;
-  /** cse lane 3 — the Cloud hosted-config adapter, read ONLY from lazy sites. */
-  configCloud: CloudConfig | undefined;
+  /** One resolution cycle happened: re-hash the five resolved surfaces and
+   *  report them if they moved (config-report.ts). No-op without a key. */
+  reportConfig: () => void;
   surfaceRoot: string | undefined;
   readSurfaceFile: (name: ConfigSurfaceName) => string | undefined;
   memoizeOnce: <T>(resolve: () => T | undefined) => () => T | undefined;
@@ -302,5 +301,8 @@ export const createComposition = (input: CreateVendoConfig): VendoComposition =>
   // deployment RUNS, and the connections adapter is not selected until
   // compose-discovery.ts above.
   emitDeploymentBoot(composition);
+  // Boot's first resolution: the surfaces are all composed, so this is the
+  // first moment the five of them have resolved values to report.
+  composition.reportConfig();
   return composition;
 };

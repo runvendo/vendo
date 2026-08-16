@@ -1,7 +1,7 @@
 /**
  * 05-guard — THE choke point, and the two things composition adds to it: the
- * plumbing a spec-shaped `guard()` cannot supply (store, risk resolver, cloud
- * policy fallback, org layer), and the one-shot warning a present-mode host
+ * plumbing a spec-shaped `guard()` cannot supply (store, risk resolver, org
+ * layer), and the one-shot warning a present-mode host
  * tool call raises when its credentials cannot be forwarded.
  */
 import { RESERVED_SUBJECT_PREFIX, type RunContext, type ToolDescriptor } from "@vendoai/core";
@@ -14,22 +14,21 @@ import {
   type VendoGuard,
 } from "@vendoai/guard";
 import type { VendoComposition } from "./compose-context.js";
-import { selectConfigSurface } from "./config-surface.js";
 import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-policy.js";
 
 /** ADAPTER RULE, guard seam: a built VendoGuard is this deployment's choke
  *  point verbatim; a spec is completed here. ONE constructor either way. */
 export const composeGuard = (composition: VendoComposition): Pick<VendoComposition,
   "guard" | "resolveRisk" | "warnPresentCredentialsNotForwarded"> => {
-  const { config, store, ops, configCloud, readSurfaceFile } = composition;
+  const { config, store, ops } = composition;
   // profile.policy is the parsed policy.json document held in memory, for a
   // deployment with no filesystem — `vendo init` writes the file instead
   // (cli/init-scaffolds.ts). Precedence keeps the
   // sibling pieces' discipline: the longer-standing explicit `policy` knob
   // wins outright; otherwise the piece feeds the guard as inline rules +
   // directions (defaulted like an absent file key), which replace the
-  // file/cloud legs entirely (inline wins with no merge — 00-overview
-  // decision 19); an unset piece leaves the guard's own file/cloud reads
+  // file leg entirely (inline wins with no merge — 00-overview
+  // decision 19); an unset piece leaves the guard's own file read
   // unchanged.
   //
   // The `guard:` slot's spec arm is where the host's rules live now; an
@@ -59,7 +58,7 @@ export const composeGuard = (composition: VendoComposition): Pick<VendoCompositi
   // ADAPTER RULE, guard seam: a built VendoGuard is this deployment's choke
   // point verbatim; rules are completed here with the plumbing only a
   // composition can supply — the store, the app/service risk resolver, the
-  // cloud policy fallback, the org layer. ONE constructor either way.
+  // org layer. ONE constructor either way.
   const guard = isGuardInstance(config.guard) ? config.guard : createGuard({
     store,
     // The engine family for the guard's own drawers, over the SAME store.
@@ -71,17 +70,6 @@ export const composeGuard = (composition: VendoComposition): Pick<VendoCompositi
     ...(guardRules.approvals === undefined ? {} : { approvals: guardRules.approvals }),
     ...(guardRules.breakers === undefined ? {} : { breakers: guardRules.breakers }),
     ...(configPolicy === undefined ? {} : { policy: configPolicy }),
-    // cse lane 3 — a cloud policy.json body, consulted by the resolver STRICTLY
-    // AFTER the local file and only within its existing opt-in path (decision
-    // 3: no change for hosts that don't configure policy). Returns the cloud
-    // value only when the surface is cloud-owned; a local file is handled by
-    // the guard's own file read.
-    ...(configCloud === undefined ? {} : {
-      policyCloudFallback: (): string | undefined => {
-        const resolved = selectConfigSurface("policy.json", { readFile: readSurfaceFile, cloud: configCloud });
-        return resolved.owner === "cloud" ? resolved.value : undefined;
-      },
-    }),
     ...(guardRules.judge === undefined ? {} : { judge: guardRules.judge }),
     // Build contract §9.10 — the org-admin layer, composed at the seam like
     // every other adapter choice: the guard evaluates rules, this reads them.

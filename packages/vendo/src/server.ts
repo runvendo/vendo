@@ -145,11 +145,8 @@ export { chainSecrets, cloudSecrets, type CloudSecretsOptions } from "./cloud-se
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
 
-// The Cloud hosted-config adapter (the read half of the config-resolution seam)
-// rides the server surface too: the composition seam (selectConfigSurface)
-// consults it for a `.vendo` surface the host neither set nor keeps on disk.
-export { cloudConfig, type CloudConfig, type CloudConfigDoc, type CloudConfigResult, type CloudConfigOptions } from "./cloud-config.js";
-
+// The config resolution seam: per surface, a value passed in code → the local
+// `.vendo/<name>` file → unset. Nothing remote participates.
 export {
   selectConfigSurface,
   isConfigSurface,

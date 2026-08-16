@@ -27,7 +27,7 @@ Advanced:
   knowledge <verb> Sync local docs/glossary/API sources into the product knowledge base (add, list, remove, sync)
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
-  config <command> Push/pull a .vendo surface to/from hosted config, or show surface owners
+  config <command> Show which layer owns each .vendo config surface
 
 Options:
   --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations

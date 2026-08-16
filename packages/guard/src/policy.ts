@@ -116,22 +116,13 @@ async function readPolicyFile(config: PolicyConfigObject): Promise<PolicyFile | 
 
 export class PolicyResolver {
   readonly #config: PolicyConfigObject | undefined;
-  readonly #cloudFallback: (() => string | undefined) | undefined;
   #filePromise: Promise<PolicyFile | undefined> | undefined;
 
   /** Takes the already-resolved object form — string presets are expanded by
    *  `resolvePolicyConfig` at `createGuard` compose time, before this class
-   *  ever sees the config.
-   *
-   *  `cloudFallback` is a source for a cloud-published
-   *  policy.json body, consulted STRICTLY AFTER the file and only within the
-   *  existing opt-in path: it fires only when policy is configured (`#config`
-   *  set) and no local file resolves. A host that never configures policy
-   *  never reaches it, so behavior is unchanged for them. The umbrella backs
-   *  it with the config snapshot; this block never reads the key. */
-  constructor(config: PolicyConfigObject | undefined, cloudFallback?: () => string | undefined) {
+   *  ever sees the config. */
+  constructor(config: PolicyConfigObject | undefined) {
     this.#config = config;
-    this.#cloudFallback = cloudFallback;
   }
 
   async rules(): Promise<PolicyRule[]> {
@@ -155,17 +146,7 @@ export class PolicyResolver {
     // posture (an explicit malformed/unreadable file throws) is preserved,
     // rejection and all, across calls.
     this.#filePromise ??= readPolicyFile(this.#config);
-    const fromFile = await this.#filePromise;
-    if (fromFile !== undefined) return fromFile;
-    // File absent (non-explicit): fall to a cloud-published
-    // policy.json body when the umbrella supplies one. Consulted LIVE on every
-    // call and never memoized: a cold cloud snapshot yields undefined now and
-    // the real policy once it warms (the snapshot is TTL-cached upstream, so
-    // this stays cheap). Memoizing here would pin the cold undefined for the
-    // process lifetime, so hosted policy would never apply after a cold start.
-    // Parsed/validated with the same loud posture as the file.
-    const body = this.#cloudFallback?.();
-    return body === undefined ? undefined : parsePolicyFileSource(body, "cloud config policy.json");
+    return await this.#filePromise;
   }
 }
 

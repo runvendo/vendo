@@ -51,35 +51,10 @@ KB because every shared module and the app-root CSS are stored once. Mark it
 `data/` is runtime state and debugging residue, not configuration. Do not
 commit it — the `.gitignore` init writes there is what keeps it out.
 
-Five of these files are also **cloud-resolvable** surfaces:
-`design-rules.md`, `brief.md`, `theme.json`, `policy.json`, and
-`overrides.json`. Per surface, resolution is an explicit `createVendo` value →
-the local file → the console's published value → unset, so the file's
-existence is the switch. `vendo config status` shows which layer owns each
-one; see [the CLI reference](/reference/cli#vendo-config-%3Ccommand%3E-dir).
+Five of these files are the **content surfaces**: `design-rules.md`,
+`brief.md`, `theme.json`, `policy.json`, and `overrides.json`. Per surface,
+resolution is a value passed to `createVendo` → the local file → unset, so the
+file's existence is the switch. `vendo config status` shows which layer owns
+each one; see [the CLI reference](/reference/cli#vendo-config-%3Ccommand%3E-dir).
 `tools.json` and `catalog.json` are deliberately not on that list — they are
 generation inputs, not host-editable content.
-
-<Warning>
-  **A local file silently out-ranks a console publish.** Nothing warns at
-  runtime: the deployment keeps serving the local file and the publish is a
-  no-op for it. And because init scaffolds `brief.md`, `policy.json`,
-  `overrides.json`, and `theme.json`, a default install is file-owned on
-  four of the five surfaces — `design-rules.md` is the only one the console
-  owns out of the box. Publishing from the console without handing the
-  surface over first is the classic "publishing looks broken" trap.
-
-  - **Check who owns what:** `vendo config status` prints one owner per
-    surface (`file`, `cloud`, `unset`); `vendo doctor` reports the same
-    ownership.
-  - **Hand a surface to the console:** delete the local file.
-    `vendo config push <surface>` copies it into the console draft first
-    (publishing stays a console step) and then offers the deletion; `--yes`
-    deletes without asking.
-  - **When a publish lands:** `brief.md` applies on the next agent turn and
-    `design-rules.md` on the next app generation; `theme.json` and the
-    tool-enablement half of `overrides.json` resolve boot-once, so they
-    apply on the next restart (generation semantics from `overrides.json`
-    are live); a cloud-owned `policy.json` is consulted live per guard
-    check.
-</Warning>

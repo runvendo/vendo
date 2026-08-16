@@ -8,10 +8,8 @@
 import {
   createActions,
   createConnectGate,
-  overridesFileSchema,
   type ActionsRunContext,
   type Connector,
-  type OverridesFile,
 } from "@vendoai/actions";
 import {
   descriptorHash,
@@ -20,7 +18,6 @@ import {
   type ToolOutcome,
 } from "@vendoai/core";
 import { createByoApprovals } from "./byo-approvals.js";
-import type { CloudConfigResult } from "./cloud-config.js";
 import type { VendoActionsConfig, VendoComposition } from "./compose-context.js";
 import { selectConnectors } from "./compose-selection.js";
 import { selectHostTools } from "./dot-vendo.js";
@@ -81,69 +78,14 @@ const baseUrlPosture = (): BaseUrlPosture => {
   return { configuredBaseUrl, urls, isDevelopmentEnv, baseUrlMissingInProduction };
 };
 
-  // #557 — cloud overrides.json feeds the actions registry's tool ENABLEMENT
-  // (disabled/audience), not only app-generation semantics. The registry
-  // resolves `config.overrides` ONCE through its memoized `loadHost`, and every
-  // tool-serving path (descriptors/execute/search/surfaceMenu) awaits loadHost
-  // before it exposes anything — so a cloud-disabled tool is NEVER live before
-  // the override resolves. The provider below reads AUTHORITATIVELY via
-  // configCloud.fetch() (awaited), NOT the cold stale-while-revalidate
-  // snapshot: the whole point of the async design is that enablement resolves
-  // before the first serve, so a cloud disable can never leak on a cold boot.
-  // Precedence mirrors selectConfigSurface (file → cloud): a local
-  // .vendo/overrides.json wins and is read by the registry itself (provider
-  // returns undefined); only a cloud-OWNED surface triggers the fetch. This is
-  // now safe at compose because `missSurface` below is deferred — nothing calls
-  // actions.descriptors()/loadHost at module init, so no console fetch happens
-  // in Workers global scope (portability-gate).
-const overridesEnablement = (
-  composition: VendoComposition,
-): (() => Promise<OverridesFile | undefined>) => {
-  const { readSurfaceFile, configCloud } = composition;
-  const overridesEnablementProvider = async (): Promise<OverridesFile | undefined> => {
-    // File-owned: let the registry read the local .vendo/overrides.json (which
-    // also handles v1/legacy migration). No cloud fetch decides enablement.
-    if (readSurfaceFile("overrides.json") !== undefined) return undefined;
-    // Cloud-owned: AWAIT the authoritative read so enablement is resolved before
-    // any tool is served (boot-once on the first request).
-    let result: CloudConfigResult;
-    try {
-      result = await configCloud!.fetch();
-    } catch (error) {
-      // A flaky/unreachable console must not permanently brick the registry
-      // (loadHost memoizes its result). Degrade to no cloud overrides this boot,
-      // the same fail-open posture as the guard policy fallback; key/meter
-      // problems still surface on the first real service call.
-      console.warn(
-        "[vendo] hosted overrides.json fetch failed; tool enablement falls back to the local file / none "
-        + `this boot: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return undefined;
-    }
-    const body = result.config?.["overrides.json"];
-    if (body === undefined) return undefined;
-    try {
-      return overridesFileSchema.parse(JSON.parse(body));
-    } catch (error) {
-      console.error(
-        "[vendo] hosted overrides.json is malformed; ignoring it for tool enablement this boot: "
-        + `${error instanceof Error ? error.message : String(error)}`,
-      );
-      return undefined;
-    }
-  };
-  return overridesEnablementProvider;
-};
-
 /** The registry's config object, assembled once and then MUTATED twice — see
  *  VendoActionsConfig for why those two fields are read at execution time. */
 const actionsConfigFor = (
   composition: VendoComposition,
   posture: BaseUrlPosture,
   resolvedConnectors: Connector[],
-  overridesProvider: () => Promise<OverridesFile | undefined>,
 ): VendoActionsConfig => {
-  const { config, actAsSeam, configCloud, warnPresentCredentialsNotForwarded } = composition;
+  const { config, actAsSeam, warnPresentCredentialsNotForwarded } = composition;
   const { urls, baseUrlMissingInProduction } = posture;
   return {
     dir: config.profileDir ?? ".",
@@ -152,15 +94,10 @@ const actionsConfigFor = (
     // added with this seam). Inside the registry each wins over its dir-read
     // file, so per-piece precedence needs no second path here.
     ...(selectHostTools(config) === undefined ? {} : { tools: selectHostTools(config) }),
-    // Overrides seam (#557 + Task 15a): an explicitly-passed in-memory
-    // profile.overrides wins (adapter rule); otherwise a cloud-configured host
-    // gets the enablement provider. Both flow through the registry's single
-    // `overrides` seam to the same disabled/audience enablement resolution.
-    ...(config.profile?.overrides !== undefined
-      ? { overrides: config.profile.overrides }
-      : configCloud === undefined
-        ? {}
-        : { overrides: overridesProvider }),
+    // Overrides seam (Task 15a): an explicitly-passed in-memory
+    // profile.overrides wins (adapter rule); otherwise the registry reads
+    // `.vendo/overrides.json` off `dir` itself.
+    ...(config.profile?.overrides === undefined ? {} : { overrides: config.profile.overrides }),
     ...(resolvedConnectors.length === 0 ? {} : { connectors: resolvedConnectors }),
     ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
@@ -230,7 +167,6 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
     composition,
     posture,
     resolvedConnectors,
-    overridesEnablement(composition),
   );
   const actions = createActions(actionsConfig);
   const doctor = doctorProbes(actionsConfig);

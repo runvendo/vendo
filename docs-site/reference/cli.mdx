@@ -632,26 +632,24 @@ The knowledge base reaches the agent through
 
 ## `vendo config <command> [dir]`
 
-Resolves, pushes, and pulls the hosted config surfaces — the `.vendo/` files
-Vendo Cloud can own instead of your repo. Per surface, resolution is
-explicit programmatic value → local `.vendo/<name>` → the console's published
-value → unset, so the local file's existence is the switch. Every command
-authenticates with `VENDO_API_KEY` and derives the project from the key.
+Reports which layer owns each `.vendo/` content surface. Per surface,
+resolution is a value passed to `createVendo` → the local `.vendo/<name>`
+file → unset, so the local file's existence is the switch. Nothing remote
+participates, so this command reads local disk only — no credential, no
+network call.
 
 ```bash
 npx vendo config status
-npx vendo config push theme.json
 ```
 
 Commands:
 
-- `status`: show each surface's owner (`file`, `cloud`, or `unset`).
-- `push <surface>`: write the local `.vendo` file into the console draft.
-- `pull <surface>`: write the console value into the local `.vendo` file.
+- `status`: show each surface's owner (`file` or `unset`). A value passed in
+  code wins over the file but is not visible to the CLI.
 
 Surfaces: `design-rules.md`, `brief.md`, `theme.json`, `policy.json`,
 `overrides.json`. (`tools.json` and `catalog.json` are generation inputs, not
-host-editable content, so they are not push/pull-able.)
+host-editable content.)
 
 Options:
 

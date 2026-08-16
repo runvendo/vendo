@@ -1641,37 +1641,12 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
-  // FINDINGS F14 (linkwarden baseline): a console-managed deployment keeps the
-  // cloud-resolvable surfaces PUBLISHED, not on disk — file → cloud precedence
-  // (config-surface seam) makes a missing local file a resolution mode there,
-  // not a broken install. tools.json has no cloud leg and stays fatal.
-  it("degrades missing cloud-resolvable config files to warnings when VENDO_API_KEY is set", async () => {
-    const root = await healthy();
-    await rm(join(root, ".vendo", "brief.md"));
-    await rm(join(root, ".vendo", "policy.json"));
-    const { exit, report } = await jsonChecks({
-      targetDir: root,
-      fetchImpl: successfulProbeFetch(),
-      env: { VENDO_API_KEY: "vnd_test_key" },
-      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
-    });
-    expect(exit).toBe(0);
-    for (const id of ["config/brief.md", "config/policy.json"]) {
-      const check = report.checks.find((entry) => entry.id === id);
-      expect(check).toMatchObject({
-        status: "warning",
-        error_code: "E-CFG-001",
-        fix_ref: doctorFixRef("E-CFG-001"),
-      });
-      expect(check?.message).toContain("vendo config status");
-      expect(check?.message).toContain("published");
-    }
-    expect(report.checks.find((entry) => entry.id === "config/tools.json")).toMatchObject({ status: "ok" });
-  });
-
-  it("keeps a missing tools.json fatal even with VENDO_API_KEY set — it has no cloud leg", async () => {
+  // Config resolves in code or from disk, and nowhere else, so a key buys a
+  // missing file no leniency: every one of them is a broken install.
+  it("keeps missing config files fatal with VENDO_API_KEY set — a key is not a config source", async () => {
     const root = await healthy();
     await rm(join(root, ".vendo", "tools.json"));
+    await rm(join(root, ".vendo", "brief.md"));
     const { exit, report } = await jsonChecks({
       targetDir: root,
       fetchImpl: successfulProbeFetch(),
@@ -1679,10 +1654,12 @@ describe("vendo doctor error codes + fix_refs", () => {
       cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
     });
     expect(exit).toBe(1);
-    expect(report.checks.find((entry) => entry.id === "config/tools.json")).toMatchObject({
-      status: "broken",
-      error_code: "E-CFG-001",
-    });
+    for (const id of ["config/tools.json", "config/brief.md"]) {
+      expect(report.checks.find((entry) => entry.id === id)).toMatchObject({
+        status: "broken",
+        error_code: "E-CFG-001",
+      });
+    }
   });
 
   // FINDINGS F7c (linkwarden baseline): a wire that ANSWERED with an error

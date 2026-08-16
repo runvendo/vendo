@@ -1,30 +1,20 @@
 import { describe, expect, it } from "vitest";
-import type { CloudConfig, CloudConfigResult } from "../src/cloud-config.js";
 import {
   CONFIG_SURFACES,
   isConfigSurface,
   selectConfigSurface,
 } from "../src/config-surface.js";
 
-// The per-surface resolution seam (cse lane 3): explicit programmatic value →
-// local `.vendo/<name>` file → cloud PUBLISHED value for that key → unset. The
-// file's EXISTENCE is the switch; one source of truth per surface, no
-// bidirectional sync. Sync (the design-rules thunk resolves synchronously per
-// generation), backed by the cloudConfig stale-while-revalidate snapshot.
-
-function stubCloud(config: CloudConfigResult["config"], version: string | null = "rel_1"): CloudConfig {
-  return {
-    fetch: async () => ({ version, config }),
-    snapshot: () => ({ version, config }),
-  };
-}
+// The per-surface resolution seam: a value passed in code → the local
+// `.vendo/<name>` file → unset. The file's EXISTENCE is the switch; one source
+// of truth per surface, no bidirectional sync and no remote layer. Sync — the
+// design-rules thunk resolves synchronously per generation.
 
 describe("selectConfigSurface", () => {
-  it("explicit programmatic value wins over file and cloud", () => {
+  it("explicit programmatic value wins over the file", () => {
     const resolved = selectConfigSurface("design-rules.md", {
       explicit: "inline rules",
       readFile: () => "file rules",
-      cloud: stubCloud({ "design-rules.md": "cloud rules" }),
     });
     expect(resolved).toEqual({ value: "inline rules", owner: "explicit" });
   });
@@ -33,95 +23,28 @@ describe("selectConfigSurface", () => {
     const resolved = selectConfigSurface("design-rules.md", {
       explicit: "   ",
       readFile: () => "file rules",
-      cloud: undefined,
     });
     expect(resolved).toEqual({ value: "file rules", owner: "file" });
   });
 
-  it("local file wins over cloud when present", () => {
-    const resolved = selectConfigSurface("brief.md", {
-      readFile: (name) => (name === "brief.md" ? "file brief" : undefined),
-      cloud: stubCloud({ "brief.md": "cloud brief" }),
-    });
-    expect(resolved).toEqual({ value: "file brief", owner: "file" });
-  });
-
   it("an EMPTY file still counts as file-owned (existence is the switch)", () => {
-    const resolved = selectConfigSurface("brief.md", {
-      readFile: () => "",
-      cloud: stubCloud({ "brief.md": "cloud brief" }),
-    });
+    const resolved = selectConfigSurface("brief.md", { readFile: () => "" });
     expect(resolved).toEqual({ value: "", owner: "file" });
   });
 
-  it("falls through to the cloud published value for the key when no file", () => {
-    const resolved = selectConfigSurface("theme.json", {
-      readFile: () => undefined,
-      cloud: stubCloud({ "theme.json": '{"accent":"#5B21B6"}' }),
-    });
-    expect(resolved).toEqual({ value: '{"accent":"#5B21B6"}', owner: "cloud" });
-  });
-
-  it("is unset when nothing resolves (no explicit, no file, cold/absent cloud)", () => {
-    expect(selectConfigSurface("policy.json", { readFile: () => undefined, cloud: undefined }))
-      .toEqual({ value: undefined, owner: "unset" });
-    // Cloud present but the key not in the published doc.
-    expect(selectConfigSurface("policy.json", { readFile: () => undefined, cloud: stubCloud({}) }))
-      .toEqual({ value: undefined, owner: "unset" });
-    // Cloud never published.
-    expect(selectConfigSurface("policy.json", { readFile: () => undefined, cloud: stubCloud(null, null) }))
+  it("is unset when nothing resolves (no explicit value, no file)", () => {
+    expect(selectConfigSurface("policy.json", { readFile: () => undefined }))
       .toEqual({ value: undefined, owner: "unset" });
   });
 
-  it("reads the cloud value from the SYNC snapshot, not a blocking fetch", () => {
-    let fetched = 0;
-    const cloud: CloudConfig = {
-      fetch: async () => { fetched += 1; return { version: "v", config: { "overrides.json": "{}" } }; },
-      snapshot: () => ({ version: "v", config: { "overrides.json": "{}" } }),
-    };
-    const resolved = selectConfigSurface("overrides.json", { readFile: () => undefined, cloud });
-    expect(resolved).toEqual({ value: "{}", owner: "cloud" });
-    expect(fetched).toBe(0);
-  });
-});
-
-describe("two-path resolution (cse lane 3 proof)", () => {
-  // One host, one interface: surface A is file-owned, surface B is cloud-owned,
-  // and both resolve correctly through the same seam. The cloud doc is shaped
-  // exactly like the config-wire published fixture.
-  const published = {
-    "design-rules.md": "# Design rules\n\nUse the violet brand tokens; never invent new hues.",
-    "brief.md": "Maple is a retail bank; the agent acts as the signed-in member.",
-    "theme.json": '{"accent":"#5B21B6","radius":"12px"}',
-    "policy.json": '{"toolBudget":20}',
-    "overrides.json": "{}",
-  };
-
-  it("resolves an A-file-owned surface from disk and a B-cloud-owned surface from the published doc", () => {
-    // Surface A (brief) lives on local disk; surface B (design-rules) does not,
-    // so it falls through to the published cloud value.
-    const readFile = (name: string): string | undefined =>
-      name === "brief.md" ? "on-disk brief" : undefined;
-    const cloud = stubCloud(published);
-
-    expect(selectConfigSurface("brief.md", { readFile, cloud }))
-      .toEqual({ value: "on-disk brief", owner: "file" });
-    expect(selectConfigSurface("design-rules.md", { readFile, cloud }))
-      .toEqual({ value: published["design-rules.md"], owner: "cloud" });
-  });
-
-  it("a published-version flip changes the cloud-owned surface on the NEXT resolution (no recomposition)", () => {
-    // The design-rules thunk re-runs selectConfigSurface each generation, so a
-    // snapshot whose backing doc flips is observed without recomposing.
-    let doc: CloudConfigResult["config"] = { "design-rules.md": "v1 rules" };
-    const cloud: CloudConfig = {
-      fetch: async () => ({ version: "rel_1", config: doc }),
-      snapshot: () => ({ version: "rel_1", config: doc }),
-    };
-    const resolve = () => selectConfigSurface("design-rules.md", { readFile: () => undefined, cloud }).value;
+  it("re-reads the file each time, so an edit lands on the NEXT resolution", () => {
+    // The design-rules thunk re-runs selectConfigSurface each generation, so an
+    // edited file is observed without recomposing.
+    let body = "v1 rules";
+    const resolve = () => selectConfigSurface("design-rules.md", { readFile: () => body }).value;
 
     expect(resolve()).toBe("v1 rules");
-    doc = { "design-rules.md": "v2 rules" };
+    body = "v2 rules";
     expect(resolve()).toBe("v2 rules");
   });
 });
