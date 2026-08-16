@@ -99,6 +99,37 @@ const pathCommitOf = (entry: unknown): PathCommit | undefined => {
   };
 };
 
+/** One `workspace.index` page as file metas. Shared by the paging read below
+    and by {@link workspaceIndexPage}, so a batched index and a fanned-out one
+    cannot describe the same rows differently. */
+const metasOf = (entries: readonly unknown[], owner: string): WorkspaceFileMeta[] => {
+  const metas: WorkspaceFileMeta[] = [];
+  for (const entry of entries) {
+    const row = entry as Record<string, unknown>;
+    if (typeof row["path"] !== "string") continue;
+    metas.push({
+      path: row["path"],
+      owner,
+      bytes: Number(row["bytes"] ?? 0),
+      revision: Number(row["revision"] ?? 0),
+      updatedAt: iso(row["updatedAt"] ?? new Date(0).toISOString()),
+    });
+  }
+  return metas;
+};
+
+/** `turn.load`'s index page, as the metas `workspaceStore.open` would have read
+    for this owner — or UNDEFINED when the page left a cursor behind. The
+    per-owner read below pages to exhaustion, and half an index is not an index:
+    a caller handed one back would open a turn whose workspace is missing files.
+    Undefined is that caller's signal to read it the ordinary way. */
+export function workspaceIndexPage(
+  page: { entries: readonly unknown[]; cursor?: string },
+  owner: string,
+): WorkspaceFileMeta[] | undefined {
+  return page.cursor === undefined ? metasOf(page.entries, owner) : undefined;
+}
+
 export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
   const readOne = async (owner: string, path: string): Promise<unknown | undefined> => {
     const files = await ops.workspace.read([path], { owner });
@@ -133,17 +164,7 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
         owner,
         ...(cursor === undefined ? {} : { cursor }),
       });
-      for (const entry of page.entries) {
-        const row = entry as Record<string, unknown>;
-        if (typeof row["path"] !== "string") continue;
-        metas.push({
-          path: row["path"],
-          owner,
-          bytes: Number(row["bytes"] ?? 0),
-          revision: Number(row["revision"] ?? 0),
-          updatedAt: iso(row["updatedAt"] ?? new Date(0).toISOString()),
-        });
-      }
+      metas.push(...metasOf(page.entries, owner));
       cursor = page.cursor;
     } while (cursor !== undefined);
     return metas;

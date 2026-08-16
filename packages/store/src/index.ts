@@ -74,6 +74,9 @@ export {
   type WorkspaceFileMeta,
   type WorkspaceHistoryEntry,
 } from "./workspace.js";
+// `turn.load`'s index page in the units `workspaceStore.open` takes, so a
+// caller that batched the read hands back rows it never had to reshape.
+export { workspaceIndexPage } from "./workspace-ops-rows.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 export { harnessStateStore } from "./harness-state.js";
 // The Cloud store: the same StoreAdapter and the same ops, over the console
