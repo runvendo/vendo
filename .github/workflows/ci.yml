@@ -30,13 +30,19 @@ concurrency:
 #   typecheck-lint    the non-test half
 #   test-shards       9 intra-package vitest shards for the big three
 #                     (vendo x4, store x3, ui x2 — 40 of the 55 serial minutes)
-#   test-rest         the other 15 packages in 2 turbo groups
+#   test-rest         every other package, one job, one turbo run
 #   coverage-merge    merges the shards' blob reports and enforces the
 #                     per-package coverage floors (they cannot be enforced on a
 #                     single shard — see the comment on that job)
 #   ci                aggregate; KEEPS the required-check name `ci`
+#   integration-legs  the e2e fleet in 4 duration-balanced legs
+#   integration       aggregate; KEEPS the required-check name `integration`
+#   conformance       the three-package conformance suite
+#   audit             supply-chain gate
 # Required checks on main are: ci, integration, conformance, audit.
-# Renaming any of those job names breaks merges.
+# Renaming any of those job names breaks merges. Both `ci` and `integration`
+# are aggregates over jobs that legitimately SKIP, so both use `if: always()`
+# plus explicit success-or-skipped arithmetic rather than `needs` semantics.
 #
 # WHAT RUNS WHERE (2026-08-16):
 #   pull_request  the affected cone only — turbo's --affected against the PR's
@@ -86,6 +92,7 @@ jobs:
       base: ${{ steps.resolve.outputs.base }}
       filter: ${{ steps.resolve.outputs.filter }}
       big3: ${{ steps.resolve.outputs.big3 }}
+      heavy: ${{ steps.heavy.outputs.heavy }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -130,6 +137,34 @@ jobs:
           done
           echo "big three in cone:${big3:- (none)}"
           { echo "base=$base"; echo "filter=--affected"; echo "big3=$big3"; } >> "$GITHUB_OUTPUT"
+      # The changesets version PR ("chore: version packages", branch
+      # changeset-release/*) rewrites CHANGELOGs and package.json versions and
+      # nothing else. Running the e2e fleet against it buys nothing.
+      #
+      # It skips the HEAVY jobs only. typecheck-lint still runs — a version bump
+      # can break the build through the lockfile — and all four required checks
+      # still report, green by skip. That distinction is load-bearing: PR #1342
+      # exists precisely so this PR gets CI without the close/reopen ritual, and
+      # a required check that never reports would mean no release could ever
+      # ship again.
+      #
+      # Detected from the title as well as the branch so it survives the
+      # merge_group event, where the source branch name is gone (github.ref is
+      # the queue's own gh-readonly-queue/... branch) but the head commit
+      # message is not.
+      - name: Heavy jobs or not
+        id: heavy
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title || github.event.merge_group.head_commit.message }}
+        run: |
+          heavy=true
+          case "$HEAD_REF" in changeset-release/*) heavy=false ;; esac
+          case "$TITLE" in "chore: version packages"*) heavy=false ;; esac
+          # A push to main always runs everything, whatever it is called.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then heavy=true; fi
+          echo "heavy jobs: $heavy"
+          echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
 
   typecheck-lint:
     runs-on: ubuntu-latest
@@ -189,6 +224,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: cone
+    # NOTE: only packages/store reads POSTGRES_URL anywhere in the tree
+    # (grep-verified across every packages/*/src and packages/*/tests), so the 4
+    # vendo and 2 ui shards each pay ~20s of container init for a database
+    # nothing they run can see. Left in place deliberately: GitHub Actions has
+    # no YAML anchors, so a per-matrix-entry service map means either a 250-char
+    # JSON blob repeated on three lines or splitting store into a second copy of
+    # this whole job — both of which cost more to read than 20s on a job that is
+    # not the critical path. Worth revisiting together with the store shard
+    # rebalance, which is where store's real time goes (store-1 was 409s of a
+    # 507s run on 1a875d4c).
     services:
       postgres:
         image: postgres:16
@@ -222,10 +267,23 @@ jobs:
           - { name: ui-2, key: ui, pkg: "@vendoai/ui", dir: packages/ui, shard: "2/2" }
     env:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
+      # 4, not the laptop's 2. This is the ONE place the two-worker cap can be
+      # lifted safely: a shard runs exactly one package's vitest, so there is no
+      # outer turbo layer to multiply against — which is what the cap exists to
+      # stop (a 12-core laptop at ~27 workers, and an OOM kill on a 15GB runner
+      # when 4 packages each sized their own pool). test-rest, which DOES have
+      # that outer layer, keeps 2. The root scripts and the laptop are untouched.
+      #
+      # MIN stays 1 rather than matching MAX: the reason MIN must be set at all
+      # is that vitest 2.1 defaults minThreads to the CPU count independently of
+      # the max, so a max-only cap throws `minThreads and maxThreads must not
+      # conflict` before a test runs — and MIN=1 prevents that just as well.
+      # Pinning MIN=4 would instead force four PGlite-booting workers onto a
+      # two-file shard, which is the memory profile that caused the OOM.
       VITEST_MIN_FORKS: "1"
-      VITEST_MAX_FORKS: "2"
+      VITEST_MAX_FORKS: "4"
       VITEST_MIN_THREADS: "1"
-      VITEST_MAX_THREADS: "2"
+      VITEST_MAX_THREADS: "4"
       # Is this shard's package in the cone? On a push to main `big3` is all
       # three, so every shard runs.
       #
@@ -237,7 +295,10 @@ jobs:
       # matrix stays whole and each step opts out. A shard outside the cone
       # burns a few seconds of runner and reports green, having honestly run
       # nothing.
-      RUN: ${{ contains(needs.cone.outputs.big3, matrix.key) }}
+      # `heavy` is what takes the version PR out: it rewrites CHANGELOGs and
+      # package.json versions, which puts every package in the cone and would
+      # otherwise run all nine shards for nothing.
+      RUN: ${{ needs.cone.outputs.heavy == 'true' && contains(needs.cone.outputs.big3, matrix.key) }}
     steps:
       - if: env.RUN == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -286,19 +347,23 @@ jobs:
           include-hidden-files: true
           retention-days: 1
 
-  # Everything that is not one of the big three. group-b is expressed as
-  # negations so a new package joins CI the day it is created, without editing
-  # this file.
+  # Everything that is not one of the big three, as ONE job. It used to be two
+  # matrix legs; on the last full main run they came in at 168s (group-b) and
+  # 56s (group-a), so the split was buying ~56s of overlap at the cost of a
+  # second runner, a second install and a second postgres container. Folded.
+  # The filter is pure negation, so a new package joins CI the day it is
+  # created without editing this file.
   #
-  # $CONE narrows both groups to the cone. Verified, because it is the opposite
-  # of what turbo's multi-filter behaviour looks like at first glance: repeated
-  # --filter flags UNION, but --affected INTERSECTS with them. `--affected
-  # --filter=@vendoai/guard --filter=@vendoai/actions` yields guard and actions
-  # only when they are in the cone, not the cone plus those two.
+  # $CONE narrows it to the cone. Verified, because it is the opposite of what
+  # turbo's multi-filter behaviour looks like at first glance: repeated --filter
+  # flags UNION, but --affected INTERSECTS with them.
   test-rest:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: cone
+    # Same reasoning as the shards' RUN gate: the version PR puts every package
+    # in the cone and there is nothing here for it to prove.
+    if: needs.cone.outputs.heavy == 'true'
     services:
       postgres:
         image: postgres:16
@@ -313,14 +378,12 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: group-a, filters: "--filter=@vendoai/guard --filter=@vendoai/actions" }
-          - { name: group-b, filters: "--filter=!@vendoai/vendo --filter=!@vendoai/store --filter=!@vendoai/ui --filter=!@vendoai/guard --filter=!@vendoai/actions" }
     env:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
+      # Stays at 2, unlike the shards. This job runs turbo across many packages
+      # at once, so its worker count is concurrency x pool — the two layers the
+      # cap exists to stop multiplying. The shards have no outer layer and go
+      # to 4.
       VITEST_MIN_FORKS: "1"
       VITEST_MAX_FORKS: "2"
       VITEST_MIN_THREADS: "1"
@@ -345,7 +408,7 @@ jobs:
       # inside each package's vitest). Unbounded, the two layers multiply and
       # the live-Next-server suites flake (PR #340).
       - name: Test with coverage (PGlite + PostgreSQL)
-        run: pnpm turbo run test:coverage --continue --concurrency=2 $CONE ${{ matrix.filters }}
+        run: pnpm turbo run test:coverage --continue --concurrency=2 $CONE --filter=!@vendoai/vendo --filter=!@vendoai/store --filter=!@vendoai/ui
 
   # The per-package coverage floors (vendo 78 / store 84 / ui 90, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
@@ -443,13 +506,29 @@ jobs:
           fi
           echo "all lanes green"
 
-  integration:
+  # The integration suites, split four ways.
+  #
+  # This job WAS the whole run's critical path: 493s of a 507s full-suite wall
+  # on main run 31930304532, nine suites end to end on one runner while eleven
+  # other runners sat idle. The legs below are balanced on that run's measured
+  # per-suite times, so the longest is ~143s of suite work instead of 432s.
+  #
+  # These legs are NOT the required check. The `integration` aggregate below is,
+  # and it keeps that exact name — renaming it breaks merges.
+  integration-legs:
+    name: integration (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: cone
+    # The version PR has no e2e surface; see the shards' RUN gate.
+    if: needs.cone.outputs.heavy == 'true'
     services:
       # J9 (postgres-durability) runs the core journeys against real Postgres and
       # skips cleanly when POSTGRES_URL is unset; provisioning it here makes that
-      # journey actually execute in CI.
+      # journey actually execute in CI. Kept on every leg rather than only the
+      # two that need it today — a suite quietly losing its postgres leg is
+      # exactly the kind of silent coverage loss this file keeps getting bitten
+      # by, and the container costs ~20s against a 143s leg.
       postgres:
         image: postgres:16
         env:
@@ -465,6 +544,48 @@ jobs:
           --health-retries 5
     env:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_integration
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Measured on run 31930304532: automations 130s | integration 113s +
+          # demo-bank 30s | mcp 56s + redteam 54s | the four orphans 48s.
+          #
+          # `guarded` decides whether the --affected probe may skip the leg. The
+          # orphans leg is UNGUARDED on purpose — see its comment below.
+          - name: automations
+            guarded: "true"
+            build: "--filter=@vendoai-fixtures/automations-e2e..."
+            suites: "@vendoai-fixtures/automations-e2e"
+          - name: node
+            guarded: "true"
+            build: "--filter=@vendoai-fixtures/integration... --filter=demo-bank^..."
+            suites: "@vendoai-fixtures/integration demo-bank"
+          - name: doors
+            guarded: "true"
+            build: "--filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e..."
+            suites: "@vendoai-fixtures/mcp-e2e @vendoai/redteam-e2e"
+          # Four suites CI never executed before #1046. Each has a `test` script
+          # and no `test:coverage`, so test-rest's turbo run passes over them and
+          # no step named them — they ran only in release.yml's unfiltered
+          # `pnpm test`, which is the worst possible place to first learn a suite
+          # is red. Not hypothetical: the Express host's doctor e2e went red on
+          # main when #989 tightened the /doctor/* mounting gate and stayed red
+          # for hours, invisible to every PR, until a release dry run tripped
+          # over it.
+          #
+          # UNGUARDED by the --affected probe, and deliberately still without a
+          # `test:coverage` script, because both of those decide on turbo's
+          # dependency graph and these suites' real inputs are not in it: they
+          # read examples/ and corpus/ trees off disk and drive the CLI at the
+          # repo root. A probe would skip exactly the PR that fixes one of them.
+          # existing-agents-e2e is the sharpest case — #1001 added a
+          # devDependency to examples/mastra-agent and left it red on main for
+          # ~17h while every affected probe and cache key stayed clean.
+          - name: orphans
+            guarded: ""
+            build: "--filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^..."
+            suites: "@vendoai-corpus/express-host @vendoai-examples/ai-sdk-agent @vendoai-examples/mastra-agent @vendoai-fixtures/existing-agents-e2e"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -477,119 +598,84 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      # Four suites CI never executed. Each has a `test` script and no
-      # `test:coverage`, so test-rest's turbo run passes over them and no step
-      # named them — they ran only in release.yml's unfiltered `pnpm test`,
-      # which is the worst possible place to first learn a suite is red. That is
-      # not hypothetical: the Express host's doctor e2e went red on main when
-      # #989 tightened the /doctor/* mounting gate and stayed red for hours,
-      # invisible to every PR, until a release dry run tripped over it (#1046).
-      #
-      # UNGUARDED by the skip probe below, and deliberately still without a
-      # `test:coverage` script, because both of those decide on turbo's
-      # dependency graph and these suites' real inputs are not in it: they read
-      # examples/ and corpus/ trees off disk and drive the CLI at the repo root.
-      # A probe would therefore skip exactly the PR that fixes one of them.
-      #
-      # They are invoked per package rather than through `turbo run test`, which
-      # would also run each example's own `build` — a full `next build` nobody
-      # needs, since these suites import the example's `src/` directly and need
-      # only their workspace deps built. That is what the `^...` step below
-      # builds (14 tasks, replayed from the remote cache that typecheck-lint's
-      # `pnpm build` fills). Sequential steps, not one parallel turbo run, for
-      # the same reason as the redteam/automations steps further down. All four
-      # are hermetic — scripted models, temp PGlite stores, no network, no keys;
-      # ai-sdk-agent's two live journeys self-skip without a key, as do
-      # existing-agents-e2e's two (VENDO_LIVE_JOURNEY=1).
-      - name: Build the orphan suites' workspace deps (no example builds)
-        run: pnpm turbo run build --filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^...
-      # The Express corpus host: six e2e that boot the real relay on loopback
-      # over real HTTP (status, chat-tool, approvals, generated view, the fetch
-      # adapter, and `vendo doctor` against the running wire).
-      - run: pnpm --filter @vendoai-corpus/express-host test
-      # The AI SDK example's four-touch diff: guarded action, generated UI,
-      # approvals. The two cloud-posture journeys gate on a live key and skip.
-      - run: pnpm --filter @vendoai-examples/ai-sdk-agent test
-      # The Mastra example's SEAM suite — a real Mastra Agent turn parking a
-      # risky tool call, approving it over the wire, and executing the real
-      # handler, against the example's own composeVendo and checked-in
-      # .vendo/tools.json. Added by #1001 and never once run in CI until now.
-      - run: pnpm --filter @vendoai-examples/mastra-agent test
-      # The fourth, and the one that motivated the rest: the BYO-agent
-      # marked-diff contract, which derives each example's pre-Vendo starter and
-      # round-trips the marked diff back. Same rationale as above, and the
-      # sharpest case of it — #1001 added a devDependency to
-      # examples/mastra-agent and left this suite red on main for ~17h while
-      # every affected probe and cache key stayed clean. Needs no build of its
-      # own (it reads the example trees as text), so it is not in the `^...`
-      # filter above; ~3s.
-      - run: pnpm --filter @vendoai-fixtures/existing-agents-e2e test
       # `--affected` marks a package when it or ANY of its workspace deps
       # changed (verified: a one-line core edit marks every fixture and demo
-      # below), so a skip here hides nothing these suites could catch VIA THE
-      # DEPENDENCY GRAPH — it is blind to inputs outside it, which is exactly
-      # how test-shards greened a broken docs-rot suite (see that job) and why
-      # this probe is on borrowed time. TURBO_SCM_BASE is explicit because
-      # turbo's default base is the local branch `main`, which does not exist
-      # on a PR checkout — without it, --affected silently reports EVERYTHING
-      # affected. If the probe itself fails, we fall open into running
-      # everything.
-      # Not `== 'pull_request'` but `!= 'push'`: a merge_group run is a cone run
-      # too, against the queue's base. Only a push to main skips the skip and
-      # runs everything. This job does NOT take the cone job's outputs — it is
-      # its own REQUIRED check, and a `needs:` on cone would let a broken cone
-      # job skip it, which branch protection reads as a pass.
-      - name: Skip if e2e scope unaffected (PR and merge queue)
+      # here), so a skip hides nothing these suites could catch VIA THE
+      # DEPENDENCY GRAPH — it is blind to inputs outside it, which is exactly how
+      # test-shards greened a broken docs-rot suite. TURBO_SCM_BASE is explicit
+      # because turbo's default base is the local branch `main`, which does not
+      # exist on a PR checkout — without it, --affected silently reports
+      # EVERYTHING affected. If the probe itself fails, we fall open into
+      # running everything. `!= push` rather than `== pull_request` so the merge
+      # queue gets the same treatment; only a push to main runs unconditionally.
+      - name: Skip if this leg's scope is unaffected (PR and merge queue)
         id: affected
-        if: github.event_name != 'push'
+        if: matrix.guarded == 'true' && github.event_name != 'push'
         env:
           # pull_request: `main`. merge_group: `refs/heads/main`.
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          SUITES: ${{ matrix.suites }}
         run: |
           export TURBO_SCM_BASE="origin/${BASE_REF#refs/heads/}"
           echo "cone base: $TURBO_SCM_BASE"
           if pnpm turbo ls --affected --output=json > /tmp/affected.json \
-             && jq -e '[.packages.items[].name | select(IN(
-                  "@vendoai-fixtures/integration",
-                  "@vendoai-fixtures/mcp-e2e",
-                  "@vendoai/redteam-e2e",
-                  "@vendoai-fixtures/automations-e2e",
-                  "demo-bank"))] | length == 0' /tmp/affected.json > /dev/null; then
-            echo "integration scope unaffected by this PR; skipping"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+             && jq -r '.packages.items[].name' /tmp/affected.json | sort > /tmp/affected-names.txt; then
+            hit=""
+            for pkg in $SUITES; do
+              if grep -qx "$pkg" /tmp/affected-names.txt; then hit="yes"; fi
+            done
+            if [ -z "$hit" ]; then
+              echo "$SUITES unaffected by this change; skipping"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
-      # Build only the workspace deps the integration suites need (the `...`
-      # suffix pulls each fixture package's transitive workspace deps;
-      # `demo-bank^...` builds demo-bank's deps without running its Next build).
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=demo-bank^...
-      # The node suite boots the real composed umbrella over HTTP against the host app.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai-fixtures/integration test
-      # The MCP door e2e suite: its multi-instance token-claim race test
-      # (token-claim-race.e2e.test.ts, the ENG-270 single-use-token guarantee)
-      # gates on POSTGRES_URL and otherwise silently skips — the job-level
-      # POSTGRES_URL above makes it actually run its forced-overlap races here.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai-fixtures/mcp-e2e test
-      # The offline security corpus (PR #123): prompt-injection, oauth-csrf,
-      # artifact/away-authority, shared-app-dormant, smoke. Mock-model and
-      # key-free; the live-egress legs are run on demand. Each fixture boots its
-      # own host-app dev server on an ephemeral port with a per-suite dist dir,
-      # so these steps are safe to run back to back on one runner; they stay
-      # sequential steps (not turbo-parallel) to avoid oversubscribing CPUs.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai/redteam-e2e test
-      # Automations governance e2e: kill-switch, emit-and-revoke, park-resume,
-      # webhook, schedules, observability, steps-pipeline (live-* legs run on
-      # demand).
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter @vendoai-fixtures/automations-e2e test
-      # Maple's suite (auth, away drill, transfers, money, mcp-config, server
-      # routes). demo apps define no test:coverage script, so the test-rest job's
-      # turbo run skips them — this is demo-bank's only CI execution.
-      - if: steps.affected.outputs.skip != 'true'
-        run: pnpm --filter demo-bank test
+      # Build only what this leg needs. `...` pulls a package's transitive
+      # workspace deps; `demo-bank^...` builds demo-bank's deps without running
+      # its Next build. The orphan leg's `^...` filters build workspace deps
+      # only, never the examples' own `next build`, which nobody here needs —
+      # those suites import the example's src/ directly.
+      - name: Build this leg's workspace deps
+        if: steps.affected.outputs.skip != 'true'
+        run: pnpm turbo run build ${{ matrix.build }}
+      # Sequential within the leg, not one parallel turbo run: each fixture
+      # boots its own host-app dev server, and running them at once
+      # oversubscribes the runner's CPUs.
+      - name: Run this leg's suites
+        if: steps.affected.outputs.skip != 'true'
+        env:
+          SUITES: ${{ matrix.suites }}
+        run: |
+          set -euo pipefail
+          for pkg in $SUITES; do
+            echo "::group::$pkg"
+            pnpm --filter "$pkg" test
+            echo "::endgroup::"
+          done
+
+  # The required check. Its name must stay `integration` (branch protection on
+  # main). `cone` is in the needs on purpose: without it a failed cone job would
+  # skip every leg, and all-skipped would read as green here.
+  integration:
+    runs-on: ubuntu-latest
+    needs: [cone, integration-legs]
+    if: always()
+    steps:
+      - name: All integration legs green (skipped counts as success)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -r 'to_entries[] | "  \(.key): \(.value.result)"' <<<"$NEEDS"
+          bad=$(jq -r '
+            to_entries
+            | map(select(.value.result != "success" and .value.result != "skipped")
+                  | "\(.key)=\(.value.result)")
+            | join(", ")' <<<"$NEEDS")
+          if [ -n "$bad" ]; then
+            echo "::error::integration legs not green: $bad"
+            exit 1
+          fi
+          echo "all integration legs green"
 
   conformance:
     runs-on: ubuntu-latest
@@ -633,7 +719,21 @@ jobs:
         env:
           # pull_request: `main`. merge_group: `refs/heads/main`.
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title || github.event.merge_group.head_commit.message }}
         run: |
+          # The version PR, same as the heavy jobs — but decided here rather than
+          # taken from the cone job's output. This is a REQUIRED check, and a
+          # `needs: cone` would let a failed cone SKIP it, which branch
+          # protection reads as a pass.
+          case "$HEAD_REF" in changeset-release/*)
+            echo "changesets version PR; conformance skipped"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          case "$TITLE" in "chore: version packages"*)
+            echo "changesets version PR; conformance skipped"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
           export TURBO_SCM_BASE="origin/${BASE_REF#refs/heads/}"
           echo "cone base: $TURBO_SCM_BASE"
           if pnpm turbo ls --affected --output=json > /tmp/affected.json \
