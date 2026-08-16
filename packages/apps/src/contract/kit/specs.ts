@@ -275,6 +275,23 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
   },
   {
+    name: "Calendar",
+    group: "data",
+    summary: "Items on a month grid — each on its own day with its label, amount and status. Use it when the question is which DAY, not which row. The month comes from the earliest item unless `month` names one.",
+    props: {
+      items: data(rows, "items from a tool call", { required: true }),
+      dateField: config(z.string(), "field holding the day each item falls on"),
+      titleField: config(z.string(), "field for each item's label"),
+      amountField: config(z.string(), "field holding each item's amount in dollars — divide a cents field by 100 where you read it"),
+      statusField: config(z.string(), "field whose value labels and tones each item"),
+      tones: config(z.record(z.string(), z.enum(["neutral", "accent", "success", "warning", "danger"])), "status value → tone overrides"),
+      month: config(z.string(), "the month to lay out, as ISO yyyy-mm"),
+    },
+    examples: [
+      '<Calendar items={bills.data.map((b) => ({ ...b, amount: b.amount / 100 }))} dateField="due_date" titleField="name" amountField="amount" statusField="status" tones={{ paid: "success", missed: "danger" }}/>',
+    ],
+  },
+  {
     name: "Stat",
     group: "data",
     summary: "A KPI/metric summary. Formats its value (money takes dollars — divide a cents field by 100 where you read it) and shows an optional trend. Kit value components nested inside render under the number.",

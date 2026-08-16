@@ -34,6 +34,7 @@ export * from "./values.js";
 export { Icon, type IconProps } from "./icon.js";
 export { DataTable, type DataTableColumn, type DataTableProps } from "./data/data-table.js";
 export { CardList, type CardField, type CardListProps } from "./data/card-list.js";
+export { Calendar, type CalendarProps } from "./data/calendar.js";
 export { Stat, type StatProps } from "./data/stat.js";
 export { Badge, type BadgeProps } from "./data/badge.js";
 export { KeyValue, type KeyValueItem, type KeyValueProps } from "./data/key-value.js";

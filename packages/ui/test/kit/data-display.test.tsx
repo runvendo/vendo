@@ -2,6 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Badge } from "../../src/kit/data/badge.js";
+import { Calendar, type CalendarProps } from "../../src/kit/data/calendar.js";
 import { CardList } from "../../src/kit/data/card-list.js";
 import { Stat } from "../../src/kit/data/stat.js";
 
@@ -106,5 +107,64 @@ describe("CardList", () => {
     );
     expect(screen.getByText("Bank")).toBeTruthy();
     expect(screen.getByText("—")).toBeTruthy();
+  });
+});
+
+describe("Calendar", () => {
+  // The maple bills the benchmark asks to see as a calendar. Aug 2026 opens on a
+  // Saturday, so its first row leads with six of July's days.
+  const bills = [
+    { id: "bill_1", name: "Mission St Rent", amount: 2850, due_date: "2026-08-01", status: "paid" },
+    { id: "bill_3", name: "Ridgeline Gym", amount: 45, due_date: "2026-08-09", status: "missed" },
+    { id: "bill_4", name: "Verdant Streaming", amount: 15.99, due_date: "2026-08-12", status: "upcoming" },
+  ];
+  const month = (props: Partial<CalendarProps> = {}): HTMLElement =>
+    render(
+      <Calendar
+        items={bills}
+        dateField="due_date"
+        titleField="name"
+        amountField="amount"
+        statusField="status"
+        tones={{ paid: "success", missed: "danger" }}
+        {...props}
+      />,
+    ).container;
+  const cell = (container: HTMLElement, day: string): Element =>
+    container.querySelector(`[data-day="${day}"]`)!;
+
+  it("lands each item on its own day, with its name, amount and status", () => {
+    const container = month();
+    expect(cell(container, "2026-08-01").textContent).toBe("1Mission St Rent$2,850.00Paid");
+    expect(cell(container, "2026-08-09").textContent).toBe("9Ridgeline Gym$45.00Missed");
+    expect(cell(container, "2026-08-12").textContent).toBe("12Verdant Streaming$15.99Upcoming");
+    // A day nothing falls on carries its number and nothing else.
+    expect(cell(container, "2026-08-02").textContent).toBe("2");
+  });
+
+  it("takes its month from the earliest item, and `month` over that", () => {
+    expect(month().querySelector("caption")!.textContent).toBe("August 2026");
+    expect(month({ month: "2026-09" }).querySelector("caption")!.textContent).toBe("September 2026");
+  });
+
+  it("mutes the days the neighbouring months own", () => {
+    const container = month();
+    const number = (day: string): string => cell(container, day).querySelector("div")!.getAttribute("style")!;
+    expect(number("2026-07-26")).toContain("var(--vendo-color-muted");
+    expect(number("2026-08-01")).toContain("var(--vendo-color-text");
+  });
+
+  it("tones an item by its status, and leaves an unmapped one neutral", () => {
+    const container = month();
+    const chip = (day: string): string => cell(container, day).querySelectorAll("div")[1]!.getAttribute("style")!;
+    expect(chip("2026-08-01")).toContain("var(--vendo-color-success");
+    expect(chip("2026-08-09")).toContain("var(--vendo-color-danger");
+    expect(chip("2026-08-12")).not.toContain("var(--vendo-color-danger");
+  });
+
+  it("fails soft on missing data, still drawing the month it was asked for", () => {
+    const container = month({ items: undefined as never, month: "2026-08" });
+    expect(container.querySelector("caption")!.textContent).toBe("August 2026");
+    expect(cell(container, "2026-08-01").textContent).toBe("1");
   });
 });

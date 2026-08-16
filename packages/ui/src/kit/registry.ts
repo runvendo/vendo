@@ -12,6 +12,7 @@ import { DateTime, EnumBadge, Money, Num, Percent, Text } from "./values.js";
 import { Icon } from "./icon.js";
 import { DataTable } from "./data/data-table.js";
 import { CardList } from "./data/card-list.js";
+import { Calendar } from "./data/calendar.js";
 import { Stat } from "./data/stat.js";
 import { Badge } from "./data/badge.js";
 import { KeyValue } from "./data/key-value.js";
@@ -59,7 +60,7 @@ export {
 export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string, never>>>> = {
   Stack, Row, Grid, Surface, Card, Divider,
   Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
-  DataTable, CardList, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
+  DataTable, CardList, Calendar, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
   LineChart, BarChart, DonutChart, Sparkline, Progress,
   Input, Select, DatePicker, Textarea, Checkbox, Button, Link, Form, Disclaimer,
   Switch, Radio, Slider, SegmentedControl, Combobox, DateRange,
