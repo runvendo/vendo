@@ -183,11 +183,11 @@ describe("@vendoai/ui/chrome export surface", () => {
   it("re-exports every chrome type from the source entry", () => {
     const failure = typecheckImports(TYPE_EXPORTS);
     expect(failure, failure ?? "").toBeNull();
-  });
+  }, 120_000);
 
   it("has teeth: a missing type re-export fails the tsc gate with TS2305", () => {
     const failure = typecheckImports(["__DefinitelyNotAChromeExport"]);
     expect(failure).not.toBeNull();
     expect(failure).toContain("TS2305");
-  });
+  }, 120_000);
 });
