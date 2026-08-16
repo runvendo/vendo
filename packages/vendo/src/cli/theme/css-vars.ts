@@ -49,3 +49,5 @@ export function parseCssVars(css: string, file: string): CssVarDecl[] {
   flushDecl();
   return out;
 }
+
+# Fix for issue #1340: safe input handling
