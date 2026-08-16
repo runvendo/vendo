@@ -15,6 +15,7 @@ import { runChannelTurn } from "./channel-turn.js";
 import {
   channelInboundSecret as deriveInboundSecret,
   cloudTextChannel,
+  isLinkEvent,
   unconfiguredChannels,
   type ChannelDoor,
   type ChannelsService,
@@ -22,6 +23,12 @@ import {
 import { cloudKeyOptions } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
 import type { CreateVendoConfig } from "./types.js";
+
+/** The conversation ref a link delivery is logged under. Link events carry no
+    conversation of their own, and the delivery log deliberately holds no phone,
+    so they share one bucket: the rows still dedupe by event id and still age out
+    on the same 24h prune. */
+const LINK_DELIVERY_REF = "link";
 
 /** ADAPTER RULE, channels seam (cloned from selectConnections). Precedence:
  *    1. `channels` unset or `{ text: false }` — no channel, and SILENTLY so:
@@ -42,7 +49,6 @@ export function selectChannels(configured: CreateVendoConfig["channels"]): Chann
   }
   return cloudTextChannel(cloud);
 }
-
 
 export const composeChannels = (composition: VendoComposition): Pick<VendoComposition,
   "channels" | "channelDoor" | "channelInboundSecret"> => {
@@ -120,6 +126,17 @@ export const composeChannels = (composition: VendoComposition): Pick<VendoCompos
     },
 
     async inbound(event) {
+      if (isLinkEvent(event)) {
+        // The one-text flow: the router kept the connect message, Cloud read the
+        // tail off its transcript, and this arrives just AHEAD of the person's
+        // first real message. Claimed silently — the reply they get is the answer
+        // to what they actually asked, not a receipt for a code they never typed.
+        // A code that is unknown, spent or expired answers null and says nothing,
+        // which is also what makes a re-relayed connect harmless.
+        if (!await delivered.claim(event.eventId, LINK_DELIVERY_REF)) return;
+        await links.claim(event.code, event.from);
+        return;
+      }
       if (!await delivered.claim(event.eventId, event.conversationId)) return;
       // A text that IS a live code claims the link — whether the phone is a
       // stranger sending the second text of a link, or an already-linked phone

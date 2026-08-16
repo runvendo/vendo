@@ -46,6 +46,31 @@ export interface InboundTextEvent {
   receivedAt: string;
 }
 
+/**
+ * The link half of the same delivery contract: a phone that just connected
+ * through the router, and the code it carried.
+ *
+ * The router keeps the connect message in ITS transcript rather than forwarding
+ * it, so the code cannot ride an inbound text. Cloud reads the tail from the
+ * transcript and relays this AHEAD of the person's first real message, which is
+ * what makes linking one text instead of two. Nothing here is trusted for
+ * identity: the code is the secret, and `claim` refuses one that is unknown,
+ * spent or expired exactly as it does on the typed path.
+ */
+export interface InboundLinkEvent {
+  eventId: string;
+  channel: "text";
+  kind: "link";
+  from: string;
+  code: string;
+  receivedAt: string;
+}
+
+export type InboundEvent = InboundTextEvent | InboundLinkEvent;
+
+export const isLinkEvent = (event: InboundEvent): event is InboundLinkEvent =>
+  "kind" in event && event.kind === "link";
+
 /** Everything the link page needs: the number to text, the code to send, and
  *  the prefilled `sms:` URL a phone opens straight into. */
 export interface TextChannelInvite {
@@ -63,7 +88,7 @@ export interface ChannelDoor {
   status(principal: Principal): Promise<{ linked: boolean; phone?: string }>;
   unlink(principal: Principal): Promise<void>;
   /** One delivery from Vendo Cloud: the claim of a pending link, or a turn. */
-  inbound(event: InboundTextEvent): Promise<void>;
+  inbound(event: InboundEvent): Promise<void>;
 }
 
 /** The label the inbound bearer is derived under. Frozen: both ends compute

@@ -52,6 +52,10 @@ const TEXT_STYLE = [
   `${AGENT_CONTEXT_MARK} This conversation is happening over text message.`,
   "Write like a text: one short paragraph, plain sentences, no markdown, no headings, no bullet lists, no links unless asked.",
   "Never mention that you are texting. If you need a yes or no, ask for it in one line.",
+  // Delivery does not exist yet: nothing can send a text on a schedule or of its
+  // own accord. So the channel must not OFFER it either — an agent that promises
+  // Friday's text has already broken a promise the product cannot keep.
+  "You cannot send scheduled, recurring or unprompted texts, and you cannot set any of that up from here — say so plainly if asked, point to the app, and say it is coming soon.",
 ].join(" ");
 
 /** What a turn says when it produced no words at all — a failure that never

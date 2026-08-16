@@ -125,6 +125,8 @@ export {
   unconfiguredChannels,
   type ChannelsService,
   type CloudTextChannelOptions,
+  type InboundEvent,
+  type InboundLinkEvent,
   type InboundTextEvent,
   type TextChannelRegistration,
 } from "./channels.js";

@@ -1,6 +1,6 @@
 import { log } from "@vendoai/core";
 import qrcode from "qrcode-generator";
-import type { ChannelDoor, InboundTextEvent, TextChannelInvite } from "../channels.js";
+import type { ChannelDoor, InboundEvent, TextChannelInvite } from "../channels.js";
 import { timingSafeEqual } from "./misc.js";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
@@ -19,10 +19,11 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-/** The desktop fallback. The copy is load-bearing, not decoration: linking is
-    TWO texts, because the router that binds the identity CONSUMES the first
-    message — the code in it never reaches this deployment. A person who is not
-    told to send the code a second time simply never gets linked. */
+/** The desktop fallback. The copy is load-bearing, not decoration: on the org's
+    DEDICATED router linking is ONE text, because the router keeps the connect
+    message in its own transcript and Cloud reads the code off it — so the person
+    sends the prefilled message and is done. Telling them to retype a code here
+    would be telling them to do work the router already did. */
 function linkPage(invite: TextChannelInvite): string {
   const qr = qrcode(0, "M");
   qr.addData(invite.url);
@@ -56,13 +57,12 @@ function linkPage(invite: TextChannelInvite): string {
 <h1>Text your assistant</h1>
 <ol>
 <li>From your phone, text <code>${escapeHtml(invite.command)}</code> to <code>${escapeHtml(invite.number)}</code>.</li>
-<li>You'll get a contact card back. Open that conversation and send just the code:
-<span class="code">${escapeHtml(invite.code)}</span></li>
+<li>That's it. A contact card comes back — save it, and text that contact from now on.</li>
 </ol>
-<p>That second message is the one that links your account — the first is eaten by the
-directory that hands you the contact card.</p>
+<p>One message links your account. The code is already in it, so send it as it is
+rather than retyping anything.</p>
 ${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}
-<p>Scan to open it on your phone. The code expires in 15 minutes.</p>
+<p>Scan to open it on your phone. The code expires in 30 minutes.</p>
 </main></body>
 </html>`;
 }
@@ -71,7 +71,7 @@ ${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}
     as it takes. A failure is the operator's to see — the person texting already
     got their ack from the vendor, and a 500 here would only earn a retry that
     runs the same turn again. */
-function runInboundDetached(door: ChannelDoor, event: InboundTextEvent): void {
+function runInboundDetached(door: ChannelDoor, event: InboundEvent): void {
   void door.inbound(event).catch((error: unknown) => {
     log({
       code: "vendo.channel-turn-failed",
@@ -108,14 +108,27 @@ export const channelRoutes: RouteEntry[] = [
       return json({ error: { code: "blocked", message: "invalid channel credential" } }, 401);
     }
     const body = await requestJson(request);
-    runInboundDetached(deps.channels, {
-      eventId: string(body["eventId"], "eventId"),
-      channel: "text",
-      from: string(body["from"], "from"),
-      text: string(body["text"], "text"),
-      conversationId: string(body["conversationId"], "conversationId"),
-      receivedAt: string(body["receivedAt"], "receivedAt"),
-    });
+    // Two shapes on one door. `kind: "link"` carries the connect tail Cloud read
+    // off the router transcript and has no text and no conversation of its own;
+    // anything else is a message. Dispatching on the field rather than on a
+    // second route keeps the frozen contract one URL and one bearer.
+    runInboundDetached(deps.channels, body["kind"] === "link"
+      ? {
+        eventId: string(body["eventId"], "eventId"),
+        channel: "text",
+        kind: "link",
+        from: string(body["from"], "from"),
+        code: string(body["code"], "code"),
+        receivedAt: string(body["receivedAt"], "receivedAt"),
+      }
+      : {
+        eventId: string(body["eventId"], "eventId"),
+        channel: "text",
+        from: string(body["from"], "from"),
+        text: string(body["text"], "text"),
+        conversationId: string(body["conversationId"], "conversationId"),
+        receivedAt: string(body["receivedAt"], "receivedAt"),
+      });
     return json({ ok: true }, 202);
   }),
 

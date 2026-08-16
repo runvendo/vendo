@@ -19,7 +19,13 @@ export type {
   SyncReport,
 } from "@vendoai/actions";
 export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
-export type { ChannelsService, InboundTextEvent, TextChannelRegistration } from "./channels.js";
+export type {
+  ChannelsService,
+  InboundEvent,
+  InboundLinkEvent,
+  InboundTextEvent,
+  TextChannelRegistration,
+} from "./channels.js";
 export type { TextChannelApi, VendoChannels } from "./types.js";
 export type {
   Judge,

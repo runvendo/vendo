@@ -44,10 +44,12 @@ const CODE_LENGTH = 6;
  *  text passes before it is worth a lookup. */
 export const CODE_PATTERN = new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
 
-/** How long a minted code stays claimable. Long enough for the two-text dance
- *  (text the router, wait for the contact card, text the code), short enough
- *  that a code read over someone's shoulder is worthless by tomorrow. */
-export const LINK_CODE_TTL_MS = 15 * 60_000;
+/** How long a minted code stays claimable. Thirty minutes because a person taps
+ *  the link on one device and finishes on another, and because the router hands
+ *  back a contact card first — the gap between tapping and texting is human, not
+ *  mechanical. Still short enough that a code read over someone's shoulder is
+ *  worthless by the time they act on it. */
+export const LINK_CODE_TTL_MS = 30 * 60_000;
 
 export interface ChannelLink {
   id: string;

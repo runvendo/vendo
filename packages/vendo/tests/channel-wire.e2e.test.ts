@@ -136,6 +136,28 @@ const inbound = async (vendo: Vendo, event: {
   }));
 };
 
+/** The LINK half of the same door: what Cloud relays after reading a connect
+ *  tail off the router transcript. No text, no conversation — just the code. */
+const inboundLink = async (vendo: Vendo, event: {
+  eventId: string;
+  from?: string;
+  code: string;
+}): Promise<Response> => {
+  const secret = await channelInboundSecret(API_KEY);
+  return vendo.handler(new Request("https://maple.test/api/vendo/channels/text/inbound", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+    body: JSON.stringify({
+      eventId: event.eventId,
+      channel: "text",
+      kind: "link",
+      from: event.from ?? PHONE,
+      code: event.code,
+      receivedAt: new Date().toISOString(),
+    }),
+  }));
+};
+
 /** The inbound door ACKs and runs the turn detached, so every assertion about
  *  what the console received is a poll. No inner deadline: the test's own
  *  timeout is the hang detector. */
@@ -150,7 +172,7 @@ beforeEach(async () => {
   vendo = await compose(cloud);
 });
 
-describe("GET /channels/text/link — the two-text invitation", () => {
+describe("GET /channels/text/link — the one-text invitation", () => {
   it("sends a phone straight into the prefilled first message", async () => {
     const response = await get(vendo, "/channels/text/link", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)");
 
@@ -165,7 +187,7 @@ describe("GET /channels/text/link — the two-text invitation", () => {
     ]);
   });
 
-  it("shows a desktop the number, the code, a QR, and the second-text expectation", async () => {
+  it("shows a desktop the number, the one message to send, and a QR", async () => {
     const response = await get(vendo, "/channels/text/link", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)");
 
     expect(response.status).toBe(200);
@@ -174,10 +196,13 @@ describe("GET /channels/text/link — the two-text invitation", () => {
     const code = /connect @maple ([23456789A-Z]{6})/.exec(page)?.[1];
     expect(code, "the page names the command to send").toBeDefined();
     expect(page).toContain("+15550000000");
-    // The code appears a SECOND time, on its own: that second send is the one
-    // that actually links, and a page that omits it links nobody.
-    expect(page.split(code!).length - 1).toBeGreaterThanOrEqual(2);
+    // ONE message now: the router passes the connect tail through, so the page
+    // must NOT ask for the code a second time. A page that still does sends
+    // people off to retype a code that is already in the message they just sent.
+    expect(page.split(code!).length - 1, "the code is named once, inside the command").toBe(1);
+    expect(page).toContain("One message links your account");
     expect(page).toContain("contact card");
+    expect(page).toContain("30 minutes");
     expect(page).toContain("<svg");
   });
 });
@@ -291,4 +316,63 @@ describe("vendo.channels — the named surface", () => {
     expect(url.startsWith("sms:+15550000000")).toBe(true);
     expect(await vendo.channels.text.status(principal)).toEqual({ linked: false });
   });
+});
+
+describe("one-text linking — the router's connect tail, relayed ahead", () => {
+  it("binds the phone from a link delivery, then answers its first message", async () => {
+    // THE POINT OF THE AMENDMENT: the person sends ONE text. The router keeps the
+    // connect message, so the code never rides an inbound text; Cloud reads the
+    // tail off the router transcript and relays it as a link delivery just ahead
+    // of whatever the person actually said.
+    const page = await (await get(vendo, "/channels/text/link", "Macintosh")).text();
+    const code = /connect @maple ([23456789A-Z]{6})/.exec(page)![1]!;
+
+    expect((await inboundLink(vendo, { eventId: "evt_link", code })).status).toBe(202);
+    // Silent by design: no receipt for a code they never typed.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(cloud.sent).toHaveLength(0);
+    expect(await vendo.channels.text.status(principal)).toEqual({
+      linked: true,
+      phone: "+1 ••• ••• 0123",
+    });
+
+    // The message that followed it is served as the linked user, not a stranger.
+    expect((await inbound(vendo, { eventId: "evt_first", text: "what do I owe?" })).status).toBe(202);
+    await waitFor(() => cloud.sent.length === 1);
+    expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due." });
+  }, 120_000);
+
+  it("ignores a link delivery whose code is not live, and stays a stranger", async () => {
+    // A connect tail Cloud read from an OLD transcript entry, or one meant for
+    // another deployment: nothing binds, and the phone is still served nothing.
+    expect((await inboundLink(vendo, { eventId: "evt_stale", code: "ZZZZZZ" })).status).toBe(202);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(await vendo.channels.text.status(principal)).toEqual({ linked: false });
+    expect((await inbound(vendo, { eventId: "evt_after", text: "hello?" })).status).toBe(202);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(cloud.sent, "a stranger is served nothing").toHaveLength(0);
+  }, 120_000);
+
+  it("binds once when the same connect is relayed twice", async () => {
+    // Cloud consults the transcript on every inbound from an unlinked phone, so
+    // the SAME connect can be relayed more than once. The delivery log makes the
+    // repeat a no-op rather than a second claim.
+    const page = await (await get(vendo, "/channels/text/link", "Macintosh")).text();
+    const code = /connect @maple ([23456789A-Z]{6})/.exec(page)![1]!;
+
+    await inboundLink(vendo, { eventId: "evt_dup", code });
+    let linked = false;
+    while (!linked) {
+      linked = (await vendo.channels.text.status(principal)).linked;
+      if (!linked) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await inboundLink(vendo, { eventId: "evt_dup", code });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(await vendo.channels.text.status(principal)).toEqual({
+      linked: true,
+      phone: "+1 ••• ••• 0123",
+    });
+  }, 120_000);
 });
