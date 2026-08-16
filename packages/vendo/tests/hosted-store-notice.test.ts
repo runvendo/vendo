@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 function compose(): void {
-  const vendo = createVendo({ model: {} as LanguageModel, principal: async () => null });
+  const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => null });
   cleanups.push(async () => { await vendo.store.close(); });
 }
 

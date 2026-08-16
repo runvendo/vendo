@@ -1,10 +1,11 @@
 /** Switch — an instant on/off setting (W2 §The Kit). */
 import { Switch as Base } from "@base-ui/react/switch";
-import { hairline, t, transitionFor } from "../tokens.js";
+import type { ComponentProps } from "react";
+import { hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
-export interface SwitchProps {
+interface SwitchOwnProps extends KitStyled {
   label?: string;
   checked?: boolean;
   hint?: string;
@@ -13,21 +14,26 @@ export interface SwitchProps {
   onChange?: (checked: boolean) => void;
 }
 
+/** Plus any Base UI `<Switch.Root>` prop, handed straight to the track. `style`
+ *  stays the Kit's own — it dresses the ROOT the label and hint share. */
+export type SwitchProps = SwitchOwnProps & KitEngine<ComponentProps<typeof Base.Root>, SwitchOwnProps>;
+
 const TRACK_WIDTH = 34;
 const THUMB = 14;
 
-export function Switch({ label, checked, hint, disabled, onChange }: SwitchProps) {
+export function Switch({ label, checked, hint, disabled, onChange, style, children, pending, ...engine }: SwitchProps & KitRendered) {
   const { fieldId, helpId } = useFieldIds("switch");
   // A screen owns its value (kit/handler.ts), exactly as Checkbox does.
   const screen = controlledHandler(checked !== undefined, onChange);
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} inline>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} inline style={style}>
       <Base.Root
-        id={fieldId}
         data-kit="Switch"
-        {...(screen === null ? { defaultChecked: checked } : { checked: checked ?? false })}
         disabled={disabled}
         aria-describedby={hint ? helpId : undefined}
+        {...given(engine)}
+        id={fieldId}
+        {...(screen === null ? { defaultChecked: checked } : { checked: checked ?? false })}
         onCheckedChange={(next) => screen === null
           ? onChange?.(next)
           : screen({ target: { checked: next } })}

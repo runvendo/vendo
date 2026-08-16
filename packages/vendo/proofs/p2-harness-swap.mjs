@@ -46,7 +46,7 @@ function scripted(label, reply) {
 }
 
 const compose = (harness) => {
-  const v = createVendo({ model: {}, principal: async () => principal, store, harness });
+  const v = createVendo({ models: { default: {} }, principal: async () => principal, store, harness });
   return v;
 };
 

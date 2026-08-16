@@ -91,6 +91,13 @@ describe("formatDateTime", () => {
     expect(formatDateTime(d, { mode: "date", timeZone: "UTC" })).toBe("Jan 2, 2026");
   });
 
+  it("shows no clock for a date-only value asked for as a datetime", () => {
+    // A `due_date` used to render "Aug 1, 2026, 12:00 AM" — a time nobody stored.
+    expect(formatDateTime("2026-08-01", { mode: "datetime" })).toBe("Aug 1, 2026");
+    // A value that HAS a clock still keeps it.
+    expect(formatDateTime("2026-08-01T15:30:00Z", { mode: "datetime", timeZone: "UTC" })).toMatch(/3:30/);
+  });
+
   it("returns null for unparseable input (never Invalid Date)", () => {
     expect(formatDateTime("not-a-date")).toBeNull();
     expect(formatDateTime(Number.NaN)).toBeNull();

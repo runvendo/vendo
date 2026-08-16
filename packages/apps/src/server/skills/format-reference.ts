@@ -53,11 +53,19 @@ and the screen re-renders with fresh data on its own — so never patch state to
 mirror what the refresh will bring back. Destructive and money-moving calls are
 confirmed by the product OUTSIDE your screen — the guard asks the person before
 the call runs — so never build a confirm step of your own: no "are you sure"
-panel, no second button, no \`confirming\` state.
+panel, no second button, no \`confirming\` state. The exception is a confirmation
+the person ASKED for, or one press that fires a whole batch of calls: that one is
+part of their app, and it is a \`<Modal>\` saying how many, with the button that
+runs the loop LAST in its \`footer\` — that footer is a right-aligned row, so the
+last button is the one a person reaches for. A guarded host still asks once per
+call on top of it, and that is the trade: only your Modal can say how many, and
+being asked twice beats a batch that goes out silently.
 
 **Components — the catalog below, and nothing else.** Every component already
 carries this product's own theme, so anything with behavior — a table, a number,
-a date, a control — is a component, never HTML you assemble yourself.
+a date, a control — is a component, never HTML you assemble yourself. That holds
+inside a sentence too: an amount in prose is an inline \`<Money>\`, never a \`$\`
+and a \`toFixed\` you typed, which lose the grouping and the host's own currency.
 
 **Layout — the display tags, plus \`style\`.** \`${DISPLAY_TAG_NAMES.join("`, `")}\`
 are yours to arrange with, and they take children and an inline \`style\` and

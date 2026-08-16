@@ -9,7 +9,7 @@ import {
   densityCssVariables,
   themeDefaults,
 } from "@vendoai/apps/contract";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 /** Every fallback is READ OFF `defaultVendoTheme` rather than retyped, because
  * the retyped copy had drifted: surface and background were swapped (an
@@ -49,6 +49,51 @@ export const t = {
   motionDuration: "var(--vendo-motion-duration, 160ms)",
   motionEasing: "var(--vendo-motion-easing, cubic-bezier(0.2, 0.8, 0.2, 1))",
 } as const;
+
+/**
+ * What every Kit component takes on top of its own props: inline CSS merged onto
+ * its ROOT, spread LAST, so a caller's declaration wins over the theme's and
+ * everything it does not mention keeps painting as it always did. The theme is
+ * still the default — this is the escape hatch for a specific ask.
+ */
+export interface KitStyled {
+  style?: CSSProperties;
+}
+
+/**
+ * What the tree renderer hands EVERY node it paints, on top of the props the
+ * screen wrote (tree/renderer.tsx `builtinContent`). No component declares them
+ * as its own — most of the Kit is a leaf, and that is what `KIT_CHILDLESS_NAMES`
+ * says — but one that passes props through to an engine must name them in its
+ * signature so they stay out of the passthrough. A void `<input>` handed a child
+ * takes the whole node down.
+ */
+export interface KitRendered {
+  children?: ReactNode;
+  pending?: boolean;
+}
+
+/**
+ * An engine's own props as the component that renders it exposes them — minus
+ * three things that are not the caller's to send.
+ *
+ * `Own` is everything the component declares itself; `Owned` names the engine
+ * props it must keep besides (a chart's `dataKey` names the field it plots, so an
+ * overridden one plots nothing); and {@link KitRendered}'s pair belongs to the
+ * renderer. A passthrough carries the CALLER's props and only those.
+ */
+export type KitEngine<Engine, Own, Owned extends string = never> =
+  Omit<Engine, keyof Own | Owned | keyof KitRendered>;
+
+/**
+ * The engine props the caller actually GAVE — spread this, never the rest object
+ * itself. React reads `undefined` as "not provided", and a passthrough has to
+ * agree: `<Sparkline stroke={brand?.accent}/>` with nothing behind it lands an
+ * `undefined` ON the Kit's theme default and blanks it, and the chart then paints
+ * in recharts' own blue instead of the host's brand.
+ */
+export const given = <T extends object>(engine: T): Partial<T> =>
+  Object.fromEntries(Object.entries(engine).filter(([, value]) => value !== undefined)) as Partial<T>;
 
 /** The ONE edge a Kit component draws. Hairline and low-contrast: borders do the
  *  work that shadows used to, so almost nothing in the Kit is elevated. */

@@ -1,0 +1,31 @@
+---
+title: "E-TURN-002"
+sidebarTitle: "E-TURN-002"
+description: "Doctor's live model turn cannot run while the dev server is down."
+---
+
+```text turn/model
+broken: live model turn cannot run; start the dev server at <base> and retry
+```
+
+`check: turn/model` · `error_code: E-TURN-002` · `doctor exits: 1`
+
+## What you're seeing
+
+This check never got to run at all.
+
+## Why
+
+It follows directly from a failed `/status` round trip. See
+[E-LIVE-002](/production/troubleshooting/e-live-002) for why the dev server
+was unreachable.
+
+## The fix
+
+Start the dev server at the probed base, then re-run `npx vendo doctor`.
+
+## Related errors
+
+- [E-LIVE-002](/production/troubleshooting/e-live-002) — the root cause this check inherits
+- [E-TURN-001](/production/troubleshooting/e-turn-001) — the same probe, once the dev server answers
+- [E-AUTH-003](/production/troubleshooting/e-auth-003) — the present-credential probe, blocked by the same dead server

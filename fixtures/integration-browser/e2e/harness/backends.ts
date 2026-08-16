@@ -166,7 +166,7 @@ export async function startBackends(): Promise<Backends> {
   const wireUrl = `http://127.0.0.1:${address.port}`;
 
   const vendo = createVendo({
-    model: scripted.model,
+    models: { default: scripted.model },
     principal: async (req) => {
       const subject = req.headers.get("x-vendo-test-user");
       return subject ? { kind: "user", subject } : null;

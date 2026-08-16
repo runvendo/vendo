@@ -60,7 +60,7 @@ const asking = (result: { value?: unknown; error?: string }) => defineHarness({
 async function compose(harness?: unknown): Promise<{ vendo: Vendo; store: VendoStore }> {
   const store = await tempStore();
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     ...(harness === undefined ? {} : { harness: harness as never }),

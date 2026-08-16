@@ -75,7 +75,7 @@ async function compose(overrides) {
   const store = createStore({ dataDir });
   const seen = [];
   const vendo = createVendo({
-    model: recordingModel(seen),
+    models: { default: recordingModel(seen) },
     principal: async () => principal,
     store,
     agent: { instructions: "PROBE-VOICE: speak like Maple." },

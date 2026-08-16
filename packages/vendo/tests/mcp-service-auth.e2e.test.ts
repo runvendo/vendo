@@ -39,7 +39,7 @@ const SERVICE_CLIENT = "svc:5c006a4c";
 async function composedHost(): Promise<{ vendo: Vendo; store: VendoStore }> {
   const store = await tempStore();
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     guard: { policy: "cautious" },

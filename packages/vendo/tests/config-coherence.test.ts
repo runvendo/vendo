@@ -138,7 +138,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     await dotVendo();
     stubHostFetch();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-spec-"),
       guard: guardRules({ policy: RULES }),
@@ -151,7 +151,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     await dotVendo();
     stubHostFetch();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-bare-"),
       guard: { policy: RULES },
@@ -167,7 +167,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     const store = await tempStore("vendo-coherence-instance-");
     const built = createGuard({ store, policy: RULES });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       guard: built,
@@ -201,7 +201,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     await dotVendo();
     stubHostFetch();
     return createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(prefix),
       guard: guardRules({ breakers }),
@@ -269,7 +269,7 @@ const PROSE = "COHERENCE-PROBE: Maple is a neobank for freelancers.";
 async function promptFor(overrides: Partial<Parameters<typeof createVendo>[0]>): Promise<string> {
   const seen: string[] = [];
   const vendo = createVendo({
-    model: recordingModel(seen),
+    models: { default: recordingModel(seen) },
     principal: async () => principal,
     store: await tempStore("vendo-coherence-prompt-"),
     ...overrides,
@@ -311,7 +311,7 @@ describe("instructions: one prose story, in the section brief always had", () =>
     const store = await tempStore("vendo-coherence-adopt-");
     const composed = agent({ name: "support", harness: vendoHarness(), store, instructions: PROSE });
     expect(() => createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       agent: composed,
       instructions: "a second voice",
@@ -365,7 +365,7 @@ describe("connectors: one list, strings and objects", () => {
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
     vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-strings-"),
       connectors: ["gmail"],
@@ -382,7 +382,7 @@ describe("connectors: one list, strings and objects", () => {
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
     vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-mixed-"),
       connectors: [
@@ -409,7 +409,7 @@ describe("connectors: one list, strings and objects", () => {
     // naming the toolkits the host asked for.
     vi.stubEnv("VENDO_API_KEY", "");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-nokey-"),
       connectors: ["gmail", "slack"],
@@ -436,7 +436,7 @@ describe("removed keys refuse to compose, naming their replacement", () => {
       // A JavaScript host gets no type error, and a dropped `policy` would mean
       // an unconfigured guard running wide open. Loud, or not at all.
       expect(() => createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         principal: async () => principal,
         ...extra,
       } as unknown as Parameters<typeof createVendo>[0])).toThrow(message);

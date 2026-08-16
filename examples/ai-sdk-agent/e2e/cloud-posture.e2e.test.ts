@@ -211,7 +211,7 @@ describe.skipIf(!LIVE)("examples/ai-sdk-agent — full Vendo Cloud posture (VEND
       // Same env (VENDO_API_KEY set) — but the host passes its own model and
       // its own store. Only the seams left unset stay cloud.
       const vendo = createVendo({
-        model: explicitGenerationModel(),
+        models: { default: explicitGenerationModel() },
         store,
         principal: async () => demoUser,
         guard: guard({ policy: "cautious" }),

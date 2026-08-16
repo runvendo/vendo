@@ -1,0 +1,62 @@
+---
+title: "E-TOOLS-004"
+sidebarTitle: "E-TOOLS-004"
+description: "Part of the tool catalog declares no request or response shape."
+---
+
+# E-TOOLS-004
+
+<Warning>
+**what doctor prints** (warning)
+
+catalog: inputs 9/12 · outputs 7/12 — blind: host_invoices_list,
+host_payments_create; declare them in your OpenAPI/tRPC contract, or run
+`vendo sync` with a model key so the judge reads the handlers
+</Warning>
+
+Some tools have no declared request schema, no declared response schema, or
+neither. The agent can still call them, just without a contract to bind to.
+
+`check tools/schemas` · `error_code E-TOOLS-004` · `doctor exits 0` (warning only)
+
+## What you're seeing
+
+Doctor counts, per tool, whether its input schema and output schema each
+came from a real source (an OpenAPI response schema, a tRPC `.output()`, a
+typed server action, or the AI judge) versus `unknown`. It warns whenever at
+least one tool is blind on either side, and names up to eight of them.
+
+## Why
+
+Nothing is broken here; a blind tool still runs, permissively. The cost is
+precision: the agent cannot know a blind tool's arguments and must not assume
+it takes none, and it has to pass a blind tool's whole output through
+instead of binding to the two fields a generated screen actually needs.
+
+## The fix
+
+Declare the shape in the contract you already publish. That is the rung that
+survives a refactor, since it is generated from your own source of truth
+rather than inferred:
+
+```ts
+export const listInvoices = t.procedure
+  .input(z.object({ status: z.enum(["open", "paid"]) }))
+  .output(z.array(InvoiceSchema)) // [!code focus]
+  .query(...);
+```
+
+For handlers with no contract to declare, a bare Next.js route handler for
+example, run `vendo sync` with a model key so the judgment pass reads the
+handler source and fills the blind slots. It never overwrites a slot your
+contract already filled.
+
+Leaving tools blind is safe. It only costs the agent precision.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-TOOLS-001" href="/production/troubleshooting/e-tools-001">every tool disabled</Card>
+  <Card title="E-TOOLS-002" href="/production/troubleshooting/e-tools-002">tool surface is empty</Card>
+  <Card title="E-TOOLS-003" href="/production/troubleshooting/e-tools-003">tools ungraded</Card>
+</CardGroup>

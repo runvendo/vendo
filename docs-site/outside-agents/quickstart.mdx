@@ -1,0 +1,152 @@
+---
+title: "From outside agents"
+description: "Your product, driven from your own agent, as one of your users."
+sidebarTitle: "Quickstart"
+---
+
+## Quickstart
+
+A door, a token, and your agent. `npx vendo init` writes the door, and the
+console holds the key.
+
+<Steps>
+
+<Step title="Open the door">
+
+`mcp` turns your app into an MCP server. With a Cloud account, `init` offers
+the **broker** posture: keys managed in the console, a stable tenant URL, and
+the OAuth surface off your domain.
+
+Take it. The door then trusts that broker.
+
+```ts src/vendo/server.ts focus={3}
+export const vendo = createVendo({
+  auth: authJs(),
+  mcp: true,
+});
+```
+
+Two things have to be true before the door opens.
+
+`auth` must be a preset that carries the oauth half: `clerk()`, `authJs()`,
+`supabase()`, or `auth0()`. Plain `jwt()` does not, and `init` writes nothing
+without one.
+
+`VENDO_BASE_URL` must name the public origin your agent actually reaches.
+Discovery, issuer, and token audience all derive from it.
+
+Two more values name the broker. They are the operator's, set where you deploy
+and never in the composition.
+
+```bash .env focus={3-4}
+VENDO_BASE_URL=https://app.maple.com
+# both values live on the console's MCP page
+VENDO_MCP_BROKER_URL=https://maple.mcp.vendo.run/mcp
+VENDO_MCP_FEDERATION_SECRET=<secret>
+```
+
+Two routes come with it, both written by `init`.
+
+| Route | What it is |
+| --- | --- |
+| `/api/vendo/mcp` | the door your agent connects to |
+| `/.well-known/oauth-*` | discovery, at your origin root, naming your broker |
+
+A broker-fronted door serves no token endpoint of its own. The exchange lives
+in the broker, in step 2.
+
+</Step>
+
+<Step title="Mint a user-bound token">
+
+The key is made once, in the console, under **Keys → Service keys**. It lives
+in the broker, so that is where your backend spends it.
+
+No browser to bounce through. Your backend trades that key plus one of *your
+own* user ids for a short-lived token, RFC 8693, at your tenant's `/token`.
+
+```bash your-backend.sh focus={5}
+curl -s https://maple.mcp.vendo.run/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d client_id=vendo-service \
+  -d client_secret="$SERVICE_KEY" \
+  -d subject_token=user_1904 \
+  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
+```
+
+```json response focus={4}
+{
+  "access_token": "vmat_…",
+  "token_type": "Bearer",
+  "expires_in": 600,
+  "scope": "read write"
+}
+```
+
+Ten minutes, bound to `user_1904`, with no refresh token to rotate or revoke.
+When it lapses, exchange again.
+
+Every call your agent makes with it runs *as that user*, through the same
+guard, policy, and audit your own UI answers to.
+
+A subject your product has never heard of is not rejected here. It dies at the
+first real tool call, the same kill switch every other grant answers to.
+
+</Step>
+
+<Step title="Wire it into your agent">
+
+Streamable HTTP at the door's URL, the token on the `authorization` header. A
+stock MCP client, no Vendo import: the door's own listing is the tool set.
+
+That URL is your app's, derived from `VENDO_BASE_URL` and never from the
+broker. It does not move when the posture does.
+
+```js acme-agent.mjs focus={7}
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client({ name: "acme-agent", version: "1.0.0" });
+await client.connect(new StreamableHTTPClientTransport(
+  new URL("https://app.maple.com/api/vendo/mcp"),
+  { requestInit: { headers: { authorization: `Bearer ${accessToken}` } } },
+));
+```
+
+From here the loop is ordinary: list the tools, hand them to your model, call
+them. What is not ordinary is who the calls belong to.
+
+A write still stops at your guard and waits for the person. The audit row names
+the key that acted.
+
+Words go back to your agent. The change lands in your product, under the user
+you named.
+
+Full client wiring, including sessions and retries, is in
+[Your own agent](/outside-agents/your-own-agent).
+
+</Step>
+
+</Steps>
+
+## Where to go next
+
+The door is set. These three go deeper on it.
+
+<CardGroup cols={3}>
+  <Card title="How the door works" href="/outside-agents/how-the-door-works">
+    Who is calling, how a call reaches your host tools, and what comes back.
+
+    `mcp + oauth + actAs`
+  </Card>
+  <Card title="Service keys & broker" href="/outside-agents/service-keys-and-broker">
+    Rotating keys, the audit's `svc:` attribution, and the hosted broker.
+
+    `grant_type=token-exchange`
+  </Card>
+  <Card title="API tools" href="/capabilities/api-tools">
+    The menu your agent sees, and the risk grade behind each call.
+
+    `.vendo/overrides.json`
+  </Card>
+</CardGroup>

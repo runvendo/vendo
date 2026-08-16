@@ -44,6 +44,12 @@ export const VENDO_MAKE_TOOL = "vendo_make";
 export const VENDO_APPS_PIN_TOOL = "vendo_apps_pin";
 export const VENDO_APPS_UNPIN_TOOL = "vendo_apps_unpin";
 
+/** The read that makes those two callable: the slot ids the host's own pages
+ *  have reported. Named here beside them because a model that invents a slot id
+ *  aims a placement at a spot no page renders, and this is the only answer to
+ *  "which ones are real". */
+export const VENDO_SLOTS_LIST_TOOL = "vendo_slots_list";
+
 /**
  * Tools whose whole effect is on a PERSON'S SCREEN.
  *
@@ -101,6 +107,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_apps_reseed: "Refresh a remixed piece",
   vendo_apps_pin: "Pin the app to your page",
   vendo_apps_unpin: "Take the app off your page",
+  vendo_slots_list: "Find the spots on your page",
   vendo_apps_data_list: "Read the app's saved items",
   vendo_apps_data_put: "Save an item in the app",
   vendo_apps_data_delete: "Remove an item from the app",

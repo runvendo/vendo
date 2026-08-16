@@ -93,7 +93,7 @@ function compose(toolkit: string) {
   return { seen, sent, build: async () => {
     const store = await tempStore();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       connectors: [gmailBroker()],

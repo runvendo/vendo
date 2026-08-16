@@ -1,25 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { SEATS, migrateModelSeats, seatConflict, type Seat } from "../src/index.js";
+import { SEATS, seatConflict, type Seat } from "../src/index.js";
 
 describe("the seat map (build contract §4)", () => {
-  it("is exactly the contracted seats", () => {
-    expect(SEATS).toEqual(["default", "reviewer", "judge", "fill"]);
-  });
-
-  it("migrates today's slot names onto seats", () => {
-    expect(migrateModelSeats({ agent: "a", paint: "p", judge: "j" })).toEqual({
-      default: "a",
-      fill: "p",
-      judge: "j",
-    });
-  });
-
-  it("carries a seat already written in the new vocabulary straight through", () => {
-    expect(migrateModelSeats({ default: "d", reviewer: "r" })).toEqual({ default: "d", reviewer: "r" });
-  });
-
-  it("returns nothing for an empty config rather than inventing seats", () => {
-    expect(migrateModelSeats({})).toEqual({});
+  it("is exactly the contracted seats — one per real job", () => {
+    expect(SEATS).toEqual(["default", "apps", "review", "judge"]);
   });
 });
 
@@ -48,7 +32,7 @@ describe("boot error when a harness option and a seat both set a model (§4)", (
 
 describe("Seat is a closed union", () => {
   it("accepts every contracted seat name", () => {
-    const seats: Seat[] = ["default", "reviewer", "judge", "fill"];
+    const seats: Seat[] = ["default", "apps", "review", "judge"];
     expect(seats.every((seat) => SEATS.includes(seat))).toBe(true);
   });
 });

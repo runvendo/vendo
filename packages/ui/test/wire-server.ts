@@ -317,7 +317,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
     /** The slot registry: what mounted `VendoSlot`s have reported. Kept
      *  newest-first the way the real route answers, and re-reporting a slot
      *  moves it back to the head rather than adding a second row. */
-    slots: [] as Array<{ id: string; label: string; lastSeen: string }>,
+    slots: [] as Array<{ id: string; label: string; description?: string; lastSeen: string }>,
     /** PR3 — apps whose build "lands" on the `after`-th placements read, so a
      *  test can watch a slot go building → ready over the real wire instead of
      *  asserting two static pages. Placing one again rewinds it (see the place
@@ -1360,7 +1360,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
       }
       if (url.pathname === "/slots") {
         if (method === "POST") {
-          const reported = (parsedBody as { slots: Array<{ id: string; label: string }> }).slots;
+          const reported = (parsedBody as { slots: Array<{ id: string; label: string; description?: string }> }).slots;
           // Mirrors the real route's caps (packages/vendo/src/wire/slots.ts):
           // at most 200 entries, each id and label 1-256 characters, refused as
           // `validation` before ANY row is written — the whole batch, because
@@ -1374,7 +1374,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
           }
           for (const slot of reported) {
             state.slots = [
-              { id: slot.id, label: slot.label, lastSeen: NOW },
+              // Kept, not dropped: a fixture that quietly discards a field lets
+              // a test pass while the real registry loses the sentence.
+              { id: slot.id, label: slot.label, ...(slot.description === undefined ? {} : { description: slot.description }), lastSeen: NOW },
               ...state.slots.filter(row => row.id !== slot.id),
             ];
           }

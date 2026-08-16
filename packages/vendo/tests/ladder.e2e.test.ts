@@ -280,7 +280,7 @@ async function harness(options: { sandbox?: boolean } = {}): Promise<{
     catalog: [],
     model,
     screen: screenAssembler({
-      models: { default: model },
+      models: { default: model, apps: model },
       tools: boundTools,
       workspace: screenWorkspace,
       render: (screenCtx) => ({

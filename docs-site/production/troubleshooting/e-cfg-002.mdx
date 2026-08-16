@@ -1,0 +1,42 @@
+---
+title: "E-CFG-002"
+sidebarTitle: "E-CFG-002"
+description: "Doctor warns when .vendo/data/.gitignore is missing, which risks committing the local store into version control."
+---
+
+```text config/data-gitignore
+warning: .vendo/data/.gitignore is missing
+```
+
+`check: config/data-gitignore` · `error_code: E-CFG-002` · `doctor exits: 0`
+
+## What you're seeing
+
+This is a warning, not a failure; doctor still exits 0. Nothing is broken
+yet, but the guard rail that keeps your local database out of git is gone.
+
+## Why
+
+The gitignore that keeps the local store's data directory out of version
+control was deleted. Without it, everything PGlite writes to `.vendo/data`
+is fair game for `git add`.
+
+## The fix
+
+Run `npx vendo init` to recreate it, or write the file by hand.
+
+```bash
+npx vendo init
+```
+
+```text .vendo/data/.gitignore
+*
+!.gitignore
+```
+
+Re-run `npx vendo doctor` once the file is back.
+
+## Related errors
+
+- [E-CFG-001](/production/troubleshooting/e-cfg-001): a missing file in the same `.vendo/` directory
+- [E-STORE-001](/production/troubleshooting/e-store-001): what actually lives in `.vendo/data` and why its durability matters

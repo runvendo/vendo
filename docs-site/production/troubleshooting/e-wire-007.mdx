@@ -1,0 +1,50 @@
+---
+title: "E-WIRE-007"
+sidebarTitle: "E-WIRE-007"
+description: "Doctor found no createVendo server wiring on a host it can't pattern-match to Next.js or Express."
+---
+
+```text wiring/server
+broken: no createVendo server wiring found — import createVendo from
+@vendoai/vendo/server and mount vendo.handler on your runtime's request entry
+```
+
+`check: wiring/server` · `error_code: E-WIRE-007` · `doctor exits: 1`
+
+## What you're seeing
+
+Your host is a Cloudflare Worker, a Bun server, a Hono app, or something else
+doctor doesn't recognize as Next.js or Express. This check runs instead of
+the framework-specific ones and it's failing.
+
+## Why
+
+Doctor found no source file that imports `createVendo` from
+`@vendoai/vendo/server`, or nothing that mounts its handler. There is no
+Vendo wire for your runtime to serve.
+
+## The fix
+
+Import `createVendo` and route your runtime's request entry through
+`vendo.handler(request)`.
+
+```ts src/index.ts {1,4,8}
+import { createVendo } from "@vendoai/vendo/server";
+
+export default {
+  async fetch(request: Request) {
+    // Construct lazily, on the first request, not at module scope;
+    // edge runtimes cold-start a fresh module scope per request.
+    const vendo = createVendo({ /* ... */ });
+    return vendo.handler(request);
+  },
+};
+```
+
+Re-run `npx vendo doctor` once the handler is mounted.
+
+## Related errors
+
+- [E-WIRE-008](/production/troubleshooting/e-wire-008): the client-side counterpart on the same unrecognized framework
+- [E-WIRE-005](/production/troubleshooting/e-wire-005): dependency declared, checked before this one
+- [E-WIRE-011](/production/troubleshooting/e-wire-011): the dependency is declared but not resolvable

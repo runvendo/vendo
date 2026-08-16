@@ -49,7 +49,7 @@ async function venueFor(env: Record<string, string>, sandbox?: SandboxAdapter): 
   vi.stubEnv("VENDO_API_KEY", "");
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store: await tempStore(),
     ...(sandbox === undefined ? {} : { sandbox }),

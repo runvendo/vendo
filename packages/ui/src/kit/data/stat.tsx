@@ -1,9 +1,9 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
 import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { densityVars, font, hairline, microLabel, numeric, resolveTone, t, toneColor, type KitDensity, type KitTone } from "../tokens.js";
+import { densityVars, font, hairline, microLabel, numeric, resolveTone, t, toneColor, type KitDensity, type KitStyled, type KitTone } from "../tokens.js";
 
-export interface StatProps {
+export interface StatProps extends KitStyled {
   /** Metric name. */
   label: string;
   /** Raw value; formatted by `format` (money takes major units, never cents). */
@@ -27,7 +27,7 @@ export interface StatProps {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", trend, tone, density, icon, children }: StatProps) {
+export function Stat({ label, value, format = "text", trend, tone, density, icon, style, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
   const formatted = applyFormat(value, format);
@@ -58,6 +58,7 @@ export function Stat({ label, value, format = "text", trend, tone, density, icon
         borderRadius: t.radiusSmall,
         background: t.surface,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
+        ...style,
       }}
     >
       {/* A row whether or not a glyph came: with one child it lays out exactly

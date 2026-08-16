@@ -58,7 +58,7 @@ const ctx: RunContext = { principal, venue: "app", presence: "present", sessionI
 
 async function compose(config: Partial<CreateVendoConfig> = {}): Promise<Vendo> {
   return createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     // Only mint a store when the row did not bring its own: spreading a
     // default here would build a whole PGlite database per compose and then

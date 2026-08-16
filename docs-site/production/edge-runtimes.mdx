@@ -1,0 +1,157 @@
+---
+title: "Edge runtimes"
+sidebarTitle: "Edge runtimes"
+description: "Run Vendo on Cloudflare Workers, Bun, Deno, Hono, Fastify, or Lambda: what init generates, the three rules, and the adapter contract if you mount the handler yourself."
+---
+
+The handler takes a standard `Request` and returns a standard `Response`. It
+runs on any Web-standard runtime, not just Node.
+
+A CI gate bundles the server entry for a Worker target and boots it under real
+workerd on every change, so the wiring below stays supported.
+
+## What init writes
+
+Run `npx vendo init --framework custom`. Detection lands here on its own when
+the host is neither Next.js nor Express.
+
+It generates `vendo/server.ts`: a lazy composition that takes `Request` in and
+returns `Response`, with the environment passed per call.
+
+```ts vendo/server.ts highlight={12,13,14,15,16}
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { cloudConnections, cloudSandbox, cloudTools, createVendo, guard, hostedStore } from "@vendoai/vendo/server";
+
+let vendo: Vendo | null = null;
+
+function getVendo(env: VendoEnv) {
+  if (vendo === null) {
+    const apiKey = env.VENDO_API_KEY;
+    const baseUrl = (env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\/+$/, "");
+    const cloud = { apiKey, baseUrl };
+    vendo = createVendo({
+      models: { default: createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo") },
+      store: hostedStore(cloud),
+      connections: cloudConnections(cloud),
+      connectors: [cloudTools(cloud)],
+      sandbox: cloudSandbox(cloud),
+      guard: guard({ policy: {} }),
+    });
+  }
+  return vendo;
+}
+
+export function handleVendoRequest(request: Request, env: VendoEnv) {
+  return getVendo(env).handler(request);
+}
+```
+
+Every Cloud seam is named in the composition. Nothing is inferred from the
+environment at this layer, because on a Worker there is no ambient environment
+to infer from.
+
+---
+
+## Route your runtime through it
+
+```ts Cloudflare Workers highlight={4}
+// wrangler.toml: compatibility_flags = ["nodejs_compat"]
+import { handleVendoRequest } from "./vendo/server";
+
+export default { fetch: (request: Request, env: VendoEnv) => handleVendoRequest(request, env) };
+```
+
+```ts Bun · Deno · Hono highlight={1}
+app.all("/api/vendo/*", (c) => handleVendoRequest(c.req.raw));
+```
+
+The client side does not change. Mount `<VendoProvider>` with the theme and
+your base path, and put `<VendoOverlay />` inside it.
+
+---
+
+## The three rules
+
+<Steps>
+  <Step title="Construct lazily.">
+    `createVendo()` performs no I/O and starts no timers at construction, but
+    the generated lazy-singleton shape is still the contract.
+
+    Workers forbids async work in module scope, and environment variables only
+    exist per request there.
+  </Step>
+  <Step title="Pass the adapters.">
+    The model ladder and the local store engines need Node. On a Worker they
+    refuse with guidance instead of half working.
+
+    The generated wiring above names every one of them, which is why it runs
+    unchanged.
+  </Step>
+  <Step title="Set VENDO_BASE_URL.">
+    Point it at the deployed app's full public URL, path prefix included.
+
+    Present-credential forwarding fails closed without it, and doctor reports
+    [`E-AUTH-001`](/production/troubleshooting/e-auth-001).
+  </Step>
+</Steps>
+
+The model rule has an exact shape. On an edge runtime the Cloud gateway is the
+stock Anthropic provider pointed at the console:
+
+```ts highlight={1}
+createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL}/api/v1` })("vendo")
+```
+
+Call `vendoModel()` on a Worker and it throws that same sentence back at you on
+first use, rather than pretending.
+
+---
+
+## Mounting the handler yourself
+
+If you skip the generated adapter and mount `vendo.handler` under a base path
+by hand, your adapter has to do five things.
+
+| Rule | Why |
+| --- | --- |
+| Pass GET, POST, PUT, PATCH, and DELETE through unchanged | The wire routes on method |
+| Never buffer the body of `POST /threads` | That is the streaming reply |
+| Rebuild the URL from `req.originalUrl`, not `req.url` | Express strips the mount path from `req.url` |
+| Keep cookie and authorization headers reachable | `principal(request)` and present-mode tool calls read them |
+| Return multi-value `Set-Cookie` as an array | A joined string loses cookies |
+
+`vendo doctor` judges an unknown-framework host by its wiring, never by another
+framework's file layout. A missing server half reports
+[`E-WIRE-007`](/production/troubleshooting/e-wire-007) and a missing client half
+[`E-WIRE-008`](/production/troubleshooting/e-wire-008).
+
+---
+
+## What Vendo calls your runtime
+
+Telemetry and error reports name the runtime from the globals it advertises:
+`workerd`, `edge-light`, `bun`, `deno`, `node`, or `unknown`.
+
+A crash on the edge is never read as a crash on Node.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Model credentials" href="/production/model-credentials">
+    The gateway your edge composition points at, and how to pin a model.
+
+    `VENDO_MODEL`
+  </Card>
+  <Card title="Vendo Cloud" href="/production/vendo-cloud">
+    The key every adapter above takes, and where to mint one.
+
+    `vendo login`
+  </Card>
+  <Card title="Deploying" href="/production/deploying">
+    The eight checks that have to pass before your users arrive.
+
+    `npx vendo doctor`
+  </Card>
+</CardGroup>

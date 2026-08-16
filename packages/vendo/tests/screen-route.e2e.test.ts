@@ -180,7 +180,7 @@ async function walk(options: {
     },
   });
   const vendo = createVendo({
-    model,
+    models: { default: model },
     principal: async () => principal,
     store,
     harness: harness as never,

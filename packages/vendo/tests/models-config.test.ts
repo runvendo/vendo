@@ -17,15 +17,16 @@ function scriptedMake() {
 
 const explicitModel = (id: string): LanguageModel => ({ explicit: id } as unknown as LanguageModel);
 
-describe("resolveModels (models block + deprecated aliases)", () => {
-  it("zero config rides the ladder on both slots — agent default + invisible family paint", () => {
+describe("resolveModels (the models block, one seat per job)", () => {
+  it("zero config rides the ladder once per seat, each under its own slot", () => {
     const { made, make } = scriptedMake();
     const resolved = resolveModels({}, make);
     expect(resolved.agent.venue).toBe("ladder");
-    expect(resolved.paint).toEqual({ model: expect.objectContaining({ slot: "paint" }) });
     expect(made).toEqual([
       { name: undefined, slot: "agent" },
-      { name: undefined, slot: "paint" },
+      { name: undefined, slot: "apps" },
+      { name: undefined, slot: "review" },
+      { name: undefined, slot: "judge" },
     ]);
   });
 
@@ -34,58 +35,50 @@ describe("resolveModels (models block + deprecated aliases)", () => {
     const viaString = resolveModels({ models: { default: "claude-opus-4-8" } }, make);
     expect(viaString.agent.venue).toBe("ladder");
     expect(made[0]).toEqual({ name: "claude-opus-4-8", slot: "agent" });
-    // A string-configured agent still rides the ladder, so paint stays the family fast pick.
-    expect(viaString.paint).toEqual({ model: expect.objectContaining({ slot: "paint" }) });
+    // A string-configured default still rides the ladder, so the other seats
+    // keep their own per-slot picks.
+    expect(viaString.seats.apps).toEqual(expect.objectContaining({ slot: "apps" }));
 
     const object = explicitModel("byo");
     const viaObject = resolveModels({ models: { default: object } }, scriptedMake().make);
     expect(viaObject.agent).toEqual({ model: object, venue: "custom" });
-    // Explicit model object → paint falls back to that model as today (engine
-    // fallback), so NO ladder paint model is composed.
-    expect(viaObject.paint).toBeUndefined();
   });
 
-  it("models.fill names the paint lane's model; the deprecated paint.model still composes", () => {
+  it("every unset seat borrows an explicitly passed default object", () => {
     const { made, make } = scriptedMake();
-    const agent = explicitModel("agent");
-
-    // Deprecated knob alone keeps working.
-    expect(resolveModels({ model: agent, paint: { model: explicitModel("legacy-paint") } }, make).paint)
-      .toEqual({ model: explicitModel("legacy-paint") });
-
-    // models.fill as a string resolves through the ladder with the paint slot.
-    const viaString = resolveModels({ model: agent, models: { fill: "claude-haiku-4-5" } }, make);
-    expect(viaString.paint).toEqual({ model: expect.objectContaining({ name: "claude-haiku-4-5", slot: "paint" }) });
-    expect(made).toContainEqual({ name: "claude-haiku-4-5", slot: "paint" });
-
-    // models.fill as an object wins as-is.
-    const preferred = explicitModel("preferred-paint");
-    expect(resolveModels({ model: agent, models: { fill: preferred } }, make).paint)
-      .toEqual({ model: preferred });
+    const object = explicitModel("byo");
+    const resolved = resolveModels({ models: { default: object } }, make);
+    expect(resolved.seats).toEqual({ default: object, apps: object, review: object, judge: object });
+    // Nothing rode the ladder: an explicit model is the host's whole answer.
+    expect(made).toEqual([]);
   });
 
-  it("paint.disabled stays the single-lane switch and suppresses the ladder paint model", () => {
+  it("an explicit seat wins over the borrowed default, string or object", () => {
     const { made, make } = scriptedMake();
-    const resolved = resolveModels({ paint: { disabled: true } }, make);
-    expect(resolved.paint).toEqual({ disabled: true });
-    // Only the agent slot composed — no paint model behind a disabled lane.
-    expect(made).toEqual([{ name: undefined, slot: "agent" }]);
+    const preferred = explicitModel("preferred-review");
+    const resolved = resolveModels(
+      { models: { default: explicitModel("byo"), apps: "claude-haiku-4-5", review: preferred } },
+      make,
+    );
+    expect(resolved.seats.apps).toEqual(expect.objectContaining({ name: "claude-haiku-4-5", slot: "apps" }));
+    expect(resolved.seats.review).toBe(preferred);
+    expect(made).toEqual([{ name: "claude-haiku-4-5", slot: "apps" }]);
   });
 
-  it("rejects non-string non-object slot values and blank strings with a validation error", () => {
+  it("rejects non-string non-object seat values and blank strings with a validation error", () => {
     const { make } = scriptedMake();
     expect(() => resolveModels({ models: { default: 5 as unknown as string } }, make)).toThrow(VendoError);
-    expect(() => resolveModels({ models: { fill: "   " } }, make)).toThrow(VendoError);
+    expect(() => resolveModels({ models: { apps: "   " } }, make)).toThrow(VendoError);
     expect(() => resolveModels({ models: { judge: null as unknown as string } }, make)).toThrow(VendoError);
   });
 
   it("refuses a models key that is not a seat instead of ignoring it", () => {
     const { make } = scriptedMake();
-    // A JavaScript host — or a config still on the removed `agent`/`paint`
-    // slots — would otherwise get a silently dropped model.
+    // A JavaScript host — or a config still on the removed `agent`/`paint`/
+    // `fill`/`reviewer` spellings — would otherwise get a silently dropped model.
     expect(() => resolveModels({ models: { agent: "opus" } as never }, make))
       .toThrow(/models\.agent is not a model seat/);
-    expect(() => resolveModels({ models: { paint: "haiku" } as never }, make))
-      .toThrow(/models\.paint is not a model seat/);
+    expect(() => resolveModels({ models: { fill: "haiku" } as never }, make))
+      .toThrow(/models\.fill is not a model seat/);
   });
 });

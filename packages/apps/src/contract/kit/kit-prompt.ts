@@ -4,7 +4,7 @@
  * W3 wires this into the engine's wire contract (engine.ts).
  */
 import { DISPLAY_TAG_NAMES } from "./display.js";
-import { KIT_SHARED_PROP_NAMES, KIT_SPECS, kitSlotPath } from "./specs.js";
+import { KIT_PREAMBLE_PROP_NAMES, KIT_SPECS, kitSlotPath } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 
 export interface KitPromptOptions {
@@ -36,9 +36,20 @@ export const PREAMBLE = [
   "",
   "Two adjectives. **tone** (neutral | accent | success | warning | danger) on",
   "values, badges and surfaces paints from the HOST's theme — the figure that is",
-  "bad news is `danger`, the one worth looking at is `accent`, and nothing invents",
-  "a color. **density** (comfortable | compact) on containers and data blocks",
-  "tightens everything inside; an operations screen is `compact`.",
+  "bad news is `danger`, the one worth looking at is `accent`. **density**",
+  "(comfortable | compact) on containers and data blocks tightens everything",
+  "inside; an operations screen is `compact`.",
+  "",
+  "Leaving the theme. The theme is the DEFAULT and costs no props: set none and",
+  "the app is brand-native. When the person asks for a particular look, every",
+  "component takes `style` — inline CSS merged onto its root, your values winning",
+  "— and a component that renders an engine (each one says which) takes that",
+  "engine's own props too: `<Sparkline stroke=\"#FF3B30\"/>`, a recharts prop on one",
+  "entry of a chart's `series`, a Base UI attribute on a control. An engine prop is the",
+  "engine's, so it is passed through unchecked, must be a JSON value (a function",
+  "there never arrives), and carries no compatibility promise — an engine upgrade",
+  "may rename one, and an app that used it paints wrong until it is regenerated.",
+  "So reach for the theme first and for these when the ask is specific.",
   "",
   "Cells are not sealed. A DataTable column and a CardList field each take a",
   "`cell` — Kit value components composed for ONE record — and a Stat takes them",
@@ -106,16 +117,21 @@ function classTag(cls: PropClass): string {
 
 function renderSpec(spec: KitComponentSpec): string {
   const lines: string[] = [`## <${spec.name}>`, spec.summary, ""];
-  // The shared adjectives sit in the props of every component that reads one, so
-  // validation and the screen typings admit them there; the preamble teaches them
-  // once, and restating them per component would spend a fifth of the catalog.
-  const props = Object.entries(spec.props).filter(([name]) => !KIT_SHARED_PROP_NAMES.includes(name));
+  // The shared adjectives sit in the props of every component that reads one, and
+  // `style` on all fifty, so validation and the screen typings admit them there;
+  // the preamble teaches them once, and restating them per component would spend
+  // a fifth of the catalog.
+  const props = Object.entries(spec.props).filter(([name]) => !KIT_PREAMBLE_PROP_NAMES.includes(name));
   if (props.length > 0) {
     lines.push("Props:");
     for (const [name, prop] of props) {
       const req = prop.required ? " (required)" : "";
       lines.push(`- \`${name}\` [${classTag(prop.cls)}]${req} — ${prop.doc}`);
     }
+    // WHICH engine, beside the props, because the preamble can only say that some
+    // components have one: without the name the model cannot know whose
+    // vocabulary it is reaching for.
+    if (spec.engine !== undefined) lines.push(`- plus any \`${spec.engine}\` prop, passed straight through`);
     lines.push("");
   }
   // The slots, from the same declaration the nesting check enforces: a place

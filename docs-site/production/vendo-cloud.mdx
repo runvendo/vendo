@@ -1,0 +1,245 @@
+---
+title: "Vendo Cloud"
+sidebarTitle: "Vendo Cloud"
+description: "What VENDO_API_KEY fills, the two key scopes, what usage costs, the hosted sandbox, and how Cloud fires your users' automations."
+---
+
+One key runs the whole platform. `VENDO_API_KEY` is the model gateway, the
+store, the sandbox, the connector broker, and the automation scheduler.
+
+## Get a key
+
+`vendo login` opens your browser at the approval page, you approve the code
+while signed in to the console, and the minted key is written to `.env.local`.
+
+```bash Terminal highlight={1}
+$ npx vendo login
+Opening your browser — approve the code BCDF-GHJK there…
+Approved — VENDO_API_KEY saved to .env.local (…a1b2)
+```
+
+The key is never printed. A non-TTY caller gets the URL and pairing code on
+stdout instead, so a coding agent can hand them to you.
+
+If the polling process dies before you approve, run `vendo login` again. It
+resumes the pending claim and the code you were already shown still works.
+
+---
+
+## What the key fills
+
+`createVendo` decides which implementation composes at each seam. A key fills
+the seams your composition left unset.
+
+| Seam | What the key composes | Where it is covered |
+| --- | --- | --- |
+| Model | The console's Anthropic-compatible gateway | [Model credentials](/production/model-credentials) |
+| Store | Vendo Cloud Postgres, tenant from the key's org | [Persistence](/production/persistence) |
+| Sandbox | Pooled machines for server-backed apps | [Hosted sandbox](#hosted-sandbox) |
+| Connections | The Composio connector broker | [Connected accounts](/capabilities/connected-accounts) |
+| Knowledge | The Cloud retrieval engine | [Knowledge](/customize/knowledge) |
+| Secrets | Cloud secrets, behind your process environment | [Persistence](/production/persistence) |
+
+An adapter you pass explicitly always wins. The adapters themselves never read
+the environment, so nothing is decided in a hidden branch.
+
+<Note>
+  There is no validate endpoint and no entitlement cache. `vendo doctor` checks
+  that the key is present and well formed locally, and a bad or revoked key
+  surfaces on the first real service call as `Invalid or revoked API key (401)`.
+</Note>
+
+---
+
+## Key scopes
+
+Every key carries one of two scopes, fixed when it is minted.
+
+<AccordionGroup>
+  <Accordion title="Runtime (the default)">
+    Reads and writes this project's data. This is what apps, agents, and CI
+    publishers need.
+
+    Every new key and every key minted before scopes shipped is Runtime.
+  </Accordion>
+  <Accordion title="Admin">
+    Everything Runtime can do, plus the two lifecycle doors that permanently
+    destroy or re-own data: `POST /api/v1/store/erase` and
+    `POST /api/v1/store/lifecycle/promote`.
+
+    A runtime-scoped key that hits either is refused with HTTP 403 and the
+    `blocked` code, before the request body is read.
+  </Accordion>
+</AccordionGroup>
+
+Scope is chosen in the console's **Create key** dialog. Runtime is preselected
+and Admin is a deliberate second click.
+
+`vendo cloud keys create` mints Runtime keys only. Use the console when you
+need Admin.
+
+```bash Terminal highlight={1}
+vendo cloud keys create --project <projectId> --name "ci-publisher"
+vendo cloud keys list --project <projectId>
+vendo cloud keys revoke --project <projectId> --id <keyId>
+```
+
+`--project` is optional only when there is exactly one candidate: one
+organization with one project in it.
+
+---
+
+## Pricing
+
+A plan's price is the amount of usage it includes. Past the included dollars,
+usage meters at the published rates and pauses at the plan's spend cap.
+
+| Plan | Price | Includes | Default spend cap |
+| --- | --- | --- | --- |
+| Free | $0 | $5 of usage / month | $0 (hard-stops) |
+| Pro | $49 / month | $49 of usage / month | $100 / month |
+| Teams | $499 / month | $499 of usage / month | $1,000 / month |
+| Enterprise | Custom | Committed usage | None |
+
+Usage meters org-wide across every project, at rates that are identical on
+every plan including Free.
+
+| Rate | Price |
+| --- | --- |
+| AI tier `vendo-fast` | $1.15 / M input tokens · $5.75 / M output tokens |
+| AI tier `vendo` | $2.30 / M input tokens · $11.50 / M output tokens |
+| AI tier `vendo-strong` | $5.75 / M input tokens · $28.75 / M output tokens |
+| Sandbox | $0.01 per minute of wall-clock run time |
+| Storage | $0.25 per GB-month |
+| Automation runs | $3 per 1,000 runs |
+
+Free hard-stops at $5 with a clear error naming the reset date, never a charge.
+Owners are emailed at 50%, 90%, and 100% of the cap, and usage pauses when the
+cap is reached.
+
+---
+
+## Hosted sandbox
+
+Server-backed apps need a machine. `cloudSandbox` is the adapter behind them,
+and the key composes it into the unset sandbox slot for you.
+
+Machines boot from Cloud's pooled base image, Node plus the in-box agent.
+Snapshot references are prefixed `vendo:v2:` and resume only against the
+console.
+
+<Warning>
+  Egress is HTTP(S) only. Raw TCP is severed even to allowlisted hosts, so a
+  direct database connection from inside a box never works, while the HTTPS
+  store callback does.
+</Warning>
+
+To construct it by hand, for instance to raise the per-request timeout:
+
+```ts highlight={5}
+import { cloudSandbox, createVendo } from "@vendoai/vendo/server";
+
+const vendo = createVendo({
+  auth: authJs(),
+  sandbox: cloudSandbox({ apiKey: process.env.VENDO_API_KEY!, timeoutMs: 600_000 }),
+});
+```
+
+`timeoutMs` is the per-request abort budget and defaults to five minutes.
+`baseUrl` overrides the console origin.
+
+---
+
+## Automations run in Cloud
+
+There is nothing to deploy. The automations your users build sync to Vendo
+Cloud as they save them and run on Vendo's schedulers.
+
+Your process says so at boot:
+
+```text highlight={1}
+[vendo] Vendo Cloud is the hosted store for this deployment: schedule and
+external-trigger automations are Cloud's job. Host-event automations
+(vendo.emit) are unaffected.
+```
+
+A development process is the exception. Cloud's scheduler cannot reach a
+localhost wire, so a dev process fires its own schedules and says that too.
+
+External triggers ride the Composio connectors. Connect the account once in the
+console and the hosted trigger registers itself.
+
+<Warning>
+  A `fn:` step is an HTTP call into the generated app's own sandbox machine, not
+  a call back into your host process. When Cloud fires the automation, the Cloud
+  runner has to wake and reach that machine, and in v1 it may not be able to.
+
+  A step that cannot reach a machine settles as an error outcome for that step,
+  not a crashed run. Enabling one warns once, naming the app.
+
+  Replace the `fn:` steps with host tools the Cloud runner can execute.
+</Warning>
+
+---
+
+## Share and publish
+
+With the key set, the apps runtime calls the hosted API.
+
+```ts highlight={1,2}
+const snapshot = await vendo.apps.share(appId, ctx);
+const record = await vendo.apps.publish(appId, ctx);
+```
+
+`share` returns a frozen copy with `id`, `doc`, and `createdAt`. `publish`
+returns the assigned `version` alongside `id`, `appId`, and `createdAt`.
+
+Both responses are validated against the frozen wire schemas before they
+resolve.
+
+---
+
+## Error handling
+
+| Code | HTTP | Means |
+| --- | --- | --- |
+| `cloud-required` | 402 | No key, an invalid key, or the org has used up its included dollars |
+| `blocked` | 403 | A runtime-scoped key hit an admin-only door |
+| `sandbox-unavailable` | 501 | The console is down, or no sandbox is configured |
+| `validation`, `not-found`, `conflict` | 4xx | Propagated from the hosted API with the wire's own codes |
+
+Key format is `vnd_` followed by 40 hex characters. `vendo init --cloud-key`
+rejects a malformed key before writing it, and doctor warns on one already in
+the environment.
+
+Neither makes a network call to do so.
+
+To point at a different console, for instance a staging environment:
+
+```bash highlight={1}
+export VENDO_CLOUD_URL=https://console.staging.vendo.run
+```
+
+Individual CLI commands also take `--api-url <url>` for a one-off override.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Persistence" href="/production/persistence">
+    What the hosted store holds, what it refuses, and how to erase a user.
+
+    `eraseStore(vendo.store)`
+  </Card>
+  <Card title="Model credentials" href="/production/model-credentials">
+    The gateway the key points at, and how to pin a model.
+
+    `VENDO_MODEL`
+  </Card>
+  <Card title="Telemetry" href="/production/telemetry">
+    What a keyed deployment reports about itself, and how to turn it off.
+
+    `VENDO_TELEMETRY_DISABLED=1`
+  </Card>
+</CardGroup>

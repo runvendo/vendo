@@ -11,16 +11,16 @@
  *
  * The manual is no longer one of those mirrors for the byte budgets: a screen is
  * `app.tsx` now and has no byte budget, so what is asserted of the manual here is
- * that it quotes none. The budgets themselves still bind a stored component map
- * (`contract/component-map.ts`), so core, the contract and the docs page still
- * have to agree.
+ * that it quotes none. The public docs page dropped out for the same reason in
+ * the Cloud restructure — `generated/apps` teaches `app.tsx`, which has no byte
+ * budget to state. The budgets themselves still bind a stored component map
+ * (`contract/component-map.ts`), so core and the contract still have to agree.
  *
  * This file is the one place a format number or a component name is written by
  * hand. Everything else derives, and this test fails the moment any mirror
  * drifts from another — a test, not a convention.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES as CORE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS as CORE_MAX_GENERATED_COMPONENTS,
@@ -57,11 +57,6 @@ const VOCABULARY = [
   "Tooltip",
 ];
 
-const DOCS_FORMAT_PAGE = readFileSync(
-  new URL("../../../docs-site/capabilities/generated-ui.mdx", import.meta.url),
-  "utf8",
-);
-
 describe("the three bundle limits have ONE definition", () => {
   it("core holds the values this file pins", () => {
     expect(CORE_MAX_GENERATED_COMPONENTS).toBe(LIMITS.generatedComponents);
@@ -86,19 +81,6 @@ describe("the manual states no budget, because the artifact it teaches has none"
     // budget nothing enforces on the file it is about, which is this file's own
     // failure mode pointed the other way.
     expect(VENDO_FORMAT_REFERENCE).not.toMatch(/\d+ KB/);
-  });
-});
-
-describe("the public docs page states the same format", () => {
-  it("quotes the three limits the validator enforces", () => {
-    const stated = /at most \*\*(\d+)\*\* generated components, each at most\s+\*\*(\d+) KB\*\* of source, and \*\*(\d+) KB\*\* across all of them/
-      .exec(DOCS_FORMAT_PAGE);
-    expect(stated, "docs-site/capabilities/generated-ui.mdx must state the three component limits").not.toBeNull();
-    expect([Number(stated?.[1]), Number(stated?.[2]) * KB, Number(stated?.[3]) * KB]).toEqual([
-      TREE_MAX_GENERATED_COMPONENTS,
-      TREE_MAX_COMPONENT_SOURCE_BYTES,
-      TREE_MAX_TOTAL_COMPONENT_BYTES,
-    ]);
   });
 });
 

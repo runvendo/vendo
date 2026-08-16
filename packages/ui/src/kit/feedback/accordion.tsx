@@ -1,14 +1,14 @@
 /** Accordion — self-managing collapsible sections (W2 §The Kit). */
 import { Accordion as Base } from "@base-ui/react/accordion";
-import type { CSSProperties, ReactNode } from "react";
-import { font, hairline, t, transitionFor } from "../tokens.js";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 export interface AccordionItem {
   label: string;
   content: ReactNode;
 }
 
-export interface AccordionProps {
+interface AccordionOwnProps extends KitStyled {
   items: AccordionItem[];
   /** Allow more than one section open at once. */
   multiple?: boolean;
@@ -16,13 +16,17 @@ export interface AccordionProps {
   defaultOpen?: number[];
 }
 
-export function Accordion({ items, multiple = false, defaultOpen = [] }: AccordionProps) {
+/** Plus any Base UI `<Accordion.Root>` prop, handed straight to the accordion. */
+export type AccordionProps = AccordionOwnProps & KitEngine<ComponentProps<typeof Base.Root>, AccordionOwnProps>;
+
+export function Accordion({ items, multiple = false, defaultOpen = [], style, children, pending, ...engine }: AccordionProps & KitRendered) {
   return (
     <Base.Root
       data-kit="Accordion"
+      {...given(engine)}
       multiple={multiple}
       defaultValue={defaultOpen}
-      style={{ ...font, border: hairline, borderRadius: t.radiusMedium, overflow: "hidden", background: t.surface }}
+      style={{ ...font, border: hairline, borderRadius: t.radiusMedium, overflow: "hidden", background: t.surface, ...style }}
     >
       {(items ?? []).map((item, i) => (
         // Sections are addressed by INDEX: two items may carry the same label,

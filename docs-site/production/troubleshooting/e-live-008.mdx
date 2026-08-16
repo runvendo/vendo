@@ -1,0 +1,37 @@
+---
+title: "E-LIVE-008"
+sidebarTitle: "E-LIVE-008"
+description: "Retired: the generic records.* store family this warning covered was replaced by appData.* and engine.*."
+---
+
+```text retired
+E-LIVE-008 — retired, doctor no longer emits this code
+```
+
+`error_code: E-LIVE-008` · `status: retired`
+
+## What you're seeing
+
+Nothing: this warning cannot appear in a current run. You are reading it
+from an older report.
+
+## Why
+
+The generic `records.*` store-wire family was on its way out when this
+warning shipped, for one release. It has since been fully replaced by two
+named families, so there is nothing left to warn about.
+
+## The fix
+
+Move every `records.*` call to the family that owns the data. App-invented
+rows and files go through `appData.*`; Vendo's own collections go through
+`engine.*`.
+
+A call left on the old `/records/*` route now answers `not-implemented`
+(HTTP 501) naming the operation, so a stale integration fails loudly instead
+of silently.
+
+## Related errors
+
+- [E-STORE-001](/production/troubleshooting/e-store-001) — the store's persistence itself, one level below these wire calls
+- [E-LIVE-001](/production/troubleshooting/e-live-001) — the same wire, failing for a different reason

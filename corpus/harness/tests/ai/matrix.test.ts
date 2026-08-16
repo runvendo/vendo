@@ -247,7 +247,7 @@ describe("runAiRepoMatrix", () => {
     const result = await runOneCell({
       models: [DEFAULT_MODEL_LABEL, "claude-haiku-4-5"],
       runPass: async (options) => {
-        if (options.env["VENDO_EXTRACTION_MODEL"] === "claude-haiku-4-5") throw new Error("model unreachable");
+        if (options.env["VENDO_MODEL_EXTRACT"] === "claude-haiku-4-5") throw new Error("model unreachable");
         return await writingPass(perfectJudgments)(options);
       },
     });
@@ -263,7 +263,7 @@ describe("runAiRepoMatrix", () => {
     await runOneCell({
       models: [DEFAULT_MODEL_LABEL, "claude-haiku-4-5"],
       runPass: async (options) => {
-        seen.push(options.env["VENDO_EXTRACTION_MODEL"]);
+        seen.push(options.env["VENDO_MODEL_EXTRACT"]);
         return await writingPass(perfectJudgments)(options);
       },
     });

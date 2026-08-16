@@ -35,6 +35,7 @@ const DEFAULT_TOOL_NAMES = [
   "vendo_apps_reseed",
   "vendo_apps_unpin",
   "vendo_make",
+  "vendo_slots_list",
 ] as const;
 
 /** Every skill a default `createVendo()` mounts at /host/skills. */
@@ -73,7 +74,7 @@ async function composedSets(): Promise<{ tools: string[]; skills: string[] }> {
   const vendo = createVendo({
     // Never reached: the harness below is scripted, and a real model would make
     // this test measure a provider instead of the composition.
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store: await tempStore(),
     harness: defineHarness({

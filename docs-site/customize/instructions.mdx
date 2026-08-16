@@ -1,129 +1,131 @@
 ---
-title: "Prompts and instructions"
-sidebarTitle: "Prompts"
-description: "Where to place product briefs, company directions, agent-prompt additions, and app design rules so each lands in the correct contracted channel, plus the block to paste into your own agent's system prompt."
+title: "Instructions"
+sidebarTitle: "Instructions"
+description: "The product brief your agent reads before every turn, where it lands in the assembled prompt, and the two channels that sit beside it."
 ---
 
-Vendo assembles the agent's system prompt from four channels: a product
-brief, company directions, host instructions, and (for generation) design
-rules. Each channel has one contracted place to live, and this page maps
-each to that place and to its position in the assembled prompt.
+The prose your agent reads before every turn.
 
-| File or config | Purpose |
+## The picture
+
+One markdown file says what your product is and how to talk about it. It
+becomes the Product section of the system prompt, verbatim.
+
+```md .vendo/brief.md
+# Maple
+
+Maple is a modern consumer-banking demo with accounts, cards, transactions,
+payments, goals, and spending insights. Vendo should act as a concise, warm
+banking assistant, use the host API as the signed-in demo user, preserve
+integer-cent money semantics, and prefer a generated view when a chart or
+table communicates the answer better than prose.
+```
+
+<Frame>
+  <img
+    src="/images/maple/brief-voice.png"
+    alt="Maple's panel answering a grocery spending question in one short, warm sentence, with the merchants named"
+    width="620"
+    height="280"
+  />
+</Frame>
+
+This file is where your agent's voice comes from.
+
+## The brief file
+
+`vendo init` drafts it from your graded tool catalog and your code, then leaves
+it alone. A brief you have edited is never overwritten by a later run.
+
+What belongs in it: what the product is, who uses it, the house voice, and
+what to emphasize. Keep it to prose you would hand a new support hire.
+
+What does not belong in it: policy. Rules about what the agent may do are
+[guard directions](/product/how-it-works), and they ride their own section of
+the prompt.
+
+`createVendo({ instructions })` is the same slot, for a deployment that holds
+its config in code. A non-blank string wins over the file, and a blank one
+falls through to it.
+
+```ts app/api/vendo/[...vendo]/route.ts focus={2}
+export const vendo = createVendo({
+  instructions: "Maple is a consumer bank. Be concise and warm.",
+  auth: authJs(),
+});
+```
+
+## Where it lands
+
+The prompt is assembled fresh on every turn, in this order.
+
+<svg viewBox="0 0 560 236" role="img" aria-label="The assembled system prompt, top to bottom: Vendo's operating sections, Product from your brief, the User facts block, Directions from your guard, the theme line, and the knowledge index" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
+  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
+    <rect x="1" y="1" width="558" height="34" rx="9" />
+    <rect x="1" y="79" width="558" height="34" rx="9" />
+    <rect x="1" y="118" width="558" height="34" rx="9" />
+    <rect x="1" y="157" width="558" height="34" rx="9" />
+    <rect x="1" y="196" width="558" height="34" rx="9" />
+  </g>
+  <rect x="1" y="40" width="558" height="34" rx="9" fill="#6c3bff" fillOpacity="0.06" stroke="#6c3bff" strokeOpacity="0.45" />
+  <g fill="currentColor" fontSize="13" fontWeight="600">
+    <text x="18" y="23">Vendo's operating sections</text>
+    <text x="18" y="101">[User]</text>
+    <text x="18" y="140">Directions</text>
+    <text x="18" y="179">Theme</text>
+    <text x="18" y="218">Knowledge</text>
+  </g>
+  <text x="18" y="62" fill="#6c3bff" fontSize="13" fontWeight="600">Product</text>
+  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="end">
+    <text x="542" y="23">how to work, how to speak</text>
+    <text x="542" y="101">facts you assert about the signed-in user</text>
+    <text x="542" y="140">policy steering from your guard</text>
+    <text x="542" y="179">one line about your brand</text>
+    <text x="542" y="218">an index of your docs</text>
+  </g>
+  <text x="542" y="62" fill="#6c3bff" fillOpacity="0.75" fontSize="11.5" textAnchor="end">your brief, verbatim</text>
+</svg>
+
+A section with nothing to say drops out entirely. The theme line and the
+knowledge index ride only the surfaces that can render a screen.
+
+Three channels reach the model, and each has exactly one home:
+
+| Channel | Where it goes |
 | --- | --- |
-| `.vendo/brief.md` | the deployment's prose, placed near the start of the agent prompt |
-| `createVendo({ instructions })` | the same prose in config; a non-blank value wins over the file |
-| `.vendo/policy.json` `directions` | company steering returned by guard |
-| `.vendo/design-rules.md` | optional rules for app generation, re-read per generation (edits apply without a restart) |
-| `createVendo({ apps: { designRules } })` | the same rules in config; a non-blank value wins over the file |
+| `.vendo/brief.md`, or `createVendo({ instructions })` | the Product section, every turn |
+| your guard's `directions` | the Directions section, every turn |
+| `.vendo/design-rules.md`, or `createVendo({ apps: { designRules } })` | the screen generator only |
 
-Directions are policy data. Put them in the policy file or inline
-`PolicyConfig`. There is no merge rule between two directions channels.
+Directions are policy data. They live in `.vendo/policy.json` under
+`directions`, or inline on the policy you pass the guard.
 
-## Prompt assembly order
+Design rules are the house style for [generated screens](/generated/apps).
+The file is re-read on every generation, so an edit applies to the next screen
+with no restart.
 
-The agent assembles its system prompt fresh for each turn. Conditional
-sections drop out entirely; the rest keep this order:
-
-1. Vendo's operating prompt.
-2. Presentation guidance, when the venue can render trees (chat and app).
-3. Capability-miss reporting guidance, when enabled.
-4. Discovery-budget guidance, when tool search is on.
-5. The deployment's prose — `createVendo({ instructions })`, else
-   `.vendo/brief.md`.
-6. Company directions returned by `guard.directions(ctx)`.
-7. Catalog and theme summary, when the venue can render trees.
-8. The knowledge index, when knowledge is configured and the venue can
-   render trees.
-There is no separate trailing host-instructions section: `brief` and
-`agent.instructions` were the same prose under two names, and they merged into
-the one `instructions` key at position 5. Policy belongs in guard directions,
-not here.
-
-The apps generation engine has its own specialized prompts for tree emission
-and code edits. It receives the component catalog, theme, optional design
-rules (`createVendo({ apps: { designRules } })`, else `.vendo/design-rules.md`
-re-read per generation), and format limits. It can use the same model as the
-agent or a different AI SDK `LanguageModel`.
-
-Memory is deferred and has no reserved v0 seam.
-
-## Teach your own agent when to build UI
-
-If you brought your own agent loop, none of the channels above apply: your
-agent has your system prompt, not Vendo's. A tool your agent never reaches for
-is not a feature, so paste this beside whatever you already say about your
-other tools.
-
-```text
-## Making the person a screen
-
-You have `vendo_make`. It puts a real, live view in front of the person, and it
-is the only way you can do that. You never build UI yourself.
-
-USE IT when the honest answer is a shape, not a sentence: more than a handful of
-rows, a comparison or trend or breakdown, something they will come back to
-("track", "every week"), something they need to act on — a screen carries
-buttons; your message cannot.
-
-ANSWER IN WORDS when the answer IS words: one number, one status, one fact, a
-yes or no, an explanation. A screen for "what's my balance" is worse than saying
-the balance.
-
-`request` is prose — what you would say to a designer sitting next to you.
-- Describe the want: "the last three months of spending, broken down by
-  category, with a way to jump into any month"
-- No component names, no layout grids, no JSON, no field names you guessed at
-- No fonts, colors, or branding: it inherits the product's own
-- Never paste numbers you looked up or computed ("Total: $4,210"). The screen
-  binds live data itself, and hardcoded figures are rejected as invented
-
-`context`: background the product cannot see — what they told you earlier, a
-constraint they mentioned, which of several things they meant. A sentence or two.
-
-`app`: ONLY to change one view that already exists, by id or by its name exactly
-as they said it. Leave it out and the product decides whether to continue the
-last one or start something new, which is usually right.
-
-WHAT COMES BACK is a receipt: id, title, status, and `say` — one line in the
-person's voice. Say `say`, close to verbatim. That is the whole report. You never
-get the screen; it goes from the server straight to their page, on a channel you
-are not on. So:
-- NEVER wait for it. Nothing to poll, nothing to check.
-- NEVER describe it. You have not seen it. No sections, charts, colors, or
-  buttons, and never tell them what to click.
-- Never paste a link or an id unless they asked.
-- status "failed": try once more on the same `app`, narrower, then stop and say
-  so plainly.
-- status "building": honest, not an error. Say the line and move on.
-- status "partial": the screen is on their page, the server-side part of it is
-  not. Say the line and offer to try that part again. Never rebuild it.
+```md .vendo/design-rules.md
+Lead with the number the user asked for, then the breakdown.
+Never put more than six series on one chart.
 ```
 
-Add this second block too. `WHERE IT LANDS` applies to both doors. Add `MOVING
-ONE THEY ALREADY HAVE` **only if your agent reaches Vendo over MCP**, because
-teaching an agent about a tool it does not have is how you get an invented tool
-call. The in-process tool pack carries no `vendo_apps_*` tool.
+Bring your own agent loop and none of these channels apply, because that agent
+runs on your system prompt rather than Vendo's. The block to paste there is on
+[In your existing agent](/existing-agent/quickstart#teach-your-model-when-to-build-ui).
 
-```text
-WHERE IT LANDS
-By default, the person's own list of views.
+## Where to go next
 
-`slot`: ONLY when they name a place in the product AND you have that place's
-exact id — they said it, or an earlier answer carried it. Slot ids belong to the
-product, not to you: NEVER invent one. A made-up id puts the screen where nobody
-is looking, and that does not look like an error. No id, no `slot`.
+The brief is what your agent knows about you. These two are what it knows
+about the moment.
 
-MOVING ONE THEY ALREADY HAVE
-`vendo_apps_pin` puts an existing view into a slot; `vendo_apps_unpin` clears
-one. Both are writes and can stop for the person's approval.
-- Only on an explicit instruction ("put the renewals radar on my dashboard"),
-  never on something you inferred.
-- Pinning replaces: a slot holds one view. If they did not name the slot, ask.
-- `slot` on `vendo_make` is for something NEW; to move an existing view, pin it.
-```
-
-The same guidance ships to Claude Code as a skill:
-[`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).
-What the tool hands back is on
-[Generated UI](/capabilities/generated-ui#the-receipt-your-agent-gets).
+<Columns cols={3}>
+  <Card title="Context" icon="user" href="/customize/context">
+    Who is asking, and what their screen shows.
+  </Card>
+  <Card title="Knowledge" icon="book-open" href="/customize/knowledge">
+    Answers from your docs, with citations.
+  </Card>
+  <Card title="Theming" icon="palette" href="/customize/theming">
+    The token file every surface renders through.
+  </Card>
+</Columns>

@@ -7,9 +7,9 @@
  * given.
  */
 import { Menu as Base } from "@base-ui/react/menu";
-import { Children, type ReactNode } from "react";
+import { Children, type ComponentProps, type ReactNode } from "react";
 import { Icon } from "../icon.js";
-import { control, font, popup, popupMotion, t, transitionFor } from "../tokens.js";
+import { control, font, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { isHandlerCallback } from "../handler.js";
 
 export interface MenuItem {
@@ -21,7 +21,7 @@ export interface MenuItem {
   disabled?: boolean;
 }
 
-export interface MenuProps {
+interface MenuOwnProps extends KitStyled {
   /** The trigger's text. */
   label: string;
   items?: MenuItem[];
@@ -30,6 +30,10 @@ export interface MenuProps {
   /** One entry per line, in place of `items`. */
   children?: ReactNode;
 }
+
+/** Plus any Base UI `<Menu.Root>` prop, handed straight to the menu. `style`
+ *  stays the Kit's own — Menu.Root draws nothing, so it dresses the TRIGGER. */
+export type MenuProps = MenuOwnProps & KitEngine<ComponentProps<typeof Base.Root>, MenuOwnProps>;
 
 const itemStyle = ({ highlighted, disabled }: { highlighted: boolean; disabled: boolean }) => ({
   ...font,
@@ -47,7 +51,7 @@ const itemStyle = ({ highlighted, disabled }: { highlighted: boolean; disabled: 
   transition: transitionFor("background-color", "color"),
 });
 
-export function Menu({ label, items, onSelect, children }: MenuProps) {
+export function Menu({ label, items, onSelect, children, style, pending, ...engine }: MenuProps & KitRendered) {
   // A screen's handler reads the event its source was written against; every
   // other caller wants the value itself (kit/handler.ts).
   const fire = (value: string) => isHandlerCallback(onSelect)
@@ -55,10 +59,10 @@ export function Menu({ label, items, onSelect, children }: MenuProps) {
     : onSelect?.(value);
   const entries = Children.toArray(children);
   return (
-    <Base.Root>
+    <Base.Root {...given(engine)}>
       <Base.Trigger
         data-kit="Menu"
-        style={{ ...control, display: "inline-flex", alignItems: "center", gap: 6, width: "auto", cursor: "pointer" }}
+        style={{ ...control, display: "inline-flex", alignItems: "center", gap: 6, width: "auto", cursor: "pointer", ...style }}
       >
         {label}
         <Icon name="chevron-down" size={14} />

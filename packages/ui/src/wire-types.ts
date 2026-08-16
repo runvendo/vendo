@@ -41,6 +41,9 @@ export interface SlotEntry {
   id: string;
   /** What a person choosing a destination reads. */
   label: string;
+  /** What the spot is for, as the host developer described it. Only an agent
+   *  reads this; the picker shows the label. */
+  description?: string;
   /** When a mounted slot last reported itself. */
   lastSeen: string;
 }

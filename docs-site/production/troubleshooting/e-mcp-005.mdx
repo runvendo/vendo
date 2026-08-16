@@ -1,0 +1,51 @@
+---
+title: "E-MCP-005"
+sidebarTitle: "E-MCP-005"
+description: "The server.json remote does not match the live MCP door."
+---
+
+# E-MCP-005
+
+<Warning>
+**what doctor prints** (broken)
+
+server.json remote does not match the live MCP door http://localhost:3000/api/vendo/mcp
+</Warning>
+
+`server.json` validates on its own, but the door URL it advertises is not the
+door doctor just probed.
+
+`check mcp/server-json-remote` · `error_code E-MCP-005` · `doctor exits 1`
+
+## What you're seeing
+
+This check only runs once `server.json` passes schema validation
+([E-MCP-004](/production/troubleshooting/e-mcp-004)). Doctor compares every
+remote URL declared in the file against the live door URL it just discovery-checked.
+
+## Why
+
+`server.json` is generated once, at a point in time, from whatever URL you
+gave the CLI. If the deployment's domain changes, or the MCP mount path
+changes, the file keeps naming the old URL. The registry entry now describes
+a door that no longer exists at that address.
+
+## The fix
+
+Regenerate `server.json` with the door's current public URL:
+
+```bash
+npx vendo mcp server-json --domain your-app.example.com \
+  --url https://your-app.example.com/api/vendo/mcp \
+  --force
+```
+
+Re-run doctor once the remote in the file matches the URL doctor probes.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
+  <Card title="E-MCP-006" href="/production/troubleshooting/e-mcp-006">server.json invalid JSON</Card>
+  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">missing VENDO_BASE_URL</Card>
+</CardGroup>

@@ -137,7 +137,7 @@ async function boxEnv(rungs: Record<string, string> = {}): Promise<Record<string
   });
   const pushed: Array<Record<string, string>> = [];
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => ADA,
     store,
     sandbox: captureSandbox(pushed),

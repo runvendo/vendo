@@ -17,7 +17,7 @@
  * render. Neither can reach a user.
  */
 import type { ComponentType, ReactNode } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { KIT_COMPONENTS, KIT_SPECS } from "../../src/kit/registry.js";
 import type { KitSlotSpec } from "../../src/kit/schema.js";
@@ -84,6 +84,22 @@ const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<st
   // else's here.
   Modal: { props: { open: true, onClose: () => {} } },
   Sheet: { props: { open: true, onClose: () => {} } },
+  // A tooltip is down for the same reason, and has no `open` to raise it: it
+  // comes up on hover, so it is hovered below. The child is what there is to
+  // hover.
+  Tooltip: { props: { children: <span>control</span> } },
+};
+
+/** What it takes to bring a component UP where a prop cannot. The Tooltip's own
+ *  test hovers exactly this way — a real `mouseenter` (Base UI listens for the
+ *  native event, not React's delegated one) and then a move. */
+const RAISE: Record<string, (container: HTMLElement) => void> = {
+  Tooltip: (container) => {
+    const trigger = container.querySelector('[data-kit="Tooltip"]');
+    if (trigger === null) return;
+    trigger.dispatchEvent(new window.MouseEvent("mouseenter"));
+    fireEvent.mouseMove(trigger);
+  },
 };
 
 /** The probe at the slot's DECLARED path: a nested slot sits in its prop's
@@ -98,7 +114,7 @@ const propsFor = (
   : { ...context.props, [slot.at]: [{ ...context.item, [name]: probe }] };
 
 describe("every declared slot renders what it promises", () => {
-  it("paints a probe put at each slot's declared path", () => {
+  it("paints a probe put at each slot's declared path", async () => {
     const declared = KIT_SPECS.flatMap((spec) =>
       Object.entries(spec.slots ?? {}).map(([name, slot]) => [spec.name, name, slot] as const));
     // The table is the subject: an empty sweep would pass this test in silence.
@@ -109,8 +125,14 @@ describe("every declared slot renders what it promises", () => {
       const context = CONTEXT[`${component}.${name}`] ?? CONTEXT[component];
       expect(context, `${at} is declared in SLOTS with no context here — implement the slot in @vendoai/ui and add one, or drop it from the table`).toBeTypeOf("object");
       const Implementation = KIT_COMPONENTS[component] as ComponentType<Record<string, unknown>>;
-      render(<Implementation {...propsFor(context!, name, slot, <span data-testid="probe">probe</span>)} />);
-      expect(screen.queryByTestId("probe"), `<${component}> declares its "${name}" slot at ${at} and does not render what is put there`).toBeTruthy();
+      const { container } = render(<Implementation {...propsFor(context!, name, slot, <span data-testid="probe">probe</span>)} />);
+      RAISE[component]?.(container);
+      // `findBy` rather than `queryBy` because a raised component arrives after
+      // its own delay; a probe already painted resolves on the first look, and
+      // only a REAL miss waits out the timeout — with the sentence intact,
+      // which is what a bare `findBy` would throw away.
+      const painted = await screen.findByTestId("probe", {}, { timeout: 3000 }).catch(() => null);
+      expect(painted, `<${component}> declares its "${name}" slot at ${at} and does not render what is put there`).toBeTruthy();
       cleanup();
     }
   });

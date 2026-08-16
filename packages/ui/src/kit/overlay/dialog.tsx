@@ -8,9 +8,9 @@
  * invisible when wrong: the focus trap, Esc, and the page's scroll lock.
  */
 import { Dialog } from "@base-ui/react/dialog";
-import type { CSSProperties, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { OverlayPortal } from "../../tree/overlay-portal.js";
-import { font, hairline, t, transitionFor } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitEngine, type KitRendered, type KitStyled, given } from "../tokens.js";
 
 export type OverlaySize = "small" | "medium" | "large";
 
@@ -28,7 +28,7 @@ export type OverlaySize = "small" | "medium" | "large";
  * trigger and no `defaultOpen`. A union would model a mode that does not exist
  * — requiring both is the smaller shape that makes the same call unrepresentable.
  */
-export interface DialogProps {
+export interface DialogProps extends KitStyled {
   open: boolean;
   onClose: () => void;
   title?: string;
@@ -40,6 +40,11 @@ export interface DialogProps {
   footer?: ReactNode;
   children?: ReactNode;
 }
+
+/** Any Base UI `<Dialog.Popup>` prop neither geometry models, handed straight to
+ *  the popup — the surface a caller means by "the dialog", which is where its
+ *  `style` lands too, not the portal or the backdrop. */
+export type DialogEngineProps = KitEngine<ComponentProps<typeof Dialog.Popup>, DialogProps>;
 
 /** The one measure both geometries read: a Modal's width, a Sheet's depth. */
 export const EXTENT: Record<OverlaySize, number> = { small: 360, medium: 480, large: 720 };
@@ -73,7 +78,10 @@ export function DialogShell({
   header,
   footer,
   children,
-}: DialogProps & { kind: "Modal" | "Sheet"; popupStyle: CSSProperties }) {
+  style,
+  pending,
+  ...engine
+}: DialogProps & DialogEngineProps & KitRendered & { kind: "Modal" | "Sheet"; popupStyle: CSSProperties }) {
   const body = (
     <>
       {/* Always drawn: `onClose` is required, so there is always a way out to
@@ -137,6 +145,7 @@ export function DialogShell({
             />
             <Dialog.Popup
               data-kit={kind}
+              {...given(engine)}
               style={{
                 ...font,
                 position: "fixed",
@@ -149,6 +158,7 @@ export function DialogShell({
                 boxShadow: t.shadowSmall,
                 padding: "var(--vendo-density-card-padding, 16px)",
                 ...popupStyle,
+                ...style,
               }}
             >
               {body}

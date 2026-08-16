@@ -47,12 +47,12 @@ describe("the inference ladder resolves from @vendoai/harnesses", () => {
 
   it("honors VENDO_CLOUD_URL, trailing slashes and all — what resolveCloudBaseUrl did", async () => {
     const seen: Array<{ apiKey: string; baseURL?: string }> = [];
-    const model = vendoModel("vendo-paint", {
+    const model = vendoModel("vendo-apps", {
       env: { VENDO_API_KEY: "vnd_key", VENDO_CLOUD_URL: "https://console.test//" },
       importModule: scriptedAnthropic(seen),
     });
 
-    expect(await resolvedId(model)).toBe("vendo-paint");
+    expect(await resolvedId(model)).toBe("vendo-apps");
     expect(seen[0]?.baseURL).toBe("https://console.test/api/v1");
   });
 

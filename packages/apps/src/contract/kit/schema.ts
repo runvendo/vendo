@@ -86,15 +86,29 @@ export interface KitComponentSpec {
   /** Slot name → spec. Absent means the component takes no elements in its
    *  props at all, and one written there is refused rather than dropped. */
   slots?: Record<string, KitSlotSpec>;
+  /**
+   * The third-party engine this component RENDERS ("recharts", "Base UI"), whose
+   * own props pass through to it. Absent means the component wraps nothing, and
+   * its prop list is closed — an undeclared name there is the "valid component,
+   * nothing happens" class the floor refuses.
+   *
+   * An engine's prop vocabulary is the engine's, not ours: it is admitted
+   * unvalidated, so an engine upgrade is free and a stored app naming a prop the
+   * engine has since renamed or dropped renders wrong until it is regenerated.
+   */
+  engine?: string;
 }
 
-/** Build a `z.object` from a spec's props, applying `.optional()` to non-required ones. */
-export function propsSchema(spec: KitComponentSpec): z.ZodObject<z.ZodRawShape> {
+/** Build a `z.object` from a spec's props, applying `.optional()` to non-required
+ *  ones. An engine-backed spec stays OPEN, because the engine's own props are
+ *  legal on it and a stripped `stroke` is a series that silently keeps the theme. */
+export function propsSchema(spec: KitComponentSpec): z.ZodObject<z.ZodRawShape, z.UnknownKeysParam> {
   const shape: z.ZodRawShape = {};
   for (const [name, prop] of Object.entries(spec.props)) {
     shape[name] = prop.required ? prop.schema : prop.schema.optional();
   }
-  return z.object(shape);
+  const object = z.object(shape);
+  return spec.engine === undefined ? object : object.passthrough();
 }
 
 /** Validate a props object against a spec. Returns zod's SafeParse result. */

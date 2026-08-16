@@ -1,0 +1,162 @@
+---
+title: "Persistence"
+sidebarTitle: "Persistence"
+description: "Where threads, apps, records, grants, approvals, and audit rows live on Vendo Cloud, what the store refuses, and how to erase a user."
+---
+
+Your Cloud key is your database. Threads, apps, records, blobs, state, grants,
+approvals, audit, and runs persist in Vendo Cloud's Postgres.
+
+## The store slot fills itself
+
+`createVendo` picks the store at composition time. With `VENDO_API_KEY` set and
+no `store` passed, the slot takes the hosted store.
+
+```ts app/api/vendo/[...vendo]/route.ts highlight={5}
+import { createVendo } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({
+  auth: authJs(),
+  // no store: line, so VENDO_API_KEY fills the slot with Vendo Cloud
+  catalog: registry,
+});
+```
+
+The adapter never reads the environment. The composition does, then hands the
+adapter a key and a base URL.
+
+Your boot log says which one won:
+
+```text vendo ready highlight={3}
+◆  vendo ready
+│  ✓ sandbox   cloud    VENDO_API_KEY
+│  ✓ store     cloud    VENDO_API_KEY
+│  ✓ models    cloud    VENDO_API_KEY (gateway)
+```
+
+Tenancy is resolved server-side from the key's organization, on every call.
+Nothing in your process picks a tenant.
+
+---
+
+## What lands where
+
+The hosted store speaks the same wire your process would speak to a local
+database, one hop shorter.
+
+| What | Where it goes | Notes |
+| --- | --- | --- |
+| Threads and messages | `vendo_threads`, `vendo_thread_messages` | Scoped to the principal's subject; a thread never crosses subjects |
+| Generated apps | `vendo_apps` | Plus their workspace files and history |
+| App data | `app:<appId>:<name>` collections | 256 KB per record, 5 MB per file |
+| Grants and approvals | `vendo_grants`, `vendo_approvals` | What a user has standing consent for |
+| Audit | `vendo_audit` | Append-only, see below |
+| Automation runs | `vendo_runs` | One row per firing |
+
+Blobs ride the same store unless you pass a `files` adapter. One adapter serves
+both writes and the erase cascade, so rows and objects can never drift apart.
+
+`ensureSchema()` is a no-op against Vendo Cloud. The service owns its own
+migrations.
+
+---
+
+## What the store refuses
+
+The store refuses three things outright. Each one shows up in a log rather
+than as a silent no-op.
+
+<AccordionGroup>
+  <Accordion title="Audit is append-only">
+    Writing `vendo_audit` with an id that already exists fails with `conflict`.
+    Deleting an audit row is refused with `blocked`.
+
+    The erase API below is the only sanctioned way to remove one.
+  </Accordion>
+  <Accordion title="Ownership flips are refused">
+    `vendo_apps`, `vendo_grants`, and `vendo_threads` reject a same-id write
+    that moves a row to a different subject.
+
+    To transfer ownership, delete the row and re-seed it under the new subject.
+  </Accordion>
+  <Accordion title="Secrets never ride the hosted wire">
+    The hosted store has no secrets surface, by construction. Secret values
+    resolve from your process environment first, and Vendo Cloud's secrets
+    provider answers only for names the environment leaves unset.
+
+    Nothing sends a secret value to the console as store data.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Erasing a user
+
+`eraseStore` is the deletion path for right-to-erasure requests, for tearing
+down a test app, and for purging old runs. It cascades across every store
+table.
+
+```ts highlight={4}
+import { eraseStore } from "@vendoai/vendo/server";
+
+// Everything this subject owns, across every table.
+const report = await eraseStore(vendo.store).bySubject(subjectId);
+
+// Everything one app owns.
+const byApp = await eraseStore(vendo.store).byApp(appId);
+```
+
+Each call returns per-table deleted counts, so you can log the cascade or
+assert on it.
+
+<Warning>
+  Against Vendo Cloud, `eraseStore` needs an **admin-scoped** `VENDO_API_KEY`.
+  A runtime-scoped key is refused with HTTP 403 and the `blocked` code before
+  the request body is read.
+
+  Every key defaults to the runtime scope. Mint an admin key from your
+  project's Keys page in the console, where Admin is a deliberate second click.
+</Warning>
+
+---
+
+## Racing writers
+
+Two ticks, two retries, or two agent runs can land on the same record. The
+collection handle carries compare-and-set primitives for that case.
+
+```ts highlight={3}
+const jobs = vendo.store.records("jobs");
+
+const mine = await jobs.claim?.(expected, replacement);
+const inserted = await jobs.atomic?.insertIfAbsent(record);
+```
+
+`claim` returns `true` for the single caller whose read of `expected` still
+matched. `insertIfAbsent` and `compareAndSwap` return `null` when another
+caller won.
+
+Both are optional on the handle, which is why the calls above are guarded. Your
+own collections expose them; Vendo's internal tables vary.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Vendo Cloud" href="/production/vendo-cloud">
+    What the key covers, what it costs, and how to mint a scoped one.
+
+    `vnd_ + 40 hex`
+  </Card>
+  <Card title="Auth" href="/production/auth">
+    The subject every row above is scoped to, and where it comes from.
+
+    `principal.subject`
+  </Card>
+  <Card title="Deploying" href="/production/deploying">
+    The eight checks that have to pass before your users arrive.
+
+    `npx vendo doctor`
+  </Card>
+</CardGroup>

@@ -248,7 +248,7 @@ export async function composedHost(
     },
   });
   const vendo = createVendo({
-    model: model ?? ({} as LanguageModel),
+    models: { default: model ?? ({} as LanguageModel) },
     principal: async () => principal,
     store,
     guard: { policy: "cautious" },
@@ -305,7 +305,7 @@ export async function composedHostOverDoor(
     },
   });
   composed = createVendo({
-    model: model ?? ({} as LanguageModel),
+    models: { default: model ?? ({} as LanguageModel) },
     principal: async () => principal,
     store,
     guard: { policy: "cautious" },

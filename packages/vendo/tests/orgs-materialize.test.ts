@@ -149,7 +149,7 @@ let acting: Principal = kim;
 async function boot(store: VendoStore, sandbox: ReturnType<typeof fakeSandbox>): Promise<Vendo> {
   const vendo = createVendo({
     // Never reached: the thinker is the scripted box, not a provider.
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     store,
     sandbox: sandbox as unknown as SandboxAdapter,
     harness: claudeCode(),

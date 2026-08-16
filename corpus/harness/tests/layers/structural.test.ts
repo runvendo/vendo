@@ -108,7 +108,7 @@ async function makeTempRepo(): Promise<string> {
     [
       'import { model } from "@/lib/ai";',
       'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";',
-      "const vendo = createVendo({ model, principal: async () => null });",
+      "const vendo = createVendo({ models: { default: model }, principal: async () => null });",
       "export const { GET, POST, DELETE } = nextVendoHandler(vendo);",
       "",
     ].join("\n"),
@@ -189,7 +189,7 @@ async function makePagesRepo(wrapped: boolean): Promise<string> {
     [
       'import { model } from "@/lib/ai";',
       'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";',
-      "const vendo = createVendo({ model, principal: async () => null });",
+      "const vendo = createVendo({ models: { default: model }, principal: async () => null });",
       "export const { GET, POST, DELETE } = nextVendoHandler(vendo);",
       "",
     ].join("\n"),

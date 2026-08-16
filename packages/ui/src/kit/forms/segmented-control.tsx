@@ -4,12 +4,13 @@
  */
 import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
-import { font, hairline, t, transitionFor } from "../tokens.js";
+import type { ComponentProps } from "react";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 
 export type SegmentItem = string | number | { value?: string | number; label?: string | number; disabled?: boolean };
 
-export interface SegmentedControlProps {
+interface SegmentedControlOwnProps extends KitStyled {
   items: SegmentItem[];
   /** The initially selected segment's value. */
   value?: string;
@@ -18,9 +19,13 @@ export interface SegmentedControlProps {
   onChange?: (value: string) => void;
 }
 
+/** Plus any Base UI `<ToggleGroup>` prop, handed straight to the bar — which is
+ *  this control's ROOT, so the Kit's own `style` dresses it. */
+export type SegmentedControlProps = SegmentedControlOwnProps & KitEngine<ComponentProps<typeof ToggleGroup>, SegmentedControlOwnProps>;
+
 const text = (value: string | number | undefined): string => value === undefined || value === null ? "" : String(value);
 
-export function SegmentedControl({ items, value, disabled, onChange }: SegmentedControlProps) {
+export function SegmentedControl({ items, value, disabled, onChange, style, children, pending, ...engine }: SegmentedControlProps & KitRendered) {
   const segments = (items ?? []).map((item) => typeof item === "object" && item !== null
     ? { value: text(item.value ?? item.label), label: text(item.label ?? item.value), disabled: item.disabled ?? false }
     : { value: text(item), label: text(item), disabled: false });
@@ -31,8 +36,9 @@ export function SegmentedControl({ items, value, disabled, onChange }: Segmented
   return (
     <ToggleGroup
       data-kit="SegmentedControl"
-      {...(screen === null ? { defaultValue: selected } : { value: selected ?? [] })}
       disabled={disabled}
+      {...given(engine)}
+      {...(screen === null ? { defaultValue: selected } : { value: selected ?? [] })}
       onValueChange={(next) => {
         const one = String(next[0] ?? "");
         return screen === null ? onChange?.(one) : screen({ target: { value: one } });
@@ -47,6 +53,7 @@ export function SegmentedControl({ items, value, disabled, onChange }: Segmented
         borderRadius: t.radiusMedium,
         background: t.surfaceRaised,
         padding: "var(--vendo-density-tabs-padding, 4px)",
+        ...style,
       }}
     >
       {segments.map((segment, i) => (

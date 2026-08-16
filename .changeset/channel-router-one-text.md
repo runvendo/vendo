@@ -1,5 +1,0 @@
----
-"@vendoai/vendo": minor
----
-
-One-text linking over the org's dedicated iMessage router. The router keeps the connect message in its own transcript instead of forwarding it, so the code in `connect @handle CODE` never reached the deployment and linking took two texts. Vendo Cloud now reads that tail off the router transcript and relays it on the existing inbound door as `{ kind: "link", from, code }`, just ahead of the person's first real message: the deployment claims the code silently and then answers what they actually asked, so one text links an account. The typed path still works — a bare code from an unlinked phone claims exactly as before — and a link payload whose code is unknown, spent or expired is a silent no-op, which is what makes a re-relayed connect harmless. Link codes now last 30 minutes rather than 15, because the gap between tapping the anchor and sending the message is human. The channel also states plainly that it cannot send scheduled, recurring or unprompted texts and points at the app instead, so the agent never promises a Friday text that nothing can deliver.

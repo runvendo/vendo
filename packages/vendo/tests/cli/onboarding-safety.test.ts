@@ -228,7 +228,7 @@ describe("the closing line tells the truth about the model key", () => {
   });
 
   it("a re-run over an existing composition states the condition — it may pass its own model", async () => {
-    // createVendo({ model }) needs no env key, so a keyless re-run over a
+    // createVendo({ models }) needs no env key, so a keyless re-run over a
     // composition init did not write must claim neither "live" nor "not live".
     const root = await mountedPagesHost();
     expect(await run(root, output())).toBe(0);

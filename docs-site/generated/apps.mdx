@@ -1,0 +1,182 @@
+---
+title: "Generated apps"
+description: "How one ask becomes one app.tsx screen, what that screen may write, the three layers it can run at, and why every user ends up with their own copy."
+sidebarTitle: "Generated apps"
+---
+
+Your user asks for something. One `app.tsx` screen comes back, live on real data.
+
+## One ask, one app
+
+The plan's skeleton paints in seconds. The finished screen replaces it in place.
+
+<Frame caption="The screen re-runs on every open, so it opens on today's numbers. There is no snapshot to go stale.">
+  <img
+    src="/images/maple/app-savings-goals.png"
+    alt="A savings goals screen built in the Maple panel, one card per goal with the amount saved, the target, and a progress bar"
+    width="620"
+    height="680"
+  />
+</Frame>
+
+An app is one file, holding one default-exported React component. Saving it repaints the person's screen.
+
+```tsx app.tsx focus={4,15}
+import { useQuery, tools, Stack, Row, Text, Money, Button } from "@vendo/screen";
+
+export default function Spend() {
+  const spend = useQuery("host_spend_by_category", { month: "aug" });
+
+  return (
+    <Stack gap={12}>
+      <Text text="Spend by category" variant="heading" />
+      {spend.rows.map((row) => (
+        <Row key={row.category} justify="between">
+          <Text text={row.category} />
+          <Money amount={row.amount_cents / 100} />
+        </Row>
+      ))}
+      <Button label="Set budget" onClick={() => tools.host_budget_set({ budget: 1800 })} />
+    </Stack>
+  );
+}
+```
+
+`useQuery` is synchronous and hands back the tool's own result, so field names come off the tool's schema. `tools.<name>(args)` is the only way a screen changes anything.
+
+## One screen, three layers
+
+Most apps never leave layer 1. The agent climbs only when the instruction demands it.
+
+<Columns cols={3}>
+  <Card title="1. Screen app">
+    No server anywhere. The screen renders in the host surface and acts through guarded host tools.
+
+    <svg viewBox="0 0 220 104" width="100%" role="img" aria-label="Surface: app.tsx. Machine: none.">
+      <rect x="1" y="1" width="218" height="42" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+      <text x="12" y="17" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">SURFACE</text>
+      <text x="12" y="33" fontSize="11" fontWeight="600" fill="#6c3bff">app.tsx</text>
+      <line x1="110" y1="45" x2="110" y2="59" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="3 3" />
+      <rect x="1" y="61" width="218" height="42" rx="8" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
+      <text x="12" y="77" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.45">MACHINE</text>
+      <text x="12" y="93" fontSize="11" fontWeight="500" fill="currentColor" fillOpacity="0.5">none</text>
+    </svg>
+  </Card>
+
+  <Card title="2. Screen plus machine">
+    The same screen, plus a persistent sandbox where execution lives. The machine never draws UI.
+
+    <svg viewBox="0 0 220 104" width="100%" role="img" aria-label="Surface: app.tsx. Machine: one sandbox.">
+      <rect x="1" y="1" width="218" height="42" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+      <text x="12" y="17" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">SURFACE</text>
+      <text x="12" y="33" fontSize="11" fontWeight="600" fill="#6c3bff">app.tsx</text>
+      <line x1="110" y1="45" x2="110" y2="59" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="3 3" />
+      <rect x="1" y="61" width="218" height="42" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
+      <text x="12" y="77" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">MACHINE</text>
+      <text x="12" y="93" fontSize="11" fontWeight="600" fill="currentColor">one sandbox</text>
+    </svg>
+  </Card>
+
+  <Card title="3. Machine everything">
+    The machine also serves a real web app, and the host embeds that URL as the surface.
+
+    <svg viewBox="0 0 220 104" width="100%" role="img" aria-label="Surface: the machine's web app, served up from the machine below it.">
+      <rect x="1" y="1" width="218" height="42" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+      <text x="12" y="17" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">SURFACE</text>
+      <text x="12" y="33" fontSize="11" fontWeight="600" fill="#6c3bff">the machine's web app</text>
+      <line x1="110" y1="49" x2="110" y2="59" stroke="#6c3bff" strokeOpacity="0.45" strokeDasharray="3 3" />
+      <path d="M110 44 l5 6 h-10 z" fill="#6c3bff" fillOpacity="0.55" />
+      <rect x="1" y="61" width="218" height="42" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
+      <text x="12" y="77" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">MACHINE</text>
+      <text x="12" y="93" fontSize="11" fontWeight="600" fill="currentColor">one sandbox, serving the pages too</text>
+    </svg>
+  </Card>
+</Columns>
+
+<Note>
+  **The gate.** Layers 2 and 3 are gated on one thing, a configured `sandbox` adapter.
+
+  Nobody picks a layer by hand, and the last working surface keeps serving while the next one builds.
+</Note>
+
+A machine sleeps as a snapshot and auto-sleeps after five minutes idle. A served layer-3 app also needs the wire mounted, so `/apps/:appId/serve/**` answers on your own origin.
+
+## What a screen may write
+
+A small closed surface, enforced at save rather than advised in a style guide.
+
+<Columns cols={2}>
+  <Card title="Allowed" icon="check">
+    * `react` and `@vendo/screen`, and nothing else
+    * `useQuery("tool_name", { literal })`, read tools only
+    * `tools.tool_name(args)`, from a handler
+    * `<Stack>` `<Row>` `<Grid>` `<Text>` `<Stat>` `<Button>`
+    * the components you registered
+    * `<div>` `<p>` `<h2>`, children and an inline `style`
+    * React state through `useState`
+  </Card>
+
+  <Card title="Refused" icon="x">
+    * any third import, `import(…)`, `require(…)`
+    * a query input from a prop, state, or another query
+    * a write tool inside `useQuery`
+    * a tool call in the render body
+    * `document` `fetch` `setTimeout` `process`
+    * `<img>` `<script>`, or `className` on a display tag
+    * a component you never registered
+  </Card>
+</Columns>
+
+Every save is compiled, scanned, type checked, run once, and its tree validated. The first stage that finds something is the last one that runs, and the last good screen keeps serving.
+
+A refusal names the line and says what to write instead. Nothing paints, and no app row lands.
+
+## Own it
+
+Nobody uses someone else's app. They get their own copy of it.
+
+<Frame caption="Import and fork each mint a fresh app_ id.">
+  <svg viewBox="0 0 700 62" width="100%" role="img" aria-label="Ana's app_790892b0 imported into your app_c0d6b562, then forked into your app_3f11ad7c.">
+    <rect x="1" y="16" width="176" height="30" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
+    <text x="89" y="30" fontSize="8" textAnchor="middle" fill="currentColor" fillOpacity="0.55">Ana's</text>
+    <text x="89" y="41" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">app_790892b0…</text>
+    <line x1="185" y1="31" x2="252" y2="31" stroke="#6c3bff" strokeOpacity="0.4" strokeWidth="1.5" />
+    <path d="M262 31 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.6" />
+    <text x="218" y="17" fontSize="10" textAnchor="middle" fill="#6c3bff">import</text>
+    <rect x="262" y="16" width="176" height="30" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+    <text x="350" y="30" fontSize="8" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">yours</text>
+    <text x="350" y="41" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">app_c0d6b562…</text>
+    <line x1="446" y1="31" x2="513" y2="31" stroke="#6c3bff" strokeOpacity="0.4" strokeWidth="1.5" />
+    <path d="M523 31 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.6" />
+    <text x="479" y="17" fontSize="10" textAnchor="middle" fill="#6c3bff">fork</text>
+    <rect x="523" y="16" width="176" height="30" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+    <text x="611" y="30" fontSize="8" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">yours</text>
+    <text x="611" y="41" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">app_3f11ad7c…</text>
+  </svg>
+</Frame>
+
+Ana shares a link, and the link carries the app and nothing else. Importing it mints a fresh id in your account, reading your rows under your approvals.
+
+Fork it and you mint another id. The copy drops the machine and the owner's approved egress, so it re-approves its own before it can run.
+
+## Where to go next
+
+<Columns cols={3}>
+  <Card title="In-client venue & approvals" href="/generated/in-client-venue">
+    An approved version can render in your page instead of the sandbox.
+
+    `approve → pinned version hash`
+  </Card>
+
+  <Card title="Host components" href="/generated/host-components">
+    Register your own components and a screen renders your real UI.
+
+    `Kit + the ones you registered`
+  </Card>
+
+  <Card title="Import & fork" href="/generated/import-and-fork">
+    How a copy is minted, and what it deliberately leaves behind.
+
+    `import → app_c0d6b562…`
+  </Card>
+</Columns>

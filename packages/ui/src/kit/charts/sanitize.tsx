@@ -7,7 +7,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { TooltipContentProps } from "recharts";
 import { isRenderableNumber } from "../format.js";
 import { RowContext } from "../row.js";
-import { font, hairline, t } from "../tokens.js";
+import { font, hairline, t, type KitStyled } from "../tokens.js";
 
 /** Replace non-finite values in the given series keys with `null`. */
 export function sanitizeSeries<T extends Record<string, unknown>>(
@@ -56,9 +56,13 @@ export function ChartFrame({ height = 220, children }: ChartFrameProps) {
   return <div style={{ width: "100%", aspectRatio: 1, height, minHeight: height }}>{children}</div>;
 }
 
-/** A designed empty/invalid state that reads as intentional, not broken. */
-export function ChartEmpty({ height = 220, children }: { height?: number; children: ReactNode }) {
-  const style: CSSProperties = {
+/** A designed empty/invalid state that reads as intentional, not broken.
+ *
+ *  ONE element, because a chart's `style` has to land on the same root whether it
+ *  has points or not: nested, the caller's margin sat on an inner box while the
+ *  populated chart put it on the outer one, so an empty chart moved. */
+export function ChartEmpty({ height = 220, children, style }: { height?: number; children: ReactNode } & KitStyled) {
+  const box: CSSProperties = {
     ...font,
     display: "flex",
     alignItems: "center",
@@ -73,8 +77,9 @@ export function ChartEmpty({ height = 220, children }: { height?: number; childr
     fontSize: "0.9em",
     textAlign: "center",
     padding: 12,
+    ...style,
   };
-  return <div data-kit="ChartEmpty">{<div style={style}>{children}</div>}</div>;
+  return <div data-kit="ChartEmpty" style={box}>{children}</div>;
 }
 
 /** The hover surface all three charts share — recharts paints its own content

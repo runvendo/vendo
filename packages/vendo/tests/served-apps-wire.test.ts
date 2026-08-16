@@ -83,7 +83,7 @@ async function setup(): Promise<Vendo> {
   const store = await tempStore("vendo-served-wire-");
   await store.ensureSchema();
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async (req) => {
       const subject = req.headers.get("x-test-user");
       return subject === null ? null : { kind: "user", subject };
@@ -169,7 +169,7 @@ describe("GET /apps/:id/open on a served (layer-3) app", () => {
     const vendo = await setup();
     vi.stubEnv("VENDO_BASE_URL", "");
     const noOrigin = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async (req) => {
         const subject = req.headers.get("x-test-user");
         return subject === null ? null : { kind: "user", subject };
@@ -252,7 +252,7 @@ describe("the served lane is offered only where it can actually serve", () => {
     await store.ensureSchema();
     const captured: string[] = [];
     const vendo = createVendo({
-      model: capturingModel(captured),
+      models: { default: capturingModel(captured) },
       principal: async () => ADA,
       store,
       // A sandbox, so the only lane in question is the served one.

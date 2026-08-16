@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { densityVars, font, hairline, numeric, t, type KitDensity } from "../tokens.js";
+import { densityVars, font, hairline, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
@@ -14,7 +14,7 @@ export interface CardField {
   cell?: ReactNode;
 }
 
-export interface CardListProps {
+export interface CardListProps extends KitStyled {
   /** Items from a tool call. */
   items: Array<Record<string, unknown>>;
   /** Field used as each card's title. */
@@ -35,14 +35,14 @@ export interface CardListProps {
   density?: KitDensity;
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", empty, actions, density }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", empty, actions, density, style }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
     // The slot replaces the dashed box, not its TEXT: what goes in one is an
     // EmptyState, which draws that same frame itself — nested, it read as a
     // box inside a box.
-    return empty !== undefined ? <div data-kit="CardList">{empty}</div> : (
+    return empty !== undefined ? <div data-kit="CardList" style={style}>{empty}</div> : (
       <div
         data-kit="CardList"
         style={{
@@ -52,6 +52,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
           border: `${t.borderWidth} dashed ${t.border}`,
           borderRadius: t.radiusMedium,
           padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
+          ...style,
         }}
       >
         {emptyState}
@@ -64,7 +65,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
   const grid = (
     <div
       data-kit="CardList"
-      style={{ ...densityVars(density), display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-content-gap, 10px)" }}
+      style={{ ...densityVars(density), display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-content-gap, 10px)", ...style }}
     >
       {items.map((item, index) => {
         const badge = badgeField ? readField(item, badgeField) : undefined;

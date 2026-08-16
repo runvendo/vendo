@@ -385,10 +385,10 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `      guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `      // With a Vendo Cloud key the infrastructure seams wire the Cloud\n` +
     `      // adapters EXPLICITLY (composition decides; blocks never read the\n` +
-    `      // environment). Without one, pass your own adapters here — model,\n` +
+    `      // environment). Without one, pass your own adapters here — models,\n` +
     `      // store, connections, sandbox all accept custom implementations.\n` +
     `      ...(cloud === undefined ? {} : {\n` +
-    `        model: createAnthropic({ apiKey: cloud.apiKey, baseURL: \`\${cloud.baseUrl}/api/v1\` })("vendo"),\n` +
+    `        models: { default: createAnthropic({ apiKey: cloud.apiKey, baseURL: \`\${cloud.baseUrl}/api/v1\` })("vendo") },\n` +
     `        store: hostedStore(cloud),\n` +
     `        connections: cloudConnections(cloud),\n` +
     `        connectors: [cloudTools(cloud)],\n` +

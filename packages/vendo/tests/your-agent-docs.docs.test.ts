@@ -7,27 +7,26 @@ import { describe, expect, it } from "vitest";
  * plain test against the sources — it reads files and nothing else, no package
  * import, so it runs without a build.
  *
- * The restructure split the old single `existing-agents/your-agent` page across
- * four pages, one canonical home per fact. Every claim below still bites; each
- * is now pinned on the page whose job that fact is. Move a fact between pages
- * and move its constant here.
+ * The Cloud restructure moved every page this gate watched and re-split the
+ * facts across new homes, one canonical home per fact. Every claim below still
+ * bites; each is now pinned on the page whose job that fact is. Move a fact
+ * between pages and move its constant here.
  *
  * What it holds, and why each claim is load-bearing:
  *  1. the door-1 quickstart is published and every nav entry still resolves,
- *     with the quickstart FIRST in its group and the overview directly behind
- *     it (the landing page's door card links straight at the quickstart);
- *  2. every tool name the docs put in a reader's system prompt really exists in
- *     the registry the prompt block is describing;
- *  3. `vendo_make`'s four documented arguments are its real schema properties on
- *     BOTH doors, and the remaining asymmetry claim — that the IN-PROCESS pack
- *     carries no `vendo_apps_*` — matches pack.ts. That asymmetry is the one
- *     thing a reader can silently get wrong (an invented tool call), so it is
- *     pinned from both sides and on both pages that state it;
- *  4. the receipt really has exactly the four fields the docs call a law;
+ *     with the quickstart FIRST in its group (the landing page's door card
+ *     links straight at the quickstart, not at an overview hop);
+ *  2. every tool name the docs put in front of a reader's model really exists
+ *     in the registry the page is describing;
+ *  3. `vendo_make`'s four arguments are its real schema properties on BOTH
+ *     doors, and the asymmetry — that the IN-PROCESS pack carries no
+ *     `vendo_apps_*` — matches pack.ts. That asymmetry is the one thing a
+ *     reader can silently get wrong (an invented tool call), so it is pinned
+ *     from both sides;
+ *  4. the receipt really carries the fields the envelope table calls a law;
  *  5. every component the docs tell a reader to import is really exported from
  *     the entry point they name;
- *  6. the pasteable prompt block stays in step with the skill it was lifted from;
- *  7. every internal link, on every page in the tree, points at a page that
+ *  6. every internal link, on every page in the tree, points at a page that
  *     really exists. Redirects do not count: they exist for links the world
  *     already published, and one of ours that needs one is a stale link.
  */
@@ -36,23 +35,50 @@ const REPO_ROOT = new URL("../../../", import.meta.url);
 const read = (path: string): Promise<string> => readFile(new URL(path, REPO_ROOT), "utf8");
 const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(path)) as T;
 
-/** Door 1's on-ramp: init, one spread, one component. */
-const PAGE = "docs-site/existing-agents/quickstart.mdx";
-const NAV_ENTRY = "existing-agents/quickstart";
-/** The block a reader pastes into their own agent's system prompt. */
+/** Door 1's on-ramp: init, one spread, one component. Also the page that lists
+ *  what the in-process pack contains. */
+const PAGE = "docs-site/existing-agent/quickstart.mdx";
+const NAV_ENTRY = "existing-agent/quickstart";
+const PACK_PAGE = PAGE;
+/** The prose channels that reach the model before every turn. */
 const PROMPT_PAGE = "docs-site/customize/instructions.mdx";
-/** What `vendo_make` answers with, where the screen lands, what a pin displaces. */
-const CONTRACT_PAGE = "docs-site/capabilities/generated-ui.mdx";
-/** The MCP door's own tools and options — the only door that carries `vendo_apps_*`. */
-const DOOR_PAGE = "docs-site/reference/mcp-door.mdx";
-/** What the in-process tool pack contains. */
-const PACK_PAGE = "docs-site/existing-agents/overview.mdx";
+/** The envelope a `vendo_*` tool answers with, and the embeds that render it. */
+const CONTRACT_PAGE = "docs-site/existing-agent/embeds.mdx";
+/** The MCP door's own behaviour: who calls, what lists, what comes back. */
+const DOOR_PAGE = "docs-site/outside-agents/how-the-door-works.mdx";
+/** Opening the door: the `createVendo` keys, the broker, the token exchange. */
+const DOOR_SETUP_PAGE = "docs-site/outside-agents/quickstart.mdx";
+/** The paste a coding agent follows to wire Vendo into an existing repo. */
+const INSTALL_PAGE = "docs-site/agents/index.mdx";
+/** Where a generated view is mounted inside the host's own page. */
+const SURFACE_PAGE = "docs-site/product/mount-the-surface.mdx";
 const AGENT_TOOLS = "packages/apps/src/server/doors/agent-tools.ts";
 const PACK = "packages/vendo/src/pack.ts";
 
-interface DocsJson {
-  navigation: { groups: { group: string; pages: string[] }[] };
+interface NavGroup {
+  group: string;
+  pages: (string | NavGroup)[];
 }
+interface DocsJson {
+  navigation: { tabs: { tab: string; groups: NavGroup[] }[] };
+}
+
+/** Every group in the nav, tabs and nested groups flattened. */
+const navGroups = (docs: DocsJson): NavGroup[] => {
+  const groups: NavGroup[] = [];
+  const walk = (group: NavGroup): void => {
+    groups.push(group);
+    for (const page of group.pages) if (typeof page !== "string") walk(page);
+  };
+  for (const tab of docs.navigation.tabs) for (const group of tab.groups) walk(group);
+  return groups;
+};
+
+/** Every page id the nav lists, in nav order. */
+const navPages = (docs: DocsJson): string[] =>
+  navGroups(docs).flatMap((group) =>
+    group.pages.filter((page): page is string => typeof page === "string"),
+  );
 
 /** A docs.json page id resolves as `<id>.mdx` or `<id>/index.mdx`. */
 const pageExists = (id: string): boolean => {
@@ -87,36 +113,32 @@ describe("the BYO on-ramp page is published", () => {
     expect(existsSync(new URL(PAGE, REPO_ROOT)), `${PAGE} must exist`).toBe(true);
     const text = await read(PAGE);
     expect(text.startsWith("---\n")).toBe(true);
-    expect(text).toMatch(/^title: "Quickstart: your agent"$/m);
-    expect(text).toMatch(/^sidebarTitle: "/m);
+    expect(text).toMatch(/^title: "/m);
+    expect(text).toMatch(/^sidebarTitle: "Quickstart"$/m);
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("leads its group, with the overview directly behind it", async () => {
+  it("leads its group", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "You already have an agent");
-    expect(group, "the 'You already have an agent' group must exist").toBeDefined();
+    const group = navGroups(docs).find((entry) => entry.group === "In your existing agent");
+    expect(group, "the 'In your existing agent' group must exist").toBeDefined();
     // The landing page's door card links straight at the quickstart, so the
-    // quickstart is the group's first entry and the overview it hands off to
-    // sits directly behind it, ahead of the framework notes. Flipping these
-    // two back reintroduces the overview hop the landing page removed.
-    expect(group?.pages.slice(0, 2)).toEqual([NAV_ENTRY, "existing-agents/overview"]);
+    // quickstart is the group's first entry. Anything ahead of it reintroduces
+    // the overview hop the landing page removed.
+    expect(group?.pages[0]).toBe(NAV_ENTRY);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const missing = docs.navigation.groups
-      .flatMap((group) => group.pages)
-      .filter((id) => !pageExists(id));
-    expect(missing).toEqual([]);
+    expect(navPages(docs).filter((id) => !pageExists(id))).toEqual([]);
   });
 
   it("lists every published page in the nav, and nothing else", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
     const listed = new Set(
-      docs.navigation.groups
-        .flatMap((group) => group.pages)
-        .map((id) => (existsSync(new URL(`docs-site/${id}.mdx`, REPO_ROOT)) ? `${id}.mdx` : `${id}/index.mdx`)),
+      navPages(docs).map((id) =>
+        existsSync(new URL(`docs-site/${id}.mdx`, REPO_ROOT)) ? `${id}.mdx` : `${id}/index.mdx`,
+      ),
     );
     expect(everyPage().filter((file) => !listed.has(file)), "orphan page, in no nav group").toEqual([]);
   });
@@ -141,15 +163,13 @@ describe("the BYO on-ramp page is published", () => {
 });
 
 describe("every tool the docs name really exists", () => {
-  /** The prompt page puts these in a reader's SYSTEM PROMPT. A name that drifted
-   *  there teaches their agent to call a tool that does not answer. */
+  /** These pages put a tool name in front of a reader's model. A name that
+   *  drifted here teaches their agent to call a tool that does not answer. */
   it.each([
-    ["vendo_make", PROMPT_PAGE],
-    ["vendo_apps_pin", PROMPT_PAGE],
-    ["vendo_apps_unpin", PROMPT_PAGE],
-    // Door-only, so it is taught where the door's tool list is.
-    ["vendo_apps_open", DOOR_PAGE],
-  ])("%s is named in the docs and declared in the apps agent-tool registry", async (tool, page) => {
+    ["vendo_make", PAGE],
+    ["vendo_make", DOOR_PAGE],
+    ["vendo_make", INSTALL_PAGE],
+  ])("%s is named in %s and declared in the apps agent-tool registry", async (tool, page) => {
     expect(await read(page), `${page} must name ${tool}`).toContain(tool);
     const source = await read(AGENT_TOOLS);
     // Either the literal name or core's constant for it.
@@ -172,7 +192,7 @@ describe("every tool the docs name really exists", () => {
 
 describe("the documented arguments match the real schemas", () => {
   /** The door serves the bound registry's descriptors verbatim, so THIS schema
-   *  is what an outside agent sees — all four arguments the page documents. */
+   *  is what an outside agent sees — all four arguments. */
   it("the registry's vendo_make takes request, context, app, and slot", async () => {
     const source = await read(AGENT_TOOLS);
     const start = source.indexOf("name: VENDO_MAKE_TOOL");
@@ -184,14 +204,10 @@ describe("the documented arguments match the real schemas", () => {
       );
     }
     expect(schema).toContain('required: ["request"]');
-    const page = await read(PROMPT_PAGE);
-    for (const argument of ["request", "context", "app", "slot"]) {
-      expect(page).toContain(`\`${argument}\``);
-    }
   });
 
-  /** `slot` is the one argument both doors carry, and the docs say so on both
-   *  paths. If the pack ever loses it, the docs' parity claim is the lie. */
+  /** `slot` is the one argument both doors carry. If the pack ever loses it,
+   *  the two paths have silently diverged. */
   it("the IN-PROCESS pack's vendo_make takes the same four arguments", async () => {
     const source = await read(PACK);
     const start = source.indexOf("function makeAppTool");
@@ -212,16 +228,15 @@ describe("the documented arguments match the real schemas", () => {
     );
   });
 
-  /** Stated on both pages a reader can arrive at with a pin tool in mind: the
-   *  prompt block they paste, and the page that teaches placement. */
-  it.each([PROMPT_PAGE, CONTRACT_PAGE])("%s says the in-process pack carries no pin tool", async (page) => {
-    expect(await read(page)).toMatch(/in-process tool pack\s+carries no `vendo_apps_\*` tool/i);
-  });
-
-  it("the prompt block gates its pin section on reaching Vendo over MCP", async () => {
-    const page = await read(PROMPT_PAGE);
-    expect(page).toMatch(/only if your agent reaches Vendo over MCP/i);
-    expect(page).toMatch(/teaching an agent about a tool it does not have/i);
+  /** The pack the in-process reader gets is exactly the three rows the
+   *  quickstart's tool table promises, and no `vendo_apps_*` among them. */
+  it("the quickstart's tool table is the pack, and names no vendo_apps_* tool", async () => {
+    const page = await read(PACK_PAGE);
+    expect(page).toContain("vendo_make");
+    expect(page).toContain("vendo_delegate");
+    expect(page, "the in-process page must not teach a tool the pack strips").not.toMatch(
+      /vendo_apps_[a-z]/,
+    );
   });
 });
 
@@ -232,16 +247,25 @@ describe("the receipt law the docs teach is the real receipt", () => {
     expect(source).toContain("title: z.string().min(1)");
     expect(source).toContain('status: z.enum(["ready", "partial", "building", "failed"])');
     expect(source).toContain("say: z.string().min(1)");
+  });
+
+  /** What the docs publish of that receipt is the app-ref envelope: the id, the
+   *  title, and the one status a ref may ever carry. */
+  it("the envelope page teaches the app ref's id, title, and building status", async () => {
     const page = await read(CONTRACT_PAGE);
-    for (const field of ["`say`", "`status`", '"ready"', '"partial"', '"building"', '"failed"']) {
+    for (const field of ["`appId`", "`title`", '`status: "building"`', "vendo/app-ref@1"]) {
       expect(page, `${CONTRACT_PAGE} must teach ${field}`).toContain(field);
     }
+  });
+
+  it("the door page says what vendo_make answers with", async () => {
+    expect(await read(DOOR_PAGE)).toMatch(/`vendo_make` answers with an id, a title, a status/);
   });
 });
 
 describe("every component the docs tell a reader to import is exported", () => {
   it.each([
-    ["VendoSlot", "@vendoai/ui/chrome", "packages/ui/src/chrome/index.ts", CONTRACT_PAGE],
+    ["VendoSlot", "@vendoai/ui/chrome", "packages/ui/src/chrome/index.ts", SURFACE_PAGE],
     ["VendoToolResult", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", PAGE],
     ["VendoProvider", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", PAGE],
   ])("%s is exported from %s", async (component, specifier, entry, page) => {
@@ -252,7 +276,7 @@ describe("every component the docs tell a reader to import is exported", () => {
   });
 
   it("wellKnownVendoHandler, the door's discovery route, is a server export", async () => {
-    expect(await read(DOOR_PAGE)).toContain("wellKnownVendoHandler");
+    expect(await read(INSTALL_PAGE)).toContain("wellKnownVendoHandler");
     expect(await read("packages/vendo/src/server.ts")).toContain("export function wellKnownVendoHandler");
   });
 
@@ -265,32 +289,9 @@ describe("every component the docs tell a reader to import is exported", () => {
   });
 
   it("mcp and oauth are real createVendo keys", async () => {
-    expect(await read(DOOR_PAGE)).toContain("mcp: true");
+    expect(await read(DOOR_SETUP_PAGE)).toContain("mcp: true");
     const source = await read("packages/vendo/src/types.ts");
     expect(source).toMatch(/^ {2}mcp\?:/m);
     expect(source).toMatch(/^ {2}oauth\?: HostOAuthAdapter;$/m);
-  });
-});
-
-describe("the pasteable guidance stays in step with the skill it was lifted from", () => {
-  const SKILL = "examples/claude-code-plugin/skills/make-a-screen/SKILL.md";
-
-  it("the skill still teaches the laws the prompt block repeats", async () => {
-    const skill = await read(SKILL);
-    for (const needle of [/never invent/i, /close to verbatim/i, /`context`/, /`slot`/]) {
-      expect(skill).toMatch(needle);
-    }
-  });
-
-  it("the prompt block carries the same four laws", async () => {
-    const page = await read(PROMPT_PAGE);
-    expect(page).toMatch(/NEVER invent one/);
-    expect(page).toMatch(/close to verbatim/i);
-    expect(page).toMatch(/NEVER describe it/);
-    expect(page).toMatch(/hardcoded figures/i);
-  });
-
-  it("credits the skill as the source", async () => {
-    expect(await read(PROMPT_PAGE)).toContain("examples/claude-code-plugin/skills/make-a-screen");
   });
 });

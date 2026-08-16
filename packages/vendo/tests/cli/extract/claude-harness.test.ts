@@ -47,7 +47,7 @@ describe("claudeHarness", () => {
     expect(progress).toEqual(["read app/api/invoices/route.ts"]);
   });
 
-  it("pins the SDK model via VENDO_MODEL_EXTRACT, with VENDO_EXTRACTION_MODEL as the deprecated fallback", async () => {
+  it("pins the SDK model via VENDO_MODEL_EXTRACT", async () => {
     let captured: Record<string, unknown> | undefined;
     const harness = claudeHarness({
       loadSdk: async () => ({
@@ -59,12 +59,10 @@ describe("claudeHarness", () => {
     });
     await harness.run({
       root: "/x",
-      env: { VENDO_MODEL_EXTRACT: "vendo-extract", VENDO_EXTRACTION_MODEL: "old-model" },
+      env: { VENDO_MODEL_EXTRACT: "vendo-extract" },
       instructions: "go",
     });
     expect(captured?.["model"]).toBe("vendo-extract");
-    await harness.run({ root: "/x", env: { VENDO_EXTRACTION_MODEL: "old-model" }, instructions: "go" });
-    expect(captured?.["model"]).toBe("old-model");
     await harness.run({ root: "/x", env: {}, instructions: "go" });
     expect(captured?.["model"]).toBeUndefined();
   });

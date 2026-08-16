@@ -368,11 +368,16 @@ const hostPropsIssues = async (
  *  `onPress` for Button's `onClick`) survives into props and the renderer
  *  silently ignores it — the "valid table, empty rows" class. Reject unknown
  *  prop names so the model repairs to the real one instead of shipping a dead
- *  component. */
+ *  component.
+ *
+ *  A component that RENDERS an engine is exempt: the undeclared name there
+ *  reaches recharts or Base UI and paints, so refusing it would refuse working
+ *  code (`KitComponentSpec.engine`). */
 const prewiredPropsIssues = (node: TreeNode): FactIssue[] => {
   const allowed = wirePropNames.get(node.component);
   const props = node.props;
   if (allowed === undefined || props === undefined) return [];
+  if (kitSpec(node.component)?.engine !== undefined) return [];
   return Object.keys(props)
     // `pending` is the renderer's own placeholder cue, not a component prop —
     // the plan skeleton writes it on every leaf (generation/skeleton.ts) and a

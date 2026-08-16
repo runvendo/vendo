@@ -55,7 +55,7 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
   it("composes the same tools the deprecated `profile.tools` did", async () => {
     const store = await tempStore();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       tools: [hostTool("host_invoices_list")],
@@ -66,13 +66,13 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
 
   it("OLD shape and NEW shape compose the same host-tool surface", async () => {
     const old = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       profile: { tools: [hostTool("host_invoices_list")] },
     });
     const next = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       tools: [hostTool("host_invoices_list")],
@@ -85,7 +85,7 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
   it("the slot wins when a host sets both, and says so once", async () => {
     const { lines } = warnings();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       tools: [hostTool("host_from_slot")],
@@ -103,7 +103,7 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
     // the slot" silently deleted every declared host tool — and blinded the boot
     // collision gate, which then read no tools.json and passed everything.
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       tools: [{
@@ -122,36 +122,46 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
   });
 });
 
-describe("deprecation shims — one minor of grace, and a warning that names the move", () => {
-  it("an OLD-shape host boots green and is told exactly what to change", async () => {
+describe("the model knobs that are GONE — a boot error naming the seat", () => {
+  it.each([
+    ["model", { model: {} as LanguageModel }, "models.default"],
+    ["paint", { paint: { model: {} as LanguageModel } }, "models.apps"],
+    ["paint", { paint: { disabled: true } }, "apps: false"],
+  ])("refuses `%s` and names where it went", async (_key, removed, destination) => {
+    const config = {
+      ...removed,
+      principal: async () => principal,
+      store: await tempStore(),
+    } as Parameters<typeof createVendo>[0];
+    // A silently dropped model key is a deployment thinking with the wrong
+    // model, or an apps lane the host believes is off. Refuse instead.
+    expect(() => createVendo(config)).toThrow(destination);
+  });
+
+  it("an OLD-shape host on the surviving deprecation boots green and is told what to change", async () => {
     const { lines } = warnings();
     const vendo = createVendo({
-      model: {} as LanguageModel,
-      paint: { model: {} as LanguageModel },
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       profile: { tools: [hostTool("host_invoices_list")] },
     });
     expect(typeof vendo.handler).toBe("function");
-    const said = lines.join("\n");
-    // Each deprecated key names its destination — a warning that does not say
-    // where to go is a warning a host cannot act on.
-    expect(said).toContain("models.default");
-    expect(said).toContain("models.fill");
-    expect(said).toContain("tools:");
+    // A warning that does not say where to go is a warning a host cannot act on.
+    expect(lines.join("\n")).toContain("tools:");
   });
 
   it("warns ONCE per key, not once per composition", async () => {
     const { lines } = warnings();
     for (let index = 0; index < 3; index += 1) {
       createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         principal: async () => principal,
         store: await tempStore(),
+        profile: { tools: [hostTool("host_invoices_list")] },
       });
     }
-    const modelWarnings = lines.filter((line) => line.includes("models.default"));
-    expect(modelWarnings).toHaveLength(1);
+    expect(lines.filter((line) => line.includes("`profile.tools` is deprecated"))).toHaveLength(1);
   });
 
   it("says nothing at all for a host already on the new shape", async () => {

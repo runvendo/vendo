@@ -64,7 +64,7 @@ function gate(): { promise: Promise<void>; open: () => void } {
 
 function vendoWith(harness: unknown, store: VendoStore) {
   return createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     harness: harness as never,

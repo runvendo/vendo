@@ -2,9 +2,9 @@
 import type { ReactNode } from "react";
 import { applyFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { font, hairline, microLabel, numeric, t } from "../tokens.js";
+import { font, hairline, microLabel, numeric, t, type KitStyled } from "../tokens.js";
 
-export interface TimelineProps {
+export interface TimelineProps extends KitStyled {
   /** Entries from a tool call, in the order they should read. */
   entries: Array<Record<string, unknown>>;
   /** Field for each entry's title. */
@@ -40,12 +40,13 @@ export function Timeline({
   marker,
   emptyState = "No activity",
   empty,
+  style,
 }: TimelineProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const entries = Array.isArray(rawEntries) ? rawEntries : [];
   if (entries.length === 0) {
     // The slot replaces the dashed box, not its TEXT — see CardList.
-    return empty !== undefined ? <div data-kit="Timeline">{empty}</div> : (
+    return empty !== undefined ? <div data-kit="Timeline" style={style}>{empty}</div> : (
       <div
         data-kit="Timeline"
         style={{
@@ -55,6 +56,7 @@ export function Timeline({
           border: `${t.borderWidth} dashed ${t.border}`,
           borderRadius: t.radiusMedium,
           padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
+          ...style,
         }}
       >
         {emptyState}
@@ -64,7 +66,7 @@ export function Timeline({
   return (
     <ol
       data-kit="Timeline"
-      style={{ ...font, display: "flex", flexDirection: "column", listStyle: "none", margin: 0, padding: 0 }}
+      style={{ ...font, display: "flex", flexDirection: "column", listStyle: "none", margin: 0, padding: 0, ...style }}
     >
       {entries.map((entry, index) => {
         const time = timeField === undefined ? "" : timeText(readField(entry, timeField));

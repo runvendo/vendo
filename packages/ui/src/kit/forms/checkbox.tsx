@@ -1,9 +1,9 @@
 /** Checkbox — boolean input; onChange reports checked (W2 §The Kit). */
-import { t } from "../tokens.js";
+import { t, type KitStyled } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
-export interface CheckboxProps {
+export interface CheckboxProps extends KitStyled {
   label?: string;
   checked?: boolean;
   hint?: string;
@@ -11,11 +11,11 @@ export interface CheckboxProps {
   onChange?: (checked: boolean) => void;
 }
 
-export function Checkbox({ label, checked, hint, disabled, onChange }: CheckboxProps) {
+export function Checkbox({ label, checked, hint, disabled, onChange, style }: CheckboxProps) {
   const { fieldId, helpId } = useFieldIds("checkbox");
   const screen = controlledHandler(checked !== undefined, onChange);
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} inline>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} inline style={style}>
       <input
         id={fieldId}
         data-kit="Checkbox"

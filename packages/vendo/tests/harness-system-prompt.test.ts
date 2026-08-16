@@ -100,7 +100,7 @@ async function compose(
   });
   const seen: string[] = [];
   const vendo = createVendo({
-    model: recordingModel(seen),
+    models: { default: recordingModel(seen) },
     principal: async () => principal,
     store,
     instructions: HOST_VOICE,

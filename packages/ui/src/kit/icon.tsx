@@ -1,8 +1,8 @@
 /** Icon — one lucide glyph from the generated path data (W2 §The Kit). */
 import { ICON_PATHS } from "./icons.gen.js";
-import { resolveTone, toneColor, type KitTone } from "./tokens.js";
+import { resolveTone, toneColor, type KitStyled, type KitTone } from "./tokens.js";
 
-export interface IconProps {
+export interface IconProps extends KitStyled {
   /** A lucide name in kebab-case, e.g. "arrow-up-right". */
   name?: string;
   /** Edge length in px. */
@@ -14,11 +14,11 @@ export interface IconProps {
 }
 
 /** A stroked glyph that inherits its color. `<Icon name="check-circle" tone="success"/>`. */
-export function Icon({ name, size = 16, tone, label }: IconProps) {
+export function Icon({ name, size = 16, tone, label, style }: IconProps) {
   const markup = name !== undefined && Object.hasOwn(ICON_PATHS, name) ? ICON_PATHS[name] : undefined;
   // Generated code guesses names; an unmapped one leaves a gap, never a crash
   // and never a broken-glyph box (the Callout lesson, 2026-07-26).
-  if (markup === undefined) return <span data-kit="Icon" data-kit-missing-icon={name ?? ""} />;
+  if (markup === undefined) return <span data-kit="Icon" data-kit-missing-icon={name ?? ""} style={style} />;
   const resolved = resolveTone(tone);
   return (
     <svg
@@ -38,6 +38,7 @@ export function Icon({ name, size = 16, tone, label }: IconProps) {
         flexShrink: 0,
         verticalAlign: "text-bottom",
         color: resolved === "neutral" ? undefined : toneColor(resolved),
+        ...style,
       }}
       {...(label === undefined ? { "aria-hidden": true } : { role: "img", "aria-label": label })}
       dangerouslySetInnerHTML={{ __html: markup }}

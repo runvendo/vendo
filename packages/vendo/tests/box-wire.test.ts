@@ -108,7 +108,7 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     refs: { subject: ADA.subject },
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async (req) => {
       const subject = req.headers.get("x-test-user");
       return subject === null ? null : { kind: "user", subject };
@@ -383,7 +383,7 @@ describe("the Lane E redaction guard on the box seams", () => {
       refs: { subject: ADA.subject },
     });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async (req) => {
         const subject = req.headers.get("x-test-user");
         return subject === null ? null : { kind: "user", subject };

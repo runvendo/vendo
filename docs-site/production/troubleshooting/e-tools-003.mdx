@@ -1,0 +1,62 @@
+---
+title: "E-TOOLS-003"
+sidebarTitle: "E-TOOLS-003"
+description: "Part of the tool catalog is ungraded, so it asks on every call."
+---
+
+# E-TOOLS-003
+
+<Warning>
+**what doctor prints** (warning)
+
+catalog: 5/12 tools ungraded — each one asks on every call; run `vendo sync`
+with a model key to grade
+</Warning>
+
+Some of your host tools have no risk grade, so the guard asks the user
+before every single call instead of letting reads through automatically.
+
+`check tools/graded` · `error_code E-TOOLS-003` · `doctor exits 0` (warning only)
+
+## What you're seeing
+
+Doctor counts how many tools in `.vendo/tools.json` have a grade once
+`.vendo/judgments.json` and `.vendo/overrides.json` are both applied, and
+warns when the ungraded count is above zero.
+
+## Why
+
+Extraction only asserts protocol facts: an HTTP `DELETE` is destructive, a
+declared tRPC mutation is at least a write. It never guesses a grade from a
+tool's name alone. Everything else stays `ungraded` until the AI judge or a
+human sets it by hand, and the guard treats ungraded as risky by default,
+asking before it runs.
+
+## The fix
+
+Run `vendo sync` with a model key so the judgment pass grades the catalog
+against the real handler source:
+
+```bash
+npx vendo sync
+```
+
+Without a model key, grade the tools you care about directly:
+
+```json
+{
+  "tools": {
+    "host_invoices_list": { "risk": "read" } // [!code focus]
+  }
+}
+```
+
+Leaving tools ungraded is safe. It only costs an approval prompt per call.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-TOOLS-001" href="/production/troubleshooting/e-tools-001">every tool disabled</Card>
+  <Card title="E-TOOLS-002" href="/production/troubleshooting/e-tools-002">tool surface is empty</Card>
+  <Card title="E-TOOLS-004" href="/production/troubleshooting/e-tools-004">tools with no schema</Card>
+</CardGroup>

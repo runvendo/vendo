@@ -38,6 +38,10 @@ export {
   VendoAppEmbed,
   VendoApprovalEmbed,
   VendoToolResult,
+  // chrome/vendo-slot.tsx — the mount point a host puts in its own markup, and
+  // the shape of its `onParked` prop.
+  VendoSlot,
+  type ParkedPress,
   // hooks/*
   useActivity,
   useApp,

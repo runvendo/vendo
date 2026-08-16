@@ -1,10 +1,11 @@
 /** Sparkline — a compact inline trend, recharts Area internals (W2 §The Kit). */
+import type { ComponentProps } from "react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useFieldValue } from "../row.js";
-import { font, resolveTone, seriesColor, t, toneColor, type KitTone } from "../tokens.js";
+import { font, resolveTone, seriesColor, t, toneColor, type KitStyled, type KitTone, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { sanitizeNumbers } from "./sanitize.js";
 
-export interface SparklineProps {
+interface SparklineOwnProps extends KitStyled {
   /** A list of numbers, or rows with a `valueKey`. */
   data?: Array<number | Record<string, unknown>>;
   /** Field to read when `data` holds objects. */
@@ -18,7 +19,12 @@ export interface SparklineProps {
   field?: string;
 }
 
-export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", tone, field }: SparklineProps) {
+/** Plus any recharts `<Area>` prop, handed straight to the curve. It arrives
+ *  AFTER the Kit's own defaults, so `stroke` wins, and BEFORE `dataKey`, which
+ *  the component owns — an overridden one would plot a field that is not there. */
+export type SparklineProps = SparklineOwnProps & KitEngine<ComponentProps<typeof Area>, SparklineOwnProps, "dataKey">;
+
+export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", tone, field, style, children, pending, ...engine }: SparklineProps & KitRendered) {
   const input = useFieldValue(field, data);
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const raw = (Array.isArray(input) ? input : []).map((d) =>
@@ -27,7 +33,7 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
   const clean = sanitizeNumbers(raw);
   if (clean.length < 2) {
     return (
-      <span data-kit="Sparkline" style={{ ...font, color: t.muted, fontSize: "0.9em" }}>
+      <span data-kit="Sparkline" style={{ ...font, color: t.muted, fontSize: "0.9em", ...style }}>
         {emptyState}
       </span>
     );
@@ -44,7 +50,7 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
   // strip transferred from its height as a SQUARE would be 40px of illegible
   // line. A parent with a real width still wins.
   return (
-    <div data-kit="Sparkline" style={{ width: "100%", aspectRatio: "4 / 1", height, minHeight: height }}>
+    <div data-kit="Sparkline" style={{ width: "100%", aspectRatio: "4 / 1", height, minHeight: height, ...style }}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={points} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
           <defs>
@@ -55,12 +61,13 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
           </defs>
           <Area
             type="monotone"
-            dataKey="v"
             stroke={line}
             strokeWidth={1.5}
             fill={`url(#${fillId})`}
             dot={false}
             isAnimationActive={false}
+            {...given(engine)}
+            dataKey="v"
           />
         </AreaChart>
       </ResponsiveContainer>

@@ -8,16 +8,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t } from "../tokens.js";
+import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
-export interface BarChartProps {
+type BarSeriesInput = SeriesInput<ComponentProps<typeof Bar>>;
+
+interface BarChartOwnProps extends KitStyled {
   data: Array<Record<string, unknown>>;
   xKey: string;
-  series: SeriesInput[];
+  series: BarSeriesInput[];
   format?: ValueFormat;
   /** Stack the series into one bar per category. */
   stacked?: boolean;
@@ -34,8 +36,13 @@ export interface BarChartProps {
   legend?: ReactNode;
 }
 
-function normalize(series: SeriesInput[]): Array<{ key: string; label: string }> {
-  return series.map((s) => (typeof s === "string" ? { key: s, label: s } : { key: s.key, label: s.label ?? s.key }));
+/** Plus any recharts `<Bar>` prop, handed to EVERY bar. It arrives AFTER the
+ *  Kit's own defaults, so `fill` wins, and BEFORE `dataKey`/`name`, which the
+ *  component owns — an overridden one would plot a field that is not there. */
+export type BarChartProps = BarChartOwnProps & KitEngine<ComponentProps<typeof Bar>, BarChartOwnProps, "dataKey" | "name">;
+
+function normalize(series: BarSeriesInput[]) {
+  return series.map((s) => (typeof s === "string" ? { key: s, label: s, color: undefined } : { ...s, label: s.label ?? s.key }));
 }
 
 const axisTick = { fill: t.muted, fontSize: 11 };
@@ -52,7 +59,9 @@ export function BarChart({
   empty,
   tooltip,
   legend,
-}: BarChartProps) {
+  style,
+  children, pending, ...engine
+}: BarChartProps & KitRendered) {
   const cols = normalize(series);
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
@@ -60,13 +69,13 @@ export function BarChart({
     // The slot replaces the dashed box, not its TEXT: what goes in one is an
     // EmptyState, which draws that same frame itself — nested, it read as a
     // box inside a box.
-    return empty ?? <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return empty ?? <ChartEmpty height={height} style={style}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
     <div
       data-kit="BarChart"
-      style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-inline-gap, 7px)" }}
+      style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-inline-gap, 7px)", ...style }}
     >
       <ChartFrame height={height}>
         <ResponsiveContainer width="100%" height="100%">
@@ -89,15 +98,17 @@ export function BarChart({
               contentStyle={tooltipSurface}
               cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }}
             />
-            {cols.map((c, i) => (
+            {cols.map(({ key, label, color, ...seriesEngine }, i) => (
               <Bar
-                key={c.key}
-                dataKey={c.key}
-                name={c.label}
-                fill={seriesColor(i)}
+                fill={color ?? seriesColor(i)}
                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
+                {...given(engine)}
+                {...given(seriesEngine)}
+                key={key}
+                dataKey={key}
+                name={label}
               />
             ))}
           </RBarChart>

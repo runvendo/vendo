@@ -1,0 +1,161 @@
+---
+title: "Converse with a person"
+sidebarTitle: "Converse — respond()"
+description: "respond() streams one turn back to a waiting person, carries the thread id in a header, and forwards the caller's own credentials to your API."
+---
+
+Someone is on the other end. `respond()` is one turn of that conversation: an
+AI SDK UI-message-stream `Response` you return from a route unchanged.
+
+## Give it hands
+
+`api()` is your own API, read from `.vendo/tools.json`. `tool()` is anything
+you would rather write yourself, with its own auth model.
+
+```ts lib/agent.ts focus={11,23}
+import { agent, api, tool } from "@vendoai/agents";
+
+export const support = agent({
+  name: "support",
+  instructions: "Answer in the product's voice; never invent account numbers.",
+  tools: [
+    api(),
+    tool({
+      name: "refund_order",
+      description: "Refund an order in full.",
+      risk: "destructive",
+      inputSchema: {
+        type: "object",
+        properties: { orderId: { type: "string" } },
+        required: ["orderId"],
+      },
+      outputSchema: {
+        type: "object",
+        properties: { refunded: { type: "string" } },
+      },
+      execute: async (input, ctx) => {
+        const { orderId } = input as { orderId: string };
+        await refundOrder(orderId, { owner: ctx.principal.subject });
+        return { refunded: orderId };
+      },
+    }),
+  ],
+});
+```
+
+**Label the risk:** `read`, `write`, or `destructive`, and your label is final.
+Leave it off and the tool is `ungraded`, which the guard asks about every time,
+exactly as it does for `destructive`.
+
+**Scope it to the caller:** the `orderId` came from the model and
+`ctx.principal` is who the turn acts as, so bind the two yourself. An unscoped
+lookup acts on someone else's order however the approval card was answered.
+
+## The route
+
+```ts app/api/support/route.ts focus={13-16}
+import { support } from "@/lib/agent";
+import { auth } from "@/lib/auth";
+
+export async function POST(req: Request) {
+  const user = await auth(req);
+  if (user === null) return new Response("unauthorized", { status: 401 });
+
+  const { message, threadId } = (await req.json()) as {
+    message: string;
+    threadId?: string;
+  };
+
+  return support.respond(user.id, message, {
+    ...(threadId === undefined ? {} : { threadId }),
+    headers: req.headers,
+    user: { id: user.id, plan: user.plan },
+  });
+}
+```
+
+Three things are doing work there.
+
+- **`user.id` is the subject.** Every thread, every workspace file, and every
+  audit row is scoped to it, and Vendo mints no identity of its own.
+- **`headers: req.headers`** forwards the caller's own credentials, so a tool
+  call reaches your API as the person signed in rather than as the agent.
+- **`user`** is server-trusted identity the model may read, printed as `[User]`
+  in the prompt. It is facts, not instructions.
+
+| Option | Type | What it does |
+| --- | --- | --- |
+| `threadId` | `string` | Reopens a conversation this subject already owns |
+| `headers` | `Headers` or `Record<string, string>` | Forwards the caller's credentials to your API |
+| `user` | `Record<string, Json>` | Server-trusted facts the model may read |
+| `context` | `Record<string, unknown>` | Data your guard rules and tools read |
+| `signal` | `AbortSignal` | Cancels this turn |
+
+## Continue the conversation
+
+The response carries the thread id on `x-vendo-thread-id`. Keep it and hand it
+back on the next turn.
+
+<div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: 10, margin: "1.25rem 0" }}>
+  <div style={{ flex: "1 1 180px", border: "1px solid #e9e6f1", borderRadius: 10, padding: "11px 13px", background: "#fdfcff" }}>
+    <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#a8a5b4", marginBottom: 5 }}>Turn 1</div>
+    <div style={{ fontSize: 13, color: "#4b4857" }}>No thread id in the body. Vendo mints one.</div>
+  </div>
+  <div style={{ flex: "1 1 180px", border: "1px solid #ddd0ff", borderRadius: 10, padding: "11px 13px", background: "#f5f1ff" }}>
+    <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6c3bff", marginBottom: 5 }}>Response</div>
+    <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#4a22bd" }}>x-vendo-thread-id: thr_…</div>
+  </div>
+  <div style={{ flex: "1 1 180px", border: "1px solid #e9e6f1", borderRadius: 10, padding: "11px 13px", background: "#fdfcff" }}>
+    <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#a8a5b4", marginBottom: 5 }}>Turn 2</div>
+    <div style={{ fontSize: 13, color: "#4b4857" }}>Send that id back. Same conversation.</div>
+  </div>
+</div>
+
+```ts app/support-client.ts focus={9}
+import { THREAD_ID_HEADER } from "@vendoai/agents";
+
+let threadId: string | null = null;
+
+const response = await fetch("/api/support", {
+  method: "POST",
+  body: JSON.stringify({ message, threadId }),
+});
+threadId = response.headers.get(THREAD_ID_HEADER);
+```
+
+A `threadId` is checked against the same subject that owns it. Someone else's
+thread, or one that never existed, comes back `not-found` rather than as a
+silent new conversation.
+
+## Approvals, with a person present
+
+An interactive turn can stop for the human. A `destructive` or `ungraded` call
+raises an approval, the stream carries the card, and the turn waits 90 seconds
+for a decision.
+
+<Frame>
+  <img
+    src="/images/maple/panel-approval.png"
+    alt="A Maple turn paused mid-stream on an approval card for a $200 transfer, with Approve and Deny buttons"
+    width="652"
+    height="712"
+  />
+</Frame>
+
+Approve and the same call runs with the same arguments. Deny, or let the wait
+expire, and the model is told so and carries on.
+
+<Warning>
+  This is the interactive lane only. Inside `run()` there is nobody to ask, so
+  the call is refused and the card is left standing. See
+  [Run](/backend/run).
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Run" href="/backend/run">
+    The same agent, unattended, through the other verb.
+  </Card>
+  <Card title="API tools" href="/capabilities/api-tools">
+    What `vendo init` extracted, and how to change a grade or a name.
+  </Card>
+</CardGroup>

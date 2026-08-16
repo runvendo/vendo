@@ -30,7 +30,7 @@ Advanced:
   config <command> Show which layer owns each .vendo config surface
 
 Options:
-  --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations
+  --agent                    Init only: ask first. Prints the open questions as JSON and writes nothing; re-run with the answers as flags and it writes, ending in a JSON receipt
   --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail; doctor: auto-start the dev server
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
@@ -181,6 +181,12 @@ async function initCommand(args: string[]): Promise<number> {
   const initAi = args.includes("--ai") || args.includes("--ai-polish");
   if (initAi && args.includes("--no-ai")) {
     problems.push("--ai and --no-ai answer the same question — pass one or the other");
+  }
+  // Agent mode delegates judgment to the caller, so an engine can never run on
+  // it. Saying so beats dropping the flag: silently ignoring one is exactly how
+  // the "--agent writes nothing" promise broke in the field.
+  if (args.includes("--agent") && (initAi || engine !== undefined)) {
+    problems.push(`${initAi ? "--ai" : "--engine"} has no effect with --agent: judgment is delegated to you and the receipt names what it left. Drop it, or drop --agent to let init judge`);
   }
   const themePairs = options(args, "--theme");
   const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));

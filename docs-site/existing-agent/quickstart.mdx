@@ -1,0 +1,273 @@
+---
+title: "In your existing agent"
+sidebarTitle: "Quickstart"
+description: "Spread Vendo's guarded tool pack into an AI SDK or Mastra loop you already run, and render what it returns in your own chat."
+---
+
+Keep your loop. Vendo adds the guarded tools and renders what they return.
+
+<Steps>
+
+<Step title="Spread the tools in">
+
+The pack takes the caller you already resolved, so it is built inside the handler. Spread it beside your own tools.
+
+```bash
+npm install @vendoai/vendo ai @ai-sdk/react
+npx vendo init
+```
+
+Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
+
+Move init's `createVendo` call into `lib/vendo.ts` and export the caller resolver beside it. Your chat route, your wire route, and the pack all need the same instance.
+
+```ts AI SDK · app/api/chat/route.ts focus={14}
+import { convertToModelMessages, streamText } from "ai";
+import { vendoTools } from "@vendoai/vendo/ai-sdk";
+import { vendoModel } from "@vendoai/vendo/server";
+import { resolvePrincipal, vendo } from "@/lib/vendo";
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
+  return streamText({
+    model: vendoModel(),
+    messages: await convertToModelMessages(messages),
+    // your own tools spread in here too
+    tools: { ...(await vendoTools(vendo, { principal: caller })) },
+  }).toUIMessageStreamResponse();
+}
+```
+
+```ts Mastra · src/mastra/agents/your-agent.ts focus={10}
+import { Agent } from "@mastra/core/agent";
+import { vendoMastraTools } from "@vendoai/vendo/mastra";
+import { vendo } from "@/lib/vendo";
+
+export const yourAgent = new Agent({
+  id: "your-agent",
+  name: "your-agent",
+  instructions: "…your system prompt as it is",
+  model: "openai/gpt-4.1-mini", // your model choice, unchanged
+  tools: async () => ({ ...(await vendoMastraTools(vendo)) }),
+});
+```
+
+Every tool lands under a `vendo_` prefix, so nothing collides with a tool of your own.
+
+| Tool | What your model gets |
+| --- | --- |
+| `vendo_<your action>` | one per registered host action, guard-wrapped per call |
+| `vendo_make` | a live view, returned as an app ref right away while the build streams |
+| `vendo_delegate` | a whole task handed to Vendo's own agent, back as `{ status, summary, refs }` |
+
+Pass `include` or `exclude` to trim the pack by final tool name, exact match.
+
+<Note>
+One Mastra definition serves every user, so its pack reads the caller off `RequestContext` per call instead. [Mastra](/existing-agent/mastra) has that route.
+</Note>
+
+</Step>
+
+<Step title="Render the embeds">
+
+Vendo calls arrive in your chat as `dynamic-tool` parts. Hand the finished ones to `<VendoToolResult>`, anywhere under one provider.
+
+```tsx app/page.tsx focus={13}
+"use client";
+import { useChat } from "@ai-sdk/react";
+import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
+
+export default function Chat() {
+  const { messages } = useChat();
+  return (
+    <VendoProvider baseUrl="/api/vendo">
+      {messages.map((message) => message.parts.map((part, i) => {
+        const key = `${message.id}-${i}`;
+        if (part.type === "text") return <p key={key}>{part.text}</p>;
+        if (part.type === "dynamic-tool" && part.state === "output-available") {
+          return <VendoToolResult key={key} output={part.output} />;
+        }
+        return null;
+      }))}
+    </VendoProvider>
+  );
+}
+```
+
+<CardGroup cols={3}>
+
+<Card title="Plain data">
+<svg viewBox="0 0 220 120" role="img" aria-label="A chat bubble, a finished tool chip, and a text answer" style={{ width: "100%", height: "auto" }}>
+  <rect x="6" y="6" width="208" height="108" rx="8" fill="#ffffff" stroke="#ddd9e8" />
+  <rect x="110" y="16" width="96" height="12" rx="5" fill="#2c2a38" />
+  <rect x="14" y="34" width="100" height="13" rx="4" fill="#e7f4f1" stroke="#cbe6e0" />
+  <text x="19" y="43.5" fontFamily="monospace" fontSize="7" fill="#1c6b5f">✓ vendo_listInvoices</text>
+  <rect x="14" y="58" width="180" height="4" rx="2" fill="#e4e1ec" />
+  <rect x="14" y="68" width="158" height="4" rx="2" fill="#e4e1ec" />
+  <rect x="14" y="78" width="98" height="4" rx="2" fill="#e4e1ec" />
+</svg>
+
+`no envelope`
+
+Your model reads the result and answers in words.
+</Card>
+
+<Card title="App ref">
+<svg viewBox="0 0 220 120" role="img" aria-label="A chat bubble, a finished tool chip, and a small chart card building inline" style={{ width: "100%", height: "auto" }}>
+  <rect x="6" y="6" width="208" height="108" rx="8" fill="#ffffff" stroke="#ddd9e8" />
+  <rect x="110" y="16" width="96" height="12" rx="5" fill="#2c2a38" />
+  <rect x="14" y="34" width="100" height="13" rx="4" fill="#e7f4f1" stroke="#cbe6e0" />
+  <text x="19" y="43.5" fontFamily="monospace" fontSize="7" fill="#1c6b5f">✓ vendo_make</text>
+  <rect x="14" y="54" width="182" height="52" rx="5" fill="#ffffff" stroke="#ddd0ff" />
+  <path d="M19 54h172a5 5 0 0 1 5 5v6H14v-6a5 5 0 0 1 5-5Z" fill="#f5f1ff" />
+  <rect x="20" y="58" width="44" height="3" rx="1.5" fill="#bda2f9" />
+  <rect x="176" y="58" width="14" height="3" rx="1.5" fill="#d3c2fc" />
+  <rect x="24" y="84" width="26" height="16" rx="1.5" fill="#d7c9fb" />
+  <rect x="56" y="76" width="26" height="24" rx="1.5" fill="#d7c9fb" />
+  <rect x="88" y="70" width="26" height="30" rx="1.5" fill="#6c3bff" />
+  <rect x="120" y="81" width="26" height="19" rx="1.5" fill="#d7c9fb" />
+  <rect x="152" y="74" width="26" height="26" rx="1.5" fill="#d7c9fb" />
+</svg>
+
+`vendo/app-ref@1`
+
+A live app builds inline, streamed over the wire.
+</Card>
+
+<Card title="Approval ref">
+<svg viewBox="0 0 220 120" role="img" aria-label="A chat bubble, a finished tool chip, and an approve or deny card" style={{ width: "100%", height: "auto" }}>
+  <rect x="6" y="6" width="208" height="108" rx="8" fill="#ffffff" stroke="#ddd9e8" />
+  <rect x="110" y="16" width="96" height="12" rx="5" fill="#2c2a38" />
+  <rect x="14" y="34" width="100" height="13" rx="4" fill="#e7f4f1" stroke="#cbe6e0" />
+  <text x="19" y="43.5" fontFamily="monospace" fontSize="7" fill="#1c6b5f">✓ vendo_refundOrder</text>
+  <rect x="14" y="54" width="182" height="52" rx="5" fill="#ffffff" stroke="#e2dfec" />
+  <rect x="22" y="62" width="90" height="4" rx="2" fill="#c9c5d6" />
+  <rect x="22" y="73" width="34" height="4" rx="2" fill="#e4e1ec" />
+  <rect x="142" y="73" width="46" height="4" rx="2" fill="#cbc7d8" />
+  <rect x="22" y="82" width="34" height="4" rx="2" fill="#e4e1ec" />
+  <rect x="142" y="82" width="46" height="4" rx="2" fill="#cbc7d8" />
+  <rect x="22" y="91" width="44" height="10" rx="3" fill="#2c2a38" />
+  <rect x="72" y="91" width="36" height="10" rx="3" fill="#ffffff" stroke="#e2dfec" />
+</svg>
+
+`vendo/approval-ref@1`
+
+An approve or deny card, resolving in place.
+</Card>
+
+</CardGroup>
+
+<Note>
+One component covers all three, so you never branch on the envelope yourself.
+</Note>
+
+</Step>
+
+<Step title="See it live">
+
+Run your own chat and ask for something behind your API. The answer comes back as a working card, inside your own bubble.
+
+<Frame>
+  <img
+    src="/images/existing-agents/ai-sdk-dashboard.png"
+    alt="A host's own chat thread where the assistant's answer is a working comparison screen rendered inside the message"
+    width="448"
+    height="800"
+  />
+</Frame>
+
+</Step>
+
+</Steps>
+
+## Teach your model when to build UI
+
+Your system prompt is yours, so nothing Vendo assembles reaches it. A tool your model never reaches for is not a feature, so paste this beside whatever you already say about your other tools.
+
+```text your agent's system prompt highlight={20-21,30-34,36-42}
+## Making the person a screen
+
+You have `vendo_make`. It puts a real, live view in front of the person, and it
+is the only way you can do that. You never build UI yourself.
+
+USE IT when the honest answer is a shape, not a sentence: more than a handful of
+rows, a comparison or trend or breakdown, something they will come back to
+("track", "every week"), something they need to act on — a screen carries
+buttons; your message cannot.
+
+ANSWER IN WORDS when the answer IS words: one number, one status, one fact, a
+yes or no, an explanation. A screen for "what's my balance" is worse than saying
+the balance.
+
+`request` is prose — what you would say to a designer sitting next to you.
+- Describe the want: "the last three months of spending, broken down by
+  category, with a way to jump into any month"
+- No component names, no layout grids, no JSON, no field names you guessed at
+- No fonts, colors, or branding: it inherits the product's own
+- Never paste numbers you looked up or computed ("Total: $4,210"). The screen
+  binds live data itself, and hardcoded figures are rejected as invented
+
+`context`: background the product cannot see — what they told you earlier, a
+constraint they mentioned, which of several things they meant. A sentence or two.
+
+`app`: ONLY to change one view that already exists, by id or by its name exactly
+as they said it. Leave it out and the product decides whether to continue the
+last one or start something new, which is usually right.
+
+`slot`: ONLY when they name a place in the product AND you have that place's
+exact id — they said it, or an earlier answer carried it. Slot ids belong to the
+product, not to you: NEVER invent one. A made-up id puts the screen where nobody
+is looking, and that does not look like an error. No id, no `slot`, and it lands
+in the person's own list of views.
+
+WHAT COMES BACK is a receipt: id, title, status, and `say` — one line in the
+person's voice. Say `say`, close to verbatim. That is the whole report. You never
+get the screen; it goes from the server straight to their page, on a channel you
+are not on. So:
+- NEVER wait for it. Nothing to poll, nothing to check.
+- NEVER describe it. You have not seen it. No sections, charts, colors, or
+  buttons, and never tell them what to click.
+- Never paste a link or an id unless they asked.
+- status "failed": try once more on the same `app`, narrower, then stop and say
+  so plainly.
+- status "building": honest, not an error. Say the line and move on.
+- status "partial": the screen is on their page, the server-side part of it is
+  not. Say the line and offer to try that part again. Never rebuild it.
+```
+
+The same guidance ships to Claude Code as a skill,
+[`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).
+
+<Warning>
+The in-process tool pack carries no `vendo_apps_*` tool. Teaching your model to pin or unpin a view here buys you an invented tool call that nothing answers.
+
+Pinning and unpinning live on the door your own agent connects to, in [How the door works](/outside-agents/how-the-door-works#where-a-screen-lands).
+</Warning>
+
+## Where to go next
+
+The pack is in your loop. These three are the rest of this track.
+
+<CardGroup cols={3}>
+
+<Card title="AI SDK" icon="/images/logos/vercel.svg" href="/existing-agent/ai-sdk">
+Per-request packs, dynamic-tool parts, one Next.js config line.
+
+`vendoTools(vendo, { principal })`
+</Card>
+
+<Card title="Mastra" icon="/images/logos/mastra.svg" href="/existing-agent/mastra">
+A static definition, the request-context caller, warming the store.
+
+`VENDO_PRINCIPAL_KEY`
+</Card>
+
+<Card title="Embeds in your chat" icon="code" href="/existing-agent/embeds">
+The envelope your tools return, and the three embeds that render it.
+
+`<VendoToolResult output={…} />`
+</Card>
+
+</CardGroup>

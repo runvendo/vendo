@@ -93,7 +93,7 @@ async function compose(harness: Parameters<typeof createVendo>[0]["harness"]): P
   const host = hostTools();
   const vendo = createVendo({
     // Never reached: the harness below is scripted, so no provider is involved.
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     harness,

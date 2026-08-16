@@ -72,12 +72,12 @@ export const mapleAuth: HostAuthPreset = {
 export const vendo = createVendo({
   // Model posture, written down rather than sniffed: env keys are credentials,
   // config selects. The DEPLOYED demo leaves the seats unset so VENDO_API_KEY
-  // fills them with the Cloud gateway, and paint invisibility gives that lane
-  // the family fast pick (vendo / vendo-paint) with no hardcoded ids. Locally,
-  // Maple brings its own Anthropic account, so it NAMES both lanes here — an
-  // ANTHROPIC_API_KEY lying in the shell no longer wins the seat by itself, and
-  // an explicit model means paint no longer gets a fast pick for free, so the
-  // fast lane is spelled out to keep the two-lane speed the demo relies on.
+  // fills each one with its own Cloud family id (vendo / vendo-apps /
+  // vendo-review) and no hardcoded ids. Locally, Maple brings its own Anthropic
+  // account, so it NAMES the seats here — an ANTHROPIC_API_KEY lying in the
+  // shell no longer wins the seat by itself, and an explicit `default` is
+  // borrowed by every unset seat, so the fast lane is spelled out to keep the
+  // two-lane speed the demo relies on.
   // `@ai-sdk/anthropic` reads the key itself; Vendo never sees it. `judge` is
   // here for the same reason: the guard judge below is wired from the STRING
   // `vendoModel("vendo-judge")`, and a string rides the ladder — which on this
@@ -91,7 +91,8 @@ export const vendo = createVendo({
     ? {
         models: {
           default: anthropic("claude-sonnet-4-6"),
-          fill: anthropic("claude-haiku-4-5"),
+          apps: anthropic("claude-sonnet-4-6"),
+          review: anthropic("claude-haiku-4-5"),
           judge: anthropic("claude-haiku-4-5"),
         },
       }

@@ -58,7 +58,7 @@ async function turn(script: (tools: {
     },
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     harness: harness as never,

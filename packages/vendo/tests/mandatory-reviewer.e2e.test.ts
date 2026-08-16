@@ -157,7 +157,7 @@ const REVIEWER_MARKER = "You are the last reader of a generated app";
 interface Scripted {
   model: LanguageModel;
   /** The same script on a SECOND model object, for the deployment that composed a
-   *  fast seat (`models.fill`). Which object the reviewer's call lands on is the
+   *  fast seat (`models.review`). Which object the reviewer's call lands on is the
    *  fact — a seat cannot be asserted from a prompt. */
   fastModel: LanguageModel;
   /** Every prompt the assembly loop was handed, in order. Each one carries the
@@ -238,7 +238,7 @@ function scripted(
   });
   return {
     model: seatModel("default") as unknown as LanguageModel,
-    fastModel: seatModel("fill") as unknown as LanguageModel,
+    fastModel: seatModel("review") as unknown as LanguageModel,
     writerPrompts,
     reviewerPrompts,
     reviewerSeats,
@@ -259,7 +259,7 @@ async function tempStore(): Promise<VendoStore> {
 async function walk(
   steps: Array<(prompt: string) => Chunk[]>,
   review: (prompt: string) => { findings: unknown } | Error,
-  /** Compose a distinct FAST seat (`models.fill`) beside the writer's, which is
+  /** Compose a distinct FAST seat (`models.review`) beside the writer's, which is
    *  what a real ladder deployment resolves. Unset: one model for everything, and
    *  the fast seat falls back to it. */
   options: { fastSeat?: boolean } = {},
@@ -284,7 +284,7 @@ async function walk(
     },
   });
   const vendo = createVendo({
-    ...(options.fastSeat === true ? { models: { default: model, fill: fastModel } } : { model }),
+    models: { default: model, ...(options.fastSeat === true ? { review: fastModel } : {}) },
     principal: async () => principal,
     store,
     tools: hostTools,
@@ -421,7 +421,7 @@ describe("the mandatory reviewer pass on a finished screen", () => {
   it("judges on the FAST seat when the deployment composed one", async () => {
     // Reading a finished screen against its own rows is not the job the flagship
     // is for, and the reviewer is the only check that spends a model call. So the
-    // umbrella hands the apps block the `fill` seat and the one judging call rides
+    // umbrella hands the apps block the `review` seat and the one judging call rides
     // it — through the composed deployment, not a hand-built dependency bag.
     const walked = await walk([
       saveApp(HONEST, "c1"),
@@ -429,7 +429,7 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     ], NOTHING_WRONG, { fastSeat: true });
 
     expect(walked.reviewerPrompts).toHaveLength(1);
-    expect(walked.reviewerSeats).toEqual(["fill"]);
+    expect(walked.reviewerSeats).toEqual(["review"]);
     // …and the screen the person keeps is unaffected by which seat judged it.
     expect(makeReceiptSchema.parse((walked.result as { output: unknown }).output).status).toBe("ready");
   }, 120_000);

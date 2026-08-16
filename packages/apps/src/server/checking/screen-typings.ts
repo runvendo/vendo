@@ -31,8 +31,8 @@ import {
   KIT_COMPONENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   kitSpec,
+  type KitComponentSpec,
   type NormalizedCatalog,
-  type PropSpec,
 } from "../../contract/index.js";
 import { z, type ZodTypeAny } from "zod";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
@@ -78,6 +78,31 @@ export const SCREEN_TYPINGS_FILE = "/vendo-screen-typings.d.ts";
 
 // ---- zod → TS type text ---------------------------------------------------
 
+/** A Kit prop whose zod schema is a SLOT — `z.unknown().describe(…)` in
+ *  kit/specs.ts. The description is the marker, because `z.unknown()` anywhere
+ *  else (a row's field values) must keep printing as `any`. */
+const SLOT_PROP_DESCRIPTION = "holds Kit elements";
+
+/**
+ * What a slot may hold — an element tree, and NOT a function.
+ *
+ * The screen VM serializes a function prop as a `$handler` door
+ * (`genui/component/vm-program.ts` `emitValue`), so `cell={(row) => <Money/>}`
+ * hands the table a callback where an element belongs and the cell paints
+ * BLANK. Printed as `any`, that screen passed the whole gauntlet — compile,
+ * types, paint, tree — and rendered a column of empty cells. Named, the
+ * compiler refuses it at the check.
+ *
+ * The wire printer keeps the permissive alias: a stored document's slot holds a
+ * SERIALIZED element (an `$element`-sigilled object) that no type here
+ * describes, and JSON cannot carry a closure, so the door this shuts was never
+ * open there.
+ */
+export const SLOT_TYPE = "VendoSlot";
+const SLOT_DECLARATION =
+  `declare type ${SLOT_TYPE} = JSX.Element | string | number | boolean | null | undefined | readonly ${SLOT_TYPE}[];`;
+const WIRE_SLOT_DECLARATION = `declare type ${SLOT_TYPE} = any;`;
+
 /** The Kit's zod vocabulary is closed — it is our own schema file — so a
  *  direct walker beats a converter dependency (see the module note in the PR).
  *  Anything outside the vocabulary degrades to `any`: a prop we cannot type
@@ -93,9 +118,12 @@ const zodTypeText = (schema: ZodTypeAny, depth = 0, note?: TypeNote): string => 
     case z.ZodFirstPartyTypeKind.ZodNumber: return "number";
     case z.ZodFirstPartyTypeKind.ZodBoolean: return "boolean";
     case z.ZodFirstPartyTypeKind.ZodNull: return "null";
-    // `any` is these two's FAITHFUL type, not a degradation — no note.
+    // `any` is these two's FAITHFUL type, not a degradation — no note. A SLOT is
+    // the one exception: it holds an element, and `any` admitted the closure that
+    // cannot work — see {@link SLOT_TYPE}.
     case z.ZodFirstPartyTypeKind.ZodUnknown:
-    case z.ZodFirstPartyTypeKind.ZodAny: return "any";
+    case z.ZodFirstPartyTypeKind.ZodAny:
+      return schema.description === SLOT_PROP_DESCRIPTION ? SLOT_TYPE : "any";
     case z.ZodFirstPartyTypeKind.ZodEnum:
       return (def as { values: readonly string[] }).values.map((value) => JSON.stringify(value)).join(" | ");
     case z.ZodFirstPartyTypeKind.ZodLiteral:
@@ -113,6 +141,10 @@ const zodTypeText = (schema: ZodTypeAny, depth = 0, note?: TypeNote): string => 
         const optional = inner.typeName === z.ZodFirstPartyTypeKind.ZodOptional;
         return `${name}${optional ? "?" : ""}: ${zodTypeText(optional ? inner.innerType as ZodTypeAny : field, depth + 1, at(note, name))}`;
       });
+      // A passthrough object keeps what it does not declare, and the printer must
+      // say so: a chart's series descriptor carries that one series' engine props
+      // beside `key`, and a closed type makes writing one an excess-property error.
+      if ((def as { unknownKeys?: string }).unknownKeys === "passthrough") fields.push(ENGINE_INDEX);
       return fields.length === 0 ? "{}" : `{ ${fields.join("; ")} }`;
     }
     case z.ZodFirstPartyTypeKind.ZodOptional:
@@ -216,6 +248,13 @@ const objectTypeText = (schema: Record<string, unknown>, reading: SchemaReading,
  *  whose fill honestly failed keeps it (facts.ts `prewiredPropsIssues`). */
 const AMBIENT_PROPS = "children?: any; pending?: any";
 
+/** What OPENS a component that renders an engine (`KitComponentSpec.engine`):
+ *  the engine's prop vocabulary is the engine's, so the type check stops
+ *  measuring against a list we would have to keep in step with it. The cost is
+ *  the excess-property gate on that component, which is the trade the upgrade
+ *  posture already made. */
+const ENGINE_INDEX = "[prop: string]: any";
+
 const componentDeclaration = (name: string, propsText: string): string =>
   `declare const ${name}: (props: ${propsText}) => JSX.Element;`;
 
@@ -239,10 +278,11 @@ const BINDING_TYPE = "VendoBinding";
 const BINDING_DECLARATION =
   `declare type ${BINDING_TYPE} = { $path: string } | { $state: string } | { $expr: string };`;
 
-const propsTextFrom = (props: Record<string, PropSpec>): string => {
-  const fields = Object.entries(props).map(([name, spec]) =>
-    `${name}${spec.required === true ? "" : "?"}: ${zodTypeText(spec.schema)} | ${BINDING_TYPE}`);
-  return `{ ${[...fields, AMBIENT_PROPS].join("; ")} }`;
+const propsTextFrom = (spec: KitComponentSpec): string => {
+  const fields = Object.entries(spec.props).map(([name, prop]) =>
+    `${name}${prop.required === true ? "" : "?"}: ${zodTypeText(prop.schema)} | ${BINDING_TYPE}`);
+  const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
+  return `{ ${[...fields, AMBIENT_PROPS, ...engine].join("; ")} }`;
 };
 
 /** The frame elements a screen file is made of. Not components: the compiler
@@ -275,6 +315,7 @@ export function screenTypings(input: ScreenTypingsInput): string {
     "  interface IntrinsicElements { [element: string]: any }",
     "}",
     BINDING_DECLARATION,
+    WIRE_SLOT_DECLARATION,
   ];
 
   const push = (name: string, propsText: string): void => {
@@ -288,7 +329,7 @@ export function screenTypings(input: ScreenTypingsInput): string {
   // catalog (facts.ts `catalogIssues`). V4: the Kit specs are the only source.
   for (const name of KIT_SCREEN_COMPONENT_NAMES) {
     const spec = kitSpec(name);
-    if (spec !== undefined) push(name, propsTextFrom(spec.props));
+    if (spec !== undefined) push(name, propsTextFrom(spec));
   }
   for (const entry of input.catalog) {
     push(entry.name, entry.propsJsonSchema === undefined
@@ -431,9 +472,16 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
  *  errors while `<div>` compiles — and each one takes only children and an
  *  inline style, so `className`, `onClick` and `dangerouslySetInnerHTML` are
  *  type errors on the tag itself. `IntrinsicAttributes` carries `key`, because a
- *  list rendered with `.map()` writes one and it is React's, not the tag's. */
+ *  list rendered with `.map()` writes one and it is React's, not the tag's.
+ *
+ *  `Element` is BRANDED rather than empty. `{}` is the type every value is
+ *  assignable to — a closure included — so an empty `Element` made
+ *  {@link SLOT_TYPE} admit exactly the function it exists to refuse. A JSX
+ *  expression is typed `JSX.Element` by the compiler whatever its shape, so the
+ *  brand costs a screen nothing; the name is the VM's own sigil for a serialized
+ *  element (`genui/component/vm-program.ts` `emitValue`). */
 const JSX_FRAME = `declare namespace JSX {
-  interface Element {}
+  interface Element { readonly $element: true }
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
   interface IntrinsicElements {
@@ -462,14 +510,15 @@ const REACT_MODULE = `declare module "react" {
   export default React;
 }`;
 
-const componentPropsText = (props: Record<string, PropSpec>, note?: TypeNote): string => {
-  const fields = Object.entries(props).map(([name, spec]) => {
-    const text = spec.schema.description === ACTION_PROP_DESCRIPTION
+const componentPropsText = (spec: KitComponentSpec, note?: TypeNote): string => {
+  const fields = Object.entries(spec.props).map(([name, prop]) => {
+    const text = prop.schema.description === ACTION_PROP_DESCRIPTION
       ? HANDLER_TYPE
-      : zodTypeText(spec.schema, 0, at(note, `prop "${name}"`));
-    return `${name}${spec.required === true ? "" : "?"}: ${text}`;
+      : zodTypeText(prop.schema, 0, at(note, `prop "${name}"`));
+    return `${name}${prop.required === true ? "" : "?"}: ${text}`;
   });
-  return `{ ${[...fields, "children?: any"].join("; ")} }`;
+  const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
+  return `{ ${[...fields, "children?: any", ...engine].join("; ")} }`;
 };
 
 /** A HOST component's props, from the one schema the composition derived for it.
@@ -508,6 +557,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
   const lines: string[] = [
     "// GENERATED by @vendoai/apps componentScreenTypings — do not edit.",
     JSX_FRAME,
+    SLOT_DECLARATION,
     REACT_MODULE,
     `declare module ${JSON.stringify(SCREEN_MODULE)} {`,
   ];
@@ -526,7 +576,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
     const spec = kitSpec(name);
     const schema = typeof entry === "string" ? undefined : entry.propsJsonSchema;
     const propsText = spec !== undefined
-      ? componentPropsText(spec.props, at(note, `<${name}>`))
+      ? componentPropsText(spec, at(note, `<${name}>`))
       : schema === undefined
         // Schema-less, and legal: the model infers the props and nothing here can
         // check them. The skill's "a guessed prop is a failed app" is true of every

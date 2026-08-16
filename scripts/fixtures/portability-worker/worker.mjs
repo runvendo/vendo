@@ -41,7 +41,7 @@ const vendo = createVendo({
   // Every request must resolve a principal — a resolver returning null refuses
   // with 403, /status included. The gate probes boot, not identity.
   principal: async () => ({ kind: "user", subject: "gate" }),
-  model: stubModel,
+  models: { default: stubModel },
   store: stubStore,
 });
 

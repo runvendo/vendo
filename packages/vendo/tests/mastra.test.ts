@@ -86,7 +86,7 @@ async function compose(): Promise<{ vendo: Vendo; fetchSpy: ReturnType<typeof vi
   cleanups.push(async () => { await store.close(); });
   await store.ensureSchema();
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     guard: { policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] } },

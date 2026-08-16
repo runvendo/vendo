@@ -1,5 +1,49 @@
 # @vendoai/harnesses
 
+## 0.26.0
+
+### Minor Changes
+
+- c369e14: **Breaking:** one model seat per real job — `default`, `apps`, `review`, `judge` — and the old spellings are gone rather than deprecated.
+
+  `createVendo({ models })` now takes exactly the four jobs that run: `default` thinks (chat, compaction, subagents, automations), `apps` writes the generated apps, `review` grades the finished ones, `judge` answers the guard's run/ask/block. The old vocabulary named things nobody could act on — `fill` was the app writer, `reviewer` was read by nothing at all, and the app-writing agent silently read `default` while `paint` configured a lane that no longer existed. A seat you cannot point at a job is a seat you cannot set correctly.
+
+  Gone, each with a boot error naming its replacement:
+
+  - top-level `model` → `models.default`
+  - top-level `paint` → `models.apps` for the model half, `apps: false` for `disabled`
+  - the `fill` seat → `apps`; the `reviewer` seat → `review` (which never had a reader and now has one: the AI reviewer)
+  - `devModel()` → `vendoModel()`
+  - `VENDO_MODEL_PAINT` → `VENDO_MODEL_APPS`; `VENDO_MODEL_REVIEW` is new
+  - the `VENDO_EXTRACTION_MODEL` fallback → `VENDO_MODEL_EXTRACT`
+  - `migrateModelSeats()`, which no production path called
+
+  Cloud gateway family ids follow the seats: `vendo`, `vendo-apps`, `vendo-review`, `vendo-judge`, `vendo-extract`. `vendo-paint` is gone, and `vendo-review` is new — so is its env pin, which the reviewer seat never had.
+
+  Resolution is one rule stated once: an explicit seat wins; an unset seat borrows `default` — the object when you passed one, its own rung pick when `default` rode the credential ladder. On the Cloud rung each seat resolves to its own family id; on a BYO provider key the reading seats (`review`, `judge`) take the provider's fast model and the writing seats (`default`, `apps`) take its flagship. The app-writing agent now genuinely runs on the seat named after it — it read `default` before, so `models.apps` was a knob that changed nothing.
+
+### Patch Changes
+
+- Updated dependencies [c369e14]
+- Updated dependencies [443edd4]
+  - @vendoai/core@0.26.0
+  - @vendoai/apps@0.26.0
+  - @vendoai/guard@0.26.0
+
+## 0.25.0
+
+### Minor Changes
+
+- aa1c8db: The harness turn now opens with ONE `turn.load` and closes with ONE `turn.commit` on a store that serves them. A quiet turn against a hosted mount costs three calls — the envelope, the user's message (landed before the model runs, so a turn that dies never loses it), the envelope — where it used to cost six. Feature-detected against `/status` once per deployment and never blind-sent: below `STORE_WIRE_TURN_OPS`, and on any store with a SQL handle (already one hop from its rows), every door reads and writes exactly as it always did, retry and per-write isolation included. Per-tool-call writes are untouched by design: the guard's audit row, the effect ledger, the workspace commit after every tool call, and the parked-approval checkpoint all stay per occurrence.
+
+### Patch Changes
+
+- Updated dependencies [aa1c8db]
+- Updated dependencies [aa1c8db]
+  - @vendoai/guard@0.25.0
+  - @vendoai/core@0.25.0
+  - @vendoai/apps@0.25.0
+
 ## 0.24.0
 
 ### Patch Changes

@@ -222,8 +222,10 @@ async function compose(overrides: Record<string, unknown>): Promise<{
   const store = await tempStore();
   const host = hostTools();
   const vendo = createVendo({
-    // Never reached: the thinker here is the scripted box, not a provider.
-    model: {} as LanguageModel,
+    // Never reached: the thinker here is the scripted box, not a provider. The
+    // reviewer's own seat is what a case overrides, since the judging pass is
+    // the only model call a composed `claudeCode()` turn makes.
+    models: { default: {} as LanguageModel, ...(overrides["models"] as object | undefined) },
     principal: async () => principal,
     store,
     // The box reaches its tools over the host's MCP door, so a composed
@@ -398,7 +400,7 @@ export default function OpenInvoices() {
       );
       box.emit({ type: "text", delta: "Here are your open invoices." });
     });
-    const { vendo, host } = await compose({ sandbox, harness: claudeCode(), model: reviewerModel(() => []) });
+    const { vendo, host } = await compose({ sandbox, harness: claudeCode(), models: { review: reviewerModel(() => []) } });
 
     const turn = await vendo.handler(post("/threads", {
       threadId: "thr_filesfirst",
@@ -492,9 +494,11 @@ export default function OpenInvoices() {
       harness: claudeCode(),
       // Blocks the first screen it is shown and clears the second — the ONE
       // check that can see a headline contradicting its own rows.
-      model: reviewerModel((call) => (call === 1
-        ? [{ severity: "block", where: "Text", message: FINDING }]
-        : [])),
+      models: {
+        review: reviewerModel((call) => (call === 1
+          ? [{ severity: "block", where: "Text", message: FINDING }]
+          : [])),
+      },
     });
 
     const turn = await vendo.handler(post("/threads", {

@@ -44,11 +44,10 @@ import type {
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
-import type { LanguageModel } from "ai";
 import type { HostAuthPreset } from "./auth-presets/index.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns } from "./harness-turn.js";
-import type { ModelsConfig, ResolveModelsInput } from "./models-config.js";
+import type { ModelsConfig } from "./models-config.js";
 
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
@@ -90,29 +89,21 @@ export interface Vendo {
 }
 
 export interface CreateVendoConfig {
-  /** @deprecated Superseded by `models.agent` (models spec 2026-07-22);
-      still functional for one release. The agent's LLM — the inference
-      adapter seam (03-agent §1): any ai-SDK LanguageModel. An explicitly
-      passed model always wins (BYO-LLM); when absent the seam resolves a
-      real key from the environment — provider keys via vendoModel's ladder,
-      then VENDO_API_KEY → Vendo Cloud managed inference — and fails honestly
-      with instructions when none exists (precedence: resolveModels). */
-  model?: LanguageModel;
-  /** @deprecated The `model` half is superseded by `models.fill` (spelled
-      `models.paint` in older configs); `disabled` has no replacement and is
-      still the only switch for the app-generation lane. Both halves are LIVE —
-      `resolveModels` throws `validation` when `paint.model` is set beside
-      `models.fill`, takes `paint.model` for the fill seat when the `models`
-      block leaves it unset, and turns the lane off on `disabled`. Still
-      accepted so a host config does not have to change in the same release. */
-  paint?: ResolveModelsInput["paint"];
-  /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by slot,
-      valued by a model-name string (resolved through vendoModel's credential
-      ladder: VERBATIM passthrough, per-rung defaults, env pins) or an
-      explicit ai-SDK LanguageModel object (wins as-is). `agent` supersedes
-      the top-level `model`; `paint` supersedes `paint.model`; `judge` only
-      feeds a judge the host wired from a string — vendoAutoJudge(
-      vendoModel("vendo-judge")) — there is NO judge-on-by-default. */
+  /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by SEAT
+      (one per real job), valued by a model-name string (resolved through
+      vendoModel's credential ladder: VERBATIM passthrough, per-rung defaults,
+      env pins) or an explicit ai-SDK LanguageModel object (wins as-is).
+
+      `default` is the agent that thinks — chat, compaction, subagents,
+      automations; `apps` writes the generated apps; `review` grades the
+      finished ones; `judge` answers guard's run/ask/block and only feeds a
+      judge the host wired from a string — vendoAutoJudge(
+      vendoModel("vendo-judge")) — there is NO judge-on-by-default.
+
+      An unset seat borrows `default`: the object when the host passed one, the
+      seat's own rung pick when `default` rode the credential ladder. A
+      deployment that sets nothing at all still fills every seat, and fails
+      honestly with instructions when no credential exists. */
   models?: ModelsConfig;
   /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
       oauth seams from one config key. Mutually exclusive with all three:

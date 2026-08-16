@@ -16,13 +16,13 @@
 import type { LanguageModel } from "ai";
 import { log } from "@vendoai/core";
 
-import type { ConfigurableSlotModels, DevModelOptions, VendoModelOptions, VendoModelSlot } from "./model.js";
+import type { ConfigurableSlotModels, VendoModelOptions, VendoModelSlot } from "./model.js";
 
-export type { DevModelOptions, VendoModelOptions, VendoModelSlot };
+export type { VendoModelOptions, VendoModelSlot };
 
 const EDGE_MESSAGE =
   "the vendo model ladder needs Node (it resolves the host's provider install and dev credentials from disk); "
-  + "on this runtime pass `model:` to createVendo explicitly — with a Vendo Cloud key that is the stock Anthropic "
+  + "on this runtime pass `models: { default: … }` to createVendo explicitly — with a Vendo Cloud key that is the stock Anthropic "
   + "provider pointed at the console gateway: createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL ?? \"https://console.vendo.run\"}/api/v1` })(\"vendo\")";
 
 interface LanguageModelV3Like {
@@ -62,11 +62,6 @@ function refusingModel(provider: string, modelId: string): LanguageModel {
  *  use through the server log, like the Node ladder's unavailable rung. */
 export function vendoModel(name?: string, _options: VendoModelOptions = {}): LanguageModel {
   return refusingModel("vendo", name ?? "vendo-env");
-}
-
-/** @deprecated Renamed `vendoModel()` (models spec 2026-07-22). */
-export function devModel(_options: DevModelOptions = {}): LanguageModel {
-  return refusingModel("vendo-dev", "dev-env");
 }
 
 /** Export parity with the Node build (the server entry imports it from

@@ -84,7 +84,7 @@ describe("the turn id (contract §3.5)", () => {
     });
 
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: harness as never,
@@ -157,7 +157,7 @@ describe("the turn id (contract §3.5)", () => {
     });
 
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       connectors: [connector],
@@ -197,7 +197,7 @@ describe("the turn id (contract §3.5)", () => {
       },
     });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: harness as never,

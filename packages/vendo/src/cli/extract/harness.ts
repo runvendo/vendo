@@ -56,14 +56,10 @@ export interface ExtractionHarness {
 }
 
 /** The extraction model pin every harness honors (models spec 2026-07-22):
- *  VENDO_MODEL_EXTRACT, with the pre-family VENDO_EXTRACTION_MODEL kept as a
- *  deprecated fallback. Blank values count as unset. */
+ *  VENDO_MODEL_EXTRACT. Blank values count as unset. */
 export function extractionModelPin(env: Record<string, string | undefined>): string | undefined {
-  for (const name of ["VENDO_MODEL_EXTRACT", "VENDO_EXTRACTION_MODEL"]) {
-    const value = env[name];
-    if (typeof value === "string" && value.trim().length > 0) return value.trim();
-  }
-  return undefined;
+  const value = env["VENDO_MODEL_EXTRACT"];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 /** Walk balanced `{…}` spans (string-aware) starting at each `{`, returning

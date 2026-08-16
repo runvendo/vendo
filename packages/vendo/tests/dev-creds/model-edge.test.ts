@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { bindVendoModelSlots, devModel, vendoModel } from "../../src/dev-creds/model-edge.js";
+import { bindVendoModelSlots, vendoModel } from "../../src/dev-creds/model-edge.js";
 
 describe("dev-creds model, edge entry", () => {
   it("fails a model call with wiring guidance instead of reaching for Node resolution", async () => {
-    const model = devModel();
+    const model = vendoModel("vendo");
     const call = (model as unknown as { doStream: (options: unknown) => Promise<unknown> }).doStream({});
-    await expect(call).rejects.toThrow(/pass `model:`/);
+    // The guidance names the seat that exists — a refusal pointing at a removed
+    // key is a second dead end, not a fix.
+    await expect(call).rejects.toThrow(/models: \{ default:/);
     await expect(call).rejects.toThrow(/VENDO_API_KEY/);
   });
 
@@ -16,7 +18,7 @@ describe("dev-creds model, edge entry", () => {
     expect(() => bindVendoModelSlots(vendoModel("vendo"), { judge: "vendo-judge" })).not.toThrow();
     const model = vendoModel("vendo");
     const call = (model as unknown as { doGenerate: (options: unknown) => Promise<unknown> }).doGenerate({});
-    await expect(call).rejects.toThrow(/pass `model:`/);
+    await expect(call).rejects.toThrow(/models: \{ default:/);
   });
 
   it("keeps the module free of node builtins and CLI imports", async () => {

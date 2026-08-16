@@ -303,7 +303,10 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
   if (options.yes || options.byo === true || !laddersWantKey) {
     if (laddersWantKey) {
       if (options.byo === true) {
-        output.log("Run `vendo login` to claim a free API key; it lands in .env.local.");
+        // --byo is the ANSWER, so this states what their own key needs and
+        // stops. Nudging back to `vendo login` here is what made the opt-out
+        // read as a detour rather than a first-class path.
+        output.log("Your own key: set ANTHROPIC_API_KEY (or OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) in .env.local, then select it in your composition's `models`.");
       } else {
         // --yes / agent-driven runs get the full auth.md pointer: the agent
         // can complete the whole key story in-band from these lines.

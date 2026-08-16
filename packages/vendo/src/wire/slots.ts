@@ -1,5 +1,6 @@
 import {
   SLOTS_REPORT_MAX,
+  SLOT_DESCRIPTION_MAX_CHARS,
   SLOT_ID_MAX_CHARS,
   SLOT_LABEL_MAX_CHARS,
   VendoError,
@@ -32,14 +33,20 @@ const bounded = (value: unknown, label: string, max: number): string => {
 
 /** ONE slot from the report body. Validated here — the one place a
     host-authored descriptor crosses into the runtime. */
-const descriptor = (value: unknown): { id: string; label: string } => {
+const descriptor = (value: unknown): { id: string; label: string; description?: string } => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new VendoError("validation", "each slot must be an object");
   }
   const entry = value as Record<string, unknown>;
+  const description = entry["description"];
   return {
     id: bounded(entry["id"], "slot id", SLOT_ID_MAX_CHARS),
     label: bounded(entry["label"], "slot label", SLOT_LABEL_MAX_CHARS),
+    // Optional, because it is: a slot with no description is still a real
+    // destination, and only the model reads the sentence.
+    ...(description === undefined
+      ? {}
+      : { description: bounded(description, "slot description", SLOT_DESCRIPTION_MAX_CHARS) }),
   };
 };
 

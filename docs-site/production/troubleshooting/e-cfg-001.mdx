@@ -1,0 +1,44 @@
+---
+title: "E-CFG-001"
+sidebarTitle: "E-CFG-001"
+description: "Doctor found a required .vendo/ file missing: tools.json, overrides.json, policy.json, brief.md, or theme.json."
+---
+
+```text config/<file>
+broken: missing .vendo/<file>
+```
+
+`<file>` is one of `tools.json`, `overrides.json`, `policy.json`, `brief.md`,
+or `theme.json`. Doctor checks each of the five separately and emits this
+once per file that's missing.
+
+`check: config/<file>` · `error_code: E-CFG-001` · `doctor exits: 1`
+
+## What you're seeing
+
+The app runs, but Vendo is missing part of its configuration. Which part
+depends on which file the message names.
+
+## Why
+
+`vendo init` was never run in this directory, or the named file was deleted
+after init ran. Config resolves from code or from disk and nowhere else, so
+a missing file is missing for every deployment, keyed or not.
+
+## The fix
+
+Run `npx vendo init`; it recreates any missing `.vendo/` files and never
+overwrites the ones you already have.
+
+```bash
+npx vendo init
+```
+
+A missing `tools.json` alone can also be regenerated on its own with
+`npx vendo sync`. Run `npx vendo config status` to see which surfaces are on
+disk and which are unset before you decide.
+
+## Related errors
+
+- [E-CFG-002](/production/troubleshooting/e-cfg-002): a missing file in the same `.vendo/` directory, `data/.gitignore`
+- [E-CFG-003](/production/troubleshooting/e-cfg-003): a different `.vendo/`-adjacent config disagreement, the OpenAPI mount

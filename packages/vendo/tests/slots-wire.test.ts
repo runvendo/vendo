@@ -4,7 +4,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Principal } from "@vendoai/core";
+import { SLOT_DESCRIPTION_MAX_CHARS, type Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -59,6 +59,34 @@ describe("POST /slots · GET /slots", () => {
     // Two rows still, the newly seen one first.
     expect(again.map(({ id }) => id)).toEqual(["hero", "sidebar"]);
     expect(again[0]).toMatchObject({ label: "Hero banner" });
+  });
+
+  it("round-trips the description a host wrote, and refuses one past the cap", async () => {
+    const store = await tempStore();
+    const vendo = createVendo({ principal: async () => principal, store });
+    const description = "main dashboard area, where users keep KPI views";
+
+    const reported = await vendo.handler(request("POST", "/slots", {
+      slots: [{ id: "dashboard.main", label: "Dashboard", description }],
+    }));
+    expect(reported.status).toBe(200);
+
+    const listed = await (await vendo.handler(request("GET", "/slots"))).json();
+    expect(listed).toEqual([
+      { id: "dashboard.main", label: "Dashboard", description, lastSeen: expect.any(String) },
+    ]);
+
+    // The cap is the route's, not the client's: this is the backstop every
+    // caller that is not our own UI hits.
+    const overlong = await vendo.handler(request("POST", "/slots", {
+      slots: [{ id: "dashboard.main", label: "Dashboard", description: "x".repeat(SLOT_DESCRIPTION_MAX_CHARS + 1) }],
+    }));
+    expect(overlong.status).toBe(400);
+    expect(await overlong.json()).toMatchObject({
+      error: { code: "validation", message: `slot description must be 1-${SLOT_DESCRIPTION_MAX_CHARS} characters` },
+    });
+    // …and the row it refused is untouched, not half-written.
+    expect(await (await vendo.handler(request("GET", "/slots"))).json()).toMatchObject([{ description }]);
   });
 
   it("refuses a body that is not a list of {id, label}", async () => {
