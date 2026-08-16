@@ -28,3 +28,5 @@ export {
 export { announcePin, onPinAnnounced } from "./pin-events.js";
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
 export * from "./wire-types.js";
+
+/* cone canary 2 — proves the ui shards run */
