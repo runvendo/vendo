@@ -235,3 +235,15 @@ export function resolveVendoRoute(
   return unfilled ? undefined : { to, path, ...(params === undefined ? {} : { params }) };
 }
 
+/** How this host's brand FEELS, in one line, for the thinker that does not
+ * render. Its companion — the host component list this used to render beside the
+ * theme — is gone: `renderBriefingPack` renders that list for the rung that
+ * actually writes a screen, and two renderings of one config key is what the
+ * briefing pack exists to prevent. The theme half is NOT a second copy of
+ * anything: the pack hands the screen agent the tokens VERBATIM, and this is a
+ * sentence. It is also the one observable that says the theme surface resolved
+ * at all (server.test.ts's profile/profileDir/disk seam). */
+export const themeSummary = (theme?: VendoTheme): string | undefined =>
+  theme === undefined
+    ? undefined
+    : `Theme: ${theme.density} density, ${theme.motion} motion, ${theme.typography.fontFamily} typography.`;
