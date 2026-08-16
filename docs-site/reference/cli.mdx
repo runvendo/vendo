@@ -8,7 +8,7 @@ The `@vendoai/vendo` package owns the `vendo` bin. `vendo --version` prints the 
 
 | Command | What it does |
 | --- | --- |
-| [`init [dir]`](#vendo-init) | Wire the handler, extract tools and theme, resolve a model key |
+| [`init [dir]`](#vendo-init-dir) | Wire the handler, extract tools and theme, resolve a model key |
 | [`login`](#vendo-login) | Claim a Vendo Cloud key; it lands in `.env.local` |
 | [`doctor [dir]`](#vendo-doctor) | Verify the install: wiring, live probes, one real model turn |
 | [`sync [dir]`](#vendo-sync) | Re-extract tools and baselines, then judge what moved |
@@ -20,7 +20,7 @@ The `@vendoai/vendo` package owns the `vendo` bin. `vendo --version` prints the 
 
 Every command rejects an option it does not recognize and exits `1` before doing anything. A value flag missing its value fails the same way.
 
-## `vendo init`
+## `vendo init` {#vendo-init-dir}
 
 ```bash
 npx vendo init
