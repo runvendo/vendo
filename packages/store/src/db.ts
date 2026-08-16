@@ -258,10 +258,33 @@ async function releaseSharedPglite(dataDir: string, entry: SharedPglite): Promis
   }
 }
 
+/** A PGlite boot re-reads its ~6MB wasm FS bundle from node_modules every time,
+    and pnpm links that file to its shared store — so an external rewrite of the
+    store's copy is visible here as a transiently truncated read, which pglite
+    surfaces as `Invalid FS bundle size` (seen on CI 2026-08-16, healed by the
+    next read). One delayed retry is the fix; a second identical failure means
+    the installed package really is truncated. */
+async function createPgliteRetryingTruncatedBundle(dataDir: string): Promise<PGlite> {
+  try {
+    return await PGlite.create(dataDir);
+  } catch (error) {
+    if (!/Invalid FS bundle size/.test(errorMessage(error))) throw error;
+    await wait(500);
+    try {
+      return await PGlite.create(dataDir);
+    } catch (retryError) {
+      if (!/Invalid FS bundle size/.test(errorMessage(retryError))) throw retryError;
+      throw new Error(
+        `[vendo] PGlite's wasm bundle read back truncated twice — the installed @electric-sql/pglite files are likely corrupt. Reinstall dependencies (pnpm install --force). Cause: ${errorMessage(retryError)}`,
+      );
+    }
+  }
+}
+
 /** ENG-350 — self-heal a stale lock instead of hard-aborting boot. */
 async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
   try {
-    return await PGlite.create(dataDir);
+    return await createPgliteRetryingTruncatedBundle(dataDir);
   } catch (error) {
     const lock = readPgliteLock(dataDir);
     if (!lock) throw error;
@@ -275,7 +298,7 @@ async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
     );
     fs.rmSync(lock.path, { force: true });
     try {
-      return await PGlite.create(dataDir);
+      return await createPgliteRetryingTruncatedBundle(dataDir);
     } catch (retryError) {
       throw new Error(
         `[vendo] PGlite data directory "${dataDir}" failed to open even after clearing its stale lock — the store is likely corrupt. Back up and delete the directory to start fresh, or set a Postgres url. Cause: ${errorMessage(retryError)}`,
