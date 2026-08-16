@@ -23,14 +23,18 @@ const verdict = (ok: boolean): string =>
   `<span class="v ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ok ? "pass" : "fail"}</span>`;
 
 /** honestData's own verdict: a fail reads exactly as any other failing check
- *  does, but a pass splits in two. `examined` values cleared is what a real
- *  pass earned; `examined` at 0 means the screen had nothing extractable to
- *  check, so the floor cleared it trivially — muted, never the same clean
- *  checkmark a screen that was actually examined gets. */
+ *  does, but a pass splits in three. `examined` values cleared is what a real
+ *  pass earned — of `found`, where the cap bit, because a number nobody looked
+ *  at must be visible rather than inferred. `examined` at 0 means the screen had
+ *  nothing extractable, and a DEGRADED check means our own machinery could not
+ *  be reached: both are muted, and neither wears the checkmark a screen that was
+ *  actually examined gets. */
 const honestDataVerdict = (data: HonestDataResult): string => {
+  if (data.degraded === true) return `<span class="v muted">— not checked</span>`;
   if (!data.pass) return verdict(false);
   if (data.examined === 0) return `<span class="v muted">— nothing to check</span>`;
-  return `<span class="v ok">✓ · ${data.examined} value${data.examined === 1 ? "" : "s"} checked</span>`;
+  const of = data.found > data.examined ? ` of ${data.found}` : "";
+  return `<span class="v ok">✓ · ${data.examined}${of} value${data.examined === 1 ? "" : "s"} checked</span>`;
 };
 
 /** `wiredActions` splits the same two ways, and for the same reason: a screen
@@ -55,18 +59,22 @@ const offenderList = (offenders: readonly Offender[]): string =>
 /** One row per press, under the mark the floor gave it. The row's words are the
  *  binding's own `why` — which is what makes a state-only pass readable as a pass
  *  and not as a control nobody could explain. */
-const bindingList = (bindings: readonly Binding[]): string =>
-  notes(
-    bindings.length === 0
+const bindingList = (actions: WiredActionsResult): string =>
+  notes([
+    // The check's own reason, where it failed for something no single press
+    // did: an action case with nothing but live local state on it reads as a
+    // red mark over a column of green ticks otherwise.
+    ...(actions.why === undefined ? [] : [`<li><span>${escape(actions.why)}</span> <i class="no">✕</i></li>`]),
+    ...(actions.bindings.length === 0
       ? ["<li><span>nothing on this screen to press</span></li>"]
-      : bindings.map(
+      : actions.bindings.map(
           (b) =>
             `<li><code>${escape(b.where)}</code> <span>${[b.tool, b.why]
               .filter((part) => part !== undefined)
               .map(escape)
               .join(" — ")}</span> ${holds(b) ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
-        ),
-  );
+        )),
+  ]);
 
 /** The row's mark and its CSS class, per verdict. A waiver is `na` — the same
  *  recessive row a rubric line whose subject is absent gets, because it is the
@@ -146,14 +154,24 @@ const metric = (label: string, value: string): string =>
  *  screen reader, and to anyone who does not see red and green apart. */
 const MARK: Readonly<Record<Verdict, string>> = { pass: "✓", fail: "✕", na: "–" };
 
-/** `na` means the line's subject is not on this screen at all, so it was
- *  neither earned nor missed. Counting it would grade a screen for lacking
- *  something it was never asked to have.
+/**
+ * `na` means the line's subject is not on this screen at all — but only a DESIGN
+ * line may honestly say so. A design line describes the product's look, and a
+ * screen with nothing destructive on it neither earned nor missed a line about
+ * confirming deletions, so counting it would grade a screen for lacking
+ * something it was never asked to have.
  *
- *  One definition, exported, because the run prints this on the terminal too —
- *  two denominators for one score is a benchmark arguing with itself. */
+ * A CORRECTNESS line is the case itself: it is what this screen was asked to do,
+ * and a screen the judge can find no subject for did not do it. Excluding those
+ * shrank the denominator, so omitting a feature outscored building it
+ * imperfectly, and two columns of one case were scored out of two different
+ * totals — which is the one thing a comparison cannot survive.
+ *
+ * One definition, exported, because the run prints this on the terminal too —
+ * two denominators for one score is a benchmark arguing with itself.
+ */
 export const tally = (lines: readonly LineVerdict[]): string => {
-  const graded = lines.filter((line) => line.verdict !== "na");
+  const graded = lines.filter((line) => line.source === "case" || line.verdict !== "na");
   return `${graded.filter((line) => line.verdict === "pass").length}/${graded.length}`;
 };
 
@@ -198,20 +216,43 @@ const rubric = (judged: JudgeResult): string =>
   ${rubricHalf("design", judged.lines.filter((line) => line.source === "style"), judged.degraded)}
 </section>`;
 
+/**
+ * A screen's floor score, with the cells that were never in front of it left
+ * out of both halves and named beside them.
+ *
+ * One reader for the column header and for the shape table, so the total on a
+ * card and the total in the table above it can only disagree by being different
+ * sets of screens.
+ */
+const earned = (
+  scored: ReadonlyArray<{ pass: boolean; vacuous?: true; degraded?: true }>,
+): { passed: number; of: number; aside: string } => {
+  const graded = scored.filter((check) => check.vacuous !== true && check.degraded !== true);
+  const count = (kind: "vacuous" | "degraded"): string => {
+    const many = scored.filter((check) => check[kind] === true).length;
+    return many === 0 ? "" : ` · ${many} ${kind}`;
+  };
+  return {
+    passed: graded.filter((check) => check.pass).length,
+    of: graded.length,
+    aside: count("vacuous") + count("degraded"),
+  };
+};
+
 async function column(runDir: string, result: CaseResult): Promise<string> {
   const caseDir = join(result.contender, result.case);
   const shot = await readFile(join(runDir, caseDir, "screenshot.png")).catch(() => undefined);
   // Only whether it is there: the frame below loads it from disk itself.
   const hasPage = existsSync(join(runDir, caseDir, "page.html"));
   const scored = checks(result.floor);
-  const total = scored.filter((check) => check.pass).length;
+  const { passed, of, aside } = earned(scored);
   const { usage } = result.cost;
   const tokens = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
 
   return `<section class="col">
   <header>
     <div><h2>${escape(result.contender)}</h2><p>${escape(result.model)}</p></div>
-    <span class="score ${total === scored.length ? "ok" : "no"}">${total}/${scored.length}</span>
+    <span class="score ${passed === of ? "ok" : "no"}">${passed}/${of}${escape(aside)}</span>
   </header>
   <figure>${
     hasPage
@@ -240,7 +281,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   ${result.floor.blocking.length === 0 ? "" : notes(result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`))}
   ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
   ${auditList(result.floor.honestData)}
-  ${bindingList(result.floor.wiredActions.bindings)}
+  ${bindingList(result.floor.wiredActions)}
   ${rubric(result.judged)}
   <dl class="metrics">
     ${metric("first render", result.timing.firstRenderMs === undefined ? "—" : `${result.timing.firstRenderMs} ms`)}
@@ -289,6 +330,11 @@ const spendLine = (
  * except by being their total. A shape nobody ran a case for is muted rather
  * than scored, for the reason a vacuous `honestData` pass is — 0/0 painted green
  * is a claim about a contender that was never put to the test.
+ *
+ * And a vacuous or degraded check is out of the numerator AND the denominator,
+ * counted beside them instead. Summing bare booleans is how a blank page — no
+ * numbers to check, nothing to press — scored 5/5 here while the preview under
+ * it was already muting both of those cells as unearned.
  */
 const shapeTable = (results: readonly CaseResult[]): string => {
   if (results.length === 0) return "";
@@ -296,10 +342,9 @@ const shapeTable = (results: readonly CaseResult[]): string => {
   // First-seen, so the cells read left to right in the column order below.
   const contenders = [...new Set(results.map((result) => result.contender))];
   const cell = (rows: readonly CaseResult[]): string => {
-    const scored = rows.flatMap((row) => checks(row.floor));
-    if (scored.length === 0) return `<td class="muted">—</td>`;
-    const passed = scored.filter((check) => check.pass).length;
-    return `<td class="${passed === scored.length ? "ok" : "no"}">${passed}/${scored.length}</td>`;
+    const { passed, of, aside } = earned(rows.flatMap((row) => checks(row.floor)));
+    if (of === 0) return `<td class="muted">—${escape(aside)}</td>`;
+    return `<td class="${passed === of ? "ok" : "no"}">${passed}/${of}${escape(aside)}</td>`;
   };
   return `<table class="shapes">
   <thead><tr><th>shape</th><th>cases</th>${contenders
@@ -561,6 +606,109 @@ addEventListener("message", function (event) {
   document.getElementById("feed").prepend(row);
 });
 `;
+
+/** One column's whole run in numbers. Floor cells and rubric lines are counted
+ *  the way the page above counts them — through `checks` and through each
+ *  line's own origin — so the summary and the preview cannot tell two stories. */
+export interface ColumnSummary {
+  readonly model: string;
+  readonly cases: number;
+  readonly floor: { earned: number; failed: number; vacuous: number; degraded: number };
+  /** A case line's `na` counts as a fail (`tally`); a style line's does not, and
+   *  is counted here instead. */
+  readonly caseLines: { pass: number; fail: number; na: number };
+  readonly styleLines: { pass: number; fail: number; na: number };
+  readonly timeouts: number;
+  readonly judgeDegraded: number;
+  readonly tokens: number;
+  readonly usd: number;
+}
+
+export interface RunSummary {
+  readonly run: string;
+  readonly gitSha: string;
+  readonly rubricVersion: number;
+  readonly auditVersion: number;
+  readonly triageVersion: number;
+  /** Every model id that answered, contenders and graders alike. */
+  readonly models: readonly string[];
+  readonly columns: Readonly<Record<string, ColumnSummary>>;
+}
+
+const lineCounts = (
+  lines: readonly LineVerdict[],
+  source: LineVerdict["source"],
+): { pass: number; fail: number; na: number } => {
+  const half = lines.filter((line) => line.source === source);
+  return {
+    pass: half.filter((line) => line.verdict === "pass").length,
+    fail: half.filter((line) => line.verdict === "fail").length,
+    na: half.filter((line) => line.verdict === "na").length,
+  };
+};
+
+/**
+ * The run's one number, per column, in one file.
+ *
+ * Everything else this benchmark writes is per case: a run folder per case, a
+ * preview section per case, a floor table broken out by shape. Fourteen worlds
+ * and 200 cases is 200 of those and no total anywhere, so the question the whole
+ * thing exists to answer — is buying this better than building it — had no
+ * answer in code. This is that answer, honestly counted and nothing more: no
+ * weighting, no score out of ten, no chart.
+ */
+export async function writeSummary(input: {
+  runDir: string;
+  runId: string;
+  results: readonly CaseResult[];
+  gitSha: string;
+}): Promise<string> {
+  const columns: Record<string, ColumnSummary> = {};
+  for (const contender of new Set(input.results.map((result) => result.contender))) {
+    const rows = input.results.filter((result) => result.contender === contender);
+    const scored = rows.flatMap((row) => checks(row.floor));
+    const graded = scored.filter((check) => check.vacuous !== true && check.degraded !== true);
+    const lines = rows.flatMap((row) => row.judged.lines);
+    columns[contender] = {
+      model: rows[0]!.model,
+      cases: rows.length,
+      floor: {
+        earned: graded.filter((check) => check.pass).length,
+        failed: graded.filter((check) => !check.pass).length,
+        vacuous: scored.filter((check) => check.vacuous === true).length,
+        degraded: scored.filter((check) => check.degraded === true).length,
+      },
+      caseLines: lineCounts(lines, "case"),
+      styleLines: lineCounts(lines, "style"),
+      timeouts: rows.filter((row) => row.failure === "timeout").length,
+      judgeDegraded: rows.filter((row) => row.judged.degraded).length,
+      tokens: rows.reduce(
+        (total, { cost }) =>
+          total + cost.usage.inputTokens + cost.usage.outputTokens + cost.usage.cacheReadTokens + cost.usage.cacheWriteTokens,
+        0,
+      ),
+      usd: rows.reduce((total, row) => total + row.cost.usd, 0),
+    };
+  }
+
+  const first = input.results[0];
+  const summary: RunSummary = {
+    run: input.runId,
+    gitSha: input.gitSha,
+    rubricVersion: first?.judgeContract.rubricVersion ?? 0,
+    auditVersion: first?.auditorContract.auditVersion ?? 0,
+    triageVersion: first?.triageContract.triageVersion ?? 0,
+    models: [
+      ...new Set(
+        input.results.flatMap((result) => [result.modelVersion ?? result.model, result.judged.modelVersion]),
+      ),
+    ].filter((id): id is string => id !== undefined),
+    columns,
+  };
+  const path = join(input.runDir, "summary.json");
+  await writeFile(path, `${JSON.stringify(summary, null, 2)}\n`);
+  return path;
+}
 
 /**
  * One page per run: every contender's REAL screen side by side under its own

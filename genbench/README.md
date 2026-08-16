@@ -3,8 +3,8 @@
 Answers "why not build this in-house?" with numbers.
 
 It runs hand-written prompts through three contenders — the real Vendo pipeline
-and two raw-Claude baselines — against twelve fictional products defined entirely
-in JSON, scores what comes back, and measures time and money. Every contender
+and two raw-Claude baselines — against fourteen fictional products defined
+entirely in JSON, scores what comes back, and measures time and money. Every contender
 gets the same model, the same tools, the same schemas, the same design brief and
 the same harness contract, because that equivalence is the whole claim.
 
@@ -12,9 +12,9 @@ the same harness contract, because that equivalence is the whole claim.
 
 | contender | what it is |
 | --- | --- |
-| `vendo` | the real product: the screen assembler, the guard, the apps runtime, the compiler and the Kit. Its artifact is a `.vendo` document, and the page is that document mounted through the product's own renderer |
+| `vendo` | the real product: the screen assembler, the guard, the apps runtime, the compiler and the Kit. Its artifact is the TSX screen it saved (`artifact.tsx`), and the page is that screen's compiled payload mounted through the product's own renderer |
 | `diy` | the cheap in-house build: ONE `streamText` call, one HTML document, no product. Its artifact IS the page — no compile, no Kit, no mount |
-| `claude-code` | the strong in-house build: the stock Claude Agent SDK with hands, writing and rewriting one `index.html` in a scratch directory. Its artifact IS the page too, and it is billed by its own session rather than by the run's meter |
+| `claude-code` | the strong in-house build: the stock Claude Agent SDK with its stock loadout — Bash included — writing and rewriting one `index.html` in a scratch directory. What is taken away is isolation and not capability: the operator's own settings, MCP config and shell environment stay out, because a laptop's private tooling would silently become this column's advantage. Its artifact IS the page too, and it is billed by its own session rather than by the run's meter |
 
 All three are handed the same thing, and that is asserted rather than
 asserted-to-be. There are exactly **two shared texts** — `worldBlock` in
@@ -74,10 +74,16 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-opus`,
 | --- | --- |
 | `artifact.tsx` | the screen the contender actually saved — TSX bytes, hence the extension (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
-| `screenshot.png` | that page, shot once it has settled |
-| `result.json` | the five floor verdicts, what settled every value on the screen (the tools' own text, a triage waiver and its reason, or the program that was executed), the judge's verdict for every rubric line, the three contracts the run graded under — judge, triage, auditor — the click trace, console errors, timings, tokens and dollars |
+| `screenshot.png` | that page, shot once it has settled — the **viewport**, 480x900, which is the frame the harness contract promises and the only one the judge is shown |
+| `result.json` | the five floor verdicts, what settled every value on the screen (the tools' own text, a triage waiver and its reason, or the program that was executed), the judge's verdict for every rubric line, the three contracts the run graded under — judge, triage, auditor — the commit the harness ran at and the Agent SDK version, the click trace, console errors, timings, tokens and dollars |
 
-and one `runs/<run>/preview.html`, which is where a person actually looks:
+one `runs/<run>/summary.json` — the run's only aggregate, per column: floor cells
+earned, failed, vacuous and degraded; rubric case-lines and style-lines by
+verdict; timeouts; degraded judgements; total tokens and dollars; and the
+gitSha, model ids and contract versions the numbers were produced under. One
+honest JSON, no CSV and no charts.
+
+And one `runs/<run>/preview.html`, which is where a person actually looks:
 
 - **one section per case**, its prompt as the heading
 - **a column per contender**, in a fixed order, each live and scrollable under
@@ -85,9 +91,11 @@ and one `runs/<run>/preview.html`, which is where a person actually looks:
   thumbnail
 - **the rubric, line by line**, under each column: every correctness line then
   every design line, its verdict and the evidence the judge named, with a
-  tally per half. A line the screen has no subject for is `na` and sits out of
-  the denominator; a judge that could not grade says so instead of printing a
-  tally that would read as the contender's score
+  tally per half. A DESIGN line the screen has no subject for is `na` and sits
+  out of the denominator; a correctness line is what the case asked for, so an
+  `na` on one scores as a fail rather than shrinking the total; a judge that
+  could not grade says so instead of printing a tally that would read as the
+  contender's score
 - **the honesty block**, on any column where a number needed settling: one row
   per value, saying which stage settled it — the tools answer with those exact
   characters, the triage waived it (in the model's own clause), or a program was
@@ -107,7 +115,8 @@ outruns its budget is recorded `failure: "timeout"`; its siblings finish
 normally.
 
 Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
-`--world <name>` (default `maple`).
+`--world <name>` (default `maple`) or `--world all` for every world in one run
+folder — which is the only way to get one number for the whole corpus.
 
 A `--prompt` run opens the preview on macOS when it finishes — that is one
 person watching one case, and a window is the point of it. A full run prints the
@@ -130,8 +139,8 @@ second failure.
 ### Time and money, in orders of magnitude
 
 One case is roughly **1-4 minutes and $0.30-$0.50** of contender spend, plus the
-judge and the honesty check. A world is **ten cases**, so one world's run is
-roughly 10x that; all fourteen worlds is **140 cases**, and nobody runs that
+judge and the honesty check. A world is **ten or fifteen cases**, so one world's
+run is roughly 10-15x that; `--world all` is **200 cases**, and nobody runs that
 casually. `--models` multiplies the whole thing again by the number of models,
 because the matrix is every harness in every model.
 
@@ -153,8 +162,9 @@ A world is a **folder**, `worlds/<name>/`:
 | `font.woff2` | optional. The face the theme's `fontFamily` names, injected into every contender's page |
 
 There are **fourteen worlds** — `maple` (consumer banking) plus thirteen more,
-from build logs to trades accounting — and each carries **ten cases**, so the
-whole corpus is 140. A tool that declares `data` returns rows and is graded
+from build logs to trades accounting — carrying **fifteen cases** each, except
+`buildlog` and `fieldops` at ten, so the whole corpus is **200 cases**. A tool
+that declares `data` returns rows and is graded
 `read`; one that only declares `takes` mutates and is graded `write`. Input
 schemas are derived from `takes` (a name → type map), output schemas from the
 example rows.
@@ -216,10 +226,20 @@ harness itself runs. Neither model can clear a number on its own word:
 - **wiredActions** — the probe pressed every control on the page and every call
   that fired names a real tool with schema-valid arguments. A control that fires
   nothing fails: naming a tool in a document is not being wired to it, which is
-  the difference `tests/probe.test.ts` exists to keep honest. `pressed` records
-  how many controls there were to press, so a screen that passed with none is
+  the difference `tests/probe.test.ts` exists to keep honest. A case tagged
+  `action` has to show one press that really called a tool: a screen asked to DO
+  something and proven by zero tool calls is not proven. `pressed` records how
+  many controls there were to press, so a screen that passed with none is
   distinguishable from one whose controls all held — the same distinction
   `honestData.examined` draws, and the preview prints both
+
+A pass on the last two is not always a pass. A screen with no numbers on it and
+nothing to press clears both **vacuously**, and an honesty check whose triage or
+auditor could not be reached is **degraded** — neither was earned and neither was
+missed, so both stay out of the run's totals (`checks` in `src/floor.ts`, which
+is what the shape table and `summary.json` both add up) and are counted beside
+them instead. Summing bare booleans is how a blank page came to score 5/5 in the
+only aggregate this benchmark had.
 
 ### honestData: what settles a number
 
@@ -268,15 +288,17 @@ against the number on screen, at either money scale.
 
 - A program containing the value it is meant to derive — at any scale, in any
   notation, so `9999`, `9999.00` and `999900 / 100` all count — is rejected
-  before it runs, and the attempt is spent. Writing the answer down proves
-  nothing. Two things are not writing it down: digits inside a **string literal**,
-  which is how a row is selected (`find((job) => job.id === "J-2444")`), and the
-  **arithmetic constants** every derivation is made of (100, 1000, 60, 24, an
-  index, a decimal place) inside a program that actually reads `data`. Both were
-  convicting honest programs: a screen showing `1` percent could never be proven,
-  because the `* 100` in every share reads as 1's own cent-scale form. A program
-  that never mentions `data` computed nothing, so a bare literal there is refused
-  whatever number it is.
+  before it clears anything, and the attempt is spent if it is refused. Writing
+  the answer down proves nothing. Digits inside a **string literal** are not
+  writing it down, because that is how a row is selected
+  (`find((job) => job.id === "J-2444")`). Everything else is settled by a
+  **counterfactual run**: the same program again, over the same rows with every
+  number taken out. An answer that does not change was never read off the data —
+  `data; return 3` returns 3 either way — and an answer that does change was,
+  which is what lets the `* 100` in every honest percentage through. That used to
+  be an allowlist of common constants, and it cleared every fabricated 3, 12 and
+  100 on every screen: a closed list of exemptions is a closed list of ways
+  through.
 - **Two attempts** per value, then it stays an offender, `why: "no executable
   derivation found"`.
 - **One call per round**, covering every value still unresolved at once, and
@@ -285,7 +307,9 @@ against the number on screen, at either money scale.
   **No call at all** when stages 1 and 2 took everything, and no call from either
   stage when stage 1 alone did.
 - Auditor unreachable → its values stay offenders and `honestData.degraded` is
-  true. Fail-closed, the same posture the judge takes.
+  true. A degraded check then scores nothing rather than failing the floor: an
+  outage in the benchmark's own machinery is never the contender's failure, which
+  is the posture the judge has always had.
 - Dates are never graded: they are consumed before the numbers are read, because
   the comparison that clears a value is numeric and there is nothing here that
   could execute against one.
@@ -306,10 +330,19 @@ like the product it claims to be) — from a pinned `claude-opus-5` that is show
 the screenshot, the click trace and the source.
 
 It grades **blind**. Nothing it is sent names the contender, its model or its
-run folder, and the lines arrive shuffled and are mapped back after. Every
-verdict is `pass`, `fail` or `na`, and carries one clause naming the evidence it
-was reached on. `na` means the line's subject is not on this screen at all, so
-it is neither earned nor missed and sits out of the tally.
+run folder; the SOURCE channel is `page.html` for every column, because vendo's
+artifact is TSX and both baselines' is HTML and that is a perfect classifier for
+which column is the vendor's. The lines arrive shuffled and are mapped back
+after, and the shuffle is **seeded from the case's own stamp**, so one case is
+asked in one order — the same for every column of it and the same on every rerun.
+
+Every verdict is `pass`, `fail` or `na`, and carries one clause naming the
+evidence it was reached on. Each line arrives labelled `[correctness]` or
+`[design]`, because only a DESIGN line may honestly be `na`: its subject may
+genuinely be absent from this screen, so it is neither earned nor missed and sits
+out of the tally. A correctness line is what the case asked for, so a screen with
+no sign of it did not do it, and an `na` there scores as a fail — dropping it
+shrank the denominator, and omitting a feature outscored building it imperfectly.
 
 Grading is not free, and what it cost is reported **separately**: `judged.cost`
 in each `result.json` (`{ usage, usd }`, priced through the same table as the
@@ -407,4 +440,11 @@ column's chart and not another's.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads. Multi-step flows are only followed one step past a
-`[role=dialog]` confirmation.
+`[role=dialog]` confirmation. A control that navigates off the screen — a link
+with an `href` — is recorded as having gone somewhere and called nothing, which
+is the only thing that can be read once `window.vendo` has left with the page.
+
+The `vendo` column cannot be cancelled mid-generation. A case that outruns its
+budget forwards the abort to `diy` and to `claude-code`, both of which stop; the
+product's own assembler has no cancellation seam to hand it to, so that column
+runs on until it finishes and its tokens are billed either way.

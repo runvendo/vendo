@@ -38,8 +38,15 @@ export function diyDriver(): Contender {
   return { run };
 }
 
-async function run({ world, testCase, meter }: RunRequest): Promise<RunOutcome> {
-  const result = streamText({ model: meter.model, system: diySystemPrompt(world), prompt: testCase.prompt });
+async function run({ world, testCase, meter, signal }: RunRequest): Promise<RunOutcome> {
+  const result = streamText({
+    model: meter.model,
+    system: diySystemPrompt(world),
+    prompt: testCase.prompt,
+    // The case's own budget: a generation whose case has already been recorded
+    // is one nobody is waiting for, and it goes on billing until it stops.
+    ...(signal === undefined ? {} : { abortSignal: signal }),
+  });
 
   const snapshots: Array<{ atMs: number }> = [];
   let answer = "";

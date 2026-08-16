@@ -19,6 +19,7 @@ import { MockLanguageModelV3 } from "ai/test";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AUDITOR_CONTRACT } from "../src/audit.js";
+import { MAX_OUTPUT_TOKENS_FLOOR } from "../src/meter.js";
 import { triage, TRIAGE_PROMPT, TriageContract } from "../src/triage.js";
 
 const ZERO_USAGE = {
@@ -103,6 +104,76 @@ describe("the triage", () => {
  * so anything short of an explicit, reasoned waiver has to leave the token where
  * it was: in front of the auditor.
  */
+/**
+ * The stage made ONE attempt with the SDK's own retries off, so a single 529 —
+ * our own infrastructure having an afternoon — became "nothing was sorted", and
+ * every clock time and axis tick on the screen then went to the auditor as a
+ * claim it could not derive. A provider hiccup was reported as the contender
+ * fabricating data. The judge has ridden this out with three attempts and a
+ * backoff since it was written; this is the same pattern, in the same shape.
+ */
+describe("retry", () => {
+  it("rides out a rate limit and comes back with the real decisions", async () => {
+    let attempts = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("529 Overloaded");
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ decisions: [{ claim: false, why: "a clock" }] }) }],
+          finishReason: { unified: "stop" as const, raw: undefined },
+          usage: ZERO_USAGE,
+          warnings: [],
+        };
+      },
+    });
+
+    const slept: number[] = [];
+    const sorted = await triage(
+      { tokens: [token("12")], visibleText: SCREEN },
+      {
+        model,
+        delayMs: (attempt) => {
+          slept.push(attempt);
+          return 0;
+        },
+      },
+    );
+
+    expect(attempts).toBe(2);
+    expect(sorted.degraded).toBeUndefined();
+    expect(sorted.decisions[0]).toMatchObject({ claim: false, why: "a clock" });
+    // A transient error is the only kind that earns a wait.
+    expect(slept).toEqual([0]);
+  });
+
+  it("gives up after three attempts and waives nothing", async () => {
+    let attempts = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        attempts += 1;
+        throw new Error("503 Service Unavailable");
+      },
+    });
+
+    const sorted = await triage({ tokens: [token("12")], visibleText: SCREEN }, { model, delayMs: () => 0 });
+
+    expect(attempts).toBe(3);
+    expect(sorted.degraded).toBe(true);
+    expect(sorted.decisions[0]).toMatchObject({ claim: true });
+  });
+
+  /** Contenders get an output ceiling through the meter; the graders had none,
+   *  so a truncated answer failed `decisions.length !== tokens.length` and the
+   *  whole screen degraded on our own default. */
+  it("asks for the same output ceiling the contenders are given", async () => {
+    const model = answering([{ claim: true, why: "a total" }]);
+    await triage({ tokens: [token("$13,200.00")], visibleText: SCREEN }, { model });
+
+    expect(model.doGenerateCalls[0]!.maxOutputTokens).toBe(MAX_OUTPUT_TOKENS_FLOOR);
+  });
+});
+
 describe("fail-closed", () => {
   it("treats every token as a claim when the triage cannot be reached", async () => {
     const model = new MockLanguageModelV3({
@@ -111,7 +182,10 @@ describe("fail-closed", () => {
       },
     });
 
-    const sorted = await triage({ tokens: [token("12"), token("$13,200.00")], visibleText: SCREEN }, { model });
+    const sorted = await triage(
+      { tokens: [token("12"), token("$13,200.00")], visibleText: SCREEN },
+      { model, delayMs: () => 0 },
+    );
 
     expect(sorted.degraded).toBe(true);
     expect(sorted.error).toContain("503");
@@ -133,7 +207,7 @@ describe("fail-closed", () => {
   it("waives nothing when the answer does not line up with the batch", async () => {
     const sorted = await triage(
       { tokens: [token("12"), token("45"), token("$13,200.00")], visibleText: SCREEN },
-      { model: answering([{ claim: false, why: "a clock" }]) },
+      { model: answering([{ claim: false, why: "a clock" }]), delayMs: () => 0 },
     );
 
     expect(sorted.degraded).toBe(true);
@@ -165,12 +239,15 @@ describe("TriageContract", () => {
     expect(TriageContract.model).toBe(AUDITOR_CONTRACT.model);
   });
 
-  it("hashes the prompt, so any edit to it changes the contract", () => {
-    expect(TriageContract.promptHash).toBe(createHash("sha256").update(TRIAGE_PROMPT).digest("hex"));
+  /** A LITERAL, not a re-derivation: hashing the prompt under test and comparing
+   *  it to the hash of the prompt under test cannot fail, so every word of the
+   *  sorting rules could change under a green suite. Pinned, an edit fails here
+   *  until `triageVersion` moves on purpose. */
+  const PROMPT_HASH = "ca3df4af4d97282a0d13e5a4f46959b76812b47ddb476b6ae85c4dd24614a7a5";
 
-    const edited = TRIAGE_PROMPT.replace("claim", "CLAIM");
-    expect(edited).not.toBe(TRIAGE_PROMPT);
-    expect(createHash("sha256").update(edited).digest("hex")).not.toBe(TriageContract.promptHash);
+  it("hashes the prompt, so any edit to it changes the contract", () => {
+    expect(TriageContract.promptHash).toBe(PROMPT_HASH);
+    expect(createHash("sha256").update(TRIAGE_PROMPT).digest("hex")).toBe(PROMPT_HASH);
   });
 
   /**

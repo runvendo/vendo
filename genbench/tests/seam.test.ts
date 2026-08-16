@@ -180,7 +180,7 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 0 },
+  honestData: { pass: true, offenders: [], examined: 0, found: 0 },
   wiredActions: { pass: true, pressed: 1, bindings: [] },
   pass: true,
 };
@@ -208,6 +208,8 @@ const resultFor = (contender: string): CaseResult => ({
   judgeContract: JudgeContract,
   triageContract: TriageContract,
   auditorContract: AUDITOR_CONTRACT,
+  gitSha: "0".repeat(40),
+  agentSdkVersion: "0.0.0",
 });
 
 const SHOT: Shot = { png: PNG, visibleText: "", renders: true, consoleErrors: [] };

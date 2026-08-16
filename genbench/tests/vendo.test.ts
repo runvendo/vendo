@@ -52,6 +52,7 @@ function scripted(turns: StreamPart[][]): Meter {
     elapsedMs: () => (tick += 1),
     totals: () => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }),
     usd: () => 0,
+    answeredBy: () => undefined,
   };
 }
 

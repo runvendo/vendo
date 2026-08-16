@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { audit, auditFloor, AUDITOR_CONTRACT, AUDITOR_PROMPT } from "../src/audit.js";
 import { around, honestData, runFloor } from "../src/floor.js";
+import { MAX_OUTPUT_TOKENS_FLOOR } from "../src/meter.js";
 import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -294,6 +295,54 @@ describe("a program that echoes the value it is meant to derive", () => {
     expect(constant.pass).toBe(false);
     expect(constant.audited?.[0]?.result).toContain("rejected");
   });
+
+  /**
+   * The hole the allowlist WAS.
+   *
+   * Any literal in {0,1,2,3,10,12,24,60,100,365,1000,3600} was exempt from the
+   * echo check as long as the program said the word `data` somewhere, so
+   * `data; return 3` cleared a fabricated 3 on any screen that printed one — and
+   * a 12, a 24, a 60 and a 100 with it. Those are not rare numbers on a screen;
+   * they are the commonest ones. Every rule added to a list of exemptions is a
+   * rule a fabrication can also satisfy, so the list is gone and an execution
+   * decides instead: run the program again over data whose every number moved,
+   * and an answer that did not move was never read off the data.
+   */
+  it("refuses a common constant a program merely mentioned `data` beside", async () => {
+    for (const [screen, value] of [["Open jobs 3", "3"], ["Hours 24", "24"], ["Score 100", "100"]] as const) {
+      const result = await auditing(screen, proposing({ [value]: `data; return ${value};` }));
+
+      expect(result.pass, screen).toBe(false);
+      expect(result.audited?.[0]?.result, screen).toContain("rejected: the program writes the value");
+    }
+  });
+
+  /** The other half of the same rule, and the reason the allowlist existed: a
+   *  real derivation is made of those constants, and it still clears. */
+  it("still clears honest arithmetic built out of the same constants", async () => {
+    const total =
+      "const rows = data.get_spending.data;" +
+      " return rows.reduce((sum, row) => sum + row.amount, 0) / 100;";
+    const result = await auditing("Total spent $4,243.11", proposing({ "$4,243.11": total }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "4243.11" });
+    expect(result.pass).toBe(true);
+  });
+
+  /** The counterfactual is a MEASUREMENT, never the answer: what clears a value
+   *  is what the program returned against the REAL data, and the moved run must
+   *  not leak into the verdict's own number. */
+  it("reports what the real data returned, never what the moved data did", async () => {
+    const result = await auditing(
+      "Housing $2,850.00",
+      // `/ 100` is a literal that collides with $2,850.00 at no scale, so this
+      // one is not even suspicious — and the recorded result is still the real
+      // execution's, to the digit.
+      proposing({ "$2,850.00": HOUSING_AMOUNT }),
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "2850" });
+  });
 });
 
 /**
@@ -364,21 +413,19 @@ describe("what the anti-cheat must not convict", () => {
   });
 
   /**
-   * The edge the string rule costs, stated out loud rather than left to be
-   * discovered on a run.
+   * The edge the string rule used to cost, and no longer does.
    *
    * A selector is exempt because it NAMES a row; a string holding nothing but
-   * digits names a row and states a figure with the same characters, and there is
-   * no way to tell those apart that a fabricated number cannot also satisfy —
-   * `data; return Number("9999")` is the same shape as an honest lookup. Between
-   * refusing a bare-digit id that happens to collide with the value it selects,
-   * and clearing every fabrication written inside quotation marks, this refuses.
+   * digits names a row and states a figure with the same characters, and no
+   * reading of the SOURCE can tell those apart — `data; return Number("9999")`
+   * is the same shape as an honest lookup. So this was refused, knowingly, to
+   * keep the laundering shut.
    *
-   * It bites only on a collision: the id has to equal the audited value at one of
-   * the money scales. Real ids carry a prefix — `J-2444`, `TK-1036` — and a
-   * prefixed id has a letter in it, so it is a selector and stays exempt.
+   * Running the program tells them apart where reading it cannot: the honest
+   * lookup's answer moves when the row it read moves, and the laundered literal's
+   * does not. The collision is no longer a cost anyone pays.
    */
-  it("refuses a bare-digit selector that collides with the value it selects", async () => {
+  it("clears a bare-digit selector that collides with the value it selects", async () => {
     const jobs: World = {
       ...world,
       tools: [
@@ -392,15 +439,40 @@ describe("what the anti-cheat must not convict", () => {
     };
     const SCREEN = "Job 2444 · quoted $24.44";
 
-    // "2444" is the quote in cents as well as the row's name, so the program
-    // cannot prove it did not simply write the answer down.
+    // "2444" is the quote in cents as well as the row's name, so the SOURCE
+    // cannot say which it is. The execution can: read the row and the answer
+    // follows the row.
     const result = await audit(
       { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
       { model: proposing({ "$24.44": `return data.list_jobs.data.find((job) => job.id === "2444").quoted / 100;` }) },
     );
 
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "24.44" });
+  });
+
+  /** …and the fabrication that used to hide behind exactly those characters is
+   *  still refused, because its answer does not follow anything. */
+  it("still refuses the same digits when the program reads no row at all", async () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "2444", quoted: 2444 }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+    const SCREEN = "Job 2444 · quoted $24.44";
+
+    const result = await audit(
+      { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
+      { model: proposing({ "$24.44": `data.list_jobs; return Number("2444") / 100;` }) },
+    );
+
     expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
-    expect(result.audited?.[0]?.result).toContain("rejected");
+    expect(result.audited?.[0]?.result).toContain("rejected: the program writes the value");
   });
 });
 
@@ -713,6 +785,16 @@ describe("what it costs", () => {
     expect(sent).toContain("285000");
   });
 
+  /** Contenders get an output ceiling through the meter; the auditor had none,
+   *  so a truncated batch failed the length check and the whole screen degraded
+   *  on our own default. */
+  it("asks for the same output ceiling the contenders are given", async () => {
+    const model = proposing({});
+    await auditing("Total spent $9,999.00", model);
+
+    expect(model.doGenerateCalls[0]!.maxOutputTokens).toBe(MAX_OUTPUT_TOKENS_FLOOR);
+  });
+
   it("prices the auditor's own tokens through the auditor's own model", async () => {
     const model = new MockLanguageModelV3({
       doGenerate: async () => ({
@@ -917,7 +999,7 @@ describe("the honesty check, end to end", () => {
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(6);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(7);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {

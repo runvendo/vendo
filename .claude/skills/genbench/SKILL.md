@@ -9,12 +9,17 @@ One command, from the repo root (`ANTHROPIC_API_KEY` in the environment):
 
     pnpm build                                      # genbench reads the built @vendoai/* dists
     pnpm genbench run --prompt <case-id>            # one case, all contenders, opens preview.html
-    pnpm genbench run                               # all screen cases
+    pnpm genbench run                               # every case in one world
     pnpm genbench run --models opus,sonnet,haiku    # expand the harness x model matrix
     pnpm genbench run --world maple                 # choose world (default: maple)
+    pnpm genbench run --world all                   # every world into ONE run folder
 
-Case ids in `maple`: `spend-overview`, `spend-chart`, `pending-transfers`,
-`account-balances`, `no-pending-transfers`.
+The corpus is **14 worlds, 200 cases** — 15 per world, except `buildlog` and
+`fieldops` at 10. Case ids in `maple`: `spend-overview`, `spend-chart`,
+`pending-transfers`, `account-balances`, `no-pending-transfers`,
+`transfer-receipt`, `cancel-both-pending`, `transfer-activity-feed`,
+`room-for-dana`, `rent-check`, `bills-calendar`, `money-dashboard`,
+`dining-budget-cap`, `category-groups`, `savings-goals`.
 
 - Contenders: `vendo` (real pipeline, this working tree) · `diy` (one raw
   `streamText` call) · `claude-code` (stock Agent SDK in a scratch dir).
@@ -26,15 +31,19 @@ Case ids in `maple`: `spend-overview`, `spend-chart`, `pending-transfers`,
   tools + canned data + theme + style rubric; `cases.json` = prompt + `pass`
   lines. Conventions: money in cents; a tool with `data` is a read, `takes`-only
   is a write.
-- Output: `genbench/runs/<run>/<contender>/<case>/{artifact.vendo (vendo only),
-  page.html, screenshot.png, result.json}` + `preview.html` (live embedded
-  screens, world-data panel, live tool-call feed). `runs/` is gitignored.
-  `<contender>` is the column slug `<harness>-<model>` — `vendo-sonnet`,
-  `diy-opus`, `claude-code-haiku`.
+- Output: `genbench/runs/<run>/<contender>/<case>/{artifact.tsx (vendo only),
+  page.html, screenshot.png, result.json}` + `summary.json` (the run's ONE
+  aggregate, per column) + `preview.html` (live embedded screens, world-data
+  panel, live tool-call feed). `runs/` is gitignored. `<contender>` is the column
+  slug `<harness>-<model>` — `vendo-sonnet`, `diy-opus`, `claude-code-haiku`.
+  Under `--world all` the case folder is `<world>/<case>`, because two worlds
+  ship the same case id.
 - Floor checks are deterministic (delivered / renders / valid / honestData /
-  wiredActions via click-probe). The `pass` lines are the rubric a pinned judge
-  (versioned rubric contract) grades on every run — any edit to its prompt
-  bumps `rubricVersion` and resets comparability.
+  wiredActions via click-probe). A check with nothing in front of it is VACUOUS
+  and one whose grader was unreachable is DEGRADED; neither scores, in either
+  direction. The `pass` lines are the rubric a pinned judge (versioned rubric
+  contract) grades on every run — any edit to its prompt bumps `rubricVersion`
+  and resets comparability.
 - Exit code: **any floor failure exits 1**; a judge outage or a failed rubric
   line does not. The last stdout line says which — `floor failures: 2 (exit 1)`.
   Through `pnpm` that is followed by pnpm's own `ELIFECYCLE` line, which is not
@@ -44,8 +53,8 @@ Case ids in `maple`: `spend-overview`, `spend-chart`, `pending-transfers`,
   `cost`, which is only what that contender spent building its screen.
 - Budgets are per contender: five minutes for `vendo` and `diy`, twelve for
   `claude-code`, which runs its own ten-minute wall clock inside the driver.
-- Rough cost: one case ≈ 1-4 min ≈ $0.30-$0.50 + judge; the full five-case run
-  is 3-15x that; `--models` multiplies by the model count. Prices in
+- Rough cost: one case ≈ 1-4 min ≈ $0.30-$0.50 + judge; one world is 10-15x
+  that and `--world all` is 200x; `--models` multiplies by the model count. Prices in
   `src/meter.ts` are as of 2026-08-08 (Sonnet 5 is on intro pricing through
   2026-08-31) — token counts are the durable number, dollars are not.
 - `--prompt` runs open `preview.html` on macOS; full runs just print the path.

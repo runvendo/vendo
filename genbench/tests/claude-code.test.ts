@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
 import { meteredModel, MODEL_IDS, usdFor, type Meter } from "../src/meter.js";
 import { worldBlock, worldBriefing } from "../src/vendo.js";
@@ -34,6 +34,7 @@ function clock(): Meter {
     elapsedMs: () => (tick += 1),
     totals: () => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }),
     usd: () => 0,
+    answeredBy: () => undefined,
   };
 }
 
@@ -69,13 +70,18 @@ function writingSdk(revisions: readonly string[], seen: Seen, subtype = "success
   };
 }
 
-/** A session that never answers — the shape a wall-clock bound exists for. */
-function hangingSdk(seen: Seen): AgentSdk {
+/** A session that never answers — the shape a wall-clock bound exists for. It
+ *  burns `turns` turns of real tokens first, because that is what a real one
+ *  does before it runs out of clock. */
+function hangingSdk(seen: Seen, turns = 0): AgentSdk {
   return {
     query({ options }) {
       seen.options = options;
       return {
         async *[Symbol.asyncIterator]() {
+          for (let turn = 0; turn < turns; turn += 1) {
+            yield { type: "assistant", message: { usage: SDK_USAGE } };
+          }
           await new Promise<void>(() => undefined);
           yield {};
         },
@@ -113,7 +119,16 @@ describe("the world block", () => {
 });
 
 describe("driving Claude Code", () => {
-  it("hands the session the world block, the case's prompt and a file-only loadout", async () => {
+  /**
+   * The column is STOCK Claude Code, which is the whole reason it is the strong
+   * baseline: a team that installs it gets Bash and everything else in the box.
+   * Restricting it to Read/Write/Edit measured a loadout nobody ships.
+   *
+   * What stays is isolation, not capability — the operator's own settings, the
+   * operator's MCP config and the operator's environment, all of which would
+   * silently become this column's advantage or its handicap.
+   */
+  it("hands the session the world block, the case's prompt and the stock loadout", async () => {
     const seen: Seen = {};
     await claudeCodeDriver({ sdk: writingSdk(["<html></html>"], seen) }).run({
       world,
@@ -126,10 +141,32 @@ describe("driving Claude Code", () => {
     expect(seen.options).toMatchObject({
       cwd: expect.any(String),
       model: MODEL_IDS.sonnet,
-      tools: ["Read", "Write", "Edit"],
       permissionMode: "bypassPermissions",
       settingSources: [],
+      strictMcpConfig: true,
     });
+    // No availability list at all: the session brings its own.
+    expect(seen.options).not.toHaveProperty("tools");
+  });
+
+  it("spells the subprocess environment out rather than handing over the operator's shell", async () => {
+    const seen: Seen = {};
+    process.env["ANTHROPIC_BASE_URL"] = "https://a-gateway-nobody-declared.example";
+    try {
+      await claudeCodeDriver({ sdk: writingSdk(["<html></html>"], seen) }).run({
+        world,
+        testCase: caseFor("pending-transfers"),
+        meter: clock(),
+      });
+    } finally {
+      delete process.env["ANTHROPIC_BASE_URL"];
+    }
+
+    // The SDK inherits `process.env` wholesale, so a stray gateway, model or
+    // CLAUDE_CODE_* left in a shell reshapes this column and nothing says so.
+    const env = seen.options!["env"] as Record<string, string>;
+    expect(Object.keys(env).sort()).toEqual(["ANTHROPIC_API_KEY", "HOME", "PATH"].filter((name) => name in env));
+    expect(env["ANTHROPIC_BASE_URL"]).toBeUndefined();
   });
 
   it("snapshots every write of index.html, in order, on the run's clock", async () => {
@@ -185,6 +222,91 @@ describe("driving Claude Code", () => {
     // A workspace left behind by the one path that does not finish is the leak
     // nobody would notice until a laptop ran out of disk.
     expect(existsSync(workspaceOf(seen))).toBe(false);
+  });
+
+  /**
+   * Usage was read off the `result` message alone — and a session that outruns
+   * its clock never sends one. So a column that burned ten minutes of engine
+   * published $0.0000 and 0 tokens, which is not a small error: it is the
+   * cheapest column on the board, by having failed.
+   */
+  it("reports the tokens a timed-out session really burned, not zero", async () => {
+    const seen: Seen = {};
+    const outcome = await claudeCodeDriver({ sdk: hangingSdk(seen, 3), timeoutMs: 50 }).run({
+      world,
+      testCase: caseFor("pending-transfers"),
+      meter: clock(),
+    });
+
+    expect(outcome.failure).toBe("timeout");
+    expect(outcome.usage).toEqual({
+      inputTokens: 3 * SDK_USAGE.input_tokens,
+      outputTokens: 3 * SDK_USAGE.output_tokens,
+      cacheReadTokens: 3 * SDK_USAGE.cache_read_input_tokens,
+      cacheWriteTokens: 3 * SDK_USAGE.cache_creation_input_tokens,
+      calls: 3,
+    });
+    expect(outcome.usd).toBeGreaterThan(0);
+  });
+
+  /** …and a session that DID finish reports its own totals, not the turns added
+   *  up beside them: the `result` message is the SDK's own accounting and it
+   *  supersedes the stand-in rather than doubling it. */
+  it("takes a finished session's own totals over the turn-by-turn stand-in", async () => {
+    const sdk: AgentSdk = {
+      query({ options }) {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await writeFile(join(options["cwd"] as string, "index.html"), "<p>done</p>");
+            yield { type: "assistant", message: { usage: SDK_USAGE } };
+            yield { type: "assistant", message: { usage: SDK_USAGE } };
+            yield {
+              type: "result",
+              subtype: "success",
+              usage: SDK_USAGE,
+              total_cost_usd: 0.0421,
+              num_turns: 2,
+              modelUsage: { "claude-sonnet-5": { inputTokens: 1_200 } },
+            };
+          },
+        };
+      },
+    };
+
+    const outcome = await claudeCodeDriver({ sdk }).run({
+      world,
+      testCase: caseFor("pending-transfers"),
+      meter: clock(),
+    });
+
+    expect(outcome.usage).toEqual({ inputTokens: 1_200, outputTokens: 8_400, cacheReadTokens: 5_000, cacheWriteTokens: 900, calls: 1 });
+    // How hard it had to work, and what the engine says it charged — both were
+    // read off the result message and thrown away, the price gap into a
+    // `console.warn` nobody keeps.
+    expect(outcome.session).toEqual({
+      turns: 2,
+      modelUsage: { "claude-sonnet-5": { inputTokens: 1_200 } },
+      billedUsd: 0.0421,
+    });
+  });
+
+  /** The case's budget is the outer one, and it never reached the driver: a
+   *  column whose case had already been recorded kept a whole engine running,
+   *  for a screen nobody was waiting for. */
+  it("stops the session when the case's own budget is spent", async () => {
+    const seen: Seen = {};
+    const lost = new AbortController();
+    const running = claudeCodeDriver({ sdk: hangingSdk(seen), timeoutMs: 200 }).run({
+      world,
+      testCase: caseFor("pending-transfers"),
+      meter: clock(),
+      signal: lost.signal,
+    });
+    await vi.waitFor(() => expect(seen.options).toBeDefined());
+
+    lost.abort();
+    expect((seen.options!["abortController"] as AbortController).signal.aborted).toBe(true);
+    await running;
   });
 });
 

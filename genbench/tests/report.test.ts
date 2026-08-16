@@ -12,7 +12,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { wiredActions, type FloorResult } from "../src/floor.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
-import { writePreview } from "../src/report.js";
+import { writePreview, writeSummary, type RunSummary } from "../src/report.js";
 import type { CaseResult } from "../src/run.js";
 import { TriageContract } from "../src/triage.js";
 import { loadCases, loadWorld, worldForCase, type World } from "../src/world.js";
@@ -22,7 +22,7 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 3 },
+  honestData: { pass: true, offenders: [], examined: 3, found: 3 },
   wiredActions: { pass: true, pressed: 0, bindings: [] },
   pass: true,
 };
@@ -31,7 +31,7 @@ const PASSING: FloorResult = {
  *  cleared trivially rather than because anything was actually checked. */
 const NOTHING_TO_CHECK: FloorResult = {
   ...PASSING,
-  honestData: { pass: true, offenders: [], examined: 0 },
+  honestData: { pass: true, offenders: [], examined: 0, found: 0 },
 };
 
 /** One of each verdict, so a row that only handles two of them shows up. Two
@@ -67,6 +67,8 @@ const resultFor = (contender: string, testCase: string, prompt: string, judged: 
   judgeContract: JudgeContract,
   triageContract: TriageContract,
   auditorContract: AUDITOR_CONTRACT,
+  gitSha: "0".repeat(40),
+  agentSdkVersion: "0.0.0",
 });
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -174,7 +176,7 @@ describe("the preview page", () => {
     );
   });
 
-  it("tallies each half and leaves an `na` line out of the denominator", async () => {
+  it("tallies each half and leaves a DESIGN `na` line out of the denominator", async () => {
     const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.")], {
       "pending-transfers": world,
     });
@@ -183,6 +185,32 @@ describe("the preview page", () => {
     // subject is not on this screen at all — that one is neither earned nor
     // missed, so counting it would grade the screen for what it does not have.
     expect(html).toContain(`<span>correctness</span><b>1/2</b>`);
+    expect(html).toContain(`<span>design</span><b>1/1</b>`);
+  });
+
+  /**
+   * A CORRECTNESS line is the case itself, so `na` on one is not "there was
+   * nothing here to grade" — it is "the screen has no sign of what it was asked
+   * for", which is a fail. Excluding it shrank the denominator, so omitting a
+   * feature outscored building it imperfectly, and two columns of one case were
+   * scored out of two different totals.
+   */
+  it("counts an `na` on a case line as a fail rather than shrinking the denominator", async () => {
+    const skipped: JudgeResult = {
+      lines: [
+        ...JUDGED.lines,
+        { line: "cancels a transfer from the row", source: "case", verdict: "na", note: "no cancel control is on this screen" },
+      ],
+      degraded: false,
+    };
+    const html = await preview(
+      [resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.", skipped)],
+      { "pending-transfers": world },
+    );
+
+    // Three case lines, one passed, and the `na` is one of the three.
+    expect(html).toContain(`<span>correctness</span><b>1/3</b>`);
+    // The design half is untouched: its `na` is legitimate and still sits out.
     expect(html).toContain(`<span>design</span><b>1/1</b>`);
   });
 
@@ -256,13 +284,58 @@ describe("the preview page", () => {
       { "pending-transfers": world, "spend-overview": world, "spend-chart": world },
     );
 
-    // Two table cases at five checks each: vendo ran both and lost two checks on
-    // one, diy ran one of the two and held everything on it.
-    expect(html).toContain(`<tr><th>table</th><td>2</td><td class="no">8/10</td><td class="ok">5/5</td></tr>`);
+    // Two table cases at five checks each, less the vacuous `wiredActions` on
+    // each screen (nothing to press): vendo ran both and lost two checks on one,
+    // diy ran one of the two and held everything on it.
+    expect(html).toContain(`<tr><th>table</th><td>2</td><td class="no">6/8 · 2 vacuous</td><td class="ok">4/4 · 1 vacuous</td></tr>`);
     // Only vendo ran the chart case, so diy's cell says so rather than scoring it.
-    expect(html).toContain(`<tr><th>chart</th><td>1</td><td class="ok">5/5</td><td class="muted">—</td></tr>`);
+    expect(html).toContain(`<tr><th>chart</th><td>1</td><td class="ok">4/4 · 1 vacuous</td><td class="muted">—</td></tr>`);
     // Shapes nobody ran are not rows at all.
     expect(html).not.toContain(`<th>form</th>`);
+  });
+
+  /**
+   * The one aggregate on this page, and it was adding up bare booleans — so a
+   * screen with no numbers on it and nothing to press scored a full 5/5 here,
+   * on two checks that were never in front of it, while the column below was
+   * already muting both as unearned. A cell that disagrees with the card under
+   * it is worse than no cell.
+   */
+  it("keeps a vacuous check out of the shape table's numerator and its denominator", async () => {
+    const html = await preview(
+      [{ ...resultFor("vendo-sonnet", "blank", "Show me nothing."), floor: NOTHING_TO_CHECK }],
+      { blank: world },
+    );
+
+    // Three checks were really in front of it; the other two had nothing to be.
+    expect(html).toContain(`<td class="ok">3/3 · 2 vacuous</td>`);
+    expect(html).not.toContain(`<td class="ok">5/5</td>`);
+    // And the card's own header agrees with the table above it, to the digit.
+    expect(html).toContain(`<span class="score ok">3/3 · 2 vacuous</span>`);
+  });
+
+  /** A check our own triage or auditor could not be reached for is not the
+   *  contender fabricating data, so it does not score and does not fail. */
+  it("keeps a degraded honesty check out of the score, and says so instead of a red mark", async () => {
+    const outage: FloorResult = {
+      ...PASSING,
+      honestData: {
+        pass: false,
+        offenders: [{ kind: "number", text: "$9,999.00", at: 0, why: "no executable derivation cleared it" }],
+        examined: 1,
+        found: 1,
+        degraded: true,
+        error: "529 overloaded",
+      },
+    };
+    const html = await preview(
+      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: outage }],
+      { "pending-transfers": world },
+    );
+
+    expect(html).toContain("— not checked");
+    expect(html).toContain(`1 degraded`);
+    expect(html).not.toContain(`<span class="v no">✕ fail</span>`);
   });
 
   it("carries the listener that turns a press in an embedded page into a feed row", async () => {
@@ -308,6 +381,40 @@ describe("the preview page", () => {
     expect(html).toContain(
       `<li><code>Refresh</code> <span>pressing it called nothing and changed nothing</span> <i class="no">✕</i></li>`,
     );
+  });
+
+  /** The cap is silent in the result unless the page says so: "20 values
+   *  checked" and "20 of 93 values checked" are different claims about a screen,
+   *  and only one of them was ever printed. */
+  it("says how many of the screen's numbers were actually examined when the cap bit", async () => {
+    const capped: FloorResult = {
+      ...PASSING,
+      honestData: { pass: true, offenders: [], examined: 20, found: 93 },
+    };
+    const html = await preview(
+      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: capped }],
+      { "pending-transfers": world },
+    );
+
+    expect(html).toContain("20 of 93 values checked");
+  });
+
+  /** An `action` case can fail `wiredActions` while every press on it holds, so
+   *  the check's own reason has to be readable beside them or the column shows a
+   *  red mark over a row of green ticks. */
+  it("prints why an action case failed when no single press did", async () => {
+    const unproven = wiredActions([{ label: "Details", confirmed: false, changed: true, calls: [] }], world, ["action"]);
+    const html = await preview(
+      [
+        {
+          ...resultFor("vendo-sonnet", "cancel-transfer", "Cancel the transfer to Alex."),
+          floor: { ...PASSING, wiredActions: unproven, pass: false },
+        },
+      ],
+      { "cancel-transfer": world },
+    );
+
+    expect(html).toContain("no press ever asked the host for anything");
   });
 
   it("shows a vacuous honestData pass as muted, not a clean checkmark", async () => {
@@ -358,6 +465,7 @@ describe("the preview page", () => {
         pass: true,
         offenders: [],
         examined: 3,
+        found: 3,
         audited: [
           { text: "4471", program: "", result: "the tool data answers with this exact text", verdict: "cleared-by-verbatim", attempts: 0 },
           { text: "12", program: "", result: "the hour on a clock", verdict: "skipped-by-triage", attempts: 0 },
@@ -381,5 +489,77 @@ describe("the preview page", () => {
     // A waiver is not a pass and not a failure: the same recessive row a rubric
     // line whose subject is absent gets.
     expect(html).toContain(`<li class="na">`);
+  });
+});
+
+/**
+ * The run's headline, which did not exist in code.
+ *
+ * Everything the benchmark wrote was per case — a folder per case, a preview
+ * section per case, a floor table broken out by shape — so 200 cases across
+ * fourteen worlds produced 200 verdicts and no total anywhere, and the question
+ * the whole thing exists to answer had to be added up by hand.
+ */
+describe("summary.json", () => {
+  const summaryOf = async (results: readonly CaseResult[]): Promise<RunSummary> => {
+    const runDir = await mkdtemp(join(tmpdir(), "genbench-summary-"));
+    const path = await writeSummary({ runDir, runId: "run-1", results, gitSha: "0".repeat(40) });
+    return JSON.parse(await readFile(path, "utf8")) as RunSummary;
+  };
+
+  it("adds one column's floor cells up, keeping vacuous and degraded out of both halves", async () => {
+    const summary = await summaryOf([
+      resultFor("vendo-sonnet", "a", "one"),
+      { ...resultFor("vendo-sonnet", "b", "two"), floor: { ...PASSING, renders: false, pass: false } },
+      { ...resultFor("vendo-sonnet", "c", "three"), floor: NOTHING_TO_CHECK },
+    ]);
+
+    // Three screens: 4 graded cells each on the first two (wiredActions is
+    // vacuous on every one of them), 3 on the blank one.
+    expect(summary.columns["vendo-sonnet"]!.floor).toEqual({ earned: 10, failed: 1, vacuous: 4, degraded: 0 });
+    expect(summary.columns["vendo-sonnet"]!.cases).toBe(3);
+  });
+
+  it("counts rubric lines by half, so an `na` on a case line is not a line that vanished", async () => {
+    const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one")]);
+
+    expect(summary.columns["vendo-sonnet"]!.caseLines).toEqual({ pass: 1, fail: 1, na: 0 });
+    expect(summary.columns["vendo-sonnet"]!.styleLines).toEqual({ pass: 1, fail: 0, na: 1 });
+  });
+
+  it("counts the run's own failures — timeouts and a judge that was down — as its own", async () => {
+    const degraded: JudgeResult = { ...JUDGED, degraded: true, error: "529 overloaded" };
+    const summary = await summaryOf([
+      { ...resultFor("vendo-sonnet", "a", "one"), failure: "timeout" },
+      { ...resultFor("vendo-sonnet", "b", "two", degraded) },
+      resultFor("diy-sonnet", "a", "one"),
+    ]);
+
+    expect(summary.columns["vendo-sonnet"]).toMatchObject({ timeouts: 1, judgeDegraded: 1 });
+    expect(summary.columns["diy-sonnet"]).toMatchObject({ timeouts: 0, judgeDegraded: 0 });
+  });
+
+  it("carries what the numbers were produced by, so two summaries can be told apart", async () => {
+    const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one")]);
+
+    expect(summary).toMatchObject({
+      run: "run-1",
+      gitSha: "0".repeat(40),
+      rubricVersion: JudgeContract.rubricVersion,
+      auditVersion: AUDITOR_CONTRACT.auditVersion,
+      triageVersion: TriageContract.triageVersion,
+    });
+    expect(summary.models).toContain("claude-sonnet-5");
+  });
+
+  it("totals what each column spent, and each column only", async () => {
+    const summary = await summaryOf([
+      resultFor("vendo-sonnet", "a", "one"),
+      resultFor("vendo-sonnet", "b", "two"),
+      resultFor("diy-sonnet", "a", "one"),
+    ]);
+
+    expect(summary.columns["vendo-sonnet"]).toMatchObject({ tokens: 4, usd: 0.02 });
+    expect(summary.columns["diy-sonnet"]).toMatchObject({ tokens: 2, usd: 0.01 });
   });
 });

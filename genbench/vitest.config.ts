@@ -26,6 +26,7 @@ const BROWSER_SUITES = [
   "tests/font.test.ts",
   "tests/mount.test.ts",
   "tests/probe.test.ts",
+  "tests/render.test.ts",
   "tests/seam.test.ts",
 ];
 

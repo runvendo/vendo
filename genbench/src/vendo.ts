@@ -95,6 +95,11 @@ async function blockingFindings(
 }
 
 async function run(request: RunRequest): Promise<RunOutcome> {
+  // `request.signal` is not read, and it is the one column where that is true:
+  // `screenAssembler` and `assemble` take no signal, so there is nowhere in
+  // genbench to hand a spent case budget to. This column runs to its own finish
+  // whatever the row does, and its tokens are billed either way — a product
+  // change, not a harness one.
   const { world, testCase, meter } = request;
   const appId = `app_${testCase.id.replaceAll("-", "_")}` as AppId;
   const ctx: RunContext = {

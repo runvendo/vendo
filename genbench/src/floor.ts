@@ -1,7 +1,7 @@
 import type { UsageTotals } from "./meter.js";
 import type { Probed } from "./probe.js";
 import type { Shot } from "./render.js";
-import { cannedResponse, type World } from "./world.js";
+import { cannedResponse, type CaseTag, type World } from "./world.js";
 
 /**
  * One token as it appeared at ONE place on the screen.
@@ -83,6 +83,11 @@ export interface HonestDataResult {
    *  passes: this field is what tells that apart from a screen that was actually
    *  checked. */
   readonly examined: number;
+  /** How many numbers the screen printed in total. It is only ever `examined`
+   *  or more, and the gap is the part of the screen nobody looked at — said in
+   *  `result.json` and in the preview rather than on stdout, where the cap was
+   *  announced to a terminal nobody keeps. */
+  readonly found: number;
   /** One entry per examined value, in the order the stages settled them: cleared
    *  verbatim, waived by triage, then everything the auditor wrote code for.
    *  Absent when the screen printed no numbers at all. */
@@ -99,6 +104,9 @@ export interface HonestDataResult {
   /** What TRIAGING and AUDITING this screen spent, priced through the same table
    *  as the contenders. Reported beside them and never added into one. */
   readonly cost?: { usage: UsageTotals; usd: number };
+  /** What the provider says actually answered: both contracts pin a floating
+   *  alias, and the id we asked for is not the model that sorted or proved. */
+  readonly modelVersion?: string;
 }
 
 export interface Binding {
@@ -128,6 +136,9 @@ export interface WiredActionsResult {
    *  one control that was pressed. */
   readonly pressed: number;
   readonly bindings: readonly Binding[];
+  /** Why the check failed for a reason no single binding carries — an `action`
+   *  case none of whose presses ever asked the host for anything. */
+  readonly why?: string;
 }
 
 export interface FloorResult {
@@ -189,9 +200,10 @@ export const around = (visibleText: string, value: string, at = visibleText.inde
  * More numbers on one screen than the auditor is asked to write programs for.
  *
  * A screen this dense is a table, and a table is the same derivation repeated per
- * row — the twenty-first program buys no finding worth the tokens. The cap is
- * said out loud when it bites, because a number nobody examined is a number
- * nobody checked, and that has to be visible rather than inferred.
+ * row — the twenty-first program buys no finding worth the tokens. What the cap
+ * left out rides on the result as `found`, because a number nobody examined is a
+ * number nobody checked: said on a terminal it was a line that scrolled past,
+ * and the pass it hid outlived it in `result.json`.
  */
 export const EXAMINE_CAP = 20;
 
@@ -244,11 +256,6 @@ export function honestData(visibleText: string, world: World): HonestDataResult 
     // even though it is not a finite number.
     .filter(({ text }) => /[A-Za-z]/.test(text) || Number.isFinite(numberIn(text)));
   const examined = found.slice(0, EXAMINE_CAP);
-  if (examined.length < found.length) {
-    console.log(
-      `genbench: ${found.length} numbers on screen — auditing the first ${EXAMINE_CAP}, the rest are not examined`,
-    );
-  }
 
   const said = answeredText(world);
   // The verbatim clearing is the one verdict that needs no surroundings — the
@@ -266,6 +273,7 @@ export function honestData(visibleText: string, world: World): HonestDataResult 
       why: "no executable derivation cleared it",
     })),
     examined: examined.length,
+    found: found.length,
     ...(verbatim.length === 0
       ? {}
       : {
@@ -319,8 +327,14 @@ export const holds = (binding: Binding): boolean =>
 /** What the probe actually saw fire, graded against the world. A control that was
  *  pressed and did nothing at all is the failure this replaced a static scan to
  *  catch: a screen can name a tool in its document and still be dead in a
- *  browser. A screen with nothing to press passes vacuously. */
-export function wiredActions(trace: readonly Probed[], world: World): WiredActionsResult {
+ *  browser. A DISPLAY screen with nothing to press passes vacuously; an `action`
+ *  case does not, because a case that asked the screen to do something is proven
+ *  by a tool call and by nothing else. */
+export function wiredActions(
+  trace: readonly Probed[],
+  world: World,
+  tags: readonly CaseTag[] = [],
+): WiredActionsResult {
   const bindings = trace.flatMap((candidate): Binding[] => {
     if (candidate.calls.length === 0) {
       // A confirmation exists to authorize an action, and the probe only ever
@@ -365,29 +379,70 @@ export function wiredActions(trace: readonly Probed[], world: World): WiredActio
       };
     });
   });
-  return { pass: bindings.every(holds), pressed: trace.length, bindings };
+  const acted = bindings.some((binding) => binding.effect === "tool" && holds(binding));
+  const why =
+    tags.includes("action") && !acted
+      ? "this case asks the screen to DO something, and no press ever asked the host for anything"
+      : undefined;
+  return {
+    pass: why === undefined && bindings.every(holds),
+    pressed: trace.length,
+    bindings,
+    ...(why === undefined ? {} : { why }),
+  };
 }
 
 // ---------------------------------------------------------------------- floor
 
-/** The five checks in report order, each under the name the report prints. One
- *  list, so a score and a column can never disagree about what was checked. Four
- *  of them are decided here and are entirely deterministic; `honestData` is the
- *  one that also leans on a model, and only ever to WAIVE a token or to write a
- *  program the harness itself runs (`audit.ts`, `triage.ts`). */
-export const checks = (floor: FloorResult): ReadonlyArray<{ name: string; pass: boolean }> => [
+/**
+ * The five checks in report order, each under the name the report prints. One
+ * list, so a score and a column can never disagree about what was checked. Four
+ * of them are decided here and are entirely deterministic; `honestData` is the
+ * one that also leans on a model, and only ever to WAIVE a token or to write a
+ * program the harness itself runs (`audit.ts`, `triage.ts`).
+ *
+ * A pass is not always a pass. A check with nothing in front of it is VACUOUS —
+ * a screen with no numbers on it, a screen with nothing to press — and a check
+ * whose model could not be reached is DEGRADED. Neither was earned and neither
+ * was missed, so both stay out of any total: summing bare booleans is how a
+ * blank page came to score 5/5 in the only aggregate this benchmark has.
+ */
+export const checks = (
+  floor: FloorResult,
+): ReadonlyArray<{ name: string; pass: boolean; vacuous?: true; degraded?: true }> => [
   { name: "delivered", pass: floor.delivered },
   { name: "renders", pass: floor.renders },
   { name: "valid", pass: floor.valid },
-  { name: "honestData", pass: floor.honestData.pass },
-  { name: "wiredActions", pass: floor.wiredActions.pass },
+  {
+    name: "honestData",
+    pass: floor.honestData.pass,
+    ...(floor.honestData.degraded === true
+      ? { degraded: true as const }
+      : floor.honestData.pass && floor.honestData.examined === 0
+        ? { vacuous: true as const }
+        : {}),
+  },
+  {
+    name: "wiredActions",
+    pass: floor.wiredActions.pass,
+    ...(floor.wiredActions.pass && floor.wiredActions.pressed === 0 ? { vacuous: true as const } : {}),
+  },
 ];
 
 /** Every check has to hold. Written once because `honestData` is re-decided once
  *  the auditor has run, and two spellings of the floor would eventually
- *  disagree. */
+ *  disagree.
+ *
+ *  A DEGRADED honesty check is the exception, and for the reason a degraded
+ *  judge never fails the run: the triage and the auditor are third parties on
+ *  someone else's infrastructure, and an outage in our own machinery is not the
+ *  contender's failure. It is loud in `result.json` and in the preview instead. */
 export const passes = (floor: Omit<FloorResult, "pass">): boolean =>
-  floor.delivered && floor.renders && floor.valid && floor.honestData.pass && floor.wiredActions.pass;
+  floor.delivered &&
+  floor.renders &&
+  floor.valid &&
+  (floor.honestData.pass || floor.honestData.degraded === true) &&
+  floor.wiredActions.pass;
 
 export function runFloor(input: {
   world: World;
@@ -396,6 +451,8 @@ export function runFloor(input: {
   blocking: readonly string[];
   trace: readonly Probed[];
   shot: Shot | undefined;
+  /** The case's own tags. `action` is the one that raises the bar. */
+  tags?: readonly CaseTag[];
 }): FloorResult {
   const delivered = input.artifact !== undefined && input.artifact.trim() !== "";
   const renders = input.shot?.renders === true;
@@ -404,7 +461,7 @@ export function runFloor(input: {
   // minus whatever the tools answer with in those exact characters. The rest is
   // for the triage to sort and the auditor to answer for.
   const data = honestData(input.shot?.visibleText ?? "", input.world);
-  const actions = wiredActions(input.trace, input.world);
+  const actions = wiredActions(input.trace, input.world, input.tags ?? []);
   const floor = {
     delivered,
     renders,

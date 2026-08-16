@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it, vi } from "vitest";
-import { EXAMINE_CAP, honestData, wiredActions } from "../src/floor.js";
+import { beforeAll, describe, expect, it } from "vitest";
+import { checks, EXAMINE_CAP, honestData, passes, wiredActions, type FloorResult } from "../src/floor.js";
 import type { Probed } from "../src/probe.js";
 import { loadWorld, type World } from "../src/world.js";
 
@@ -141,22 +141,103 @@ describe("honestData — examined", () => {
     expect(result.examined).toBe(0);
   });
 
-  it("stops at the cap on a screen dense with numbers, and says so out loud", () => {
-    // A number nobody examined is a number nobody checked, so the truncation is
-    // announced rather than left to be inferred from a count.
-    const said = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const result = honestData(
-        Array.from({ length: EXAMINE_CAP + 5 }, (_, row) => `$${row + 100}.00`).join(" "),
-        world,
-      );
+  /**
+   * The cap, and where it now says so.
+   *
+   * A number nobody examined is a number nobody checked. That used to be one
+   * line on stdout — gone the moment the terminal scrolled, while the pass it
+   * hid outlived it in `result.json`, where nothing distinguished "twenty values
+   * cleared" from "twenty of ninety cleared". The count rides on the result.
+   */
+  it("stops at the cap on a screen dense with numbers, and records how many it left", () => {
+    const result = honestData(
+      Array.from({ length: EXAMINE_CAP + 5 }, (_, row) => `$${row + 100}.00`).join(" "),
+      world,
+    );
 
-      expect(result.examined).toBe(EXAMINE_CAP);
-      expect(result.offenders).toHaveLength(EXAMINE_CAP);
-      expect(said.mock.calls.flat().join(" ")).toContain(`auditing the first ${EXAMINE_CAP}`);
-    } finally {
-      said.mockRestore();
-    }
+    expect(result.examined).toBe(EXAMINE_CAP);
+    expect(result.found).toBe(EXAMINE_CAP + 5);
+    expect(result.offenders).toHaveLength(EXAMINE_CAP);
+  });
+
+  it("finds exactly what it examined on a screen the cap never reached", () => {
+    const result = honestData("Alex Rivera $250.00 and total spent $9,999.00", world);
+    expect(result).toMatchObject({ examined: 2, found: 2 });
+  });
+});
+
+/**
+ * A pass is not always a pass, and the score has to know the difference.
+ *
+ * `checks` handed out bare booleans, and `shapeTable` added them up — so a blank
+ * page, with no numbers to check and nothing to press, scored 5/5 in the only
+ * aggregate this benchmark has, while the preview beside it was already muting
+ * both of those cells as unearned. And a check our own triage or auditor could
+ * not be reached for read as the contender fabricating data.
+ */
+describe("checks", () => {
+  const floorWith = (over: Partial<FloorResult>): FloorResult => ({
+    delivered: true,
+    renders: true,
+    valid: true,
+    blocking: [],
+    honestData: { pass: true, offenders: [], examined: 4, found: 4 },
+    wiredActions: { pass: true, pressed: 2, bindings: [] },
+    pass: true,
+    ...over,
+  });
+
+  const named = (floor: FloorResult, name: string): { pass: boolean; vacuous?: true; degraded?: true } =>
+    checks(floor).find((check) => check.name === name)!;
+
+  it("calls a screen with nothing to check and nothing to press vacuous, not passed", () => {
+    const blank = floorWith({
+      honestData: { pass: true, offenders: [], examined: 0, found: 0 },
+      wiredActions: { pass: true, pressed: 0, bindings: [] },
+    });
+
+    expect(named(blank, "honestData")).toEqual({ name: "honestData", pass: true, vacuous: true });
+    expect(named(blank, "wiredActions")).toEqual({ name: "wiredActions", pass: true, vacuous: true });
+    // The three that are always in front of a screen stay plain passes.
+    expect(named(blank, "renders")).toEqual({ name: "renders", pass: true });
+  });
+
+  it("calls a screen that really was examined a plain pass", () => {
+    expect(named(floorWith({}), "honestData")).toEqual({ name: "honestData", pass: true });
+    expect(named(floorWith({}), "wiredActions")).toEqual({ name: "wiredActions", pass: true });
+  });
+
+  it("calls an unreachable honesty check degraded rather than a fabrication", () => {
+    const degraded = floorWith({
+      honestData: {
+        pass: false,
+        offenders: [{ kind: "number", text: "$9,999.00", at: 0, why: "no executable derivation cleared it" }],
+        examined: 1,
+        found: 1,
+        degraded: true,
+        error: "529 overloaded",
+      },
+    });
+
+    expect(named(degraded, "honestData")).toMatchObject({ degraded: true });
+    // …and it does not fail the floor, for the reason a degraded judge does not
+    // fail the run: an outage in our machinery is never the contender's fault.
+    expect(passes(degraded)).toBe(true);
+  });
+
+  it("still fails a screen whose honesty check ran and found a fabrication", () => {
+    expect(
+      passes(
+        floorWith({
+          honestData: {
+            pass: false,
+            offenders: [{ kind: "number", text: "$9,999.00", at: 0, why: "no executable derivation found" }],
+            examined: 1,
+            found: 1,
+          },
+        }),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -247,6 +328,44 @@ describe("wiredActions", () => {
    *  controls all held — exactly what `honestData.examined` does for numbers. */
   it("passes vacuously when a screen has nothing to press, and counts nothing pressed", () => {
     expect(wiredActions([], world)).toEqual({ pass: true, pressed: 0, bindings: [] });
+  });
+
+  it("does not pass vacuously when the case was an action", () => {
+    expect(wiredActions([], world, ["action"]).pass).toBe(false);
+  });
+
+  /**
+   * An `action` case asks the screen to DO something, and the only evidence that
+   * it did is a tool call. A screen that opens a confirmation, moves a toggle and
+   * never asks the host for anything passed this check — every press held, and
+   * the case it was answering was never done.
+   */
+  describe("an action case", () => {
+    const DETAILS: Probed[] = [{ label: "Details", confirmed: false, changed: true, calls: [] }];
+
+    it("is not proven by controls that only moved the screen", () => {
+      const result = wiredActions(DETAILS, world, ["action"]);
+      expect(result.pass).toBe(false);
+      expect(result.why).toContain("no press ever asked the host for anything");
+      // Every binding still holds on its own — the failure is the case's, and it
+      // has to say so somewhere a reader can find it.
+      expect(result.bindings[0]).toMatchObject({ effect: "state" });
+    });
+
+    it("is proven by one press that called a real tool with valid arguments", () => {
+      const result = wiredActions(pressed("cancel_transfer", { id: "tr_1" }), world, ["action"]);
+      expect(result.pass).toBe(true);
+      expect(result.why).toBeUndefined();
+    });
+
+    it("is not proven by a tool call that does not hold", () => {
+      expect(wiredActions(pressed("cancel_transfer", {}), world, ["action"]).pass).toBe(false);
+    });
+
+    it("leaves a display case exactly where it was", () => {
+      expect(wiredActions(DETAILS, world, ["display"]).pass).toBe(true);
+      expect(wiredActions(DETAILS, world).pass).toBe(true);
+    });
   });
 
   it("counts the controls the probe pressed, not the calls they made", () => {

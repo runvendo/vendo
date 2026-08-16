@@ -37,6 +37,48 @@ const WIRED = fixture(`document.getElementById("go").addEventListener("click", (
 const DEAD = fixture("");
 
 /**
+ * One call at LOAD, and a dead button beside it.
+ *
+ * The probe recorded `after.calls` — the page's whole recorder array — for every
+ * candidate, so a single refetch at load was credited to every control on the
+ * screen. A dead button on a screen that fetches anything graded as wired, which
+ * is precisely the failure the probe exists to catch, on precisely the screens
+ * that have something to fetch.
+ */
+const LOADS_THEN_DEAD = fixture(`window.vendo.callTool("list_transfers", { limit: 5 });`);
+
+/**
+ * A link out of the screen.
+ *
+ * `a[href]` is actionable, so the probe presses it, and the page navigates away:
+ * the recorder goes with it and every read after the click throws. That rejected
+ * `probe()`, which rejected the whole case — the screenshot already taken was
+ * discarded with it, and the column read as a contender that built nothing. The
+ * harness blocks the network, so the navigation cannot even land.
+ */
+const LINK_OUT = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>control</title></head><body>
+<div id="root"><a href="https://example.com/statements">Download statements</a></div>
+<script>
+  window.vendo = { calls: [], callTool(name, args) { window.vendo.calls.push({ name, args }); return { status: "ok", output: null }; } };
+  window.__settled = true;
+</script>
+</body></html>`;
+
+/** A page that brings its own `window.vendo` and no `calls` array at all. The
+ *  seam wraps whatever it finds rather than replacing it, so this is what the
+ *  probe then reads — and reading `.length` off `undefined` threw. */
+const FOREIGN_RECORDER = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>control</title></head><body>
+<div id="root"><button id="go">Cancel transfer</button></div>
+<script>
+  window.vendo = { callTool: function () { return { status: "ok", output: null }; } };
+  document.getElementById("go").addEventListener("click", function () { window.vendo.callTool("cancel_transfer", { id: "tr_1" }); });
+  window.__settled = true;
+</script>
+</body></html>`;
+
+/**
  * The same wired control, one turn of the event loop late.
  *
  * This is what an interactive screen is: the press goes through a runtime before
@@ -150,6 +192,38 @@ describe("the click probe grades what a browser actually does", () => {
     const result = wiredActions(trace, world);
     expect(result.pass).toBe(false);
     expect(result.bindings[0]).toMatchObject({ effect: "none" });
+  });
+
+  it("credits a press with the calls IT made, not with everything the page ever asked for", async () => {
+    const trace = await traceOf(LOADS_THEN_DEAD);
+
+    // One control, one press, and it did nothing: the load-time fetch was on the
+    // recorder before the button was ever touched.
+    expect(trace).toEqual([{ label: "Cancel transfer", confirmed: false, changed: false, calls: [] }]);
+    expect(wiredActions(trace, world).pass).toBe(false);
+    expect(wiredActions(trace, world).bindings[0]).toMatchObject({ effect: "none" });
+  });
+
+  /**
+   * The two pages that used to take the whole case down with them, both graded
+   * rather than thrown: a link that leaves the screen, and a page that brings a
+   * recorder of its own shape. Neither is a screen the benchmark should refuse to
+   * score — one navigates, one is wired — and neither is worth a lost screenshot.
+   */
+  it("survives a control that navigates off the screen, and still reports it", async () => {
+    const trace = await traceOf(LINK_OUT);
+
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ label: "Download statements", calls: [] });
+    // It went somewhere, so it is a live local control rather than a dead one.
+    expect(wiredActions(trace, world).bindings[0]).toMatchObject({ effect: "state" });
+  });
+
+  it("reads a page whose own recorder keeps no calls as having called nothing", async () => {
+    const trace = await traceOf(FOREIGN_RECORDER);
+
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ label: "Cancel transfer", calls: [] });
   });
 
   /**

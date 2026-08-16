@@ -1,18 +1,19 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { UIPayload } from "@vendoai/core";
-import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditFloor, AUDITOR_CONTRACT } from "./audit.js";
-import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
+import { claudeCodeDriver, WALL_CLOCK_MS, type SessionRecord } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
 import { judge, JudgeContract, rubricLines, type JudgeResult } from "./judge.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
-import { tally, writePreview } from "./report.js";
+import { tally, writePreview, writeSummary } from "./report.js";
 import { TriageContract } from "./triage.js";
 import { vendoDriver } from "./vendo.js";
 import { caseHash, loadCases, loadWorld, worldForCase, type Case, type CaseShape, type Lane, type World } from "./world.js";
@@ -32,6 +33,10 @@ export interface RunRequest {
   readonly testCase: Case;
   /** Already metered — the run's only source of tokens, dollars and time. */
   readonly meter: Meter;
+  /** The case's budget, already spent: this attempt has been recorded and
+   *  nobody is waiting for it. Absent only where nothing races the driver,
+   *  which is the tests. */
+  readonly signal?: AbortSignal;
 }
 
 export interface RunOutcome {
@@ -50,6 +55,8 @@ export interface RunOutcome {
    *  meter never saw those tokens. Priced through the same table all the same. */
   readonly usage?: UsageTotals;
   readonly usd?: number;
+  /** What a contender that runs its own engine says about that session. */
+  readonly session?: SessionRecord;
   /** When the contender had something new to show. Only the clock is shared —
    *  what each snapshot holds is the driver's own business. */
   readonly snapshots: ReadonlyArray<{ atMs: number }>;
@@ -106,6 +113,17 @@ export interface CaseResult {
    *  `honestData` verdicts do not compare with another run's. */
   readonly triageContract: typeof TriageContract;
   readonly auditorContract: typeof AUDITOR_CONTRACT;
+  /** What the provider says actually answered this column. `model` is the id we
+   *  asked for, and two of the three are floating aliases (`meter.ts`). */
+  readonly modelVersion?: string;
+  /** The tree the harness itself was, and the engine version the `claude-code`
+   *  column ran on. Both move under a run without any stamp moving, so two
+   *  results that do not carry the same pair were not produced by the same
+   *  benchmark. */
+  readonly gitSha: string;
+  readonly agentSdkVersion: string;
+  /** A contender that runs its own engine, in that engine's own words. */
+  readonly session?: SessionRecord;
   readonly failure?: string;
 }
 
@@ -118,14 +136,20 @@ const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
   "claude-code": (model) => claudeCodeDriver({ model }),
 };
 
-/** The world a run uses when `--world` names none — one of the twelve folders
+/** The world a run uses when `--world` names none — one of the fourteen folders
  *  under `worlds/`. */
 const DEFAULT_WORLD = "maple";
+
+/** Every world, into one run folder. The corpus is 200 cases across fourteen
+ *  worlds, and one number for the whole corpus cannot be read off fourteen
+ *  disconnected run folders. */
+const ALL_WORLDS = "all";
 
 export interface Args {
   readonly only?: string;
   readonly models: readonly ModelAlias[];
-  /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face. */
+  /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face —
+   *  or `all`, which is every folder there. */
   readonly world: string;
 }
 
@@ -281,6 +305,37 @@ export async function writeCase(
   await writeFile(join(caseDir, "result.json"), `${JSON.stringify(wrote.result, null, 2)}\n`);
 }
 
+/** The world folders one run covers: the one that was named, or every folder
+ *  there. Fourteen worlds and 200 cases used to mean fourteen run folders and no
+ *  total anywhere, so the question the benchmark exists to answer had nowhere to
+ *  be answered. */
+export async function worldsFor(worldsDir: string, world: string): Promise<readonly string[]> {
+  if (world !== ALL_WORLDS) return [world];
+  const entries = await readdir(worldsDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/**
+ * What the harness itself was, read once at the start of a run.
+ *
+ * Both halves move under a benchmark without a single stamp in `result.json`
+ * moving with them: the tree is the vendo column's whole product, and the Agent
+ * SDK is the `claude-code` column's whole engine. Two results that do not carry
+ * the same pair were not produced by the same benchmark, whatever their model
+ * ids and rubric versions agree about.
+ */
+export async function harnessStamp(root: string): Promise<{ gitSha: string; agentSdkVersion: string }> {
+  const sdk = createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
+  const manifest = JSON.parse(await readFile(join(dirname(sdk), "package.json"), "utf8")) as { version: string };
+  return {
+    gitSha: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+    agentSdkVersion: manifest.version,
+  };
+}
+
 async function main(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv);
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -290,11 +345,8 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
-  const worldDir = join(root, "worlds", args.world);
-  const world = await loadWorld(worldDir);
-  const all = await loadCases(join(worldDir, "cases.json"));
-  const cases = all.filter((entry) => args.only === undefined || entry.id === args.only);
-  if (cases.length === 0) throw new Error(`genbench: no case matches --prompt "${args.only ?? ""}"`);
+  const worldsDir = join(root, "worlds");
+  const names = await worldsFor(worldsDir, args.world);
 
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const runDir = join(root, "runs", runId);
@@ -305,21 +357,39 @@ async function main(argv: readonly string[]): Promise<number> {
   /** The world each case was actually graded against — what the report's data
    *  panel shows, so a person can check any number on any screen against it. */
   const worlds: Record<string, World> = {};
+  const stamp = await harnessStamp(root);
 
-  /** One column of one case, start to finish, reporting rather than throwing. */
-  const runOne = async (contender: ContenderId, testCase: Case, scoped: World): Promise<CaseResult> => {
+  /** One column of one case, start to finish, reporting rather than throwing.
+   *  `key` is the case's own id, or `<world>/<id>` where a run covers more than
+   *  one world — two worlds really do ship a `visit-history`, and one run folder
+   *  would otherwise write both into the same directory. */
+  const runOne = async (contender: ContenderId, testCase: Case, scoped: World, key: string): Promise<CaseResult> => {
     const modelId = MODEL_IDS[contender.model];
     // Its own meter, so a sibling's tokens and a sibling's clock are never
     // charged to this column.
     const meter = meteredModel(anthropic(modelId), modelId);
 
+    /** Evidence as it is produced, not as it is returned. Losing the outer race
+     *  used to discard a screenshot that had already been taken and a trace that
+     *  had already been recorded, so a case that ran out of time was graded as
+     *  a screen that failed every check — the harness's clock reported as the
+     *  contender's quality. Whatever exists is graded; the timeout is recorded
+     *  beside it as itself. */
+    const captured: { outcome?: RunOutcome; html?: string; shot?: Shot; trace?: Probed[] } = {};
+
     // Raced against the clock as one unit: generation, paint and probe all spend
     // the person's wait, so one budget covers all three.
-    const { done, failure: broke } = await attempt(async (lost) => {
-      const outcome = await DRIVERS[contender.harness](contender.model).run({ world: scoped, testCase, meter });
+    const { failure: broke } = await attempt(async (lost) => {
+      captured.outcome = await DRIVERS[contender.harness](contender.model).run({
+        world: scoped,
+        testCase,
+        meter,
+        signal: lost,
+      });
       // Either the product compiled a payload into a page, or the contender
       // handed over an artifact that already IS a document. From here on both
       // are just a page.
+      const outcome = captured.outcome;
       const authored = outcome.format === "html" ? outcome.artifact : undefined;
       const html =
         authored !== undefined
@@ -330,18 +400,20 @@ async function main(argv: readonly string[]): Promise<number> {
       // This case has already been recorded as a timeout and the row has moved
       // on. Painting it now would spend the shared browser on a screen nobody
       // is waiting for, while the case that IS being graded is shot beside it.
-      if (html === undefined || lost.aborted) return { outcome, trace: [] as Probed[] };
+      if (html === undefined || lost.aborted) return;
+      captured.html = html;
       const visit = await shooter.visit(html);
       try {
-        return { outcome, html, shot: await visit.shot(), trace: await probe(visit) };
+        captured.shot = await visit.shot();
+        captured.trace = await probe(visit);
       } finally {
         await visit.close();
       }
     }, CASE_TIMEOUT_MS[contender.harness]);
 
-    const outcome = done?.outcome;
-    const shot: Shot | undefined = done?.shot;
-    const trace = done?.trace ?? [];
+    // Read out before anything else is awaited: work that lost the race is still
+    // running and still writing into `captured`.
+    const { outcome, html: page, shot, trace = [] } = captured;
     const artifact = outcome?.artifact;
     // The fabrication check's verdict — every claim on the screen answered for
     // by a program the harness ran — and outside the contender's budget for the
@@ -349,7 +421,14 @@ async function main(argv: readonly string[]): Promise<number> {
     // screen whose every number the tools already answer with calls nobody and
     // costs nothing.
     const floor = await auditFloor(
-      runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot }),
+      runFloor({
+        world: scoped,
+        artifact,
+        blocking: outcome?.blocking ?? [],
+        trace,
+        shot,
+        tags: testCase.tags ?? [],
+      }),
       scoped,
       shot?.visibleText ?? "",
     );
@@ -363,10 +442,15 @@ async function main(argv: readonly string[]): Promise<number> {
         ? ungraded(testCase.pass, scoped.style)
         : await judge({
             screenshot: shot.png,
-            artifact: artifact ?? "",
+            // The PAGE, for every column. Vendo's artifact is a TSX document and
+            // both baselines' is HTML, so sending each column its own artifact
+            // handed the judge a perfect classifier for which one was the
+            // vendor's — under a prompt that says the format is not evidence.
+            artifact: page ?? "",
             trace,
             caseLines: testCase.pass,
             styleLines: scoped.style,
+            caseHash: caseHash(testCase),
           });
 
     const failure = broke ?? outcome?.failure;
@@ -375,7 +459,7 @@ async function main(argv: readonly string[]): Promise<number> {
       run: runId,
       contender: contender.slug,
       model: modelId,
-      case: testCase.id,
+      case: key,
       prompt: testCase.prompt,
       lane: testCase.lane,
       shape: testCase.shape,
@@ -393,21 +477,24 @@ async function main(argv: readonly string[]): Promise<number> {
       clientOnly: nodes.filter((node) => node.component !== undefined && CHARTS.has(node.component)).length,
       trace,
       consoleErrors: shot?.consoleErrors ?? [],
-      world: world.hash,
+      world: scoped.hash,
       caseHash: caseHash(testCase),
       judged,
       judgeContract: JudgeContract,
       triageContract: TriageContract,
       auditorContract: AUDITOR_CONTRACT,
+      ...(meter.answeredBy() === undefined ? {} : { modelVersion: meter.answeredBy()! }),
+      ...stamp,
+      ...(outcome?.session === undefined ? {} : { session: outcome.session }),
       ...(failure === undefined ? {} : { failure }),
     };
-    await writeCase(runDir, { outcome, html: done?.html, shot, result });
+    await writeCase(runDir, { outcome, html: page, shot, result });
     const scored = checks(floor);
     const values = floor.honestData.audited ?? [];
     const waived = values.filter((one) => one.verdict === "skipped-by-triage").length;
     const cleared = values.filter((one) => one.verdict.startsWith("cleared")).length;
     console.log(
-      `· ${contender.slug} / ${testCase.id} · floor ${scored.filter((check) => check.pass).length}/${scored.length}` +
+      `· ${contender.slug} / ${key} · floor ${scored.filter((check) => check.pass).length}/${scored.length}` +
         ` · judged ${judged.degraded ? "—" : tally(judged.lines)}` +
         ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}` +
         // The honesty check's own model calls are never silent: say what it was
@@ -423,20 +510,29 @@ async function main(argv: readonly string[]): Promise<number> {
   };
 
   try {
-    for (const testCase of cases) {
-      const scoped = worldForCase(world, testCase);
-      worlds[testCase.id] = scoped;
-      // The whole row at once: they share only the browser, a page each, and the
-      // order of `results` is the order of `contenders` whoever finishes first.
-      const row = await Promise.all(
-        contenders(args.models).map(async (contender) => await runOne(contender, testCase, scoped)),
-      );
-      results.push(...row);
+    for (const name of names) {
+      const worldDir = join(worldsDir, name);
+      const world = await loadWorld(worldDir);
+      const all = await loadCases(join(worldDir, "cases.json"));
+      for (const testCase of all.filter((entry) => args.only === undefined || entry.id === args.only)) {
+        const key = names.length === 1 ? testCase.id : `${name}/${testCase.id}`;
+        const scoped = worldForCase(world, testCase);
+        worlds[key] = scoped;
+        // The whole row at once: they share only the browser, a page each, and the
+        // order of `results` is the order of `contenders` whoever finishes first.
+        const row = await Promise.all(
+          contenders(args.models).map(async (contender) => await runOne(contender, testCase, scoped, key)),
+        );
+        results.push(...row);
+      }
     }
   } finally {
     await shooter.close();
   }
+  if (results.length === 0) throw new Error(`genbench: no case matches --prompt "${args.only ?? ""}"`);
 
+  const summary = await writeSummary({ runDir, runId, results, gitSha: stamp.gitSha });
+  console.log(summary);
   const preview = await writePreview({ runDir, runId, results, worlds });
   console.log(preview);
   if (process.platform === "darwin" && shouldOpen(args, process.env)) {

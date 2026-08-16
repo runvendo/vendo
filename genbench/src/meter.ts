@@ -3,8 +3,17 @@ import { wrapLanguageModel, type LanguageModel } from "ai";
 
 export type ModelAlias = "opus" | "sonnet" | "haiku";
 
-/** Pinned ids. Each one was checked against the live API through
- *  `@ai-sdk/anthropic` before being written here. */
+/**
+ * Pinned ids. Each one was checked against the live API through
+ * `@ai-sdk/anthropic` before being written here.
+ *
+ * Two of the three are floating aliases, and not for want of trying: as of
+ * 2026-08-15 `GET /v1/models` lists `claude-opus-5` and `claude-sonnet-5` with
+ * no dated snapshot beside them, so there is nothing to pin them to. Haiku has
+ * one and carries it. Until the other two do, `Meter.answeredBy` is what says
+ * which model actually answered — a pinned alias is a promise the provider
+ * makes and the run has to record it keeping.
+ */
 export const MODEL_IDS: Readonly<Record<ModelAlias, string>> = {
   opus: "claude-opus-5",
   sonnet: "claude-sonnet-5",
@@ -33,8 +42,11 @@ const CACHE_WRITE_MULTIPLIER = 1.25;
 
 /** The screen agent builds its Turn with no `maxOutputTokens`, so the provider
  *  default applies and a long document can truncate mid-write with no error.
- *  The meter fills the gap only when the caller left it unset. */
-const MAX_OUTPUT_TOKENS_FLOOR = 32_000;
+ *  The meter fills the gap only when the caller left it unset. Exported because
+ *  the judge, the triage and the auditor need the same floor and are not metered
+ *  through this wrapper — a grader that truncates fails every line it never
+ *  reached, and charges that to the screen. */
+export const MAX_OUTPUT_TOKENS_FLOOR = 32_000;
 
 export interface UsageTotals {
   /** Input tokens billed at the full rate — cache reads and writes are excluded. */
@@ -53,11 +65,16 @@ export interface Meter {
   elapsedMs(): number;
   totals(): UsageTotals;
   usd(): number;
+  /** What the provider says actually answered, once anything has. Undefined
+   *  until the first response, and for a contender that never called this
+   *  model at all. */
+  answeredBy(): string | undefined;
 }
 
 export function meteredModel(base: LanguageModelV3, modelId: string): Meter {
   const startedAt = performance.now();
   const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 };
+  let answeredBy: string | undefined;
 
   const record = (usage: LanguageModelV3Usage): void => {
     const cacheRead = usage.inputTokens.cacheRead ?? 0;
@@ -82,6 +99,7 @@ export function meteredModel(base: LanguageModelV3, modelId: string): Meter {
     wrapGenerate: async ({ doGenerate }) => {
       const result = await doGenerate();
       record(result.usage);
+      answeredBy = result.response?.modelId ?? answeredBy;
       return result;
     },
     wrapStream: async ({ doStream }) => {
@@ -92,6 +110,7 @@ export function meteredModel(base: LanguageModelV3, modelId: string): Meter {
           new TransformStream({
             transform(part, controller) {
               if (part.type === "finish") record(part.usage);
+              if (part.type === "response-metadata") answeredBy = part.modelId ?? answeredBy;
               controller.enqueue(part);
             },
           }),
@@ -105,6 +124,7 @@ export function meteredModel(base: LanguageModelV3, modelId: string): Meter {
     elapsedMs: () => Math.round(performance.now() - startedAt),
     totals: () => ({ ...totals }),
     usd: () => usdFor({ ...totals }, modelId),
+    answeredBy: () => answeredBy,
   };
 }
 

@@ -51,7 +51,7 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 1 },
+  honestData: { pass: true, offenders: [], examined: 1, found: 1 },
   wiredActions: { pass: true, pressed: 1, bindings: [] },
   pass: true,
 };
@@ -84,6 +84,8 @@ const RESULT: CaseResult = {
   judgeContract: JudgeContract,
   triageContract: TriageContract,
   auditorContract: AUDITOR_CONTRACT,
+  gitSha: "0".repeat(40),
+  agentSdkVersion: "0.0.0",
 };
 
 describe("the run folder", () => {

@@ -73,6 +73,7 @@ function replying(text: string): { meter: Meter; sent: () => Sent } {
       elapsedMs: () => (tick += 1),
       totals: () => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }),
       usd: () => 0,
+      answeredBy: () => undefined,
     },
     sent: () => prompt,
   };
@@ -322,6 +323,18 @@ describe("the diy driver", () => {
 
     expect(outcome.artifact).toBe(PAGE);
     expect(outcome.failure).toBeUndefined();
+  });
+
+  /** The case's budget never reached the provider, so a column whose case had
+   *  already been recorded went on generating — and went on billing — for a
+   *  screen nobody was waiting for. */
+  it("passes the case's budget through to the generation itself", async () => {
+    const { meter } = replying(PAGE);
+    const lost = new AbortController();
+    await diyDriver().run({ world, testCase: cases[0]!, meter, signal: lost.signal });
+
+    const model = meter.model as MockLanguageModelV3;
+    expect(model.doStreamCalls[0]!.abortSignal).toBe(lost.signal);
   });
 
   it("takes the document out of a fenced answer", async () => {

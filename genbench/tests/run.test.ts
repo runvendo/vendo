@@ -5,6 +5,8 @@
  * what lets the row be gathered with `Promise.all` — and so what keeps the
  * report's column order the contender order, whatever order they finish in.
  */
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { WALL_CLOCK_MS } from "../src/claude-code.js";
 import type { FloorResult } from "../src/floor.js";
@@ -15,9 +17,11 @@ import {
   CASE_TIMEOUT_MS,
   contenders,
   exitCode,
+  harnessStamp,
   parseArgs,
   shouldOpen,
   ungraded,
+  worldsFor,
   type Args,
   type CaseResult,
 } from "../src/run.js";
@@ -114,7 +118,7 @@ const floorAt = (pass: boolean): FloorResult => ({
   renders: pass,
   valid: pass,
   blocking: [],
-  honestData: { pass, offenders: [], examined: 0 },
+  honestData: { pass, offenders: [], examined: 0, found: 0 },
   wiredActions: { pass, pressed: 0, bindings: [] },
   pass,
 });
@@ -142,6 +146,8 @@ const scored = (floor: FloorResult, judged: JudgeResult): CaseResult => ({
   judgeContract: JudgeContract,
   triageContract: TriageContract,
   auditorContract: AUDITOR_CONTRACT,
+  gitSha: "0".repeat(40),
+  agentSdkVersion: "0.0.0",
 });
 
 /**
@@ -222,7 +228,7 @@ describe("opening the preview", () => {
 });
 
 describe("parseArgs", () => {
-  it("runs maple, the only world there is, when none is named", () => {
+  it("runs maple when no world is named", () => {
     expect(parseArgs(["run"]).world).toBe("maple");
   });
 
@@ -231,5 +237,40 @@ describe("parseArgs", () => {
       world: "sienna",
       only: "spend-overview",
     });
+  });
+});
+
+/**
+ * `--world` took exactly one folder, so fourteen worlds meant fourteen runs into
+ * fourteen disconnected folders and no number anywhere covering the corpus.
+ */
+describe("worldsFor", () => {
+  const worldsDir = join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds");
+
+  it("takes one named world as itself, without looking at the disk", async () => {
+    expect(await worldsFor(worldsDir, "maple")).toEqual(["maple"]);
+  });
+
+  it("takes `all` as every world folder there is, in a fixed order", async () => {
+    const all = await worldsFor(worldsDir, "all");
+
+    expect(all).toContain("maple");
+    expect(all).toContain("buildlog");
+    expect(all).toEqual([...all].sort());
+    expect(all.length).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * A result named its models and its rubric version and nothing about the tree it
+ * was produced from — so the product under test could change completely between
+ * two runs and every stamp in `result.json` would still match.
+ */
+describe("harnessStamp", () => {
+  it("names the commit the harness ran at and the engine the agentic column ran on", async () => {
+    const stamp = await harnessStamp(dirname(dirname(fileURLToPath(import.meta.url))));
+
+    expect(stamp.gitSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(stamp.agentSdkVersion).toMatch(/^\d+\.\d+\.\d+/);
   });
 });

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { judge, JudgeContract, SYSTEM_PROMPT, VERDICTS, type JudgeInput, type Verdict } from "../src/judge.js";
+import { MAX_OUTPUT_TOKENS_FLOOR } from "../src/meter.js";
 import { probe, type Probed } from "../src/probe.js";
 import { authoredPage, openBrowser } from "../src/render.js";
 import { loadWorld } from "../src/world.js";
@@ -31,6 +32,7 @@ const input = (over: Partial<JudgeInput> = {}): JudgeInput => ({
   trace: TRACE,
   caseLines: CASE_LINES,
   styleLines: STYLE_LINES,
+  caseHash: "9f1c0a2b3d4e5f60",
   ...over,
 });
 
@@ -49,8 +51,9 @@ const replied = (verdicts: Answer[]) => ({
 });
 
 /** Every numbered checklist line the model was actually asked about, in the
- *  order it was asked — parsed back out of the assembled prompt, so the tests
- *  see exactly what went over the wire and nothing the judge merely intended. */
+ *  order it was asked, with its `[correctness]` / `[design]` label stripped —
+ *  parsed back out of the assembled prompt, so the tests see exactly what went
+ *  over the wire and nothing the judge merely intended. */
 const asked = (call: { prompt: unknown }): string[] => {
   const text = JSON.stringify(call.prompt);
   const parsed = JSON.parse(text) as Array<{ content: unknown }>;
@@ -58,7 +61,7 @@ const asked = (call: { prompt: unknown }): string[] => {
     Array.isArray(message.content) ? (message.content as Array<{ type: string; text?: string }>) : [],
   );
   const checklist = parts.filter((part) => part.type === "text").at(-1)?.text ?? "";
-  return [...checklist.matchAll(/^\s*\d+\.\s+(.+)$/gm)].map((match) => match[1]!);
+  return [...checklist.matchAll(/^\s*\d+\.\s+\[\w+\]\s+(.+)$/gm)].map((match) => match[1]!);
 };
 
 /** The verdict this line is worth, decided by its own first word — so a remap
@@ -93,6 +96,10 @@ describe("blindness", () => {
   /** Everything that would tell the judge whose screen this is. */
   const FORBIDDEN = [
     "vendo",
+    // The npm scope, which `\bvendo\b` could not reach: the trailing `a` of
+    // `vendoai` kills the word boundary, so every import in a product page went
+    // to the judge with the vendor's name on it.
+    "vendoai",
     "diy",
     "claude-code",
     "claude-sonnet-5",
@@ -112,6 +119,7 @@ describe("blindness", () => {
         // because its prompt tells it to (diy.ts), the product because its
         // document is stamped with the format (VENDO_APP_FORMAT).
         artifact: `{"format":"vendo/app@1","tree":{"formatVersion":"vendo-genui/v2"}}
+<script type="module">import { PayloadView } from "@vendoai/ui/tree";</script>
 <button onclick="window.vendo.callTool('cancel_transfer', { id: 'tr_1' })">Cancel</button>`,
         // A control's label is page text, and page text can sign its own work.
         trace: [{ label: "Built with Vendo", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
@@ -160,13 +168,9 @@ describe("blindness", () => {
 
 describe("shuffled lines, remapped verdicts", () => {
   it("lands every verdict on the line it was asked about, whatever the order", async () => {
-    const orders = new Set<string>();
-
-    for (let round = 0; round < 40; round += 1) {
+    for (let round = 0; round < 5; round += 1) {
       const model = answering();
       const result = await judge(input(), { model });
-
-      orders.add(asked(model.doGenerateCalls[0]!).join("|"));
 
       // Answers come back in the ORIGINAL order, each carrying its own line's
       // verdict — not the verdict of whatever sat in that slot when asked.
@@ -176,15 +180,51 @@ describe("shuffled lines, remapped verdicts", () => {
       ]);
       expect(result.degraded).toBe(false);
     }
-
-    // A judge that never shuffles would pass the assertion above every round.
-    expect(orders.size).toBeGreaterThan(1);
   });
 
   it("asks about every line exactly once", async () => {
     const model = answering();
     await judge(input(), { model });
     expect([...asked(model.doGenerateCalls[0]!)].sort()).toEqual([...CASE_LINES, ...STYLE_LINES].sort());
+  });
+
+  /**
+   * The shuffle was `Math.random`, so one case got a different exam every run
+   * and every COLUMN — two contenders on the same screen were asked the same
+   * lines in two orders, and neither verdict could be reproduced afterwards.
+   * The seed is the case's own stamp, so the order is a property of the case.
+   */
+  it("asks one case's lines in one order, every time and for every column", async () => {
+    const orders = new Set<string>();
+    for (let round = 0; round < 10; round += 1) {
+      const model = answering();
+      await judge(input(), { model });
+      orders.add(asked(model.doGenerateCalls[0]!).join("|"));
+    }
+
+    expect(orders.size).toBe(1);
+  });
+
+  it("gives two different cases two different orders", async () => {
+    const seen = new Set<string>();
+    for (const caseHash of ["a1", "b2", "c3", "d4", "e5", "f6"]) {
+      const model = answering();
+      await judge(input({ caseHash }), { model });
+      seen.add(asked(model.doGenerateCalls[0]!).join("|"));
+    }
+
+    // Not a permutation count: a seed that ignored its input would collapse all
+    // six onto one order, which is the failure this is here for.
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("tells the judge which half each line belongs to, because only a design line may be na", async () => {
+    const model = answering();
+    await judge(input(), { model });
+    const sent = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+
+    expect(sent).toContain(`[correctness] ${CASE_LINES[0]!}`);
+    expect(sent).toContain(`[design] ${STYLE_LINES[0]!}`);
   });
 });
 
@@ -200,6 +240,16 @@ describe("schema", () => {
     // "na" reaches the provider as an allowed value, not just our own type.
     expect(JSON.stringify(format)).toContain('"enum":["pass","fail","na"]');
     expect(VERDICTS).toContain("na");
+  });
+
+  /** Contenders get an output ceiling through the meter; the judge had none, so
+   *  a truncated answer failed `wellFormed` and every line on the screen read
+   *  `fail` — our own default reported as the contender's screen. */
+  it("asks for the same output ceiling the contenders are given", async () => {
+    const model = answering();
+    await judge(input(), { model });
+
+    expect(model.doGenerateCalls[0]!.maxOutputTokens).toBe(MAX_OUTPUT_TOKENS_FLOOR);
   });
 });
 
@@ -364,15 +414,24 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(2);
+    expect(JudgeContract.rubricVersion).toBe(3);
   });
 
-  it("hashes the prompt, so any edit to it changes the contract", () => {
-    expect(JudgeContract.promptHash).toBe(createHash("sha256").update(SYSTEM_PROMPT).digest("hex"));
+  /**
+   * The digest is a LITERAL, not a re-derivation.
+   *
+   * Hashing the prompt under test and comparing it to the hash of the prompt
+   * under test is an assertion that cannot fail: every word of the rubric could
+   * change and this stayed green, which is the opposite of what a comparability
+   * stamp is for. Pinned, the next prompt edit fails here — and the way to make
+   * it pass is to move `rubricVersion` on purpose and paste the new digest,
+   * which is exactly the decision the stamp exists to force.
+   */
+  const PROMPT_HASH = "aca0fe1fb3a9cfb79bba07b65541b312704c167ce62847da3894e4b86e160b9d";
 
-    const edited = SYSTEM_PROMPT.replace("pass", "PASS");
-    expect(edited).not.toBe(SYSTEM_PROMPT);
-    expect(createHash("sha256").update(edited).digest("hex")).not.toBe(JudgeContract.promptHash);
+  it("hashes the prompt, so any edit to it changes the contract", () => {
+    expect(JudgeContract.promptHash).toBe(PROMPT_HASH);
+    expect(createHash("sha256").update(SYSTEM_PROMPT).digest("hex")).toBe(PROMPT_HASH);
   });
 
   /**
@@ -501,6 +560,7 @@ describe.runIf(LIVE)("live smoke", () => {
         screenshot: shot.png,
         artifact: FIXTURE,
         trace,
+        caseHash: "live-smoke",
         caseLines: [
           "shows every spending category the tool returned",
           "shows a total for the month equal to the sum of the categories",

@@ -23,17 +23,22 @@ const VIEWPORT = { width: 480, height: 900 } as const;
  * it had been told rather than on what it built. One text, both baselines,
  * pinned byte for byte by `diy.test.ts`.
  *
- * The honesty rule here is the rule the floor actually enforces. It used to
- * recite the deterministic allowlist — "a sum, count, min, max or mean of one
- * numeric field" — which stopped being true when that allowlist was deleted, and
- * a page written to a rule nobody grades is a page graded on someone else's.
+ * Every sentence here is a rule the harness KEEPS, which is a separate promise
+ * from stating it. The honesty rule used to recite the deterministic allowlist —
+ * "a sum, count, min, max or mean of one numeric field" — which stopped being
+ * true when that allowlist was deleted. The network was promised away and never
+ * blocked, the viewport was promised as the frame and the shot was `fullPage`,
+ * and the settle signal was asked for and then set by `authoredPage` two frames
+ * after load whatever the page did. The first two are now enforced below; the
+ * third said the truth instead, because the harness setting it is the better
+ * behaviour and only the sentence was wrong.
  */
 export const HARNESS_CONTRACT = `THE PAGE — the seam every screen is scored through, the same for whoever writes it.
 
 - SELF-CONTAINED. Inline every style and every script. The page is opened with NO network at all, so a CDN link, a webfont URL or an import of anything paints a blank screen.
 - WIRED. Every control a person can press must call \`window.vendo.callTool("<tool name>", { ...arguments })\`, with arguments that tool's input schema accepts. \`window.vendo\` is already on the page before anything you write runs — use it, do not define it.
 - CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`, or the call behind it is never seen.
-- FINISHED. Set \`window.__settled = true\` once the screen has drawn. A page that never sets it is recorded as never having finished.
+- FINISHED. The screen is considered settled two frames after the page loads, and it is shot then. Draw synchronously: anything painted later may not be in the picture anyone grades.
 - HONEST. Every number and every date on the screen must come from the tool data above — shown as it is, or computed from it. Anything else is graded as invented.
 - SIZED. It is shot at ${VIEWPORT.width}x${VIEWPORT.height}, and what a person sees there is all anyone sees.`;
 
@@ -222,6 +227,12 @@ export async function openBrowser(): Promise<Shooter> {
   return {
     async visit(html) {
       const page = await browser.newPage({ viewport: { ...VIEWPORT } });
+      // "NO network at all" is a rule every contender is graded on, so the
+      // harness has to be held to it too: a CDN font that happens to resolve on
+      // the operator's laptop is a screen that cannot be reproduced anywhere
+      // else. `data:` and `blob:` are not requests, so the world's face and the
+      // inlined bundle still arrive.
+      await page.context().route("**/*", (route) => route.abort());
       const consoleErrors: string[] = [];
       page.on("console", (message) => {
         if (message.type() === "error") consoleErrors.push(message.text());
@@ -294,7 +305,10 @@ export async function openBrowser(): Promise<Shooter> {
             };
           }, CHART_SCAFFOLDING);
           return {
-            png: await page.screenshot({ fullPage: true }),
+            // The viewport, not the whole document: the contract says what a
+            // person sees at this size is all anyone sees, and a full-page shot
+            // handed the judge a screen no person was ever shown.
+            png: await page.screenshot(),
             visibleText,
             renders: mounted && consoleErrors.length === 0,
             consoleErrors: [...consoleErrors],

@@ -62,10 +62,15 @@ interface Look {
 
 /** Nothing evaluated in the page may be a NAMED function: tsx compiles this file
  *  with esbuild's keepNames, which wraps one in a `__name` helper that exists in
- *  node and not in the page — see the longer note in `render.ts`. */
+ *  node and not in the page — see the longer note in `render.ts`.
+ *
+ *  The recorder is read as it might not be there. A contender may define its own
+ *  `window.vendo` without a `calls` array, and a link may have navigated the page
+ *  off the seam entirely; both are screens that asked the host for nothing, and
+ *  reading them as an exception loses the whole case instead of one press. */
 const look = async (page: Page): Promise<Look> =>
   await page.evaluate(() => ({
-    calls: window.vendo.calls,
+    calls: window.vendo?.calls ?? [],
     text: document.body.innerText.length,
     elements: document.querySelectorAll("*").length,
   }));
@@ -117,12 +122,20 @@ export async function probe(visit: Visit): Promise<Probed[]> {
       await settle(visit.page, opened);
     }
 
-    const after = await look(visit.page);
+    // A press that navigated away — a link with an href — leaves no screen to
+    // read: it went somewhere, which is the change, and it asked the host for
+    // nothing on the way. The screen is put back for the next candidate rather
+    // than the whole case being lost to one anchor.
+    const after = await look(visit.page).catch(() => undefined);
+    if (after === undefined) await visit.reset();
     trace.push({
       label: (text || aria || "").trim() || `control ${index + 1}`,
       confirmed,
-      changed: after.text !== before.text || after.elements !== before.elements,
-      calls: after.calls,
+      changed: after === undefined || after.text !== before.text || after.elements !== before.elements,
+      // Only what THIS press asked for. The recorder is the page's, not the
+      // press's, so handing over the whole array credited one load-time call to
+      // every control on the screen and graded a dead button as wired.
+      calls: after?.calls.slice(before.calls.length) ?? [],
     });
   }
   return trace;

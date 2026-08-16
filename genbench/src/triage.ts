@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
 import { around, type Occurrence, type TriageDecision } from "./floor.js";
-import type { UsageTotals } from "./meter.js";
+import { MAX_OUTPUT_TOKENS_FLOOR, type UsageTotals } from "./meter.js";
 
 /**
  * Which of the digit groups on a screen are CLAIMS.
@@ -63,12 +63,16 @@ export interface TriageOutcome {
   readonly degraded?: boolean;
   readonly error?: string;
   readonly usage: UsageTotals;
+  /** What the provider says actually answered: the contract pins a floating
+   *  alias, and the id we asked for is not the model that sorted. */
+  readonly modelVersion?: string;
 }
 
 export interface TriageOptions {
   /** Defaults to the contract's pinned model. Tests pass a double here; the run
    *  never does, which is what keeps the triage model off the contender. */
   readonly model?: LanguageModel;
+  readonly delayMs?: (attempt: number) => number;
   /** One attempt's deadline, defaulting to `ATTEMPT_TIMEOUT_MS`. Tests shorten
    *  it; the run never does. */
   readonly timeoutMs?: number;
@@ -97,28 +101,33 @@ const answerSchema = jsonSchema<{ decisions: Array<{ claim: boolean; why: string
  *
  * `runOne` writes the case only after the honesty check returns, so a provider
  * request that never settles takes that case's screenshot, page and
- * `result.json` with it and the row never completes. One attempt, because a
- * triage that flakes costs a waiver and never a verdict: the values it did not
- * sort are simply all checked.
+ * `result.json` with it and the row never completes.
  */
 const ATTEMPT_TIMEOUT_MS = 90_000;
+
+/** Only a provider that is briefly unwell earns a wait; everything else is
+ *  retried immediately. The same three attempts the judge takes, for the same
+ *  reason: a 529 is our infrastructure having an afternoon, and converting one
+ *  into "nothing was sorted" charges it to the screen being graded. */
+const TRANSIENT = /\b(429|500|502|503|504|529)\b|overload|rate.?limit|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|fetch failed|network|timed? ?out/i;
+const MAX_ATTEMPTS = 3;
 
 const NO_USAGE: UsageTotals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 };
 
 /** The `ai` layer's usage shape folded into the meter's. Spelled again rather
  *  than shared with `judge.ts` and `audit.ts`: each of those is a signed contract
  *  and is not edited to export a helper. */
-function spent(usage: LanguageModelUsage): UsageTotals {
+function spent(totals: UsageTotals, usage: LanguageModelUsage): UsageTotals {
   const cacheRead = usage.inputTokenDetails.cacheReadTokens ?? 0;
   const cacheWrite = usage.inputTokenDetails.cacheWriteTokens ?? 0;
   const uncached =
     usage.inputTokenDetails.noCacheTokens ?? Math.max(0, (usage.inputTokens ?? 0) - cacheRead - cacheWrite);
   return {
-    inputTokens: uncached,
-    outputTokens: usage.outputTokens ?? 0,
-    cacheReadTokens: cacheRead,
-    cacheWriteTokens: cacheWrite,
-    calls: 1,
+    inputTokens: totals.inputTokens + uncached,
+    outputTokens: totals.outputTokens + (usage.outputTokens ?? 0),
+    cacheReadTokens: totals.cacheReadTokens + cacheRead,
+    cacheWriteTokens: totals.cacheWriteTokens + cacheWrite,
+    calls: totals.calls + 1,
   };
 }
 
@@ -151,61 +160,73 @@ export async function triage(
     .map((token, position) => `${position + 1}. ${token.text}\n   where it appears: ${where(token)}\n`)
     .join("");
 
+  const delayMs = options.delayMs ?? ((attempt: number) => 1500 * (attempt + 1));
   const timeoutMs = options.timeoutMs ?? ATTEMPT_TIMEOUT_MS;
-  // The signal stops the provider's own request; the race is what stops US
-  // waiting on one that never answers and never honours it.
-  const expiry = AbortSignal.timeout(timeoutMs);
-  const expired = new Promise<never>((_, fail) => {
-    expiry.addEventListener("abort", () => fail(new Error(`the triage did not answer within ${timeoutMs}ms`)));
-  });
+  let error = "the triage returned nothing";
+  let usage = NO_USAGE;
 
-  try {
-    const result = await Promise.race([
-      expired,
-      generateObject({
-        model: options.model ?? createAnthropic()(TriageContract.model),
-        schema: answerSchema,
-        system: TRIAGE_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `THE TOKENS — answer one decision per numbered token, in this order:\n\n${listing}` },
-            ],
-          },
-        ],
-        maxRetries: 0,
-        abortSignal: expiry,
-      }),
-    ]);
-    const { decisions } = result.object;
-    const usage = spent(result.usage);
-    // `jsonSchema` validates nothing at runtime and no provider enforces a
-    // length, so an answer that does not line up with the batch is not a triage
-    // of this screen — it is a guess about which token each decision belongs to.
-    if (!Array.isArray(decisions) || decisions.length !== tokens.length) {
-      const error = `the triage answered ${decisions?.length ?? 0} of ${tokens.length} tokens`;
-      return { decisions: everythingIsAClaim(tokens, where, error), degraded: true, error, usage };
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    // The signal stops the provider's own request; the race is what stops US
+    // waiting on one that never answers and never honours it.
+    const expiry = AbortSignal.timeout(timeoutMs);
+    const expired = new Promise<never>((_, fail) => {
+      expiry.addEventListener("abort", () => fail(new Error(`the triage did not answer within ${timeoutMs}ms`)));
+    });
+    try {
+      const result = await Promise.race([
+        expired,
+        generateObject({
+          model: options.model ?? createAnthropic()(TriageContract.model),
+          schema: answerSchema,
+          system: TRIAGE_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: `THE TOKENS — answer one decision per numbered token, in this order:\n\n${listing}` },
+              ],
+            },
+          ],
+          // The loop above owns every attempt, so the SDK's own retries are off.
+          maxRetries: 0,
+          // The contenders get this floor through the meter; a grader without one
+          // answers half a batch and degrades the whole screen for it.
+          maxOutputTokens: MAX_OUTPUT_TOKENS_FLOOR,
+          abortSignal: expiry,
+        }),
+      ]);
+      usage = spent(usage, result.usage);
+      const { decisions } = result.object;
+      // `jsonSchema` validates nothing at runtime and no provider enforces a
+      // length, so an answer that does not line up with the batch is not a triage
+      // of this screen — it is a guess about which token each decision belongs to.
+      if (!Array.isArray(decisions) || decisions.length !== tokens.length) {
+        throw new Error(`the triage answered ${decisions?.length ?? 0} of ${tokens.length} tokens`);
+      }
+      return {
+        // Only the occurrence's own two fields are carried across: the caller
+        // hands in whole offenders, and a decision is not the place for the
+        // extraction's wording about them.
+        decisions: tokens.map(({ text, at }, position) => {
+          const answer = decisions[position]!;
+          // A missing or unreadable clause is not a reason to waive: only an
+          // explicit `false` waives, and only with words beside it.
+          const why = typeof answer.why === "string" && answer.why.trim() !== "" ? answer.why.trim() : "";
+          const settled =
+            answer.claim === false && why !== ""
+              ? { claim: false, why }
+              : { claim: true, why: why === "" ? "the triage gave no reason, so it was checked" : why };
+          return { text, at, ...settled, where: where({ text, at }) };
+        }),
+        usage,
+        modelVersion: result.response.modelId,
+      };
+    } catch (thrown) {
+      error = thrown instanceof Error ? thrown.message : String(thrown);
+      if (TRANSIENT.test(error) && attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((settle) => setTimeout(settle, delayMs(attempt)));
+      }
     }
-    return {
-      // Only the occurrence's own two fields are carried across: the caller
-      // hands in whole offenders, and a decision is not the place for the
-      // extraction's wording about them.
-      decisions: tokens.map(({ text, at }, position) => {
-        const answer = decisions[position]!;
-        // A missing or unreadable clause is not a reason to waive: only an
-        // explicit `false` waives, and only with words beside it.
-        const why = typeof answer.why === "string" && answer.why.trim() !== "" ? answer.why.trim() : "";
-        const settled =
-          answer.claim === false && why !== ""
-            ? { claim: false, why }
-            : { claim: true, why: why === "" ? "the triage gave no reason, so it was checked" : why };
-        return { text, at, ...settled, where: where({ text, at }) };
-      }),
-      usage,
-    };
-  } catch (thrown) {
-    const error = thrown instanceof Error ? thrown.message : String(thrown);
-    return { decisions: everythingIsAClaim(tokens, where, error), degraded: true, error, usage: NO_USAGE };
   }
+  return { decisions: everythingIsAClaim(tokens, where, error), degraded: true, error, usage };
 }
