@@ -279,9 +279,9 @@ path asks; 3 is always yours.
 
    Leave `actAs` out. A stub returning empty headers is worse than an absent
    seam: doctor then runs its live mint-and-verify round-trip and FAILS
-   [`E-AUTH-004`](/production/troubleshooting#E-AUTH-004), because a fixed demo principal can
+   [`E-AUTH-004`](/production/troubleshooting/e-auth-004), because a fixed demo principal can
    never echo the probe's own subject. Absent, doctor warns
-   [`E-AUTH-007`](/production/troubleshooting#E-AUTH-007) and step 6's gate still passes — the
+   [`E-AUTH-007`](/production/troubleshooting/e-auth-007) and step 6's gate still passes — the
    price is that your own route-bound tools answer `not-implemented` over the
    door, while `vendo_make` and the apps tools work. Every client acts as that
    one person: a demo or an internal tool, not a multi-user product.
@@ -317,7 +317,7 @@ path asks; 3 is always yours.
 
    `--base-url` only writes it into `.env.example`; setting it where the host
    deploys stays your human's. Doctor FAILS
-   [`E-MCP-009`](/production/troubleshooting#E-MCP-009) on an MCP-wired project with neither
+   [`E-MCP-009`](/production/troubleshooting/e-mcp-009) on an MCP-wired project with neither
    this variable nor `mcp: { baseUrl }`.
 
 4. **`serviceAuth` — only when asked for.** Skip it unless the HOST's own
@@ -338,7 +338,7 @@ path asks; 3 is always yours.
    run at all. The registry checks grade `server.json` and the challenge only
    when those files already exist — publishing to the MCP registry is a separate
    job, not part of reaching green. Every `E-MCP` code with its exact fix:
-   [verify](/production/troubleshooting#E-MCP-001).
+   [verify](/production/troubleshooting/e-mcp-001).
 
 ## Rules of engagement
 
