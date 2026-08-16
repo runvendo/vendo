@@ -83,3 +83,46 @@ describe("the host's brand faces reach the document generated UI renders in", ()
     expect(fontStyles()).toHaveLength(0);
   });
 });
+
+describe("a second provider in the same document", () => {
+  it("replaces the sheet rather than being outranked by whoever mounted first", async () => {
+    const FIRST = "@font-face { font-family: 'First'; src: url(data:font/woff2;base64,Zg==) format('woff2'); }";
+    const SECOND = "@font-face { font-family: 'Second'; src: url(data:font/woff2;base64,Zw==) format('woff2'); }";
+
+    const first = render(
+      <VendoProvider fonts={FIRST}>
+        <ChromeRoot><span>one</span></ChromeRoot>
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(fontStyles()).toHaveLength(1));
+    expect(fontStyles()[0]!.textContent).toBe(FIRST);
+    first.unmount();
+
+    render(
+      <VendoProvider fonts={SECOND}>
+        <ChromeRoot><span>two</span></ChromeRoot>
+      </VendoProvider>,
+    );
+
+    // One document holds ONE brand sheet, and it is the current one — a stale
+    // tag left by an earlier mount must not pin the page to the old faces.
+    await waitFor(() => expect(fontStyles()[0]!.textContent).toBe(SECOND));
+    expect(fontStyles()).toHaveLength(1);
+  });
+
+  it("updates in place when the host swaps the fonts prop on a live provider", async () => {
+    const A = "@font-face { font-family: 'A'; src: url(data:font/woff2;base64,YQ==) format('woff2'); }";
+    const B = "@font-face { font-family: 'B'; src: url(data:font/woff2;base64,Yg==) format('woff2'); }";
+
+    const view = render(
+      <VendoProvider fonts={A}><ChromeRoot><span>x</span></ChromeRoot></VendoProvider>,
+    );
+    await waitFor(() => expect(fontStyles()[0]!.textContent).toBe(A));
+
+    view.rerender(
+      <VendoProvider fonts={B}><ChromeRoot><span>x</span></ChromeRoot></VendoProvider>,
+    );
+    await waitFor(() => expect(fontStyles()[0]!.textContent).toBe(B));
+    expect(fontStyles()).toHaveLength(1);
+  });
+});

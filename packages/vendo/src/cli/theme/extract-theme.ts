@@ -35,7 +35,7 @@ const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
 /** Slot values → the frozen runtime VendoTheme contract — one derivation law,
  *  never two (theme/provenance.ts leans on this exact derivation). */
-export function toVendoTheme(slots: ThemeSlotValues, fonts?: VendoThemeFont[]): VendoTheme {
+export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
   const deriveRadius = (factor: number, fallback: string): string => {
     const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
     return value === undefined ? fallback : `${Number(value) * factor}px`;
@@ -56,7 +56,6 @@ export function toVendoTheme(slots: ThemeSlotValues, fonts?: VendoThemeFont[]): 
       headingFamily: slots.headingFamily,
       ...(slots.monoFamily === undefined ? {} : { monoFamily: slots.monoFamily }),
       baseSize: slots.baseSize,
-      ...(fonts === undefined || fonts.length === 0 ? {} : { fonts }),
     },
     radius: {
       small: deriveRadius(0.5, DEFAULT_RADIUS.small),
@@ -66,6 +65,23 @@ export function toVendoTheme(slots: ThemeSlotValues, fonts?: VendoThemeFont[]): 
     density: slots.density,
     motion: slots.motion,
   };
+}
+
+/**
+ * Record on a theme document which faces `.vendo/fonts.css` actually holds.
+ *
+ * The ONE place that metadata is attached, because there are two writers that
+ * must agree — the install path builds a fresh document, the reconcile path
+ * edits the host's — and they drifted: a rebrand rewrote the sheet and left
+ * `typography.fonts` advertising the previous brand's faces. An empty list
+ * REMOVES the key rather than writing `[]`, so a theme never claims faces that
+ * are not on disk.
+ */
+export function applyThemeFonts(theme: unknown, fonts: VendoThemeFont[]): void {
+  const typography = (theme as { typography?: Record<string, unknown> } | null)?.typography;
+  if (typography === undefined || typography === null) return;
+  if (fonts.length === 0) delete typography["fonts"];
+  else typography["fonts"] = fonts;
 }
 
 export interface ThemeSlotValues {

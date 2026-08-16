@@ -43,6 +43,7 @@ import { createPrettyOutput, plainSecret, plainSelect, plainText, usePrettyOutpu
 import { contrastingText } from "./theme/color.js";
 import {
   applyThemeDraft,
+  applyThemeFonts,
   toVendoTheme,
   validateSlotValue,
   type ThemeSlotValues,
@@ -1329,7 +1330,9 @@ async function finalizeTheme(input: {
     }
   }
   if (Object.keys(answers).length > 0) applyThemeAnswers(summary, answers, output);
-  await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots, summary.fonts), null, 2)}\n`);
+  const document = toVendoTheme(summary.slots);
+  applyThemeFonts(document, summary.fonts ?? []);
+  await writeText(themePath, `${JSON.stringify(document, null, 2)}\n`);
   printThemeSummary(summary, output);
 }
 
