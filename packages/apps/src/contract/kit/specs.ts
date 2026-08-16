@@ -659,7 +659,7 @@ const BASE_SPECS: KitComponentSpec[] = [
             // Code-only: a panel passed inline instead of as a child. Wire
             // trees cannot express an element in an attribute, so they nest
             // panels as children (the shape the plan skeleton emits).
-            content: z.unknown().optional(),
+            content: slot.optional(),
           }),
         ])),
         "tab labels, or {value,label} items",
@@ -686,7 +686,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "feedback",
     summary: "Self-managing collapsible sections. Good for long apps.",
     props: {
-      items: config(z.array(z.object({ label: z.string(), content: z.unknown() })), "sections", { required: true }),
+      items: config(z.array(z.object({ label: z.string(), content: slot })), "sections", { required: true }),
       multiple: config(z.boolean(), "allow several open at once"),
     },
     examples: ["<Accordion items={[{label:\"Terms\",content:<Text .../>}]}/>"],
@@ -720,7 +720,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "the hint, as plain text"),
       // Code-only, exactly like `Tabs.tabs[].content`: a slot holds an ELEMENT,
       // and a wire attribute cannot. Optional is what keeps Tooltip wire-usable.
-      content: config(z.unknown(), "code-only: Kit elements rendered as the hint instead of label"),
+      content: config(slot, "code-only: Kit elements rendered as the hint instead of label"),
     },
     examples: ['<Tooltip label="Sent 3 days ago"><Icon name="clock"/></Tooltip>'],
   },

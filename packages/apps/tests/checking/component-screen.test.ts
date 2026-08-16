@@ -851,7 +851,7 @@ export default function Everything() {
 
   /** Wide enough to write a chart, a table and a slot. Its own list because the
    *  shared catalog is pinned verbatim by the sentences that enumerate it. */
-  const kitCatalog = [...catalog, "Badge", "DataTable", "EnumBadge", "LineChart", "Sparkline", "Stat"];
+  const kitCatalog = [...catalog, "Accordion", "Badge", "DataTable", "EnumBadge", "LineChart", "Sparkline", "Stat", "Tabs", "Tooltip"];
 
   const painted = async (source: string): Promise<ComponentScreenCheck> =>
     checkComponentScreen({ source, hostTools: tools, catalog: kitCatalog, runQuery: async () => ROWS });
@@ -941,6 +941,30 @@ export default function Ledger() {
     expect(message).toContain("a slot holds ELEMENTS");
     // …and the repair is the element, with the column's own key in it.
     expect(message).toContain('cell={<Text field="amount"/>}');
+  });
+
+  /** Every slot, not just a cell: `Tabs.tabs[].content`, `Accordion.items[].content`
+   *  and `Tooltip.content` hold elements the same way, and each wrote its own
+   *  `z.unknown()` instead of the shared one — so each was a hole of exactly the
+   *  same shape. One screen, all three, one refusal apiece. */
+  it("refuses a function in the OTHER element slots too", async () => {
+    const result = await painted(`import { Accordion, Tabs, Text, Tooltip } from "@vendo/screen";
+
+export default function Panels() {
+  return (
+    <Tabs tabs={[{ label: "Queued", content: () => <Text text="none" /> }]}>
+      <Accordion items={[{ label: "Terms", content: () => <Text text="terms" /> }]} />
+      <Tooltip content={() => <Text text="hint" />}><Text text="?" /></Tooltip>
+    </Tabs>
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types", "types", "types"]);
+    for (const { message } of result.issues) {
+      expect(message).toContain('in the "content" slot');
+      expect(message).toContain("a slot holds ELEMENTS");
+    }
   });
 
   it("follows a control nested INSIDE a legal slot component", async () => {
