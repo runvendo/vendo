@@ -69,6 +69,17 @@ globalThis.getComputedStyle = ((element: Element, pseudoElement?: string | null)
     : ({ content: "none", display: "inline", visibility: "visible" } as unknown as CSSStyleDeclaration)
 ) as typeof globalThis.getComputedStyle;
 
+/**
+ * jsdom ships no `PointerEvent`, and Base UI's Checkbox, Switch and Radio
+ * forward a click to their hidden input by CONSTRUCTING one — without the
+ * constructor the root throws and the control never moves. A real browser has
+ * it, so this is an environment gap, not a component one. (`MouseEvent` is the
+ * jsdom-only guard: the node-environment files have neither.)
+ */
+if (typeof MouseEvent === "function" && typeof PointerEvent !== "function") {
+  globalThis.PointerEvent = class extends MouseEvent {} as unknown as typeof PointerEvent;
+}
+
 const nativeFetch = globalThis.fetch;
 
 globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
