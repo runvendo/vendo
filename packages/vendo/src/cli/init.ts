@@ -567,10 +567,15 @@ async function setupSkillSource(): Promise<string | null> {
 }
 
 /** The mount paste for a Next host, as data — ONE paste: `<VendoProvider>`
-    around the app's client root. A host that already mounts a surface needs
-    nothing. No overlay line: the chat bubble is an optional documented line,
-    never something init prints. Null on Express and custom hosts: their wiring
-    has no single host file to name, so it stays in the printed lines below. */
+    around the app's client root WITH `<VendoOverlay />` inside it. The paste
+    used to omit the overlay (the bubble was "an optional documented line"),
+    but a verbatim install then rendered NOTHING — wired and invisible reads
+    as broken (field: expense.fyi, ENG-421 / #1370), and doctor E-WIRE-006
+    already hard-fails an overlay-less host, so the paste and the gate now
+    agree. The why-line names the escape: hosts rendering their own surface
+    delete the overlay line. A host that already mounts a surface needs
+    nothing. Null on Express and custom hosts: their wiring has no single
+    host file to name, so it stays in the printed lines below. */
 async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit | null> {
   if (layout.kind === "already" || layout.kind === "express" || layout.kind === "custom") return null;
   const { file: entry, children } = await clientRoot(root);
@@ -582,16 +587,16 @@ async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit
     file: relative(root, entry),
     lines: [
       ...(fonts === null ? [] : [`import ${JSON.stringify(fonts)};`]),
-      `import { VendoProvider } from "@vendoai/vendo/react";`,
+      `import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";`,
       ...(specifier === null
         ? []
         : [
             `import theme from ${JSON.stringify(specifier)};`,
             `import type { VendoTheme } from "@vendoai/vendo";`,
           ]),
-      `… then wrap: <VendoProvider baseUrl="/api/vendo"${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}</VendoProvider>`,
+      `… then wrap: <VendoProvider baseUrl="/api/vendo"${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}<VendoOverlay /></VendoProvider>`,
     ],
-    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it."
+    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. <VendoOverlay /> is the visible agent — delete that line if you render your own surface. Until this lands, Vendo is wired but nothing on the page can reach it."
       + (fonts === null ? "" : " fonts.css carries your brand font as inlined @font-face rules, so generated screens render it wherever your own stylesheet doesn't reach."),
   };
 }

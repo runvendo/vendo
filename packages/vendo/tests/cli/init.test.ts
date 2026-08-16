@@ -251,7 +251,7 @@ describe("vendo init (zero-question)", () => {
     expect(await readFile(join(root, "src", "app", "layout.tsx"), "utf8")).not.toContain("VendoProvider");
     const logs = sink.logs.join("\n");
     expect(logs).toContain('import theme from "../../.vendo/theme.json";');
-    expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    expect(logs).toContain('import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";');
   });
 
   it("scaffolds app/ under src/ when the host's pages router lives there (teable: pages+app must share one base)", async () => {
@@ -840,13 +840,17 @@ describe("vendo init (zero-question)", () => {
     expect(theme.colors.muted).toBe("#908c85");
   });
 
-  it("prints ONE paste — <VendoProvider>, with no overlay line", async () => {
+  // Reversal (ENG-421 / #1370): the paste used to omit the overlay, and a
+  // verbatim install rendered nothing — wired and invisible reads as broken,
+  // while doctor E-WIRE-006 hard-fails exactly that state. One paste now
+  // yields a visible agent; hosts with their own surface delete the line.
+  it("prints ONE paste — provider AND overlay, still never a generated file", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const printed = sink.logs.join("\n");
     expect(printed).toContain("<VendoProvider");
-    expect(printed).not.toContain("VendoOverlay");
+    expect(printed).toContain("<VendoOverlay />");
     expect(printed).not.toContain("vendo-root");
   });
 
@@ -1889,8 +1893,8 @@ describe("the mount paste (init never edits user-authored source)", () => {
     const logs = sink.logs.join("\n");
     expect(logs).toContain("ONE STEP LEFT — paste this yourself (init never edits your files)");
     expect(logs).toContain(`File: ${join("app", "layout.tsx")}`);
-    expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
-    expect(logs).toContain('<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>');
+    expect(logs).toContain('import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";');
+    expect(logs).toContain('<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}<VendoOverlay /></VendoProvider>');
     // Doctor is named ONCE, at the ending — never a second time inside the
     // paste frame (#1164).
     expect(logs).not.toContain("Then confirm it landed: npx vendo doctor");
@@ -1909,8 +1913,12 @@ describe("the mount paste (init never edits user-authored source)", () => {
     expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(twoSites);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("ONE STEP LEFT");
-    expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    expect(logs).toContain('import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";');
     expect(logs).toContain("<VendoProvider baseUrl=");
+    // The paste must yield a VISIBLE agent: a verbatim install that renders
+    // nothing reads as broken (field: expense.fyi, ENG-421 / #1370), and
+    // doctor E-WIRE-006 already hard-fails an overlay-less host.
+    expect(logs).toContain("<VendoOverlay />");
   });
 
   it("carries the same file and lines in the --agent plan's `mount`", async () => {
@@ -1924,12 +1932,13 @@ describe("the mount paste (init never edits user-authored source)", () => {
     };
     expect(plan.mount?.file).toBe(join("app", "layout.tsx"));
     expect(plan.mount?.lines).toEqual([
-      'import { VendoProvider } from "@vendoai/vendo/react";',
+      'import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";',
       'import theme from "../.vendo/theme.json";',
       'import type { VendoTheme } from "@vendoai/vendo";',
-      '… then wrap: <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>',
+      '… then wrap: <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}<VendoOverlay /></VendoProvider>',
     ]);
     expect(plan.mount?.why).toContain("nothing on the page can reach it");
+    expect(plan.mount?.why).toContain("your own surface");
     // The same lines still ride manualSteps, and no layout diff is planned.
     expect(plan.manualSteps.join("\n")).toContain('<VendoProvider baseUrl="/api/vendo"');
     expect(plan.codeChanges.map((change) => change.path)).not.toContain(join("app", "layout.tsx"));
@@ -1979,7 +1988,7 @@ describe("the mount paste (init never edits user-authored source)", () => {
     expect(plan.mount?.file).toBe(join("app", "[locale]", "layout.tsx"));
     // The paste still wraps {children}, and the theme import walks out of the
     // deeper directory.
-    expect(plan.mount?.lines.at(-1)).toContain("{children}</VendoProvider>");
+    expect(plan.mount?.lines.at(-1)).toContain("{children}<VendoOverlay /></VendoProvider>");
     expect(plan.mount?.lines).toContain('import theme from "../../.vendo/theme.json";');
   });
 
@@ -2003,7 +2012,7 @@ describe("the mount paste (init never edits user-authored source)", () => {
     expect(await run(root, sink, { agent: true })).toBe(0);
     const plan = JSON.parse(sink.logs.join("\n")) as { mount?: { file: string; lines: string[] } };
     expect(plan.mount?.file).toBe(join("pages", "_app.tsx"));
-    expect(plan.mount?.lines.at(-1)).toContain("<Component {...pageProps} /></VendoProvider>");
+    expect(plan.mount?.lines.at(-1)).toContain("<Component {...pageProps} /><VendoOverlay /></VendoProvider>");
   });
 
   /** No layout and no pages/ means the host has no client root yet — the
