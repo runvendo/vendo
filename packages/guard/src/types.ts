@@ -10,6 +10,7 @@ import {
   type IsoDateTime,
   type PermissionGrant,
   type Principal,
+  type RecordInput,
   type RiskLabel,
   riskLabelSchema,
   type RiskResolver,
@@ -108,6 +109,20 @@ export interface Judge {
 
 export interface VendoGuard extends Guard {
   bind(tools: ToolRegistry): ToolRegistry;
+
+  /** `report` with the audit row handed to `place` instead of written to the
+   *  guard's own engine — the seam a batched turn folds its ONE run row
+   *  through, so the row rides the same call as the messages it describes.
+   *  Scope is that row: a per-tool-call decision has no batch to ride and
+   *  keeps writing one row per call.
+   *
+   *  Optional and FEATURE-DETECTED, exactly as `previewCheck` is: a guard that
+   *  omits it leaves the caller writing the row through `report`, which is
+   *  where every caller started. */
+  reportThrough?(
+    event: AuditEvent,
+    place: (collection: string, record: RecordInput) => Promise<unknown>,
+  ): Promise<void>;
 
   /** The park-side mirror of `onApprovalDecision`: fires when a check parks an
    *  approval, with the persisted request. Optional on core's Guard (existing
