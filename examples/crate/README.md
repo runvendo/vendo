@@ -163,6 +163,15 @@ Found while wiring this up. All three are in Linear: ENG-415, ENG-416, ENG-417.
    "Internal Vendo error". `vendo init --auth clerk` leaves you in exactly this
    state before you paste your keys. The same preset returns null for an
    unverifiable token two lines away.
+
+   Crate's half of the workaround is to compose `auth` only when both keys are
+   present — but that alone is not enough, because `createVendo` no longer mints
+   anonymous sessions. A composition with neither `auth.principal` nor
+   `principal` refuses to build at all, and every wire request answers 500 with
+   *"createVendo needs an identity"*. So the keyless branch names its actor
+   explicitly: the seeded shop owner, the same one `resolveActor()` returns for
+   a keyless request. Saying it out loud is better than the anonymous default it
+   replaced — the agent and the screens now agree on who is asking.
 2. **`vendo init` does not add `serverExternalPackages`.** The composed default
    store is PGlite, whose Emscripten module breaks under Turbopack's production
    chunking — `next dev` is fine and `next build` + `next start` 501s every wire
