@@ -27,6 +27,6 @@ describe("vendo doctor on the Express host", () => {
   it("recognizes the committed wiring with nothing running", async () => {
     const result = await runDoctor();
     expect(result.code, result.output).toBe(0);
-    expect(result.output).toContain("createVendo");
+    expect(result.output).toContain("Express server is wired");
   });
 });
