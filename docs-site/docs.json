@@ -228,17 +228,17 @@
   "redirects": [
     {
       "source": "/quickstart",
-      "destination": "/agents",
+      "destination": "/",
       "permanent": true
     },
     {
       "source": "/quickstart-node",
-      "destination": "/agents",
+      "destination": "/product/quickstart",
       "permanent": true
     },
     {
       "source": "/try",
-      "destination": "/agents",
+      "destination": "/",
       "permanent": true
     },
     {
@@ -303,7 +303,7 @@
     },
     {
       "source": "/vendo-agent/index",
-      "destination": "/agents",
+      "destination": "/product/quickstart",
       "permanent": true
     },
     {
@@ -473,22 +473,22 @@
     },
     {
       "source": "/vendo-agent/quickstart",
-      "destination": "/agents",
+      "destination": "/product/quickstart",
       "permanent": true
     },
     {
       "source": "/vendo-agent/overview",
-      "destination": "/agents",
+      "destination": "/product/how-it-works",
       "permanent": true
     },
     {
       "source": "/vendo-agent/linkwarden",
-      "destination": "/agents",
+      "destination": "/product/quickstart",
       "permanent": true
     },
     {
       "source": "/vendo-agent",
-      "destination": "/agents",
+      "destination": "/product/quickstart",
       "permanent": true
     },
     {
