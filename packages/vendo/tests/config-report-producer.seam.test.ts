@@ -11,6 +11,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { guard } from "@vendoai/guard";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
 import type { CreateVendoConfig } from "../src/types.js";
@@ -20,6 +21,18 @@ const REPORT_URL = "https://console.producer-test/api/v1/config/report";
 const identity: Pick<CreateVendoConfig, "principal"> = {
   principal: async () => ({ kind: "user", subject: "user_producer_test" }),
 };
+
+/** A real `vendo/policy@1` document — what the console validates a reported
+ *  policy surface against. */
+const POLICY_DOC = `${JSON.stringify(
+  {
+    format: "vendo/policy@1",
+    directions: ["Ask before moving money."],
+    rules: [{ match: { risk: "destructive" }, action: "ask" }],
+  },
+  null,
+  2,
+)}\n`;
 
 type Surfaces = Record<string, { source: string; content: string | null }>;
 
@@ -104,6 +117,42 @@ describe("the report has to name the surface the runtime actually resolved", () 
     await waitForReport();
 
     expect(sent[0]?.surfaces["brief.md"]).toEqual({ source: "code", content: "" });
+  });
+
+  // `guard({ policy: { file } })` is the demo host's own wiring
+  // (examples/demo-bank/src/vendo/server.ts). The knob is a POINTER, and a
+  // pointer reported as the policy shipped `{"file":".vendo/policy.json"}` to
+  // the console as this deployment's policy document — labelled "set in code",
+  // and failed against the policy schema, which wants `vendo/policy@1`. The
+  // report has to carry the document the guard reads from that path.
+  it("reports policy.json as the FILE a `policy: { file }` pointer names, not the pointer", async () => {
+    await project({ "policy.json": POLICY_DOC });
+    createVendo({
+      ...identity,
+      guard: guard({ policy: { file: ".vendo/policy.json" } }),
+      connectors: [],
+    });
+    await waitForReport();
+
+    expect(sent[0]?.surfaces["policy.json"]).toEqual({ source: "file", content: POLICY_DOC });
+  });
+
+  // The other half of the pointer rule: a policy the host wrote IN CODE is the
+  // document, so it keeps reporting as code even with a file on disk beside it
+  // (inline wins with no merge — the guard never reads that file either).
+  it("reports policy.json as CODE when the rules are inline", async () => {
+    await project({ "policy.json": POLICY_DOC });
+    createVendo({
+      ...identity,
+      guard: guard({ policy: { rules: [{ match: { risk: "read" }, action: "run" }] } }),
+      connectors: [],
+    });
+    await waitForReport();
+
+    expect(sent[0]?.surfaces["policy.json"]?.source).toBe("code");
+    expect(JSON.parse(String(sent[0]?.surfaces["policy.json"]?.content))).toEqual({
+      rules: [{ match: { risk: "read" }, action: "run" }],
+    });
   });
 
   it("reports design-rules.md as the FILE when a blank `apps.designRules` falls through", async () => {

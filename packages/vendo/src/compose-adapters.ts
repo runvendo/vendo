@@ -11,7 +11,7 @@ import type { VendoComposition } from "./compose-context.js";
 import { selectStore } from "./compose-store.js";
 import { createConfigReporter } from "./config-report.js";
 import type { ConfigSurfaceName } from "./config-surface.js";
-import { dotVendoFile, dotVendoRoot } from "./dot-vendo.js";
+import { dotVendoFile, dotVendoRoot, readFileSyncOrUndefined } from "./dot-vendo.js";
 import { resolveModels } from "./models-config.js";
 import { cloudSandbox } from "./sandbox.js";
 
@@ -91,11 +91,26 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   // DEFINED `profile.brief` is authoritative even when blank and never touches
   // disk (compose-prompt.ts:40-42). `undefined` here — and only `undefined` —
   // means "code said nothing, go look at the file".
+  //
+  // `guard({ policy: { file } })` NAMES a policy document, it is not one:
+  // reported as a code value it shipped `{"file":".vendo/policy.json"}` as this
+  // deployment's policy, which no policy document schema accepts. A pointer is
+  // followed below instead and reported as the file it is — the path taken
+  // exactly as the guard takes it (guard/src/policy.ts:88-115), so the mirror
+  // can never name a different document than the one being enforced. Inline
+  // rules, a preset name and `profile.policy` are values, not pointers, and
+  // stay code.
+  const policySurface = isGuardInstance(config.guard)
+    ? undefined
+    : config.guard?.policy ?? config.profile?.policy;
+  const policyPointer = typeof policySurface === "object" && "file" in policySurface
+    ? policySurface.file
+    : undefined;
   const codeSurface: Record<ConfigSurfaceName, unknown> = {
     "design-rules.md": config.apps?.designRules?.trim() || config.profile?.designRules?.trim() || undefined,
     "brief.md": (config.instructions ?? composed?.instructions)?.trim() || config.profile?.brief?.trim(),
     "theme.json": config.theme ?? config.profile?.theme,
-    "policy.json": isGuardInstance(config.guard) ? undefined : config.guard?.policy ?? config.profile?.policy,
+    "policy.json": policyPointer === undefined ? policySurface : undefined,
     "overrides.json": config.profile?.overrides,
   };
   // The one-way config report, selected at THIS composition seam from
@@ -103,7 +118,9 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   // cloudKeyOptions lives only here). Keyless, `reportConfig` is a no-op.
   const reportConfig = createConfigReporter({
     cloud: cloudKeyOptions(),
-    readFile: readSurfaceFile,
+    readFile: (name) => (name === "policy.json" && policyPointer !== undefined
+      ? readFileSyncOrUndefined(policyPointer)
+      : readSurfaceFile(name)),
     codeValue: (name) => {
       const value = codeSurface[name];
       if (value === undefined) return undefined;
