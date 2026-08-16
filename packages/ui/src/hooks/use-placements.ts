@@ -218,7 +218,12 @@ function createPoller(client: VendoClient): Poller {
       const entry: Reported = {
         id: slot,
         label: label.slice(0, SLOT_LABEL_MAX_CHARS),
-        ...(description === undefined ? {} : { description: description.slice(0, SLOT_DESCRIPTION_MAX_CHARS) }),
+        // An empty string is left off entirely: the route reads a description
+        // as a NON-EMPTY string and refuses the whole batch over one, so a
+        // `description=""` on one slot would unregister the entire page.
+        ...(description === undefined || description.length === 0
+          ? {}
+          : { description: description.slice(0, SLOT_DESCRIPTION_MAX_CHARS) }),
       };
       // JSON, not a separator join: a space (or any other delimiter) is legal
       // in every half, so `${slot} ${label}` merges ("sales report", "Q3")

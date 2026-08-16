@@ -92,6 +92,29 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
     });
   });
 
+  it("leaves an EMPTY description off the wire, so the page it is on still registers", async () => {
+    // The route refuses a zero-length string and refuses the WHOLE batch with
+    // it, so one `description=""` on one slot would take every slot on the page
+    // out of the registry — no pin destinations at all.
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero" description="" />
+        <VendoSlot id="sidebar" description="the right rail" />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(reports()).toHaveLength(1));
+    expect(reports()[0]?.body).toEqual({
+      slots: [
+        { id: "hero", label: "Hero" },
+        { id: "sidebar", label: "Sidebar", description: "the right rail" },
+      ],
+    });
+    expect(wire.state.slots).toEqual([
+      { id: "sidebar", label: "Sidebar", description: "the right rail", lastSeen: expect.any(String) },
+      { id: "hero", label: "Hero", lastSeen: expect.any(String) },
+    ]);
+  });
+
   it("re-reports the same slot under a NEW description", async () => {
     const page = (description: string) => (
       <VendoProvider client={client}><VendoSlot id="hero" description={description} /></VendoProvider>
