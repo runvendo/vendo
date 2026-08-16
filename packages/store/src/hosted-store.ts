@@ -581,21 +581,27 @@ function storeWireClient(
 
   const P = STORE_WIRE_PATHS;
 
-  /** ONE answer per client to "does this mount serve the turn envelopes?",
-   * asked EXPLICITLY and answered BEFORE the first send — the shape
-   * `servesAppendMessages` uses (helpers/thread-messages.ts) and deliberately
-   * NOT a `catch` around a failed mutation: reading a 501 as "fall back" is how
-   * a half-applied write gets retried down a second path (#1251). A handshake
-   * that fails is not an answer — it is not cached and it does not degrade; the
-   * call fails and the caller's retry asks again. */
-  let served: Promise<boolean> | undefined;
-  const servesTurn = async (): Promise<boolean> => {
-    if (served === undefined) {
-      served = ops.status().then((status) => status.ops >= STORE_WIRE_TURN_OPS);
-      served.catch(() => { served = undefined; });
+  /** The mount's op count is a deployment FACT, so this client reads `/status`
+   * ONCE and every capability check consumes that one answer — `servesTurn`
+   * below, `servesAppendMessages` (helpers/thread-messages.ts), and the
+   * harness's own pre-send check, which all asked it separately and paid a round
+   * trip each. Asked EXPLICITLY and answered BEFORE the first send, never a
+   * `catch` around a failed mutation: reading a 501 as "fall back" is how a
+   * half-applied write gets retried down a second path (#1251). A handshake that
+   * fails is not an answer — it is not kept, and the next caller asks again. */
+  let handshake: Promise<StoreWireStatus> | undefined;
+  const status = async (): Promise<StoreWireStatus> => {
+    if (handshake === undefined) {
+      handshake = get("status", P.status).then((payload) => {
+        const parsed = storeWireStatusSchema.safeParse(payload);
+        if (!parsed.success) invalidResponse("invalid status");
+        return parsed.data as StoreWireStatus;
+      });
+      handshake.catch(() => { handshake = undefined; });
     }
-    return await served;
+    return await handshake;
   };
+  const servesTurn = async (): Promise<boolean> => (await status()).ops >= STORE_WIRE_TURN_OPS;
 
   const ops: StoreOps = {
     // Vendo's OWN engine drawers, over collection-addressed bodies, with the
@@ -940,11 +946,7 @@ function storeWireClient(
         return parsed.data as TurnCommit;
       },
     },
-    async status(): Promise<StoreWireStatus> {
-      const parsed = storeWireStatusSchema.safeParse(await get("status", P.status));
-      if (!parsed.success) invalidResponse("invalid status");
-      return parsed.data as StoreWireStatus;
-    },
+    status,
   };
   return ops;
 }
