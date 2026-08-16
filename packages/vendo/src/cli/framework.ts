@@ -80,6 +80,21 @@ export async function workspaceHostCandidates(root: string): Promise<string[]> {
   return candidates;
 }
 
+/** Whether any host source imports the Supabase auth preset. Import marker
+    only, comments stripped: outside a known Vendo composition file a bare
+    `supabase(` call is the host's OWN Supabase client, not the preset
+    (expense.fyi defines exactly such a helper). Same bounded walk as
+    `detectVendoWiring`, so a host too big to scan is judged consistently. */
+export async function wiresSupabaseAuth(root: string): Promise<boolean> {
+  const files = await walk(root, (relativePath) => SOURCE_FILE.test(relativePath), SOURCE_SCAN_MAX_FILES);
+  for (const file of files) {
+    const source = await readFile(file, "utf8").catch(() => "");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    if (code.includes("@vendoai/vendo/auth/supabase")) return true;
+  }
+  return false;
+}
+
 /** Bounded source scan shared by init and doctor so their wiring verdicts
     agree. */
 export async function detectVendoWiring(root: string): Promise<VendoWiring> {

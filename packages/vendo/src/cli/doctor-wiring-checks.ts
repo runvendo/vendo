@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { detectFramework, detectVendoWiring, type VendoWiring } from "./framework.js";
+import { detectFramework, detectVendoWiring, wiresSupabaseAuth, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
@@ -190,13 +190,22 @@ async function checkVendoResolvable(run: DoctorRun): Promise<void> {
  *  signed-in turn — init detects the family from the NEXT_PUBLIC_* pair, but
  *  the preset verifies sessions with the server-side names. Same helper as
  *  init's advisory, so the two can never disagree. Warn, not fail: a host may
- *  keep production-only env outside the local files doctor can read. */
+ *  keep production-only env outside the local files doctor can read.
+ *  Discovery is framework-neutral (greptile on #1374 proved Express/custom
+ *  hosts never reached this check): with a Next route we read its composition,
+ *  where a bare `supabase()` call is trusted; anywhere else only the preset
+ *  IMPORT is evidence — a bare call in arbitrary host source is the host's
+ *  own Supabase client. */
 async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
   const { root } = run;
   const routePath = await nextRoutePath(root);
-  if (routePath === null) return;
-  const { source } = await compositionOf(routePath);
-  const wiresSupabase = source.includes("@vendoai/vendo/auth/supabase") || /[^\w.]supabase\s*\(/.test(source);
+  let wiresSupabase: boolean;
+  if (routePath === null) {
+    wiresSupabase = await wiresSupabaseAuth(root);
+  } else {
+    const { source } = await compositionOf(routePath);
+    wiresSupabase = source.includes("@vendoai/vendo/auth/supabase") || /[^\w.]supabase\s*\(/.test(source);
+  }
   if (!wiresSupabase) return;
   if (await supabaseServerEnvSatisfied(root, run.env)) {
     run.pass("wiring/supabase-env", "supabase() has a server-side session secret (SUPABASE_JWT_SECRET and/or SUPABASE_URL)");
