@@ -144,6 +144,25 @@ export interface HarnessRuntimeDeps {
      */
     steer: (text: string, messageId: string) => Promise<boolean>;
   }) => () => void;
+  /**
+   * Land this turn's three closing writes — the messages it produced, the
+   * harness state to carry into the next one, and the run's audit row — in ONE
+   * call, when composition has a store that serves it.
+   *
+   * The runtime decides WHAT closes a turn either way: the same message diff,
+   * the same dirty check, the same "no spend and no failure, no row" rule feed
+   * this and the three separate writes below. Unset — the mount does not serve
+   * a batched commit — those three run exactly as they always have, retry and
+   * per-write isolation included, which is why this is a slot and not a switch.
+   */
+  commitTurn?: (turn: {
+    messages: UIMessage[];
+    /** Present only when the harness's state CHANGED and has a value to keep;
+     *  clearing a slot is not something a commit can express, so it stays with
+     *  the state door. */
+    state?: string;
+    audit?: AuditEvent;
+  }) => Promise<void>;
 }
 
 export interface TurnRunInput<Options = unknown> {
@@ -622,9 +641,27 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           }
         },
         onFinish: async ({ messages }) => {
-          await persistTurn(deps.transcript, input, messages, pristine);
-          await saveHarnessState(harnessState, input, state.pending());
-          await reportRun(deps.guard, input, { usage, failure });
+          // ONE decision about what closes this turn, whichever way it lands.
+          const changed = changedMessages(messages, pristine);
+          const pending = state.pending();
+          const event = runAuditEvent(input, { usage, failure });
+          // A clearing state change has no place in a commit, so it keeps the
+          // door either way — it is a delete, and the envelope only writes.
+          const clearing = pending.dirty && pending.value === undefined;
+          // Nothing to append is the one turn a commit cannot carry (its
+          // messages part IS an append), and it is what the doors below
+          // already no-op on — so it takes them, as it always did.
+          if (deps.commitTurn !== undefined && !clearing && changed.length > 0) {
+            await landTurnWrites(input, () => deps.commitTurn!({
+              messages: changed.map(({ message }) => message),
+              ...(pending.dirty && pending.value !== undefined ? { state: pending.value } : {}),
+              ...(event === undefined ? {} : { audit: event }),
+            }));
+            return;
+          }
+          await persistTurn(deps.transcript, input, changed);
+          await saveHarnessState(harnessState, input, pending);
+          await reportRun(deps.guard, event);
         },
         // The runtime's own last-resort gate for a runtime/transport fault.
         // A harness `error` event already reached the operator's terminal through
@@ -673,7 +710,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               .map((part) => (part as { toolCallId: string }).toolCallId);
             if (parked.every((toolCallId) => checkpointed.has(toolCallId))) continue;
             for (const toolCallId of parked) checkpointed.add(toolCallId);
-            await persistTurn(deps.transcript, input, [...messages, message], pristine);
+            // The checkpoint stays on the transcript door and stays per
+            // occurrence: a parked approval must be durable the moment it
+            // parks, which is the opposite of waiting for a turn to close.
+            await persistTurn(deps.transcript, input, changedMessages([...messages, message], pristine));
           }
         } catch {
           // A safety net, never the turn itself: onFinish still saves, and
@@ -736,39 +776,40 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
  * nothing, so a turn lands O(messages changed) rows — not O(thread), and never
  * O(tokens).
  */
-async function persistTurn(
-  transcript: TranscriptStore,
-  input: TurnRunInput<unknown>,
+function changedMessages(
   rawMessages: UIMessage[],
   before: readonly UIMessage[] | undefined,
-): Promise<void> {
+): { message: UIMessage; seq: number }[] {
   const messages = withoutDanglingToolCalls(rawMessages);
   const unchanged = new Map(
     (before ?? []).map((message) => [message.id, JSON.stringify(message)]),
   );
-  const changed = [...messages.entries()]
+  return [...messages.entries()]
     .filter(([, message]) => unchanged.get(message.id) !== JSON.stringify(message))
     .map(([seq, message]) => ({ message, seq }));
-  if (changed.length === 0) return;
-  // ENG-309: a store blip must not cost the turn. Each attempt re-sends the
-  // whole diff — the write is idempotent for an unchanged row, so a partial
-  // first pass costs a repeat write, never a corrupted thread.
+}
+
+/**
+ * ENG-309: a store blip must not cost the turn. Each attempt re-sends the WHOLE
+ * write — every one of them is idempotent for an unchanged row, so a partial
+ * first pass costs a repeat write, never a corrupted thread.
+ *
+ * Shared by the separate persist and the batched commit because the reason is
+ * the same for both: by the time onFinish runs the reply is already on the
+ * wire, so throwing here would corrupt a delivered stream. A thread silently
+ * vanishing after a successful reply is data loss, so it is named LOUDLY.
+ */
+async function landTurnWrites(
+  input: TurnRunInput<unknown>,
+  write: () => Promise<void>,
+): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      if (transcript.upsertMany !== undefined) {
-        await transcript.upsertMany(input.ctx.principal, input.threadId, changed.map(({ message }) => message));
-      } else {
-        for (const { message, seq } of changed) {
-          await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
-        }
-      }
+      await write();
       return;
     } catch (error) {
       const delay = PERSIST_RETRY_DELAYS_MS[attempt];
       if (delay === undefined) {
-        // By the time onFinish runs the reply is already on the wire, so throwing
-        // here would corrupt a delivered stream. A thread silently vanishing after a
-        // successful reply is data loss, so it is named LOUDLY instead.
         log({
           code: "harnesses.runtime-transcript-persist-failed",
           level: "error",
@@ -787,6 +828,23 @@ async function persistTurn(
       await wait(delay);
     }
   }
+}
+
+async function persistTurn(
+  transcript: TranscriptStore,
+  input: TurnRunInput<unknown>,
+  changed: { message: UIMessage; seq: number }[],
+): Promise<void> {
+  if (changed.length === 0) return;
+  await landTurnWrites(input, async () => {
+    if (transcript.upsertMany !== undefined) {
+      await transcript.upsertMany(input.ctx.principal, input.threadId, changed.map(({ message }) => message));
+    } else {
+      for (const { message, seq } of changed) {
+        await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+      }
+    }
+  });
 }
 
 async function saveHarnessState(
@@ -826,16 +884,15 @@ async function saveHarnessState(
  * the de-brain refactor: staffing is the brain's strategy, and the meter reads
  * tokens, not org charts.
  */
-async function reportRun(
-  guard: Guard,
+function runAuditEvent(
   input: TurnRunInput<unknown>,
   detail: {
     usage: UsageTotals | undefined;
     failure: { message: string; code?: string } | undefined;
   },
-): Promise<void> {
-  if (detail.usage === undefined && detail.failure === undefined) return;
-  const event: AuditEvent = {
+): AuditEvent | undefined {
+  if (detail.usage === undefined && detail.failure === undefined) return undefined;
+  return {
     id: mintAuditId(),
     at: new Date().toISOString(),
     kind: "run",
@@ -846,6 +903,10 @@ async function reportRun(
       ...(detail.failure === undefined ? {} : { error: detail.failure }),
     },
   };
+}
+
+async function reportRun(guard: Guard, event: AuditEvent | undefined): Promise<void> {
+  if (event === undefined) return;
   try {
     await guard.report(event);
   } catch {

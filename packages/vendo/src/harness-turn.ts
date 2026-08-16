@@ -13,6 +13,7 @@
  * It decides nothing about how to think. Every value below is a façade or a gate.
  */
 import {
+  STORE_WIRE_TURN_OPS,
   VendoError,
   createTurnSkills,
   emitUsage,
@@ -25,6 +26,7 @@ import {
   type Membership,
   type Skill,
   type Principal,
+  type RecordInput,
   type ResolvedModels,
   type RunContext,
   type ThreadId,
@@ -35,7 +37,7 @@ import {
   hostComponentFiles,
   type NormalizedCatalog,
 } from "@vendoai/apps/contract";
-import { deriveTitle, ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
+import { deriveTitle, isThreadId, mintThreadId, ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import {
   HOT_PATH_WATCH,
   hotPathAppId,
@@ -45,7 +47,16 @@ import {
   type RenderSeamOptions,
 } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
-import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
+import {
+  harnessStateKey,
+  harnessStateRow,
+  harnessStateStore,
+  maybeDbFor,
+  threadMessageStore,
+  workspaceIndexPage,
+  workspaceStore,
+  type VendoStore,
+} from "@vendoai/store";
 import {
   createHarnessRuntime,
   latestUserIntent,
@@ -253,6 +264,34 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     return sql;
   };
   /**
+   * Does this deployment's store serve the turn envelopes? ONE answer per
+   * deployment, asked EXPLICITLY before the first send — the shape
+   * `servesAppendMessages` uses, and deliberately not a `catch` around a failed
+   * batch (#1251).
+   *
+   * Two mounts answer no and mean it. A store with a SQL handle is already ONE
+   * HOP from its rows, so there is no round trip to batch away and its doors
+   * stay exactly as they are. A mount below the level is served by the
+   * individual calls every caller started with — and that fallback is not
+   * cosmetic: the runtime's closing writes carry a retry and a per-write
+   * isolation (a lost session must never cost the transcript) that one batched
+   * write cannot express.
+   *
+   * A handshake that fails is not an answer — it is not cached, and the turn
+   * takes the per-op path rather than failing.
+   */
+  let turnLevel: Promise<boolean> | undefined;
+  const servesTurn = async (): Promise<boolean> => {
+    const ops = config.store.ops;
+    if (ops?.turn === undefined || maybeDbFor(config.store) !== undefined) return false;
+    if (turnLevel === undefined) {
+      turnLevel = ops.status().then((status) => status.ops >= STORE_WIRE_TURN_OPS);
+      turnLevel.catch(() => { turnLevel = undefined; });
+    }
+    return await turnLevel.catch(() => false);
+  };
+
+  /**
    * The `/host` mount for this deployment: skills as SKILL.md files (plus
    * their companion files), and the component catalog as one reference file each.
    *
@@ -361,11 +400,40 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // costs no read, no write and no model call.
       const verdict = await config.limiter?.gate("message", input.ctx);
       if (verdict?.allow === false) return limitResponse(verdict.message);
+      // The turn's opening reads, in ONE call where the store serves it: the
+      // thread row, the workspace index, and the harness slot. Each part is
+      // exactly what its own op answers, so the doors below decide on the same
+      // rows they would have read one call at a time — this skips the READS and
+      // nothing else. Unserved, `loaded` is undefined and every door reads for
+      // itself, exactly as it always has.
+      //
+      // The id is minted HERE when the caller brought none: a turn has to name
+      // its thread before it can ask for it, and a first turn still has a
+      // workspace to read. A malformed one is refused by `resolve` below
+      // without costing a read, which is what it always cost.
+      const given = input.threadId as ThreadId | undefined;
+      const { subject } = input.ctx.principal;
+      const batched = (given === undefined || isThreadId(given)) && await servesTurn();
+      // Minted HERE only when the envelope will ask for it: a turn has to name
+      // its thread before it can read it, and a first turn still has a
+      // workspace to read. Unbatched, `resolve` mints exactly as it always did
+      // — a fresh id must not cost a read for a row that cannot exist.
+      const threadId = given ?? mintThreadId();
+      const loaded = batched
+        ? await config.store.ops!.turn!.load({
+          thread: { id: threadId },
+          index: { owner: subject },
+          // The slot is keyed by the thread's OWNER. A thread that is not this
+          // caller's reads as a missing slot and is refused by `resolve`
+          // moments later, so the guess is either right or discarded.
+          harness: { appId: harnessStateKey(threadId), subject },
+        })
+        : undefined;
       // The thread is resolved through the SHIPPED repository: same id pattern,
       // same "already in use" refusal for a foreign thread, same title
       // derivation — and `thread.messages` is the canonical transcript read back
       // from `vendo_thread_messages`.
-      const thread = await threads.resolve(input.threadId as ThreadId | undefined, input.ctx);
+      const thread = await threads.resolve(batched ? threadId : given, input.ctx, loaded?.thread);
 
       // THE CONSTRAINT (lane A's verifier): `TurnRunInput.messages` is
       // STORE-SOURCED. The client contributes at most this one message, and
@@ -400,12 +468,19 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // `@vendoai/harnesses` already guards the same verb the same way. One
       // policy for it, not two.
       const batchAppend: typeof transcript.upsertMany | undefined = transcript.upsertMany;
+      const index = loaded !== undefined && (input.ctx.memberships ?? []).length === 0
+        ? workspaceIndexPage(loaded.index, subject)
+        : undefined;
 
       // The turn's store reads, IN FLIGHT TOGETHER (sub-1s shipment): the state
       // read needs nothing below, and `resolve()` already read the thread row —
       // subject included — so it skips its own owner lookup. Read-only, so a
       // turn the runtime later refuses has spent a read and changed nothing.
-      const stateRead = harnessState.get(thread.id, config.harness.name, thread.subject);
+      const stateRead = loaded === undefined
+        ? harnessState.get(thread.id, config.harness.name, thread.subject)
+        // `resume` IS `get`'s second half — same §1.3 rules, including a foreign
+        // harness DESTROYING the slot — against the row already in hand.
+        : harnessState.resume(thread.id, config.harness.name, loaded.harness, thread.subject);
       // The runtime may never await it (an arbitrary history edit clears the
       // slot instead); a rejection still reaches whoever does await.
       void stateRead.catch(() => {});
@@ -446,6 +521,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         workspaces.open(input.ctx.principal, {
           host: hostProjection(),
           ...(input.ctx.memberships === undefined ? {} : { memberships: input.ctx.memberships }),
+          // The index the envelope read, when it covers this caller's whole
+          // mount set — one owner, and a page that finished. An org turn (§9.7)
+          // reads one index per asserted org, so it keeps the fan-out; a page
+          // that left a cursor behind is refused by `workspaceIndexPage`,
+          // because half an index is a workspace missing files.
+          ...(index === undefined ? {} : { index }),
         }),
       ]);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
@@ -529,6 +610,39 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
             emitRun("ok", null);
           };
         },
+        // The turn's closing writes as ONE call, where the store serves it: the
+        // messages, the harness state to carry into the next turn, and the
+        // run's audit row, landed together. Unset, the runtime writes the three
+        // it always wrote — the fallback lives there, with its retry and its
+        // per-write isolation, and this slot never touches it.
+        ...(!batched ? {} : {
+          commitTurn: async ({ messages, state, audit }) => {
+            // The audit row comes from the GUARD's own door, never rebuilt
+            // here: `reportThrough` normalises and meters exactly as `report`
+            // does and hands the row over instead of writing it. A guard that
+            // omits the seam writes it the way every caller started.
+            let row: { collection: string; record: RecordInput } | undefined;
+            if (audit !== undefined) {
+              await config.guard.reportThrough?.(audit, async (collection, record) => {
+                row = { collection, record };
+              });
+            }
+            await config.store.ops!.turn!.commit({
+              messages: { threadId: thread.id, subject: thread.subject, messages },
+              ...(state === undefined ? {} : {
+                harness: {
+                  appId: harnessStateKey(thread.id),
+                  subject: thread.subject,
+                  state: harnessStateRow(config.harness.name, state),
+                },
+              }),
+              ...(row === undefined ? {} : { audit: row }),
+            });
+            // The row the envelope could not carry still lands — one extra
+            // call, and never a lost run row.
+            if (audit !== undefined && row === undefined) await config.guard.report(audit);
+          },
+        }),
       });
 
       // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's

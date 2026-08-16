@@ -12,8 +12,15 @@ import type { UIMessage } from "ai";
 const THREAD_COLLECTION = "vendo_threads";
 const THREAD_ID_PATTERN = /^thr_.+$/;
 
-/** 03-agent §5 */
-function mintThreadId(): ThreadId {
+/** Whether `resolve` will accept this id at all. Exported for the caller that
+ *  batches a turn's opening reads: it addresses the thread BEFORE `resolve`
+ *  sees it, and a malformed id must still cost a refusal rather than a read. */
+export const isThreadId = (id: string): boolean => THREAD_ID_PATTERN.test(id);
+
+/** 03-agent §5. Exported for the caller that batches a turn's opening reads: it
+ *  has to name the thread before it can ask for it, and a turn with no id yet
+ *  is still a turn with a workspace to read. */
+export function mintThreadId(): ThreadId {
   return `thr_${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
 }
 
@@ -143,7 +150,15 @@ export class ThreadRepository {
   // separate in-memory branch here to keep behavior-parity with.
   constructor(private readonly store: StoreAdapter) {}
 
-  async resolve(id: ThreadId | undefined, ctx: RunContext): Promise<Thread> {
+  async resolve(
+    id: ThreadId | undefined,
+    ctx: RunContext,
+    /** The row this id reads to, when the caller ALREADY read it (the turn
+     *  envelope reads it beside the workspace index). `null` is a read absence,
+     *  the same answer the read below would have given — so it is `undefined`,
+     *  not `null`, that means "nobody read it yet". */
+    prefetched?: VendoRecord | null,
+  ): Promise<Thread> {
     if (id === undefined) return this.create(ctx);
     if (!THREAD_ID_PATTERN.test(id)) {
       throw new VendoError("validation", "threadId is malformed");
@@ -155,7 +170,7 @@ export class ThreadRepository {
     // atomic guarantee — this only surfaces the conflict early with a clear error.
     // Ephemeral principals resolve through this exact path too (no overlay,
     // ordinary rows under their subject) — nothing here is BYO-specific.
-    const record = await this.store.records(THREAD_COLLECTION).get(id);
+    const record = prefetched === undefined ? await this.store.records(THREAD_COLLECTION).get(id) : prefetched;
     if (record === null) return this.create(ctx, id);
     const thread = threadFromRecord(record);
     if (thread !== null && thread.subject === ctx.principal.subject) return thread;
