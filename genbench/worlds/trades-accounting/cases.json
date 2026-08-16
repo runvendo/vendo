@@ -186,7 +186,7 @@
     "pass": [
       "lays the photos out as a grid of tiles rather than a list of file names",
       "all six photos from J-2418 · Harbor Point Dental are there, and none from another job",
-      "every tile carries the caption the tool returned for it",
+      "every tile is identified by the caption the tool returned for it — the tool gives a stored path and no loadable image, so the caption is what names the tile",
       "every tile shows who uploaded it and its date, oldest first from Jul 24 through Aug 8"
     ]
   },

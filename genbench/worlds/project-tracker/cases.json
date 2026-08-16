@@ -140,7 +140,7 @@
       "lays the four releases out along a run of dates, each one sitting at its own target date — not a table of rows",
       "places 2026.7 on Jul 31, 2026.8 on Aug 21, 2026.9 on Sep 18 and 2026.10 on Oct 16",
       "every release reads with its version and the status it is in — shipped, open or planned",
-      "marks nothing as late: the one target date already behind us belongs to 2026.7, which shipped"
+      "marks nothing as late against the tools' own today of Aug 12: the one target date already behind us belongs to 2026.7, which shipped"
     ],
     "tags": ["display"],
     "shape": "timeline",
@@ -164,13 +164,13 @@
   {
     "id": "file-bug",
     "lane": "screen",
-    "prompt": "Open a new bug on the mobile team — title, priority, assignee, estimate — and file it.",
+    "prompt": "Open a new bug on the mobile team called 'Board view crashes on iPad' — priority, assignee, estimate — and file it.",
     "pass": [
       "shows one form to file a new issue, with a field each for title, team, priority, assignee and estimate",
       "priority offers urgent, high, medium and low, and assignee offers the five teammates by name",
       "invents no issue key for the bug before it is filed",
-      "one control files the bug, and it stays unavailable until the form carries a title",
-      "filing calls create_issue with exactly the title, team, priority, assignee and estimate the form carries"
+      "the title field arrives carrying 'Board view crashes on iPad' and the team field the mobile team",
+      "one control files the bug, and filing calls create_issue with the title, team, priority, assignee and estimate the form carries"
     ],
     "tags": ["action"],
     "shape": "form",

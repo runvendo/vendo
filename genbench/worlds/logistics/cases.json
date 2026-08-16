@@ -94,12 +94,12 @@
   {
     "id": "late-notify-all",
     "lane": "screen",
-    "prompt": "Every shipment past its promised date needs a notice sent to the customer. Show me that list, let me select all of them, show me the message text, and send one notice per shipment after I confirm.",
+    "prompt": "Every shipment past its promised date needs a notice sent to the customer. Show me that list with all of them already selected, show me the message text, and send one notice per shipment after I confirm.",
     "pass": [
       "lists exactly the four shipments whose days late is above zero and no on-time or delivered one",
-      "lets me select several rows at once and shows the message text before anything is sent",
+      "arrives with those rows already selected, and shows the message text before anything is sent",
       "asks me to confirm before sending",
-      "confirming calls notify_customer with a shipment id and a message once per row that is selected when I confirm"
+      "confirming calls notify_customer once per row the screen shows selected when it loads, each with that row's shipment id and a message"
     ],
     "tags": ["action"],
     "shape": "list-feed"
@@ -133,7 +133,7 @@
   {
     "id": "driver-map",
     "lane": "screen",
-    "prompt": "Show me where every driver is on a map right now, so I can see who's close to a terminal and who's falling behind.",
+    "prompt": "Show me where every driver is on a map right now, so I can see who's close to a terminal and who's falling behind — falling behind meaning the minutes left on their route are more than the legal hours they have left.",
     "pass": [
       "draws a map with a marker for each of the six drivers rather than only listing them",
       "the three drivers on a route show the address of the stop they are heading to; the available and off-duty ones show none",
@@ -161,12 +161,12 @@
   {
     "id": "start-return",
     "lane": "screen",
-    "prompt": "Walk me through a return on this order — reason, item, then print the label.",
+    "prompt": "Walk me through a return on PO-88431 — reason, item, then print the label.",
     "pass": [
-      "asks one step at a time — the reason, then the item, then the label — never all three at once",
+      "shows only the first step when it loads — the reason — with the item step and the label step named as what comes next, never all three at once",
       "names the shipment it is returning: PO-88431 for Ridgeline Hardware",
-      "the item step offers the six pieces the shipment tool reports and no invented product names",
-      "the last step calls create_return with shp_40218 and the reason and item I picked, and nothing fires until I confirm"
+      "invents no product names for the freight — the shipment tool gives a count of 6 pieces and no item names",
+      "nothing on the first step opens the return — no press before the last step calls create_return"
     ],
     "tags": ["action"],
     "shape": "wizard",

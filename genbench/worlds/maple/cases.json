@@ -83,7 +83,7 @@
     "pass": [
       "shows both pending transfers, Alex Rivera $250.00 and Jordan Avery $60.00, and no completed transfer",
       "offers exactly one cancel button for all of them rather than one per row",
-      "asks for confirmation before cancelling and says it will cancel 2 transfers",
+      "that button says it will cancel 2 transfers, and pressing it asks for confirmation before anything is cancelled",
       "confirming fires cancel_transfer twice, once with id tr_1 and once with id tr_2"
     ],
     "tags": ["action"],
@@ -133,7 +133,7 @@
   {
     "id": "rent-check",
     "lane": "screen",
-    "prompt": "Did my rent actually go out? Put the housing line from my spending next to the transfer that paid it so I can see they match.",
+    "prompt": "Did my rent actually go out? Put the housing line from my spending next to the transfer that paid it — the transfer, not the bill — so I can see they match.",
     "pass": [
       "shows the housing spending amount as $2,850.00",
       "shows the Mission St Property transfer of $2,850.00 and that it completed",
@@ -146,7 +146,7 @@
   {
     "id": "bills-calendar",
     "lane": "screen",
-    "prompt": "Show me the bills and subscriptions coming up this month, laid out like a calendar so I can see which days they hit.",
+    "prompt": "Show me every bill and subscription this month — including the ones already paid or missed — laid out like a calendar so I can see which days they hit.",
     "pass": [
       "lays the month out as a calendar grid rather than a list of bills",
       "puts each of the six bills on its due day — Aug 1, Aug 5, Aug 9, Aug 12, Aug 18 and Aug 24",

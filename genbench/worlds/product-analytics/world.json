@@ -159,6 +159,8 @@
           { "event_name": "checkout_started", "property": "plan", "value": "pro", "matching_users": 1386 },
           { "event_name": "checkout_started", "property": "plan", "value": "team", "matching_users": 962 },
           { "event_name": "checkout_started", "property": "plan", "value": "starter", "matching_users": 662 },
+          { "event_name": "checkout_started", "property": "source", "value": "web", "matching_users": 2348 },
+          { "event_name": "checkout_started", "property": "source", "value": "mobile", "matching_users": 662 },
           { "event_name": "checkout_started", "property": "country", "value": "US", "matching_users": 1806 },
           { "event_name": "checkout_started", "property": "country", "value": "GB", "matching_users": 391 },
           { "event_name": "checkout_started", "property": "country", "value": "DE", "matching_users": 301 },

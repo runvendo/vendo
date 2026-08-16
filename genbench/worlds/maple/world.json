@@ -19,7 +19,7 @@
   "style": [
     "uses the theme exactly: brand green, Onest, 8px corners — no invented colors or fonts",
     "money always shows 2 decimals with currency symbol",
-    "dates shown as 'Aug 1' style, never ISO"
+    "dates shown as 'Aug 7' style, never ISO"
   ],
   "tools": {
     "list_accounts": {
@@ -62,7 +62,7 @@
       "takes": { "id": "string" }
     },
     "list_upcoming_bills": {
-      "does": "Recurring bills and subscriptions due this month, earliest due first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00.",
+      "does": "Recurring bills and subscriptions due this month, earliest due first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00. Today is 2026-08-11.",
       "data": {
         "data": [
           { "id": "bill_1", "name": "Mission St Rent", "amount": 285000, "due_date": "2026-08-01", "status": "paid" },

@@ -120,7 +120,7 @@
   {
     "id": "empty-refund-queue",
     "lane": "screen",
-    "prompt": "I work refunds every morning. Show me the refund requests that are still open — order, customer, reason and amount — and let me approve or deny each one right there.",
+    "prompt": "I work refunds every morning. Show me the refund requests that are still open — order, customer, reason and amount.",
     "tags": ["display"],
     "shape": "empty-state",
     "pass": [
@@ -167,7 +167,7 @@
     "shape": "map",
     "pass": [
       "plots all seven regions as markers on a map, not only as a list",
-      "each selling region shows its order count and its sales, the United States highest at 128 orders",
+      "each selling region shows its order count and its sales, the United States highest at 25 orders",
       "the three regions with no orders read as not sold into yet, distinct from the four active ones",
       "flagging one of those three calls activate_region with that region"
     ],

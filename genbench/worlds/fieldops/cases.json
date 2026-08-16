@@ -82,10 +82,10 @@
     "lane": "screen",
     "prompt": "Take me through sending JOB-4474 to a technician one step at a time — pick the person, check the window, then confirm.",
     "pass": [
-      "moves through numbered steps and shows which step is current and which are done",
-      "the first step lists the crew to choose from and the second shows JOB-4474's Aug 15, 3:00–5:00 PM window",
-      "the last step asks for confirmation and names both JOB-4474 and the chosen technician before firing",
-      "confirming fires dispatch_job once, with job_id JOB-4474"
+      "moves through numbered steps and shows which step is current and which are still to come",
+      "the first step lists the crew to choose from, and names the window check and the confirmation as the steps after it",
+      "names JOB-4474 · Fulton Street Gym as the job being sent, on the first step",
+      "nothing on the first step dispatches the job — no press before the last step calls dispatch_job"
     ],
     "tags": ["action"],
     "shape": "wizard"
@@ -106,7 +106,7 @@
   {
     "id": "quoted-by-trade",
     "lane": "screen",
-    "prompt": "Chart how much quoted work we have on the board by trade, biggest first.",
+    "prompt": "Chart how much quoted work we have by trade, biggest first — everything on the board, whatever its status and whatever day it falls on.",
     "pass": [
       "draws a chart of the three trades rather than only listing them",
       "shows hvac largest at $3,195.00, then fiber at $2,055.00, then plumbing at $320.00",

@@ -29,7 +29,7 @@
     "id": "nothing-waiting",
     "lane": "screen",
     "prompt": "Walk me through the time-off requests waiting on my approval, with an approve and a deny on each row.",
-    "tags": ["action"],
+    "tags": ["display"],
     "shape": "empty-state",
     "pass": [
       "says nothing is waiting rather than drawing an empty table",
@@ -183,8 +183,8 @@
     "pass": [
       "offers a filter for each of department, employment type and status, and a control that picks which columns show",
       "lists all twelve employees before any filter is set",
-      "filtering to Engineering and full-time narrows the roster to exactly Nadia Kwan, Priya Raghunathan, Daniel Okafor and Elin Lindqvist",
-      "clearing the filters brings all twelve back, and turning a column off drops that column without dropping any row"
+      "the department filter offers exactly the four departments the roster uses and the employment-type filter only full-time and contract, with nothing invented",
+      "the column control names the roster's own columns and shows every one of them on before anything is picked, so no row and no column is hidden when the screen loads"
     ]
   },
   {

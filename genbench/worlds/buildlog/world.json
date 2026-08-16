@@ -32,13 +32,13 @@
     "dark console: near-black #0A0C10 page, #12161D panels, hairline #1E2530 borders — never a light background",
     "uses the theme exactly: the blue accent, Inter for prose and the theme's mono family for shas, branches and log output — no invented colors or fonts",
     "build status reads as a labelled word or pill — passed, failed, running, cancelled — never color alone",
-    "durations read as '4m 28s', never a raw count of seconds",
+    "durations read as '3m 12s', never a raw count of seconds",
     "money shows a $ symbol and 2 decimals, converted from the tools' cents",
     "a commit shows as its 7-character short sha beside the message, never as a bare id"
   ],
   "tools": {
     "list_builds": {
-      "does": "The most recent pipeline runs, newest first. The rows are the `data` array. `duration_seconds` is how long the run took, and is how far a running build has got so far. `compute_cost` is in CENTS: 1870 is $18.70.",
+      "does": "The most recent pipeline runs, newest first. The rows are the `data` array. `duration_seconds` is how long the run took, and is how far a running build has got so far. `compute_cost` is in CENTS: 1870 is $18.70. Today is 2026-08-15 and it is about 10:00 AM.",
       "data": {
         "data": [
           { "id": "bld_4192", "number": 4192, "branch": "feat/timeline-brick", "commit": "5ba9e70", "message": "ui: the Timeline brick", "author": "Theo Lindqvist", "status": "running", "started": "2026-08-15 09:58", "duration_seconds": 133, "compute_cost": 620 },

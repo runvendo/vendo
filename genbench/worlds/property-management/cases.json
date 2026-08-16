@@ -80,12 +80,12 @@
   {
     "id": "late-notice-blast",
     "lane": "screen",
-    "prompt": "Let me tick every tenant who still owes something on August rent and send them all a late notice in one go, with a confirmation before anything goes out.",
+    "prompt": "Show me every tenant who still owes something on August rent with all of them ticked, let me untick anyone I would rather not chase, and send the rest a late notice in one go, with a confirmation before anything goes out.",
     "pass": [
-      "lists exactly the four tenants with an August balance and none of the four who paid in full",
+      "lists exactly the four tenants with an August balance and none of the four who paid in full, all four ticked when the screen loads",
       "shows each of them the amount they still owe",
       "several can be ticked at once and sent with one control",
-      "asks for confirmation first, then fires one send_late_notice per ticked tenant"
+      "asks for confirmation first, then fires one send_late_notice per row the screen shows ticked"
     ],
     "tags": ["action"],
     "shape": "list-feed"
@@ -132,7 +132,7 @@
   {
     "id": "portfolio-dashboard",
     "lane": "screen",
-    "prompt": "Give me one screen with occupancy, how much of August rent is collected so far, and how many maintenance requests are still open — the whole portfolio at a glance.",
+    "prompt": "Give me one screen with occupancy — a unit on notice still counts as occupied — how much of August rent is collected so far, and how many maintenance requests are still sitting at open, not the scheduled or in-progress ones — the whole portfolio at a glance.",
     "pass": [
       "all three answers sit on the one screen: occupancy, August rent collected, and open maintenance requests",
       "occupancy counts the two vacant units out of the ten — 8 of 10, or 80%",
@@ -192,7 +192,7 @@
     "pass": [
       "shows seven tiles in a grid, four under Wexler Row · 2B and three under Alder Court · 2B",
       "the tiles are grouped by unit, each group headed by its unit name",
-      "every tile carries its caption from the tool, so a tile that cannot load still says what it is",
+      "every tile is labelled with its own caption from the tool, which is all the tool returns — no image file stands behind it",
       "the two photos on Alder Court 2A are not shown"
     ],
     "tags": ["display"],

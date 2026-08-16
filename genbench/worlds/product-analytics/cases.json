@@ -95,7 +95,7 @@
   {
     "id": "quiet-alert-board",
     "lane": "screen",
-    "prompt": "Show me the alerts that are firing right now, worst first, and let me acknowledge one with a note about what I found.",
+    "prompt": "Show me the alerts that are firing right now, worst first.",
     "pass": [
       "says nothing is firing rather than showing an empty table",
       "invents no alerts",
@@ -137,7 +137,7 @@
     "lane": "screen",
     "prompt": "I want a segment builder where I can stack rules against our events — pick an event, a property, a value — chain them with AND or OR, and see how many people match before I save it.",
     "pass": [
-      "a rule is built by picking an event, then a property, then a value, all from the tool's rows — picking checkout_started leaves plan and country as its properties",
+      "a rule is built by picking an event, then a property, then a value, all from the tool's rows — picking checkout_started leaves plan, source and country as its properties",
       "a second rule can be added and joined to the first with AND or OR, without leaving the screen",
       "the matching-people count shown before saving is one the tool returned — checkout_started plan is pro reads 1,386 people",
       "a name field and a save control sit with the rules, so the segment is named and saved without leaving the builder",

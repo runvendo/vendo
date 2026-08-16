@@ -19,7 +19,7 @@
   "style": [
     "uses the theme exactly: cream page, mulberry accent, Lora serif, near-square 3-4px corners — no invented colors or fonts",
     "money always shows 2 decimals with a $ symbol",
-    "more than three records is a dense table with hairline row rules, never a grid of cards",
+    "a list of more than three records is a dense table with hairline row rules, never a grid of cards — a theme gallery and a region map are not record lists",
     "every status is a small badge, never bare colored text",
     "anything that moves money or stock — a refund, a bulk fulfilment, a restock — asks for confirmation first",
     "dates read as 'Aug 5' style, never ISO"
@@ -170,13 +170,13 @@
       }
     },
     "list_regions": {
-      "does": "Every region the shop can sell into. `active` is true where the shop already sells, and those regions carry the orders taken and `sales` billed there in the last 30 days — a region that is not active has none of either. `lat` and `lng` place the region on a map. `sales` is in CENTS: 984510 is $9,845.10.",
+      "does": "Every region the shop can sell into. `active` is true where the shop already sells, and those regions carry the orders taken and `sales` billed there in the last 30 days — a region that is not active has none of either. `lat` and `lng` place the region on a map. `sales` is in CENTS: 254300 is $2,543.00.",
       "data": {
         "data": [
-          { "region": "United States", "active": true, "orders": 128, "sales": 984510, "lat": 39.8, "lng": -98.6 },
-          { "region": "Canada", "active": true, "orders": 34, "sales": 246800, "lat": 56.1, "lng": -106.3 },
-          { "region": "United Kingdom", "active": true, "orders": 21, "sales": 158920, "lat": 54.0, "lng": -2.0 },
-          { "region": "Australia", "active": true, "orders": 9, "sales": 61340, "lat": -25.3, "lng": 133.8 },
+          { "region": "United States", "active": true, "orders": 25, "sales": 254300, "lat": 39.8, "lng": -98.6 },
+          { "region": "Canada", "active": true, "orders": 7, "sales": 74900, "lat": 56.1, "lng": -106.3 },
+          { "region": "United Kingdom", "active": true, "orders": 4, "sales": 41600, "lat": 54.0, "lng": -2.0 },
+          { "region": "Australia", "active": true, "orders": 2, "sales": 20600, "lat": -25.3, "lng": 133.8 },
           { "region": "Germany", "active": false, "orders": 0, "sales": 0, "lat": 51.2, "lng": 10.5 },
           { "region": "Japan", "active": false, "orders": 0, "sales": 0, "lat": 36.2, "lng": 138.3 },
           { "region": "New Zealand", "active": false, "orders": 0, "sales": 0, "lat": -41.0, "lng": 174.9 }

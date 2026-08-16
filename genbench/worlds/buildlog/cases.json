@@ -119,12 +119,12 @@
   {
     "id": "rerun-by-number",
     "lane": "screen",
-    "prompt": "Give me a small form where I pick a run and re-trigger it.",
+    "prompt": "Give me a small form where I pick a run and re-trigger it, starting on the newest run.",
     "pass": [
       "offers one field to choose the run, listing the six by number and commit message",
-      "shows the chosen run's branch and status before anything fires",
-      "has exactly one submit control, which is disabled or refuses until a run is chosen",
-      "submitting fires retry_build once, with the chosen run's id"
+      "the field starts on 4192, the newest run, and the screen shows that run's branch and status before anything fires",
+      "has exactly one submit control",
+      "submitting fires retry_build once, with bld_4192 — the run the form is showing"
     ],
     "tags": ["action"],
     "shape": "form"

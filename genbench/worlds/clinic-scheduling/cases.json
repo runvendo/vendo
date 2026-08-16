@@ -111,7 +111,7 @@
     "pass": [
       "lists the appointments still to come that the patient has not confirmed, and no others",
       "offers one control that texts all of them at once",
-      "asks for confirmation before anything sends, saying how many people will be texted",
+      "that control says how many people it will text, and pressing it asks for confirmation before anything sends",
       "confirming calls the reminder tool once for each of those appointments"
     ],
     "tags": ["action"],
@@ -135,11 +135,10 @@
     "lane": "screen",
     "prompt": "Book Ruth in the way a patient would — treatment, then provider, then a time, one step at a time.",
     "pass": [
-      "asks for one thing at a time — what the visit is for, then the provider, then the time — never all at once",
-      "the provider step offers the providers the tool returned, not invented ones",
-      "the time step offers only today's open slots, shown as times",
-      "shows a confirmation step naming Ruth Ozawa, the chosen provider and the chosen time before anything is booked",
-      "confirming calls the booking tool with Ruth Ozawa and the slot that was picked"
+      "shows only the first step when it loads — what the visit is for — with the provider step and the time step named as what comes next, never all three at once",
+      "the first step's choices are visit types, not providers and not slot times",
+      "names Ruth Ozawa as the patient being booked, so no step has to ask who it is for",
+      "nothing on the first step books anything — no press before the last step calls the booking tool"
     ],
     "tags": ["action"],
     "shape": "wizard",
@@ -153,7 +152,7 @@
       "shows Dr. Sven Lindqvist's own settings, not every provider's",
       "offers a control for whether he takes new patients, reading as accepting when the screen loads",
       "offers a control for his default visit length, starting at the tool's 30 minutes",
-      "saving calls the settings tool with Lindqvist, no longer accepting new patients, and a shorter default length"
+      "saving calls the settings tool with Lindqvist and the values on screen, never another provider's"
     ],
     "tags": ["action"],
     "shape": "settings",
@@ -193,10 +192,9 @@
     "lane": "screen",
     "prompt": "One of the providers just opened up — let me filter the waitlist by who they wanted to see and how urgent it is, instead of scrolling the whole list.",
     "pass": [
-      "offers a control that filters the waitlist by provider, offering the providers the waitlist rows name",
+      "offers a control that filters the waitlist by provider, offering exactly the three providers the waitlist rows name and not the fourth nobody is waiting for",
       "offers a control that filters by urgency — routine, soon and urgent",
       "shows all five waiting patients before any filter is set",
-      "filtering to Dr. Priya Raman leaves exactly Gio Ferraro and Sana Alvi on screen",
       "every row still shows who the patient is waiting for and how long they have waited"
     ],
     "tags": ["display"],

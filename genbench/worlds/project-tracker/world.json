@@ -71,10 +71,10 @@
       }
     },
     "list_releases": {
-      "does": "Every release, oldest first. `issues_total` and `issues_done` count the issues tagged to that release, including work that shipped before the current window. `status` is planned, open or shipped, and `owner_id` is null when nobody owns it yet.",
+      "does": "Every release, oldest first. `issues_total` and `issues_done` count that release's issues among the ones `list_issues` returns, so a shipped release whose work has left the window counts none. `status` is planned, open or shipped, and `owner_id` is null when nobody owns it yet.",
       "data": {
         "data": [
-          { "id": "rel_30", "version": "2026.7", "status": "shipped", "target_date": "2026-07-31", "issues_total": 12, "issues_done": 12, "owner_id": "usr_maya" },
+          { "id": "rel_30", "version": "2026.7", "status": "shipped", "target_date": "2026-07-31", "issues_total": 0, "issues_done": 0, "owner_id": "usr_maya" },
           { "id": "rel_31", "version": "2026.8", "status": "open", "target_date": "2026-08-21", "issues_total": 7, "issues_done": 4, "owner_id": "usr_maya" },
           { "id": "rel_32", "version": "2026.9", "status": "planned", "target_date": "2026-09-18", "issues_total": 5, "issues_done": 0, "owner_id": "usr_dev" },
           { "id": "rel_33", "version": "2026.10", "status": "planned", "target_date": "2026-10-16", "issues_total": 0, "issues_done": 0, "owner_id": null }
@@ -98,7 +98,7 @@
       }
     },
     "list_reviews": {
-      "does": "Every open code review, newest first. `waiting_days` is how long the review has been open as of today; `checks` is passing or failing; `state` is waiting, changes_requested or draft — a draft is open but not yet handed to its reviewer.",
+      "does": "Every open code review, newest first. Today is 2026-08-12. `waiting_days` is how long the review has been open as of today; `checks` is passing or failing; `state` is waiting, changes_requested or draft — a draft is open but not yet handed to its reviewer.",
       "data": {
         "data": [
           { "id": "rev_3", "issue_id": "CAI-151", "title": "Board drag-and-drop drops on the wrong column", "author_id": "usr_theo", "reviewer_id": "usr_maya", "opened": "2026-08-12", "waiting_days": 0, "checks": "passing", "state": "draft" },

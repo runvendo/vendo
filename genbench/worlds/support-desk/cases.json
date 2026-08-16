@@ -90,8 +90,8 @@
       "lists the three pending refund requests and neither the approved nor the denied one",
       "each row shows the customer, the order total and the requested amount in dollars with two decimals",
       "shows the pending total as $760.00",
-      "the amount can be changed before approving",
-      "approving fires approve_refund with that request's id and an amount in cents"
+      "each row's amount sits in an editable field, prefilled with what the agent asked for, so it can be trimmed before approving",
+      "approving fires approve_refund with that row's request id and the amount its field holds, in cents"
     ],
     "tags": ["action"],
     "shape": "table"
@@ -99,12 +99,12 @@
   {
     "id": "bulk-close",
     "lane": "screen",
-    "prompt": "The solved tickets are cluttering my inbox. Let me tick the ones I want gone and close them in one go, with a confirmation before anything happens.",
+    "prompt": "The solved tickets are cluttering my inbox. Show them all ticked to start, let me untick any I want to keep, and close the rest in one go, with a confirmation before anything happens.",
     "pass": [
-      "lists exactly the three solved tickets — TK-1036, TK-1037, TK-1038 — each with its own checkbox",
-      "the close control says how many are selected and does nothing while none are",
+      "lists exactly the three solved tickets — TK-1036, TK-1037, TK-1038 — each with its own checkbox, all three ticked when the screen loads",
+      "the close control says how many are selected",
       "asks for confirmation before closing anything",
-      "confirming fires close_tickets once, with the selected ticket ids"
+      "confirming fires close_tickets once, with the ids of the rows the screen shows ticked"
     ],
     "tags": ["action"],
     "shape": "table"
@@ -112,7 +112,7 @@
   {
     "id": "team-pulse",
     "lane": "screen",
-    "prompt": "Put a wall-board up for the team right now: who is on, how loaded they are, how happy customers are, and what is overdue.",
+    "prompt": "Put a wall-board up for the team right now: who is on, how loaded they are, how happy customers are — the plain average of the five agents' CSAT, not weighted by how many ratings each has — and what is overdue.",
     "pass": [
       "shows all five agents with their status, their open ticket count and their CSAT",
       "shows the agents' own open counts totalling 10",
@@ -168,10 +168,9 @@
     "prompt": "Walk me through merging these three duplicate tickets — pick which one stays, then confirm.",
     "pass": [
       "shows all three of Rosa Delgado's tickets — TK-1045, TK-1051, TK-1052 — with their subjects and when each came in",
-      "runs as steps: the survivor is picked first, and confirming is a second step, not the same click",
+      "shows only the first step when it loads — picking the ticket that stays — with the confirmation named as the step after it, not the same click",
       "only one ticket can be the one that stays",
-      "the confirm step names the ticket that stays and the two being absorbed into it",
-      "confirming fires merge_tickets once per absorbed ticket, each with into_ticket_id set to the chosen survivor"
+      "nothing on the first step merges anything — no press before the confirmation calls merge_tickets"
     ],
     "tags": ["action"],
     "shape": "wizard",

@@ -109,13 +109,13 @@
     "lane": "screen",
     "tags": ["action"],
     "shape": "table",
-    "prompt": "My phone will not stop. Rank the alerts by how often they fired this week against how often anyone actually acked them, call out the ones nobody ever acts on, and let me pick several and silence them for the rest of the day in one action.",
+    "prompt": "My phone will not stop. Rank the alerts by how often they fired this week against how often anyone actually acked them, call out the ones nobody ever acts on and start with those already picked, and let me silence everything picked for the rest of the day in one action.",
     "pass": [
       "ranks the alerts by how often they fired, most-fired first, using the tool's counts",
       "shows the acknowledged count beside the fired count for each alert",
       "singles out the two alerts that fired repeatedly and were never acknowledged",
       "lets more than one alert be selected and silenced in a single action",
-      "the bulk silence asks for confirmation, then fires a silence call per selected alert with a number of minutes"
+      "the bulk silence asks for confirmation, and confirming fires one silence call, with a number of minutes, for each alert the screen shows picked when it loads"
     ]
   },
   {
@@ -157,7 +157,7 @@
       "lays the incidents out in mitigating, monitoring and resolved columns rather than one flat list",
       "the checkout incident sits in mitigating and the search one in monitoring, matching the tool's status",
       "each card names its incident's severity and commander",
-      "moving a card to another column sets that incident's status to the column it landed in"
+      "each card carries a control for the statuses it is not in, and pressing one sets that card's own incident to the status pressed"
     ]
   },
   {
@@ -168,11 +168,11 @@
     "source": "Grafana — New alert rule, https://grafana.com/docs/grafana/latest/alerting/alerting-rules/create-grafana-managed-rule/",
     "prompt": "Walk me through setting up a new alert on search-indexer's tail latency — the condition, the threshold, and who it pages.",
     "pass": [
-      "asks for the condition, the threshold and who to notify as separate steps, one at a time",
-      "names search-indexer as the service the rule is on, and its current tail latency from the tool",
-      "the threshold is typed in milliseconds and carries that unit",
-      "offers Discovery among the teams to notify, because Discovery owns search-indexer",
-      "creates the rule only on the last step, for search-indexer, with the threshold and team chosen"
+      "shows only the first step when it loads — the condition — with the threshold step and the notify step named as what comes next, never all three at once",
+      "names search-indexer as the service the rule is on, and its current tail latency from the tool, in milliseconds",
+      "the threshold the rule will use is stated in milliseconds, never a bare number",
+      "names Discovery as the team the rule would page, because Discovery owns search-indexer",
+      "nothing on the first step creates the rule — no press before the last step calls the alert-rule tool"
     ]
   },
   {

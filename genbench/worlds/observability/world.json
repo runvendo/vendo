@@ -22,7 +22,7 @@
     "severity and health read as a labelled pill or word (critical / warning / healthy), never colour alone",
     "every figure carries its unit — ms for latency, min for durations, GB for volume — never a bare number",
     "money shows a currency symbol and 2 decimals, converted from the tools' cents",
-    "times shown as 'Aug 12, 13:29' style, never a raw timestamp"
+    "times shown as 'Aug 12, 16:45' style, never a raw timestamp"
   ],
   "tools": {
     "list_services": {
@@ -36,12 +36,12 @@
           { "id": "svc_search", "name": "search-indexer", "owner": "Discovery", "tier": "important", "health": "degraded", "tail_latency_ms": 1940 },
           { "id": "svc_notify", "name": "notify-fanout", "owner": "Messaging", "tier": "important", "health": "down", "tail_latency_ms": 5210 },
           { "id": "svc_billing", "name": "billing-sync", "owner": "Payments", "tier": "standard", "health": "healthy", "tail_latency_ms": 214 },
-          { "id": "svc_media", "name": "media-transcode", "owner": "Platform", "tier": "standard", "health": "healthy", "tail_latency_ms": 3120 }
+          { "id": "svc_media", "name": "media-transcode", "owner": "Platform", "tier": "standard", "health": "healthy", "tail_latency_ms": 268 }
         ]
       }
     },
     "list_alerts": {
-      "does": "Alerts on the board right now, newest first. The rows are the `data` array. `service_id` is a list_services id. `severity` is critical, warning or info. `state` is firing or acked. `fires_this_week` is how many times the alert fired in the last seven days and `acks_this_week` how many of those a human acknowledged.",
+      "does": "Alerts on the board right now, newest first. The rows are the `data` array. `service_id` is a list_services id. `severity` is critical, warning or info. `state` is firing or acked. `fires_this_week` is how many times the alert fired in the last seven days and `acks_this_week` how many of those a human acknowledged. Today is 2026-08-12 and it is about 14:22.",
       "data": {
         "data": [
           { "id": "al_2202", "service_id": "svc_checkout", "title": "Checkout error rate above burn limit", "severity": "critical", "state": "firing", "opened_at": "2026-08-12 13:41", "fires_this_week": 2, "acks_this_week": 2 },

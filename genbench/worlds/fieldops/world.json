@@ -34,11 +34,11 @@
     "red is reserved for a job that is blocked or past its window; nothing else on the screen is red",
     "every job is named by its number and its customer together — 'JOB-4471 · Bayside Dental' — never a bare id",
     "money always shows 2 decimals with a $ symbol, converted from the tools' cents",
-    "dates read as 'Aug 15' and arrival windows as '8:00–10:00 AM' — never ISO"
+    "dates read as 'Aug 3' and arrival windows as '7:30–9:30 AM' — never ISO"
   ],
   "tools": {
     "list_jobs": {
-      "does": "Every job on the board this week. The rows are the `data` array. `technician_id` is null when nobody is assigned yet. `status` is one of scheduled, en_route, on_site, blocked, done. `quoted_amount` is in CENTS: 48500 is $485.00.",
+      "does": "Every job on the board this week. The rows are the `data` array. `technician_id` is null when nobody is assigned yet. `status` is one of scheduled, en_route, on_site, blocked, done. `quoted_amount` is in CENTS: 48500 is $485.00. Today is 2026-08-15 and it is about 10:00 AM.",
       "data": {
         "data": [
           { "id": "JOB-4471", "customer": "Bayside Dental", "trade": "hvac", "summary": "Rooftop unit short-cycling", "status": "on_site", "priority": "urgent", "technician_id": "tech_ari", "scheduled": "2026-08-15", "window": "08:00-10:00", "quoted_amount": 48500 },

@@ -80,12 +80,12 @@
   {
     "id": "write-off-unpayable",
     "lane": "screen",
-    "prompt": "Show me everything still unpaid and let me tick the ones to void in one go, with a reason and a confirmation step before anything is written off.",
+    "prompt": "Show me everything still unpaid, ticked to start so I can untick anything worth chasing, and let me void the rest in one go — with a reason on the screen and a confirmation step before anything is written off.",
     "pass": [
       "lists only the unpaid invoices — the open one and the two past due — and no paid, voided or refunded ones",
-      "lets more than one invoice be ticked at once and shows the total that would be written off",
-      "asks for confirmation and takes a reason before anything is voided",
-      "confirming calls void_invoice with a ticked invoice's id and a reason"
+      "arrives with all three ticked and shows the total that would be written off, $177.83",
+      "a reason field sits with the write-off control, and confirming is a second step rather than the same press",
+      "confirming calls void_invoice once per ticked invoice, each with that invoice's id and whatever the reason field holds"
     ],
     "tags": ["action"],
     "shape": "table"
@@ -93,7 +93,7 @@
   {
     "id": "dunning-queue-empty",
     "lane": "screen",
-    "prompt": "Show me every failed payment we're still retrying, and give me a button to retry the charge now.",
+    "prompt": "Show me every failed payment we're still retrying.",
     "pass": [
       "says nothing is in the retry queue right now rather than showing an empty table",
       "shows no retry attempt count, next-retry date or card-failure reason for any invoice",
@@ -137,7 +137,7 @@
       "shows all five portal switches — cancel, plan switch, payment method, promo codes, invoice history — each with its current state",
       "shows cancel, plan switch and promo codes as currently off, and payment method and invoice history as currently on",
       "each switch can be flipped on this screen and there is one control that saves them together",
-      "saving calls update_portal_settings with allow_cancel and allow_plan_switch on"
+      "saving calls update_portal_settings with all five switches exactly as the screen is showing them"
     ],
     "tags": ["action"],
     "shape": "settings",
@@ -162,10 +162,10 @@
     "lane": "screen",
     "prompt": "Walk me through putting a brand-new customer on a plan — pick the plan, add a coupon if they've earned one, and confirm before it goes live.",
     "pass": [
-      "asks one step at a time — the plan, then the coupon, then a confirmation — rather than one long form",
+      "shows only the first step when it loads — the plan — with the coupon step and the confirmation named as what comes next, never one long form",
       "the plan step offers the four active plans with their prices and not the archived Pro (legacy)",
-      "the coupon step can be left empty and does not offer the expired LAUNCH50",
-      "the last step restates the chosen plan before anything runs, and confirming calls create_subscription with the customer, the chosen plan id and the coupon code"
+      "marks the coupon step as one that can be skipped, so a customer without a coupon still reaches the confirmation",
+      "nothing on the first step creates anything — no press before the confirmation calls create_subscription"
     ],
     "tags": ["action"],
     "shape": "wizard",
