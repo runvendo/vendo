@@ -1,5 +1,11 @@
 # @vendoai/core
 
+## 0.25.0
+
+### Minor Changes
+
+- aa1c8db: Two batched store-wire ops so one agent turn costs one call at each end instead of many. `turn.load` bundles a turn's opening reads — `transcripts.getThread`, `workspace.index`, `workspace.read`, and optionally `harness.get` and the `usage.count` a limits policy needs — and `turn.commit` bundles its closing writes: `transcripts.appendMessages`, optionally `harness.set`, and optionally the run's audit `engine.put`. Both bodies are pure composition of the per-op schemas that already existed, and every answer is exactly what the individual op returns, so nothing here is new semantics; the only thing that changes is the number of round trips. The family is OPTIONAL on `StoreOps` (`usage`'s rule) and rides the tail of `STORE_WIRE_PATHS`, so a mount that omits it reports the level it always did and a caller that finds it absent makes the calls it always made. Clients feature-detect on `/status` with the frozen `STORE_WIRE_TURN_OPS = 50`, read with `>=`, exactly as the batch append is detected.
+
 ## 0.24.0
 
 ## 0.23.0

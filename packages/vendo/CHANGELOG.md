@@ -1,5 +1,34 @@
 # @vendoai/vendo
 
+## 0.25.0
+
+### Minor Changes
+
+- 374279e: One-text linking over the org's dedicated iMessage router. The router keeps the connect message in its own transcript instead of forwarding it, so the code in `connect @handle CODE` never reached the deployment and linking took two texts. Vendo Cloud now reads that tail off the router transcript and relays it on the existing inbound door as `{ kind: "link", from, code }`, just ahead of the person's first real message: the deployment claims the code silently and then answers what they actually asked, so one text links an account. The typed path still works — a bare code from an unlinked phone claims exactly as before — and a link payload whose code is unknown, spent or expired is a silent no-op, which is what makes a re-relayed connect harmless. Link codes now last 30 minutes rather than 15, because the gap between tapping the anchor and sending the message is human. The channel also states plainly that it cannot send scheduled, recurring or unprompted texts and points at the app instead, so the agent never promises a Friday text that nothing can deliver.
+- aa1c8db: The harness turn now opens with ONE `turn.load` and closes with ONE `turn.commit` on a store that serves them. A quiet turn against a hosted mount costs three calls — the envelope, the user's message (landed before the model runs, so a turn that dies never loses it), the envelope — where it used to cost six. Feature-detected against `/status` once per deployment and never blind-sent: below `STORE_WIRE_TURN_OPS`, and on any store with a SQL handle (already one hop from its rows), every door reads and writes exactly as it always did, retry and per-write isolation included. Per-tool-call writes are untouched by design: the guard's audit row, the effect ledger, the workspace commit after every tool call, and the parked-approval checkpoint all stay per occurrence.
+
+### Patch Changes
+
+- 6c26bfd: The config report ships the policy document, not the pointer to it.
+
+  `guard({ policy: { file: ".vendo/policy.json" } })` names a policy document; it is not one. The report sent the knob verbatim, so the console's Policy card showed `{"file":".vendo/policy.json"}` labelled "set in code" and then failed it against the policy schema, which wants a real `vendo/policy@1` document. The pointer is now followed at report time — the path taken exactly as the guard takes it — and the file's own bytes are reported as a file surface. Inline rules, preset names and `profile.policy` are values rather than pointers and still report as code.
+
+- Updated dependencies [aa1c8db]
+- Updated dependencies [aa1c8db]
+- Updated dependencies [aa1c8db]
+- Updated dependencies [aa1c8db]
+  - @vendoai/guard@0.25.0
+  - @vendoai/harnesses@0.25.0
+  - @vendoai/store@0.25.0
+  - @vendoai/core@0.25.0
+  - @vendoai/agents@0.25.0
+  - @vendoai/actions@0.25.0
+  - @vendoai/apps@0.25.0
+  - @vendoai/automations@0.25.0
+  - @vendoai/knowledge@0.25.0
+  - @vendoai/mcp@0.25.0
+  - @vendoai/ui@0.25.0
+
 ## 0.24.0
 
 ### Patch Changes

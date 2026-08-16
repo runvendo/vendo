@@ -1,5 +1,19 @@
 # @vendoai/store
 
+## 0.25.0
+
+### Minor Changes
+
+- aa1c8db: The turn envelopes, served. The local backend answers `turn.load` by fanning out over the very ops it bundles (`transcripts.getThread`, `workspace.index`, `workspace.read`, and `harness.get`/`usage.count` when asked for), and `turn.commit` lands the batch append, the harness state and the run's audit row inside ONE `db.transaction()` — a turn that landed its messages and lost its harness state is a turn the next one resumes wrong. `/status` now reports `ops: 50`, which it may do because the two ops are genuinely served. The hosted client gains both, and they are the one family it feature-detects before sending: ONE cached `/status` read compared against `STORE_WIRE_TURN_OPS`, exactly as the batch append is detected, because this is the one shape with a cheaper fallback to route to — a mount below the level is served by the individual calls the caller always made, never by reading a failed mutation as a capability answer.
+
+  Two prefetch seams let one `turn.load` actually replace a turn's opening reads: `workspaceStore.open` takes an `index` the caller already read (it skips the READ, never the permission filter), and `harnessStateStore.resume` is `get` for a caller that already holds the slot's row — same §1.3 rules, including a foreign harness DESTROYING the slot. `workspaceIndexPage` converts the envelope's index page into the metas `open` takes, and answers `undefined` when the page left a cursor behind, because half an index would open a turn on a workspace that is missing files.
+
+### Patch Changes
+
+- Updated dependencies [aa1c8db]
+  - @vendoai/core@0.25.0
+  - @vendoai/apps@0.25.0
+
 ## 0.24.0
 
 ### Patch Changes

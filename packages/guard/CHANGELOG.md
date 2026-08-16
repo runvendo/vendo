@@ -1,5 +1,16 @@
 # @vendoai/guard
 
+## 0.25.0
+
+### Minor Changes
+
+- aa1c8db: `guard.reportThrough(event, place)` — `report` with the audit row handed to a placer instead of written to the guard's own engine, so a batched turn can fold its ONE run row into the same call as the messages it describes. It IS `report` (which is now this, with the engine as the placer), so normalisation and the decision metric are unchanged. Per-tool-call decisions keep writing one row per call.
+
+### Patch Changes
+
+- Updated dependencies [aa1c8db]
+  - @vendoai/core@0.25.0
+
 ## 0.24.0
 
 ### Patch Changes
