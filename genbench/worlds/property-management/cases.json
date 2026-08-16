@@ -85,7 +85,7 @@
       "lists exactly the four tenants with an August balance and none of the four who paid in full, all four ticked when the screen loads",
       "shows each of them the amount they still owe",
       "several can be ticked at once and sent with one control",
-      "asks for confirmation first, then fires one send_late_notice per row the screen shows ticked"
+      "asks for confirmation first, and the confirmation says how many notices it is about to send — the four rows ticked when the screen loads"
     ],
     "tags": ["action"],
     "shape": "list-feed"

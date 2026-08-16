@@ -99,7 +99,7 @@
       "lists exactly the four shipments whose days late is above zero and no on-time or delivered one",
       "arrives with those rows already selected, and shows the message text before anything is sent",
       "asks me to confirm before sending",
-      "confirming calls notify_customer once per row the screen shows selected when it loads, each with that row's shipment id and a message"
+      "the confirmation names the four shipments it would notify — SO-3318, SO-3352, PO-88377 and PO-88402"
     ],
     "tags": ["action"],
     "shape": "list-feed"
@@ -125,7 +125,7 @@
       "shows both refused shipments — SO-3352 and PO-88402 — with the refusal reason the exception tool returned for each",
       "each shipment has its own date and delivery window input rather than one setting for both",
       "a row's button calls reschedule_delivery with that shipment's id, the chosen date and the chosen window",
-      "the same row also calls notify_customer for that shipment, and nothing fires until I confirm"
+      "the same row also calls notify_customer for that shipment, so one press both books it and tells the customer"
     ],
     "tags": ["action"],
     "shape": "form"

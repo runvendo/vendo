@@ -85,7 +85,7 @@
       "lists only the unpaid invoices — the open one and the two past due — and no paid, voided or refunded ones",
       "arrives with all three ticked and shows the total that would be written off, $177.83",
       "a reason field sits with the write-off control, and confirming is a second step rather than the same press",
-      "confirming calls void_invoice once per ticked invoice, each with that invoice's id and whatever the reason field holds"
+      "the confirmation names what it would write off — three invoices, $177.83 — and carries the reason the field holds"
     ],
     "tags": ["action"],
     "shape": "table"
@@ -123,8 +123,8 @@
     "pass": [
       "shows Tessellate Studio's failed invoice with its amount, the card-expired reason and that all four attempts are spent",
       "offers exactly the three choices asked for and nothing else",
-      "each choice calls its own tool for Tessellate Studio — retry_payment and void_invoice on the invoice, cancel_subscription on the subscription with period_end",
-      "the void and the cancel ask for confirmation before they run"
+      "the retry choice calls retry_payment for INV-2044, the invoice on the screen",
+      "the void and the cancel each ask for confirmation first, and each confirmation says what it would do — void INV-2044, or cancel Tessellate Studio at the end of the period"
     ],
     "tags": ["action"],
     "shape": "detail"

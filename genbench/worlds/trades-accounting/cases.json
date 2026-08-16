@@ -104,7 +104,7 @@
       "shows the totals as 75.0 hours and $4,634.00",
       "shows each entry's tech, date, hours and amount",
       "one control approves every pending entry and asks for confirmation before it fires",
-      "confirming calls approve_time_entry once per pending entry — nine calls"
+      "the confirmation says what it is about to approve — nine entries, 75.0 hours, $4,634.00"
     ]
   },
   {

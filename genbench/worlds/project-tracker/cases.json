@@ -87,7 +87,7 @@
       "shows what 2026.8 holds before it offers to cut anything — its 7 issues, 4 of them done",
       "offers a cut control for 2026.8 only, not for the planned releases",
       "asks for confirmation before the cut fires, rather than firing on the first press",
-      "confirming is what calls cut_release, and it calls it for 2026.8"
+      "the confirmation names 2026.8 as the release it would cut, and says the cut cannot be undone"
     ],
     "tags": ["action"],
     "shape": "detail"
