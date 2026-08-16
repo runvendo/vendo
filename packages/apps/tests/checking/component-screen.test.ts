@@ -851,7 +851,7 @@ export default function Everything() {
 
   /** Wide enough to write a chart, a table and a slot. Its own list because the
    *  shared catalog is pinned verbatim by the sentences that enumerate it. */
-  const kitCatalog = [...catalog, "Badge", "DataTable", "EnumBadge", "LineChart", "Sparkline", "Stat"];
+  const kitCatalog = [...catalog, "Accordion", "Badge", "DataTable", "EnumBadge", "LineChart", "Sparkline", "Stat", "Tabs", "Tooltip"];
 
   const painted = async (source: string): Promise<ComponentScreenCheck> =>
     checkComponentScreen({ source, hostTools: tools, catalog: kitCatalog, runQuery: async () => ROWS });
@@ -913,6 +913,75 @@ export default function Ledger() {
     expect(message).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
     expect(message).toContain("a cell is read, never operated");
     expect(message).toContain("A cell may hold: Text, Money, DateTime, Percent, Num, EnumBadge, Badge, Sparkline, Progress, Stack, Row");
+  });
+
+  /**
+   * The BLANK CELL class, and the whole reason a slot is typed rather than left
+   * `any`: a function in a cell serializes as a `$handler` door (vm-program.ts
+   * `emitValue`), so the table is handed a callback it cannot paint and the
+   * column renders empty. A generated screen shipped exactly this past compile,
+   * types, paint and tree with every gate green.
+   */
+  it("refuses a function in a cell slot, and names the column it sits in", async () => {
+    const result = await painted(`import { DataTable, Money } from "@vendo/screen";
+
+export default function Ledger() {
+  return (
+    <DataTable
+      rows={[{ id: "tr_1", amount: 4200 }]}
+      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
+    />
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain('in the "cell" slot of "amount"');
+    expect(message).toContain("a slot holds ELEMENTS");
+    // …and the repair is the element, with the column's own key in it.
+    expect(message).toContain('cell={<Text field="amount"/>}');
+  });
+
+  /** Every slot, not just a cell: `Tabs.tabs[].content`, `Accordion.items[].content`
+   *  and `Tooltip.content` hold elements the same way, and each wrote its own
+   *  `z.unknown()` instead of the shared one — so each was a hole of exactly the
+   *  same shape. One screen, all three, one refusal apiece. */
+  it("refuses a function in the OTHER element slots too", async () => {
+    const result = await painted(`import { Accordion, Tabs, Text, Tooltip } from "@vendo/screen";
+
+export default function Panels() {
+  return (
+    <Tabs tabs={[{ label: "Queued", content: () => <Text text="none" /> }]}>
+      <Accordion items={[{ label: "Terms", content: () => <Text text="terms" /> }]} />
+      <Tooltip content={() => <Text text="hint" />}><Text text="?" /></Tooltip>
+    </Tabs>
+  );
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types", "types", "types"]);
+    for (const { message } of result.issues) {
+      expect(message).toContain('in the "content" slot');
+      expect(message).toContain("a slot holds ELEMENTS");
+    }
+  });
+
+  /** Tooltip's `content` is documented as "code-only: Kit elements rendered as
+   *  the hint instead of label", and `SLOTS` carried no entry for it — so the
+   *  one shape the prop teaches was refused by the tree check while the Kit
+   *  component painted it perfectly well (`ui` feedback/tooltip.tsx `content ??
+   *  label`). The registry was the bug; the doc is the contract. */
+  it("passes an element in Tooltip's content — the slot its own prop documents", async () => {
+    const result = await painted(`import { Text, Tooltip } from "@vendo/screen";
+
+export default function Hint() {
+  return <Tooltip content={<Text text="Sent 3 days ago" />}><Text text="?" /></Tooltip>;
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 
   it("follows a control nested INSIDE a legal slot component", async () => {

@@ -1,0 +1,48 @@
+---
+title: "E-DEP-003"
+sidebarTitle: "E-DEP-003"
+description: "Doctor found an installed zod older than 3.25, which breaks the build the moment Vendo's wiring pulls in the AI SDK."
+---
+
+```text deps/zod-floor
+broken: installed zod@<version> predates the zod/v3 + zod/v4 subpaths the AI
+SDK imports (needs >=3.25) — the app build fails inside ai@6; bump within
+zod 3: <bump command>
+```
+
+`<version>` is your installed `zod` version, and `<bump command>` is the
+exact command doctor generated for your package manager.
+
+`check: deps/zod-floor` · `error_code: E-DEP-003` · `doctor exits: 1`
+
+## What you're seeing
+
+Without the fix, `next build` (or any bundling build) fails with
+`Package path ./v3 is not exported from package zod`, a module-not-found
+buried inside `ai`.
+
+## Why
+
+`ai@6` imports the `zod/v3` and `zod/v4` subpaths, which first ship in zod
+3.25. When your app pins an older zod, usually a common `^3.2x` range that
+resolves below 3.25, that pin wins the installed tree, and the build breaks
+the moment Vendo's wiring pulls `ai` into the bundle.
+
+## The fix
+
+Bump zod within v3. 3.25 satisfies the common `^3.2x` ranges and keeps zod 3
+semantics.
+
+```bash
+npm install zod@^3.25.0
+```
+
+`vendo init` detects this and offers the bump automatically; this check
+catches hosts that declined or predate that detection. Hosts already on zod
+4 are unaffected, since zod 4 exposes both subpaths. Re-run
+`npx vendo doctor` once the install finishes.
+
+## Related errors
+
+- [E-DEP-001](/production/troubleshooting/e-dep-001): the same kind of peer-floor problem, for `ai` instead of `zod`
+- [E-DEP-002](/production/troubleshooting/e-dep-002): a version mismatch between the CLI and the running wire

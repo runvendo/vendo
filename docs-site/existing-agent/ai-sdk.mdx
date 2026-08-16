@@ -1,0 +1,93 @@
+---
+title: "AI SDK"
+sidebarTitle: "AI SDK"
+description: "What the quickstart left out for a Vercel AI SDK loop: per-request pack builds, dynamic-tool message parts, and the one Next.js config line."
+icon: "/images/logos/vercel.svg"
+---
+
+The [quickstart](/existing-agent/quickstart) wires an AI SDK loop end to end. This page is the rest.
+
+## Build the pack per request
+
+`vendoTools` takes the caller and returns a Promise, so it belongs inside the handler rather than at module scope.
+
+```ts app/api/chat/route.ts focus={8,13}
+import { convertToModelMessages, streamText } from "ai";
+import { vendoTools } from "@vendoai/vendo/ai-sdk";
+import { vendoModel } from "@vendoai/vendo/server";
+import { resolvePrincipal, vendo } from "@/lib/vendo";
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
+  return streamText({
+    model: vendoModel(),
+    messages: await convertToModelMessages(messages),
+    tools: { ...(await vendoTools(vendo, { principal: caller })) },
+  }).toUIMessageStreamResponse();
+}
+```
+
+`principal` is not nullable, and an auth preset's resolver returns `Principal | null`. Drop the 401 and the call stops typechecking.
+
+Pass `sessionId` alongside `principal` to carry your own session id into Vendo's audit trail. Leave it out and the shim mints one per pack build.
+
+<Warning>
+The principal your loop passes has to be the one your wire route resolves. If they disagree, the agent reports success while the embed polls forever, because the person looking at the chat owns none of what the agent made.
+
+Resolve both from the same session, and never take a principal from the client. See [Auth](/production/auth).
+</Warning>
+
+## Render the parts
+
+The shim builds every tool with the AI SDK's `dynamicTool`, so `useChat` streams them as `dynamic-tool` parts rather than `tool-<name>`. Match on that.
+
+```tsx components/vendo-part.tsx focus={5-8}
+import type { UIMessage } from "ai";
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
+  if (part.type !== "dynamic-tool") return null;
+  return part.state === "output-available"
+    ? <VendoToolResult output={part.output} />
+    : <div>Running {part.toolName}…</div>;
+}
+```
+
+`<VendoToolResult>` handles plain data, app refs, and approval refs, so you never branch on the envelope yourself. Full contract: [Embeds in your chat](/existing-agent/embeds).
+
+<Frame>
+  <img
+    src="/images/existing-agents/ai-sdk-dashboard.png"
+    alt="The AI SDK example chat answering a dashboard request with a generated weather comparison screen rendered inline in the assistant message"
+    width="448"
+    height="800"
+  />
+</Frame>
+
+## One Next.js line
+
+`serverExternalPackages` keeps Vendo's native and wasm dependencies out of the bundler.
+
+```ts next.config.ts focus={2}
+const nextConfig = {
+  serverExternalPackages: ["esbuild", "@electric-sql/pglite"],
+};
+
+export default nextConfig;
+```
+
+`esbuild` syntax-checks generated apps and PGlite backs persistence. The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
+
+## Two models, one key
+
+Your loop and Vendo's own turns each call a model. `vendoModel()` resolves through the Cloud gateway on your `VENDO_API_KEY`, and the builds behind `vendo_make` resolve the same way while `createVendo`'s `models` block is unset.
+
+A name you pass reaches the gateway verbatim, since there is no client-side translation of model ids. Which seat takes which name is on [Model credentials](/production/model-credentials).
+
+`vendo doctor` cannot see your loop's model, so an install is not done until a chat turn renders a Vendo tool output.
+
+## The full example
+
+[`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent) is the stock [AI SDK Next.js chatbot](https://ai-sdk.dev/docs/getting-started/nextjs-app-router) with this diff applied. Every added line sits between `--- vendo` and `--- /vendo` markers, so `grep` shows you the whole integration.

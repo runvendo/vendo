@@ -93,7 +93,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
     });
 
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => ({ kind: "user", subject: "user_seam" }),
       agent: support,
     });
@@ -127,7 +127,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
     });
 
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => ({ kind: "user", subject: "user_seam" }),
       agent: support,
     });
@@ -147,7 +147,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
     const store = await tempStore();
     const support = agent({ name: "support", harness: boxy(), store, sandbox: fakeSandbox() });
     const base = {
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => ({ kind: "user" as const, subject: "user_seam" }),
       agent: support,
     };
@@ -170,7 +170,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
     noKeys();
     const store = await tempStore();
     expect(() => createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => ({ kind: "user", subject: "user_seam" }),
       store,
       agent: { name: "impostor", session: async () => ({}) } as never,

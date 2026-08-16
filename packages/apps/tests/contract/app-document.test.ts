@@ -117,6 +117,16 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
   });
 
+  it("loads a pre-instruction seeded document, defaulting the instruction to empty", () => {
+    // Apps seeded before the ✦ gesture collected an instruction verbatim stored
+    // a seed without one. They must still load, or every app remixed before the
+    // field existed fails the read-side integrity check and never opens again.
+    const legacy = { ...minimal(), seed: { component: "invoice-card", baseline: "sha256:abc123" } };
+    const expected = { ...legacy, seed: { ...legacy.seed, instruction: "" } };
+    expect(appDocumentSchema.parse(legacy)).toEqual(expected);
+    expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
+  });
+
   it("rejects two triggers sharing one id", () => {
     // The id is the key for this trigger's grants, sponsorship, schedule cursor
     // and runs, so a duplicate would silently share all of them.

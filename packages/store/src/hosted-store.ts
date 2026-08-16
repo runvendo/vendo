@@ -12,16 +12,22 @@ import {
   type RecordQuery,
   type RecordStore,
   STORE_WIRE_PATHS,
+  STORE_WIRE_TURN_OPS,
   type StoreOps,
   storeWireErrorSchema,
   type StoreWireStatus,
   storeWireStatusSchema,
+  storeWireTurnCommitResponseSchema,
+  storeWireTurnLoadResponseSchema,
+  type TurnCommit,
+  type TurnLoad,
   type UsageTallyRow,
   VendoError,
   type VendoRecord,
   vendoRecordSchema,
 } from "@vendoai/core";
 import type { EraseReport } from "./erase.js";
+import { turnLoadOverOps } from "./helpers/turn.js";
 import {
   ATOMIC_RESERVED_COLLECTIONS,
   DEDICATED_RECORD_COLLECTIONS,
@@ -80,7 +86,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 48-op named-operation surface over the same mount and the same key —
+  /** The 50-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
    * above are built ON these ops: engine for Vendo's own collections, appData
    * for an app's own drawers. */
@@ -166,7 +172,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
-  // The StoreAdapter façade rides the SAME 48 ops as `ops` below — it has no
+  // The StoreAdapter façade rides the SAME 50 ops as `ops` below — it has no
   // doors of its own since the generic records family left the wire. A
   // collection (or blob namespace) either names an app's own drawer, which the
   // appData family serves with the owner stamped on, or it names one of Vendo's
@@ -283,15 +289,15 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 48-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 50-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 48 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 50 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
 /** Measurement instrument, not a feature: with VENDO_STORE_TRACE set, every
- * call through the store client below — the 48 ops AND the StoreAdapter façade,
+ * call through the store client below — the 50 ops AND the StoreAdapter façade,
  * which rides the same client — emits one greppable stderr line naming the op,
  * its path, the round trip in milliseconds (the body read included, since that
  * is what the caller waits for), the response size in bytes and the outcome.
@@ -364,7 +370,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 48-op store contract, speaking
+ * The Cloud client for the whole 50-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -575,7 +581,29 @@ function storeWireClient(
 
   const P = STORE_WIRE_PATHS;
 
-  return {
+  /** The mount's op count is a deployment FACT, so this client reads `/status`
+   * ONCE and every capability check consumes that one answer — `servesTurn`
+   * below, `servesAppendMessages` (helpers/thread-messages.ts), and the
+   * harness's own pre-send check, which all asked it separately and paid a round
+   * trip each. Asked EXPLICITLY and answered BEFORE the first send, never a
+   * `catch` around a failed mutation: reading a 501 as "fall back" is how a
+   * half-applied write gets retried down a second path (#1251). A handshake that
+   * fails is not an answer — it is not kept, and the next caller asks again. */
+  let handshake: Promise<StoreWireStatus> | undefined;
+  const status = async (): Promise<StoreWireStatus> => {
+    if (handshake === undefined) {
+      handshake = get("status", P.status).then((payload) => {
+        const parsed = storeWireStatusSchema.safeParse(payload);
+        if (!parsed.success) invalidResponse("invalid status");
+        return parsed.data as StoreWireStatus;
+      });
+      handshake.catch(() => { handshake = undefined; });
+    }
+    return await handshake;
+  };
+  const servesTurn = async (): Promise<boolean> => (await status()).ops >= STORE_WIRE_TURN_OPS;
+
+  const ops: StoreOps = {
     // Vendo's OWN engine drawers, over collection-addressed bodies, with the
     // allowlist gated service-side on every verb.
     engine: {
@@ -883,10 +911,42 @@ function storeWireClient(
         return { purged: field<number>(payload, "purged", "invalid purge", (value) => typeof value === "number") };
       },
     },
-    async status(): Promise<StoreWireStatus> {
-      const parsed = storeWireStatusSchema.safeParse(await get("status", P.status));
-      if (!parsed.success) invalidResponse("invalid status");
-      return parsed.data as StoreWireStatus;
+    // One agent turn's opening reads and closing writes, each in ONE call — and
+    // the one family this client feature-detects before sending, because it is
+    // the one with a CHEAPER FALLBACK to route to: the individual ops, which is
+    // where every caller started. `usage`'s instants are the only part the
+    // envelope respells, into the ISO datetimes the wire schema validates.
+    turn: {
+      async load(request) {
+        if (!await servesTurn()) return await turnLoadOverOps(ops, request);
+        const parsed = storeWireTurnLoadResponseSchema.safeParse(await post("turn.load", P["turn.load"], {
+          ...request,
+          ...(request.usage === undefined ? {} : { usage: { ...request.usage, ...bounds(request.usage) } }),
+        }));
+        if (!parsed.success) invalidResponse("invalid turn load");
+        return parsed.data as TurnLoad;
+      },
+      async commit(request) {
+        if (!await servesTurn()) {
+          const { threadId, subject, messages, title } = request.messages;
+          if (request.harness !== undefined) {
+            await ops.harness.set(request.harness.appId, request.harness.subject, request.harness.state);
+          }
+          return {
+            messages: await ops.transcripts.appendMessages!(threadId, subject, messages, { title }),
+            ...(request.audit === undefined
+              ? {}
+              : { audit: await ops.engine.put(request.audit.collection, request.audit.record) }),
+          };
+        }
+        const parsed = storeWireTurnCommitResponseSchema.safeParse(
+          await mutate("turn.commit", P["turn.commit"], request),
+        );
+        if (!parsed.success) invalidResponse("invalid turn commit");
+        return parsed.data as TurnCommit;
+      },
     },
+    status,
   };
+  return ops;
 }

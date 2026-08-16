@@ -81,8 +81,10 @@ export {
   type WorkspaceFileMeta,
   type WorkspaceHistoryEntry,
 } from "./workspace.js";
+export { workspaceIndexPage } from "./workspace-ops-rows.js";
+export { turnLoadOverOps } from "./helpers/turn.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
-export { harnessStateStore } from "./harness-state.js";
+export { harnessStateKey, harnessStateRow, harnessStateStore } from "./harness-state.js";
 // The Cloud store belongs here too: it talks to the console over HTTP, so it
 // carries no engine at all.
 export { hostedStore, hostedStoreOps, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";

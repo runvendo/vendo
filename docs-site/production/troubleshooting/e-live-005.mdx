@@ -1,0 +1,36 @@
+---
+title: "E-LIVE-005"
+sidebarTitle: "E-LIVE-005"
+description: "Doctor's host predates the execution venue field in /status, so the venue check cannot run."
+---
+
+```text live/venue
+warning: host /status does not report an execution venue; upgrade
+@vendoai/vendo to enable the venue check
+```
+
+`check: live/venue` · `error_code: E-LIVE-005` · `doctor exits: 0`
+
+## What you're seeing
+
+A warning: `/status` does not report a `blocks.sandbox` field at all.
+
+## Why
+
+This is version skew, not a broken install. The installed `@vendoai/vendo`
+predates the `blocks.sandbox` field, so the venue check has nothing to read.
+
+## The fix
+
+Upgrade and restart.
+
+```bash
+npm install vendoai@latest
+```
+
+Restart the dev server, then re-run `npx vendo doctor`.
+
+## Related errors
+
+- [E-LIVE-004](/production/troubleshooting/e-live-004) — the same check once the field exists but reports no venue
+- [E-DEP-002](/production/troubleshooting/e-dep-002) — a different version-skew code, for the wire itself

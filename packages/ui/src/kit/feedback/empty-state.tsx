@@ -3,9 +3,9 @@
  *  so an empty region reads as intentional rather than broken. */
 import type { PropsWithChildren, ReactNode } from "react";
 import { Icon } from "../icon.js";
-import { font, t } from "../tokens.js";
+import { font, t, type KitStyled } from "../tokens.js";
 
-export interface EmptyStateProps {
+export interface EmptyStateProps extends KitStyled {
   /** A lucide icon name in kebab-case (an unknown one draws nothing), or a Kit
    *  mark drawn in the disc instead. */
   icon?: ReactNode;
@@ -15,7 +15,7 @@ export interface EmptyStateProps {
   description?: string;
 }
 
-export function EmptyState({ icon, title, description, children }: PropsWithChildren<EmptyStateProps>) {
+export function EmptyState({ icon, title, description, style, children }: PropsWithChildren<EmptyStateProps>) {
   return (
     <div
       data-kit="EmptyState"
@@ -30,6 +30,7 @@ export function EmptyState({ icon, title, description, children }: PropsWithChil
         background: `color-mix(in srgb, ${t.background} 40%, transparent)`,
         padding: "calc(var(--vendo-font-size, 15px) * 1.8) var(--vendo-density-card-padding, 16px)",
         textAlign: "center",
+        ...style,
       }}
     >
       {/* The disc is what gives a bare lucide GLYPH a presence — a Kit mark

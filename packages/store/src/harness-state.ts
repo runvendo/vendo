@@ -34,6 +34,13 @@ import type { VendoStore } from "./store.js";
  *  family, whose slot is keyed identically so `deleteThread` cascades there too. */
 export const harnessStateKey = (threadId: string): string => `harness_state:${threadId}`;
 
+/** The slot's stored payload. Spelled ONCE because three writers land it: both
+ *  backends' `set`, and a batched turn commit, which carries the row itself
+ *  rather than calling `set` — a second spelling would be a slot one writer
+ *  could no longer read. */
+export const harnessStateRow = (harnessName: string, value: string): { harness: string; value: string } =>
+  ({ harness: harnessName, value });
+
 export interface HarnessStateStore {
   /** `owner` is the thread row's own `subject`, passed when the caller has
    *  ALREADY read the row this verb would otherwise re-fetch to learn it (the
@@ -41,6 +48,12 @@ export interface HarnessStateStore {
    *  shortcut, never an assertion: a wrong owner reads as a missing slot, so
    *  callers pass only what a thread read actually returned. */
   get(threadId: string, harnessName: string, owner?: string): Promise<string | undefined>;
+  /** `get` for a caller that ALREADY holds the slot's stored value — the turn
+   *  envelope reads it in the same call as the thread. Same rules as `get`,
+   *  because it is `get`'s second half: a slot belonging to another harness is
+   *  still destroyed rather than shadowed (§1.3). `stored` is the raw row
+   *  payload `harness.get` answers; `undefined` is a missing slot. */
+  resume(threadId: string, harnessName: string, stored: unknown, owner?: string): Promise<string | undefined>;
   set(threadId: string, harnessName: string, value: string | undefined, owner?: string): Promise<void>;
   clear(threadId: string, owner?: string): Promise<void>;
 }
@@ -80,17 +93,34 @@ function overOps(ops: StoreOps): HarnessStateStore {
     return typeof subject === "string" ? subject : undefined;
   };
 
+  /** The half of `get` that runs once the row is in hand, so the read and the
+   *  prefetched read decide identically. */
+  const resolve = async (
+    threadId: string,
+    harnessName: string,
+    subject: string,
+    row: unknown,
+  ): Promise<string | undefined> => {
+    const stored = decode(row);
+    if (stored === undefined) return undefined;
+    if (stored.harness === harnessName) return typeof stored.value === "string" ? stored.value : undefined;
+    // §1.3's clearing rule: a different thinker holds this conversation now.
+    await ops.harness.clear(harnessStateKey(threadId), subject);
+    return undefined;
+  };
+
   return {
     async get(threadId, harnessName, owner) {
       const subject = owner ?? await ownerOf(threadId);
       // No thread, no slot — the SQL half's missing row, reached differently.
       if (subject === undefined) return undefined;
-      const stored = decode(await ops.harness.get(harnessStateKey(threadId), subject));
-      if (stored === undefined) return undefined;
-      if (stored.harness === harnessName) return typeof stored.value === "string" ? stored.value : undefined;
-      // §1.3's clearing rule: a different thinker holds this conversation now.
-      await ops.harness.clear(harnessStateKey(threadId), subject);
-      return undefined;
+      return await resolve(threadId, harnessName, subject, await ops.harness.get(harnessStateKey(threadId), subject));
+    },
+
+    async resume(threadId, harnessName, stored, owner) {
+      const subject = owner ?? await ownerOf(threadId);
+      if (subject === undefined) return undefined;
+      return await resolve(threadId, harnessName, subject, stored);
     },
 
     async set(threadId, harnessName, value, owner) {
@@ -104,7 +134,7 @@ function overOps(ops: StoreOps): HarnessStateStore {
       }
       // One row per (appId, subject), so a harness swap overwrites in place —
       // the SQL half's delete-then-insert, expressed as the wire's own upsert.
-      await ops.harness.set(harnessStateKey(threadId), subject, { harness: harnessName, value });
+      await ops.harness.set(harnessStateKey(threadId), subject, harnessStateRow(harnessName, value));
     },
 
     async clear(threadId, owner) {
@@ -135,16 +165,25 @@ function overSql(db: Db): HarnessStateStore {
     await db.query("DELETE FROM vendo_state WHERE app_id = $1", [key(threadId)]);
   };
 
+  const resolve = async (threadId: string, harnessName: string, row: unknown): Promise<string | undefined> => {
+    const stored = decode(row);
+    if (stored === undefined) return undefined;
+    if (stored.harness === harnessName) return typeof stored.value === "string" ? stored.value : undefined;
+    // §1.3's clearing rule: a different thinker holds this conversation now.
+    await drop(threadId);
+    return undefined;
+  };
+
   return {
     async get(threadId, harnessName) {
       const result = await db.query("SELECT data FROM vendo_state WHERE app_id = $1", [key(threadId)]);
-      const stored = decode(result.rows[0]?.["data"]);
-      if (stored === undefined) return undefined;
-      if (stored.harness === harnessName) return typeof stored.value === "string" ? stored.value : undefined;
-      // §1.3's clearing rule: a different thinker holds this conversation now.
-      await drop(threadId);
-      return undefined;
+      return await resolve(threadId, harnessName, result.rows[0]?.["data"]);
     },
+
+    /** A SQL store is one hop from its own rows, so nothing here batches — but
+     *  the verb answers the same question the same way, since the shape is the
+     *  contract (a caller must not have to know which backend it holds). */
+    resume: (threadId, harnessName, stored) => resolve(threadId, harnessName, stored),
 
     async set(threadId, harnessName, value, owner) {
       if (value === undefined) {
@@ -159,7 +198,7 @@ function overSql(db: Db): HarnessStateStore {
       await db.query(
         `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
          VALUES ($1, $2, $3, $4, $4)`,
-        [key(threadId), subject, JSON.stringify({ harness: harnessName, value }), now],
+        [key(threadId), subject, JSON.stringify(harnessStateRow(harnessName, value)), now],
       );
     },
 

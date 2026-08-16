@@ -14,6 +14,7 @@ import {
   themeCssVariables,
   type VendoTheme,
 } from "@vendoai/apps/contract";
+import { VendoProvider } from "@vendoai/ui";
 import { applyThemeVars } from "@vendoai/ui/kit";
 import { PayloadView } from "@vendoai/ui/tree";
 import { useEffect, type JSX } from "react";
@@ -35,7 +36,8 @@ declare global {
 
 const read = <T,>(id: string): T => JSON.parse(document.getElementById(id)!.textContent!) as T;
 
-applyThemeVars(themeCssVariables(resolveTheme(defaultVendoTheme, read<VendoTheme>("theme"))));
+const theme = read<VendoTheme>("theme");
+applyThemeVars(themeCssVariables(resolveTheme(defaultVendoTheme, theme)));
 const payload = read<UIPayload>("payload");
 
 /**
@@ -76,13 +78,21 @@ function Screen(): JSX.Element {
       });
     });
   }, []);
+  // The provider is where a host declares its brand, and the renderer's surface
+  // re-emits every `--vendo-*` from the theme it reads there — defaulting to the
+  // product's own neutral one when nobody provided it (renderer.tsx:805, 1016).
+  // So the root variables `applyThemeVars` set above are shadowed inside the
+  // screen: without this, every vendo-column page painted accent #111111 on a
+  // world that declares brand green, and was graded down for it.
   return (
-    <PayloadView
-      payload={payload}
-      components={{}}
-      data={(payload as { data?: Record<string, Json> }).data}
-      onAction={async ({ action, payload: args }) => window.vendo.callTool(action, args ?? {})}
-    />
+    <VendoProvider theme={theme}>
+      <PayloadView
+        payload={payload}
+        components={{}}
+        data={(payload as { data?: Record<string, Json> }).data}
+        onAction={async ({ action, payload: args }) => window.vendo.callTool(action, args ?? {})}
+      />
+    </VendoProvider>
   );
 }
 

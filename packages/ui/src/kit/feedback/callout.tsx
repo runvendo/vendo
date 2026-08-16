@@ -4,7 +4,7 @@
  * the honesty arm for when no tool backs the ask.
  */
 import type { PropsWithChildren } from "react";
-import { font, resolveTone, t, toneColor, type KitTone } from "../tokens.js";
+import { font, resolveTone, t, toneColor, type KitStyled, type KitTone } from "../tokens.js";
 
 /** The shared vocabulary plus "info", which a Callout keeps as its own spelling:
  *  elsewhere it is the legacy name for neutral, but a notice has ALWAYS been
@@ -23,12 +23,12 @@ const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
   danger: { accent: toneColor("danger"), icon: "✕" },
 };
 
-export interface CalloutProps {
+export interface CalloutProps extends KitStyled {
   tone?: CalloutTone;
   title?: string;
 }
 
-export function Callout({ tone = "info", title, children }: PropsWithChildren<CalloutProps>) {
+export function Callout({ tone = "info", title, style, children }: PropsWithChildren<CalloutProps>) {
   // "info" is read HERE, before the shared resolver would flatten it to neutral:
   // it is this component's default and has always been the accented ⓘ. Every
   // other word goes through the ONE resolver, so "default" lands on neutral like
@@ -51,6 +51,7 @@ export function Callout({ tone = "info", title, children }: PropsWithChildren<Ca
         borderRadius: t.radiusMedium,
         background: `color-mix(in srgb, ${accent} 7%, ${t.surface})`,
         padding: "var(--vendo-density-card-padding, 12px 14px)",
+        ...style,
       }}
     >
       <span aria-hidden="true" style={{ color: accent, fontWeight: t.weightEmphasis, lineHeight: t.lineHeight }}>

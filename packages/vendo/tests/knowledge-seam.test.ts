@@ -37,7 +37,7 @@ const principal: Principal = { kind: "user", subject: "user_knowledge" };
 
 async function compose(config: Partial<CreateVendoConfig> = {}): Promise<Vendo> {
   return createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store: await tempStore("vendo-knowledge-seam-"),
     ...config,
@@ -154,7 +154,7 @@ describe("knowledge prompt index (k8)", () => {
       ],
     });
     const { model, prompts } = await mockModel();
-    const vendo = await compose({ model, knowledge: adapter });
+    const vendo = await compose({ models: { default: model }, knowledge: adapter });
 
     const first = await systemPromptOfTurn(vendo, prompts, "thr_k8_stability");
     expect(first).toContain("Knowledge\n");
@@ -188,7 +188,7 @@ describe("knowledge prompt index (k8)", () => {
 
   it("is absent when no knowledge adapter is composed", async () => {
     const { model, prompts } = await mockModel();
-    const vendo = await compose({ model });
+    const vendo = await compose({ models: { default: model } });
     const prompt = await systemPromptOfTurn(vendo, prompts, "thr_k8_absent");
     expect(prompt).not.toContain("Knowledge\n");
     expect(prompt).not.toContain("vendo_knowledge_search");

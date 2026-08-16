@@ -50,12 +50,12 @@ import {
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 48 mount-relative paths", () => {
+  it("exposes the format constant and 50 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 13 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
+    // 14 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
     // + workspace(4) + lifecycle(2) + audit(2) + secrets(4) + footprint(1)
-    // + retention(2) + status(1) + usage(3) = 48
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(48);
+    // + retention(2) + status(1) + usage(3) + turn(2) = 50
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(50);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
@@ -70,18 +70,20 @@ describe("vendo/store-wire@1", () => {
 
   // `ops` on /status is a LEVEL over this order, so an implementation that
   // stops short of the newest ops can only report an honest number when those
-  // ops are the tail. The usage family is the newest one no mount answers yet,
-  // and it sits behind everything a shipped mount already serves — as retention
-  // and the audit tally did before it.
+  // ops are the tail. The turn family is the newest one no mount answers yet,
+  // and it sits behind everything a shipped mount already serves — as usage,
+  // retention and the audit tally did before it.
   it("declares the ops nothing serves yet LAST, so the /status level can stay honest", () => {
     const ops = Object.keys(STORE_WIRE_PATHS).filter((op) => op !== "status");
-    expect(ops.slice(-6)).toEqual([
+    expect(ops.slice(-8)).toEqual([
       "retention.quarantine",
       "retention.purge",
       "audit.tally",
       "usage.record",
       "usage.count",
       "usage.tally",
+      "turn.load",
+      "turn.commit",
     ]);
   });
 

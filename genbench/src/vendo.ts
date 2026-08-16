@@ -138,7 +138,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   const snapshots: Array<{ atMs: number; payload: UIPayload }> = [];
   let appsRef: ReturnType<typeof createApps> | undefined;
   const assembler = screenAssembler({
-    models: { default: meter.model },
+    models: { default: meter.model, apps: meter.model },
     tools: boundTools,
     workspace: async (screenCtx) => await workspaces.open(screenCtx.principal),
     // The floor is what paints at all: its gauntlet runs the screen's queries

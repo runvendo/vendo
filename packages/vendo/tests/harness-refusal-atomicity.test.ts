@@ -72,7 +72,7 @@ describe("the no-SQL/no-ops refusal is atomic", () => {
   it("writes nothing to the store when it refuses the turn", async () => {
     const backing = await tempStore();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: nonSqlStore(backing),
       harness: defineHarness({

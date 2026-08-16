@@ -17,7 +17,7 @@ import {
 } from "@tanstack/react-table";
 import { applyFormat, formatDateTime, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
-import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, type KitDensity } from "../tokens.js";
+import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -34,7 +34,7 @@ export interface DataTableColumn {
   cell?: ReactNode;
 }
 
-export interface DataTableProps {
+export interface DataTableProps extends KitStyled {
   /** Rows from a tool call. */
   rows: Array<Record<string, unknown>>;
   /** Column descriptions; when omitted, inferred from the first row's keys. */
@@ -118,6 +118,7 @@ export function DataTable(props: DataTableProps) {
     toolbar,
     rowActions,
     density,
+    style,
   } = props;
 
   // W3 — fail SOFT on missing data: a failed/pending query resolves its
@@ -298,7 +299,7 @@ export function DataTable(props: DataTableProps) {
   return (
     <div
       data-kit="DataTable"
-      style={{ ...font, ...numeric, ...densityVars(density), display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
+      style={{ ...font, ...numeric, ...densityVars(density), display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)", ...style }}
     >
       {(searchable || (filterableBy && filterableBy.length > 0) || toolbar !== undefined) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--vendo-density-inline-gap, 7px)", alignItems: "center" }}>

@@ -155,7 +155,7 @@ export default function Page() {
     const user = "user_ada";
     const reviewer = "host_reviewer";
     const vendo = createVendo({
-      model: screenModel(["Transfer remix v1", "Transfer remix v2", "Transfer remix v3"]),
+      models: { default: screenModel(["Transfer remix v1", "Transfer remix v2", "Transfer remix v3"]) },
       // Host-resolved principal from the fixture header; absent = no identity,
       // which the wire refuses with `forbidden`.
       principal: async (req): Promise<Principal | null> => {

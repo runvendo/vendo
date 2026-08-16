@@ -232,7 +232,10 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
           ...(options.compact ? {} : { year: "numeric" }),
           month: "short",
           day: "numeric",
-          ...(mode === "datetime" ? clock : {}),
+          // A date-only value carries no clock, so `datetime` shows the day
+          // alone: the alternative is stamping "12:00 AM" on every row, which
+          // is a time the host never said.
+          ...(mode === "datetime" && !dateOnly ? clock : {}),
         };
   return new Intl.DateTimeFormat(locale, { ...base, ...parts }).format(date);
 }

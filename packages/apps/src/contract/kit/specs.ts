@@ -16,7 +16,16 @@ import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropC
 const rows = z.array(z.record(z.string(), z.unknown()));
 const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "text"]);
 const align = z.enum(["start", "center", "end"]);
-const seriesInput = z.array(z.union([z.string(), z.object({ key: z.string(), label: z.string().optional() })]));
+/** A series descriptor stays OPEN: what is written beside `key`, `label` and
+ *  `color` is passed to that one series' engine element, so per-line colors are a
+ *  property of the line rather than of the whole chart. `color` is DECLARED
+ *  rather than left to the passthrough because the engine's own name for it
+ *  differs per chart (`stroke`, `fill`) — undeclared, the obvious word reached
+ *  the engine and meant nothing to it. */
+const seriesInput = z.array(z.union([
+  z.string(),
+  z.object({ key: z.string(), label: z.string().optional(), color: z.string().optional() }).passthrough(),
+]));
 
 /**
  * A CELL SLOT — Kit value components composed for one record.
@@ -32,8 +41,13 @@ const seriesInput = z.array(z.union([z.string(), z.object({ key: z.string(), lab
  * `$handler` callback (`genui/component/vm-program.ts` `emitValue`), so the
  * table would be handed an async door, not something it may call while it
  * paints. An element serializes; a closure does not.
+ *
+ * The DESCRIPTION is the marker a slot is known by: `z.unknown()` prints as
+ * `any` and `any` admitted exactly that function, so the component screen's
+ * typings print a described slot as an element type instead and the compiler
+ * refuses the closure (`checking/screen-typings.ts` `SLOT_PROP_DESCRIPTION`).
  */
-const slot = z.unknown();
+const slot = z.unknown().describe("holds Kit elements");
 const tableColumn = z.object({
   key: z.string(),
   label: z.string().optional(),
@@ -82,6 +96,35 @@ const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly s
 /** The shared adjectives' names, so `kitPrompt` can leave them out of every
  *  component's prop list and teach them once. */
 export const KIT_SHARED_PROP_NAMES: readonly string[] = SHARED_PROPS.map(({ name }) => name);
+
+/**
+ * THE STYLE PROP — on every component, not just the ones that read it, because
+ * every one of them merges it onto its own root. The theme is still the default
+ * and still what an unstyled screen paints from; this is the escape hatch for
+ * when the person asked for a particular look.
+ */
+const STYLE_PROP = "style";
+const style = config(
+  z.record(z.string(), z.union([z.string(), z.number()])),
+  "inline CSS on the component's root; your values win over the theme's",
+);
+
+/** What the PREAMBLE teaches, so neither prompt spends a line on it per
+ *  component: the shared adjectives, and `style`, which every component takes. */
+export const KIT_PREAMBLE_PROP_NAMES: readonly string[] = [...KIT_SHARED_PROP_NAMES, STYLE_PROP];
+
+/**
+ * Who RENDERS a third-party engine, and which one — the fact `kitPrompt`, the
+ * wire's allowed-prop set and the screen typings all read to let that engine's
+ * own props through (`KitComponentSpec.engine`).
+ */
+const ENGINES: Readonly<Record<string, string>> = {
+  BarChart: "recharts", DonutChart: "recharts", LineChart: "recharts", Sparkline: "recharts",
+  Accordion: "Base UI", Combobox: "Base UI", DatePicker: "Base UI", DateRange: "Base UI",
+  Form: "Base UI", Input: "Base UI", Menu: "Base UI", Modal: "Base UI", Progress: "Base UI",
+  Radio: "Base UI", SegmentedControl: "Base UI", Sheet: "Base UI", Slider: "Base UI",
+  Switch: "Base UI", Tabs: "Base UI", Toast: "Base UI", Tooltip: "Base UI",
+};
 
 // ---- specs ---------------------------------------------------------------
 const BASE_SPECS: KitComponentSpec[] = [
@@ -357,7 +400,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category (x) field", { required: true }),
-      series: config(seriesInput, "value series (keys or {key,label})", { required: true }),
+      series: config(seriesInput, "value series (keys or {key,label,color})", { required: true }),
       format: config(valueFormat, "y-axis + tooltip format"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
@@ -374,7 +417,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
-      series: config(seriesInput, "value series", { required: true }),
+      series: config(seriesInput, "value series (keys or {key,label,color})", { required: true }),
       format: config(valueFormat, "axis + tooltip format"),
       stacked: config(z.boolean(), "stack series into one bar"),
       horizontal: config(z.boolean(), "horizontal bars"),
@@ -654,7 +697,7 @@ const BASE_SPECS: KitComponentSpec[] = [
             // Code-only: a panel passed inline instead of as a child. Wire
             // trees cannot express an element in an attribute, so they nest
             // panels as children (the shape the plan skeleton emits).
-            content: z.unknown().optional(),
+            content: slot.optional(),
           }),
         ])),
         "tab labels, or {value,label} items",
@@ -681,7 +724,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "feedback",
     summary: "Self-managing collapsible sections. Good for long apps.",
     props: {
-      items: config(z.array(z.object({ label: z.string(), content: z.unknown() })), "sections", { required: true }),
+      items: config(z.array(z.object({ label: z.string(), content: slot })), "sections", { required: true }),
       multiple: config(z.boolean(), "allow several open at once"),
     },
     examples: ["<Accordion items={[{label:\"Terms\",content:<Text .../>}]}/>"],
@@ -715,7 +758,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "the hint, as plain text"),
       // Code-only, exactly like `Tabs.tabs[].content`: a slot holds an ELEMENT,
       // and a wire attribute cannot. Optional is what keeps Tooltip wire-usable.
-      content: config(z.unknown(), "code-only: Kit elements rendered as the hint instead of label"),
+      content: config(slot, "code-only: Kit elements rendered as the hint instead of label"),
     },
     examples: ['<Tooltip label="Sent 3 days ago"><Icon name="clock"/></Tooltip>'],
   },
@@ -885,6 +928,10 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
     actions: { doc: "elements at the end of the tab row", content: region },
   },
   Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
+  // The read tier, and no `at`: the hint is a prop of its own, and a hover
+  // popup is READ — nothing in one can be reliably operated, so a control there
+  // would be the same trap `rowActions` exists to keep out of a cell.
+  Tooltip: { content: { doc: "Kit elements rendered as the hint instead of the label" } },
   EmptyState: { icon: { doc: "a Kit mark drawn in the disc instead of a lucide name", content: mark } },
   Steps: { marker: { doc: "a glyph drawn in place of the step's numbered disc", content: mark } },
   Modal: { header, footer },
@@ -904,9 +951,11 @@ export const kitSlotPath = (name: string, slot: KitSlotSpec): string =>
  *  slots, which the same consumers read. */
 export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => ({
   ...spec,
+  engine: ENGINES[spec.name],
   slots: SLOTS[spec.name],
   props: {
     ...spec.props,
+    [STYLE_PROP]: style,
     ...Object.fromEntries(SHARED_PROPS
       .filter(({ on }) => on.includes(spec.name))
       .map(({ name, spec: prop }) => [name, prop])),

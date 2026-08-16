@@ -1,11 +1,11 @@
 /** Progress — a themed progress bar; ratio or value/max (W2 §The Kit). */
 import { Progress as Base } from "@base-ui/react/progress";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { isRenderableNumber } from "../format.js";
 import { useFieldValue } from "../row.js";
-import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitTone } from "../tokens.js";
+import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitStyled, type KitTone, type KitEngine, type KitRendered, given } from "../tokens.js";
 
-export interface ProgressProps {
+interface ProgressOwnProps extends KitStyled {
   /** A ratio (0..1) unless `max` is given, then a raw value. */
   value?: number;
   /** When set, `value/max` is the ratio. */
@@ -19,11 +19,16 @@ export interface ProgressProps {
   field?: string;
 }
 
-export function Progress({ value, max, label, showValue = false, tone, field }: ProgressProps) {
+/** Plus any Base UI `<Progress.Root>` prop, handed straight to the bar. It
+ *  arrives AFTER the Kit's own defaults and BEFORE `value`, which the component
+ *  owns — it is the clamped ratio the caller's own `value`/`max` resolved to. */
+export type ProgressProps = ProgressOwnProps & KitEngine<ComponentProps<typeof Base.Root>, ProgressOwnProps>;
+
+export function Progress({ value, max, label, showValue = false, tone, field, style, children, pending, ...engine }: ProgressProps & KitRendered) {
   const own = useFieldValue(field, value);
   if (!isRenderableNumber(own) || (max !== undefined && !isRenderableNumber(max))) {
     return (
-      <div data-kit="Progress" style={{ ...font, color: t.muted }}>
+      <div data-kit="Progress" style={{ ...font, color: t.muted, ...style }}>
         —
       </div>
     );
@@ -32,7 +37,7 @@ export function Progress({ value, max, label, showValue = false, tone, field }: 
   const clamped = Math.max(0, Math.min(1, ratio));
   const pct = `${Math.round(clamped * 100)}%`;
   return (
-    <div data-kit="Progress" style={{ ...font, display: "flex", flexDirection: "column", gap: 4 }}>
+    <div data-kit="Progress" style={{ ...font, display: "flex", flexDirection: "column", gap: 4, ...style }}>
       {(label || showValue) && (
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, fontSize: "0.85em" }}>
           {label ? <span style={microLabel}>{label}</span> : <span />}
@@ -44,13 +49,14 @@ export function Progress({ value, max, label, showValue = false, tone, field }: 
           its Indicator is the fill. The Track part is skipped because it would
           only add a wrapper between the two. */}
       <Base.Root
-        value={Math.round(clamped * 100)}
         // The ratio is `ChartFrame`'s intrinsic-width trick (charts/sanitize.tsx)
         // at a meter's proportion: an unlabelled bar has no content, so a parent
         // that sizes to what is inside it (the Kit's `Row`) resolved this
         // `width: 100%` to zero and the bar vanished. A parent with a real width
         // still wins.
         style={{ width: "100%", aspectRatio: "16 / 1", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
+        {...given(engine)}
+        value={Math.round(clamped * 100)}
       >
         <Base.Indicator
           style={{

@@ -1,0 +1,175 @@
+---
+title: "Import & fork"
+description: "How an app copy is minted and what it deliberately leaves behind, how a user forks one of your own components with Remixable, and what drift and reseed do to that fork."
+sidebarTitle: "Import & fork"
+---
+
+Nobody uses someone else's app. Every copy is a new app with a new id, and nothing about the original's authority crosses the line.
+
+## Copying an app
+
+Export writes a `.vendoapp` archive. Import mints a fresh `app_` id before it even validates the document, because an artifact's own id is never trusted.
+
+`fork` does the same in one call and records `forkedFrom` so the lineage is readable. `share` and `publish` hand the copy to Vendo Cloud, and both need `VENDO_API_KEY`.
+
+<Frame caption="A copy re-approves its own egress before it can run anything.">
+  <svg viewBox="0 0 700 132" width="100%" role="img" aria-label="What travels with a copy: the document, the app.tsx screen, the declared secrets and egress domains. What stays behind: the machine, the owner's approved egress, and the conversation.">
+    <rect x="1" y="1" width="330" height="130" rx="10" fill="#6c3bff" fillOpacity="0.07" stroke="#6c3bff" strokeOpacity="0.35" />
+    <text x="20" y="26" fontSize="8" letterSpacing="1.2" fill="#6c3bff" fillOpacity="0.85">TRAVELS</text>
+    <text x="20" y="50" fontSize="12" fill="currentColor">the document and its app.tsx screen</text>
+    <text x="20" y="73" fontSize="12" fill="currentColor">the storage the app declares</text>
+    <text x="20" y="96" fontSize="12" fill="currentColor">the secret names it declares</text>
+    <text x="20" y="119" fontSize="12" fill="currentColor">the egress domains it declares</text>
+    <rect x="369" y="1" width="330" height="130" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
+    <text x="388" y="26" fontSize="8" letterSpacing="1.2" fill="currentColor" fillOpacity="0.5">STAYS BEHIND</text>
+    <text x="388" y="50" fontSize="12" fill="currentColor" fillOpacity="0.65">the machine, so the copy re-graduates</text>
+    <text x="388" y="73" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's approved egress</text>
+    <text x="388" y="96" fontSize="12" fill="currentColor" fillOpacity="0.65">every grant, which is keyed to the old id</text>
+    <text x="388" y="119" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's conversation</text>
+  </svg>
+</Frame>
+
+Two copies are refused outright, and both refusals are loud.
+
+<Warning>
+  A served layer-3 app cannot be forked. Its whole surface lives in its machine, and machines never travel with a copy, so the fork would be an app that can never open.
+
+  An app forked from one of your host components cannot be exported at all. Captured baselines are written `exportable: false`, and the export fails with `baseline-forbids-export`.
+</Warning>
+
+## Forking one of your components
+
+Wrap a component and a user can make it theirs. The fork starts from your real source, copied byte for byte by the engine, never regenerated and never retyped by a model.
+
+```tsx focus={3-5}
+import { Remixable } from "@vendoai/ui/chrome";
+
+<Remixable>
+  <NetWorthCard accounts={accounts} />
+</Remixable>
+```
+
+At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hover into a **✦ Remix** pill, and pressing it copies the captured source into the user's own fork with no model call.
+
+<Frame>
+  <img
+    src="/images/maple/remix-mark.png"
+    alt="Maple's balance card under the pointer, with the Remix pill bloomed in its top right corner"
+    width="480"
+    height="370"
+  />
+</Frame>
+
+The fork renders in place, because the wrapper is the mount boundary. The page morphs for that user alone.
+
+Forking is a user gesture the engine executes, so the model never decides to fork. The route dedupes per user and per component, so a double press can never mint a duplicate.
+
+### Instant and reviewed
+
+Review never affects who can see a remix, because remixes are personal, always.
+
+It decides one thing only: where the fork executes.
+
+<Columns cols={2}>
+  <Card title="Instant" icon="zap">
+    The default. The remix appears immediately and runs sandboxed, forever, and the ✦ mark becomes its management handle.
+
+    No queue, no approval ceremony.
+  </Card>
+
+  <Card title="Reviewed" icon="shield-check">
+    `<Remixable review>`. Your original keeps rendering and the user sees "sent for review", never a half-trusted render.
+
+    On approval the fork mounts natively in your page. On rejection the note lands in the panel and the fork survives, so the user can edit and resubmit.
+  </Card>
+</Columns>
+
+The gate is the [in-client approval machinery](/generated/in-client-venue), and the review artifact is the ship-diff against your captured baseline.
+
+### What crosses the fork boundary
+
+The JSON-serializable props your call site passes flow into the fork on every render. Nothing is captured, so nothing goes stale.
+
+Host functions do not cross. Callbacks, your router, and context-style hooks are dropped, and a fork's behavior is rewired through your API instead, exactly like any generated app.
+
+<Note>
+  Sync notices this for you. A component that reaches into host plumbing gets a warning suggesting `review`, because plumbing does not cross the boundary and an approved reviewed remix runs natively where it would have kept working.
+</Note>
+
+## What sync captures
+
+`vendo sync` scans your source for `<Remixable>` wrappers, resolves each wrapped child through its import, and snapshots it to `.vendo/remixable/<slot>.json`.
+
+The slot name is the component's own exported identifier, so remixes survive call-site refactors. Wrapping the same component in several places is legal: one capture, many mount points.
+
+| Captured | Notes |
+| --- | --- |
+| The component source | Plus a `sha256:` content hash of it |
+| Its local import closure | No depth limit, bounded by the `node_modules` boundary and 256 KB |
+| Your app-root stylesheets | From `app/layout.*`, `app/root.*`, `pages/_app.*`, or their `src/` variants |
+| The kind | `review: true` for a reviewed wrapper |
+
+Sync never skips a wrapper without saying so. Inline JSX, an unimported component, an anonymous default export, or source outside your project root each print one `error:` line naming the file, the line, and the fix, and the run exits `2`.
+
+A component that is intentionally never capturable can be acknowledged instead.
+
+```json .vendo/overrides.json focus={4}
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "remix": { "ignoreSlots": ["ThirdPartyWidget"] }
+}
+```
+
+Acknowledged slots are skipped without error and their baselines are left alone.
+
+## Drift and reseed
+
+Update the component, run `vendo sync`, and the new baseline overwrites the old one. Existing forks are now drifted: the hash they recorded no longer matches the captured baseline.
+
+<Frame caption="Drift is a warning, never an action. A drifted fork keeps rendering its own content, untouched.">
+  <svg viewBox="0 0 700 112" width="100%" role="img" aria-label="A user's fork records the baseline hash it was created from. When sync captures a new baseline, the recorded hash no longer matches and the fork is reported as drifted.">
+    <rect x="1" y="16" width="200" height="52" rx="9" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
+    <text x="101" y="38" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">NetWorthCard</text>
+    <text x="101" y="55" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.55">baseline sha256:a1c4…</text>
+    <line x1="209" y1="42" x2="248" y2="42" stroke="#6c3bff" strokeOpacity="0.4" strokeWidth="1.5" />
+    <path d="M258 42 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.6" />
+    <text x="233" y="30" fontSize="9" textAnchor="middle" fill="#6c3bff">remix</text>
+    <rect x="258" y="16" width="200" height="52" rx="9" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+    <text x="358" y="38" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">the user's fork</text>
+    <text x="358" y="55" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">seed.baseline sha256:a1c4…</text>
+    <line x1="101" y1="68" x2="101" y2="84" stroke="currentColor" strokeOpacity="0.3" strokeDasharray="3 3" />
+    <rect x="1" y="84" width="200" height="27" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.22" />
+    <text x="101" y="102" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.75">you edit it, sync captures sha256:7f02…</text>
+    <line x1="209" y1="97" x2="248" y2="97" stroke="currentColor" strokeOpacity="0.3" />
+    <path d="M258 97 l-10 -5 v10 z" fill="currentColor" fillOpacity="0.4" />
+    <rect x="258" y="84" width="200" height="27" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.3" strokeDasharray="4 3" />
+    <text x="358" y="102" fontSize="10" fontWeight="600" textAnchor="middle" fill="currentColor" fillOpacity="0.8">drifted: baseline-changed</text>
+  </svg>
+</Frame>
+
+Vendo says so everywhere the fork is opened or edited. `open()` attaches a server-authoritative `seedDrift` to the payload, edit results carry the same field, and the renderer shows an in-surface notice above the fork.
+
+**Reseed** rebuilds the fork from the new baseline by replaying the one instruction the seed recorded.
+
+```ts focus={1}
+await client.apps.reseed(appId);
+```
+
+<Warning>
+  Reseed replaces. Anything the person changed after that first instruction is gone, which is exactly why it stays behind an explicit ask and nothing auto-rebases.
+</Warning>
+
+It fails closed with `conflict` in two cases: an app that was not created from a host component, and a component that has not changed since the app was created.
+
+## Where to go next
+
+<Columns cols={2}>
+  <Card title="Host components" href="/generated/host-components">
+    Register the components a fork starts from, and see what sync captures.
+  </Card>
+
+  <Card title="Generated apps" href="/generated/apps">
+    The screen a fork becomes, and the checks every save faces.
+  </Card>
+</Columns>

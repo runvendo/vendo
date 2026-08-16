@@ -148,7 +148,7 @@ export default function Page() {
 
     // ONE host process lifetime: the ✦ gesture, instruction and all.
     const vendo = createVendo({
-      model: screenModel(["Net worth $1.2M — remixed"]),
+      models: { default: screenModel(["Net worth $1.2M — remixed"]) },
       principal: async () => principal,
       store,
       development: true,
@@ -192,7 +192,7 @@ export default function Page() {
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      model: screenModel(["Total net worth $1.2M — remixed"]),
+      models: { default: screenModel(["Total net worth $1.2M — remixed"]) },
       principal: async () => principal,
       store,
       development: true,

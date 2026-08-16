@@ -346,7 +346,7 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
 
     const env = model === DEFAULT_MODEL_LABEL
       ? { ...options.env }
-      : { ...options.env, VENDO_EXTRACTION_MODEL: model };
+      : { ...options.env, VENDO_MODEL_EXTRACT: model };
 
     // The pass's narrative IS the evidence a human reads to believe a cell, so it
     // is captured per cell rather than interleaved across models on stdout.

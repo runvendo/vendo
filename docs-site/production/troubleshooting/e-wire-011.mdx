@@ -1,0 +1,50 @@
+---
+title: "E-WIRE-011"
+sidebarTitle: "E-WIRE-011"
+description: "Doctor found the vendoai alias installed but @vendoai/vendo unresolvable, which 500s every wired route under pnpm."
+---
+
+```text wiring/vendo-resolvable
+broken: the vendoai alias is installed but @vendoai/vendo is not resolvable
+from this app — the alias keeps its copy nested, so under pnpm every
+@vendoai/vendo/* import in your wiring fails to compile ("Module not found")
+and the route 500s before any live check can mean anything. Fix: <install
+command> (keep the alias; both names ship the same wire).
+```
+
+`<install command>` is the exact command for your package manager, for
+example `pnpm add @vendoai/vendo`.
+
+`check: wiring/vendo-resolvable` · `error_code: E-WIRE-011` · `doctor exits: 1`
+
+## What you're seeing
+
+Every wired route answers a 500 whose page reads
+`Module not found: Can't resolve '@vendoai/vendo/server'`. The live checks
+report the server as unreachable, which reads like a dead dev server rather
+than what it actually is.
+
+## Why
+
+`vendoai` is a thin alias that depends on `@vendoai/vendo`. Under pnpm's
+strict, non-flat `node_modules`, that package lives inside the alias's own
+nested resolution. Your host source can only resolve its direct
+dependencies, so the `@vendoai/vendo/*` imports in your wiring fail at
+compile time. npm and yarn hoist, which is why the same install works there.
+
+## The fix
+
+Add the package your wiring imports as a direct dependency.
+
+```bash
+pnpm add @vendoai/vendo
+```
+
+Keep the `vendoai` alias installed too; both names ship the same wire.
+`vendo init` performs this repair itself on any host where it can. Re-run
+`npx vendo doctor` after the install finishes.
+
+## Related errors
+
+- [E-WIRE-005](/production/troubleshooting/e-wire-005): neither package declared at all
+- [E-DEP-002](/production/troubleshooting/e-dep-002): a different split-brain, between the CLI and the running wire's version

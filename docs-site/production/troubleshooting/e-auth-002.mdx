@@ -1,0 +1,40 @@
+---
+title: "E-AUTH-002"
+sidebarTitle: "E-AUTH-002"
+description: "Doctor's present-credential probe threw instead of answering."
+---
+
+```text auth/present
+broken: present credential probe is unreachable at <base>/doctor/present;
+restart the dev server and verify VENDO_BASE_URL
+```
+
+`check: auth/present` · `error_code: E-AUTH-002` · `doctor exits: 1`
+
+## What you're seeing
+
+`/status` answered, but the follow-up POST to `<base>/doctor/present` threw
+instead of returning a response.
+
+## Why
+
+The dev server died mid-run, or a proxy in front of it blocks doctor's
+routes.
+
+## The fix
+
+Restart the dev server, then re-run doctor.
+
+```bash
+npm run dev
+npx vendo doctor
+```
+
+Verify `VENDO_BASE_URL` points at the running host origin, and remove any
+proxy rule that blocks `/doctor/*` paths.
+
+## Related errors
+
+- [E-AUTH-001](/production/troubleshooting/e-auth-001) — the same probe, answering but stripping credentials
+- [E-LIVE-002](/production/troubleshooting/e-live-002) — the earlier check this one depends on
+- [E-AUTH-005](/production/troubleshooting/e-auth-005) — the actAs probe's equivalent unreachable case

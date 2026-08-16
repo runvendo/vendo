@@ -24,7 +24,7 @@ import { BRAND_SLOTS, modelThemeSchema, type ThemeSlotValues } from "../theme/ex
  *   unfilled. A failure degrades to a note; the exact reads and neutral
  *   defaults still stand.
  *
- * Nothing here assumes a vendor; the model override rides VENDO_EXTRACTION_MODEL,
+ * Nothing here assumes a vendor; the model override rides VENDO_MODEL_EXTRACT,
  * which every harness already honors.
  */
 

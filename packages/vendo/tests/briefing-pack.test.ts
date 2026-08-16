@@ -261,7 +261,7 @@ async function walk(options: { brief?: string; routes?: VendoRouteMap } = {}): P
   const { model, systemPrompts } = scripted();
   const box: BoxLog = { contexts: [] };
   const vendo = createVendo({
-    model,
+    models: { default: model },
     principal: async () => principal,
     store: await tempStore(join(root, "store")),
     theme: THEME,

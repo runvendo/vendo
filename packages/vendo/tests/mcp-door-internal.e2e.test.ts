@@ -91,7 +91,7 @@ async function internalHost(
     },
   });
   composed = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     guard: { policy: "cautious" },
@@ -217,7 +217,7 @@ describe("the INTERNAL-only door — one credential space, and no way into the o
       },
     });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: harness as never,
@@ -266,7 +266,7 @@ async function dialledDoorUrl(
     },
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     harness: harness as never,
@@ -311,7 +311,7 @@ async function mountedAutoMounted(
     },
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     harness: harness as never,

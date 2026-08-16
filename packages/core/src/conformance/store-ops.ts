@@ -2,7 +2,7 @@ import type { AuditEvent } from "../audit.js";
 import { ENGINE_ALLOWLIST_VERSION, engineAppHistory } from "../engine-collections.js";
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema, type IsoDateTime } from "../ids.js";
-import { STORE_WIRE_APPEND_MESSAGES_OPS, STORE_WIRE_PATHS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
+import { STORE_WIRE_APPEND_MESSAGES_OPS, STORE_WIRE_PATHS, STORE_WIRE_TURN_OPS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
 import type { AuditQuery, CollectionFootprint, StoreOps, UsageCountQuery } from "../store.js";
 import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
 import { omitted, type ConformanceCase, type ConformanceOmission, type ConformanceSuite } from "./index.js";
@@ -144,6 +144,9 @@ const RETENTION_ABSENT = "this mount omits the retention family (optional — an
 
 /** ...and for the meter, optional on the same rule. */
 const USAGE_ABSENT = "this mount omits the usage family (optional — a store with nowhere to meter leaves it off, and a limits policy is refused at composition rather than enforced against a meter that reads zero)";
+
+/** ...and for the turn envelopes, optional on the same rule. */
+const TURN_ABSENT = "this mount omits the turn family (optional — a caller that finds it absent makes the individual calls it always did)";
 
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
@@ -2392,6 +2395,69 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       },
 
       // =====================================================================
+      // turn
+      // =====================================================================
+
+      /** The envelope's WHOLE contract: each part is exactly what its own op
+          answers, so a turn that batches its opening reads reads the same store
+          it would have read one call at a time. OPTIONAL — a mount that omits
+          the family is served by those calls — so this reports the omission
+          rather than passing on absence. */
+      opsCase(opts, "turn.load answers exactly what the ops it bundles answer", async (ops) => {
+        const turn = ops.turn;
+        if (turn === undefined) return omitted(TURN_ABSENT);
+        await seedApp(ops, "app_turn");
+        await ops.transcripts.putThread({ id: "thr_turn", subject: "user_1", messages: [{ id: "m_1", text: "one" }] });
+        await ops.harness.set("app_turn", "user_1", { step: 3 });
+        await ops.workspace.commit([{ path: "page.tsx", data: { code: "x" } }], { owner: "user_1" });
+
+        const loaded = await turn.load({
+          thread: { id: "thr_turn" },
+          index: { owner: "user_1" },
+          read: { paths: ["page.tsx"], owner: "user_1" },
+          harness: { appId: "app_turn", subject: "user_1" },
+        });
+        assertDeepEqual(loaded.thread, await ops.transcripts.getThread("thr_turn"), "turn.load's thread is not getThread's answer");
+        assertDeepEqual(loaded.index, await ops.workspace.index({ owner: "user_1" }), "turn.load's index is not workspace.index's answer");
+        assertDeepEqual(loaded.read, await ops.workspace.read(["page.tsx"], { owner: "user_1" }), "turn.load's read is not workspace.read's answer");
+        assertDeepEqual(loaded.harness, await ops.harness.get("app_turn", "user_1"), "turn.load's harness is not harness.get's answer");
+        // Asking for less costs less: a part the request left out is absent from
+        // the answer, never a zero standing in for one.
+        assert(!("usage" in loaded), "turn.load answered a usage count nobody asked for");
+
+        // The shape EVERY `vendo()` turn sends: the thread and the index, no
+        // file bytes. A turn reads a file when a tool asks for one, so a
+        // required `read` would have it name a path it does not want.
+        const quiet = await turn.load({ thread: { id: "thr_turn" }, index: { owner: "user_1" } });
+        assertDeepEqual(quiet.index, loaded.index, "turn.load's index changed when the request dropped `read`");
+        assert(!("read" in quiet), "turn.load answered a workspace read nobody asked for");
+        assert(!("harness" in quiet), "turn.load answered harness state nobody asked for");
+      }),
+
+      /** The closing half, held to the same rule from the other side: every part
+          lands exactly where its own op would have landed it, and the answer is
+          the batch append's `{revision, count}` — never the thread. */
+      opsCase(opts, "turn.commit lands exactly what the ops it bundles land", async (ops) => {
+        const turn = ops.turn;
+        if (turn === undefined) return omitted(TURN_ABSENT);
+        await seedApp(ops, "app_commit");
+        const event = auditEvent("aud_turn", 0, {});
+        const landed = await turn.commit({
+          messages: { threadId: "thr_commit", subject: "user_1", messages: [{ id: "m_1", text: "one" }], title: "a turn" },
+          harness: { appId: "app_commit", subject: "user_1", state: { step: 4 } },
+          audit: { collection: "vendo_audit", record: { id: event.id, data: event } },
+        });
+        assert(landed.messages.count === 1, `turn.commit should report 1 message landed, got ${landed.messages.count}`);
+        const thread = await ops.transcripts.getThread("thr_commit");
+        assert(
+          thread?.revision === landed.messages.revision,
+          `turn.commit reported revision ${String(landed.messages.revision)}, the thread holds ${String(thread?.revision)}`,
+        );
+        assertDeepEqual(await ops.harness.get("app_commit", "user_1"), { step: 4 }, "turn.commit did not land the harness state");
+        assertDeepEqual((await ops.engine.get("vendo_audit", "aud_turn"))?.data, event, "turn.commit did not land the audit row");
+      }),
+
+      // =====================================================================
       // status
       // =====================================================================
 
@@ -2417,6 +2483,12 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           `status.ops ${status.ops} disagrees with transcripts.appendMessages being `
           + `${ops.transcripts.appendMessages === undefined ? "absent" : "served"} `
           + `(the batch append is op ${STORE_WIRE_APPEND_MESSAGES_OPS})`,
+        );
+        assert(
+          (status.ops >= STORE_WIRE_TURN_OPS) === (ops.turn !== undefined),
+          `status.ops ${status.ops} disagrees with the turn family being `
+          + `${ops.turn === undefined ? "absent" : "served"} `
+          + `(the envelopes are ops ${STORE_WIRE_TURN_OPS - 1} and ${STORE_WIRE_TURN_OPS})`,
         );
       }),
     ],

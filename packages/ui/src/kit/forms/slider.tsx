@@ -1,10 +1,11 @@
 /** Slider — a number picked along a range; arrow keys step it (W2 §The Kit). */
 import { Slider as Base } from "@base-ui/react/slider";
-import { font, hairline, numeric, t, transitionFor } from "../tokens.js";
+import type { ComponentProps } from "react";
+import { font, hairline, numeric, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
-export interface SliderProps {
+interface SliderOwnProps extends KitStyled {
   label?: string;
   value?: number;
   min?: number;
@@ -18,18 +19,23 @@ export interface SliderProps {
   onChange?: (value: number) => void;
 }
 
-export function Slider({ label, value, min = 0, max = 100, step = 1, showValue = false, hint, disabled, onChange }: SliderProps) {
+/** Plus any Base UI `<Slider.Root>` prop, handed straight to the slider. `style`
+ *  stays the Kit's own — it dresses the ROOT the label and hint share. */
+export type SliderProps = SliderOwnProps & KitEngine<ComponentProps<typeof Base.Root>, SliderOwnProps>;
+
+export function Slider({ label, value, min = 0, max = 100, step = 1, showValue = false, hint, disabled, onChange, style, children, pending, ...engine }: SliderProps & KitRendered) {
   const { fieldId, helpId } = useFieldIds("slider");
   const screen = controlledHandler(value !== undefined, onChange);
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} style={style}>
       <Base.Root
         data-kit="Slider"
-        {...(screen === null ? { defaultValue: value ?? min } : { value: value ?? min })}
         min={min}
         max={max}
         step={step}
         disabled={disabled}
+        {...given(engine)}
+        {...(screen === null ? { defaultValue: value ?? min } : { value: value ?? min })}
         onValueChange={(next) => {
           const one = Array.isArray(next) ? next[0]! : next;
           return screen === null ? onChange?.(one) : screen({ target: { value: one } });

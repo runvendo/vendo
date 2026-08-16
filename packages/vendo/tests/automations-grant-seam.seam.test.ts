@@ -67,7 +67,7 @@ async function setup(): Promise<Vendo> {
     await rm(dataDir, { recursive: true, force: true });
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     guard: { policy: { rules: [{ match: { risk: "read" }, action: "ask" }] } },

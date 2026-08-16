@@ -1,9 +1,9 @@
 /** CodeBlock — code or a raw payload, shown exactly as it came (W2 §The Kit).
  *  No highlighting (a parser is a dependency) and no copy button (the clipboard
  *  is a permission the jail does not have). */
-import { font, hairline, microLabel, t } from "../tokens.js";
+import { font, hairline, microLabel, t, type KitStyled } from "../tokens.js";
 
-export interface CodeBlockProps {
+export interface CodeBlockProps extends KitStyled {
   /** The code / payload to show. */
   code?: string;
   /** Language label for the chip, e.g. "json". */
@@ -12,7 +12,7 @@ export interface CodeBlockProps {
 
 const mono = "var(--vendo-mono-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)";
 
-export function CodeBlock({ code = "", language }: CodeBlockProps) {
+export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
   return (
     <div
       data-kit="CodeBlock"
@@ -24,6 +24,7 @@ export function CodeBlock({ code = "", language }: CodeBlockProps) {
         borderRadius: t.radiusMedium,
         background: t.surfaceRaised,
         overflow: "hidden",
+        ...style,
       }}
     >
       {language ? (

@@ -1,10 +1,10 @@
 /** Textarea — themed multiline input (W2 §The Kit). */
 import type { ReactNode } from "react";
-import { control, t } from "../tokens.js";
+import { control, t, type KitStyled } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
-export interface TextareaProps {
+export interface TextareaProps extends KitStyled {
   label?: string;
   value?: string;
   placeholder?: string;
@@ -17,11 +17,11 @@ export interface TextareaProps {
   onChange?: (value: string) => void;
 }
 
-export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, required, footer, onChange }: TextareaProps) {
+export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, required, footer, onChange, style }: TextareaProps) {
   const { fieldId, helpId } = useFieldIds("textarea");
   const screen = controlledHandler(value !== undefined, onChange);
   return (
-    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
+    <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} style={style}>
       <textarea
         id={fieldId}
         data-kit="Textarea"

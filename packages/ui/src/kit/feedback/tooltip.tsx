@@ -5,8 +5,8 @@
  * slot for a hint that is more than one line. Content wins when both are given.
  */
 import { Tooltip as Base } from "@base-ui/react/tooltip";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { popup, popupMotion, t } from "../tokens.js";
+import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { popup, popupMotion, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 /** What the browser would already stop on inside the trigger. `:disabled` is
  *  excluded because a disabled control is SKIPPED by sequential navigation:
@@ -27,7 +27,7 @@ const FOCUSABLE = [
 const described = (element: HTMLElement): string[] =>
   (element.getAttribute("aria-describedby") ?? "").split(/\s+/u).filter(Boolean);
 
-export interface TooltipProps {
+interface TooltipOwnProps extends KitStyled {
   /** The hint, as plain text. */
   label?: string;
   /** Code-only: Kit elements rendered as the hint instead of `label`. */
@@ -36,7 +36,12 @@ export interface TooltipProps {
   children?: ReactNode;
 }
 
-export function Tooltip({ label, content, children }: TooltipProps) {
+/** Plus any Base UI `<Tooltip.Root>` prop, handed straight to the tooltip.
+ *  `style` stays the Kit's own — Tooltip.Root draws nothing, so it dresses the
+ *  TRIGGER the caller sees, not the portalled hint. */
+export type TooltipProps = TooltipOwnProps & KitEngine<ComponentProps<typeof Base.Root>, TooltipOwnProps>;
+
+export function Tooltip({ label, content, children, style, pending, ...engine }: TooltipProps & KitRendered) {
   // Base UI's tooltip parts carry no role and no description wiring of their
   // own, so the hint would be invisible to a screen reader. Both are ours.
   const hintId = useId();
@@ -66,13 +71,13 @@ export function Tooltip({ label, content, children }: TooltipProps) {
   }, [control, hintId]);
 
   return (
-    <Base.Root>
+    <Base.Root {...given(engine)}>
       {/* A span, not Base UI's default button: the thing being explained is
           often a button already, and a button inside a button is not HTML. */}
       <Base.Trigger
         data-kit="Tooltip"
         {...(control === null ? { tabIndex: 0, "aria-describedby": hintId } : {})}
-        render={<span ref={wrapper} style={{ display: "inline-flex" }} />}
+        render={<span ref={wrapper} style={{ display: "inline-flex", ...style }} />}
       >
         {children}
       </Base.Trigger>

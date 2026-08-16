@@ -1,0 +1,192 @@
+---
+title: "Telemetry"
+sidebarTitle: "Telemetry"
+description: "What a running Vendo deployment reports about itself, what the build tooling reports, what neither ever sends, and every way to turn both off."
+---
+
+Vendo collects two streams. One is what a running deployment reports about
+itself, and one is what the build and development tooling reports.
+
+Neither ever carries a prompt, a tool argument, a row, a message, or a person.
+
+## What a deployment reports
+
+Runtime SDK telemetry is Vendo describing its own behavior inside your process:
+which adapters it booted with, how a turn went, and whether Vendo's own code
+warned or failed.
+
+It uploads only when both of these hold.
+
+<Steps>
+  <Step title="VENDO_API_KEY is set to a non-empty value.">
+    A keyless deployment installs no sink at all. Nothing is queued and nothing
+    is sent.
+  </Step>
+  <Step title="No kill switch is tripped.">
+    Any of `VENDO_TELEMETRY_DISABLED`, `DO_NOT_TRACK`, or `CI` stops the stream
+    before it exists. See [Opting out](#opting-out).
+  </Step>
+</Steps>
+
+`NODE_ENV` gates nothing here. The stream runs in production, which is the
+point of it.
+
+The console can also stop a talking deployment mid-flight. If your org has
+telemetry disabled, the ingest door answers `disabled: true` and the SDK stops
+uploading for the rest of the process lifetime.
+
+---
+
+## The five events
+
+The catalog is closed. A sixth event, or a new property on an existing one, is
+a contract change on both the SDK and the console.
+
+| Event | Fires when | Carries |
+| --- | --- | --- |
+| `deployment_boot` | `createVendo` finishes composing | `adapters` (the filled slot names), `blocks`, `framework` |
+| `agent_run` | One agent turn ends | `durationMs`, `steps`, `toolCalls`, `tools`, `modelFamily`, `outcome`, `errorCode` |
+| `app_generated` | One app generation finishes | `components` (uses per name), `durationMs`, `outcome`, `kind` |
+| `guard_decision` | The guard renders a decision | `kind`, `decision`, `tool` |
+| `sdk_error` | Vendo's own logger emits `warn` or `error` | `code`, `level`, `message`, `data`, `stack`, `runtime` |
+
+`sdk_error` is the one with free text, and the text is Vendo's own authored
+sentence. `data` carries each logged key's shape, never its value, and `stack`
+carries `@vendoai` frames only.
+
+Every upload is stamped with the running SDK version and the runtime name:
+`workerd`, `edge-light`, `bun`, `deno`, `node`, or `unknown`.
+
+Who the deployment is never rides the body. The console resolves org, project,
+and deployment from the identity headers server-side, so a deployment cannot
+claim to be another one.
+
+---
+
+## Deployment identity headers
+
+Every key-authed request from a running deployment carries three headers.
+
+| Header | Value |
+| --- | --- |
+| `x-vendo-deployment-host` | The OS hostname, or `unknown` on runtimes with none |
+| `x-vendo-deployment-name` | The deployment name resolved from the project root |
+| `x-vendo-deployment-version` | The running `@vendoai/vendo` version |
+
+Values are stripped to printable ASCII before they are sent, so a hostname with
+an emoji in it can never take a request down.
+
+Operators reading request logs will see these on every hosted call. Model
+gateway traffic is the exception: it goes through the stock Anthropic provider
+and carries none of them.
+
+---
+
+## Routing SDK logs somewhere else
+
+Every `warn` or `error` Vendo writes to the operator log also becomes an
+`sdk_error` event. The console line itself is untouched.
+
+To send those lines to your own observability stack, pass a `logger`:
+
+```ts highlight={7,8,9,10}
+import { createVendo } from "@vendoai/vendo/server";
+import type { VendoLogger } from "@vendoai/core";
+
+const vendo = createVendo({
+  auth: authJs(),
+  logger: (event) => {
+    myObservability.record({
+      level: event.level,
+      code: event.code,
+      message: event.message,
+    });
+  },
+});
+```
+
+A host-passed logger always wins. Leaving it unset keeps today's console lines,
+byte for byte.
+
+---
+
+## What the build tooling reports
+
+Build and development telemetry runs in `vendo init`, `sync`, and `doctor`. It
+does not fire from a deployed app and does not collect end-user activity.
+
+It has two lanes.
+
+<AccordionGroup>
+  <Accordion title="Anonymous (the default)">
+    Events carry a random anonymous id, allowlisted counts and short enums, and
+    a salted one-way hash of the git origin URL so events from one repo group
+    together.
+
+    The stored id is a random UUID, not derived from a machine, account,
+    project, or app. Deleting `~/.vendo/telemetry.json` rotates it.
+  </Accordion>
+  <Accordion title="Cloud">
+    A well-formed `VENDO_API_KEY` also marks each event `cloud: true` and
+    attaches the SHA-256 hash of the key, which joins to the owning account in
+    the console.
+
+    The raw key is never sent.
+  </Accordion>
+</AccordionGroup>
+
+Events never contain source, file paths, prompts, generated UI, tool inputs or
+outputs, keys, environment values, request bodies, or stack traces.
+
+The cloud lane's `errorDetail` is the only free-text property, and it is
+scrubbed first. File paths, email addresses, and secret-shaped strings become
+fixed tokens, then the result is capped at 200 characters.
+
+The full event allowlist is maintained in
+[`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md).
+
+---
+
+## Opting out
+
+Three environment values stop both streams. Set any one of them.
+
+| Variable | Blocks when |
+| --- | --- |
+| `VENDO_TELEMETRY_DISABLED` | equal to `"1"` or `"true"` |
+| `DO_NOT_TRACK` | equal to `"1"` or `"true"` |
+| `CI` | set to anything other than `""`, `"0"`, or `"false"` |
+
+```bash .env.local highlight={1}
+VENDO_TELEMETRY_DISABLED=1
+```
+
+The build lane has a fourth control of its own: `"optedOut": true` in
+`~/.vendo/telemetry.json`. An opted-out user with a Cloud key sends nothing on
+either lane.
+
+`NODE_ENV` is a separate, narrower gate. It applies only to the dev-server
+collector, which fires solely when `NODE_ENV` is `development` or `test`, and
+an unset value is treated as production.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Vendo Cloud" href="/production/vendo-cloud">
+    The key that turns the runtime stream on, and what else it fills.
+
+    `vendo login`
+  </Card>
+  <Card title="Handler options" href="/reference/handler-options">
+    The `logger` seam and every other option on `createVendo`.
+
+    `createVendo({ logger })`
+  </Card>
+  <Card title="Environment variables" href="/reference/environment-variables">
+    Every `VENDO_*` variable the runtime and CLI read.
+
+    `VENDO_TELEMETRY_DISABLED`
+  </Card>
+</CardGroup>

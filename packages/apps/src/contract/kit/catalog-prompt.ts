@@ -16,7 +16,7 @@
  */
 import { KIT_ICON_NAMES } from "./icon-names.gen.js";
 import { PREAMBLE } from "./kit-prompt.js";
-import { KIT_SHARED_PROP_NAMES, KIT_SPECS } from "./specs.js";
+import { KIT_PREAMBLE_PROP_NAMES, KIT_SPECS } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 import type { CatalogSummaryEntry } from "../briefing.js";
 
@@ -43,13 +43,17 @@ const CLASS_ORDER: readonly PropClass[] = ["data", "config", "copy"];
 function catalogLine(spec: KitComponentSpec): string {
   const parts = [`<${spec.name}> ${spec.summary}`];
   for (const cls of CLASS_ORDER) {
-    // The shared adjectives ride every component that reads one; the preamble
-    // teaches them once, and 39 restatements would undo the compression.
+    // The shared adjectives ride every component that reads one and `style` rides
+    // all of them; the preamble teaches both, and 39 restatements would undo the
+    // compression.
     const names = Object.entries(spec.props)
-      .filter(([name, prop]) => prop.cls === cls && !KIT_SHARED_PROP_NAMES.includes(name))
+      .filter(([name, prop]) => prop.cls === cls && !KIT_PREAMBLE_PROP_NAMES.includes(name))
       .map(([name, prop]) => (prop.required === true ? `${name}!` : name));
     if (names.length > 0) parts.push(`${cls}: ${names.join(" ")}`);
   }
+  // The engine's NAME, which the preamble cannot supply: it can say that some
+  // components pass props through, not whose vocabulary each one speaks.
+  if (spec.engine !== undefined) parts.push(`plus any ${spec.engine} prop`);
   for (const [name, slot] of Object.entries(spec.slots ?? {})) {
     parts.push(`slot ${name}${slot.perRow === true ? " (per row)" : ""}: ${slot.doc}`);
   }

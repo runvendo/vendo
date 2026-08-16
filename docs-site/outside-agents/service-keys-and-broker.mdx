@@ -1,0 +1,160 @@
+---
+title: "Service keys & broker"
+description: "Rotating keys, the audit's svc: attribution, and the hosted broker that mints user-bound tokens for your backend."
+sidebarTitle: "Service keys & broker"
+---
+
+A service key is the one long-lived credential in this path. It never touches
+your agent, and it never leaves your backend.
+
+<svg viewBox="0 0 760 118" role="img" aria-label="A service key path: the console, the broker token endpoint, a ten-minute bearer, your door" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
+  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
+    <rect x="1" y="1" width="164" height="52" rx="11" />
+    <rect x="199" y="1" width="164" height="52" rx="11" />
+    <rect x="397" y="1" width="164" height="52" rx="11" />
+    <rect x="595" y="1" width="164" height="52" rx="11" />
+  </g>
+  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round">
+    <path d="M169 27h20" /><path d="M367 27h20" /><path d="M565 27h20" />
+  </g>
+  <g fill="#6c3bff">
+    <path d="M189 23l7 4-7 4z" /><path d="M387 23l7 4-7 4z" /><path d="M585 23l7 4-7 4z" />
+  </g>
+  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
+    <text x="83" y="32">Service key</text>
+    <text x="281" y="32">Broker /token</text>
+    <text x="479" y="32">10-minute bearer</text>
+    <text x="677" y="32">Your door</text>
+  </g>
+  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
+    <text x="83" y="76">created once, in the console</text>
+    <text x="281" y="76">RFC 8693 exchange</text>
+    <text x="479" y="76">bound to one user id</text>
+    <text x="677" y="76">verifies the signature</text>
+  </g>
+</svg>
+
+## Where the key lives
+
+Create it in the console under **Keys → Service keys**. The key lands in the
+broker, so the broker is where your backend spends it.
+
+The door never sees the key. It only ever sees the short-lived token the broker
+minted from it.
+
+## The exchange
+
+One form post, RFC 8693, at your tenant's `/token`.
+
+```bash focus={5}
+curl -s https://maple.mcp.vendo.run/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d client_id=vendo-service \
+  -d client_secret="$VENDO_SERVICE_KEY" \
+  -d subject_token=user_1904 \
+  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
+```
+
+| Field | Value |
+| --- | --- |
+| `grant_type` | `urn:ietf:params:oauth:grant-type:token-exchange` |
+| `client_id` | `vendo-service`, always |
+| `client_secret` | your service key |
+| `subject_token` | one of *your* user ids |
+| `subject_token_type` | `urn:vendo:params:oauth:token-type:user-id` |
+| `resource` | optional, and must identify this MCP server if sent |
+
+The answer is an ordinary OAuth token response.
+
+```json focus={5}
+{
+  "access_token": "vmat_…",
+  "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+  "token_type": "Bearer",
+  "expires_in": 600,
+  "scope": "read write"
+}
+```
+
+Ten minutes, and no refresh token. There is nothing outstanding to rotate or
+revoke once it lapses, so a backend that still has work to do exchanges again.
+
+## Who the audit says acted
+
+The exchange binds two identities to every call the token makes: the person
+named in `subject_token`, and the key that asked.
+
+The key rides as a client id of the form `svc:<hash8>`, the first eight hex of
+the presented key's digest. The audit row names which key acted without the key
+value going anywhere near it.
+
+Your policy sees the same person your own UI sees. A write still parks for
+approval, and the approval names the tool and the user, not the agent.
+
+## Rotating a key
+
+More than one key can be live at once, which makes rotation a deploy rather
+than an outage.
+
+<Steps>
+  <Step title="Create the replacement">
+    A new key in the console, alongside the one you are retiring.
+  </Step>
+  <Step title="Ship it">
+    Update `VENDO_SERVICE_KEY` where your backend runs and deploy.
+  </Step>
+  <Step title="Retire the old one">
+    Delete it in the console. Tokens it already minted keep working until they
+    expire, which is at most ten minutes.
+  </Step>
+</Steps>
+
+## When the exchange refuses
+
+| Answer | What it means |
+| --- | --- |
+| `invalid_client` | wrong `client_id`, unknown key, or retired key |
+| `invalid_request` | a missing `subject_token`, or a `subject_token_type` that is not the user-id URN |
+| `invalid_target` | the `resource` you sent does not identify this MCP server |
+| `401` on the first tool call | the subject is not a user your product recognizes |
+
+The first row is deliberately one answer for three causes. Anything narrower
+would tell whoever is guessing which half of the credential they got right.
+
+The `401` is the one that looks like a key problem and is not. The exchange
+never checks the user id, so a token for a stranger mints fine and dies at
+`principal()` on the first real request.
+
+## What the broker owns
+
+Two environment variables put the broker in front of your door. Both live on
+the console's MCP page.
+
+```bash .env focus={1-2}
+VENDO_MCP_BROKER_URL=https://maple.mcp.vendo.run/mcp
+VENDO_MCP_FEDERATION_SECRET=<secret>
+```
+
+`VENDO_MCP_BROKER_URL` decides two things at once. Its origin becomes the
+issuer your door trusts, and the URL itself becomes the audience every token
+must carry.
+
+The door then stops serving `/authorize`, `/token`, and `/register`, and
+verifies each inbound bearer as a JWT the broker signed. Keys come from the
+issuer's own metadata, so ordinary rotation at the broker needs nothing from
+you.
+
+`VENDO_MCP_FEDERATION_SECRET` answers the broker's login handshake. The broker
+owns the sign-in surface and your app owns the users, and that shared secret is
+how the two agree on an answer.
+
+<Warning>
+  Broker mode is declared, never discovered. A `VENDO_MCP_BROKER_URL` that is
+  not an absolute `http(s)` URL, or that carries credentials or a fragment,
+  fails at composition rather than dropping quietly to a door with no broker in
+  front of it.
+</Warning>
+
+The broker reaches your door over the public internet, so `VENDO_BASE_URL` has
+to name a deployed HTTPS origin. Everything else about the door is unchanged by
+the posture, the client URL included.

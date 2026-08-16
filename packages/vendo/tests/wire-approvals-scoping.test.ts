@@ -47,7 +47,7 @@ async function setup(): Promise<Vendo> {
     await rm(dataDir, { recursive: true, force: true });
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     async principal(request) {
       return request.headers.get("x-subject") === "bob" ? bob : alice;
     },

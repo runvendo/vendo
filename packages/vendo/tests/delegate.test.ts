@@ -69,7 +69,7 @@ async function compose(
   cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
   await store.ensureSchema();
   const vendo = createVendo({
-    model,
+    models: { default: model },
     principal: async () => principal,
     store: wrap(store),
     harness: reporting as never,

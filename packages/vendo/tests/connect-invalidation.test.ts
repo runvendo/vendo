@@ -68,7 +68,7 @@ async function composeVendo(connector: Connector) {
     await rm(dataDir, { recursive: true, force: true });
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     store,
     connectors: [connector],
     principal: vi.fn(async () => principal),

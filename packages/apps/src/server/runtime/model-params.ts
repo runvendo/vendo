@@ -92,9 +92,10 @@ const modelIdOf = (model: LanguageModel): string =>
 
 /**
  * The Cloud gateway's model family — literal ids the console maps to concrete
- * models SERVER-SIDE (dev-creds CLOUD_MODEL: `vendo`, `vendo-paint`,
- * `vendo-judge`, `vendo-extract`; `vendo-env` is the lazy ladder wrapper's
- * placeholder identity). They ride the STOCK @ai-sdk/anthropic provider, whose
+ * models SERVER-SIDE (dev-creds CLOUD_MODEL: `vendo`, `vendo-apps`,
+ * `vendo-review`, `vendo-judge`, `vendo-extract`; `vendo-env` is the lazy
+ * ladder wrapper's placeholder identity). They ride the STOCK
+ * @ai-sdk/anthropic provider, whose
  * capability registry does not know them — without an explicit cap it silently
  * limits max_tokens to 4096, truncating a generated app document mid-wire
  * (field: linkwarden 2026-08-08 — nothing painted, no row landed, every
@@ -102,7 +103,7 @@ const modelIdOf = (model: LanguageModel): string =>
  * line, so sampling is rejected too. A new family name must join this set the
  * day the console starts serving it.
  */
-const VENDO_GATEWAY_FAMILY = /^vendo(?:-(?:paint|judge|extract|env))?$/;
+const VENDO_GATEWAY_FAMILY = /^vendo(?:-(?:apps|review|judge|extract|env))?$/;
 
 /** Whether this model accepts `temperature` / `top_p` / `top_k`. Non-Claude
  *  models always do; Claude models do only on the pre-removal families; the

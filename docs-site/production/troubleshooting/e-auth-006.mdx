@@ -1,0 +1,30 @@
+---
+title: "E-AUTH-006"
+sidebarTitle: "E-AUTH-006"
+description: "Doctor's actAs probe cannot run while the dev server is down."
+---
+
+```text auth/act-as
+broken: cannot probe actAs; start the dev server at <base> and retry
+```
+
+`check: auth/act-as` · `error_code: E-AUTH-006` · `doctor exits: 1`
+
+## What you're seeing
+
+This check never got to run at all.
+
+## Why
+
+It follows directly from a failed `/status` round trip. See
+[E-LIVE-002](/production/troubleshooting/e-live-002) for why the dev server
+was unreachable.
+
+## The fix
+
+Start the dev server at the probed base, then re-run `npx vendo doctor`.
+
+## Related errors
+
+- [E-LIVE-002](/production/troubleshooting/e-live-002) — the root cause this check inherits
+- [E-AUTH-003](/production/troubleshooting/e-auth-003) — the present-credential probe, blocked by the same dead server

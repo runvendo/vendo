@@ -1,9 +1,14 @@
 /** Build contract §4 — the model seats. A seat is a JOB, not a model: the
- *  same model may fill several, and swapping one never renames the others. */
-export type Seat = "default" | "reviewer" | "judge" | "fill";
+ *  same model may fill several, and swapping one never renames the others.
+ *
+ *  One seat per job that actually runs: `default` thinks (chat, compaction,
+ *  subagents, automations), `apps` writes generated apps, `review` grades the
+ *  finished ones, `judge` answers guard's run/ask/block. A seat nobody reads
+ *  is a seat nobody can set correctly, which is why there are exactly four. */
+export type Seat = "default" | "apps" | "review" | "judge";
 
 /** Iteration order for the seats, so callers never hand-roll the list. */
-export const SEATS: readonly Seat[] = ["default", "reviewer", "judge", "fill"];
+export const SEATS: readonly Seat[] = ["default", "apps", "review", "judge"];
 
 /**
  * Build contract §4's `ResolvedModels`: every seat filled.
@@ -31,35 +36,6 @@ export type SeatModels<Model = unknown> = Readonly<Partial<Record<Seat, Model>>>
 /** What a host may set: any subset, each either a model or a name to resolve. */
 export type SeatConfig<Model = unknown> = Partial<Record<Seat, Model | string>>;
 
-/** Today's slot vocabulary, as `packages/vendo/src/models-config.ts` writes it. */
-export interface LegacyModelsConfig<Model = unknown> {
-  agent?: Model | string;
-  paint?: Model | string;
-  judge?: Model | string;
-}
-
-/**
- * Build contract §4's migration: `agent → default`, `paint → fill`, `judge`
- * unchanged.
- *
- * Seats already written in the new vocabulary pass straight through and win over
- * the legacy spelling, so a half-migrated config still works.
- */
-export function migrateModelSeats<Model = unknown>(
-  config: LegacyModelsConfig<Model> & SeatConfig<Model>,
-): SeatConfig<Model> {
-  const seats: SeatConfig<Model> = {};
-  const chosenDefault = config.default ?? config.agent;
-  if (chosenDefault !== undefined) seats.default = chosenDefault;
-  const fill = config.fill ?? config.paint;
-  if (fill !== undefined) seats.fill = fill;
-  const judge = config.judge;
-  if (judge !== undefined) seats.judge = judge;
-  const reviewer = config.reviewer;
-  if (reviewer !== undefined) seats.reviewer = reviewer;
-  return seats;
-}
-
 /**
  * Build contract §4: **boot error** if a harness option sets a model AND
  * `models.default` is set for the same seat.
@@ -68,7 +44,7 @@ export function migrateModelSeats<Model = unknown>(
  * is a boot failure or a config warning. Silence means no conflict.
  *
  * Why only `default`: a harness's `model` option names the model it thinks with,
- * which is the `default` seat. A judge or reviewer seat is a different job, so
+ * which is the `default` seat. A judge or review seat is a different job, so
  * setting one alongside a harness option is not ambiguous and must not error.
  */
 export function seatConflict<Model = unknown>(input: {

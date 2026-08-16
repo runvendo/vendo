@@ -82,7 +82,7 @@ async function setup(options: { parkedCallTtlMs?: number; clock?: () => number }
   const store = await tempStore();
   const host = messagingHost();
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     guard: {

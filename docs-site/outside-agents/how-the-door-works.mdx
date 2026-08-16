@@ -1,0 +1,229 @@
+---
+title: "How the door works"
+description: "Who is calling, how a call reaches your host tools, and what comes back."
+sidebarTitle: "How the door works"
+---
+
+One bearer arrives, one user is named, and every call after that answers to the
+same guard your own UI answers to.
+
+<svg viewBox="0 0 760 118" role="img" aria-label="A request path: your agent, the door, your guard, your host API" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
+  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
+    <rect x="1" y="1" width="164" height="52" rx="11" />
+    <rect x="199" y="1" width="164" height="52" rx="11" />
+    <rect x="397" y="1" width="164" height="52" rx="11" />
+    <rect x="595" y="1" width="164" height="52" rx="11" />
+  </g>
+  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round">
+    <path d="M169 27h20" /><path d="M367 27h20" /><path d="M565 27h20" />
+  </g>
+  <g fill="#6c3bff">
+    <path d="M189 23l7 4-7 4z" /><path d="M387 23l7 4-7 4z" /><path d="M585 23l7 4-7 4z" />
+  </g>
+  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
+    <text x="83" y="32">Your agent</text>
+    <text x="281" y="32">The door</text>
+    <text x="479" y="32">Your guard</text>
+    <text x="677" y="32">Your host API</text>
+  </g>
+  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
+    <text x="83" y="76">bearer for user_1904</text>
+    <text x="281" y="76">principal + consent</text>
+    <text x="479" y="76">allow · ask · block</text>
+    <text x="677" y="76">called as that user</text>
+  </g>
+</svg>
+
+## Who is calling
+
+The bearer on the request is a JWT your broker signed, and the door verifies it
+against the broker's published keys. The `sub` claim is one of your own user
+ids, in your own spelling.
+
+The door then asks your auth preset to resolve that subject to a live
+principal, on every request. Return `null` there and the token is dead on the
+next call, sessions included.
+
+An anonymous or ephemeral principal is never served a session. The door
+persists grants and audit rows, so it needs a durable subject.
+
+## What the agent sees
+
+`tools/list` answers with your merged, enabled tools whose `audience` is
+`end-user` or unset. Operator and internal tools stay off it.
+
+Names, descriptions, and input schemas are served verbatim from your registry.
+A tool's `title` is what a client shows a person instead of the wire name.
+
+Vendo's own `vendo_*` tools ride along: `vendo_make` for a generated screen,
+and the saved-apps viewer, which is `vendo_apps_list`, `vendo_apps_open`, and
+`vendo_apps_call`. They are runtime plumbing and are never curated away.
+
+Each listing carries MCP `annotations` derived from the tool's Vendo risk
+label, so a client can warn before a write without re-reading prose.
+
+| Risk | `readOnlyHint` | `destructiveHint` |
+| --- | --- | --- |
+| `read` | `true` | `false` |
+| `write` | `false` | `false` |
+| `destructive` | `false` | `true` |
+| `ungraded` | *omitted* | *omitted* |
+
+An `ungraded` tool asserts neither hint. MCP's own default for
+`destructiveHint` is `true`, so leaving both out keeps the client on the spec's
+conservative reading.
+
+## Curate the menu
+
+A shorter, deliberate menu is named in `.vendo/overrides.json` under
+`surfaces.mcp`.
+
+```json .vendo/overrides.json focus={7-9}
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_listAccounts": { "title": "List your accounts" },
+    "host_transferMoney": { "title": "Send money" }
+  },
+  "surfaces": {
+    "mcp": { "tools": ["host_listAccounts", "host_transferMoney"] }
+  }
+}
+```
+
+The door then lists exactly those tools, and a call to any other name returns
+the not-found error an unknown name returns. The menu is resolved fresh on
+every listing and every call, so a tool registered at runtime is never stranded.
+
+A menu is curation, not a permission boundary. Your policy, approvals, audit,
+`disabled`, and audience exclusions decide what may run, and none of them read
+this block.
+
+## How a call reaches your host tools
+
+The agent has no session in your product, so the inbound bearer is never
+forwarded to your host routes. Door tool calls reach your API through the
+`actAs` seam.
+
+The door records the caller's consent for that client id and projects it onto
+every context it mints. When a call resolves to a host route, Vendo hands
+`actAs(principal, grant)` that projection and uses the auth material it returns.
+
+Without `actAs` configured the tool returns a `not-implemented` error. A grant
+whose subject is not the current principal fails closed with
+`act-as-subject-mismatch`.
+
+The authenticated user is the authority. Scopes on the token buy no exemption,
+and the door adds none.
+
+## What comes back
+
+Five outcomes, all of them in-band so a retry never re-executes a committed
+write.
+
+| Outcome | What the agent gets |
+| --- | --- |
+| `ok` | the tool's output, as text plus `structuredContent` |
+| `error` | `code: message` from your handler |
+| `blocked` | your guard's reason, verbatim |
+| `pending-approval` | the approval id and where to resolve it |
+| `connect-required` | which account to connect in your product, then retry |
+
+`vendo_make` answers with an id, a title, a status, and one line to say out
+loud. The screen itself lands in your product, never in the agent's transcript.
+
+That line is `say`, and it is written for the person rather than for the model.
+An agent relays it close to verbatim and reports nothing else.
+
+| `status` | What the agent has |
+| --- | --- |
+| `ready` | the screen is on the person's page |
+| `building` | the build was accepted and has not finished |
+| `partial` | the screen is up, and the server-side work its plan called for is not |
+| `failed` | nothing painted. One narrower retry on the same `app`, then stop |
+
+## Where a screen lands
+
+A new screen goes to the person's own list of views. Pass `slot` on
+`vendo_make` and it takes a named place on your page instead.
+
+```json tools/call arguments focus={3}
+{
+  "request": "spend by category for the last three months",
+  "slot": "home-hero"
+}
+```
+
+Slot ids belong to your product. Your surfaces report the ones they mount, so
+an agent passes an id it was told rather than one it invented.
+
+`slot` is for something new. Moving an app the person already has is a
+different pair of tools.
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `vendo_apps_pin` | `app`, `slot` | puts one of the caller's own apps in that slot, and names the `evicted` app it replaced |
+| `vendo_apps_unpin` | `app`, `slot` | takes the app back out. The app itself is untouched |
+
+A slot holds one app, so pinning replaces. Both are writes, and on the
+`cautious` preset they park like any other write.
+
+`vendo_make` refuses `app` and `slot` together, by name. An edit that also
+moved the app would evict whatever held that slot off the back of a change
+nobody aimed there.
+
+<Frame caption="A pin, start to finish. The slot is the caller's own, so the second person's home is untouched.">
+  <img
+    src="/images/existing-agents/mcp-walk-slot-empty.png"
+    alt="Maple's home page with an empty hero slot reading This space builds itself, next to the total balance chart"
+    width="1080"
+    height="750"
+  />
+</Frame>
+
+<Frame>
+  <img
+    src="/images/existing-agents/mcp-walk-pinned.png"
+    alt="The same Maple home page after a pin, the hero slot now holding a savings goals table with a goal and target column for five goals"
+    width="1080"
+    height="750"
+  />
+</Frame>
+
+<Frame>
+  <img
+    src="/images/existing-agents/mcp-walk-other-user.png"
+    alt="Maple's home page signed in as Mia Nakamura, the same hero slot still empty and reading This space builds itself"
+    width="1080"
+    height="630"
+  />
+</Frame>
+
+## Approvals wait for the person
+
+On the `cautious` preset, reads answer straight away and writes park. The agent
+gets an error naming the approval and where it is waiting.
+
+Approving does not resume the call. The agent has to call again, and it has to
+be on the same MCP session.
+
+<Warning>
+  The door mints a fresh call id per `tools/call`, except for an identical call
+  still parked in the same session, and the one-off approval is pinned to that
+  exact id. A client that reconnects between attempts mints a new id and parks
+  again.
+</Warning>
+
+## The discovery your broker owns
+
+The first unauthenticated request answers `401` with a `WWW-Authenticate`
+challenge naming the door's protected-resource metadata. That document names
+your broker as the authorization server.
+
+A broker-fronted door serves no `/authorize`, `/token`, or `/register` of its
+own. Those live at the broker, which is why the exchange in
+[Service keys & broker](/outside-agents/service-keys-and-broker) posts there.
+
+Broker mode is declared, never discovered. Nothing is registered anywhere and
+nothing is fetched at boot, so no deploy can repoint a live door behind its
+back.

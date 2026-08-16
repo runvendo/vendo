@@ -5,7 +5,7 @@ import { backendOf } from "./helpers/backend.js";
 import type { VendoStore } from "./store.js";
 import { workspaceOpsRows } from "./workspace-ops-rows.js";
 import { HOST_MOUNT, normalizePath, pathNotFound, WorkspaceStoreFs } from "./workspace-fs.js";
-import { workspaceRows, type AppMount, type WorkspaceHistoryEntry } from "./workspace-rows.js";
+import { workspaceRows, type AppMount, type WorkspaceFileMeta, type WorkspaceHistoryEntry } from "./workspace-rows.js";
 
 /** Build contract §9.7 — what the façade needs to know about the caller: who
     they are, and which orgs the host ASSERTED this request. A RunContext
@@ -56,6 +56,11 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
       /** Build contract §9.7 — one `/orgs/<org>` mount per ASSERTED membership.
           Absent ⇒ no org mounts at all, exactly today's single-player façade. */
       memberships?: Membership[];
+      /** This caller's whole path index, already read (`turn.load` reads it
+          beside the thread). Covers EVERY owner in `memberships` or none —
+          a partial index would open a turn whose workspace is missing files.
+          Absent ⇒ read here, exactly as every caller always did. */
+      index?: WorkspaceFileMeta[];
     },
   ): Promise<WorkspaceFs>;
   /** Newest superseded revision first; viewer-level, like any other read. */
@@ -116,8 +121,15 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
   /** `ls` on a mount is a QUERY, not a directory read (design §8): the index a
       turn opens with is already narrowed to what this caller may see, so an org
       app they hold no grant on is simply absent rather than forbidden. */
-  const visibleIndex = async (caller: WorkspaceCaller): Promise<Awaited<ReturnType<typeof rows.index>>> => {
-    const all = await rows.index(ownersOf(caller));
+  const visibleIndex = async (
+    caller: WorkspaceCaller,
+    /** The same rows `rows.index` would have answered, read by the caller in
+        the same breath as the rest of the turn (`turn.load`). It skips the
+        READ, never the permission filter below — a prefetched index is still
+        narrowed to what this caller may see. */
+    prefetched?: WorkspaceFileMeta[],
+  ): Promise<Awaited<ReturnType<typeof rows.index>>> => {
+    const all = prefetched ?? await rows.index(ownersOf(caller));
     // Every file under `/orgs/<org>/apps/<appId>/` shares that app's own grant
     // decision (§9.3), and `can()` pays store reads per app — so resolve each
     // app once, every check in flight together. Serial per-file checks were
@@ -143,7 +155,7 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
         principal,
         ...(opts?.memberships === undefined ? {} : { memberships: opts.memberships }),
       };
-      const index = await visibleIndex(caller);
+      const index = await visibleIndex(caller, opts?.index);
       return new WorkspaceStoreFs(
         rows,
         {

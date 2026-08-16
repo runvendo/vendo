@@ -1,11 +1,11 @@
 /** DonutChart — recharts Pie internals, data props only (W2 §The Kit). */
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
-import { font, numeric, seriesColor, t } from "../tokens.js";
+import { font, numeric, seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, slotTooltip, tooltipSurface } from "./sanitize.js";
 
-export interface DonutChartProps {
+interface DonutChartOwnProps extends KitStyled {
   data: Array<Record<string, unknown>>;
   /** Slice-label field. */
   categoryKey: string;
@@ -27,6 +27,12 @@ export interface DonutChartProps {
   tooltip?: ReactNode;
 }
 
+/** Plus any recharts `<Pie>` prop, handed straight to the ring. It arrives AFTER
+ *  the Kit's own defaults, so `strokeWidth` wins, and BEFORE `dataKey`/`nameKey`,
+ *  which the component owns — an overridden one would plot a field that is not
+ *  there. A slice's own colour stays the `<Cell fill>` under it. */
+export type DonutChartProps = DonutChartOwnProps & KitEngine<ComponentProps<typeof Pie>, DonutChartOwnProps, "dataKey" | "nameKey" | "data">;
+
 export function DonutChart({
   data,
   categoryKey,
@@ -38,7 +44,9 @@ export function DonutChart({
   emptyState = "No data to chart",
   empty,
   tooltip,
-}: DonutChartProps) {
+  style,
+  children, pending, ...engine
+}: DonutChartProps & KitRendered) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined),
   // the same guard the other Kit charts get via sanitizeSeries.
   // The whole row rides along under the slice's own two keys, so a `tooltip`
@@ -50,27 +58,28 @@ export function DonutChart({
     // The slot replaces the dashed box, not its TEXT: what goes in one is an
     // EmptyState, which draws that same frame itself — nested, it read as a
     // box inside a box.
-    return empty ?? <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return empty ?? <ChartEmpty height={height} style={style}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
     <div
       data-kit="DonutChart"
-      style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-inline-gap, 7px)" }}
+      style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-inline-gap, 7px)", ...style }}
     >
       <ChartFrame height={height}>
         <ResponsiveContainer width="100%" height="100%">
           <RPieChart>
             <Pie
-              data={slices}
-              dataKey="value"
-              nameKey="name"
               innerRadius={donut ? "58%" : 0}
               outerRadius="82%"
               paddingAngle={donut ? 2 : 0}
               stroke={t.surface}
               strokeWidth={2}
               isAnimationActive={false}
+              {...given(engine)}
+              data={slices}
+              dataKey="value"
+              nameKey="name"
             >
               {slices.map((_, i) => (
                 <Cell key={i} fill={seriesColor(i)} />

@@ -6,6 +6,9 @@ import {
   APP_DATA_COLLECTION_PATTERN,
   APP_DATA_OWNER_PATTERN,
   recordQuerySchema,
+  vendoRecordSchema,
+  type TurnCommit,
+  type TurnLoad,
 } from "./store.js";
 
 /** Store design v1 — the wire protocol version tag. The HTTP profile of the
@@ -103,6 +106,10 @@ export const STORE_WIRE_PATHS = {
   "usage.record": "/usage/record",
   "usage.count": "/usage/count",
   "usage.tally": "/usage/tally",
+  // turn (2) — the two cross-family envelopes, appended for the reason every
+  // family since `audit.tally` was: the level may only ever grow.
+  "turn.load": "/turn/load",
+  "turn.commit": "/turn/commit",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -360,9 +367,10 @@ export interface StoreWireAppendMessagesResult {
     the mount is behind — never send it blind and read the 501 as a fallback
     signal (#1251: a failed mutation is not a capability answer).
 
-    ⚠ AND THIS IS THE LAST CONSTANT OF ITS KIND. Ops 37-45 (audit, secrets,
-    footprint, retention, the audit tally) added no twin, and a future op should
-    not either. A pre-send check earns its keep only when sending blind is
+    ⚠ AND A SECOND CONSTANT OF THIS KIND MUST CLEAR THE BAR BELOW — only
+    STORE_WIRE_TURN_OPS ever has. Ops 37-48 (audit, secrets, footprint,
+    retention, the audit tally, usage) added no twin, and most ops should not.
+    A pre-send check earns its keep only when sending blind is
     unsafe, and that is true of exactly one shape: a MUTATION with a cheaper
     fallback, where a 501 leaves the caller unable to tell "never ran" from
     "ran and failed". Every one of 37-45 is a new PATH, so an older mount
@@ -591,6 +599,59 @@ export const storeWireRetentionPurgeRequestSchema = z.object({
   collection: z.string().min(1),
   quarantinedBefore: isoDateTimeSchema,
 }).passthrough();
+
+// ---------------------------------------------------------------------------
+// turn — one call at the start of an agent turn, one at the end
+//
+// Both bodies are COMPOSITION: every part is the very schema its own op takes,
+// and every answer is the very shape its own op returns. A part a caller does
+// not need is omitted from the request and then absent from the answer, so
+// asking for less costs less. Nothing here is new semantics — an envelope that
+// invented a shape would be a second contract to keep in step with the first.
+// ---------------------------------------------------------------------------
+
+export const storeWireTurnLoadRequestSchema = z.object({
+  thread: storeWireTranscriptsGetThreadRequestSchema,
+  index: storeWireWorkspaceIndexRequestSchema,
+  read: storeWireWorkspaceReadRequestSchema.optional(),
+  harness: storeWireHarnessGetRequestSchema.optional(),
+  usage: storeWireUsageCountRequestSchema.optional(),
+}).passthrough();
+
+export const storeWireTurnLoadResponseSchema = z.object({
+  thread: vendoRecordSchema.nullable(),
+  index: z.object({
+    entries: z.array(z.unknown()),
+    cursor: z.string().optional(),
+  }).passthrough(),
+  read: z.record(z.unknown()).optional(),
+  harness: z.unknown().optional(),
+  usage: z.number().optional(),
+}).passthrough() satisfies z.ZodType<TurnLoad>;
+
+export const storeWireTurnCommitRequestSchema = z.object({
+  messages: storeWireTranscriptsAppendMessagesRequestSchema,
+  harness: storeWireHarnessSetRequestSchema.optional(),
+  audit: storeWireCollectionPutRequestSchema.optional(),
+}).passthrough();
+
+/** `harness.set` answers nothing, so the envelope answers nothing for it. */
+export const storeWireTurnCommitResponseSchema = z.object({
+  messages: z.object({
+    revision: z.string(),
+    count: z.number().int(),
+  }).passthrough(),
+  audit: vendoRecordSchema.optional(),
+}).passthrough() satisfies z.ZodType<TurnCommit>;
+
+/** The op count a mount must report on `/status` before a client may send the
+    turn envelopes — read with `>=` and FROZEN, exactly as
+    {@link STORE_WIRE_APPEND_MESSAGES_OPS} is, and for its reasons.
+    `turn.commit` is the shape that warrants a pre-send check: a MUTATION with a
+    cheaper fallback (the individual ops), where a 501 leaves the caller unable
+    to tell "never ran" from "ran and failed". `turn.load` is a read that could
+    be sent blind, but the two ship as one family on one level. */
+export const STORE_WIRE_TURN_OPS = 50;
 
 // ---------------------------------------------------------------------------
 // status

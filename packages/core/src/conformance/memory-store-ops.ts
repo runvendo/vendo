@@ -944,6 +944,33 @@ export function memoryStoreOps(): StoreOps {
   };
 
   // ---------------------------------------------------------------------------
+  // turn — a fan-out over the ops it bundles and nothing more. Written as calls
+  // through the members above so the envelope cannot drift from the individual
+  // ops: a rule added to one is a rule the envelope already obeys.
+  // ---------------------------------------------------------------------------
+
+  const turn: NonNullable<StoreOps["turn"]> = {
+    async load(request) {
+      return {
+        thread: await transcripts.getThread(request.thread.id),
+        index: await workspace.index(request.index),
+        // Asked for or absent, the same rule the two below follow.
+        ...(request.read ? { read: await workspace.read(request.read.paths, request.read) } : {}),
+        ...(request.harness ? { harness: await harness.get(request.harness.appId, request.harness.subject) } : {}),
+        ...(request.usage ? { usage: await usage.count(request.usage) } : {}),
+      };
+    },
+    async commit(request) {
+      const { threadId, subject, messages, title } = request.messages;
+      if (request.harness) await harness.set(request.harness.appId, request.harness.subject, request.harness.state);
+      return {
+        messages: await transcripts.appendMessages!(threadId, subject, messages, { title }),
+        ...(request.audit ? { audit: await engine.put(request.audit.collection, request.audit.record) } : {}),
+      };
+    },
+  };
+
+  // ---------------------------------------------------------------------------
   // status
   // ---------------------------------------------------------------------------
 
@@ -959,6 +986,7 @@ export function memoryStoreOps(): StoreOps {
     secrets,
     retention,
     lifecycle,
+    turn,
     /** Serialized JSON length, which is this reference's honest answer to "how
         much is in here": it grows with every row and shrinks when rows leave,
         which is the whole of what a footprint promises. */

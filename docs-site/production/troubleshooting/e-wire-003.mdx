@@ -1,0 +1,48 @@
+---
+title: "E-WIRE-003"
+sidebarTitle: "E-WIRE-003"
+description: "Doctor found no Next.js catch-all route at app/api/vendo/[...vendo]/route.ts."
+---
+
+```text wiring/next-route
+broken: missing app/api/vendo/[...vendo]/route.ts
+```
+
+`check: wiring/next-route` · `error_code: E-WIRE-003` · `doctor exits: 1`
+
+## What you're seeing
+
+Every request from the client to `/api/vendo/*` has nowhere to land. The app
+builds and runs; the wire itself is absent.
+
+## Why
+
+Doctor looked for the catch-all handler at exactly
+`app/api/vendo/[...vendo]/route.ts` or `src/app/api/vendo/[...vendo]/route.ts`
+and found neither. Doctor checks only these two paths, so a handler mounted
+somewhere else still fails this check.
+
+## The fix
+
+Run `npx vendo init`; it scaffolds the route for you.
+
+```bash
+npx vendo init
+```
+
+If you composed the wire by hand, create the route yourself at one of the
+two paths above:
+
+```ts app/api/vendo/[...vendo]/route.ts {2,5}
+import { vendo } from "@/vendo/server";
+
+export const { GET, POST } = vendo.next();
+```
+
+Re-run `npx vendo doctor` once the file exists at the expected path.
+
+## Related errors
+
+- [E-WIRE-004](/production/troubleshooting/e-wire-004): the route exists but nothing mounts the client provider
+- [E-WIRE-009](/production/troubleshooting/e-wire-009): the route exists but server actions aren't registered in it
+- [E-WIRE-006](/production/troubleshooting/e-wire-006): the route exists but nothing visible reaches the agent

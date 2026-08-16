@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   STORE_WIRE_PATHS,
+  STORE_WIRE_TURN_OPS,
   VendoError,
   engineAppHistory,
   parseStoreWireError,
@@ -882,6 +883,30 @@ describe("hostedStoreOps — the 48-op wire client", () => {
     expect(new Set(keys).size).toBe(25);
   });
 
+  it("asks the mount's /status ONCE, however many capability checks read it", async () => {
+    const { calls, ops } = wireFake({
+      ...ALL_BODIES,
+      [door("status")]: { format: "vendo/store-wire@1", ops: STORE_WIRE_TURN_OPS },
+      [`POST ${P["turn.load"]}`]: { thread: null, index: { entries: [] } },
+      [`POST ${P["turn.commit"]}`]: { messages: { revision: "2", count: 1 } },
+    });
+
+    // Both envelopes feature-detect before sending, and a caller that asks the
+    // level itself (the harness does, before the first send) is a third reader
+    // of the same deployment fact. Three checks, ONE handshake.
+    await ops.turn!.load({ thread: { id: "thr_1" }, index: { owner: "sub_1" } });
+    await ops.turn!.commit({
+      messages: { threadId: "thr_1", subject: "sub_1", messages: [{ id: "m_1", role: "user" }] },
+    });
+    await ops.status();
+
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      `GET ${P.status}`,
+      `POST ${P["turn.load"]}`,
+      `POST ${P["turn.commit"]}`,
+    ]);
+  });
+
   it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
     const bytes = new Uint8Array([0, 1, 2, 255]);
     const { calls, ops } = wireFake(ALL_BODIES);
@@ -1478,13 +1503,13 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.records).toBe("function");
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
-    // Eleven families plus the two bare verbs (`footprint`, `status`) — the
-    // generic records family is gone from the op surface, and `retention` is
-    // present because the CLIENT serves the whole protocol, whatever a given
-    // mount has.
+    // Twelve families plus the two bare verbs (`footprint`, `status`) — the
+    // generic records family is gone from the op surface, and `retention` and
+    // `turn` are present because the CLIENT serves the whole protocol, whatever
+    // a given mount has (`turn` asks the mount before it sends).
     expect(Object.keys(store.ops).sort()).toEqual([
       "appData", "audit", "blobs", "engine", "footprint", "harness", "lifecycle",
-      "retention", "secrets", "status", "transcripts", "usage", "workspace",
+      "retention", "secrets", "status", "transcripts", "turn", "usage", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the

@@ -1,9 +1,10 @@
 /** Modal — a dialog centered over the screen, for a decision that has to be
  *  answered before anything else. */
-import { DialogShell, EXTENT, type DialogProps } from "./dialog.js";
+import { DialogShell, EXTENT, type DialogEngineProps, type DialogProps } from "./dialog.js";
 import { t } from "../tokens.js";
 
-export type ModalProps = DialogProps;
+/** Plus any Base UI `<Dialog.Popup>` prop, handed straight to the popup. */
+export type ModalProps = DialogProps & DialogEngineProps;
 
 export function Modal({ size = "medium", ...rest }: ModalProps) {
   return (

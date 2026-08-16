@@ -98,7 +98,7 @@ async function compose(console_: FakeConsole): Promise<Vendo> {
   vi.stubEnv("VENDO_CLOUD_URL", console_.baseUrl);
   vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
   return createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store: await tempStore(),
     harness: replying as never,

@@ -37,27 +37,24 @@ import {
  * error. The only "magic" is per-rung/per-slot DEFAULTS when no name is
  * given, and per-slot env pins (precedence: explicit model object → env pin
  * → configured string → per-rung default).
- *
- * `devModel()` is the deprecated pre-family alias of `vendoModel()`.
  */
 
-/** The model slots the runtime composes. `extract` never runs in-process —
- *  it exists so the CLI extraction ladder shares the same pin names. */
-export type VendoModelSlot = "agent" | "paint" | "judge" | "extract";
+/** The model slots the runtime composes — one per real job, matching the seats
+ *  in `@vendoai/core` (`agent` is what the `default` seat rides). `extract`
+ *  never runs in-process; it exists so the CLI extraction ladder shares the
+ *  same pin names. */
+export type VendoModelSlot = "agent" | "apps" | "review" | "judge" | "extract";
 
-export interface DevModelOptions {
+export interface VendoModelOptions {
   /** Host app root; providers resolve from here. Default cwd. */
   root?: string;
   env?: Record<string, string | undefined>;
   /** Test seam for host-module resolution (providers). */
   importModule?: (root: string, specifier: string) => Promise<Record<string, unknown>>;
-}
-
-export interface VendoModelOptions extends DevModelOptions {
   /** Which slot's env pin + per-rung default applies. Normally inferred from
-   *  the family name (`vendo-paint` → paint, `vendo-judge` → judge,
-   *  `vendo-extract` → extract, anything else → agent); createVendo passes it
-   *  explicitly when composing internal slots. */
+   *  the family name (`vendo-apps` → apps, `vendo-review` → review,
+   *  `vendo-judge` → judge, `vendo-extract` → extract, anything else → agent);
+   *  createVendo passes it explicitly when composing internal slots. */
   slot?: VendoModelSlot;
 }
 
@@ -79,9 +76,9 @@ type Resolution =
 interface ProviderSpec {
   module: string;
   factory: string;
-  /** Flagship default (agent/extract slots) when no name is given. */
+  /** Flagship default (agent/apps/extract slots) when no name is given. */
   model: string;
-  /** Family fast pick (paint/judge slots) when no name is given. */
+  /** Family fast pick (review/judge slots) when no name is given. */
   fast: string;
   install: string;
 }
@@ -111,8 +108,9 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
 };
 
 /** The Cloud gateway serves the vendo model family as literal model ids:
- *  `vendo` (the agent), `vendo-paint`, `vendo-judge`, `vendo-extract`. The
- *  console maps each name to a concrete model SERVER-SIDE — clients never see
+ *  `vendo` (the agent), `vendo-apps`, `vendo-review`, `vendo-judge`,
+ *  `vendo-extract`. The console maps each name to a concrete model
+ *  SERVER-SIDE — clients never see
  *  or perform the mapping, so Cloud-keyed apps can be retuned without a
  *  client release. Same module/factory/install as anthropic — the gateway
  *  speaks the Anthropic Messages wire. */
@@ -133,7 +131,8 @@ const CONSOLE_URL = "https://console.vendo.run";
 /** Cloud rung slot defaults — the family names, per slot. */
 const CLOUD_FAMILY: Record<VendoModelSlot, string> = {
   agent: "vendo",
-  paint: "vendo-paint",
+  apps: "vendo-apps",
+  review: "vendo-review",
   judge: "vendo-judge",
   extract: "vendo-extract",
 };
@@ -142,7 +141,8 @@ const CLOUD_FAMILY: Record<VendoModelSlot, string> = {
  *  precedence: explicit model object → env pin → models string → default. */
 export const SLOT_PIN_ENV: Record<VendoModelSlot, string> = {
   agent: "VENDO_MODEL",
-  paint: "VENDO_MODEL_PAINT",
+  apps: "VENDO_MODEL_APPS",
+  review: "VENDO_MODEL_REVIEW",
   judge: "VENDO_MODEL_JUDGE",
   extract: "VENDO_MODEL_EXTRACT",
 };
@@ -167,24 +167,26 @@ function nonBlank(value: string | undefined): string | undefined {
  *  "vendo-judge")) is pinnable via VENDO_MODEL_JUDGE). This is slot TAGGING,
  *  never name mapping — the name itself still passes through verbatim. */
 function inferSlot(name: string | undefined): VendoModelSlot {
-  if (name === "vendo-paint") return "paint";
+  if (name === "vendo-apps") return "apps";
+  if (name === "vendo-review") return "review";
   if (name === "vendo-judge") return "judge";
   if (name === "vendo-extract") return "extract";
   return "agent";
 }
 
 /** The cheap/fast slots: no name given means the family's fast pick, not the
- *  flagship. */
-const FAST_SLOTS = new Set<VendoModelSlot>(["paint", "judge"]);
+ *  flagship. Reading jobs only — grading a finished app and answering
+ *  run/ask/block are both reading; writing an app is not. */
+const FAST_SLOTS = new Set<VendoModelSlot>(["review", "judge"]);
 
 /** The slots whose model `createVendo`'s `models` block can configure by name
- *  or object. The agent and paint slots resolve through their own paths
+ *  or object. Every other slot resolves through the seat record
  *  (resolveModels), so they are not bound per-instance here. */
 const CONFIGURABLE_SLOTS = ["judge"] as const;
 type ConfigurableSlot = (typeof CONFIGURABLE_SLOTS)[number];
 export type ConfigurableSlotModels = Partial<Record<ConfigurableSlot, string | LanguageModel>>;
 
-/** The controller behind each vendoModel()/devModel() instance, so composition
+/** The controller behind each vendoModel() instance, so composition
  *  can bind per-instance slot config onto exactly the model the host handed it
  *  (bindVendoModelSlots below). WeakMap: holding a model never leaks its
  *  controller past the model's own lifetime. @internal */
@@ -523,10 +525,4 @@ function lazyModel(controller: DevModelController, provider: string, modelId: st
  *  a BYO rung. A name is passed VERBATIM to the resolved rung. */
 export function vendoModel(name?: string, options: VendoModelOptions = {}): LanguageModel {
   return new DevModelController({ ...options, ...(name === undefined ? {} : { name }) }).model();
-}
-
-/** @deprecated Renamed `vendoModel()` (models spec 2026-07-22) — same ladder,
- *  same behavior; this alias remains for one release. */
-export function devModel(options: DevModelOptions = {}): LanguageModel {
-  return lazyModel(new DevModelController(options), "vendo-dev", "dev-env");
 }

@@ -1,0 +1,46 @@
+---
+title: "E-TURN-001"
+sidebarTitle: "E-TURN-001"
+description: "Doctor posted one real model turn to the wire and no reply text came back."
+---
+
+```text turn/model
+broken: live model turn did not answer over <credential>: <error>
+```
+
+`<credential>` is the credential label doctor resolved (or `n/a` when none
+resolved); `<error>` is the provider error, the timeout note, or
+`no reply` when the stream closed empty.
+
+`check: turn/model` · `error_code: E-TURN-001` · `doctor exits: 1`
+
+## What you're seeing
+
+Doctor posted one real turn to `<base>/threads`, and no reply text came back
+within 90 seconds.
+
+## Why
+
+Either no usable model credential resolved, the provider itself returned an
+error, or the turn timed out.
+
+## The fix
+
+Set `VENDO_API_KEY` and Vendo fills the model seat with the managed Cloud
+gateway, no `models` option needed.
+
+```bash
+export VENDO_API_KEY=vnd_live_...
+```
+
+No key yet? Run `vendo login`: your human approves a code in the browser (a
+non-TTY run prints the URL and code instead), and the minted key lands in
+`.env.local` automatically. Ask your human before running it.
+
+Restart the dev server and re-run `npx vendo doctor`. If it still fails,
+check the dev server log for the same error the doctor line named.
+
+## Related errors
+
+- [E-TURN-002](/production/troubleshooting/e-turn-002) — the same probe, blocked because the dev server is down
+- [E-LIVE-004](/production/troubleshooting/e-live-004) — the sandbox seat, filled by the same VENDO_API_KEY

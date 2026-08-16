@@ -22,8 +22,13 @@ import { CREATE_VENDO_CONFIG_KEYS, docsTableDiff, tableKeys } from "../src/confi
 
 const OPTIONS_PAGE = new URL("../../../docs-site/reference/handler-options.mdx", import.meta.url);
 
+/** The restructure renamed this section `## Composition configuration` →
+ *  `## Composition`. The heading is the gate's anchor, so it moves here with
+ *  the page. */
+const COMPOSITION_HEADING = "## Composition";
+
 const compositionTable = (page: string): string => {
-  const start = page.indexOf("## Composition configuration");
+  const start = page.indexOf(COMPOSITION_HEADING);
   return page.slice(start, page.indexOf("##", start + 1));
 };
 
@@ -43,7 +48,7 @@ describe("handler-options.mdx stays 1:1 with CreateVendoConfig", () => {
 describe("the gate can still FAIL", () => {
   const row = (key: string): string => `| \`${key}\` | what it does |`;
   const pageOf = (keys: readonly string[]): string =>
-    ["## Composition configuration", "", "| Option | Behavior |", "| --- | --- |", ...keys.map(row), "", "## Next"].join("\n");
+    [COMPOSITION_HEADING, "", "| Option | Behavior |", "| --- | --- |", ...keys.map(row), "", "## Next"].join("\n");
 
   it("catches a key the docs forgot", () => {
     const documented = CREATE_VENDO_CONFIG_KEYS.filter((key) => key !== "automations");
@@ -65,7 +70,7 @@ describe("the gate can still FAIL", () => {
 
   it("reads the table, not the whole page — a key mentioned in prose is not documentation", () => {
     const page = [
-      "## Composition configuration",
+      COMPOSITION_HEADING,
       "",
       "| Option | Behavior |",
       "| --- | --- |",

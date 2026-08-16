@@ -110,9 +110,8 @@ async function compose(
   const host = hostTools();
   const vendo = createVendo({
     // Never reached: every harness in this file is scripted. A model would make
-    // these tests measure a provider instead of the composition. Omitted when the
-    // case sets `models`, because naming one seat twice is a boot error.
-    ...(overrides.models === undefined ? { model: {} as LanguageModel } : {}),
+    // these tests measure a provider instead of the composition.
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     ...overrides,
@@ -230,10 +229,10 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
 
   it("fills every model seat, borrowing `default` for the ones nobody set", async () => {
     const model = { id: "the-default" } as unknown as LanguageModel;
-    const reviewer = { id: "the-reviewer" } as unknown as LanguageModel;
+    const review = { id: "the-reviewer" } as unknown as LanguageModel;
     let seats: Record<string, unknown> = {};
     const { vendo } = await compose({
-      models: { default: model, reviewer },
+      models: { default: model, review },
       harness: scriptedHarness(async function* (turn) {
         seats = turn.models as unknown as Record<string, unknown>;
         yield { type: "text", delta: "seated" };
@@ -245,16 +244,16 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
     }))).text();
 
     expect(seats["default"]).toBe(model);
-    expect(seats["reviewer"]).toBe(reviewer);
-    // Unset seats borrow `default` — contract §4's own fallback, so no seat is
-    // ever undefined for a harness that reads one.
+    expect(seats["review"]).toBe(review);
+    // Unset seats borrow the explicitly passed `default` — contract §4's own
+    // fallback, so no seat is ever undefined for a harness that reads one.
     expect(seats["judge"]).toBe(model);
-    expect(seats["fill"]).toBe(model);
+    expect(seats["apps"]).toBe(model);
   });
 
   it("boot-errors when a harness needs a sandbox and none is wired", () => {
     expect(() => createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       harness: { name: "boxed", requires: { sandbox: true }, run: async function* () {} },
     } as Parameters<typeof createVendo>[0])).toThrow(/boxed needs a sandbox adapter/);

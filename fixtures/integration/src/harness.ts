@@ -5,7 +5,7 @@
  *
  * What a stack is:
  *   - a per-test PGlite store in a temp dir (isolation),
- *   - `createVendo({ model, principal, store, actAs, policy })` — nothing else is
+ *   - `createVendo({ models: { default: model }, principal, store, actAs, policy })` — nothing else is
  *     hand-wired; store/guard/actions/apps/automations are composed by the umbrella,
  *   - host tools loaded through the real `.vendo/tools.json` contract (createVendo
  *     does `createActions({ dir: "." })` from cwd = this package),
@@ -289,7 +289,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   const model = (options.model as ScriptedModel | undefined) ?? scriptedModel(options.turns ?? []);
 
   const vendo = createVendo({
-    model,
+    models: { default: model },
     principal: async (req) => {
       const subject = req.headers.get("x-vendo-test-user");
       return subject ? { kind: "user", subject } : null;

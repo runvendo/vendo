@@ -167,13 +167,13 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     guard,
     tools: boundTools,
     model: inference.agent.model,
-    // The AI reviewer's own seat — the FAST pick. `fill` is the seat that
-    // resolves through the family fast path (`resolveModels`: the paint model
-    // when the default rode the ladder, else the default itself), so a
-    // deployment with a fast model reviews on it and one without keeps
-    // reviewing on the flagship. Judging a finished screen against its own
-    // rows is a reading job; it was paying flagship rates for it.
-    reviewModel: inference.seats.fill,
+    // The AI reviewer's own seat — the FAST pick. `review` resolves through the
+    // family fast path (`resolveModels`: its own rung pick when the default rode
+    // the ladder, else the default itself), so a deployment with a fast model
+    // reviews on it and one without keeps reviewing on the flagship. Judging a
+    // finished screen against its own rows is a reading job; it was paying
+    // flagship rates for it.
+    reviewModel: inference.seats.review,
     catalog,
     seedBaselines,
     // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one

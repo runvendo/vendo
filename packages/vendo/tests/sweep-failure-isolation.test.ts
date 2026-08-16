@@ -53,7 +53,7 @@ describe("on-request sweep failure isolation", () => {
 
     let now = 0;
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => ({ kind: "user", subject: "user_a" }),
       store,
       sweep: { intervalMs: 100, now: () => now },

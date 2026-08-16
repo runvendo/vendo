@@ -36,14 +36,14 @@ describe("createVendo construction purity (Workers global scope)", () => {
   it("performs no store I/O and starts no timers at construction", async () => {
     const timerSpy = vi.spyOn(globalThis, "setInterval");
     const { store, ensureSchema } = await tempStore();
-    createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     expect(ensureSchema).not.toHaveBeenCalled();
     expect(timerSpy).not.toHaveBeenCalled();
   });
 
   it("triggers schema readiness from a guardedTools execute (BYO agent loops never call the handler)", async () => {
     const { store, ensureSchema } = await tempStore();
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     expect(ensureSchema).not.toHaveBeenCalled();
     await vendo.guardedTools.execute(
       { id: "call_lazy", tool: "vendo_apps_list", args: {} },
@@ -55,7 +55,7 @@ describe("createVendo construction purity (Workers global scope)", () => {
   it("runs schema readiness once, on first request, and starts the sweep then", async () => {
     const timerSpy = vi.spyOn(globalThis, "setInterval");
     const { store, ensureSchema } = await tempStore();
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     expect(timerSpy).not.toHaveBeenCalled();
     const status = () => vendo.handler(new Request("https://host.test/api/vendo/status"));
     const first = await status();

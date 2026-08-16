@@ -15,7 +15,7 @@ import {
   type MoneyOptions,
 } from "./format.js";
 import { useFieldValue } from "./row.js";
-import { font, microLabel, numeric, resolveTone, t, toneColor, toneStyle, type KitTone } from "./tokens.js";
+import { font, microLabel, numeric, resolveTone, t, toneColor, toneStyle, type KitStyled, type KitTone } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -29,9 +29,9 @@ function useValue<T>(field: string | undefined, own: T): T {
   return useFieldValue(field, own) as T;
 }
 
-function Placeholder(): ReactNode {
+function Placeholder({ style }: KitStyled): ReactNode {
   return (
-    <span data-kit="Placeholder" style={{ color: t.muted }} aria-hidden="true">
+    <span data-kit="Placeholder" style={{ color: t.muted, ...style }} aria-hidden="true">
       {PLACEHOLDER}
     </span>
   );
@@ -45,7 +45,7 @@ function tonePaint(tone: KitTone | undefined): CSSProperties {
   return resolved === "neutral" ? {} : { color: toneColor(resolved) };
 }
 
-export interface MoneyProps extends MoneyOptions {
+export interface MoneyProps extends MoneyOptions, KitStyled {
   /** The amount in MAJOR units (dollars) — formatters never convert, so a cents
    *  field is divided by 100 before it gets here. */
   amount?: number;
@@ -56,17 +56,17 @@ export interface MoneyProps extends MoneyOptions {
 }
 
 /** Currency from a major-unit amount. `<Money amount={1234.56}/>` → "$1,234.56". */
-export function Money({ amount, currency, locale, tone, field }: MoneyProps) {
+export function Money({ amount, currency, locale, tone, field, style }: MoneyProps) {
   const formatted = formatMoney(useValue(field, amount), { currency, locale });
-  if (formatted === null) return <Placeholder />;
+  if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="Money" style={{ ...font, ...numeric, ...tonePaint(tone) }}>
+    <span data-kit="Money" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
 }
 
-export interface DateTimeProps extends DateTimeOptions {
+export interface DateTimeProps extends DateTimeOptions, KitStyled {
   value?: DateInput;
   /** Paints the date — a date that is bad news is `danger`. */
   tone?: KitTone;
@@ -75,17 +75,17 @@ export interface DateTimeProps extends DateTimeOptions {
 }
 
 /** A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14, 2026". */
-export function DateTime({ value, mode, locale, timeZone, compact, tone, field }: DateTimeProps) {
+export function DateTime({ value, mode, locale, timeZone, compact, tone, field, style }: DateTimeProps) {
   const formatted = formatDateTime(useValue(field, value), { mode, locale, timeZone, compact });
-  if (formatted === null) return <Placeholder />;
+  if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="DateTime" style={{ ...font, ...tonePaint(tone) }}>
+    <span data-kit="DateTime" style={{ ...font, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
 }
 
-export interface PercentProps {
+export interface PercentProps extends KitStyled {
   /** A ratio (0.42 → "42%") unless `whole`. */
   value?: number;
   fractionDigits?: number;
@@ -97,17 +97,17 @@ export interface PercentProps {
 }
 
 /** A percentage from a ratio. `<Percent value={0.42}/>` → "42%". */
-export function Percent({ value, fractionDigits, whole, tone, field }: PercentProps) {
+export function Percent({ value, fractionDigits, whole, tone, field, style }: PercentProps) {
   const formatted = formatPercent(useValue(field, value), { fractionDigits, whole });
-  if (formatted === null) return <Placeholder />;
+  if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="Percent" style={{ ...font, ...numeric, ...tonePaint(tone) }}>
+    <span data-kit="Percent" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
 }
 
-export interface NumProps {
+export interface NumProps extends KitStyled {
   value?: number;
   maximumFractionDigits?: number;
   notation?: "standard" | "compact";
@@ -118,11 +118,11 @@ export interface NumProps {
 }
 
 /** A grouped number. `<Num value={1234567}/>` → "1,234,567". */
-export function Num({ value, maximumFractionDigits, notation, tone, field }: NumProps) {
+export function Num({ value, maximumFractionDigits, notation, tone, field, style }: NumProps) {
   const formatted = formatNum(useValue(field, value), { maximumFractionDigits, notation });
-  if (formatted === null) return <Placeholder />;
+  if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="Num" style={{ ...font, ...numeric, ...tonePaint(tone) }}>
+    <span data-kit="Num" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
@@ -142,7 +142,7 @@ export function humanizeEnum(value: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export interface EnumBadgeProps {
+export interface EnumBadgeProps extends KitStyled {
   /** The raw enum value from data. */
   value?: string | null;
   /** Optional value → display label overrides. */
@@ -163,11 +163,11 @@ function own<T>(record: Record<string, T> | undefined, key: string): T | undefin
 }
 
 /** A status pill for enum fields — humanized label, tone-mapped color. */
-export function EnumBadge({ value, labels, tones, tone, field }: EnumBadgeProps) {
+export function EnumBadge({ value, labels, tones, tone, field, style }: EnumBadgeProps) {
   const key = applyFormat(useValue(field, value), "text");
   if (key === null) return null;
   const resolvedTone = resolveTone(own(tones, key) ?? tone);
-  const style = toneStyle[resolvedTone];
+  const paint = toneStyle[resolvedTone];
   const label = own(labels, key) ?? humanizeEnum(key);
   return (
     <span
@@ -179,14 +179,15 @@ export function EnumBadge({ value, labels, tones, tone, field }: EnumBadgeProps)
         alignItems: "center",
         width: "fit-content",
         minHeight: "var(--vendo-density-badge-height, 24px)",
-        border: `${t.borderWidth} solid ${style.border}`,
+        border: `${t.borderWidth} solid ${paint.border}`,
         borderRadius: "999px",
-        color: style.color,
-        background: style.background,
+        color: paint.color,
+        background: paint.background,
         fontSize: "0.78em",
         fontWeight: t.weightEmphasis,
         lineHeight: 1,
         padding: "var(--vendo-density-badge-padding, 5px 9px)",
+        ...style,
       }}
     >
       {label}
@@ -194,7 +195,7 @@ export function EnumBadge({ value, labels, tones, tone, field }: EnumBadgeProps)
   );
 }
 
-export interface TextProps {
+export interface TextProps extends KitStyled {
   text?: ReactNode;
   variant?: "body" | "heading" | "caption" | "label";
   /** Paints the text — a `danger` figure is how an overdue amount reads red. */
@@ -204,7 +205,7 @@ export interface TextProps {
 }
 
 /** Themed text. Heading renders an <h3>; others render a <span>. */
-export function Text({ text, variant = "body", tone, field }: TextProps) {
+export function Text({ text, variant = "body", tone, field, style }: TextProps) {
   // A row field holds ANYTHING: a plain object as a React child throws
   // ("Objects are not valid as a React child") and a boolean renders as
   // literally NOTHING, which is how `active: false` came out blank. An element
@@ -223,7 +224,7 @@ export function Text({ text, variant = "body", tone, field }: TextProps) {
     : value === undefined || value === null || value === ""
       ? null
       : (applyFormat(typeof value === "object" ? null : value, "text") ?? <Placeholder />);
-  const style: CSSProperties = {
+  const rootStyle: CSSProperties = {
     ...font,
     // `label` IS the micro-label — the word over a figure, not prose. `caption`
     // stays sentence-case: it carries model-authored sentences, and uppercasing
@@ -235,16 +236,17 @@ export function Text({ text, variant = "body", tone, field }: TextProps) {
       : {}),
     margin: 0,
     ...tonePaint(tone),
+    ...style,
   };
   if (variant === "heading") {
     return (
-      <h3 data-kit="Text" data-variant={variant} style={style}>
+      <h3 data-kit="Text" data-variant={variant} style={rootStyle}>
         {content}
       </h3>
     );
   }
   return (
-    <span data-kit="Text" data-variant={variant} style={style}>
+    <span data-kit="Text" data-variant={variant} style={rootStyle}>
       {content}
     </span>
   );

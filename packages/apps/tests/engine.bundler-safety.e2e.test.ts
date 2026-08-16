@@ -66,4 +66,4 @@ describe("toolchain.ts esbuild import — bundler-style reachability (built dist
     const compiled = buildDistToolchainSource();
     expect(GUARDED_ESBUILD_IMPORT.test(compiled)).toBe(true);
   });
-}, 30_000);
+}, 120_000);

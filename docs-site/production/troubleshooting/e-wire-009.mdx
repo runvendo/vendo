@@ -1,0 +1,61 @@
+---
+title: "E-WIRE-009"
+sidebarTitle: "E-WIRE-009"
+description: "Doctor found live server actions that aren't registered, or a route that never wires the registration map into createVendo."
+---
+
+```text wiring/server-actions
+broken: server actions fail closed — <detail>. Re-run `npx vendo init`: it
+prints the exact paste for each (it never rewrites a file you already have).
+```
+
+`<detail>` names the exact gap doctor found: `vendo/vendo-actions.ts is
+missing`, or `vendo/vendo-actions.ts does not register <action names>`, or
+`app/api/vendo/[...vendo]/route.ts does not pass serverActions inside
+createVendo({ … })`. Doctor can name more than one of these at once.
+
+`check: wiring/server-actions` · `error_code: E-WIRE-009` · `doctor exits: 1`
+
+## What you're seeing
+
+Everything else can be green. The failure only shows up when a user's turn
+calls one of the affected tools: it fails closed, with no work performed and
+no error the user can act on.
+
+## Why
+
+`vendo init` generates the registration map and the route the first time it
+runs, and it only ever creates: a file you already have is never rewritten.
+Server actions added after that first run don't register themselves. The
+commonest shape is a half-applied paste, where the `import { serverActions }`
+line landed but the `serverActions,` property never went into the
+`createVendo({ … })` call.
+
+## The fix
+
+Run `npx vendo init` again.
+
+```bash
+npx vendo init
+```
+
+It prints the exact paste for each file it will not touch: the import line
+plus `serverActions,` inside `createVendo({ … })`, and the missing map
+entries, with aliases that continue your file's own numbering.
+
+```ts app/api/vendo/[...vendo]/route.ts {1,4}
+import { serverActions } from "./vendo-actions";
+
+export const vendo = createVendo({
+  serverActions,
+});
+```
+
+Apply the paste and re-run `npx vendo doctor`. Actions you disabled in
+`.vendo/overrides.json` are never reported here; the runtime never
+dispatches those, so registering them buys nothing.
+
+## Related errors
+
+- [E-WIRE-003](/production/troubleshooting/e-wire-003): the route this registration map lives beside
+- [E-WIRE-004](/production/troubleshooting/e-wire-004): the client mount this route ultimately serves

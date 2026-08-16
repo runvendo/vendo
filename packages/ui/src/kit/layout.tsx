@@ -1,6 +1,6 @@
 /** Layout tier — themed containers (W2 §The Kit). */
 import type { CSSProperties, PropsWithChildren, ReactNode } from "react";
-import { densityVars, font, hairline, microLabel, resolveTone, t, toneColor, type KitDensity, type KitTone } from "./tokens.js";
+import { densityVars, font, hairline, microLabel, resolveTone, t, toneColor, type KitDensity, type KitStyled, type KitTone } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
@@ -12,24 +12,24 @@ const borderColor = (tone: KitTone | undefined): string => {
   return resolved === "neutral" ? t.border : toneColor(resolved);
 };
 
-export interface StackProps {
+export interface StackProps extends KitStyled {
   gap?: number;
   density?: KitDensity;
 }
 
 /** Vertical flow. */
-export function Stack({ gap, density, children }: PropsWithChildren<StackProps>) {
+export function Stack({ gap, density, style, children }: PropsWithChildren<StackProps>) {
   return (
     <div
       data-kit="Stack"
-      style={{ ...densityVars(density), display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap) }}
+      style={{ ...densityVars(density), display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap), ...style }}
     >
       {children}
     </div>
   );
 }
 
-export interface RowProps {
+export interface RowProps extends KitStyled {
   gap?: number;
   align?: "start" | "center" | "end" | "stretch";
   justify?: "start" | "center" | "end" | "between";
@@ -51,7 +51,7 @@ const justifyMap: Record<string, CSSProperties["justifyContent"]> = {
 };
 
 /** Horizontal flow. */
-export function Row({ gap, align = "center", justify = "start", wrap = true, density, children }: PropsWithChildren<RowProps>) {
+export function Row({ gap, align = "center", justify = "start", wrap = true, density, style, children }: PropsWithChildren<RowProps>) {
   // Avatar's stack rule pulls its sibling back by the row's gap, and a numeric
   // `gap` never reaches the density variable — so the row publishes whichever
   // gap it resolved.
@@ -68,6 +68,7 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, den
         alignItems: alignMap[align],
         justifyContent: justifyMap[justify],
         gap: resolved,
+        ...style,
       } as CSSProperties}
     >
       {children}
@@ -75,7 +76,7 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, den
   );
 }
 
-export interface GridProps {
+export interface GridProps extends KitStyled {
   columns?: number;
   /** Narrowest a cell may get, in px. Wins over `columns`. */
   minChildWidth?: number;
@@ -84,7 +85,7 @@ export interface GridProps {
 }
 
 /** Equal-width columns. */
-export function Grid({ columns = 2, minChildWidth = 0, gap, density, children }: PropsWithChildren<GridProps>) {
+export function Grid({ columns = 2, minChildWidth = 0, gap, density, style, children }: PropsWithChildren<GridProps>) {
   const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
   // A fixed count CLIPS its cells once the screen is narrower than the count
   // needs; auto-fit wraps them instead. The inner `min()` is what keeps the last
@@ -102,6 +103,7 @@ export function Grid({ columns = 2, minChildWidth = 0, gap, density, children }:
         gridTemplateColumns: template,
         alignItems: "stretch",
         gap: gapVar(gap),
+        ...style,
       }}
     >
       {children}
@@ -124,7 +126,7 @@ const footerRow: CSSProperties = {
   gap: "var(--vendo-density-inline-gap, 7px)",
 };
 
-export interface SurfaceProps {
+export interface SurfaceProps extends KitStyled {
   title?: string;
   tone?: KitTone;
   density?: KitDensity;
@@ -135,7 +137,7 @@ export interface SurfaceProps {
 }
 
 /** A bordered, elevated container; optional title. */
-export function Surface({ title, tone, density, header, footer, children }: PropsWithChildren<SurfaceProps>) {
+export function Surface({ title, tone, density, header, footer, style, children }: PropsWithChildren<SurfaceProps>) {
   return (
     <section
       data-kit="Surface"
@@ -150,6 +152,7 @@ export function Surface({ title, tone, density, header, footer, children }: Prop
         borderRadius: t.radiusMedium,
         background: t.surface,
         padding: "var(--vendo-density-card-padding, 16px)",
+        ...style,
       }}
     >
       {title || header ? (
@@ -173,7 +176,7 @@ export function Surface({ title, tone, density, header, footer, children }: Prop
   );
 }
 
-export interface CardProps {
+export interface CardProps extends KitStyled {
   title?: string;
   description?: string;
   tone?: KitTone;
@@ -185,7 +188,7 @@ export interface CardProps {
 }
 
 /** A titled content block; Surface is the untitled/plain container. */
-export function Card({ title, description, tone, density, header, footer, children }: PropsWithChildren<CardProps>) {
+export function Card({ title, description, tone, density, header, footer, style, children }: PropsWithChildren<CardProps>) {
   return (
     <article
       data-kit="Card"
@@ -200,6 +203,7 @@ export function Card({ title, description, tone, density, header, footer, childr
         borderRadius: t.radiusLarge,
         background: t.surface,
         padding: "var(--vendo-density-card-padding, 16px)",
+        ...style,
       }}
     >
       {title || header ? (
@@ -226,14 +230,14 @@ export function Card({ title, description, tone, density, header, footer, childr
   );
 }
 
-export interface DividerProps {
+export interface DividerProps extends KitStyled {
   /** A Kit mark centred in the rule, which then reads as a section break
    *  rather than as decoration. */
   label?: ReactNode;
 }
 
 /** A horizontal rule. */
-export function Divider({ label }: DividerProps) {
+export function Divider({ label, style }: DividerProps) {
   // An `<hr>` is void, so a labelled rule is two rules around the label — and it
   // carries meaning, so it is NOT hidden from the reading order the way the
   // plain one is.
@@ -242,7 +246,7 @@ export function Divider({ label }: DividerProps) {
       <hr
         data-kit="Divider"
         aria-hidden="true"
-        style={{ width: "100%", margin: 0, border: 0, borderTop: hairline }}
+        style={{ width: "100%", margin: 0, border: 0, borderTop: hairline, ...style }}
       />
     );
   }
@@ -250,7 +254,7 @@ export function Divider({ label }: DividerProps) {
     <div
       data-kit="Divider"
       role="separator"
-      style={{ ...font, display: "flex", alignItems: "center", gap: "var(--vendo-density-inline-gap, 7px)", width: "100%" }}
+      style={{ ...font, display: "flex", alignItems: "center", gap: "var(--vendo-density-inline-gap, 7px)", width: "100%", ...style }}
     >
       <span style={{ flex: 1, borderTop: hairline }} />
       <span style={microLabel}>{label}</span>

@@ -80,7 +80,7 @@ describe("the vendo Cloud gateway family", () => {
   // max_tokens to 4096, and the screen agent's document truncates mid-wire
   // (nothing paints, no row lands, every row-scoped verb answers not-found).
   // The server-side mapping is the Claude 5 line, so sampling is rejected too.
-  it.each(["vendo", "vendo-paint", "vendo-judge", "vendo-extract", "vendo-env"])(
+  it.each(["vendo", "vendo-apps", "vendo-review", "vendo-judge", "vendo-extract", "vendo-env"])(
     "caps output and omits temperature for %s", (id) => {
       expect(acceptsSamplingParams(idOnly(id))).toBe(false);
       expect(modelCallParams(idOnly(id))).toEqual({ maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS });

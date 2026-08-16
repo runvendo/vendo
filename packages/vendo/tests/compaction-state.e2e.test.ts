@@ -132,7 +132,7 @@ async function compose(): Promise<Composed> {
   await store.ensureSchema();
   const model = reportingModel();
   const vendo = createVendo({
-    model: model as never,
+    models: { default: model as never },
     principal: async () => principal,
     store,
     // Q1a: the window override lives on the HARNESS, never on `createVendo`.

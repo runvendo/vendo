@@ -1,0 +1,40 @@
+---
+title: "E-DEV-001"
+sidebarTitle: "E-DEV-001"
+description: "Doctor warns when it offered to start your dev server for the live probes and it never answered in time."
+---
+
+```text dev/start
+warning: could not start the dev server for the probe; start it yourself
+(e.g. `npm run dev`) and re-run `vendo doctor`
+```
+
+`check: dev/start` · `error_code: E-DEV-001` · `doctor exits: 0`
+
+## What you're seeing
+
+Interactive doctor offered to start your dev server for you, and `/status`
+never answered within the startup window. This is a warning, not a failure;
+doctor still exits 0.
+
+## Why
+
+Doctor tried running your package manager's `dev` script and waited for
+`/status` to answer. Something kept it from coming up in time: a slow first
+compile, a crash on boot, or a port already in use.
+
+## The fix
+
+Start the dev server yourself and wait until it's actually serving requests.
+
+```bash
+npm run dev
+```
+
+Then re-run `npx vendo doctor`. If your app listens on a non-default port
+or mount, pass `--url <base>` or set `VENDO_URL`. Note that `--json` runs
+never attempt to start the dev server themselves; agents own that step.
+
+## Related errors
+
+- [E-CFG-001](/production/troubleshooting/e-cfg-001): a missing `.vendo/` config file, checked before any live probe runs

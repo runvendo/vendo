@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { SEATS } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { REMOVED_CONFIG_KEYS, docsTableDiff, tableKeys } from "../src/config-keys.js";
+import { REMOVED_CONFIG_KEYS } from "../src/config-keys.js";
 
 /**
  * Docs-rot gate for `docs-site/reference/server-api.mdx` — the sibling of the
@@ -17,11 +17,12 @@ import { REMOVED_CONFIG_KEYS, docsTableDiff, tableKeys } from "../src/config-key
  * plus a `verifier` model seat that has never existed, while omitting eight real
  * keys. A host following it got an immediate crash.
  *
- * Same three failure modes, same shared comparison (`tableKeys` +
- * `docsTableDiff`), same path resolution: a URL relative to this module, so the
- * gate reads the page that publishes rather than a copy of it. The synthetic
- * red-green proof for the comparison itself lives once, in the sibling's "the
- * gate can still FAIL" block.
+ * The restructure closed the duplication that made this file necessary:
+ * server-api.mdx dropped its own `## Config keys` table and now sends the
+ * reader to handler-options.mdx, which is the one gated copy. So the key-for-key
+ * comparison lives on the sibling alone, and what is asserted here is that this
+ * page keeps NO second copy to rot — plus the two claims that were never in a
+ * table and so were never covered by one.
  */
 
 const SERVER_API_PAGE = new URL("../../../docs-site/reference/server-api.mdx", import.meta.url);
@@ -30,17 +31,11 @@ const HANDLER_OPTIONS_PAGE = new URL(
   import.meta.url,
 );
 
-/** The `## Config keys` section only: a key named in prose or in an example is
- *  not documentation, the same rule the sibling's section slice enforces. */
-const configKeyTable = (page: string): string => {
-  const start = page.indexOf("## Config keys");
-  return page.slice(start, page.indexOf("\n## ", start + 1));
-};
-
-describe("server-api.mdx stays 1:1 with CreateVendoConfig", () => {
-  it("documents every config key and no key that does not exist", async () => {
-    const table = configKeyTable(await readFile(SERVER_API_PAGE, "utf8"));
-    expect(docsTableDiff(tableKeys(table))).toEqual({ missing: [], unknown: [], duplicated: [] });
+describe("server-api.mdx keeps no second copy of the config keys", () => {
+  it("sends the reader to the one gated page instead", async () => {
+    const page = await readFile(SERVER_API_PAGE, "utf8");
+    expect(page).not.toMatch(/^## Config keys$/m);
+    expect(page).toContain("/reference/handler-options");
   });
 
   it("shows no removed key, and no `agent:` knobs object, as a config field", async () => {
@@ -59,40 +54,43 @@ describe("server-api.mdx stays 1:1 with CreateVendoConfig", () => {
   });
 });
 
-/** The `models` row of a reference page's option table — where both pages teach
- *  the seats. */
-const modelsRow = (page: string): string | undefined =>
-  page.split("\n").find((line) => line.startsWith("| `models` |"));
+/** The `## `models`` section of handler-options.mdx: one row per seat, the seat
+ *  name in the first cell. The restructure moved the vocabulary out of an inline
+ *  `{ … }` group on the `models` option row and into this table, and moved it
+ *  off server-api.mdx entirely — that page defers to this one now. */
+const seatSection = (page: string): string => {
+  const start = page.indexOf("## `models`");
+  return page.slice(start, page.indexOf("\n## ", start + 1));
+};
 
-/** The seats that row teaches: the identifiers in its `{ … }` group. Both pages
- *  spell the list that way, so one comparison against `SEATS` covers both. */
-const documentedSeats = (row: string | undefined): string[] | undefined =>
-  row
-    ?.match(/\{([^}]*)\}/)?.[1]
-    ?.split(",")
-    .map((seat) => seat.trim().replace(/[`?]/g, ""))
-    .filter((seat) => seat.length > 0);
+const documentedSeats = (section: string): string[] =>
+  [...section.matchAll(/^\| `([a-zA-Z]+)` \|/gm)].map((match) => match[1]!);
 
 /**
- * Both reference pages document the seat vocabulary, so both are pinned to the
- * one closed list in `@vendoai/core`. server-api.mdx invented a `verifier` seat
- * and handler-options.mdx taught the same one plus a `knowledgeVerifier` →
+ * The page that documents the seat vocabulary is pinned to the one closed list
+ * in `@vendoai/core`. server-api.mdx invented a `verifier` seat and
+ * handler-options.mdx taught the same one plus a `knowledgeVerifier` →
  * `verifier` migration — neither has ever existed on `ModelsConfig`, and the
  * knowledge verifier pass they belonged to was removed outright.
  */
 describe("the reference pages pin their model seats to model-seats.ts", () => {
-  it.each([
-    ["server-api.mdx", SERVER_API_PAGE],
-    ["handler-options.mdx", HANDLER_OPTIONS_PAGE],
-  ])("%s names exactly the real seats, in order", async (_name, url) => {
-    const row = modelsRow(await readFile(url, "utf8"));
-    expect(row).toBeDefined();
-    expect(documentedSeats(row)).toEqual([...SEATS]);
-    // The set comparison covers an invented seat inside the LIST; this covers
-    // one named in the row's prose, which is where the "`knowledgeVerifier` →
-    // `verifier`" migration claim sat. Scoped to the seat SPELLING rather than
+  it("handler-options.mdx names exactly the real seats", async () => {
+    const section = seatSection(await readFile(HANDLER_OPTIONS_PAGE, "utf8"));
+    expect(section, "the `models` seat table must still exist").not.toBe("");
+    // Compared as a set: the table orders seats by how they relate to each
+    // other, which is the page's call, while WHICH seats exist is not.
+    expect(documentedSeats(section).sort()).toEqual([...SEATS].sort());
+    // The set comparison covers an invented seat inside the TABLE; this covers
+    // one named in the section's prose, which is where the "`knowledgeVerifier`
+    // → `verifier`" migration claim sat. Scoped to the seat SPELLING rather than
     // the word, so the page can still say the old slot is gone — which it
     // should, and which the house style does for every other removed key.
-    expect(row).not.toMatch(/`(models\.)?verifier`/i);
+    expect(section).not.toMatch(/`(models\.)?verifier`/i);
+  });
+
+  it("server-api.mdx teaches no seat vocabulary of its own to rot", async () => {
+    const page = await readFile(SERVER_API_PAGE, "utf8");
+    expect(page).not.toMatch(/`(models\.)?verifier`/i);
+    expect(page).not.toMatch(/^## `models`$/m);
   });
 });

@@ -1,0 +1,115 @@
+---
+title: "Mastra"
+sidebarTitle: "Mastra"
+description: "What the quickstart left out for a Mastra agent: the static definition, the request-context caller, warming the store, and the model pin."
+icon: "/images/logos/mastra.svg"
+---
+
+The [quickstart](/existing-agent/quickstart) wires a Mastra agent end to end. This page is the rest.
+
+## The definition is static, the caller is not
+
+One Mastra agent definition serves every user, so `vendoMastraTools` takes no principal. Each call reads one off Mastra's request context, and a `vendo_*` call that finds none fails closed.
+
+```ts app/api/chat/route.ts focus={13-15}
+import { handleChatStream } from "@mastra/ai-sdk";
+import { RequestContext } from "@mastra/core/request-context";
+import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
+import { createUIMessageStreamResponse } from "ai";
+import { resolvePrincipal } from "@/lib/vendo";
+import { mastra } from "@/mastra";
+
+export async function POST(req: Request) {
+  const params = await req.json();
+  const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
+
+  const requestContext = new RequestContext();
+  requestContext.set(VENDO_PRINCIPAL_KEY, caller);
+  params.requestContext = requestContext;
+
+  const stream = await handleChatStream({ version: "v6", mastra, agentId: "your-agent", params });
+  return createUIMessageStreamResponse({ stream });
+}
+```
+
+A context you build and never pass is a context the tools never see. Skip the `params.requestContext` assignment and every `vendo_*` call fails, which reads at first glance like a broken install.
+
+Set `VENDO_SESSION_KEY` on the same context to carry your own session id into the audit trail. Leave it out and each call mints one.
+
+<Warning>
+That subject has to match what your wire route's `principal` resolves. If they disagree, the person never sees what the agent makes, and the app embed polls forever while the agent reports success.
+
+Resolve both from the same session, and never take a principal from the client. See [Auth](/production/auth).
+</Warning>
+
+`vendoMastraTools` returns a Promise, which is why the agent takes the tools-as-function form.
+
+```ts src/mastra/agents/your-agent.ts focus={10}
+import { Agent } from "@mastra/core/agent";
+import { vendoMastraTools } from "@vendoai/vendo/mastra";
+import { vendo } from "@/lib/vendo";
+
+export const yourAgent = new Agent({
+  id: "your-agent",
+  name: "your-agent",
+  instructions: "…your system prompt as it is",
+  model: "openai/gpt-4.1-mini", // see the pin below
+  tools: async () => ({ ...(await vendoMastraTools(vendo)) }),
+});
+```
+
+## Warm the store
+
+Every `vendo_*` call runs the schema check before it executes, so a guarded tool that fires before any wire request still works. Call `ensureSchema` once at module scope to move that one-time cost off the first turn.
+
+```ts src/mastra/index.ts focus={3}
+import { vendo } from "@/lib/vendo";
+
+await vendo.store.ensureSchema();
+```
+
+## Render the parts
+
+Mastra streams tool calls as `dynamic-tool` or as `tool-<name>`, depending on how the tool was declared. Match both.
+
+```tsx components/vendo-part.tsx focus={5-8}
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
+  if (!isToolUIPart(part)) return null; // true for both shapes
+  return part.state === "output-available"
+    ? <VendoToolResult output={part.output} />
+    : <span>Running {getToolName(part)}…</span>;
+}
+```
+
+Everything downstream of that is the same as any other framework. Full contract: [Embeds in your chat](/existing-agent/embeds).
+
+<Frame>
+  <img
+    src="/images/existing-agents/mastra-approval.png"
+    alt="The Mastra example chat with the vendo_send_trip_report tool pill above an approval card carrying the report, the recipient, and Approve and Deny buttons"
+    width="672"
+    height="605"
+  />
+</Frame>
+
+## Open input schemas ride a bridge
+
+Extraction emits an open object schema for a route whose body shape it cannot type. Mastra's provider compat layers hard-close every object node, so an open schema reaches the model as "this tool takes no arguments", and the model then calls it with `{}`.
+
+The shim routes those tools through one declared `args` property instead, a JSON object or that object as a JSON string, and unwraps it before the guard. Nothing on your side changes.
+
+## The model pin
+
+Multi-turn tool use with GPT-5 reasoning models breaks on history replay. Mastra's memory drops the Responses API's reasoning items and the second turn errors.
+
+[mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005) is closed, but it still reproduces on `@mastra/core` 1.51.0, retested 2026-07-20, so the example pins `openai/gpt-4.1-mini`.
+
+Your agent's model is your call. Vendo's own turns take a seat of their own, filled through the Cloud gateway on your `VENDO_API_KEY`: [Model credentials](/production/model-credentials).
+
+## The full example
+
+[`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent) is the stock [`create-mastra`](https://mastra.ai/docs) weather starter, fronted with Next.js per Mastra's guide, with this diff applied. Every added line sits between `--- vendo` and `--- /vendo` markers, about sixty of them in total.

@@ -1,0 +1,51 @@
+---
+title: "E-WIRE-010"
+sidebarTitle: "E-WIRE-010"
+description: "Doctor warns when the host still names the removed <VendoRoot>, or still carries the old vendo-root.tsx wrapper."
+---
+
+```text wiring/vendo-root
+warning: <VendoRoot> was removed — swap it for <VendoProvider
+baseUrl="/api/vendo">. <file> is YOUR file now: change its import to `import
+{ VendoProvider } from "@vendoai/vendo/react"`, rename the tag, and add
+baseUrl. Nothing else moves — the props are identical.
+```
+
+`<file>` names `vendo/vendo-root.tsx` (or its `src/` twin) when doctor found
+that generated wrapper on disk. When only the `<VendoRoot>` tag name shows up
+without the wrapper file, that middle sentence is left out.
+
+`check: wiring/vendo-root` · `error_code: E-WIRE-010` · `doctor exits: 0`
+
+## What you're seeing
+
+This is a warning, not a failure; doctor still exits 0. The app runs on the
+older name, and it works today.
+
+## Why
+
+`VendoRoot` was removed. `VendoProvider` is the only provider now, and it
+takes the wire mount directly as `baseUrl`. Older versions of `vendo init`
+generated a `vendo/vendo-root.tsx` wrapper around the old name; doctor flags
+either the tag or the file.
+
+## The fix
+
+Three changes, and the props are otherwise identical.
+
+```tsx vendo/vendo-root.tsx {1,4}
+import { VendoProvider } from "@vendoai/vendo/react";
+
+export function VendoRoot({ children }: { children: React.ReactNode }) {
+  return <VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>;
+}
+```
+
+A generated `vendo/vendo-root.tsx` is your file now: edit it in place, or
+fold its contents directly into your layout. Re-run `npx vendo doctor` after
+the swap.
+
+## Related errors
+
+- [E-WIRE-004](/production/troubleshooting/e-wire-004): the mount this file wraps
+- [E-WIRE-006](/production/troubleshooting/e-wire-006): visible surface, checked independently of which provider name you use

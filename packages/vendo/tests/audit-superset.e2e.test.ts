@@ -212,7 +212,7 @@ async function runTheTurn(): Promise<TurnResult> {
   });
 
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     // `cautious` is what makes the approval leg real: a `write` tool asks, a
@@ -472,7 +472,7 @@ describe("the unattended failure card (design §3)", () => {
       },
     });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       guard: { policy: "cautious" },

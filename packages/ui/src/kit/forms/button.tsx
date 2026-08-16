@@ -5,9 +5,9 @@
  * host action. Standalone it just calls the bound callback.
  */
 import type { PropsWithChildren } from "react";
-import { font, hairline, t, transitionFor } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitStyled } from "../tokens.js";
 
-export interface ButtonProps {
+export interface ButtonProps extends KitStyled {
   label?: string;
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
@@ -16,7 +16,7 @@ export interface ButtonProps {
   type?: "button" | "submit";
 }
 
-export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", children }: PropsWithChildren<ButtonProps>) {
+export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", style, children }: PropsWithChildren<ButtonProps>) {
   const primary = variant === "primary";
   const danger = variant === "danger";
   const background = primary ? t.accent : danger ? t.danger : t.surface;
@@ -50,6 +50,7 @@ export function Button({ label, variant = "primary", disabled = false, onClick, 
         opacity: disabled ? 0.55 : 1,
         padding: "var(--vendo-density-control-padding, 9px 12px)",
         transition: transitionFor("background-color", "border-color", "box-shadow", "opacity"),
+        ...style,
       }}
     >
       {label ?? children}

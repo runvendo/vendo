@@ -143,7 +143,7 @@ async function seam(turns: Chunk[][] = []): Promise<Seam> {
   await store.ensureSchema();
   const identified: boolean[] = [];
   const vendo = createVendo({
-    model: scriptedModel(turns),
+    models: { default: scriptedModel(turns) },
     principal: async request => {
       const subject = request.headers.get(USER_HEADER);
       identified.push(subject !== null);

@@ -547,11 +547,11 @@ export async function assembleScreen(
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
 
   // Seats are required only where a harness reads them (contract §4, relaxed) —
-  // and the screen agent thinks with `default`, so a turn without it is the
-  // caller's composition bug, named loudly rather than limped past. Same posture
-  // as `vendo()`, which reads the same seat.
-  if (surface.models.default === undefined) {
-    throw new Error("the screen agent thinks with `turn.models.default`, and this turn carries no default seat");
+  // and the screen agent is the app-writing agent, so it thinks with `apps` and
+  // a turn without that seat is the caller's composition bug, named loudly
+  // rather than limped past. Same posture as `vendo()`, on its own seat.
+  if (surface.models.apps === undefined) {
+    throw new Error("the screen agent thinks with `turn.models.apps`, and this turn carries no apps seat");
   }
 
   const directory = appDirectory(input.appId);
@@ -826,7 +826,10 @@ export async function assembleScreen(
     },
     skills: NO_SKILLS,
     workspace: surface.workspace,
-    models: surface.models,
+    // `vendo()` thinks with the turn's `default` seat, and the loop it drives
+    // HERE is the app-writing one — so the seat this agent runs on is what the
+    // inner harness is handed as its default.
+    models: { ...surface.models, default: surface.models.apps },
     state: runState(),
     options: {},
     signal: surface.signal,

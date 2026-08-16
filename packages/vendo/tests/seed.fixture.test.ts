@@ -126,7 +126,7 @@ export default function Page() {
     await store.ensureSchema();
     process.chdir(root);
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => ctx.principal,
       store,
     });
@@ -189,7 +189,7 @@ export default function Page() {
     await store.ensureSchema();
     process.chdir(root);
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => ctx.principal,
       store,
     });

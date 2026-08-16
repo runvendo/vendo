@@ -1,5 +1,37 @@
 # @vendoai/core
 
+## 0.26.0
+
+### Minor Changes
+
+- c369e14: **Breaking:** one model seat per real job — `default`, `apps`, `review`, `judge` — and the old spellings are gone rather than deprecated.
+
+  `createVendo({ models })` now takes exactly the four jobs that run: `default` thinks (chat, compaction, subagents, automations), `apps` writes the generated apps, `review` grades the finished ones, `judge` answers the guard's run/ask/block. The old vocabulary named things nobody could act on — `fill` was the app writer, `reviewer` was read by nothing at all, and the app-writing agent silently read `default` while `paint` configured a lane that no longer existed. A seat you cannot point at a job is a seat you cannot set correctly.
+
+  Gone, each with a boot error naming its replacement:
+
+  - top-level `model` → `models.default`
+  - top-level `paint` → `models.apps` for the model half, `apps: false` for `disabled`
+  - the `fill` seat → `apps`; the `reviewer` seat → `review` (which never had a reader and now has one: the AI reviewer)
+  - `devModel()` → `vendoModel()`
+  - `VENDO_MODEL_PAINT` → `VENDO_MODEL_APPS`; `VENDO_MODEL_REVIEW` is new
+  - the `VENDO_EXTRACTION_MODEL` fallback → `VENDO_MODEL_EXTRACT`
+  - `migrateModelSeats()`, which no production path called
+
+  Cloud gateway family ids follow the seats: `vendo`, `vendo-apps`, `vendo-review`, `vendo-judge`, `vendo-extract`. `vendo-paint` is gone, and `vendo-review` is new — so is its env pin, which the reviewer seat never had.
+
+  Resolution is one rule stated once: an explicit seat wins; an unset seat borrows `default` — the object when you passed one, its own rung pick when `default` rode the credential ladder. On the Cloud rung each seat resolves to its own family id; on a BYO provider key the reading seats (`review`, `judge`) take the provider's fast model and the writing seats (`default`, `apps`) take its flagship. The app-writing agent now genuinely runs on the seat named after it — it read `default` before, so `models.apps` was a knob that changed nothing.
+
+### Patch Changes
+
+- 443edd4: Apps seeded before a remix carried its instruction load again. `appSeedSchema` made `instruction` required, so every stored `seed` written without one failed the read-side integrity check (`validateDocument`) and its app refused to open — a document that had been valid when it was written became unreadable. `instruction` now defaults to the empty string on read, so an old seed parses as the seed it always was while the field stays required for everything that writes one.
+
+## 0.25.0
+
+### Minor Changes
+
+- aa1c8db: Two batched store-wire ops so one agent turn costs one call at each end instead of many. `turn.load` bundles a turn's opening reads — `transcripts.getThread`, `workspace.index`, `workspace.read`, and optionally `harness.get` and the `usage.count` a limits policy needs — and `turn.commit` bundles its closing writes: `transcripts.appendMessages`, optionally `harness.set`, and optionally the run's audit `engine.put`. Both bodies are pure composition of the per-op schemas that already existed, and every answer is exactly what the individual op returns, so nothing here is new semantics; the only thing that changes is the number of round trips. The family is OPTIONAL on `StoreOps` (`usage`'s rule) and rides the tail of `STORE_WIRE_PATHS`, so a mount that omits it reports the level it always did and a caller that finds it absent makes the calls it always made. Clients feature-detect on `/status` with the frozen `STORE_WIRE_TURN_OPS = 50`, read with `>=`, exactly as the batch append is detected.
+
 ## 0.24.0
 
 ## 0.23.0

@@ -30,8 +30,6 @@ import type { CreateVendoConfig } from "./types.js";
  * typecheck failure (`_listedKeysExist`).
  */
 export const CREATE_VENDO_CONFIG_KEYS = [
-  "model",
-  "paint",
   "models",
   "auth",
   "principal",
@@ -82,14 +80,12 @@ type _NoMissingKeys = AssertNever<Exclude<keyof CreateVendoConfig, CreateVendoCo
 
 /**
  * Keys that still work and should not be used, mapped to the sentence a host is
- * told. One minor of grace (the `model`/`paint` precedent), then they go.
+ * told. One minor of grace, then they go.
  *
  * Spelled with the nested path where the deprecation is nested — `profile.tools`
  * is deprecated, `profile` itself is not.
  */
 export const DEPRECATED_CONFIG_KEYS: Readonly<Record<string, string>> = {
-  model: "`model` is deprecated: use the `models.default` seat — `models: { default: … }`. It still works for one more minor.",
-  paint: "`paint` is deprecated: use the `models.fill` seat — `models: { fill: … }`. It still works for one more minor.",
   "profile.tools":
     "`profile.tools` is deprecated: use the `tools:` slot, which is the same in-memory host-tool "
     + "declarations under their §10 name. It still works for one more minor.",
@@ -106,6 +102,10 @@ export const DEPRECATED_CONFIG_KEYS: Readonly<Record<string, string>> = {
  * never fail that way quietly.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
+  model: "`model` is gone: use the `models.default` seat — `models: { default: … }`.",
+  paint:
+    "`paint` is gone: its model half is the `models.apps` seat — `models: { apps: … }` — and its "
+    + "`disabled` half is the top-level kill switch, `apps: false`.",
   brief: "`brief` is gone: use `instructions` — one prose key, the same `.vendo/brief.md` surface behind it.",
   policy: "`policy` is gone: use `guard: guard({ policy })` from @vendoai/vendo/server.",
   judge: "`judge` is gone: use `guard: guard({ judge })` from @vendoai/vendo/server.",
@@ -166,9 +166,9 @@ export function resetDeprecationWarnings(): void {
 
 /**
  * Say, once per key per process, that a set key has moved. Called from
- * `createVendo` with the raw config — the shims themselves live where the value
- * is read (`resolveModels` for the model pair, `selectHostTools` for the tools
- * slot), because that is where the precedence lives.
+ * `createVendo` with the raw config — the shim itself lives where the value is
+ * read (`selectHostTools` for the tools slot), because that is where the
+ * precedence lives.
  */
 export function warnDeprecatedConfigKeys(
   config: Partial<Record<string, unknown>> & { profile?: Record<string, unknown> },

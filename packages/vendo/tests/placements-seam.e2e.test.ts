@@ -147,7 +147,7 @@ async function setup(gate: Promise<void>): Promise<Vendo> {
   const store = await tempStore();
   await store.ensureSchema();
   return createVendo({
-    model: gatedModel(gate),
+    models: { default: gatedModel(gate) },
     principal: async (request) => {
       const subject = request.headers.get("x-test-user");
       return subject === null ? null : { kind: "user", subject };

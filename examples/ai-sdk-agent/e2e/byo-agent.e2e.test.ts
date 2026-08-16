@@ -127,7 +127,7 @@ async function compose(): Promise<Vendo> {
   // root, so `.vendo/tools.json` — the same manifest production reads — is
   // what declares the two host actions.
   return createVendo({
-    model: generationModel(),
+    models: { default: generationModel() },
     principal: async () => demoUser,
     guard: guard({ policy: "cautious" }),
     store,

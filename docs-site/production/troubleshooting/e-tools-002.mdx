@@ -1,0 +1,52 @@
+---
+title: "E-TOOLS-002"
+sidebarTitle: "E-TOOLS-002"
+description: "The extracted tool surface is empty."
+---
+
+# E-TOOLS-002
+
+<Warning>
+**what doctor prints** (warning)
+
+the extracted tool surface is empty — the agent cannot act on this product's
+API; re-run `vendo init` extraction (or ignore if this deployment is
+connector-only)
+</Warning>
+
+Extraction ran and found nothing: `.vendo/tools.json` carries zero tools.
+
+`check tools/live-surface` · `error_code E-TOOLS-002` · `doctor exits 0` (warning only)
+
+## What you're seeing
+
+Doctor reads `.vendo/tools.json` and warns when the extracted tool list is
+empty. This is different from
+[E-TOOLS-001](/production/troubleshooting/e-tools-001), where tools exist
+but are all disabled; here there is nothing to disable in the first place.
+
+## Why
+
+Either extraction found no end-user API surface to describe as tools, or
+every proposed tool was removed by hand afterward. A deployment whose agent
+works purely through connected third-party tools rather than the host's own
+API is a legitimate reason for this to stay empty.
+
+## The fix
+
+Re-run extraction:
+
+```bash
+npx vendo init
+```
+
+If this deployment is connector-only by design, this warning is safe to
+leave; it never blocks doctor.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-TOOLS-001" href="/production/troubleshooting/e-tools-001">every tool disabled</Card>
+  <Card title="E-TOOLS-003" href="/production/troubleshooting/e-tools-003">tools ungraded</Card>
+  <Card title="E-TOOLS-004" href="/production/troubleshooting/e-tools-004">tools with no schema</Card>
+</CardGroup>

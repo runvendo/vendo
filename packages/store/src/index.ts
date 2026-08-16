@@ -74,8 +74,15 @@ export {
   type WorkspaceFileMeta,
   type WorkspaceHistoryEntry,
 } from "./workspace.js";
+// `turn.load`'s index page in the units `workspaceStore.open` takes, so a
+// caller that batched the read hands back rows it never had to reshape.
+export { workspaceIndexPage } from "./workspace-ops-rows.js";
+// The envelope fanned back out over the ops it bundles: exported so a third
+// implementation (the console's native engine) serves `turn.load` from this
+// one definition instead of mirroring it.
+export { turnLoadOverOps } from "./helpers/turn.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
-export { harnessStateStore } from "./harness-state.js";
+export { harnessStateKey, harnessStateRow, harnessStateStore } from "./harness-state.js";
 // The Cloud store: the same StoreAdapter and the same ops, over the console
 // wire instead of a local Postgres. It lives HERE so every helper above can be
 // served by it without the caller reaching for the umbrella.

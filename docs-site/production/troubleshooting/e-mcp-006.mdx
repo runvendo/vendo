@@ -1,0 +1,52 @@
+---
+title: "E-MCP-006"
+sidebarTitle: "E-MCP-006"
+description: "server.json is invalid JSON."
+---
+
+# E-MCP-006
+
+<Warning>
+**what doctor prints** (broken)
+
+server.json is invalid JSON
+</Warning>
+
+The registry artifact at the repo root does not parse at all, before doctor
+can even check its schema.
+
+`check mcp/server-json` · `error_code E-MCP-006` · `doctor exits 1`
+
+## What you're seeing
+
+Doctor reads `server.json` from the repo root and calls `JSON.parse` on it.
+This check fires when that parse throws: a stray comma, an unterminated
+string, a hand-edit that broke the syntax.
+
+## Why
+
+`server.json` is meant to be machine-generated and machine-read by MCP
+registries. A syntax error anywhere in the file means no registry, and no
+version of `vendo doctor`, can read any field out of it, not just the one you
+were editing.
+
+## The fix
+
+Regenerate the file rather than hunting for the broken character:
+
+```bash
+npx vendo mcp server-json --domain your-app.example.com \
+  --url https://your-app.example.com/api/vendo/mcp \
+  --force
+```
+
+Or repair the JSON syntax by hand if you have reason to keep manual edits,
+then re-run doctor.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
+  <Card title="E-MCP-005" href="/production/troubleshooting/e-mcp-005">server.json remote mismatch</Card>
+  <Card title="E-MCP-003" href="/production/troubleshooting/e-mcp-003">server card</Card>
+</CardGroup>

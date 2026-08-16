@@ -1,0 +1,40 @@
+---
+title: "E-LIVE-007"
+sidebarTitle: "E-LIVE-007"
+description: "Retired: E2B_API_KEY alone no longer selects an execution venue, so this check has nothing left to catch."
+---
+
+```text retired
+E-LIVE-007 — retired, doctor no longer emits this code
+```
+
+`error_code: E-LIVE-007` · `status: retired`
+
+## What you're seeing
+
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
+
+## Why
+
+This code caught a wire that had selected the e2b venue off a stray
+`E2B_API_KEY` with no `e2b` package installed. Env keys no longer select a
+venue on their own, so no host can be handed a venue it did not explicitly
+ask for, and the check has nothing left to catch.
+
+## The fix
+
+Nothing to do for a current run. If you are reading this off an older
+report, the wire has since moved to explicit selection: `E2B_API_KEY` is a
+credential now, read only when a composition explicitly configures a
+sandbox adapter.
+
+To use the managed Cloud sandbox, leave the `sandbox` slot unset in
+`createVendo` and keep `VENDO_API_KEY` set. Restart the dev server and
+re-run `npx vendo doctor`; the code you would see instead, if any, is
+E-LIVE-004 or E-LIVE-005.
+
+## Related errors
+
+- [E-LIVE-004](/production/troubleshooting/e-live-004) — the live check that replaced this one
+- [E-LIVE-005](/production/troubleshooting/e-live-005) — version skew on the same venue field

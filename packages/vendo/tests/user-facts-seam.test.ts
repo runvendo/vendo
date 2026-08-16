@@ -80,7 +80,7 @@ async function compose(): Promise<{ vendo: Vendo; seen: string[] }> {
   });
   const seen: string[] = [];
   const vendo = createVendo({
-    model: recordingModel(seen),
+    models: { default: recordingModel(seen) },
     auth: jwt({
       secret: SECRET,
       // A user the host knows but asserts NO facts about — the surviving

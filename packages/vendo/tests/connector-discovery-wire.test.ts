@@ -131,7 +131,7 @@ async function compose(
   overrides: { toolOutputCap?: number } = {},
 ): Promise<Vendo> {
   return createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store: shared!,
     connectors,

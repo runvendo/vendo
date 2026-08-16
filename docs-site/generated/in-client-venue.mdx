@@ -1,0 +1,141 @@
+---
+title: "In-client venue & approvals"
+description: "How an approved app version runs as real code in your page, how an approval pins the exact content hash, and what renders when nothing is approved."
+sidebarTitle: "In-client venue & approvals"
+---
+
+A screen runs in a sealed VM with no DOM, no network, and no clock. An approved version runs in your page instead, as real modules.
+
+## The verdict decides the venue
+
+`open()` computes the venue on every open. Nothing a stored, imported, or streamed document says about `inClient` survives to the client.
+
+<Frame caption="A stored approval pinning the current content hash is the only way into your page.">
+  <svg viewBox="0 0 700 196" width="100%" role="img" aria-label="open() checks for a stored approval pinning the current content hash. Granted, the code mounts in your page. Otherwise a contained notice takes its place.">
+    <rect x="252" y="1" width="196" height="30" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
+    <text x="350" y="20" fontSize="12" fontWeight="600" textAnchor="middle" fill="currentColor">open()</text>
+    <line x1="350" y1="31" x2="350" y2="55" stroke="currentColor" strokeOpacity="0.3" />
+    <rect x="192" y="56" width="316" height="44" rx="8" fill="#6c3bff" fillOpacity="0.07" stroke="#6c3bff" strokeOpacity="0.35" />
+    <text x="350" y="74" fontSize="11" textAnchor="middle" fill="currentColor" fillOpacity="0.75">does a stored approval pin</text>
+    <text x="350" y="90" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">this version's content hash?</text>
+    <path d="M192 78 H120 V132" fill="none" stroke="currentColor" strokeOpacity="0.3" />
+    <path d="M120 142 l-5 -10 h10 z" fill="currentColor" fillOpacity="0.45" />
+    <text x="152" y="120" fontSize="10" fill="currentColor" fillOpacity="0.6">no</text>
+    <path d="M508 78 H580 V132" fill="none" stroke="#6c3bff" strokeOpacity="0.45" />
+    <path d="M580 142 l-5 -10 h10 z" fill="#6c3bff" fillOpacity="0.6" />
+    <text x="540" y="120" fontSize="10" fill="#6c3bff">yes</text>
+    <rect x="1" y="144" width="238" height="50" rx="8" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
+    <text x="120" y="164" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor" fillOpacity="0.7">the code does not run</text>
+    <text x="120" y="181" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.5">a contained notice takes its place</text>
+    <rect x="461" y="144" width="238" height="50" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
+    <text x="580" y="164" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">it mounts in your page</text>
+    <text x="580" y="181" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">your origin, your cookies, your CSP</text>
+  </svg>
+</Frame>
+
+<Columns cols={2}>
+  <Frame>
+    <img
+      src="/images/maple/slot-unapproved.png"
+      alt="The same Maple slot with no stored approval: a contained notice stands where the generated component would be"
+      width="496"
+      height="386"
+    />
+  </Frame>
+  <Frame>
+    <img
+      src="/images/maple/slot-filled.png"
+      alt="The same Maple slot once an approval pins the version: the generated component renders natively in the page"
+      width="496"
+      height="671"
+    />
+  </Frame>
+</Columns>
+
+## Approvals pin a version
+
+An approval records that one named principal approved one exact content hash of one app.
+
+The hash covers everything but the app's id, its fork lineage, and the conversation. Any edit produces a new hash, so every existing approval for that app stops granting.
+
+| Stored approval | `payload.inClient` | What renders |
+| --- | --- | --- |
+| One pins the current hash | `{ granted: true, versionHash, approvedBy, at }` | The code, mounted in your page |
+| One exists, the version moved | `{ granted: false, reason: "version-changed" }` | A contained notice in its place |
+| A review-kind remix is still waiting | `{ granted: false, reason: "pending-review", review }` | Your original component, and no executable source ships at all |
+| None was ever recorded | The field is absent | A contained notice in its place |
+
+<Note>
+  **Review-kind never drops.** A remix wrapped in `<Remixable review>` keeps showing your original component while it waits, so the reader sees the review standing rather than a half-trusted render.
+</Note>
+
+## Reviewing what changed
+
+The review artifact is the ship-diff: approvable code diffed against the host baselines `vendo sync` captured, pinned to the current version.
+
+The base side is always your shipped product. So the diff answers how far the app has drifted from what your users run, not what changed since the last approval.
+
+```ts focus={2}
+// ctx is the RunContext for the request: { principal, venue, presence, sessionId }
+const diff = await vendo.apps.inClient.shipDiff(appId, ctx);
+```
+
+A baseline that has since moved is flagged `drifted`. The diff still returns and approving is still possible.
+
+## Minting an approval
+
+Vendo Cloud's review console mints approvals in production. On your own server the call is one line, and `approvedBy` is required because the record names who reviewed.
+
+```ts focus={1}
+await vendo.apps.inClient.approve({ appId, approvedBy: reviewerId }, ctx);
+```
+
+A review-kind app refuses to be approved by its own owner. Assert a reviewer through the `apps.review.reviewer(ctx)` hook, or the call comes back `blocked` with a pointer to it.
+
+For local work, one development route pins whatever is running right now.
+
+```bash
+curl -X POST \
+  http://localhost:3000/api/vendo/dev/inclient-approval \
+  -H "content-type: application/json" \
+  -d '{ "appId": "app_…" }'
+```
+
+`approvedBy` is optional here and defaults to `"local-dev"`. The route is mounted in development compositions only, and it refuses a principal marked `ephemeral: true` with a `401`.
+
+## What runs in your page
+
+Approved source is compiled with sucrase and every import is rewritten into a controlled `require`. That `require` resolves React, three bundled packages, and the captured sub-sources of this component, and nothing else.
+
+Presses do not change venue. A `$action` still routes through the tree chokepoint, so host tools keep the same policy, grants, approvals, and audit path they have everywhere else.
+
+<Warning>
+  In-thread previews are never granted. The `inClient` field is stripped from conversational payloads, so a preview can never become a host-page mount.
+</Warning>
+
+## The record
+
+```ts
+type InClientApproval = {
+  appId: string;
+  versionHash: string;   // pins the exact content approved
+  approvedBy: string;    // principal id
+  at: string;            // ISO timestamp
+};
+```
+
+Records live in the `vendo_inclient_approvals` collection, one per approved version. The verdict is only ever "some stored approval pins the current version's content hash", so a hand-crafted row can never grant.
+
+Deleting an app clears its approvals.
+
+## Where to go next
+
+<Columns cols={2}>
+  <Card title="Host components" href="/generated/host-components">
+    Register your components, and a generated screen renders your real UI.
+  </Card>
+
+  <Card title="Import & fork" href="/generated/import-and-fork">
+    How a remix is minted from your component, and what drift does to it.
+  </Card>
+</Columns>

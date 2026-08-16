@@ -428,14 +428,57 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 48 store operations across 13 families.
+/** The reads one agent turn OPENS with, in one call: the thread it continues,
+    the workspace it works in, and — only when the caller needs them — the
+    harness state it resumes and the meter reading its limits are decided on.
+    Every part is exactly its own op's argument, and {@link TurnLoad}'s parts are
+    exactly those ops' answers. The saving is round trips and nothing else. */
+export interface TurnLoadRequest {
+  thread: { id: string };
+  index: { cursor?: string; limit?: number; owner?: string };
+  /** Only for a turn that opens with file BYTES in hand. A turn that opens with
+      the index alone — every `vendo()` turn does; the workspace reads a file
+      when a tool asks for it — omits this rather than naming a path it does not
+      want, which is what a required `paths` would force it to do. */
+  read?: { paths: string[]; owner?: string };
+  harness?: { appId: string; subject: string };
+  usage?: UsageCountQuery;
+}
+
+export interface TurnLoad {
+  thread: VendoRecord | null;
+  index: { entries: unknown[]; cursor?: string };
+  /** Present exactly when the request asked for it — the same rule as
+      `harness` and `usage` below. */
+  read?: Record<string, unknown>;
+  /** Present exactly when the request asked for it — the harness state, or
+      `null` where `harness.get` would have answered null. */
+  harness?: unknown;
+  usage?: number;
+}
+
+/** The writes one agent turn CLOSES with, in one call: the messages it produced,
+    and — when the caller has them — the harness state to carry into the next
+    turn and the run's audit row. */
+export interface TurnCommitRequest {
+  messages: { threadId: string; subject: string; messages: unknown[]; title?: string };
+  harness?: { appId: string; subject: string; state: unknown };
+  audit?: { collection: string; record: RecordInput };
+}
+
+export interface TurnCommit {
+  messages: { revision: string; count: number };
+  audit?: VendoRecord;
+}
+
+/** The typed contract for all 50 store operations across 14 families.
     Lean by design — this is the CONTRACT interface, not the implementation.
 
-    Three members are OPTIONAL, and all three mean the same thing: an
+    Four members are OPTIONAL, and all four mean the same thing: an
     implementation that cannot serve the family says so by OMITTING it, never by
     accepting the call and doing something else (`transcripts.appendMessages`,
-    `retention` and `usage`, following `RecordStore.claim`/`atomic`). Everything
-    else is required. */
+    `retention`, `usage` and `turn`, following `RecordStore.claim`/`atomic`).
+    Everything else is required. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
       effects, and the automations and guard drawers — reached through seven
@@ -605,6 +648,17 @@ export interface StoreOps {
   lifecycle: {
     erase(target: EraseTarget): Promise<unknown>;
     promote(appId: string, orgId: string): Promise<void>;
+  };
+  /** One agent turn's opening reads and its closing writes, each as ONE call
+      over the families they already cross — no new semantics, no new data, just
+      the round trips a hosted turn was paying for them.
+
+      OPTIONAL (`usage`'s rule): a mount that omits the family is served by the
+      individual ops, which is where every caller started. Over the wire the
+      equivalent question is the `/status` op count — see STORE_WIRE_TURN_OPS. */
+  turn?: {
+    load(request: TurnLoadRequest): Promise<TurnLoad>;
+    commit(request: TurnCommitRequest): Promise<TurnCommit>;
   };
   /** What this store is holding, per collection, with each collection's kind
       alongside — see {@link CollectionFootprint} for what `bytes` is and is not.

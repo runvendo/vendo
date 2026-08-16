@@ -71,6 +71,10 @@ describe("StoreOps conformance kit against the memory reference", () => {
           ops: {
             ...ops,
             transcripts: { ...ops.transcripts, appendMessages: undefined },
+            // The turn envelopes ride BEHIND the batch append on the same level
+            // and `turn.commit` IS one, so a mount stopping short of op 36
+            // serves neither.
+            turn: undefined,
             // A mount that omits op 36 may not claim to have reached it — the
             // status case pins that biconditional, and this mount is honest.
             async status() {
