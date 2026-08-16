@@ -99,7 +99,11 @@ export function createBatchedUploader<T>(options: BatchedUploaderOptions<T>): Ba
         }
         if (!options.accept(response)) throw new Error(`Invalid Vendo Cloud ${options.path} response`);
         return;
-      } catch {
+      } catch (error) {
+        // The console understood and refused: the same batch gets the same
+        // answer, so a retry only re-sends it. 5xx and transport errors stay
+        // retryable.
+        if (((error as { status?: number }).status ?? 500) < 500) return;
         const retryDelay = retryDelaysMs[attempt];
         if (retryDelay === undefined) return;
         await delay(retryDelay);
