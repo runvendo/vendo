@@ -122,3 +122,51 @@ describe("a rebrand moves the sheet and the metadata together", () => {
     expect((await readTheme(dir)).typography.fonts).toBeUndefined();
   }, 30_000);
 });
+
+describe("a pinned family is the family that gets embedded", () => {
+  /** Two faces really on disk, so whichever family wins RESOLVES — the test is
+   *  then about which one was chosen, never about one failing to load. */
+  async function hostShippingBoth(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-fonts-pinned-"));
+    dirs.push(root);
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await mkdir(join(root, "app"), { recursive: true });
+    await mkdir(join(root, "public", "fonts"), { recursive: true });
+    await writeFile(join(root, "public", "fonts", "pinned.woff2"), Buffer.from("wOF2-pinned", "utf8"));
+    await writeFile(join(root, "public", "fonts", "extracted.woff2"), Buffer.from("wOF2-extracted", "utf8"));
+    await writeFile(join(root, "app", "layout.tsx"), 'import "./globals.css";\nexport default () => null;\n', "utf8");
+    await writeFile(join(root, "app", "globals.css"),
+      "@font-face { font-family: 'Pinned Face'; font-weight: 400; src: url('/fonts/pinned.woff2') format('woff2'); }\n"
+      + "@font-face { font-family: 'Extracted Face'; font-weight: 400; src: url('/fonts/extracted.woff2') format('woff2'); }\n"
+      // The brand moved (accent), and the app's own font is NOT what the host chose.
+      + ":root { --primary: #0f766e; --background: #ffffff; --radius: 8px; --font-sans: 'Extracted Face', sans-serif; }\n",
+      "utf8");
+    return root;
+  }
+
+  it("embeds the family theme.json still selects, not the one just extracted", async () => {
+    const dir = await hostShippingBoth();
+    // The host hand-picked their typeface: theme.json carries it and the merge
+    // base does NOT record it, which is exactly what makes it theirs.
+    await writeTheme(dir, themeDoc("Pinned Face, sans-serif"));
+    await writeBase(dir, { accent: "#7c3bed" });
+
+    await flow({ root: dir, output: silent });
+
+    const theme = await readTheme(dir);
+    // The unrelated machine-owned slot moved — this is what drags the font
+    // resolution along behind it.
+    expect(theme.colors.accent).toBe("#0f766e");
+    // ...and the pinned choice is untouched, as the whole pinning law promises.
+    expect(theme.typography.fontFamily).toBe("Pinned Face, sans-serif");
+
+    // So the SHIPPED bytes must be that same typeface. Swapping it here would
+    // silently replace a host's deliberate brand font with their app's.
+    const sheet = await readSheet(dir);
+    expect(sheet).toContain("font-family: 'Pinned Face'");
+    expect(sheet).not.toContain("Extracted Face");
+    expect(theme.typography.fonts).toEqual([
+      { family: "Pinned Face", weight: "400", style: "normal", source: "public" },
+    ]);
+  }, 30_000);
+});

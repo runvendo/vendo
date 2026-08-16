@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { VendoThemeFont } from "@vendoai/apps/contract";
-import type { ThemeSlotValues } from "./extract-theme.js";
 import { walk } from "./walk.js";
 
 /**
@@ -162,16 +161,24 @@ function faceCss(face: Face, data: Buffer): string {
 }
 
 /** The families worth resolving: the head of each stack the theme names, since
- *  the entries after it are the host's own fallbacks. */
-function wantedFamilies(slots: ThemeSlotValues): string[] {
-  const heads = [slots.fontFamily, slots.headingFamily, slots.monoFamily]
-    .filter((stack): stack is string => stack !== undefined)
+ *  the entries after it are the host's own fallbacks.
+ *
+ *  Read off the theme DOCUMENT that is about to be written — never off a fresh
+ *  extraction. A host's pinned typeface survives reconciliation while the
+ *  app's own CSS says something else, so resolving from the extraction embedded
+ *  the family the host had deliberately rejected. */
+export function themeFontFamilies(theme: unknown): string[] {
+  const typography = (theme as { typography?: Record<string, unknown> } | null)?.typography;
+  const heads = [typography?.["fontFamily"], typography?.["headingFamily"], typography?.["monoFamily"]]
+    .filter((stack): stack is string => typeof stack === "string")
     .map((stack) => unquote(stack.split(",")[0]!));
   return [...new Set(heads.filter((family) => family !== "" && !GENERIC.test(family)))];
 }
 
-export async function embedHostFonts(root: string, slots: ThemeSlotValues): Promise<EmbeddedFonts> {
-  const families = wantedFamilies(slots);
+/** `theme` is the VendoTheme document being persisted — the SAME object the
+ *  faces are then recorded on, so the sheet and the selection cannot disagree. */
+export async function embedHostFonts(root: string, theme: unknown): Promise<EmbeddedFonts> {
+  const families = themeFontFamilies(theme);
   if (families.length === 0) return { css: "", fonts: [], bytes: 0, notes: [] };
   const local = [...await nextFontFaces(root), ...await publicFaces(root)];
 

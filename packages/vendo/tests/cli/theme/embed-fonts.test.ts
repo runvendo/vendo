@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { embedHostFonts } from "../../../src/cli/theme/embed-fonts.js";
+import type { VendoTheme } from "@vendoai/apps/contract";
 import { extractTheme, toVendoTheme, type ThemeSlotValues } from "../../../src/cli/theme/extract-theme.js";
 
 const cleanup: string[] = [];
@@ -22,14 +23,17 @@ async function fixture(files: Record<string, string | Buffer>): Promise<string> 
   return root;
 }
 
-function slots(overrides: Partial<ThemeSlotValues>): ThemeSlotValues {
-  return {
+/** The theme DOCUMENT the faces are resolved from — built through the real
+ *  `toVendoTheme`, so these read families off exactly the shape sync persists
+ *  rather than a hand-made stand-in. */
+function theme(overrides: Partial<ThemeSlotValues>): VendoTheme {
+  return toVendoTheme({
     accent: "#111111", accentText: "#ffffff", background: "#ffffff", border: "#e2e8f0",
     danger: "#dc2626", surface: "#f8fafc", text: "#0f172a", mutedText: "#64748b",
     radius: "8px", fontFamily: "system-ui, sans-serif", headingFamily: "system-ui, sans-serif",
     baseSize: "16px", density: "comfortable", motion: "full",
     ...overrides,
-  };
+  });
 }
 
 /** Verbatim shape of a Next 16 / Turbopack `next build` of examples/demo-bank
@@ -56,7 +60,7 @@ async function demoBankLike(): Promise<string> {
 describe("embedHostFonts", () => {
   it("takes Inter from the next/font build output rather than Google, latin cut only", async () => {
     const root = await demoBankLike();
-    const embedded = await embedHostFonts(root, slots({ fontFamily: "Inter, sans-serif", headingFamily: "Inter, sans-serif" }));
+    const embedded = await embedHostFonts(root, theme({ fontFamily: "Inter, sans-serif", headingFamily: "Inter, sans-serif" }));
 
     // The build output PROVES what the host serves; the network is only ever
     // the fallback for a family named but never shipped.
@@ -72,7 +76,7 @@ describe("embedHostFonts", () => {
 
   it("round-trips the file: the emitted @font-face decodes back to the bytes on disk", async () => {
     const root = await demoBankLike();
-    const { css } = await embedHostFonts(root, slots({ fontFamily: "Inter" }));
+    const { css } = await embedHostFonts(root, theme({ fontFamily: "Inter" }));
 
     const face = /@font-face \{([^}]*)\}/.exec(css);
     expect(face).not.toBeNull();
@@ -91,7 +95,7 @@ describe("embedHostFonts", () => {
       "src/app/globals.css": "@font-face { font-family: 'Maple Sans'; font-weight: 500; src: url('/fonts/maple.woff2') format('woff2'); }",
       "public/fonts/maple.woff2": Buffer.from("wOF2-maple", "utf8"),
     });
-    const embedded = await embedHostFonts(root, slots({
+    const embedded = await embedHostFonts(root, theme({
       fontFamily: "Maple Sans, sans-serif",
       headingFamily: "Nothing Ships This, sans-serif",
     }));
@@ -104,7 +108,7 @@ describe("embedHostFonts", () => {
 
   it("asks for nothing when the theme names only generic stacks", async () => {
     const root = await fixture({ "package.json": "{}" });
-    expect(await embedHostFonts(root, slots({ fontFamily: "system-ui, sans-serif", headingFamily: "ui-serif" })))
+    expect(await embedHostFonts(root, theme({ fontFamily: "system-ui, sans-serif", headingFamily: "ui-serif" })))
       .toEqual({ css: "", fonts: [], bytes: 0, notes: [] });
   });
 });

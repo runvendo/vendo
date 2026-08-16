@@ -247,10 +247,10 @@ async function reconcileTheme(
   // The sheet is rebuilt BEFORE theme.json is written, because
   // `typography.fonts` describes that sheet: writing the document first left it
   // advertising the previous brand's faces.
-  const rebuilt = merge.theme !== null || !(await exists(join(vendoDir, "fonts.css")))
-    ? await writeFonts(root, vendoDir, summary.slots, note)
-    : null;
   const document = merge.theme ?? theme;
+  const rebuilt = merge.theme !== null || !(await exists(join(vendoDir, "fonts.css")))
+    ? await writeFonts(root, vendoDir, document, note)
+    : null;
   if (rebuilt !== null) applyThemeFonts(document, rebuilt);
   if (merge.theme !== null || rebuilt !== null) {
     await writeText(join(vendoDir, "theme.json"), `${JSON.stringify(document, null, 2)}\n`);
@@ -454,10 +454,10 @@ interface FlowNotes {
 async function writeFonts(
   root: string,
   vendoDir: string,
-  slots: ThemeSlotValues,
+  theme: unknown,
   note: (message: string) => void,
 ): Promise<VendoThemeFont[]> {
-  const embedded = await embedHostFonts(root, slots);
+  const embedded = await embedHostFonts(root, theme);
   for (const line of embedded.notes) note(`fonts: ${line}`);
   const sheet = join(vendoDir, "fonts.css");
   if (embedded.css === "") {
@@ -490,8 +490,8 @@ async function resolveTheme(input: {
     const themeStarted = Date.now();
     const themeSummary = await extractTheme(root);
     const themeMs = Date.now() - themeStarted;
-    themeSummary.fonts = await writeFonts(root, vendoDir, themeSummary.slots, note);
     const document = toVendoTheme(themeSummary.slots);
+    themeSummary.fonts = await writeFonts(root, vendoDir, document, note);
     applyThemeFonts(document, themeSummary.fonts);
     await writeText(themePath, `${JSON.stringify(document, null, 2)}\n`);
     // The merge base for every later re-scan: what the DETERMINISTIC pass read,

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
 import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
+import { themeFontFamilies } from "./embed-fonts.js";
 import { deriveBodyFontStack, deriveMonoFontStack } from "./font-stack.js";
 import { walk } from "./walk.js";
 
@@ -76,12 +77,18 @@ export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
  * `typography.fonts` advertising the previous brand's faces. An empty list
  * REMOVES the key rather than writing `[]`, so a theme never claims faces that
  * are not on disk.
+ *
+ * Faces for a family this document does NOT select are dropped, so the metadata
+ * cannot name a typeface the theme rejected — the case a `--theme fontFamily=`
+ * answer creates by overriding the family AFTER the faces were resolved.
  */
 export function applyThemeFonts(theme: unknown, fonts: VendoThemeFont[]): void {
   const typography = (theme as { typography?: Record<string, unknown> } | null)?.typography;
   if (typography === undefined || typography === null) return;
-  if (fonts.length === 0) delete typography["fonts"];
-  else typography["fonts"] = fonts;
+  const selected = new Set(themeFontFamilies(theme).map((family) => family.toLowerCase()));
+  const kept = fonts.filter((font) => selected.has(font.family.toLowerCase()));
+  if (kept.length === 0) delete typography["fonts"];
+  else typography["fonts"] = kept;
 }
 
 export interface ThemeSlotValues {
