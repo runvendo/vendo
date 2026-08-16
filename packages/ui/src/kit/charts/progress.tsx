@@ -3,7 +3,7 @@ import { Progress as Base } from "@base-ui/react/progress";
 import type { ComponentProps, ReactNode } from "react";
 import { isRenderableNumber } from "../format.js";
 import { useFieldValue } from "../row.js";
-import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitStyled, type KitTone, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitStyled, type KitTone, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 interface ProgressOwnProps extends KitStyled {
   /** A ratio (0..1) unless `max` is given, then a raw value. */
@@ -55,7 +55,7 @@ export function Progress({ value, max, label, showValue = false, tone, field, st
         // `width: 100%` to zero and the bar vanished. A parent with a real width
         // still wins.
         style={{ width: "100%", aspectRatio: "16 / 1", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
-        {...engine}
+        {...given(engine)}
         value={Math.round(clamped * 100)}
       >
         <Base.Indicator

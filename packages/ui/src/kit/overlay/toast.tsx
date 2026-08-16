@@ -11,7 +11,7 @@
 import { Toast as Base } from "@base-ui/react/toast";
 import { useEffect, useRef, type ComponentProps } from "react";
 import { OverlayPortal } from "../../tree/overlay-portal.js";
-import { font, resolveTone, t, toneStyle, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, resolveTone, t, toneStyle, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { closeStyle } from "./dialog.js";
 
 interface ToastOwnProps extends KitStyled {
@@ -78,7 +78,7 @@ function Notice({ open = false, onClose, message, tone, duration, style, childre
               <Base.Root
                 key={toast.id}
                 data-kit="Toast"
-                {...engine}
+                {...given(engine)}
                 toast={toast}
                 style={{
                   ...font,

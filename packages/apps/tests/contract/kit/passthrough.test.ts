@@ -42,10 +42,10 @@ describe("passthrough styling in the specs", () => {
     const line = kitSpec("LineChart")!;
     const props = { data: [], xKey: "month", series: [{ key: "revenue", label: "Revenue", stroke: "#FF3B30" }] };
     const result = validateProps(line, props);
-    expect(result.success).toBe(true);
     // Parsed THROUGH, not stripped: a zod object drops what it does not declare,
-    // and a dropped color is a series that paints from the theme anyway.
-    expect((result as { data: typeof props }).data.series[0]).toMatchObject({ stroke: "#FF3B30" });
+    // and a dropped color is a series that paints from the theme anyway. A
+    // refusal fails here too — `false` matches no object.
+    expect(result.success && result.data.series[0]).toMatchObject({ stroke: "#FF3B30" });
   });
 });
 

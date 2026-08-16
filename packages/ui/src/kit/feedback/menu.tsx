@@ -9,7 +9,7 @@
 import { Menu as Base } from "@base-ui/react/menu";
 import { Children, type ComponentProps, type ReactNode } from "react";
 import { Icon } from "../icon.js";
-import { control, font, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { control, font, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { isHandlerCallback } from "../handler.js";
 
 export interface MenuItem {
@@ -59,7 +59,7 @@ export function Menu({ label, items, onSelect, children, style, pending, ...engi
     : onSelect?.(value);
   const entries = Children.toArray(children);
   return (
-    <Base.Root {...engine}>
+    <Base.Root {...given(engine)}>
       <Base.Trigger
         data-kit="Menu"
         style={{ ...control, display: "inline-flex", alignItems: "center", gap: 6, width: "auto", cursor: "pointer", ...style }}

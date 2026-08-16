@@ -85,6 +85,16 @@ export interface KitRendered {
 export type KitEngine<Engine, Own, Owned extends string = never> =
   Omit<Engine, keyof Own | Owned | keyof KitRendered>;
 
+/**
+ * The engine props the caller actually GAVE — spread this, never the rest object
+ * itself. React reads `undefined` as "not provided", and a passthrough has to
+ * agree: `<Sparkline stroke={brand?.accent}/>` with nothing behind it lands an
+ * `undefined` ON the Kit's theme default and blanks it, and the chart then paints
+ * in recharts' own blue instead of the host's brand.
+ */
+export const given = <T extends object>(engine: T): Partial<T> =>
+  Object.fromEntries(Object.entries(engine).filter(([, value]) => value !== undefined)) as Partial<T>;
+
 /** The ONE edge a Kit component draws. Hairline and low-contrast: borders do the
  *  work that shadows used to, so almost nothing in the Kit is elevated. */
 export const hairline = `${t.borderWidth} solid ${t.border}`;

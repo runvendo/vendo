@@ -10,7 +10,7 @@
  */
 import { Tabs as Base } from "@base-ui/react/tabs";
 import { Children, type ComponentProps, type ReactNode } from "react";
-import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 export type TabItem = string | number | {
   value?: string | number;
@@ -74,7 +74,7 @@ export function Tabs({ tabs, value, defaultIndex = 0, actions, children, style, 
   return (
     <Base.Root
       data-kit="Tabs"
-      {...engine}
+      {...given(engine)}
       defaultValue={start}
       style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)", ...style }}
     >

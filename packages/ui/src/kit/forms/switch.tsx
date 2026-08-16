@@ -1,7 +1,7 @@
 /** Switch — an instant on/off setting (W2 §The Kit). */
 import { Switch as Base } from "@base-ui/react/switch";
 import type { ComponentProps } from "react";
-import { hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
@@ -31,7 +31,7 @@ export function Switch({ label, checked, hint, disabled, onChange, style, childr
         data-kit="Switch"
         disabled={disabled}
         aria-describedby={hint ? helpId : undefined}
-        {...engine}
+        {...given(engine)}
         id={fieldId}
         {...(screen === null ? { defaultChecked: checked } : { checked: checked ?? false })}
         onCheckedChange={(next) => screen === null

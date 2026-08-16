@@ -6,7 +6,7 @@
  */
 import { Tooltip as Base } from "@base-ui/react/tooltip";
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { popup, popupMotion, t, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { popup, popupMotion, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 /** What the browser would already stop on inside the trigger. `:disabled` is
  *  excluded because a disabled control is SKIPPED by sequential navigation:
@@ -71,7 +71,7 @@ export function Tooltip({ label, content, children, style, pending, ...engine }:
   }, [control, hintId]);
 
   return (
-    <Base.Root {...engine}>
+    <Base.Root {...given(engine)}>
       {/* A span, not Base UI's default button: the thing being explained is
           often a button already, and a button inside a button is not HTML. */}
       <Base.Trigger

@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import type { ComponentProps, ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
 
 /** A series key, or a descriptor: `label` renames it, and any other engine prop
@@ -85,8 +85,8 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
                 dot={false}
                 connectNulls={false}
                 isAnimationActive={false}
-                {...engine}
-                {...seriesEngine}
+                {...given(engine)}
+                {...given(seriesEngine)}
                 key={key}
                 dataKey={key}
                 name={label}

@@ -1,7 +1,7 @@
 /** Input — themed text field; onChange reports the value (W2 §The Kit). */
 import { Input as Base } from "@base-ui/react/input";
 import type { ComponentProps, ReactNode } from "react";
-import { control, t, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { control, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
@@ -46,7 +46,7 @@ export function Input({ label, value, placeholder, type = "text", hint, error, d
       required={required}
       aria-invalid={error ? true : undefined}
       aria-describedby={error || hint ? helpId : undefined}
-      {...engine}
+      {...given(engine)}
       id={fieldId}
       {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
       onValueChange={(next) => screen === null

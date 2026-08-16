@@ -1,7 +1,7 @@
 /** Slider — a number picked along a range; arrow keys step it (W2 §The Kit). */
 import { Slider as Base } from "@base-ui/react/slider";
 import type { ComponentProps } from "react";
-import { font, hairline, numeric, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, hairline, numeric, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
@@ -34,7 +34,7 @@ export function Slider({ label, value, min = 0, max = 100, step = 1, showValue =
         max={max}
         step={step}
         disabled={disabled}
-        {...engine}
+        {...given(engine)}
         {...(screen === null ? { defaultValue: value ?? min } : { value: value ?? min })}
         onValueChange={(next) => {
           const one = Array.isArray(next) ? next[0]! : next;

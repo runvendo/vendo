@@ -10,7 +10,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { OverlayPortal } from "../../tree/overlay-portal.js";
-import { font, hairline, t, transitionFor, type KitEngine, type KitRendered, type KitStyled } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitEngine, type KitRendered, type KitStyled, given } from "../tokens.js";
 
 export type OverlaySize = "small" | "medium" | "large";
 
@@ -145,7 +145,7 @@ export function DialogShell({
             />
             <Dialog.Popup
               data-kit={kind}
-              {...engine}
+              {...given(engine)}
               style={{
                 ...font,
                 position: "fixed",

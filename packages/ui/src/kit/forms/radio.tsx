@@ -5,7 +5,7 @@
 import { Radio as Base } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import type { ComponentProps } from "react";
-import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 import { choices, type KitOption } from "./options.js";
@@ -37,7 +37,7 @@ export function Radio({ label, options: rawOptions, labelField, valueField, valu
         data-kit="Radio"
         disabled={disabled}
         aria-describedby={hint ? helpId : undefined}
-        {...engine}
+        {...given(engine)}
         {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
         onValueChange={(next) => screen === null
           ? onChange?.(String(next))

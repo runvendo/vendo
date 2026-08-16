@@ -2,7 +2,7 @@
 import type { ComponentProps } from "react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useFieldValue } from "../row.js";
-import { font, resolveTone, seriesColor, t, toneColor, type KitStyled, type KitTone, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, resolveTone, seriesColor, t, toneColor, type KitStyled, type KitTone, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { sanitizeNumbers } from "./sanitize.js";
 
 interface SparklineOwnProps extends KitStyled {
@@ -66,7 +66,7 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
             fill={`url(#${fillId})`}
             dot={false}
             isAnimationActive={false}
-            {...engine}
+            {...given(engine)}
             dataKey="v"
           />
         </AreaChart>

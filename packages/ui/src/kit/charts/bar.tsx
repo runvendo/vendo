@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import type { ComponentProps, ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
@@ -104,8 +104,8 @@ export function BarChart({
                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
-                {...engine}
-                {...seriesEngine}
+                {...given(engine)}
+                {...given(seriesEngine)}
                 key={key}
                 dataKey={key}
                 name={label}

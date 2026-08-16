@@ -8,7 +8,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { useState, type ComponentProps } from "react";
 import { applyFormat, getKitIntl } from "../format.js";
-import { control, font, microLabel, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { control, font, microLabel, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
 interface DateRangeOwnProps extends KitStyled {
@@ -78,7 +78,7 @@ export function DateRange({ label: fieldLabel, start, end, min, max, placeholder
 
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={fieldLabel} hint={hint} style={style}>
-      <Popover.Root {...engine} onOpenChange={(next) => { if (!next) setAnchor(undefined); }}>
+      <Popover.Root {...given(engine)} onOpenChange={(next) => { if (!next) setAnchor(undefined); }}>
         <Popover.Trigger
           id={fieldId}
           data-kit="DateRange"

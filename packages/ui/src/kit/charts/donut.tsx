@@ -2,7 +2,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
-import { font, numeric, seriesColor, t, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, numeric, seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, slotTooltip, tooltipSurface } from "./sanitize.js";
 
 interface DonutChartOwnProps extends KitStyled {
@@ -76,7 +76,7 @@ export function DonutChart({
               stroke={t.surface}
               strokeWidth={2}
               isAnimationActive={false}
-              {...engine}
+              {...given(engine)}
               data={slices}
               dataKey="value"
               nameKey="name"

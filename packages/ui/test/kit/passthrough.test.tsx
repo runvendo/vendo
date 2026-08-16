@@ -139,6 +139,22 @@ describe("a chart's engine props reach the engine", () => {
     }
   });
 
+  it("treats an engine prop that was never really set as absent", () => {
+    // `<Sparkline stroke={brand?.accent}/>` with nothing behind it is a prop
+    // React calls unset — and a spread that carried the `undefined` through would
+    // land it ON the Kit's default and blank it, dropping the chart to RECHARTS'
+    // own blue. The host asked for nothing and must get their own theme.
+    const restore = stubChartSize(200, 40);
+    try {
+      render(<Sparkline data={[1, 5, 3]} stroke={undefined} strokeWidth={undefined} />);
+      const curve = document.querySelector(".recharts-area-curve")!;
+      expect(curve.getAttribute("stroke")).toContain("var(--vendo-color-accent");
+      expect(curve.getAttribute("stroke-width")).toBe("1.5");
+    } finally {
+      restore();
+    }
+  });
+
   it("colors one line of a LineChart from its own series descriptor", () => {
     const restore = stubChartSize(400, 200);
     try {

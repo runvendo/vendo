@@ -5,7 +5,7 @@
 import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
 import type { ComponentProps } from "react";
-import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 
 export type SegmentItem = string | number | { value?: string | number; label?: string | number; disabled?: boolean };
@@ -37,7 +37,7 @@ export function SegmentedControl({ items, value, disabled, onChange, style, chil
     <ToggleGroup
       data-kit="SegmentedControl"
       disabled={disabled}
-      {...engine}
+      {...given(engine)}
       {...(screen === null ? { defaultValue: selected } : { value: selected ?? [] })}
       onValueChange={(next) => {
         const one = String(next[0] ?? "");

@@ -4,7 +4,7 @@
  */
 import { Combobox as Base } from "@base-ui/react/combobox";
 import type { ComponentProps } from "react";
-import { control, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { control, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 import { choices, type KitChoice, type KitOption } from "./options.js";
@@ -39,7 +39,7 @@ export function Combobox({ label, options: rawOptions, labelField, valueField, v
       <Base.Root
         items={options}
         disabled={disabled}
-        {...engine}
+        {...given(engine)}
         // `{value,label}` items: Base UI reads the label for the input text and
         // the value for the selection, so neither needs a mapping function.
         {...(screen === null ? { defaultValue: selected } : { value: selected })}

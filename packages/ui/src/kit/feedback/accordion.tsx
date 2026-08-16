@@ -1,7 +1,7 @@
 /** Accordion — self-managing collapsible sections (W2 §The Kit). */
 import { Accordion as Base } from "@base-ui/react/accordion";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
-import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 export interface AccordionItem {
   label: string;
@@ -23,7 +23,7 @@ export function Accordion({ items, multiple = false, defaultOpen = [], style, ch
   return (
     <Base.Root
       data-kit="Accordion"
-      {...engine}
+      {...given(engine)}
       multiple={multiple}
       defaultValue={defaultOpen}
       style={{ ...font, border: hairline, borderRadius: t.radiusMedium, overflow: "hidden", background: t.surface, ...style }}

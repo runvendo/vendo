@@ -1,7 +1,7 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
 import { Form as Base } from "@base-ui/react/form";
-import type { ComponentProps, FormEvent, PropsWithChildren, ReactNode } from "react";
-import { font, t, type KitStyled, type KitEngine, type KitRendered } from "../tokens.js";
+import type { ComponentProps, FormEvent, ReactNode } from "react";
+import { font, t, type KitEngine, type KitRendered, type KitStyled, given } from "../tokens.js";
 import { Button } from "./button.js";
 
 interface FormOwnProps extends KitStyled {
@@ -38,7 +38,7 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, header, actio
         e.preventDefault();
         onSubmit?.(e);
       }}
-      {...engine}
+      {...given(engine)}
       style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)", ...style }}
     >
       {header}
