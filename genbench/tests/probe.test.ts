@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { wiredActions } from "../src/floor.js";
 import { probe } from "../src/probe.js";
-import { openBrowser, type Shooter } from "../src/render.js";
+import { HARNESS_CONTRACT, openBrowser, type Shooter } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
 /** The recorder every real benchmark page carries, in its smallest honest form.
@@ -250,6 +250,11 @@ describe("the click probe grades what a browser actually does", () => {
     const result = wiredActions(trace, world);
     expect(result.pass).toBe(true);
     expect(result.bindings[0]).toMatchObject({ effect: "tool", tool: "cancel_transfer" });
+
+    // The order this press relies on is one every contender is TOLD, in the same
+    // text: a page that puts the way out last has its way out pressed, records a
+    // confirmation that called nothing, and fails a screen that was wired.
+    expect(HARNESS_CONTRACT).toContain("goes LAST inside it");
   });
 
   it("fails a confirmation that was followed through and still called nothing", async () => {
