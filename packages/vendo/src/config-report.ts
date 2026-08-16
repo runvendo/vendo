@@ -34,7 +34,8 @@ export interface ConfigReporterOptions {
   /** The `.vendo/<name>` reader, bound to the compose-time surface root. */
   readFile: (name: ConfigSurfaceName) => string | undefined;
   /** What this deployment set for a surface IN CODE, as the bytes the matching
-   *  `.vendo` file would have carried. */
+   *  `.vendo` file would have carried. `undefined`, and only `undefined`, means
+   *  code said nothing and the file decides. */
   codeValue: (name: ConfigSurfaceName) => string | undefined;
   fetchImpl?: typeof fetch;
 }
@@ -63,13 +64,14 @@ export function createConfigReporter(options: ConfigReporterOptions): () => void
   return () => {
     const surfaces = {} as ConfigReport["surfaces"];
     for (const name of CONFIG_SURFACES) {
-      const { owner, value } = selectConfigSurface(name, {
-        ...(options.codeValue(name) === undefined ? {} : { explicit: options.codeValue(name) }),
-        readFile: options.readFile,
-      });
+      // A DEFINED code value is authoritative: the per-surface blank rule
+      // already ran in `codeSurface` (compose-adapters.ts), so a blank that
+      // reached here is a deployment that chose "nothing" and never read disk.
+      const code = options.codeValue(name);
+      const value = code ?? selectConfigSurface(name, { readFile: options.readFile }).value;
       surfaces[name] = value === undefined
         ? { source: "unset", content: null }
-        : { source: owner === "explicit" ? "code" : "file", content: value };
+        : { source: code === undefined ? "file" : "code", content: value };
     }
     const report: ConfigReport = { surfaces };
     const hash = sha256Hex(canonicalJson(report));

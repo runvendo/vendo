@@ -94,6 +94,20 @@ describe("the report has to name the surface the runtime actually resolved", () 
     });
   });
 
+  // The mirror image, and the reason the blank rule cannot live in the shared
+  // `selectConfigSurface`: it is per SURFACE. A DEFINED `profile.brief` is
+  // authoritative even when blank — compose-prompt.ts:33-36 takes that branch
+  // and never touches disk, so the deployment runs with NO brief. A report that
+  // trimmed it to falsy would show the operator a file-backed brief this
+  // deployment deliberately does not run.
+  it("reports brief.md as CODE when an explicitly empty `profile.brief` means NO brief", async () => {
+    await project({ "brief.md": "Maple is a consumer bank.\n" });
+    createVendo({ ...identity, profile: { brief: "" }, connectors: [] });
+    await waitForReport();
+
+    expect(sent[0]?.surfaces["brief.md"]).toEqual({ source: "code", content: "" });
+  });
+
   it("reports design-rules.md as the FILE when a blank `apps.designRules` falls through", async () => {
     await project({ "design-rules.md": "# Rules\n\nUse the host's components.\n" });
     createVendo({ ...identity, apps: { designRules: "   " }, connectors: [] });

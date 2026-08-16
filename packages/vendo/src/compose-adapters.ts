@@ -84,9 +84,16 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   // knob; this table exists so the REPORT (config-report.ts) names the same
   // five surfaces the resolution seam does, from the one place that can see
   // them all. Reporting only — nothing resolves through it.
+  //
+  // Each entry mirrors its own block's ladder INCLUDING what that block does
+  // with a blank value, because the blank rule is per surface, not global:
+  // design-rules falls through to the file (compose-surfaces.ts:73), while a
+  // DEFINED `profile.brief` is authoritative even when blank and never touches
+  // disk (compose-prompt.ts:33-36). `undefined` here — and only `undefined` —
+  // means "code said nothing, go look at the file".
   const codeSurface: Record<ConfigSurfaceName, unknown> = {
-    "design-rules.md": config.apps?.designRules ?? config.profile?.designRules,
-    "brief.md": config.instructions ?? composed?.instructions ?? config.profile?.brief,
+    "design-rules.md": config.apps?.designRules?.trim() || config.profile?.designRules?.trim() || undefined,
+    "brief.md": (config.instructions ?? composed?.instructions)?.trim() || config.profile?.brief?.trim(),
     "theme.json": config.theme ?? config.profile?.theme,
     "policy.json": isGuardInstance(config.guard) ? undefined : config.guard?.policy ?? config.profile?.policy,
     "overrides.json": config.profile?.overrides,
