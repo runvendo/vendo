@@ -2424,6 +2424,14 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         // Asking for less costs less: a part the request left out is absent from
         // the answer, never a zero standing in for one.
         assert(!("usage" in loaded), "turn.load answered a usage count nobody asked for");
+
+        // The shape EVERY `vendo()` turn sends: the thread and the index, no
+        // file bytes. A turn reads a file when a tool asks for one, so a
+        // required `read` would have it name a path it does not want.
+        const quiet = await turn.load({ thread: { id: "thr_turn" }, index: { owner: "user_1" } });
+        assertDeepEqual(quiet.index, loaded.index, "turn.load's index changed when the request dropped `read`");
+        assert(!("read" in quiet), "turn.load answered a workspace read nobody asked for");
+        assert(!("harness" in quiet), "turn.load answered harness state nobody asked for");
       }),
 
       /** The closing half, held to the same rule from the other side: every part

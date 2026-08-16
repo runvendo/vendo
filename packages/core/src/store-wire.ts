@@ -613,7 +613,7 @@ export const storeWireRetentionPurgeRequestSchema = z.object({
 export const storeWireTurnLoadRequestSchema = z.object({
   thread: storeWireTranscriptsGetThreadRequestSchema,
   index: storeWireWorkspaceIndexRequestSchema,
-  read: storeWireWorkspaceReadRequestSchema,
+  read: storeWireWorkspaceReadRequestSchema.optional(),
   harness: storeWireHarnessGetRequestSchema.optional(),
   usage: storeWireUsageCountRequestSchema.optional(),
 }).passthrough();
@@ -624,7 +624,7 @@ export const storeWireTurnLoadResponseSchema = z.object({
     entries: z.array(z.unknown()),
     cursor: z.string().optional(),
   }).passthrough(),
-  read: z.record(z.unknown()),
+  read: z.record(z.unknown()).optional(),
   harness: z.unknown().optional(),
   usage: z.number().optional(),
 }).passthrough() satisfies z.ZodType<TurnLoad>;

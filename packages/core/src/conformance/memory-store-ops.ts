@@ -954,7 +954,8 @@ export function memoryStoreOps(): StoreOps {
       return {
         thread: await transcripts.getThread(request.thread.id),
         index: await workspace.index(request.index),
-        read: await workspace.read(request.read.paths, request.read),
+        // Asked for or absent, the same rule the two below follow.
+        ...(request.read ? { read: await workspace.read(request.read.paths, request.read) } : {}),
         ...(request.harness ? { harness: await harness.get(request.harness.appId, request.harness.subject) } : {}),
         ...(request.usage ? { usage: await usage.count(request.usage) } : {}),
       };

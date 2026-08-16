@@ -436,7 +436,11 @@ export type EraseTarget =
 export interface TurnLoadRequest {
   thread: { id: string };
   index: { cursor?: string; limit?: number; owner?: string };
-  read: { paths: string[]; owner?: string };
+  /** Only for a turn that opens with file BYTES in hand. A turn that opens with
+      the index alone — every `vendo()` turn does; the workspace reads a file
+      when a tool asks for it — omits this rather than naming a path it does not
+      want, which is what a required `paths` would force it to do. */
+  read?: { paths: string[]; owner?: string };
   harness?: { appId: string; subject: string };
   usage?: UsageCountQuery;
 }
@@ -444,7 +448,9 @@ export interface TurnLoadRequest {
 export interface TurnLoad {
   thread: VendoRecord | null;
   index: { entries: unknown[]; cursor?: string };
-  read: Record<string, unknown>;
+  /** Present exactly when the request asked for it — the same rule as
+      `harness` and `usage` below. */
+  read?: Record<string, unknown>;
   /** Present exactly when the request asked for it — the harness state, or
       `null` where `harness.get` would have answered null. */
   harness?: unknown;
