@@ -25,6 +25,7 @@ import {
   presenceOnlyCall,
   type Principal,
   projectableForRun,
+  type RecordInput,
   type RecordQuery,
   type RecordStore,
   type RunContext,
@@ -573,6 +574,22 @@ class GuardImplementation implements VendoGuard {
   }
 
   async report(event: AuditEvent): Promise<void> {
+    await this.reportThrough(event, (collection, record) => this.#engine.put(collection, record));
+  }
+
+  /** `report`, with the audit row handed to `place` instead of written to this
+   *  guard's own engine — the seam a batched turn folds its ONE run row
+   *  through, so the row rides the same call as the messages it describes.
+   *
+   *  This IS `report`: every rule above applies, because `report` is this with
+   *  the engine as the placer. It exists for the TURN row and nothing else —
+   *  a per-tool-call decision has no batch to ride and keeps writing one row
+   *  per call, which is the guarantee that makes the audit trail worth having.
+   */
+  async reportThrough(
+    event: AuditEvent,
+    place: (collection: string, record: RecordInput) => Promise<unknown>,
+  ): Promise<void> {
     const normalized: AuditEvent = {
       ...event,
       id: event.id || makeId("aud_"),
@@ -596,7 +613,7 @@ class GuardImplementation implements VendoGuard {
     };
     if (normalized.appId !== undefined) refs.app_id = normalized.appId;
     if (normalized.tool !== undefined) refs.tool = normalized.tool;
-    await this.#engine.put(AUDIT_COLLECTION, {
+    await place(AUDIT_COLLECTION, {
       id: normalized.id,
       data: normalized,
       refs,
