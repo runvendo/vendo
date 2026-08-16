@@ -173,7 +173,7 @@ describe("end to end: a keyless turn through the real composed door", () => {
     });
     const vendo = createVendo({
       store,
-      model: vendoModel(undefined, { env: {} }),
+      models: { default: vendoModel(undefined, { env: {} }) },
       principal: async () => ({ kind: "user", subject: "onboarding-user" }),
     });
     const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) =>

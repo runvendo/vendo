@@ -82,7 +82,7 @@ async function compose(): Promise<{ vendo: Vendo; seen: SeenPrefix[] }> {
   });
   const seen: SeenPrefix[] = [];
   const vendo = createVendo({
-    model: recordingModel(seen),
+    models: { default: recordingModel(seen) },
     principal: async () => principal,
     store,
   });

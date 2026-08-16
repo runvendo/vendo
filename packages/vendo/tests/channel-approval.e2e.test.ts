@@ -146,7 +146,7 @@ describe.sequential("consent over text", () => {
     vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
     const host = payingHost();
     const vendo: Vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       harness: paying as never,
@@ -216,7 +216,7 @@ describe.sequential("consent over text", () => {
     vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
     const host = payingHost();
     const vendo: Vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       harness: paying as never,
@@ -273,7 +273,7 @@ describe.sequential("consent over text", () => {
     vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
     const host = payingHost();
     const vendo: Vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       harness: paying as never,
@@ -324,7 +324,7 @@ describe.sequential("consent over text", () => {
     vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
     const host = payingHost();
     const vendo: Vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore(),
       harness: paying as never,

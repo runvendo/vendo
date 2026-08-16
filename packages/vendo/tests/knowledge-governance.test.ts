@@ -90,7 +90,7 @@ const principal: Principal = { kind: "user", subject: "user_governance" };
 
 async function compose(config: Partial<CreateVendoConfig> = {}): Promise<Vendo> {
   return createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store: await tempStore("vendo-knowledge-gov-"),
     ...config,
@@ -144,7 +144,7 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
   it("chat: the agent's tool call surfaces only public hits and never sets includeInternal", async () => {
     const adapter = spyAdapter();
     const { model, prompts } = await knowledgeCallingModel();
-    const vendo = await compose({ model, knowledge: adapter });
+    const vendo = await compose({ models: { default: model }, knowledge: adapter });
 
     const turn = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
       method: "POST",

@@ -277,7 +277,7 @@ describe("vendo.usage() — the tally a host's own overage job reads", () => {
   it("REFUSES on a store with no meter, rather than answering an empty tally", async () => {
     const { usage: _absent, ...meterless } = memoryStoreOps();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: Object.assign(await tempStore(), { ops: meterless as StoreOps }),
     } as CreateVendoConfig);

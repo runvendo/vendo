@@ -8,7 +8,6 @@ import type { LanguageModel } from "ai";
 import {
   DevModelController,
   bindVendoModelSlots,
-  devModel,
   importHostModule,
   NO_CREDENTIAL_MESSAGE,
   vendoModel,
@@ -125,28 +124,7 @@ describe("THE SELECTION LAW — a provider key is a credential, not a choice", (
   });
 });
 
-describe("devModel (env-resolving default model)", () => {
-  it("is an ai-SDK LanguageModel", () => {
-    const model = devModel({ env: {} });
-    const record = model as unknown as Record<string, unknown>;
-    expect(record.specificationVersion).toBe("v3");
-    expect(record.provider).toBe("vendo-dev");
-    expect(typeof record.doGenerate).toBe("function");
-    expect(typeof record.doStream).toBe("function");
-  });
-
-  it("fails every call with the honest instructions when nothing is available", async () => {
-    const model = devModel({ env: {} });
-    const record = model as unknown as {
-      doGenerate(options: unknown): Promise<unknown>;
-      doStream(options: unknown): Promise<unknown>;
-    };
-    await expect(record.doGenerate({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
-    // doStream rejects with the same message (streamText's error path shows
-    // the generic error part; the operator log carries this one).
-    await expect(record.doStream({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
-  });
-
+describe("the credential ladder (env-resolving default model)", () => {
   it("serves the vendo-cloud rung through @ai-sdk/anthropic pointed at the Cloud gateway", async () => {
     const seen: Array<{ apiKey: string; baseURL: string }> = [];
     const controller = new DevModelController({
@@ -452,21 +430,23 @@ describe("provider module resolution (host first, vendo's copy as fallback)", ()
 });
 
 describe("vendoModel (the vendo model family entry)", () => {
-  it("is an ai-SDK LanguageModel and devModel stays a working deprecated alias", () => {
+  it("is an ai-SDK LanguageModel", () => {
     const model = vendoModel(undefined, { env: {} }) as unknown as Record<string, unknown>;
     expect(model.specificationVersion).toBe("v3");
+    expect(model.provider).toBe("vendo");
     expect(typeof model.doGenerate).toBe("function");
-    // devModel keeps its exact historical wrapper identity.
-    const legacy = devModel({ env: {} }) as unknown as Record<string, unknown>;
-    expect(legacy.provider).toBe("vendo-dev");
-    expect(legacy.modelId).toBe("dev-env");
+    expect(typeof model.doStream).toBe("function");
   });
 
-  it("keeps the honest keyless failure unchanged", async () => {
+  it("keeps the honest keyless failure unchanged, on both call paths", async () => {
     const model = vendoModel(undefined, { env: {} }) as unknown as {
       doGenerate(options: unknown): Promise<unknown>;
+      doStream(options: unknown): Promise<unknown>;
     };
     await expect(model.doGenerate({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
+    // doStream rejects with the same message (streamText's error path shows
+    // the generic error part; the operator log carries this one).
+    await expect(model.doStream({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
   });
 
   it("passes an explicit name VERBATIM to the provider rung — no client-side mapping", async () => {
@@ -477,11 +457,11 @@ describe("vendoModel (the vendo model family entry)", () => {
     expect(await resolvedId(model)).toBe("claude-opus-4-8");
     // Even a vendo-* family name goes through untouched: the provider's own
     // error is the surface for unknown names, never a client-side remap.
-    const family = vendoModel("vendo-paint", {
+    const family = vendoModel("vendo-apps", {
       env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
     });
-    expect(await resolvedId(family)).toBe("vendo-paint");
+    expect(await resolvedId(family)).toBe("vendo-apps");
   });
 
   it("passes an explicit name VERBATIM to the Cloud gateway as the model id", async () => {
@@ -509,24 +489,44 @@ describe("vendoModel (the vendo model family entry)", () => {
     }))).toBe("gpt-5");
   });
 
-  it("defaults the paint slot to the family fast pick per rung", async () => {
+  it("defaults the apps slot to its own family id on Cloud and the FLAGSHIP on a BYO rung", async () => {
+    // Writing an app is the same weight of job as thinking, so `apps` takes the
+    // provider's flagship — only the reading jobs (review, judge) go fast.
     expect(await resolvedId(vendoModel(undefined, {
-      slot: "paint",
+      slot: "apps",
       env: { VENDO_API_KEY: "vnd_x" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo-paint");
+    }))).toBe("vendo-apps");
     expect(await resolvedId(vendoModel(undefined, {
-      slot: "paint",
+      slot: "apps",
+      env: { ...BYO.anthropic },
+      importModule: scriptedProvider("createAnthropic"),
+    }))).toBe("claude-sonnet-4-6");
+    expect(await resolvedId(vendoModel(undefined, {
+      slot: "apps",
+      env: { ...BYO.openai },
+      importModule: scriptedProvider("createOpenAI"),
+    }))).toBe("gpt-5");
+  });
+
+  it("defaults the review and judge slots to the family fast pick per rung", async () => {
+    expect(await resolvedId(vendoModel(undefined, {
+      slot: "review",
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: scriptedProvider("createAnthropic"),
+    }))).toBe("vendo-review");
+    expect(await resolvedId(vendoModel(undefined, {
+      slot: "review",
       env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-haiku-4-5");
     expect(await resolvedId(vendoModel(undefined, {
-      slot: "paint",
+      slot: "judge",
       env: { ...BYO.openai },
       importModule: scriptedProvider("createOpenAI"),
     }))).toBe("gpt-5-mini");
     expect(await resolvedId(vendoModel(undefined, {
-      slot: "paint",
+      slot: "judge",
       env: { ...BYO.google },
       importModule: scriptedProvider("createGoogleGenerativeAI"),
     }))).toBe("gemini-2.5-flash-lite");
@@ -539,17 +539,36 @@ describe("vendoModel (the vendo model family entry)", () => {
     }))).toBe("claude-sonnet-4-6");
   });
 
-  it("VENDO_MODEL_PAINT pins the paint slot; VENDO_MODEL does not", async () => {
+  it("VENDO_MODEL_APPS pins the apps slot; VENDO_MODEL does not", async () => {
     expect(await resolvedId(vendoModel(undefined, {
-      slot: "paint",
-      env: { ...BYO.anthropic, VENDO_MODEL: "claude-opus-4-8", VENDO_MODEL_PAINT: "claude-haiku-4-5" },
+      slot: "apps",
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-opus-4-8", VENDO_MODEL_APPS: "claude-haiku-4-5" },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-haiku-4-5");
     expect(await resolvedId(vendoModel(undefined, {
-      slot: "paint",
+      slot: "apps",
       env: { ...BYO.anthropic, VENDO_MODEL: "claude-opus-4-8" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("claude-haiku-4-5");
+    }))).toBe("claude-sonnet-4-6");
+  });
+
+  it("VENDO_MODEL_REVIEW pins the review slot, the seat that never had a pin before", async () => {
+    expect(await resolvedId(vendoModel(undefined, {
+      slot: "review",
+      env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_REVIEW: "vendo-strong" },
+      importModule: scriptedProvider("createAnthropic"),
+    }))).toBe("vendo-strong");
+  });
+
+  it("infers apps and review slots from their family names, so their env pins reach them", async () => {
+    expect(await resolvedId(vendoModel("vendo-apps", {
+      env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_APPS: "vendo-strong" },
+      importModule: scriptedProvider("createAnthropic"),
+    }))).toBe("vendo-strong");
+    expect(await resolvedId(vendoModel("vendo-review", {
+      env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_REVIEW: "vendo-fast" },
+      importModule: scriptedProvider("createAnthropic"),
+    }))).toBe("vendo-fast");
   });
 
   it("infers the judge slot from the family name so VENDO_MODEL_JUDGE pins vendoModel(\"vendo-judge\")", async () => {

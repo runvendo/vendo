@@ -7,13 +7,11 @@
 export {
   bindVendoModelSlots,
   DevModelController,
-  devModel,
   importHostModule,
   NO_CREDENTIAL_MESSAGE,
   SLOT_PIN_ENV,
   vendoModel,
   type ConfigurableSlotModels,
-  type DevModelOptions,
   type VendoModelOptions,
   type VendoModelSlot,
 } from "@vendoai/harnesses/inference";

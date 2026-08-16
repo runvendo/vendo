@@ -115,7 +115,7 @@ describe("the validate gate judges a written app by what it IS", () => {
       },
     });
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       harness: harness as never,

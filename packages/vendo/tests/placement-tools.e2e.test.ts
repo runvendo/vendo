@@ -124,7 +124,7 @@ async function host(onTurn?: OnTurn): Promise<Host> {
     },
   });
   const vendo = createVendo({
-    model: screenModel(),
+    models: { default: screenModel() },
     principal: async () => principal,
     store,
     harness: harness as never,

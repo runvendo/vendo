@@ -100,7 +100,7 @@ async function createUmbrella(
     headers: { cookie: `fixture_session=${principal.subject}` },
   }));
   const config: CreateVendoConfig = {
-    model: {} as unknown as CreateVendoConfig["model"],
+    models: { default: {} as unknown as NonNullable<CreateVendoConfig["models"]>["default"] },
     // The wire's own principal resolver (used by /approvals/decide): the approving
     // user is identified from a first-party cookie the host sets in-product.
     principal: async (req) => {
@@ -197,7 +197,7 @@ async function umbrellaSql<Row = Record<string, unknown>>(umbrella: Umbrella, qu
 describe("umbrella hookup — createVendo({ mcp: true }) mounts the door", () => {
   it("throws synchronously when mcp is enabled without an oauth adapter", () => {
     expect(() => createVendo({
-      model: {} as unknown as CreateVendoConfig["model"],
+      models: { default: {} as unknown as NonNullable<CreateVendoConfig["models"]>["default"] },
       principal: async () => null,
       mcp: true,
     })).toThrow(/oauth/i);

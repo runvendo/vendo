@@ -286,7 +286,7 @@ describe("a screen mounts only once its build is terminal", () => {
       },
     });
     vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       tools: hostTools,

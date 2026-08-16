@@ -159,7 +159,7 @@ live("a real box reaches a real team's app", () => {
   it("Kim edits the TEAM's Quarterly Report, and Dana sees the change", async () => {
     const store = await tempStore();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       store,
       sandbox: reapingSandbox() as unknown as SandboxAdapter,
       harness: claudeCode({ model: MODEL, maxTurns: 14 }),

@@ -17,7 +17,7 @@ describe("the advertised principal snippet", () => {
     const store = createStore({ dataDir });
     try {
       const vendo = createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         store,
         principal: async () => ({ kind: "user", subject: "dev" }),
       });

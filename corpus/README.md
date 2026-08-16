@@ -139,9 +139,9 @@ before reading those columns as a verdict.
 
 - Repos default to every one with an `ai-expected.json`; pass names to filter.
 - Models: repeat `--model <id>` (or comma-separate) to build the matrix; each
-  run sets `VENDO_EXTRACTION_MODEL` for the harness. With no `--model` flag a
+  run sets `VENDO_MODEL_EXTRACT` for the harness. With no `--model` flag a
   single `default` column exercises the harness default (which itself honors a
-  `VENDO_EXTRACTION_MODEL` already present in the environment).
+  `VENDO_MODEL_EXTRACT` already present in the environment).
 - Credential: the run needs `ANTHROPIC_API_KEY` or a Claude Code login and
   fails fast with a clear message when neither is available. The Claude Agent
   SDK deliberately exists nowhere in the workspace (host-only resolution

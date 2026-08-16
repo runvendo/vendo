@@ -169,7 +169,7 @@ async function walk(steps: Array<(prompt: string) => Chunk[]>): Promise<{
     },
   });
   const vendo = createVendo({
-    model,
+    models: { default: model },
     principal: async () => principal,
     store,
     harness: harness as never,

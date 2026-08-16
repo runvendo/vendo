@@ -81,7 +81,7 @@ async function compose(): Promise<{ vendo: Vendo; seen: string[] }> {
   const store = await tempStore();
   const seen: string[] = [];
   const vendo = createVendo({
-    model: recordingModel(seen),
+    models: { default: recordingModel(seen) },
     principal: async () => principal,
     store,
   });
@@ -137,7 +137,7 @@ describe("situation channel — adversarial body.context", () => {
       },
     });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: harness as never,
@@ -179,7 +179,7 @@ describe("situation channel — adversarial body.context", () => {
     const store = await tempStore();
     const seen: string[] = [];
     const vendo = createVendo({
-      model: recordingModel(seen),
+      models: { default: recordingModel(seen) },
       principal: async () => ({ kind: "user", subject: "visitor_forge", ephemeral: true }),
       store,
       guard: guard({ policy: { directions: ["Never disclose balances"] } }),

@@ -84,7 +84,7 @@ async function expressHost(wired: boolean): Promise<string> {
     dependencies: { "@vendoai/vendo": "0.3.0", express: "5.0.0" },
   }));
   if (wired) {
-    await write("src/server.ts", 'import { createVendo } from "@vendoai/vendo/server";\ncreateVendo({ model, principal });\n');
+    await write("src/server.ts", 'import { createVendo } from "@vendoai/vendo/server";\ncreateVendo({ models: { default: model }, principal });\n');
     await write("src/client.tsx", "export const App = () => <VendoProvider><main /><VendoOverlay /></VendoProvider>;\n");
   } else {
     await write("src/notes.ts", "/* TODO: import createVendo from @vendoai/vendo/server and render <VendoRoot> */\n");
@@ -108,7 +108,7 @@ async function customHost(wired: boolean): Promise<string> {
     dependencies: { "@vendoai/vendo": "0.3.0", vite: "6.0.0" },
   }));
   if (wired) {
-    await write("src/worker.ts", 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ model, principal });\n');
+    await write("src/worker.ts", 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ models: { default: model }, principal });\n');
     await write("src/app.tsx", "export const App = () => <VendoProvider><main /><VendoOverlay /></VendoProvider>;\n");
   } else {
     await write("src/worker.ts", "export default { fetch: () => new Response('ok') };\n");
@@ -208,7 +208,7 @@ async function liveHost(options: { configureBaseUrl?: boolean; actAs?: boolean }
     subject: minted.get(request.headers.get("authorization") ?? "") ?? "user_doctor",
   });
   vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal,
     store,
     // This fixture stands in for the dev server `vendo doctor` targets, and the
@@ -856,7 +856,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
         VENDO_DEV_CREDENTIAL: "env-key:anthropic",
         ANTHROPIC_API_KEY: "sk-test",
         VENDO_MODEL: "claude-opus-4-8",
-        VENDO_MODEL_PAINT: "claude-haiku-4-5",
+        VENDO_MODEL_REVIEW: "claude-haiku-4-5",
       },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
@@ -865,7 +865,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.logs).toContain("ok: model credential: explicit ANTHROPIC_API_KEY (anthropic)");
-    expect(messages.logs).toContain("ok: model pins: VENDO_MODEL=claude-opus-4-8, VENDO_MODEL_PAINT=claude-haiku-4-5");
+    expect(messages.logs).toContain("ok: model pins: VENDO_MODEL=claude-opus-4-8, VENDO_MODEL_REVIEW=claude-haiku-4-5");
 
     // No pins → no pins line (and never a role/alias table: the client cannot
     // know the gateway's server-side alias mappings).

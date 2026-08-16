@@ -151,7 +151,7 @@ async function setup(
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const store = await tempStore("vendo-wire-");
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: resolver,
     store,
     ...options,
@@ -382,7 +382,7 @@ describe("09 §3 public wire", () => {
     // a caller of a non-existent app hears.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const store = await tempStore("vendo-wire-b4-");
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     stubRouteBlocks(vendo);
     await store.ensureSchema();
     await appStore(store).put({ kind: "user", subject: "someone_else" }, app("app_foreign"));
@@ -407,7 +407,7 @@ describe("09 §3 public wire", () => {
     // runtime's #532 write exactly (records-door put; a failed doc has no ui
     // payload).
     const store = await tempStore("vendo-wire-d2-");
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     stubRouteBlocks(vendo);
     await store.ensureSchema();
     await store.records("vendo_apps").put({
@@ -443,7 +443,7 @@ describe("09 §3 public wire", () => {
     // the first time this path is proven for someone who is not the owner.
     const store = await tempStore("vendo-wire-viewer-failed-");
     vi.stubEnv("VENDO_API_KEY", "vnd_viewer_failed");
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     stubRouteBlocks(vendo);
     await store.ensureSchema();
     await store.records("vendo_apps").put({
@@ -497,7 +497,7 @@ describe("09 §3 public wire", () => {
       baseUrl: "https://cloud.test",
       fetch: fakeConsole().handler as unknown as typeof fetch,
     });
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     cleanups.push(async () => { await vendo.store.close(); });
     stubRouteBlocks(vendo);
     vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found"));
@@ -681,7 +681,7 @@ describe("09 §3 public wire", () => {
     ): Promise<unknown> => {
       for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
       const vendo = createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         principal: vi.fn(async () => principal),
         store,
         ...(sandbox === undefined ? {} : { sandbox }),
@@ -763,7 +763,7 @@ describe("09 §3 public wire", () => {
     // vendo's schema readiness) so teardown never races an in-flight migration.
     const compose = async (config: Partial<CreateVendoConfig>): Promise<Vendo> => {
       const vendo = createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         principal: vi.fn(async () => principal),
         store,
         ...config,
@@ -872,7 +872,7 @@ describe("09 §3 public wire", () => {
     // never races an in-flight migration.
     const compose = async (config: Partial<CreateVendoConfig>): Promise<Vendo> => {
       const vendo = createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         principal: vi.fn(async () => principal),
         store,
         ...config,
@@ -944,7 +944,7 @@ describe("09 §3 public wire", () => {
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: vi.fn(async () => principal),
       store,
       connectors: ["gmail"],
@@ -989,7 +989,7 @@ describe("09 §3 public wire", () => {
       data: { subject: principal.subject, enabled: true, doc: app("app_share") },
       refs: { subject: principal.subject },
     });
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
 
     const snapshot = await vendo.apps.share("app_share", ctx);
     expect(snapshot.id).toBe("share_1");
@@ -1000,7 +1000,7 @@ describe("09 §3 public wire", () => {
 
     // No key → the seam stays unfilled and refuses honestly, without a fetch.
     vi.stubEnv("VENDO_API_KEY", "");
-    const bare = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const bare = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     const sent = calls.length;
     await expect(bare.apps.share("app_share", ctx)).rejects.toMatchObject({ code: "cloud-required" });
     expect(calls).toHaveLength(sent);
@@ -1008,7 +1008,7 @@ describe("09 §3 public wire", () => {
 
   it("selects the inference adapter with the adapter-rule precedence", async () => {
     // Adapter rule (2026-07-17 cloud definition) unified with install-dx v1's
-    // model-optional createVendo: explicit model → the composed devModel
+    // model-optional createVendo: explicit model → the composed vendoModel
     // ladder (provider env key, then VENDO_API_KEY via the Cloud model
     // gateway, then honest failure — all resolved lazily INSIDE the ladder).
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
@@ -1026,7 +1026,7 @@ describe("09 §3 public wire", () => {
     };
 
     // An explicitly passed model wins over every env credential.
-    expect(await modelVenue({ model: {} as LanguageModel })).toBe("custom");
+    expect(await modelVenue({ models: { default: {} as LanguageModel } })).toBe("custom");
 
     // Otherwise the vendoModel ladder composes — with or without any key set
     // (rung resolution is lazy; the honest failure happens on first call).
@@ -1035,13 +1035,8 @@ describe("09 §3 public wire", () => {
     expect(await modelVenue({})).toBe("ladder");
 
     // Models block (models spec 2026-07-22): an explicit LanguageModel object
-    // wins as-is; a string resolves through the ladder. Naming the seat both
-    // ways — the deprecated top-level `model` AND `models.default` — is a
-    // boot collision, not a precedence (no silent last-write-wins).
-    expect(await modelVenue({ models: { default: {} as LanguageModel } })).toBe("custom");
+    // wins as-is; a string resolves through the ladder.
     expect(await modelVenue({ models: { default: "claude-opus-4-8" } })).toBe("ladder");
-    await expect(modelVenue({ model: {} as LanguageModel, models: { default: "claude-opus-4-8" } }))
-      .rejects.toThrow("Two knobs set the same model seat");
 
     // Slot values must be model-name strings or LanguageModel objects.
     expect(() => createVendo({
@@ -1069,7 +1064,7 @@ describe("09 §3 public wire", () => {
       return Response.json({ record: null });
     }));
     const compose = (config: Partial<CreateVendoConfig>): Vendo => createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: vi.fn(async () => principal),
       // The store seam under test must stay isolated from the connectors
       // seam: with the key stubbed, an unset connectors slot would compose
@@ -1643,7 +1638,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
       let thrown: unknown;
       try {
         createVendo({
-          model: {} as LanguageModel,
+          models: { default: {} as LanguageModel },
           store,
           auth: { principal: async () => null },
           ...seams[key],
@@ -1661,7 +1656,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
     const store = await tempStore("vendo-auth-none-");
     let thrown: unknown;
     try {
-      createVendo({ model: {} as LanguageModel, store });
+      createVendo({ models: { default: {} as LanguageModel }, store });
     } catch (error) {
       thrown = error;
     } finally {
@@ -1676,7 +1671,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   it("auth fills the principal seam — one real wire request resolves the host session", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
     const store = await tempStore("vendo-auth-principal-");
-    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs() });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, store, auth: authJs() });
     const seen: Principal[] = [];
     vi.spyOn(vendo.apps, "list").mockImplementation(async (listCtx) => {
       seen.push(listCtx.principal);
@@ -1692,7 +1687,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   it("auth's oauth half opens the MCP door — mcp: true needs no separate oauth key", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
     const store = await tempStore("vendo-auth-door-");
-    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs(), mcp: true });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, store, auth: authJs(), mcp: true });
     await store.ensureSchema();
     const res = await vendo.handler(new Request("https://host.test/.well-known/oauth-protected-resource/api/vendo/mcp"));
     expect(res.status).toBe(200);
@@ -1702,7 +1697,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   it("an auth preset WITHOUT an oauth half leaves the door seam unset — mcp: true still throws", async () => {
     const store = await tempStore("vendo-auth-no-oauth-");
     expect(() => createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       store,
       auth: { principal: async () => null },
       mcp: true,
@@ -1714,7 +1709,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
     const store = await tempStore("vendo-auth-actas-");
     // `development` because the probe this drives is a development-only route
     // now; the dev server `vendo doctor` targets gets it from NODE_ENV.
-    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs(), development: true });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, store, auth: authJs(), development: true });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const target = input instanceof Request ? input : new Request(input, init);
       return vendo.handler(target);
@@ -1739,7 +1734,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
     // no identity — the CALLER's own session resolves fine; it is the actAs
     // mint for the synthetic subject that declines.
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       store,
       auth: authJs({ user: async () => null }),
       development: true,
@@ -1758,7 +1753,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
     // The auth object resolves the caller (the wire refuses anonymity) but
     // wires NO actAs seam — the truly absent case E-AUTH-007 narrates.
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       store,
       auth: { principal: async () => ({ kind: "user", subject: "user_actas_absent" }) },
       development: true,
@@ -1873,7 +1868,7 @@ export default function DesignCheck() {
     await store.ensureSchema();
     const prompts: string[] = [];
     const vendo = createVendo({
-      model: appGenModel(prompts),
+      models: { default: appGenModel(prompts) },
       principal: async () => principal,
       store,
       ...(options.apps === undefined ? {} : { apps: options.apps }),
@@ -2064,7 +2059,7 @@ export default function Ledger() {
     // Explicit store wins over the key (BYO); connectors:[] avoids the cloud
     // tools connector's descriptor fetch.
     const vendo = createVendo({
-      model: planModel,
+      models: { default: planModel },
       principal: async () => principal,
       store,
       connectors: [],
@@ -2144,7 +2139,7 @@ describe("03 §3 prompt wiring (AGENT-1/2)", () => {
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); });
     const vendo = createVendo({
-      model: model as unknown as LanguageModel,
+      models: { default: model as unknown as LanguageModel },
       principal: async () => principal,
       store,
       catalog: [{
@@ -2203,7 +2198,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
       }),
     });
     const vendo = createVendo({
-      model: model as unknown as LanguageModel,
+      models: { default: model as unknown as LanguageModel },
       principal: async () => principal,
       store,
     });
@@ -2318,7 +2313,7 @@ ${Array.from({ length: count }, (_, index) => `      <Text text="Section ${index
     });
     const store = await tempStore("vendo-stream-turn-");
     const vendo = createVendo({
-      model: model as unknown as LanguageModel,
+      models: { default: model as unknown as LanguageModel },
       principal: async () => principal,
       store,
       guard: { policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] } },
@@ -2389,7 +2384,7 @@ describe("ENG-252 agent.loadout through createVendo", () => {
     };
     const store = await tempStore("vendo-loadout-");
     const vendo = createVendo({
-      model: model as unknown as LanguageModel,
+      models: { default: model as unknown as LanguageModel },
       principal: async () => principal,
       store,
       connectors: [connector],
@@ -2493,7 +2488,7 @@ describe("surfaces.agent through createVendo", () => {
     const store = await tempStore("vendo-surfaces-agent-store-");
     const recorder = recordingModel(["text"]);
     const vendo = createVendo({
-      model: await recorder.model() as unknown as LanguageModel,
+      models: { default: await recorder.model() as unknown as LanguageModel },
       principal: async () => principal,
       store,
     });
@@ -2517,7 +2512,7 @@ describe("surfaces.agent through createVendo", () => {
     const store = await tempStore("vendo-surfaces-agent-search-store-");
     const recorder = recordingModel(["search", "text"]);
     const vendo = createVendo({
-      model: await recorder.model() as unknown as LanguageModel,
+      models: { default: await recorder.model() as unknown as LanguageModel },
       principal: async () => principal,
       store,
     });
@@ -2539,7 +2534,7 @@ describe("surfaces.agent through createVendo", () => {
     const store = await tempStore("vendo-surfaces-agent-loadout-store-");
     const recorder = recordingModel(["text"]);
     const vendo = createVendo({
-      model: await recorder.model() as unknown as LanguageModel,
+      models: { default: await recorder.model() as unknown as LanguageModel },
       principal: async () => principal,
       store,
       // The host names BOTH tools in its explicit loadout; the menu still wins.
@@ -2562,7 +2557,7 @@ describe("surfaces.agent through createVendo", () => {
     const store = await tempStore("vendo-surfaces-agent-none-store-");
     const recorder = recordingModel(["text"]);
     const vendo = createVendo({
-      model: await recorder.model() as unknown as LanguageModel,
+      models: { default: await recorder.model() as unknown as LanguageModel },
       principal: async () => principal,
       store,
     });
@@ -2626,7 +2621,7 @@ export default function ${name}() {
       propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } },
     }];
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       catalog,
@@ -2666,7 +2661,7 @@ export default function ${name}() {
       },
     };
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       catalog: registry,
@@ -2714,7 +2709,7 @@ export default function DiskCatalogApp() {
     const vendo = (() => {
       try {
         process.chdir(root);
-        return createVendo({ model, principal: async () => principal, store });
+        return createVendo({ models: { default: model }, principal: async () => principal, store });
       } finally {
         process.chdir(previousCwd);
       }
@@ -2748,7 +2743,7 @@ export default function DiskCatalogApp() {
     const previousCwd = process.cwd();
     try {
       process.chdir(root);
-      createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+      createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     } finally {
       process.chdir(previousCwd);
     }
@@ -2765,7 +2760,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
   async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
     const store = await tempStore("vendo-door-");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => null,
       store,
       mcp,
@@ -3076,7 +3071,7 @@ describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...
   async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
     const store = await tempStore("vendo-well-known-");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => null,
       store,
       mcp,
@@ -3161,7 +3156,7 @@ describe("02-store §4 default-on encryption composition", () => {
     try {
       // No `store` in the config: the composed default store must come up with
       // encryption on, so stored secrets work with zero extra wiring.
-      const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal });
+      const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal });
       cleanups.push(async () => {
         await vendo.store.close();
         await rm(dir, { recursive: true, force: true });
@@ -3438,7 +3433,7 @@ describe("unified try surface (Task 4) — profileDir + fetch seams", () => {
     const root = await tempProfile();
     const store = await tempStore("vendo-profile-dir-store-");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       profileDir: root,
@@ -3462,7 +3457,7 @@ describe("unified try surface (Task 4) — profileDir + fetch seams", () => {
     vi.stubGlobal("fetch", realFetch);
 
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       profileDir: root,
@@ -3590,7 +3585,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     const { model, prompts } = await promptCapture();
 
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       profile: {
@@ -3623,7 +3618,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     const { model, prompts } = await promptCapture();
 
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       profileDir: root,
@@ -3654,7 +3649,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     const { model, prompts } = await promptCapture();
 
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       profileDir: join(root, ".vendo"),
@@ -3683,7 +3678,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
 
     const store = await tempStore("vendo-profile-workerd-store-");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       profileDir: root,
@@ -3715,7 +3710,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
 
     const store = await tempStore("vendo-profile-eisdir-store-");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       profileDir: root,
@@ -3733,7 +3728,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
       const store = await tempStore("vendo-profile-equiv-store-");
       const { model, prompts } = await promptCapture();
       const vendo = createVendo({
-        model,
+        models: { default: model },
         principal: async () => principal,
         store,
         profileDir: root,
@@ -3762,7 +3757,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     const store = await tempStore("vendo-profile-policy-store-");
 
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       profile: {
@@ -3796,7 +3791,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     // Explicit wins: the in-memory piece runs everything, the explicit knob
     // blocks — the block decides, so config.policy took precedence.
     const explicit = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-profile-policy-prec-"),
       guard: { policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] } },
@@ -3815,7 +3810,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     // Unset piece → unchanged: no policy anywhere still reports the honest
     // "unconfigured" posture.
     const unset = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-profile-policy-unset-"),
       profile: { tools: [profileTool("host_invoices_list")] },
@@ -3836,7 +3831,7 @@ describe("execution-v2 — box-edit env knobs", () => {
     vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "8m");
     let thrown: unknown;
     try {
-      createVendo({ model: {} as LanguageModel, store, ...identity });
+      createVendo({ models: { default: {} as LanguageModel }, store, ...identity });
     } catch (error) {
       thrown = error;
     }
@@ -3846,12 +3841,12 @@ describe("execution-v2 — box-edit env knobs", () => {
 
     vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "480000");
     vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "0");
-    expect(() => createVendo({ model: {} as LanguageModel, store, ...identity }))
+    expect(() => createVendo({ models: { default: {} as LanguageModel }, store, ...identity }))
       .toThrowError(/VENDO_BOX_EDIT_POLL_MS/);
 
     // Valid positive-integer values still compose.
     vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
-    expect(() => createVendo({ model: {} as LanguageModel, store, ...identity })).not.toThrow();
+    expect(() => createVendo({ models: { default: {} as LanguageModel }, store, ...identity })).not.toThrow();
   });
 });
 
@@ -3884,7 +3879,7 @@ describe("mid-build steering — POST /threads/:id/steer (§10.2)", () => {
     };
     const store = await tempStore("vendo-steer-");
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: resolver,
       store,
       harness: harness as never,

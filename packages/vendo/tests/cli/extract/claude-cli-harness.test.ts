@@ -97,7 +97,7 @@ describe("claudeCliHarness", () => {
     expect(capturedOptions?.env["VENDO_CLI_HARNESS_TEST_MARKER"]).toBe("from-caller");
   });
 
-  it("passes VENDO_EXTRACTION_MODEL as --model when set, and omits --model/--permission-mode otherwise", async () => {
+  it("passes VENDO_MODEL_EXTRACT as --model when set, and omits --model/--permission-mode otherwise", async () => {
     let capturedArgs: string[] = [];
     const harness = claudeCliHarness({
       exec: async (args) => {
@@ -109,16 +109,8 @@ describe("claudeCliHarness", () => {
     expect(capturedArgs).not.toContain("--model");
     expect(capturedArgs).not.toContain("--permission-mode");
 
-    await harness.run({ root: "/x", env: { VENDO_EXTRACTION_MODEL: "claude-fable-5" }, instructions: "go" });
+    await harness.run({ root: "/x", env: { VENDO_MODEL_EXTRACT: "claude-fable-5" }, instructions: "go" });
     expect(capturedArgs.slice(-2)).toEqual(["--model", "claude-fable-5"]);
-
-    // VENDO_MODEL_EXTRACT (models spec 2026-07-22) outranks the deprecated var.
-    await harness.run({
-      root: "/x",
-      env: { VENDO_MODEL_EXTRACT: "vendo-extract", VENDO_EXTRACTION_MODEL: "claude-fable-5" },
-      instructions: "go",
-    });
-    expect(capturedArgs.slice(-2)).toEqual(["--model", "vendo-extract"]);
   });
 
   it("returns stdout on success", async () => {
@@ -440,7 +432,7 @@ describe("claudeCliHarness", () => {
       expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBe("x-vendo-purpose: init");
       // The child must send the gateway's own model id — Claude Code's default
       // is a claude-* id the gateway 400s (#617). No --model flag is passed
-      // (VENDO_EXTRACTION_MODEL is unset), so this env pin is what lands.
+      // (VENDO_MODEL_EXTRACT is unset), so this env pin is what lands.
       expect(capturedEnv?.ANTHROPIC_MODEL).toBe("vendo-extract");
     });
   });

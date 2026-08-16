@@ -146,7 +146,7 @@ async function compose(overrides: Record<string, unknown> = {}): Promise<{
   // base is how a deployment names an origin its thinker can dial.
   vi.stubEnv("VENDO_BASE_URL", origin);
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     ...overrides,
@@ -216,7 +216,7 @@ live("claudeCode() through createVendo", () => {
     const host = hostTools();
     const origin = nextOrigin();
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: claudeCode({ machine: "local", model: MODEL, maxTurns: 10 }),
@@ -259,7 +259,7 @@ live("claudeCode() through createVendo", () => {
     const calls: string[] = [];
     vi.stubEnv("VENDO_BASE_URL", origin);
     const vendo = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: claudeCode({ machine: "local", model: MODEL, maxTurns: 8 }),
@@ -318,7 +318,7 @@ live("claudeCode() through createVendo", () => {
       // would hand turn 2 a blank slate and pay a re-seed every single time.
       const host = hostTools();
       const vendo = createVendo({
-        model: {} as LanguageModel,
+        models: { default: {} as LanguageModel },
         principal: async () => principal,
         store,
         harness: claudeCode({ machine: "local", model: MODEL, maxTurns: 6 }),
@@ -349,7 +349,7 @@ live("claudeCode() through createVendo", () => {
     // the state slot belongs to another harness, so §1.3 clears it and the
     // re-seed has to come from the transcript we own.
     const other = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: defineHarness({
@@ -366,7 +366,7 @@ live("claudeCode() through createVendo", () => {
     }));
 
     const swapped = createVendo({
-      model: {} as LanguageModel,
+      models: { default: {} as LanguageModel },
       principal: async () => principal,
       store,
       harness: claudeCode({ machine: "local", model: MODEL, maxTurns: 6 }),

@@ -98,7 +98,7 @@ function hostedComposition(): Vendo {
     baseUrl: "https://cloud.test",
     fetch: fakeConsole().handler as unknown as typeof fetch,
   });
-  const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+  const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
   cleanups.push(async () => { await vendo.store.close(); });
   return vendo;
 }
@@ -158,7 +158,7 @@ describe("automations composition: a local/BYO store is untouched (existing beha
   it("logs no Cloud-authority warning and fires a due schedule automation on tick", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const store = await tempStore("vendo-automations-defer-");
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     await vendo.store.ensureSchema();
     const doc = scheduleApp("app_local_schedule");
     await seedDueSchedule(vendo.store, doc);
@@ -172,7 +172,7 @@ describe("automations composition: a local/BYO store is untouched (existing beha
   it("still fires host-event automations via emit", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const store = await tempStore("vendo-automations-defer-host-");
-    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     await vendo.store.ensureSchema();
     const doc = hostEventApp("app_local_host_event");
     await seedHostEventApp(vendo.store, doc);

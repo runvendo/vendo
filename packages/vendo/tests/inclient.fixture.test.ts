@@ -163,7 +163,7 @@ export default function NetWorth() {
     await store.ensureSchema();
     process.chdir(root);
     const vendo = createVendo({
-      model,
+      models: { default: model },
       principal: async () => principal,
       store,
       development: true,

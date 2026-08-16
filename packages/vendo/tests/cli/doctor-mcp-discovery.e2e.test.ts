@@ -62,7 +62,7 @@ describe("vendo doctor MCP discovery live", () => {
     vi.stubEnv("VENDO_BASE_URL", origin);
     const minted = new Map<string, string>();
     vendo = createVendo({
-      model: {} as unknown as CreateVendoConfig["model"],
+      models: { default: {} as unknown as NonNullable<CreateVendoConfig["models"]>["default"] },
       principal: async (request) => ({
         kind: "user",
         subject: minted.get(request.headers.get("authorization") ?? "") ?? "doctor-user",

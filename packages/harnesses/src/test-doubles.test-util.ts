@@ -331,7 +331,7 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
 
 /** `ResolvedModels` whose every seat is one scripted model. */
 export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
-  return { default: model, reviewer: model, judge: model, fill: model };
+  return { default: model, apps: model, review: model, judge: model };
 }
 
 /**

@@ -185,7 +185,7 @@ describe("umbrella wire CSRF floor — adversarial (ENG-251)", () => {
   // never reached, and neither is the resolver: every probe below is rejected
   // at the CSRF floor, ahead of principal resolution and agent execution.
   const wire = () => createVendo({
-    model: {} as unknown as LanguageModel,
+    models: { default: {} as unknown as LanguageModel },
     principal: async () => null,
   }).handler;
 

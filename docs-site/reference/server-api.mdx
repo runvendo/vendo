@@ -109,9 +109,7 @@ Types only; each key's behavior is documented once, on
 
 | Key | Type | Notes |
 | --- | --- | --- |
-| `model` | `LanguageModel` | **deprecated** → `models.default`. Setting both is a boot error, not a precedence puzzle |
-| `paint` | `{ model?: LanguageModel; disabled?: boolean }` | **deprecated**: the model half → `models.fill`; `disabled` remains the single-lane switch for app generation |
-| `models` | `ModelsConfig` | the model seats, keyed by JOB: `{ default?, reviewer?, judge?, fill? }`, each a model-name string (resolved through the credential ladder) or an explicit ai-SDK `LanguageModel` (wins as-is). Every unset seat borrows `default` |
+| `models` | `ModelsConfig` | the model seats, keyed by JOB: `{ default?, apps?, review?, judge? }`, each a model-name string (resolved through the credential ladder) or an explicit ai-SDK `LanguageModel` (wins as-is). Every unset seat borrows `default` |
 | `auth` | `HostAuthPreset` | one preset fills `principal` + `actAs` + `oauth`; mutually exclusive with all three — see [actAs presets](/deploy/auth) |
 | `principal` | `(req: Request) => Promise<Principal \| null>` | required unless `auth` fills the seam, and mutually exclusive with it; `null` → the request is refused with `forbidden` |
 | `tools` | `readonly (ExtractedTool \| ToolDefinition)[]` | host-tool declarations in memory (else `.vendo/tools.json`), and/or executable tools — the two shapes are told apart by `execute` |

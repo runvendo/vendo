@@ -75,7 +75,7 @@ const app = (id: string, extra: Partial<AppDocument> = {}): AppDocument => ({
 async function compose(): Promise<{ vendo: Vendo; store: VendoStore }> {
   const store = await tempStore();
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     catalog,

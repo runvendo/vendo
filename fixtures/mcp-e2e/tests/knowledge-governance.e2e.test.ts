@@ -49,7 +49,7 @@ async function createKnowledgeUmbrella(): Promise<Umbrella> {
     },
   };
   const config: CreateVendoConfig = {
-    model: {} as unknown as CreateVendoConfig["model"],
+    models: { default: {} as unknown as NonNullable<CreateVendoConfig["models"]>["default"] },
     principal: async () => null,
     store,
     // The shipped read posture: the call RUNS at the door, so the leg proves

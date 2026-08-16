@@ -63,7 +63,7 @@ async function deployment(): Promise<{ url: string }> {
     await rm(dataDir, { recursive: true, force: true });
   });
   const vendo = createVendo({
-    model: {} as LanguageModel,
+    models: { default: {} as LanguageModel },
     principal: async () => principal,
     store,
     harness: defineHarness({

@@ -48,7 +48,7 @@ export const INIT_PURPOSE_HEADER_VALUE = "init";
  * id lands every rung on a valid gateway id — no gateway contract change. This
  * is the extraction role of the gateway's model family (vendo-extract, see
  * vendo-web console lib/api/model-aliases.ts VENDO_MODEL_FAMILY); a dev's
- * explicit VENDO_EXTRACTION_MODEL pin still wins via the harness's --model flag.
+ * explicit VENDO_MODEL_EXTRACT pin still wins via the harness's --model flag.
  */
 export const EXTRACTION_MODEL_ID = "vendo-extract";
 

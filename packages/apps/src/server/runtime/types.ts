@@ -159,7 +159,7 @@ export interface AppsConfig {
    * The reviewer is the one check that spends a model call, and what it does is
    * read a finished screen against its own rows. That is not the job the
    * flagship is for, so the umbrella fills this with the family fast model
-   * (`resolveModels`' `fill` seat) and the reviewer stops riding the writer's
+   * (`resolveModels`' `review` seat) and the reviewer stops riding the writer's
    * seat. Unset — a host composing this block itself — and it rides
    * {@link AppsConfig.model}, exactly as it always did.
    */

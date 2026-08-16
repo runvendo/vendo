@@ -103,8 +103,8 @@ export {
 // entry: the lazily-resolving env ladder createVendo composes when the host
 // passes none, exported for host code too (judge wiring, host features). No
 // argument means `vendo` semantics (per-rung defaults); a name passes through
-// VERBATIM to the resolved rung. `devModel` stays as the deprecated alias.
-export { devModel, vendoModel, type DevModelOptions, type VendoModelOptions, type VendoModelSlot } from "#dev-creds/model";
+// VERBATIM to the resolved rung.
+export { vendoModel, type VendoModelOptions, type VendoModelSlot } from "#dev-creds/model";
 
 export { type ModelsConfig } from "./models-config.js";
 
