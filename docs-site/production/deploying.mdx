@@ -1,0 +1,133 @@
+---
+title: "Production checklist"
+sidebarTitle: "Deploying"
+description: "The eight things that must be true before your users meet Vendo in production, and the one command that checks all eight."
+---
+
+Eight things must be true before your users meet Vendo in production.
+
+## What must be true
+
+Work top to bottom. Each row links to the page that covers it in depth.
+
+<Steps>
+  <Step title="Your Cloud key is set, so every turn has a model.">
+    If not: every message fails before it reaches your API.
+
+    [Model credentials](/production/model-credentials)
+  </Step>
+  <Step title="Every request resolves to one stable user id.">
+    If not: threads, approvals, and audit rows land on the wrong user.
+
+    [Auth](/production/auth)
+  </Step>
+  <Step title="Your Cloud store is on, so threads outlive a restart.">
+    If not: threads, apps, and audit rows vanish when the process restarts.
+
+    [Persistence](/production/persistence)
+  </Step>
+  <Step title="The handler sits at one base path, with streaming intact.">
+    If not: replies arrive in one lump at the end, or not at all.
+
+    [Handler options](/reference/handler-options)
+  </Step>
+  <Step title="Risky tools ask a human before they run.">
+    If not: every call runs on its own, including the ones that move money.
+
+    [In-client venue and approvals](/generated/in-client-venue)
+  </Step>
+  <Step title="Something calls /tick on a clock.">
+    If not: apps that declare `vendo.json` schedules never run their functions.
+
+    [Automations](/capabilities/automations)
+  </Step>
+  <Step title="Every webhook source is registered and verified.">
+    If not: anyone who finds the URL can start a run in your product.
+
+    [Automations](/capabilities/automations)
+  </Step>
+  <Step title="Apps that need a server have a sandbox to run in.">
+    If not: those apps stay stuck at the preview and never boot.
+
+    [Vendo Cloud](/production/vendo-cloud)
+  </Step>
+</Steps>
+
+Checks 1, 3, and 8 come with your Cloud key. The other five are yours to wire.
+
+<Note>
+  The automations your users build fire on Vendo Cloud, not in your process.
+  Check 6 is about app machine schedules, which still need a caller on
+  `POST /api/vendo/tick`.
+</Note>
+
+---
+
+## One command checks all eight
+
+Point `vendo doctor` at the running app. It walks the same list and ends on a
+real model turn.
+
+```bash Terminal highlight={1}
+$ npx vendo doctor --url https://app.example.com/api/vendo
+
+ok: model credential: VENDO_API_KEY (Vendo Cloud)
+ok: the OpenAPI server mount and VENDO_BASE_URL agree on "/api/vendo"
+ok: /status live round-trip (0.23.0, rules)
+ok: execution venue: cloud
+ok: catalog: all 34 tools graded
+ok: present credentials reach the host API
+ok: actAs mint round-trip verified by the composition's own principal resolver
+ok: schedule caller configured (VENDO_TICK_SECRET)
+ok: live model turn answered over VENDO_API_KEY (Vendo Cloud) (1240ms)
+ok: Vendo Cloud key present and well-formed
+```
+
+Exit 0 means a real user would have gotten an answer. A check that fails prints
+`broken:` instead, and a soft one prints `warning:`.
+
+Add `--json` and doctor prints one object with a `checks` array. Each entry
+carries a `status`, and a failing one also carries its `error_code` and a
+`fix_ref` URL, for example
+[`E-TURN-001`](/production/troubleshooting/e-turn-001).
+
+---
+
+## What your process prints at boot
+
+`createVendo` announces the seams it composed, once per process. Read it as
+which implementation won each slot, and what chose it.
+
+```text vendo ready highlight={2,3,4}
+◆  vendo ready
+│  ✓ sandbox   cloud    VENDO_API_KEY
+│  ✓ store     cloud    VENDO_API_KEY
+│  ✓ models    cloud    VENDO_API_KEY (gateway)
+│  ✓ auth      clerk    auth: clerk()
+```
+
+Column two is the venue. Column three is what selected it.
+
+---
+
+## Where to go next
+
+The three pages behind the rows you are most likely to touch.
+
+<CardGroup cols={3}>
+  <Card title="Persistence" href="/production/persistence">
+    Where threads, apps, and audit rows live, and how to erase them.
+
+    `VENDO_API_KEY → hosted store`
+  </Card>
+  <Card title="Auth" href="/production/auth">
+    Who the agent acts as, on present calls and away runs.
+
+    `principal.subject · actAs`
+  </Card>
+  <Card title="Telemetry" href="/production/telemetry">
+    What Vendo collects, what it never sends, and every way to opt out.
+
+    `VENDO_TELEMETRY_DISABLED=1`
+  </Card>
+</CardGroup>
