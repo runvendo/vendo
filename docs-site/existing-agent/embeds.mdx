@@ -64,10 +64,6 @@ None of the three takes config props beyond the one shown. Theme and behavior co
 
 Default to `<VendoToolResult>` wherever you render a finished tool part. Reach for the other two only when you hold a ref that did not come from a live tool call, such as one you stored and want to re-render later.
 
-<Frame caption="One thread, all three outputs: a spoken answer, an app that built inline, and a card waiting on a decision.">
-{/* VISUAL: screenshot of a single host chat thread showing three consecutive assistant turns, showing a plain text answer from a read tool, a Vendo app embed with a finished dashboard, and a Vendo approval card with Approve and Deny buttons. */}
-</Frame>
-
 ## Set up the provider
 
 Wrap your chat once in `VendoProvider`, pointed at the wire route. Auth rides your host session cookie and theme rides the `--vendo-*` tokens, so the embeds render on-brand.

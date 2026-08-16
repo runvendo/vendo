@@ -62,8 +62,6 @@ in the broker, in step 2.
 The key is made once, in the console, under **Keys → Service keys**. It lives
 in the broker, so that is where your backend spends it.
 
-{/* VISUAL: the console's Keys page, Service keys row: key name "maple-backend", masked value ····9f3c1a02, and the New key button */}
-
 No browser to bounce through. Your backend trades that key plus one of *your
 own* user ids for a short-lived token, RFC 8693, at your tenant's `/token`.
 
@@ -120,8 +118,6 @@ them. What is not ordinary is who the calls belong to.
 
 A write still stops at your guard and waits for the person. The audit row names
 the key that acted.
-
-{/* VISUAL: 6-second loop recording, side by side: acme-agent in a terminal asked to raise user_1904's card limit to $5,000, the call crossing to app.maple.com/cards, the approval parking and then being approved in Maple, the monthly limit flipping $2,000 to $5,000, and the audit row reading setCardLimit · svc:9f3c1a02 */}
 
 Words go back to your agent. The change lands in your product, under the user
 you named.

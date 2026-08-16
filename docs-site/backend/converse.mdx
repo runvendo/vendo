@@ -133,7 +133,14 @@ An interactive turn can stop for the human. A `destructive` or `ungraded` call
 raises an approval, the stream carries the card, and the turn waits 90 seconds
 for a decision.
 
-{/* VISUAL: demo-bank (Maple) chat mid-turn, approval card rendered inline in the stream for a destructive transfer, with Approve and Deny buttons visible */}
+<Frame>
+  <img
+    src="/images/maple/panel-approval.png"
+    alt="A Maple turn paused mid-stream on an approval card for a $200 transfer, with Approve and Deny buttons"
+    width="652"
+    height="712"
+  />
+</Frame>
 
 Approve and the same call runs with the same arguments. Deny, or let the wait
 expire, and the model is told so and carries on.

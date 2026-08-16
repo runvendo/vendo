@@ -111,7 +111,5 @@ const result = await client.callTool({
 task.push(result.isError ? result.content[0].text : result.structuredContent);
 ```
 
-{/* VISUAL: terminal recording of acme-agent.mjs running against a live door: the tools/list output, one host tool call, and the in-band approval message coming back */}
-
 What the agent may call, and what happens to a call on the way to your API, is
 in [How the door works](/outside-agents/how-the-door-works).

@@ -15,7 +15,12 @@ The user asks for it in words. There is no separate automations tool and no form
 Vendo builds the app with that trigger attached, and arms it in the same turn. One app can hold several triggers, so a second schedule is added the same way.
 
 <Frame caption="The receipt is a card in the thread, not a config screen.">
-  {/* VISUAL: recording, ~8s, of the demo-bank (Maple) thread. The user types "Every weekday at 8am, email me the invoices that went overdue overnight", and an automation card builds in the reply showing the schedule in plain words ("Weekdays at 8:00 UTC"), the action, and an armed state. */}
+  <img
+    src="/images/maple/automation-card.png"
+    alt="An automation card in a Maple thread reading Every Friday at 5:00 PM, prepare a digest of that week's spending by category, drafted and ready for you to send"
+    width="563"
+    height="120"
+  />
 </Frame>
 
 ## The three triggers
@@ -89,10 +94,6 @@ const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutoma
 - `dryRun` shows the plan a fire would follow, without firing it.
 - `stopRun` cancels a run that is still going. A run that already finished answers with a conflict.
 - `rerun` starts a fresh run of the same automation on the same triggering event. It is the second half of grant-and-retry.
-
-<Frame caption="One row per trigger: when it runs, who it runs as, what it did last.">
-  {/* VISUAL: screenshot of an automations panel built on useAutomations in demo-bank (Maple), showing two automations, their schedules in plain words, the sponsor line, an on/off toggle, and a run history row with a green ok and a red error. */}
-</Frame>
 
 ## Where to go next
 

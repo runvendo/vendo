@@ -10,10 +10,6 @@ Your user asks for something. One `app.tsx` screen comes back, live on real data
 
 The plan's skeleton paints in seconds. The finished screen replaces it in place.
 
-<Frame caption="The screen re-runs on every open, so it opens on today's numbers. There is no snapshot to go stale.">
-  {/* VISUAL: 6-second loop in demo-bank (Maple). A user types "show my spend by category and let me set a budget" into the Vendo panel; a plan skeleton paints in the panel; app.tsx is written over the product with the five save checks turning green; the finished screen replaces the skeleton in place; the user drags the budget slider and presses Set budget; the Monthly budget tile in Maple's own page flips from $1,200 to $1,800. */}
-</Frame>
-
 An app is one file, holding one default-exported React component. Saving it repaints the person's screen.
 
 ```tsx app.tsx focus={4,15}

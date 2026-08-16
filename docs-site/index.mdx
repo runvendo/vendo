@@ -23,10 +23,20 @@ Your agent picks the right setup for your repo. You confirm it.
 
 <Columns cols={2}>
   <Frame caption="Ask, and a working screen shows up in your product.">
-    {/* VISUAL: looping demo-bank recording, ~6s. Maple's Overview page with the Vendo panel open on the right. The user types "Where did my money go?", a getSpending tool call resolves, and a by-category chart renders inside the panel in Maple's brand. */}
+    <img
+      src="/images/maple/hero-generated-card.png"
+      alt="Maple's overview page with a generated spend by category screen sitting in the grid beside the balance card"
+      width="1280"
+      height="900"
+    />
   </Frame>
   <Frame caption="Every action runs through your own API, with approval and an audit log.">
-    {/* VISUAL: looping demo-bank recording, ~6s. Maple's Cards page. The user types "Raise my card limit to $5,000", an approval card appears with the card, the new limit, and Approve/Deny, the user approves, setCardLimit runs, and the limit tile flips from $2,000 to $5,000. */}
+    <img
+      src="/images/maple/hero-approval.png"
+      alt="Maple's payments page with the panel open on an approval card for a $200 transfer, showing Approve and Deny"
+      width="1280"
+      height="900"
+    />
   </Frame>
 </Columns>
 
@@ -70,8 +80,6 @@ No agent handy? Do it by hand. Three steps, about five minutes.
 
     <CardGroup cols={3}>
       <Card title="In your product" href="/product/quickstart">
-        {/* VISUAL: still from the demo-bank product recording. Maple's Overview page with the Vendo panel open and a by-category chart rendered inside it. */}
-
         Vendo runs the loop and renders screens in your brand.
 
         `<VendoProvider>{children}`
@@ -79,8 +87,6 @@ No agent handy? Do it by hand. Three steps, about five minutes.
         Quickstart →
       </Card>
       <Card title="In your existing agent" href="/existing-agent/quickstart">
-        {/* VISUAL: still of a host's own chat UI where a Vendo tool result renders as an overdue-invoices card inside the host's own message bubble. */}
-
         Keep your loop. Vendo adds tools and renders the result.
 
         `...(await vendoTools(vendo, { principal }))`
@@ -88,8 +94,6 @@ No agent handy? Do it by hand. Three steps, about five minutes.
         Quickstart →
       </Card>
       <Card title="From outside agents" href="/outside-agents/quickstart">
-        {/* VISUAL: still of a developer's own agent (Acme Agent) connected to Maple over the door, showing a "$400 transfer" approval card with From, To, and Approve/Deny. */}
-
         Your own agent, acting as the signed-in user.
 
         `createVendo({ mcp: true, oauth })`

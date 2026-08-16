@@ -31,7 +31,14 @@ screen: https://maple.example.com/transfers
     - button "Review transfer" [disabled]
 ```
 
-{/* VISUAL: demo-bank (Maple) on the Transfers page with the Vendo panel open. The user types "move $200 to savings" and the agent acts on the account already selected on the page, with no clarifying question. */}
+<Frame>
+  <img
+    src="/images/maple/hero-approval.png"
+    alt="Maple's payments page with the panel open, moving $200 to savings without asking which accounts to use"
+    width="1280"
+    height="900"
+  />
+</Frame>
 
 `[User]` is your server's assertion about the person, refreshed every request.
 `[Situation]` is their screen right now, and it lives for one turn only.

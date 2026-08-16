@@ -51,8 +51,6 @@ import { Remixable } from "@vendoai/ui/chrome";
 
 At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hover into a **✦ Remix** pill, and pressing it copies the captured source into the user's own fork with no model call.
 
-{/* VISUAL: The NetWorthCard in demo-bank (Maple), three states side by side: the muted ✦ mark at rest, the ✦ Remix pill on hover, and the same card after remixing with the management popover open showing status, open in panel, and revert. */}
-
 The fork renders in place, because the wrapper is the mount boundary. The page morphs for that user alone.
 
 Forking is a user gesture the engine executes, so the model never decides to fork. The route dedupes per user and per component, so a double press can never mint a duplicate.
@@ -142,8 +140,6 @@ Update the component, run `vendo sync`, and the new baseline overwrites the old 
 </Frame>
 
 Vendo says so everywhere the fork is opened or edited. `open()` attaches a server-authoritative `seedDrift` to the payload, edit results carry the same field, and the renderer shows an in-surface notice above the fork.
-
-{/* VISUAL: The demo-bank surface showing a drifted fork with the in-surface drift notice above it, reading that the host updated the component and offering the rebase ask. */}
 
 **Reseed** rebuilds the fork from the new baseline by replaying the one instruction the seed recorded.
 

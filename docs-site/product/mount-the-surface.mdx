@@ -87,7 +87,14 @@ and mark.
 />
 ```
 
-{/* VISUAL: demo-bank at rest with the branded "Ask Maple" launcher pill in the bottom-right corner, page otherwise untouched. */}
+<Frame>
+  <img
+    src="/images/maple/launcher-at-rest.png"
+    alt="The Maple overview page at rest with the branded Ask Maple launcher pill in the bottom right corner"
+    width="1280"
+    height="400"
+  />
+</Frame>
 
 `position` takes any viewport corner. `offset` nudges the whole cluster inward
 when your own UI already lives in that corner, and `launcher="none"` hides the
@@ -107,8 +114,6 @@ full height and your page reflows beside it, staying visible and clickable.
 
 `dockWidth` is also the amount the page reflows by, so the two can never
 disagree. It defaults to 420.
-
-{/* VISUAL: the same demo-bank page in both postures, side by side: centered panel over a scrim, and the docked panel with the page reflowed beside it. */}
 
 ### Conversations survive
 
@@ -157,7 +162,14 @@ steals a keystroke from a focused input of yours. Pass a chord
 (`hotkey={{ key: "j", meta: true }}`), a matcher function, or `false` to wire
 your own.
 
-{/* VISUAL: demo-bank with the compact ⌘K panel open: greeting, command chips, composer. */}
+<Frame>
+  <img
+    src="/images/maple/panel-compact.png"
+    alt="The compact panel open over Maple, showing the greeting, five suggestion cards, and the composer"
+    width="652"
+    height="532"
+  />
+</Frame>
 
 ## Slots
 
@@ -187,7 +199,24 @@ prefill the composer, and a button that opens the panel. Filled, the view
 mounts in place. If that view throws, your own `children` come back, never a
 blank hole.
 
-{/* VISUAL: the empty slot invitation in the Maple overview grid, then the same slot holding a generated spend-by-category card. */}
+<Columns cols={2}>
+  <Frame>
+    <img
+      src="/images/maple/slot-empty.png"
+      alt="An empty slot in the Maple overview grid, showing a skeleton, three prompt chips, and a button that opens the panel"
+      width="500"
+      height="390"
+    />
+  </Frame>
+  <Frame>
+    <img
+      src="/images/maple/slot-filled.png"
+      alt="The same Maple slot holding a generated spend by category view with a donut chart and a category list"
+      width="496"
+      height="671"
+    />
+  </Frame>
+</Columns>
 
 Every mounted slot reports itself to the server, which is how the panel knows
 which places exist. `label` is what a person reads when they pick one, and it

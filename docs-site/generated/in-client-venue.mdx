@@ -33,7 +33,24 @@ A screen runs in a sealed VM with no DOM, no network, and no clock. An approved 
   </svg>
 </Frame>
 
-{/* VISUAL: Side by side in demo-bank (Maple), same app, same slot. Left: the unapproved state, showing the contained "Not approved for this page" notice where the component would be. Right: the approved state, with the real component rendered natively in the page. */}
+<Columns cols={2}>
+  <Frame>
+    <img
+      src="/images/maple/slot-unapproved.png"
+      alt="The same Maple slot with no stored approval: a contained notice stands where the generated component would be"
+      width="496"
+      height="386"
+    />
+  </Frame>
+  <Frame>
+    <img
+      src="/images/maple/slot-filled.png"
+      alt="The same Maple slot once an approval pins the version: the generated component renders natively in the page"
+      width="496"
+      height="671"
+    />
+  </Frame>
+</Columns>
 
 ## Approvals pin a version
 
@@ -64,8 +81,6 @@ const diff = await vendo.apps.inClient.shipDiff(appId, ctx);
 ```
 
 A baseline that has since moved is flagged `drifted`. The diff still returns and approving is still possible.
-
-{/* VISUAL: The Vendo Cloud console's review screen for a demo-bank remix, showing the ship-diff: the fork's code on the right, the captured host baseline on the left, with the version hash and the approve control visible. */}
 
 ## Minting an approval
 

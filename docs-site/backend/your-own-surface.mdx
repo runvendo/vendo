@@ -8,8 +8,6 @@ A long piece of work with a progress view is still `run()`. The `AgentRun` is
 awaitable and iterable: `run.events` is the live feed, and awaiting the same
 object gives you the report at the end.
 
-{/* VISUAL: demo-bank (Maple) reports screen driven by the SSE feed, progress bar part-filled, two steps ticked, one in flight, all in Maple's own chrome with no Vendo UI */}
-
 <Note>
   Vendo's chat UI is not handed over here, deliberately: this lane gives you an
   event stream and a report, and the surface is yours to build. For Vendo's own

@@ -57,10 +57,6 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 
 `<VendoToolResult>` handles plain data, app refs, and approval refs, so you never branch on the envelope yourself. Full contract: [Embeds in your chat](/existing-agent/embeds).
 
-<Frame caption="An app ref lands mid-thread and builds where the tool part was.">
-{/* VISUAL: screenshot of the examples/ai-sdk-agent chat after "Make me a dashboard comparing the weather in Paris, London and Tokyo": dynamic-tool beat above a Vendo app embed rendering the finished dashboard inline. */}
-</Frame>
-
 ## One Next.js line
 
 `serverExternalPackages` keeps Vendo's native and wasm dependencies out of the bundler.
