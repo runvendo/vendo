@@ -25,6 +25,7 @@ import { storeFiles, storeFilesForDb } from "./files-store.js";
 import { collectionFootprints } from "./footprint.js";
 import { harnessStateKey } from "./harness-state.js";
 import { appendThreadMessages, putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
+import { turnLoadOverOps } from "./helpers/turn.js";
 import { cursorMs, decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import { storeRetention } from "./retention.js";
@@ -267,9 +268,17 @@ async function usageTally(db: Db, query: UsageTallyQuery): Promise<UsageTallyRow
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+/** A transcript row's key: the message's own id where it carries one, otherwise
+ *  a minted one. Shared by every write that lands a message, so a batch and a
+ *  single put key the same message the same way. */
+const rowIdOf = (message: unknown): string => {
+  const given = (message as { id?: unknown } | null)?.id;
+  return typeof given === "string" && given !== "" ? given : `msg_${globalThis.crypto.randomUUID()}`;
+};
+
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 48 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 50 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -377,7 +386,21 @@ export function createStoreOps(
     );
   };
 
-  return {
+  /** The batch append minus the transaction it runs in, so `turn.commit` lands
+   *  the same messages under ITS one transaction. Positions are assigned by
+   *  appendThreadMessages' own statement, under the thread row it has already
+   *  taken — reading the tail out here, before that lock, is what let two
+   *  concurrent turns claim one seq. */
+  const appendBatch = async (
+    d: Db,
+    input: { threadId: string; subject: string; messages: unknown[]; title?: string },
+  ): Promise<{ revision: string; count: number }> =>
+    await appendThreadMessages(d, {
+      ...input,
+      messages: input.messages.map((message) => ({ id: rowIdOf(message), message })),
+    });
+
+  const ops: StoreOps = {
     // -----------------------------------------------------------------------
     // engine — seven verbs onto the routed doors, with the per-collection
     // policy living there; the ONE addition is the allowlist gate, which is why
@@ -528,10 +551,7 @@ export function createStoreOps(
         });
       },
       async putMessage(threadId, message) {
-        const given = (message as { id?: unknown } | null)?.id;
-        const rowId = typeof given === "string" && given !== ""
-          ? given
-          : `msg_${globalThis.crypto.randomUUID()}`;
+        const rowId = rowIdOf(message);
         return await db.transaction(async (q) => {
           const now = new Date().toISOString();
           // The thread row FIRST: it is what serialises this write's position
@@ -558,17 +578,10 @@ export function createStoreOps(
        *  no thread download precedes the write, and the answer is the thread's
        *  new revision plus the row count — never the transcript. */
       async appendMessages(threadId, subject, messages, opts) {
-        const rowIdOf = (message: unknown): string => {
-          const given = (message as { id?: unknown } | null)?.id;
-          return typeof given === "string" && given !== "" ? given : `msg_${globalThis.crypto.randomUUID()}`;
-        };
-        // Positions are assigned by appendThreadMessages' own statement, under
-        // the thread row it has already taken — reading the tail out here,
-        // before that lock, is what let two concurrent turns claim one seq.
-        return await db.transaction((q) => appendThreadMessages(txDb(q), {
+        return await db.transaction((q) => appendBatch(txDb(q), {
           threadId,
           subject,
-          messages: messages.map((message) => ({ id: rowIdOf(message), message })),
+          messages,
           ...(opts?.title === undefined ? {} : { title: opts.title }),
         }));
       },
@@ -971,17 +984,50 @@ export function createStoreOps(
       },
     },
 
+    // -----------------------------------------------------------------------
+    // turn — the two envelopes, each as the ops it bundles and nothing more.
+    // The reads fan out (they are the same reads, in one call instead of five);
+    // the writes share ONE transaction, because a turn that landed its messages
+    // and lost its harness state is a turn the next one resumes wrong.
+    // -----------------------------------------------------------------------
+    turn: {
+      load: (request) => turnLoadOverOps(ops, request),
+      async commit(request) {
+        const { audit, harness } = request;
+        if (audit !== undefined) assertEngineCollection(audit.collection);
+        return await db.transaction(async (q) => {
+          const tdb = txDb(q);
+          // The thread row FIRST, the order every transcript writer takes its
+          // locks in (see touchThread).
+          const messages = await appendBatch(tdb, request.messages);
+          if (harness !== undefined) {
+            await putStateRow(tdb, {
+              appId: harness.appId,
+              subject: harness.subject,
+              data: requireJson(harness.state, "harness state"),
+            });
+          }
+          return {
+            messages,
+            ...(audit === undefined ? {} : { audit: await recordsDoor(tdb, audit.collection).put(audit.record) }),
+          };
+        });
+      },
+    },
+
     async footprint() {
       return await collectionFootprints(db);
     },
 
     async status() {
-      // All 48 of STORE_WIRE_PATHS: `ops` is a LEVEL over that list's declared
+      // All 50 of STORE_WIRE_PATHS: `ops` is a LEVEL over that list's declared
       // order, and this engine serves the whole of it — retention, the audit
-      // tally, and now the usage family that rides the tail behind them. A
-      // number this engine cannot back with an op is the one thing the level
-      // must never report, so it moves WITH the object and never ahead of it.
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 48 };
+      // tally, usage, and now the turn envelopes that ride the tail behind
+      // them. A number this engine cannot back with an op is the one thing the
+      // level must never report, so it moves WITH the object and never ahead of
+      // it.
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 50 };
     },
   };
+  return ops;
 }

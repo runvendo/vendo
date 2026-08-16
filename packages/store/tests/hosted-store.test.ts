@@ -1478,13 +1478,13 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.records).toBe("function");
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
-    // Eleven families plus the two bare verbs (`footprint`, `status`) — the
-    // generic records family is gone from the op surface, and `retention` is
-    // present because the CLIENT serves the whole protocol, whatever a given
-    // mount has.
+    // Twelve families plus the two bare verbs (`footprint`, `status`) — the
+    // generic records family is gone from the op surface, and `retention` and
+    // `turn` are present because the CLIENT serves the whole protocol, whatever
+    // a given mount has (`turn` asks the mount before it sends).
     expect(Object.keys(store.ops).sort()).toEqual([
       "appData", "audit", "blobs", "engine", "footprint", "harness", "lifecycle",
-      "retention", "secrets", "status", "transcripts", "usage", "workspace",
+      "retention", "secrets", "status", "transcripts", "turn", "usage", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the
