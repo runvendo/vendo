@@ -145,6 +145,11 @@ const RETENTION_ABSENT = "this mount omits the retention family (optional — an
 /** ...and for the meter, optional on the same rule. */
 const USAGE_ABSENT = "this mount omits the usage family (optional — a store with nowhere to meter leaves it off, and a limits policy is refused at composition rather than enforced against a meter that reads zero)";
 
+/** ...and for the one verb INSIDE the meter that is optional on its own, the
+    same way `RecordStore.claim` is: an adapter that cannot reserve says so by
+    omitting it, and the limiter falls back to count-then-record. */
+const USAGE_CLAIM_ABSENT = "this mount omits usage.claim (optional — an adapter that cannot reserve leaves it off, and the limiter falls back to count-then-record)";
+
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
     seeds one first, with the shape the typed `vendo_apps` door accepts. */
@@ -2306,6 +2311,113 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           [{ subject: "conf_tally_b", action: "message", count: 1 }],
           "narrowing to one subject did not narrow the tally",
         );
+      }),
+
+      /** `claim`'s sequential half — what it admits and what it refuses when
+          nothing is racing. The refusal is the whole verb: a verdict reached
+          against a count that has since moved was decided against a meter that
+          no longer exists, and admitting it anyway is the overrun. */
+      opsCase(opts, "usage.claim records only while the counts the policy read still hold", async (ops) => {
+        const usage = ops.usage;
+        if (usage === undefined) return omitted(USAGE_ABSENT);
+        const claim = usage.claim;
+        if (claim === undefined) return omitted(USAGE_CLAIM_ABSENT);
+        const since = new Date(Date.UTC(2026, 0, 1));
+        const at = new Date(Date.UTC(2026, 0, 2));
+        const query: UsageCountQuery = { subject: "conf_claim", action: "message", since };
+        const counted = async (): Promise<number> => await usage.count(query);
+
+        // A policy that never read the meter has no race to lose, so an empty
+        // observation set is an unconditional write and never a refusal.
+        assert(await claim({ subject: "conf_claim", action: "message", at }, []) === true,
+          "a claim observing nothing was refused, though it staked nothing to be wrong about");
+        assert(await counted() === 1, `an admitted claim must land its event: counted ${await counted()}`);
+
+        // The honest case: the policy read 1, the meter still reads 1.
+        assert(await claim({ subject: "conf_claim", action: "message", at }, [{ query, count: 1 }]) === true,
+          "a claim whose observed count still holds was refused");
+        assert(await counted() === 2, `an admitted claim must land its event: counted ${await counted()}`);
+
+        // The stale case: the policy read 1, the meter has since moved to 2.
+        assert(await claim({ subject: "conf_claim", action: "message", at }, [{ query, count: 1 }]) === false,
+          "a claim against a count that had moved was ADMITTED — this is the overrun the verb exists to stop");
+        assert(await counted() === 2, `a refused claim must write NOTHING: counted ${await counted()}`);
+
+        // Every observation has to hold, not just the first: a policy that read
+        // two windows was judged on both.
+        const other: UsageCountQuery = { subject: "conf_claim", action: "generation", since };
+        assert(
+          await claim({ subject: "conf_claim", action: "message", at }, [{ query, count: 2 }, { query: other, count: 9 }]) === false,
+          "a claim was admitted on its FIRST observation alone, ignoring a second that no longer held",
+        );
+        assert(await counted() === 2, `a refused claim must write NOTHING: counted ${await counted()}`);
+      }),
+
+      /** The claim, RACED — the shape it exists for, and the one `count` +
+          `record` can never pass. Two requests for one subject read an empty
+          meter at the same instant, a cap of one admits both, and the meter
+          must still end at ONE. Which caller wins is the scheduler's business;
+          that exactly one does is the contract.
+
+          The pool leg rides along because it is the hole a check over the
+          OBSERVED targets alone leaves open: the second caller is a different
+          person who never counts the pool at all, so an implementation that
+          serializes on what it read — rather than on what it also WRITES —
+          lets its row into the bucket the first caller was judged against. */
+      opsCase(opts, "usage.claim under a real race admits exactly one of two callers reading one meter", async (ops) => {
+        const usage = ops.usage;
+        if (usage === undefined) return omitted(USAGE_ABSENT);
+        const claim = usage.claim;
+        if (claim === undefined) return omitted(USAGE_CLAIM_ABSENT);
+        const since = new Date(Date.UTC(2026, 0, 1));
+        const at = new Date(Date.UTC(2026, 0, 2));
+
+        // One subject, cap of one: both callers observed the empty meter.
+        const mine: UsageCountQuery = { subject: "conf_claim_race", action: "message", since };
+        const settled = await race(2, () =>
+          claim({ subject: "conf_claim_race", action: "message", at }, [{ query: mine, count: 0 }]));
+        for (const one of settled) {
+          assert(one.status === "fulfilled", `a raced claim failed instead of losing: ${String(refusalCode(one))}`);
+        }
+        const admitted = won(settled).filter((one) => one).length;
+        assert(admitted === 1, `exactly one of two simultaneous claims on a cap of one may be admitted, ${admitted} were`);
+        const held = await usage.count(mine);
+        assert(held === 1, `the meter must hold exactly the one admitted action, it holds ${held}`);
+
+        // The write-target leg, SEQUENCED rather than raced. The contender is a
+        // DIFFERENT person who never counts the pool — it only draws the bucket
+        // down — so an implementation that re-checks the OBSERVED targets and
+        // nothing else never notices its row, and admits an observer that was
+        // judged on a bucket the contender has since filled.
+        //
+        // Sequenced because the raced form of this has no sound assertion.
+        // Fire the two at once and BOTH orders are legal: contender-first
+        // refuses the observer (pool 1, one admission), observer-first admits
+        // both (pool 2, two admissions) — and the second is also what an
+        // implementation with no lock at all produces, so no post-hoc count
+        // tells the two apart. That is the boundary of this case, and it is a
+        // real one: it pins that the re-check SPANS the pool, and it cannot pin
+        // that the implementation also serializes on what it WRITES. The lock
+        // covering the event's own targets is asserted by construction in the
+        // backend and by nothing here — PGlite has one connection and the
+        // memory reference one thread, so neither can exhibit the interleaving
+        // that would catch its absence.
+        const pool: UsageCountQuery = { poolKey: "conf_claim_pool", action: "generation", since };
+        assert(
+          await claim(
+            { subject: "conf_claim_pool_other", action: "generation", at, poolKeys: ["conf_claim_pool"] },
+            [{ query: { subject: "conf_claim_pool_other", action: "generation", since }, count: 0 }],
+          ) === true,
+          "the contender staked only its own empty count and was refused anyway",
+        );
+        assert(
+          await claim(
+            { subject: "conf_claim_pool_mine", action: "generation", at, poolKeys: ["conf_claim_pool"] },
+            [{ query: pool, count: 0 }],
+          ) === false,
+          "a claim was admitted on a pool count of zero that ANOTHER subject's action had already moved to one",
+        );
+        assert(await usage.count(pool) === 1, "the refused pool claim wrote its event anyway");
       }),
 
       // =====================================================================

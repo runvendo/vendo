@@ -830,6 +830,15 @@ function storeWireClient(
         const payload = await post("usage.tally", P["usage.tally"], { ...query, ...bounds(query) });
         return field<UsageTallyRow[]>(payload, "rows", "invalid usage tally", Array.isArray);
       },
+      // `claim` is DELIBERATELY absent, on the rule that says an adapter which
+      // cannot reserve omits it: the reservation is one indivisible check and
+      // write, and this client holds no handle it could make one on — the
+      // atomicity would have to live in the mount, behind a wire path that does
+      // not exist yet. A client that posted to it anyway would be claiming a
+      // guarantee nothing on the other end makes, which is worse than the
+      // bounded overrun the fallback keeps. Cloud stays on check-then-record
+      // until the mount serves the verb; the limiter reads its absence and says
+      // so in one branch.
     },
     // `get` is the one read in this protocol that answers with a CREDENTIAL. The
     // value rides the body in the clear (TLS is the transport's job) and the
