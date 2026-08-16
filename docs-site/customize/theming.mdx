@@ -145,3 +145,112 @@ Theme is how it looks. These three are what it knows.
     Answers from your docs, with citations.
   </Card>
 </Columns>
+
+## Token reference
+
+Every value the five groups expand into. Open a panel when you need an exact
+number.
+
+<AccordionGroup>
+  <Accordion title="Density variables">
+
+`density: "compact"` tightens control sizes, padding, and gaps, and
+`comfortable` relaxes them. Every compact value is less than or equal to its
+comfortable counterpart.
+
+| Variable | `compact` | `comfortable` |
+| --- | --- | --- |
+| `--vendo-density` | `compact` | `comfortable` |
+| `--vendo-density-control-height` | `32px` | `38px` |
+| `--vendo-density-control-padding` | `6px 10px` | `9px 12px` |
+| `--vendo-density-card-padding` | `12px` | `16px` |
+| `--vendo-density-content-gap` | `7px` | `10px` |
+| `--vendo-density-inline-gap` | `5px` | `7px` |
+| `--vendo-density-field-gap` | `4px` | `6px` |
+| `--vendo-density-table-padding` | `7px 10px` | `10px 12px` |
+| `--vendo-density-badge-height` | `20px` | `24px` |
+| `--vendo-density-badge-padding` | `3px 7px` | `5px 9px` |
+| `--vendo-density-stat-padding` | `9px 11px` | `12px 14px` |
+| `--vendo-density-tabs-padding` | `3px` | `4px` |
+| `--vendo-density-tab-height` | `26px` | `30px` |
+| `--vendo-density-tab-padding` | `4px 8px` | `6px 10px` |
+
+A Kit container takes its own `density` adjective and re-emits this same
+ladder on its own element. That is how a compact table sits inside a
+comfortable page.
+
+  </Accordion>
+  <Accordion title="Color scheme">
+
+Vendo derives `color-scheme` from the WCAG relative luminance of
+`colors.background` and publishes it as `--vendo-color-scheme`. Backgrounds
+below `0.179` resolve to `dark`, and everything else resolves to `light`.
+
+| Variable | Light background | Dark background |
+| --- | --- | --- |
+| `--vendo-color-scheme` | `light` | `dark` |
+
+A color the parser cannot read resolves to `light`. Only `#rgb`, `#rgba`,
+`#rrggbb`, and `#rrggbbaa` are parsed.
+
+The chrome's `light-dark()` branches key off this variable, so a dark-brand
+host gets dark chrome with no extra configuration. Read it from your own
+styles to make a custom surface track the same flip:
+
+```css
+.my-card {
+  color-scheme: var(--vendo-color-scheme);
+}
+```
+
+  </Accordion>
+  <Accordion title="Motion variables">
+
+`motion: "reduced"` collapses the duration to `0ms`. The easing curve does not
+change.
+
+| Variable | `full` | `reduced` |
+| --- | --- | --- |
+| `--vendo-motion` | `full` | `reduced` |
+| `--vendo-motion-duration` | `160ms` | `0ms` |
+| `--vendo-motion-easing` | `cubic-bezier(0.2, 0.8, 0.2, 1)` | `cubic-bezier(0.2, 0.8, 0.2, 1)` |
+
+Both defaults are overridable. Set `motionDuration` or `motionEasing` on the
+theme and `full` motion uses your values instead, while `reduced` still pins
+the duration to `0ms`.
+
+  </Accordion>
+  <Accordion title="Mobile takeover">
+
+The overlay panel goes full-bleed at viewports 767px wide and narrower. It
+covers the host layout rather than docking inside a squeezed column.
+
+The panel portals to `document.body`, so a transformed or filtered host
+ancestor cannot confine it. It pads all four edges with the iOS safe-area
+insets.
+
+Touch ergonomics are keyed to small viewports **or** coarse pointers, so a
+tablet in a wide orientation still gets honest targets. The composer and the
+palette search render at 16px to stop iOS auto-zoom, and icon buttons and the
+overlay close control expand to 44px.
+
+Desktop chrome is unchanged, and the palette keeps its own presentation at
+every width.
+
+While the takeover is open, the panel stamps a `--fl-kb-inset` variable
+derived from `visualViewport` so the composer lifts above the on-screen
+keyboard. Read it if you render a custom surface inside one:
+
+```css
+.my-mobile-footer {
+  padding-bottom: calc(
+    env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)
+  );
+}
+```
+
+Keep the `0px` fallback. Outside the takeover the variable is not set at all,
+and with the takeover open but no keyboard showing it is `0px`.
+
+  </Accordion>
+</AccordionGroup>
