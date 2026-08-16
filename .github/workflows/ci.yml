@@ -3,12 +3,22 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue evaluates the REQUIRED checks on this event. Every workflow
+  # that provides one of them (ci, integration, conformance, audit) must list
+  # merge_group or the queue waits forever for a check that will never report —
+  # including on the PR that would fix it. All four live in this file and this
+  # is the only workflow that needs it; the other three (mintlify-automerge,
+  # release, version-packages) provide no required check.
+  merge_group:
 
 permissions:
   contents: read
 
 # A new push to a PR supersedes the previous run; cancel it. Pushes to main
-# never cancel each other (every main commit keeps its full record).
+# never cancel each other (every main commit keeps its full record), and a
+# merge_group run is never cancelled either — github.ref is the queue's own
+# gh-readonly-queue branch, unique per entry, and cancelling one fails its
+# queue entry.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -16,6 +26,7 @@ concurrency:
 # The old `ci` job did install → build → test:coverage (24 min) → typecheck →
 # lint on ONE runner, ~30 min wall. It is now, all fanned out over the shared
 # turbo remote cache so the fan-out does not multiply the build:
+#   cone              computes the affected cone once, for everything below
 #   typecheck-lint    the non-test half
 #   test-shards       9 intra-package vitest shards for the big three
 #                     (vendo x4, store x3, ui x2 — 40 of the 55 serial minutes)
@@ -27,6 +38,28 @@ concurrency:
 # Required checks on main are: ci, integration, conformance, audit.
 # Renaming any of those job names breaks merges.
 #
+# WHAT RUNS WHERE (2026-08-16):
+#   pull_request  the affected cone only — turbo's --affected against the PR's
+#                 base branch. A big-three package's shards run only when that
+#                 package is in the cone; coverage-merge does not run at all,
+#                 because a coverage floor measured against a cone is not the
+#                 floor. Cheap signal, fast merges.
+#   merge_group   the same cone, computed against the queue's base branch.
+#   push to main  NO filter. Every shard, every package, plus coverage-merge
+#                 with the real per-package floors. This is the backstop that
+#                 makes cone-only PR CI safe, and the workflow going red on
+#                 main is the whole notification — there is no pager.
+#
+# The gap that backstop is covering, stated plainly: the cone is turbo's
+# dependency graph, and inputs outside the graph are invisible to it.
+# docs-site/ is not a workspace package, so a docs-only change puts nothing in
+# the cone — yet @vendoai/vendo's docs-rot suite readFile()s docs-site/*.mdx.
+# That exact hole merged green once already (#1139) back when the shards had an
+# --affected skip, which is why the skip was removed. It is deliberately back,
+# with the difference that main now runs the full suite on every push instead
+# of only at release time, so the blast radius is one red commit on main rather
+# than hours of invisible rot.
+#
 # No browser runs here (Yousef's call, 2026-08-06): headless CI mis-resolves
 # :focus-visible and light-dark(), so the Playwright suites were a slow gate
 # that could not judge the thing they were watching. They stay the LOCAL
@@ -34,11 +67,81 @@ concurrency:
 # `pnpm --filter @vendoai-fixtures/integration-browser test:browser` — under
 # the UI-LAW browser-verification step.
 jobs:
+  # ONE place computes the cone, because test-shards has to know which of the
+  # big three are in it BEFORE its matrix expands — a job-level `if:` cannot see
+  # the `matrix` context, so the gate has to arrive as a `needs` output.
+  #
+  # Outputs, consumed verbatim by every job below:
+  #   base    the git ref to diff against, or "" on a push to main
+  #   filter  "--affected", or "" on a push to main (the full suite)
+  #   big3    space-separated subset of "vendo store ui" whose shards should run
+  #
+  # Fails OPEN. If the probe itself breaks, filter is "" and big3 is all three,
+  # i.e. the full suite runs. A broken probe must never be the reason a suite
+  # did not run — that is the failure mode this whole design is guarding.
+  cone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      base: ${{ steps.resolve.outputs.base }}
+      filter: ${{ steps.resolve.outputs.filter }}
+      big3: ${{ steps.resolve.outputs.big3 }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # turbo --affected diffs against the base branch
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve the affected cone
+        id: resolve
+        # Via env, not inline ${{ }}: a branch name is allowed to contain shell
+        # metacharacters, and this string would otherwise be pasted into the
+        # script body.
+        env:
+          # pull_request hands the base as `main`; merge_group as
+          # `refs/heads/main`; a push to main hands neither.
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+        run: |
+          set -uo pipefail
+          full() {
+            { echo "base="; echo "filter="; echo "big3=vendo store ui"; } >> "$GITHUB_OUTPUT"
+          }
+          if [ -z "$BASE_REF" ]; then
+            echo "no base ref (push to main) — full suite, no cone"
+            full; exit 0
+          fi
+          base="origin/${BASE_REF#refs/heads/}"
+          echo "cone base: $base"
+          if ! TURBO_SCM_BASE="$base" pnpm turbo ls --affected --output=json > /tmp/affected.json; then
+            echo "::warning::affected probe failed — falling open to the full suite"
+            full; exit 0
+          fi
+          jq -r '.packages.items[].name' /tmp/affected.json | sort > /tmp/affected-names.txt
+          echo "::group::affected packages ($(wc -l < /tmp/affected-names.txt))"
+          cat /tmp/affected-names.txt
+          echo "::endgroup::"
+          big3=""
+          for p in vendo store ui; do
+            if grep -qx "@vendoai/$p" /tmp/affected-names.txt; then big3="$big3 $p"; fi
+          done
+          echo "big three in cone:${big3:- (none)}"
+          { echo "base=$base"; echo "filter=--affected"; echo "big3=$big3"; } >> "$GITHUB_OUTPUT"
+
   typecheck-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: cone
+    env:
+      TURBO_SCM_BASE: ${{ needs.cone.outputs.base }}
+      CONE: ${{ needs.cone.outputs.filter }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # turbo --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -47,9 +150,21 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm lint
+      # The root `pnpm build` / `typecheck` / `lint` scripts unrolled, so the
+      # per-package half can take $CONE while the repo-wide half cannot.
+      # $CONE is "" on a push to main, which is exactly those scripts again.
+      - run: pnpm turbo run build $CONE
+      - run: pnpm turbo run typecheck $CONE
+      # Neither guard is a turbo task and neither is package-scoped — they walk
+      # the whole tree in seconds. They always run.
+      - run: node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs
+      # `//#lint:packages` is a ROOT task (one eslint over all of packages/), so
+      # it has no place in a package cone. Run unfiltered: turbo caches it on
+      # its own declared inputs, so an untouched packages/ replays in seconds,
+      # and a PR that edits only eslint.blocking.config.mjs — which puts nothing
+      # in the cone — still gets linted.
+      - run: pnpm turbo run lint:packages
+      - run: pnpm turbo run lint $CONE
 
   # The big three, split file-wise inside each package. Coverage is collected
   # per shard as a BLOB report and merged in coverage-merge; the per-shard runs
@@ -62,6 +177,7 @@ jobs:
   test-shards:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: cone
     services:
       postgres:
         image: postgres:16
@@ -84,54 +200,73 @@ jobs:
           # 3 the full-stack suites clustered on shard 2 (7m25s vs its
           # siblings' ~4m45s — measured on the #849 proof run), making it tie
           # integration as the whole run's critical path.
-          - { name: vendo-1, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "1/4" }
-          - { name: vendo-2, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "2/4" }
-          - { name: vendo-3, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "3/4" }
-          - { name: vendo-4, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "4/4" }
-          - { name: store-1, pkg: "@vendoai/store", dir: packages/store, shard: "1/3", tsc: "true" }
-          - { name: store-2, pkg: "@vendoai/store", dir: packages/store, shard: "2/3", tsc: "true" }
-          - { name: store-3, pkg: "@vendoai/store", dir: packages/store, shard: "3/3", tsc: "true" }
-          - { name: ui-1, pkg: "@vendoai/ui", dir: packages/ui, shard: "1/2" }
-          - { name: ui-2, pkg: "@vendoai/ui", dir: packages/ui, shard: "2/2" }
+          - { name: vendo-1, key: vendo, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "1/4" }
+          - { name: vendo-2, key: vendo, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "2/4" }
+          - { name: vendo-3, key: vendo, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "3/4" }
+          - { name: vendo-4, key: vendo, pkg: "@vendoai/vendo", dir: packages/vendo, shard: "4/4" }
+          - { name: store-1, key: store, pkg: "@vendoai/store", dir: packages/store, shard: "1/3", tsc: "true" }
+          - { name: store-2, key: store, pkg: "@vendoai/store", dir: packages/store, shard: "2/3", tsc: "true" }
+          - { name: store-3, key: store, pkg: "@vendoai/store", dir: packages/store, shard: "3/3", tsc: "true" }
+          - { name: ui-1, key: ui, pkg: "@vendoai/ui", dir: packages/ui, shard: "1/2" }
+          - { name: ui-2, key: ui, pkg: "@vendoai/ui", dir: packages/ui, shard: "2/2" }
     env:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
       VITEST_MIN_FORKS: "1"
       VITEST_MAX_FORKS: "2"
       VITEST_MIN_THREADS: "1"
       VITEST_MAX_THREADS: "2"
+      # Is this shard's package in the cone? On a push to main `big3` is all
+      # three, so every shard runs.
+      #
+      # The gate is on the STEPS, not on the job. A job-level `if:` cannot read
+      # `matrix`, so it could only ever be all-nine-or-nothing; and the shard
+      # jobs must keep reporting either way — a job skipped by an `if:` still
+      # posts a conclusion, a job that was never generated posts nothing, and
+      # the difference between those two is whether anything can merge. So the
+      # matrix stays whole and each step opts out. A shard outside the cone
+      # burns a few seconds of runner and reports green, having honestly run
+      # nothing.
+      RUN: ${{ contains(needs.cone.outputs.big3, matrix.key) }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - if: env.RUN == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - if: env.RUN == 'true'
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - if: env.RUN == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - name: Turbo remote cache (GitHub-cache backed)
+        if: env.RUN == 'true'
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-      - run: pnpm install --frozen-lockfile
-      # No --affected skip step here, same as test-rest: this job feeds the
-      # REQUIRED `ci` check, and a required check must never report green for a
-      # shard it did not run. It did: #1139 (docs-only) skipped every vendo
-      # shard and merged green, and the vendo-3 shard went red on main the
-      # moment it actually ran — the docs-rot tests readFile docs-site/*.mdx,
-      # an input turbo's graph does not know about. The remote cache is the
-      # honest fast path: an unaffected shard's build replays from cache and
-      # the tests run for real.
+      - if: env.RUN == 'true'
+        run: pnpm install --frozen-lockfile
+      # Within a package that IS in the cone there is no second, file-level
+      # skip: every shard of it runs for real. #1139 is the reason — a
+      # per-shard --affected probe let a docs-only PR skip every vendo shard and
+      # merge green, and vendo-3 went red on main the moment it actually ran
+      # (the docs-rot tests readFile docs-site/*.mdx, an input turbo's graph
+      # does not know about). The package-level gate above has the same blind
+      # spot by construction; what makes it survivable is the unfiltered run on
+      # every push to main, which #1139 did not have.
       - name: Build deps
+        if: env.RUN == 'true'
         run: pnpm turbo run build --filter=${{ matrix.pkg }}
       - name: tsc (store keeps its tsc-before-test contract)
-        if: matrix.tsc == 'true'
+        if: env.RUN == 'true' && matrix.tsc == 'true'
         run: pnpm --filter ${{ matrix.pkg }} exec tsc -p tsconfig.json
       # --reporter=default alongside blob: with blob as the SOLE reporter a
       # failing shard prints nothing about WHICH test failed, so a red shard
       # is undebuggable from the log alone.
       - name: Test shard
+        if: env.RUN == 'true'
         run: pnpm --filter ${{ matrix.pkg }} exec vitest run --coverage --coverage.thresholds.lines=0 --reporter=default --reporter=blob --shard=${{ matrix.shard }}
       # always(): a failed shard must still upload its blob, or coverage-merge
       # merges a hole and reports a phantom coverage drop on top of the real
       # failure.
       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
-        if: always()
+        if: always() && env.RUN == 'true'
         with:
           name: blob-${{ matrix.name }}
           path: ${{ matrix.dir }}/.vitest-reports/
@@ -140,13 +275,19 @@ jobs:
           include-hidden-files: true
           retention-days: 1
 
-  # Everything that is not one of the big three. No --affected skip step here:
-  # turbo's remote cache IS the skip — an unchanged package's test:coverage
-  # replays from cache in seconds. group-b is expressed as negations so a new
-  # package joins CI the day it is created, without editing this file.
+  # Everything that is not one of the big three. group-b is expressed as
+  # negations so a new package joins CI the day it is created, without editing
+  # this file.
+  #
+  # $CONE narrows both groups to the cone. Verified, because it is the opposite
+  # of what turbo's multi-filter behaviour looks like at first glance: repeated
+  # --filter flags UNION, but --affected INTERSECTS with them. `--affected
+  # --filter=@vendoai/guard --filter=@vendoai/actions` yields guard and actions
+  # only when they are in the cone, not the cone plus those two.
   test-rest:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: cone
     services:
       postgres:
         image: postgres:16
@@ -173,8 +314,12 @@ jobs:
       VITEST_MAX_FORKS: "2"
       VITEST_MIN_THREADS: "1"
       VITEST_MAX_THREADS: "2"
+      TURBO_SCM_BASE: ${{ needs.cone.outputs.base }}
+      CONE: ${{ needs.cone.outputs.filter }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # turbo --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -189,17 +334,23 @@ jobs:
       # inside each package's vitest). Unbounded, the two layers multiply and
       # the live-Next-server suites flake (PR #340).
       - name: Test with coverage (PGlite + PostgreSQL)
-        run: pnpm turbo run test:coverage --continue --concurrency=2 ${{ matrix.filters }}
+        run: pnpm turbo run test:coverage --continue --concurrency=2 $CONE ${{ matrix.filters }}
 
   # The per-package coverage floors (vendo 78 / store 84 / ui 90, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
   # against the whole suite's coverage. vitest replays the shards' blob reports
   # without re-running a single test, then reports and enforces.
+  #
+  # PUSH TO MAIN ONLY. On a PR or a merge_group run the shards are the cone, so
+  # the merged number is coverage-of-a-cone — a fraction that is not the floor
+  # and cannot be compared to it. Enforcing it there would fail honest PRs and
+  # teach everyone to ignore the check. main runs everything, so main is where
+  # the number is real.
   coverage-merge:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: test-shards
-    if: always() && needs.test-shards.result != 'cancelled'
+    if: github.event_name == 'push' && always() && needs.test-shards.result != 'cancelled'
     # No turbo cache step: this job never invokes turbo — it replays blob
     # reports through vitest directly.
     steps:
@@ -248,17 +399,38 @@ jobs:
           done
 
   # The required check. Its name must stay `ci` (branch protection on main).
+  #
+  # Now that the lanes below it are cone-gated, SKIPPED is a normal, correct
+  # outcome — coverage-merge skips on every PR, and the shards skip whenever
+  # their package is outside the cone. GitHub's default `needs` semantics would
+  # skip this job in turn and it would never report, so: `if: always()` to make
+  # it run regardless, and explicit arithmetic below instead of leaning on
+  # `needs`. Each need must be success OR skipped; anything else (failure,
+  # cancelled) is red. Getting this backwards is the difference between
+  # cone-only CI and no PR ever passing again, in either direction.
   ci:
     runs-on: ubuntu-latest
-    needs: [typecheck-lint, test-shards, test-rest, coverage-merge]
+    needs: [cone, typecheck-lint, test-shards, test-rest, coverage-merge]
     if: always()
     steps:
-      - name: All lanes green
+      - name: All lanes green (skipped counts as success)
         env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
+          # toJSON(needs), not toJSON(needs.*.result): the object form keeps the
+          # job names, so a red run names the lane that failed.
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo "$RESULTS"
-          [[ "$RESULTS" != *failure* && "$RESULTS" != *cancelled* ]]
+          set -euo pipefail
+          jq -r 'to_entries[] | "  \(.key): \(.value.result)"' <<<"$NEEDS"
+          bad=$(jq -r '
+            to_entries
+            | map(select(.value.result != "success" and .value.result != "skipped")
+                  | "\(.key)=\(.value.result)")
+            | join(", ")' <<<"$NEEDS")
+          if [ -n "$bad" ]; then
+            echo "::error::CI lanes not green: $bad"
+            exit 1
+          fi
+          echo "all lanes green"
 
   integration:
     runs-on: ubuntu-latest
@@ -351,12 +523,20 @@ jobs:
       # on a PR checkout — without it, --affected silently reports EVERYTHING
       # affected. If the probe itself fails, we fall open into running
       # everything.
-      - name: Skip if e2e scope unaffected (PRs only)
+      # Not `== 'pull_request'` but `!= 'push'`: a merge_group run is a cone run
+      # too, against the queue's base. Only a push to main skips the skip and
+      # runs everything. This job does NOT take the cone job's outputs — it is
+      # its own REQUIRED check, and a `needs:` on cone would let a broken cone
+      # job skip it, which branch protection reads as a pass.
+      - name: Skip if e2e scope unaffected (PR and merge queue)
         id: affected
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         env:
-          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+          # pull_request: `main`. merge_group: `refs/heads/main`.
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
+          export TURBO_SCM_BASE="origin/${BASE_REF#refs/heads/}"
+          echo "cone base: $TURBO_SCM_BASE"
           if pnpm turbo ls --affected --output=json > /tmp/affected.json \
              && jq -e '[.packages.items[].name | select(IN(
                   "@vendoai-fixtures/integration",
@@ -434,12 +614,17 @@ jobs:
       # script covers. `--affected` includes dependents, so a change anywhere
       # beneath them still runs this job — see the integration job's skip step
       # for the TURBO_SCM_BASE and fall-open rationale.
-      - name: Skip if conformance scope unaffected (PRs only)
+      # `!= 'push'` so the merge queue gets the same cone treatment as a PR; see
+      # the matching step in the integration job.
+      - name: Skip if conformance scope unaffected (PR and merge queue)
         id: affected
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         env:
-          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+          # pull_request: `main`. merge_group: `refs/heads/main`.
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
+          export TURBO_SCM_BASE="origin/${BASE_REF#refs/heads/}"
+          echo "cone base: $TURBO_SCM_BASE"
           if pnpm turbo ls --affected --output=json > /tmp/affected.json \
              && jq -e '[.packages.items[].name | select(IN(
                   "@vendoai/core",
