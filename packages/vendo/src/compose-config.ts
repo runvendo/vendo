@@ -6,6 +6,7 @@
  * slot twice leaks no resources on its way to the error.
  */
 import { agentComposition, type AgentComposition } from "@vendoai/agents";
+import { unsupportedRouteParams } from "@vendoai/apps/contract";
 import { VendoError } from "@vendoai/core";
 import type { VendoComposition } from "./compose-context.js";
 import { rejectRemovedConfigKeys, warnDeprecatedConfigKeys } from "./config-keys.js";
@@ -36,6 +37,39 @@ function adoptAgent(config: CreateVendoConfig): AgentComposition | undefined {
     );
   }
   return composed;
+}
+
+/** 09-vendo §2 — a route whose path uses a `:param` shape the resolver cannot
+    fill, refused HERE rather than at render.
+
+    A `:param` is a whole path segment. `/posts/:slug.html` takes no parameter at
+    all, so `resolveVendoRoute` hands back a path still carrying `:slug.html`
+    even when the caller supplies `slug` — and the floor and the briefing read it
+    the same wrong way, so neither refuses the route nor tells generation to fill
+    it. Every link to that page is silently dead.
+
+    Registration is the earliest moment anyone can be told, and the only one
+    where the fix is obvious, so the whole failure becomes one boot error a host
+    reads once. Suffixes are rejected rather than parsed: a path grammar is real
+    surface in a module that also ships to the browser, and support can be added
+    later without breaking anyone — withdrawing it could not. */
+function validateRouteConfig(routes: CreateVendoConfig["routes"]): void {
+  const refused = Object.entries(routes ?? {}).flatMap(([name, route]) => {
+    const bad = unsupportedRouteParams(route.path);
+    return bad.length === 0 ? [] : [
+      `route "${name}" has path "${route.path}", where ${bad.map((segment) => `"${segment}"`).join(", ")} `
+      + `${bad.length === 1 ? "is" : "are"} neither a parameter nor plain text`,
+    ];
+  });
+  if (refused.length > 0) {
+    throw new VendoError(
+      "validation",
+      `createVendo({ routes }): ${refused.join("; ")}. In a registered path a :param must be a WHOLE path segment, `
+      + `so "/accounts/:id" works and "/accounts/:id-2" does not — nothing can fill a partial one, and every link to `
+      + `that page would render as plain text and go nowhere. Give the value its own segment ("/accounts/:id/2"), or `
+      + `drop the colon if the text is literal.`,
+    );
+  }
 }
 
 /** ENG-237 recommended default (documented in the PR body; Yousef-gated as
@@ -77,6 +111,10 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // `policy` silently and run wide open, which is the one failure mode a config
   // change must never have.
   rejectRemovedConfigKeys(config as Record<string, unknown>);
+  // …and a registered path whose `:param` the resolver could never fill, for the
+  // same reason and in the same place: a wiring mistake the host hears about
+  // before anything is constructed, rather than as a dead link months later.
+  validateRouteConfig(config.routes);
   // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
   // before anything is constructed so a miswired config leaks no resources.
   if (config.auth !== undefined) {

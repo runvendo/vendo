@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveVendoRoute,
   vendoRouteMapSchema,
+  unsupportedRouteParams,
   vendoRouteParams,
   type VendoRouteMap,
 } from "../../src/contract/catalog.js";
@@ -69,6 +70,27 @@ describe("a `:` inside a segment is a literal, not a parameter", () => {
       .toEqual({ to: "mixed", path: "/reports/2026:Q3/s_1", params: { sectionId: "s_1" } });
     // …and the real parameter is still required.
     expect(resolveVendoRoute(literal, "mixed")).toBeUndefined();
+  });
+
+  it("names a colon-led segment it cannot fill, and never counts it as a param", () => {
+    // The complement property, pinned: every colon-led segment is EITHER a
+    // parameter OR unsupported — never both, never neither. That gap is exactly
+    // where `/posts/:slug.html` fell, reporting no params while leaving the text
+    // sitting in the resolved path.
+    for (const path of ["/posts/:slug.html", "/accounts/:id-2", "/a/:b/c/:d.json", "/reports/2026:Q3", "/accounts/:id", "/"]) {
+      const params = vendoRouteParams(path);
+      const refused = unsupportedRouteParams(path);
+      const colonLed = path.split("/").filter((segment) => segment.startsWith(":"));
+      expect([...params.map((name) => `:${name}`), ...refused].sort()).toEqual([...colonLed].sort());
+    }
+  });
+
+  it("refuses a suffix after the parameter, and keeps the good shapes", () => {
+    expect(unsupportedRouteParams("/posts/:slug.html")).toEqual([":slug.html"]);
+    expect(unsupportedRouteParams("/accounts/:id-2")).toEqual([":id-2"]);
+    expect(vendoRouteParams("/posts/:slug.html")).toEqual([]);
+    expect(unsupportedRouteParams("/accounts/:id")).toEqual([]);
+    expect(unsupportedRouteParams("/reports/2026:Q3")).toEqual([]);
   });
 
   it("keeps the ordinary readings it always had", () => {

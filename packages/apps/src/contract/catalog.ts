@@ -192,6 +192,21 @@ const PARAM_SEGMENT = /^:(\w+)$/u;
 export const vendoRouteParams = (path: string): string[] =>
   path.split("/").flatMap((segment) => PARAM_SEGMENT.exec(segment)?.[1] ?? []);
 
+/** The colon-led segments this resolver cannot fill — `:slug.html`, `:id-2`.
+ *
+ * The exact COMPLEMENT of {@link vendoRouteParams} over colon-led segments, from
+ * the same `PARAM_SEGMENT`: every segment starting with `:` is either a
+ * parameter or named here, never both and never neither. That is what makes
+ * "supported" and "refused" agree by construction instead of by two authors
+ * keeping two rules in step — and the gap between them is precisely where
+ * `/posts/:slug.html` fell, reported as taking NO parameters while the resolver
+ * handed back a path still carrying `:slug.html`. Nothing could fill it, so the
+ * link died quietly, and the floor and the briefing read it the same wrong way.
+ *
+ * A host hears about this at registration (`createVendo`), never at render. */
+export const unsupportedRouteParams = (path: string): string[] =>
+  path.split("/").filter((segment) => segment.startsWith(":") && !PARAM_SEGMENT.test(segment));
+
 /** Resolve a link target against the registry. A name the host never registered
  * — or one whose path has `:params` the link left unfilled — resolves to
  * `undefined`: an unknown route is REFUSED here rather than passed through, so

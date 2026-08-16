@@ -68,3 +68,39 @@ describe("createVendo({ routes }) reaches the checks floor", () => {
     expect((await paint("accounts")).ok).toBe(true);
   }, 60_000);
 });
+
+describe("createVendo({ routes }) refuses a pattern the resolver cannot fill", () => {
+  // A `:param` is a WHOLE path segment. `/posts/:slug.html` reported no
+  // parameters at all, so `resolveVendoRoute` handed back a path still carrying
+  // ":slug.html" even when the caller supplied `slug` — and because the checker
+  // and the briefing share that parser, neither refused the route nor told
+  // generation to provide the value. Silence, again. So it is refused at
+  // REGISTRATION, where a host reads it once and fixes it.
+  const compose = (routes: VendoRouteMap) => async () =>
+    createVendo({ principal: async () => principal, store: await tempStore(), routes });
+
+  it("refuses a suffix after the parameter, naming the route and the segment", async () => {
+    await expect(compose({
+      post: { path: "/posts/:slug.html", description: "One post." },
+    })()).rejects.toThrow(/route "post".*"\/posts\/:slug\.html".*":slug\.html"/su);
+  });
+
+  it("tells the reader what is supported and what to write instead", async () => {
+    const failed = await compose({
+      account: { path: "/accounts/:id-2", description: "The second account." },
+    })().then(() => undefined, (error: unknown) => error as Error);
+
+    const said = failed?.message ?? "";
+    expect(said).toContain("a :param must be a WHOLE path segment");
+    expect(said).toContain('"/accounts/:id"');
+    expect(said).toContain('"/accounts/:id-2"');
+  });
+
+  it("composes fine for a literal colon and for a whole-segment param", async () => {
+    await expect(compose({
+      quarter: { path: "/reports/2026:Q3", description: "The Q3 report." },
+      account: { path: "/accounts/:id", description: "One account." },
+      plain: { path: "/accounts", description: "Every account." },
+    })()).resolves.toBeDefined();
+  });
+});
