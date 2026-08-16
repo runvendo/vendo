@@ -240,14 +240,19 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    ```tsx
    import { VendoSlot } from "@vendoai/vendo/react";
 
-   <VendoSlot id="home-hero" label="Dashboard hero">
+   <VendoSlot
+     id="home-hero"
+     label="Dashboard hero"
+     description="main dashboard area, where users keep KPI views"
+   >
      <YourOriginalCard />
    </VendoSlot>
    ```
 
    Always give a `label`: it is what a person picking a destination reads and
    what an assistant matches a request against, so write it as meaning, not as
-   an id. A slot with children renders them untouched while it is empty; a slot
+   an id. The description is how the assistant finds the right slot by meaning.
+   A slot with children renders them untouched while it is empty; a slot
    with none shows users an invitation with prompt chips instead, which is the
    hint that this space builds itself.
    Filled, it holds one view per person. On the own-loop path pass `onAuthor`
