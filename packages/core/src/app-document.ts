@@ -207,10 +207,15 @@ export interface AppSeed {
 export const appSeedSchema = z.object({
   component: z.string(),
   baseline: z.string(),
-  instruction: z.string(),
+  // Seeds stored before the ✦ gesture collected an instruction have none, and a
+  // required field would make every one of those apps unreadable. Defaulted on
+  // READ so the field stays required for everything that writes a seed.
+  instruction: z.string().default(""),
   slot: z.string().optional(),
   review: z.boolean().optional(),
-}).passthrough() satisfies z.ZodType<AppSeed>;
+  // The parsed shape is still an AppSeed; only the INPUT is looser than one,
+  // which is what a default means.
+}).passthrough() satisfies z.ZodType<AppSeed, z.ZodTypeDef, unknown>;
 
 /**
  * The stable generated-component name a seeded app's copy of the host component
@@ -365,7 +370,9 @@ const appDocumentShapeSchema = z.object({
   buildFailed: appBuildFailureSchema.optional(),
   building: isoDateTimeSchema.optional(),
   memory: appMemorySchema.optional(),
-}).passthrough() satisfies z.ZodType<AppDocument>;
+  // Input widened for the same reason as {@link appSeedSchema}'s: a defaulted
+  // field inside `seed` makes this schema's input looser than an AppDocument.
+}).passthrough() satisfies z.ZodType<AppDocument, z.ZodTypeDef, unknown>;
 
 /**
  * READ-TIME normalization of the pre-list document shape: a stored `trigger`
