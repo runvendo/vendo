@@ -651,18 +651,9 @@ Surfaces: `design-rules.md`, `brief.md`, `theme.json`, `policy.json`,
 `overrides.json`. (`tools.json` and `catalog.json` are generation inputs, not
 host-editable content.)
 
-Options:
-
-- `--draft`: pull only — take the working draft instead of the published
-  value.
-- `--yes`: push only — delete the local file without asking, making cloud the
-  source.
-- `--key <key>` / `--api-url <url>`: override `VENDO_API_KEY` and
-  `VENDO_CLOUD_URL`.
-
-A hosted `overrides.json` gates both app generation (field semantics) and
+`.vendo/overrides.json` gates both app generation (field semantics) and
 tool enablement (`disabled` / `audience`). Enablement resolves boot-once on
-the first request, so a console publish applies on the next restart;
+the first request, so an edit applies on the next restart;
 generation picks it up per generation.
 
 ## `vendo mcp`
