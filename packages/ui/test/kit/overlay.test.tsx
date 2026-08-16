@@ -6,13 +6,15 @@ import { Sheet } from "../../src/kit/overlay/sheet.js";
 import { Toast } from "../../src/kit/overlay/toast.js";
 import { KIT_CSS, ensureKitStyles } from "../../src/kit/kit-css.js";
 
+const noop = (): void => {};
+
 describe("the overlay host", () => {
   it("paints OUTSIDE the containment box it was written in", () => {
     // The whole point of the portal: written inside a clipped, transformed
     // column, the dialog still lands on <body> where nothing can crop it.
     const { container } = render(
       <div style={{ overflow: "hidden", transform: "translateZ(0)", height: 20 }}>
-        <Modal open title="Send reminders?">
+        <Modal open onClose={noop} title="Send reminders?">
           <p>three clients</p>
         </Modal>
       </div>,
@@ -32,28 +34,28 @@ describe("the overlay host", () => {
   });
 
   it("renders nothing while closed", () => {
-    render(<Modal title="Send reminders?"><p>three clients</p></Modal>);
+    render(<Modal open={false} onClose={noop} title="Send reminders?"><p>three clients</p></Modal>);
     expect(screen.queryByText("three clients")).toBeNull();
   });
 
   it("puts a Sheet on the edge it was asked for, and a Modal in the middle", () => {
-    render(<Sheet open side="left" title="Detail" />);
+    render(<Sheet open onClose={noop} side="left" title="Detail" />);
     const sheet = document.querySelector("[data-kit='Sheet']") as HTMLElement;
     expect(sheet.style.left).toBe("0px");
     expect(sheet.style.transform).toBe("");
-    render(<Modal open title="Detail" />);
+    render(<Modal open onClose={noop} title="Detail" />);
     const modal = document.querySelector("[data-kit='Modal']") as HTMLElement;
     expect(modal.style.transform).toBe("translate(-50%, -50%)");
   });
 
   it("renders the title and description as the dialog's own labels", () => {
-    render(<Modal open title="Send reminders?" description="Three clients will be emailed." />);
+    render(<Modal open onClose={noop} title="Send reminders?" description="Three clients will be emailed." />);
     expect(screen.getByText("Send reminders?")).toBeTruthy();
     expect(screen.getByText("Three clients will be emailed.")).toBeTruthy();
   });
 
   it("takes header and footer slots", () => {
-    render(<Modal open title="T" header={<span>badge</span>} footer={<button>Send</button>} />);
+    render(<Modal open onClose={noop} title="T" header={<span>badge</span>} footer={<button>Send</button>} />);
     expect(screen.getByText("badge")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
   });

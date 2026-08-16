@@ -14,10 +14,23 @@ import { font, hairline, t, transitionFor } from "../tokens.js";
 
 export type OverlaySize = "small" | "medium" | "large";
 
-/** Shared by both geometries — Sheet adds `side` on top. */
+/**
+ * Shared by both geometries — Sheet adds `side` on top.
+ *
+ * `open` and `onClose` are BOTH required, and that is the type doing the same
+ * job the spec does for generated screens: every way out of a dialog — the X,
+ * Esc, the backdrop — does nothing but call `onClose`, so `<Modal open />`
+ * without one is a person shut behind a dialog that cannot be dismissed. It
+ * must not compile.
+ *
+ * Not a discriminated union, because there is no uncontrolled dialog to be the
+ * union's other arm: `Dialog.Root` is always handed `open`, and this takes no
+ * trigger and no `defaultOpen`. A union would model a mode that does not exist
+ * — requiring both is the smaller shape that makes the same call unrepresentable.
+ */
 export interface DialogProps {
-  open?: boolean;
-  onClose?: () => void;
+  open: boolean;
+  onClose: () => void;
   title?: string;
   description?: string;
   size?: OverlaySize;
@@ -53,7 +66,7 @@ export const closeStyle: CSSProperties = {
 export function DialogShell({
   kind,
   popupStyle,
-  open = false,
+  open,
   onClose,
   title,
   description,
@@ -63,37 +76,37 @@ export function DialogShell({
 }: DialogProps & { kind: "Modal" | "Sheet"; popupStyle: CSSProperties }) {
   const body = (
     <>
-      {(title !== undefined || header !== undefined || onClose !== undefined) ? (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--vendo-density-inline-gap, 7px)" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
-            {title === undefined ? null : (
-              <Dialog.Title
-                style={{
-                  margin: 0,
-                  color: t.text,
-                  fontFamily: t.headingFamily,
-                  fontSize: "1.05em",
-                  fontWeight: t.weightEmphasis,
-                  lineHeight: t.lineHeightHeading,
-                }}
-              >
-                {title}
-              </Dialog.Title>
-            )}
-            {description === undefined ? null : (
-              <Dialog.Description style={{ margin: 0, color: t.muted, fontSize: "0.9em" }}>
-                {description}
-              </Dialog.Description>
-            )}
-          </div>
-          {header}
-          {/* Rendered INSIDE the popup on purpose: with the focus trap on, a
-              touch screen reader has no other way out. */}
-          <Dialog.Close data-kit-close="" aria-label="Close" style={closeStyle}>
-            ✕
-          </Dialog.Close>
+      {/* Always drawn: `onClose` is required, so there is always a way out to
+          draw, even on a dialog with no title and no header. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--vendo-density-inline-gap, 7px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
+          {title === undefined ? null : (
+            <Dialog.Title
+              style={{
+                margin: 0,
+                color: t.text,
+                fontFamily: t.headingFamily,
+                fontSize: "1.05em",
+                fontWeight: t.weightEmphasis,
+                lineHeight: t.lineHeightHeading,
+              }}
+            >
+              {title}
+            </Dialog.Title>
+          )}
+          {description === undefined ? null : (
+            <Dialog.Description style={{ margin: 0, color: t.muted, fontSize: "0.9em" }}>
+              {description}
+            </Dialog.Description>
+          )}
         </div>
-      ) : null}
+        {header}
+        {/* Rendered INSIDE the popup on purpose: with the focus trap on, a
+            touch screen reader has no other way out. */}
+        <Dialog.Close data-kit-close="" aria-label="Close" style={closeStyle}>
+          ✕
+        </Dialog.Close>
+      </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</div>
       {footer === undefined ? null : (
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--vendo-density-inline-gap, 7px)" }}>
@@ -107,7 +120,7 @@ export function DialogShell({
     <Dialog.Root
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose?.();
+        if (!next) onClose();
       }}
     >
       <OverlayPortal>

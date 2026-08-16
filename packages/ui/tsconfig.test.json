@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "//": "Scoped to the type-level suites. The runtime tests carry ~148 pre-existing type errors and bringing them under tsc is its own lane, not this file's job.",
+  "include": ["src", "test/**/*.test-d.tsx"]
+}

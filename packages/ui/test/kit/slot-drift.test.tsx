@@ -41,8 +41,8 @@ const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<st
   // land no matter how faithfully the slot is wired. `open` is the truth these
   // two follow; raise them and the slots are on the same footing as everyone
   // else's here.
-  Modal: { props: { open: true } },
-  Sheet: { props: { open: true } },
+  Modal: { props: { open: true, onClose: () => {} } },
+  Sheet: { props: { open: true, onClose: () => {} } },
 };
 
 /** The probe at the slot's DECLARED path: a nested slot sits in its prop's
