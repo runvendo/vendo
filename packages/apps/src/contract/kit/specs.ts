@@ -16,12 +16,15 @@ import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropC
 const rows = z.array(z.record(z.string(), z.unknown()));
 const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "text"]);
 const align = z.enum(["start", "center", "end"]);
-/** A series descriptor stays OPEN: what is written beside `key` and `label` is
- *  passed to that one series' engine element, so per-line colors are a property
- *  of the line rather than of the whole chart. */
+/** A series descriptor stays OPEN: what is written beside `key`, `label` and
+ *  `color` is passed to that one series' engine element, so per-line colors are a
+ *  property of the line rather than of the whole chart. `color` is DECLARED
+ *  rather than left to the passthrough because the engine's own name for it
+ *  differs per chart (`stroke`, `fill`) — undeclared, the obvious word reached
+ *  the engine and meant nothing to it. */
 const seriesInput = z.array(z.union([
   z.string(),
-  z.object({ key: z.string(), label: z.string().optional() }).passthrough(),
+  z.object({ key: z.string(), label: z.string().optional(), color: z.string().optional() }).passthrough(),
 ]));
 
 /**
@@ -392,7 +395,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category (x) field", { required: true }),
-      series: config(seriesInput, "value series (keys or {key,label})", { required: true }),
+      series: config(seriesInput, "value series (keys or {key,label,color})", { required: true }),
       format: config(valueFormat, "y-axis + tooltip format"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
@@ -409,7 +412,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
-      series: config(seriesInput, "value series", { required: true }),
+      series: config(seriesInput, "value series (keys or {key,label,color})", { required: true }),
       format: config(valueFormat, "axis + tooltip format"),
       stacked: config(z.boolean(), "stack series into one bar"),
       horizontal: config(z.boolean(), "horizontal bars"),

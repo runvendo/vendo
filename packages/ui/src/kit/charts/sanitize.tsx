@@ -56,7 +56,11 @@ export function ChartFrame({ height = 220, children }: ChartFrameProps) {
   return <div style={{ width: "100%", aspectRatio: 1, height, minHeight: height }}>{children}</div>;
 }
 
-/** A designed empty/invalid state that reads as intentional, not broken. */
+/** A designed empty/invalid state that reads as intentional, not broken.
+ *
+ *  ONE element, because a chart's `style` has to land on the same root whether it
+ *  has points or not: nested, the caller's margin sat on an inner box while the
+ *  populated chart put it on the outer one, so an empty chart moved. */
 export function ChartEmpty({ height = 220, children, style }: { height?: number; children: ReactNode } & KitStyled) {
   const box: CSSProperties = {
     ...font,
@@ -75,7 +79,7 @@ export function ChartEmpty({ height = 220, children, style }: { height?: number;
     padding: 12,
     ...style,
   };
-  return <div data-kit="ChartEmpty">{<div style={box}>{children}</div>}</div>;
+  return <div data-kit="ChartEmpty" style={box}>{children}</div>;
 }
 
 /** The hover surface all three charts share — recharts paints its own content

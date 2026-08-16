@@ -17,8 +17,8 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { transform } from "sucrase";
-import { bootScreen, flattenTree, warmScreenEngine } from "@vendoai/apps/contract";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { bootScreen, flattenTree, kitSpec, validateProps, warmScreenEngine } from "@vendoai/apps/contract";
+import { VENDO_TREE_FORMAT, type ToolOutcome, type TreeNode, type UIPayload } from "@vendoai/core";
 import { PayloadView } from "../../src/tree/index.js";
 
 afterEach(cleanup);
@@ -80,31 +80,63 @@ const PLAIN = BRANDED
   .replace(' stroke="#FF3B30"', "")
   .replace(', stroke: "#0A84FF"', "");
 
-const ROWS = [{ month: "Jan", amount: 1_200 }, { month: "Feb", amount: 1_900 }];
+/**
+ * The same ask, in the DIALECT a model actually writes it in: a palette const and
+ * a `series` built from it by `.map`, with the colour under the one word anybody
+ * reaches for. This is the shape the store's "All balances chart"
+ * (app_9b197e3d-7ad9-4a4d-9a76-d99d5180b860) carries, and the one that painted
+ * all seven of its lines from the theme.
+ */
+const COLORED = `
+import { LineChart, Stack, useQuery } from "@vendo/screen";
 
-const paint = (source: string) => {
-  const queries = { revenue: { data: ROWS } };
+const COLORS = ["#e11d48", "#f97316"];
+
+export default function Balances() {
+  const accounts = useQuery("revenue");
+  const series = COLORS.map((color, i) => ({ key: "acc_" + i, label: "Account " + i, color }));
+  return (
+    <Stack gap={12}>
+      <LineChart data={accounts.data} xKey="month" series={series} format="money" />
+    </Stack>
+  );
+}
+`;
+
+const ROWS = [{ month: "Jan", amount: 1_200 }, { month: "Feb", amount: 1_900 }];
+const PALETTE_ROWS = [
+  { month: "Jan", acc_0: 1_200, acc_1: 900 },
+  { month: "Feb", acc_0: 1_900, acc_1: 1_400 },
+];
+
+const paint = (source: string, rows: Array<Record<string, unknown>> = ROWS) => {
+  const queries = { revenue: { data: rows } };
   const compiledSource = compile(source);
   const first = bootScreen({ compiledSource, queries, catalog: CATALOG, now: Date.UTC(2026, 1, 1) });
   let payload: UIPayload;
+  let nodes: TreeNode[];
   try {
     const flat = flattenTree(first.tree());
+    nodes = Object.values(flat.nodes);
     payload = {
       formatVersion: VENDO_TREE_FORMAT,
       root: flat.root,
-      nodes: Object.values(flat.nodes),
+      nodes,
       interactive: { compiledSource, queries },
     } as unknown as UIPayload;
   } finally {
     first.dispose();
   }
-  return render(
-    <PayloadView
-      payload={payload}
-      components={{}}
-      onAction={async (): Promise<ToolOutcome> => ({ status: "ok", output: null })}
-    />,
-  );
+  return {
+    nodes,
+    ...render(
+      <PayloadView
+        payload={payload}
+        components={{}}
+        onAction={async (): Promise<ToolOutcome> => ({ status: "ok", output: null })}
+      />,
+    ),
+  };
 };
 
 describe("a generated app's own colors survive the whole chain", () => {
@@ -137,6 +169,30 @@ describe("a generated app's own colors survive the whole chain", () => {
       expect(card.style.display).toBe("flex");
       expect(container.querySelector(".recharts-area-curve")?.getAttribute("stroke")).toContain("var(--vendo-color-accent");
       expect(container.querySelector(".recharts-line-curve")?.getAttribute("stroke")).toContain("var(--vendo-chart-1");
+    } finally {
+      restore();
+    }
+  });
+
+  it("paints per-series colors written the way a model writes them", () => {
+    const restore = stubChartSize(360, 180);
+    try {
+      const { container, nodes } = paint(COLORED, PALETTE_ROWS);
+
+      // The WIRE gate keeps them. A schema that stripped `color` would leave the
+      // renderer nothing to paint from, and the DOM check below would then be
+      // asserting against the theme's palette rather than the app's own.
+      const chart = nodes.find((node) => node.component === "LineChart");
+      const wire = validateProps(kitSpec("LineChart")!, chart?.props);
+      expect(wire.success).toBe(true);
+      expect(wire.data?.series).toEqual([
+        { key: "acc_0", label: "Account 0", color: "#e11d48" },
+        { key: "acc_1", label: "Account 1", color: "#f97316" },
+      ]);
+
+      // And the renderer paints them: not one of these is a theme token.
+      expect([...container.querySelectorAll(".recharts-line-curve")].map((line) => line.getAttribute("stroke")))
+        .toEqual(["#e11d48", "#f97316"]);
     } finally {
       restore();
     }

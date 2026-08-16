@@ -13,11 +13,19 @@ import { applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
 
-/** A series key, or a descriptor: `label` renames it, and any other engine prop
- *  paints THAT series alone — over the chart-level one it collides with. */
+/** A series key, or a descriptor: `label` renames it, `color` paints it, and any
+ *  other engine prop paints THAT series alone — over the chart-level one it
+ *  collides with.
+ *
+ *  `color` is the KIT's word for a series' paint, because the engine's own name
+ *  for it is a different one per chart (`stroke` on a line, `fill` on a bar) and
+ *  a passthrough that only spoke the engine's name left the obvious word landing
+ *  on the SVG as an inert attribute: a chart that took seven hex colors and drew
+ *  all seven from the theme. The engine's own name still wins where both are
+ *  written. */
 export type SeriesInput<Engine = ComponentProps<typeof Line>> =
   | string
-  | ({ key: string; label?: string } & Omit<Engine, "dataKey" | "name">);
+  | ({ key: string; label?: string; color?: string } & Omit<Engine, "dataKey" | "name">);
 
 interface LineChartOwnProps extends KitStyled {
   /** Rows from a tool call. */
@@ -45,7 +53,7 @@ interface LineChartOwnProps extends KitStyled {
 export type LineChartProps = LineChartOwnProps & KitEngine<ComponentProps<typeof Line>, LineChartOwnProps, "dataKey" | "name">;
 
 function normalize(series: SeriesInput[]) {
-  return series.map((s) => (typeof s === "string" ? { key: s, label: s } : { ...s, label: s.label ?? s.key }));
+  return series.map((s) => (typeof s === "string" ? { key: s, label: s, color: undefined } : { ...s, label: s.label ?? s.key }));
 }
 
 const axisTick = { fill: t.muted, fontSize: 11 };
@@ -77,10 +85,10 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
               content={tooltip === undefined ? undefined : slotTooltip(tooltip)}
               contentStyle={tooltipSurface}
             />
-            {cols.map(({ key, label, ...seriesEngine }, i) => (
+            {cols.map(({ key, label, color, ...seriesEngine }, i) => (
               <Line
                 type="monotone"
-                stroke={seriesColor(i)}
+                stroke={color ?? seriesColor(i)}
                 strokeWidth={2}
                 dot={false}
                 connectNulls={false}

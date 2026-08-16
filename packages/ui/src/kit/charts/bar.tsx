@@ -42,7 +42,7 @@ interface BarChartOwnProps extends KitStyled {
 export type BarChartProps = BarChartOwnProps & KitEngine<ComponentProps<typeof Bar>, BarChartOwnProps, "dataKey" | "name">;
 
 function normalize(series: BarSeriesInput[]) {
-  return series.map((s) => (typeof s === "string" ? { key: s, label: s } : { ...s, label: s.label ?? s.key }));
+  return series.map((s) => (typeof s === "string" ? { key: s, label: s, color: undefined } : { ...s, label: s.label ?? s.key }));
 }
 
 const axisTick = { fill: t.muted, fontSize: 11 };
@@ -98,9 +98,9 @@ export function BarChart({
               contentStyle={tooltipSurface}
               cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }}
             />
-            {cols.map(({ key, label, ...seriesEngine }, i) => (
+            {cols.map(({ key, label, color, ...seriesEngine }, i) => (
               <Bar
-                fill={seriesColor(i)}
+                fill={color ?? seriesColor(i)}
                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}

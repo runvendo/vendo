@@ -174,6 +174,24 @@ describe("a chart's engine props reach the engine", () => {
     }
   });
 
+  it("puts the style on the same root whether the chart has points or not", () => {
+    // A chart with nothing to plot returns its empty state INSTEAD of its own
+    // root, so the caller's style has to land on that one too — on a nested box
+    // it was layout the populated chart applied and the empty one did not, and a
+    // chart that lost its data moved on the page.
+    const restore = stubChartSize(400, 200);
+    const root = (container: HTMLElement) => container.firstElementChild as HTMLElement;
+    try {
+      const populated = render(<LineChart {...series} style={{ marginTop: "13px" }} />);
+      expect(root(populated.container).style.marginTop).toBe("13px");
+      cleanup();
+      const empty = render(<LineChart data={[]} xKey="m" series={["v"]} style={{ marginTop: "13px" }} />);
+      expect(root(empty.container).style.marginTop).toBe("13px");
+    } finally {
+      restore();
+    }
+  });
+
   it("paints every bar from a chart-level recharts prop", () => {
     const restore = stubChartSize(400, 200);
     try {
