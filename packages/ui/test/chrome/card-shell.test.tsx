@@ -66,7 +66,7 @@ const KINDS: Array<[string, React.ReactNode]> = [
     "standing access",
     <GrantSetCard
       name="Invoice watcher"
-      permissions={[{ approvalId: "apr_1", tool: "host_email_send", description: "Send digests.", risk: "read" }]}
+      permissions={[{ approvalId: "apr_1", tool: "host_email_send", risk: "read" }]}
       state="parked"
     />,
   ],

@@ -2,8 +2,8 @@
 import type { CSSProperties } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { DISPLAY_TAG_NAMES, VENDO_TREE_FORMAT } from "@vendoai/apps/contract";
-import type { ToolOutcome } from "@vendoai/core";
+import { DISPLAY_TAG_NAMES } from "@vendoai/apps/contract";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { TreeView, type WalkTree } from "../../src/tree/index.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeStyle } from "../../src/tree/display-bricks.js";
 
@@ -11,7 +11,7 @@ afterEach(cleanup);
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-const tree = (nodes: WalkTree["nodes"]): WalkTree =>
+const tree = (nodes: WalkTree["nodes"]): WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT } =>
   ({ formatVersion: VENDO_TREE_FORMAT, root: nodes[0]!.id, nodes });
 
 describe("display bricks", () => {

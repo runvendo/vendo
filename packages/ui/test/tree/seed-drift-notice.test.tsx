@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
-import { TreeView } from "../../src/tree/index.js";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
+import { TreeView, type WalkTree } from "../../src/tree/index.js";
 import type { SeedDrift } from "../../src/wire-types.js";
 
 afterEach(() => {
   cleanup();
 });
+
+/** A v2 payload rendered straight by TreeView: the walk shape plus the format tag. */
+type Payload = WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT };
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
@@ -27,8 +30,8 @@ const DRIFT: SeedDrift = {
 
 const NOTICE = "Newer version available";
 
-function driftedTree(seedDrift?: SeedDrift): UIPayload {
-  const tree: UIPayload & { seedDrift?: SeedDrift; inClient?: unknown } = {
+function driftedTree(seedDrift?: SeedDrift): Payload {
+  const tree: Payload & { seedDrift?: SeedDrift; inClient?: unknown } = {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [

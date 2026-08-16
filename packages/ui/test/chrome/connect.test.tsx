@@ -17,7 +17,7 @@ function fakePopup() {
 /** Stub `window.open` with what a browser that ALLOWS the popup returns. */
 function allowPopups() {
   const popup = fakePopup();
-  const open = vi.fn(() => popup);
+  const open = vi.fn<typeof window.open>(() => popup);
   vi.stubGlobal("open", open);
   return { popup, open };
 }
@@ -78,7 +78,7 @@ describe("ConnectCard", () => {
     expect(wire.requests.some(request => request.path === "/connections/initiate")).toBe(false);
     // …and centered on the screen, at the designed size, rather than dropped
     // in a corner. (jsdom reports a 0x0 screen, so the test states one.)
-    const features = open.mock.calls[0]![2] as string;
+    const features = open.mock.calls[0]![2];
     expect(features).toBe("popup=yes,width=520,height=680,left=540,top=200");
 
     await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));

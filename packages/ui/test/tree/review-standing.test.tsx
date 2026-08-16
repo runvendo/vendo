@@ -1,18 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
-import { TreeView } from "../../src/tree/index.js";
-import type { InClientVenue } from "../../src/tree/renderer.js";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
+import { TreeView, type WalkTree } from "../../src/tree/index.js";
+import type { InClientVenue } from "../../src/wire-types.js";
 
 afterEach(() => cleanup());
+
+/** A v2 payload rendered straight by TreeView: the walk shape plus the format tag. */
+type Payload = WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT };
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
 /** A review-kind payload as the server ships it while unapproved: the venue
  *  says pending-review and NO fork source travels (open() strips it). */
-function pendingTree(inClient: InClientVenue): UIPayload {
-  const tree: UIPayload & { inClient?: InClientVenue } = {
+function pendingTree(inClient: InClientVenue): Payload {
+  const tree: Payload & { inClient?: InClientVenue } = {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [

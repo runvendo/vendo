@@ -34,7 +34,7 @@ describe("VendoPalette singleton, host-collision-safe keybinding", () => {
       </VendoProvider>,
     );
     screen.getByRole("button", { name: "Opener" }).focus();
-    fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     // The keybinding TOGGLES the one-surface overlay: double delivery (the
     // pre-ENG-222 bug) would toggle twice and leave it closed. Exactly one
     // delivery leaves exactly one open dialog.
@@ -67,10 +67,10 @@ describe("VendoPalette singleton, host-collision-safe keybinding", () => {
     );
     screen.getByRole("button", { name: "Opener" }).focus();
     // The default ⌘K no longer opens a surface bound to ⌘J.
-    fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
     // The configured chord opens it.
-    fireEvent.keyDown(globalThis, { key: "j", metaKey: true });
+    fireEvent.keyDown(window, { key: "j", metaKey: true });
     const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog).toBeTruthy();
     // Close it before disabling (disabling stops the keybinding, it doesn't
@@ -87,8 +87,8 @@ describe("VendoPalette singleton, host-collision-safe keybinding", () => {
       </VendoProvider>,
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
-    fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
-    fireEvent.keyDown(globalThis, { key: "j", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "j", metaKey: true });
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
   });
 });

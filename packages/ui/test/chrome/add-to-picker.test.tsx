@@ -173,7 +173,7 @@ describe("placing a generated view from the conversation the user is actually in
     await waitFor(() => expect(wire.state.slots).toHaveLength(slots.length));
     render(
       <VendoProvider client={client} pinSlot="home-hero">
-        <ThreadPart part={view(appId)} partKey="p0" role="assistant" restored={false} />
+        <ThreadPart part={view(appId)} partKey="p0" role="assistant" restored={false} risks={new Map()} />
       </VendoProvider>,
     );
   }

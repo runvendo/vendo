@@ -123,7 +123,7 @@ describe("degraded data never changes the card", () => {
       <VendoProvider client={client}>
         <GrantSetCard
           name="Renewal digest"
-          permissions={[{ approvalId: "apr_1", tool: "slack_SLACK_SEND_MESSAGE", description: "Post digests.", risk: "write" }]}
+          permissions={[{ approvalId: "apr_1", tool: "slack_SLACK_SEND_MESSAGE", risk: "write" }]}
           state="parked"
         />
       </VendoProvider>,
@@ -492,7 +492,7 @@ describe("the plain-words line says what happens, not which tool", () => {
       args: { amount_cents: 4750, recipient_name: "Acme Utilities" },
       risk: "write",
     }, {});
-    expect(graded.descriptor.critical).toBeUndefined();
+    expect(graded.descriptor.confirmEach).toBeUndefined();
     const notes = notesOf(show(graded));
     expect(notes).not.toContain("Nobody has checked what this changes");
     expect(notes).not.toContain("Can’t be undone");

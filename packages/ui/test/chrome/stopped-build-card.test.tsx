@@ -41,6 +41,8 @@ function renderTurn(busy: boolean, restored = false) {
         busy={busy}
         activeAssistantId={busy ? message.id : undefined}
         lastAssistantId={message.id}
+        onEditLast={() => undefined}
+        onRegenerateLast={() => undefined}
       />
     </VendoProvider>,
   );

@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
-import { TreeView, evaluateApprovedComponent } from "../../src/tree/index.js";
-import type { InClientVenue } from "../../src/tree/renderer.js";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
+import { TreeView, evaluateApprovedComponent, type WalkTree } from "../../src/tree/index.js";
+import type { InClientVenue } from "../../src/wire-types.js";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+/** A v2 payload rendered straight by TreeView: the walk shape plus the format tag. */
+type Payload = WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT };
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
@@ -25,8 +28,8 @@ const GRANTED: InClientVenue = {
   at: "2026-07-15T09:00:00.000Z",
 };
 
-function venueTree(inClient?: InClientVenue, source = WIDGET_SOURCE): UIPayload {
-  const tree: UIPayload & { inClient?: InClientVenue } = {
+function venueTree(inClient?: InClientVenue, source = WIDGET_SOURCE): Payload {
+  const tree: Payload & { inClient?: InClientVenue } = {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [
@@ -69,10 +72,10 @@ describe("in-client venue enforcement (06-apps §9)", () => {
     // A forked pin commonly has no live tree props. Promotion is hash-pinned,
     // so the approved mount must see the baseline's sampleProps instead of
     // crashing on undefined.
-    const tree = venueTree(GRANTED, "export default function Widget({ label }) { return <p>Sampled {label}</p>; }") as UIPayload & {
+    const tree = venueTree(GRANTED, "export default function Widget({ label }) { return <p>Sampled {label}</p>; }") as Payload & {
       furnishings?: Record<string, { sampleProps?: Record<string, unknown> }>;
     };
-    delete (tree.nodes[1] as { props?: unknown }).props;
+    delete (tree.nodes[1]! as { props?: unknown }).props;
     tree.furnishings = { Widget: { sampleProps: { label: "rehearsal" } } };
     render(<TreeView tree={tree} components={{}} onAction={ok} />);
 

@@ -50,6 +50,8 @@ describe("citation card reachability (Knowledge K1)", () => {
   });
 
   const chips = () => [...document.querySelectorAll<HTMLElement>(".fl-cite")];
+  // One chip per citation, so an index this fixture names is always rendered.
+  const chip = (index: number) => chips()[index]!;
   const openChips = () => [...document.querySelectorAll(".fl-cite--open")];
   const button = (name: RegExp) => screen.getByRole("button", { name });
 
@@ -58,7 +60,7 @@ describe("citation card reachability (Knowledge K1)", () => {
   it("opens the card on hover and holds it through the grace on the way out", () => {
     vi.useFakeTimers();
     mount();
-    const [first] = chips();
+    const first = chip(0);
 
     fireEvent.pointerEnter(first);
     expect(button(/Refunds & cancellations/).getAttribute("aria-expanded")).toBe("true");
@@ -76,7 +78,7 @@ describe("citation card reachability (Knowledge K1)", () => {
   it("arriving on the card cancels the pending close", () => {
     vi.useFakeTimers();
     mount();
-    const [first] = chips();
+    const first = chip(0);
 
     fireEvent.pointerEnter(first);
     fireEvent.pointerLeave(first);
@@ -91,7 +93,7 @@ describe("citation card reachability (Knowledge K1)", () => {
   it("a click pins the card, so it survives the pointer leaving", () => {
     vi.useFakeTimers();
     mount();
-    const [first] = chips();
+    const first = chip(0);
 
     fireEvent.pointerEnter(first);
     fireEvent.click(button(/Refunds & cancellations/));
@@ -121,7 +123,8 @@ describe("citation card reachability (Knowledge K1)", () => {
 
   it("entering another chip closes the first — never two cards at once", () => {
     mount();
-    const [first, second] = chips();
+    const first = chip(0);
+    const second = chip(1);
 
     fireEvent.pointerEnter(first);
     fireEvent.pointerEnter(second);
@@ -132,7 +135,7 @@ describe("citation card reachability (Knowledge K1)", () => {
 
   it("a pinned card gives way to another chip's hover too", () => {
     mount();
-    const [, second] = chips();
+    const second = chip(1);
 
     fireEvent.click(button(/Refunds & cancellations/));
     fireEvent.pointerEnter(second);

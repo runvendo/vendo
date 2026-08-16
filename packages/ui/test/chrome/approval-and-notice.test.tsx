@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { VendoTheme } from "@vendoai/apps/contract";
 import type { ApprovalRequest } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -120,8 +121,10 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
   });
 
   it("injects the chrome stylesheet once and applies resolved theme variables", () => {
+    // `theme` is a SHALLOW `Partial<VendoTheme>`, so overriding ONE color needs a
+    // cast; resolveTheme spreads `colors` over the defaults at runtime.
     render(
-      <VendoProvider client={client} theme={{ colors: { accent: "rgb(1, 2, 3)" } }}>
+      <VendoProvider client={client} theme={{ colors: { accent: "rgb(1, 2, 3)" } as VendoTheme["colors"] }}>
         <ApprovalCard approval={approval} onDecide={() => undefined} />
         <ApprovalCard approval={{ ...approval, id: "apr_2" }} onDecide={() => undefined} />
       </VendoProvider>,

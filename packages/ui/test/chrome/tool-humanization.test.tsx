@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import type { ApprovalRequest, Thread } from "@vendoai/core";
+import type { ApprovalRequest } from "@vendoai/core";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { VendoProvider, createVendoClient, type ToolMetaMap, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type Thread, type ToolMetaMap, type VendoClient } from "../../src/index.js";
 import { ApprovalCard, BuildBeat, VendoThread } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 

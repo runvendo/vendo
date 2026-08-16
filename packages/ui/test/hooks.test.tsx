@@ -410,10 +410,13 @@ describe("headless hooks", () => {
     const nativeApproval = result.current.approvals.find(part => part.type === "dynamic-tool");
     expect(nativeApproval).toMatchObject({ state: "approval-requested" });
 
-    await act(() => result.current.addToolApprovalResponse({
-      id: (nativeApproval as { approval: { id: string } }).approval.id,
-      approved: true,
-    }));
+    // The SDK types this `void | PromiseLike<void>`, which fits neither act() overload.
+    await act(async () => {
+      await result.current.addToolApprovalResponse({
+        id: (nativeApproval as { approval: { id: string } }).approval.id,
+        approved: true,
+      });
+    });
     await waitFor(() => {
       expect(wire.requests.filter(request => request.method === "POST" && request.path === "/threads"))
         .toHaveLength(2);

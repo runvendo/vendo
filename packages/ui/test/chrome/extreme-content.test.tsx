@@ -5,9 +5,8 @@
 // transcript can be mounted deterministically.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Thread } from "@vendoai/core";
 import type { UIMessage } from "ai";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type Thread, type VendoClient } from "../../src/index.js";
 import { VendoThread } from "../../src/chrome/index.js";
 import { LONG_TEXT_CAP, truncateHead } from "../../src/chrome/truncate.js";
 

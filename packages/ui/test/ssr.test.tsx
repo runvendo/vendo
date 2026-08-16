@@ -78,7 +78,7 @@ describe("every chrome surface server-renders without a DOM", () => {
     createdAt: "2026-07-11T12:00:00.000Z",
   };
   const noop = async () => ({ status: "ok", output: null } as const);
-  const tree = { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "SSR tree" } }] } as const;
+  const tree = { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "SSR tree" } }] };
   // A NAMED component child: the wrapper derives its slot from the child's
   // identifier (2026-08-02 final shape — the `name` prop is gone).
   const SsrCard = () => <span>original</span>;

@@ -5,8 +5,12 @@
     "rootDir": ".",
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    // eject-templates.test.ts imports this package's own
+    // `scripts/eject-templates-lib.mjs`, which has no `.d.ts` — same reason
+    // `apps`, `vendo` and `harnesses` set this. There is no `.js` under `src`
+    // or `test`, so it widens nothing else.
+    "allowJs": true
   },
-  "//": "Scoped to the type-level suites. The runtime tests carry ~148 pre-existing type errors and bringing them under tsc is its own lane, not this file's job.",
-  "include": ["src", "test/**/*.test-d.tsx"]
+  "include": ["src", "test"]
 }

@@ -110,7 +110,7 @@ describe("the screen-initiated approval modal", () => {
       mount(clientWith({
         get: pending({
           call: { id: "call_2", tool: "host_archiveProject", args: { project: "Orion", notify_team: true } },
-          descriptor: { name: "host_archiveProject", title: "Archive project", inputSchema: {}, risk: "destructive" },
+          descriptor: { name: "host_archiveProject", title: "Archive project", description: "", inputSchema: {}, risk: "destructive" },
         }),
       }));
       await waitFor(() => expect(ask()).toBe("Archive project?"));
@@ -420,7 +420,7 @@ describe("the screen-initiated approval modal", () => {
     it("the BYO chat surface's app embed", async () => {
       render(
         <VendoProvider client={parking({ open: async () => ({ kind: "tree", payload: PAYEES }) })}>
-          <VendoAppEmbed refValue={{ kind: "vendo/app-ref@1", appId: "app_1", title: "Payees" }} />
+          <VendoAppEmbed refValue={{ kind: "vendo/app-ref@1", appId: "app_1", title: "Payees", status: "building" }} />
         </VendoProvider>,
       );
       await press();

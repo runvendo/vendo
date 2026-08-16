@@ -23,7 +23,7 @@ describe("VendoThread and VendoOverlay exports", () => {
   // whole workspace's suites in parallel, so this heavy integration test can
   // starve past the 5s default under load (275ms locally, ~7s on a loaded runner).
   it("runs a complete wire turn, renders receipts and approvals, and honors composer keys", { timeout: 20_000 }, async () => {
-    let release = () => undefined;
+    let release: () => void = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     expect(await screen.findByText("Existing thread")).toBeTruthy();
@@ -122,7 +122,7 @@ describe("VendoThread and VendoOverlay exports", () => {
   // must keep a live row whatever text precedes it — since spec §1 that row is
   // the transcript's own beat, not the ribbon.
   it("keeps a live beat on a running tool call after text has streamed", { timeout: 20_000 }, async () => {
-    let release = () => undefined;
+    let release: () => void = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     expect(await screen.findByText("Existing thread")).toBeTruthy();
@@ -158,7 +158,7 @@ describe("VendoThread and VendoOverlay exports", () => {
   // the list TAIL (was a WorkingRibbon pill above the composer), and it waits
   // out an 800ms debounce so the end-of-stream teardown never flashes it.
   it("shows the working beat in the settled-tools busy gap and drops it when the turn closes", { timeout: 20_000 }, async () => {
-    let release = () => undefined;
+    let release: () => void = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     expect(await screen.findByText("Existing thread")).toBeTruthy();
@@ -197,7 +197,7 @@ describe("VendoThread and VendoOverlay exports", () => {
   // M22 — a REFUSED ask is terminal. It used to count as a live step forever, so
   // the between-steps indicator never returned for the rest of the turn.
   it("brings the working beat back after a denial — a refused ask is not live", { timeout: 20_000 }, async () => {
-    let release = () => undefined;
+    let release: () => void = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     expect(await screen.findByText("Existing thread")).toBeTruthy();

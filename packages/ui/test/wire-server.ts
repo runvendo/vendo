@@ -243,6 +243,7 @@ function run(): RunRecord {
   return {
     id: "run_1",
     appId: "app_auto",
+    triggerId: DEFAULT_TRIGGER_ID,
     trigger: { kind: "host-event", event: "invoice.created" },
     status: "running",
     startedAt: NOW,
@@ -265,7 +266,7 @@ function wireError(response: ServerResponse, code: string, message: string, stat
   json(response, { error: { code, message } }, status);
 }
 
-async function bodyBytes(request: IncomingMessage): Promise<Uint8Array> {
+async function bodyBytes(request: IncomingMessage): Promise<Uint8Array<ArrayBuffer>> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return new Uint8Array(Buffer.concat(chunks));
@@ -301,6 +302,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
     role: "assistant",
     parts: [{ type: "text", text: "Existing thread" }],
   };
+  // Annotated, not `satisfies`: the routes below arm a trigger and push a rung-2
+  // version, and a `satisfies` literal keeps `false`/`1` as its own type.
+  const automations: AutomationEntry[] = [
+    { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
+  ];
+  const history: VersionEntry[] = [{ at: NOW, intent: "create", rung: 1 }];
   const state = {
     apps: [baseApp, automationApp, ...(options.islandApp === true ? [islandApp()] : [])],
     /** Placement rows (2026-08-05): the fixture keeps the SHAPE the wire keeps
@@ -342,9 +349,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  URL. A knob because the URL is the one field of that response the
      *  BROKER controls, and the surfaces navigate a window to it. */
     redirectUrl: "https://connect.test/oauth/1",
-    automations: [
-      { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
-    ] satisfies AutomationEntry[],
+    automations,
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3"), appEditAudit()],
     threads: new Map<string, Thread>([
@@ -353,7 +358,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
         { id: "thr_1", subject: "user_1", messages: [existingMessage], createdAt: NOW, updatedAt: NOW },
       ],
     ]),
-    history: [{ at: NOW, intent: "create", rung: 1 }] satisfies VersionEntry[],
+    history,
     importBytes: new Uint8Array(),
     // Existing-agents polish — how many open polls `app_building_lands`
     // misses before its build "lands" (the browser harness's build window).

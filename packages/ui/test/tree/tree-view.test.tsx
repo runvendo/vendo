@@ -12,7 +12,11 @@ afterEach(() => {
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-function tree(nodes: WalkTree["nodes"], root = nodes[0]?.id ?? "root", components?: Record<string, string>): WalkTree {
+function tree(
+  nodes: WalkTree["nodes"],
+  root = nodes[0]?.id ?? "root",
+  components?: Record<string, string>,
+): WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT } {
   return { formatVersion: VENDO_TREE_FORMAT, root, nodes, components };
 }
 
@@ -490,20 +494,21 @@ describe("TreeView bindings and outcomes", () => {
   it("updates $state reads and reports an approved component's state writes", async () => {
     const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
     const onStateChange = vi.fn();
+    const granted = {
+      ...tree(
+        [
+          { id: "root", component: "Row", children: ["generated", "probe"] },
+          { id: "generated", component: "Editor", source: "generated" },
+          { id: "probe", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
+        ],
+        "root",
+        { Editor: setStateSource("Editor", "saved locally") },
+      ),
+      inClient: GRANTED,
+    };
     render(
       <TreeView
-        tree={{
-          ...tree(
-            [
-              { id: "root", component: "Row", children: ["generated", "probe"] },
-              { id: "generated", component: "Editor", source: "generated" },
-              { id: "probe", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
-            ],
-            "root",
-            { Editor: setStateSource("Editor", "saved locally") },
-          ),
-          inClient: GRANTED,
-        }}
+        tree={granted}
         components={{ StateProbe }}
         onAction={ok}
         onStateChange={onStateChange}

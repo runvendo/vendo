@@ -9,6 +9,8 @@ import {
   VendoProvider,
   VendoToolResult,
   createVendoClient,
+  type OpenSurface,
+  type PendingSurface,
   type VendoClient,
 } from "../src/index.js";
 import { createWireServer } from "./wire-server.js";
@@ -372,7 +374,8 @@ describe("existing-agents embeds", () => {
           ...client,
           apps: {
             ...client.apps,
-            open: (() => Promise.resolve({ kind: "pending" })) as VendoClient["apps"]["open"],
+            open: ((): Promise<OpenSurface | PendingSurface> =>
+              Promise.resolve({ kind: "pending" })) as VendoClient["apps"]["open"],
           },
         };
         render(

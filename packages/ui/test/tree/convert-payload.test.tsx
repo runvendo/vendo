@@ -240,13 +240,14 @@ describe("vendo-genui/v2 component source resolution", () => {
 describe("v1 walk regression", () => {
   it("keeps preferring the built-in for undefined-source v1 nodes that collide with host names", () => {
     const Card: ComponentType<{ title?: string }> = ({ title }) => <article>Host card: {title}</article>;
+    const v1Tree = {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [{ id: "root", component: "Card", props: { title: "still built-in" } }],
+    };
     render(
       <TreeView
-        tree={{
-          formatVersion: "vendo-genui/v2",
-          root: "root",
-          nodes: [{ id: "root", component: "Card", props: { title: "still built-in" } }],
-        }}
+        tree={v1Tree}
         components={{ Card }}
         onAction={ok}
       />,

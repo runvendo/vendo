@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
-import { TreeView } from "../../src/tree/index.js";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
+import { TreeView, type WalkTree } from "../../src/tree/index.js";
 
 afterEach(() => {
   cleanup();
 });
+
+/** A v2 payload rendered straight by TreeView: the walk shape plus the format tag. */
+type Payload = WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT };
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
@@ -18,7 +21,7 @@ const NOTICE = "Data didn't load";
  * ("No data"), which is exactly why the failure has to be said out loud —
  * otherwise the user cannot tell "this couldn't load" from "you have nothing".
  */
-function spendingTree(extras: Record<string, unknown> = {}): UIPayload {
+function spendingTree(extras: Record<string, unknown> = {}): Payload {
   return {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
@@ -31,12 +34,12 @@ function spendingTree(extras: Record<string, unknown> = {}): UIPayload {
       },
     ],
     ...extras,
-  } as UIPayload;
+  } as Payload;
 }
 
 /** The same app with a second, independent value in it — the shape a PARTIAL
  *  failure takes on screen: one binding resolved, one still blank. */
-function mixedTree(extras: Record<string, unknown> = {}): UIPayload {
+function mixedTree(extras: Record<string, unknown> = {}): Payload {
   return {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
@@ -50,7 +53,7 @@ function mixedTree(extras: Record<string, unknown> = {}): UIPayload {
       },
     ],
     ...extras,
-  } as UIPayload;
+  } as Payload;
 }
 
 describe("the data-unavailable notice (render-seam F6)", () => {

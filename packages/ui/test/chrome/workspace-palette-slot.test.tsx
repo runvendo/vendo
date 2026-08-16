@@ -34,7 +34,7 @@ describe("VendoPalette and VendoSlot exports", () => {
     await waitFor(() => expect(wire.requests.some(request => request.path === "/apps")).toBe(true));
     const opener = screen.getByRole("button", { name: "Palette opener" });
     opener.focus();
-    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     // One surface: the conversation overlay, composer focused, no combobox.
     expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
     expect(screen.queryByRole("combobox")).toBeNull();
@@ -61,7 +61,7 @@ describe("VendoPalette and VendoSlot exports", () => {
     // the Escape/focus assertions below.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     opener.focus();
-    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     await screen.findByRole("dialog", { name: "Vendo assistant" });
     // Escape closes the surface and restores focus to the invoker.
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Vendo assistant" }), { key: "Escape" });
@@ -69,7 +69,7 @@ describe("VendoPalette and VendoSlot exports", () => {
     await waitFor(() => expect(document.activeElement).toBe(opener));
 
     // ⌘K toggles: open, then a second press (even from the composer) closes.
-    fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     await screen.findByRole("dialog", { name: "Vendo assistant" });
     const reopenedComposer = await screen.findByRole("textbox", { name: "Message" });
     await waitFor(() => expect(document.activeElement).toBe(reopenedComposer));
@@ -95,7 +95,7 @@ describe("VendoPalette and VendoSlot exports", () => {
   function Racer({ open }: { open: boolean }) {
     const previous = useRef(open);
     useLayoutEffect(() => {
-      if (previous.current && !open) fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+      if (previous.current && !open) fireEvent.keyDown(window, { key: "k", metaKey: true });
       previous.current = open;
     }, [open]);
     return null;
@@ -117,7 +117,7 @@ describe("VendoPalette and VendoSlot exports", () => {
     await waitFor(() => expect(wire.requests.some(request => request.path === "/apps")).toBe(true));
     const opener = screen.getByRole("button", { name: "Palette opener" });
     opener.focus();
-    fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     await screen.findByRole("dialog", { name: "Vendo assistant" });
 
     // Close from a host affordance; the Racer's layout effect fires the racing

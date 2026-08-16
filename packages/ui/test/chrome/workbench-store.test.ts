@@ -10,7 +10,7 @@ import {
 
 afterEach(() => resetWorkbench());
 
-function chunk(part: Partial<WorkbenchPart> & { event?: unknown }, type = "data-vendo-debug") {
+function chunk(part: Omit<Partial<WorkbenchPart>, "event"> & { event?: unknown }, type = "data-vendo-debug") {
   return { type, data: { turnId: "thr_a", seq: 1, at: 1_000, agent: "resident", ...part } };
 }
 

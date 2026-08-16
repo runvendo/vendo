@@ -2,8 +2,19 @@ import { describe, expect, it } from "vitest";
 import { IN_CLIENT_BUNDLED_PACKAGES } from "@vendoai/apps/contract";
 import { zodShim } from "../../src/tree/inclient-zod-shim.js";
 
+/** The shim's node: a Proxy, so every one of these names answers with another
+ *  callable node — nothing here is ever missing. */
+interface ShimNode extends Record<
+  "object" | "string" | "number" | "boolean" | "enum" | "array"
+  | "discriminatedUnion" | "optional" | "describe" | "min" | "brand" | "readonly" | "catch",
+  ShimNode
+> {
+  (...args: unknown[]): ShimNode;
+  [name: string]: ShimNode;
+}
+
 /** The `z` namespace as an in-client component receives it. */
-const z = (zodShim as { z: Record<string, (...args: unknown[]) => Record<string, unknown>> }).z;
+const z = (zodShim as { z: ShimNode }).z;
 
 describe("the in-client zod shim", () => {
   it("resolves the declaration surface real host registries use", () => {

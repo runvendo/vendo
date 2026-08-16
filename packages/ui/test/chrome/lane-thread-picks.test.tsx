@@ -75,7 +75,7 @@ describe("lane pick 4B — landing starter cards", () => {
         <VendoThread
           discoverability="quiet"
           suggestions={[
-            { title: "Build a view", prompt: "Build me a renewals view" },
+            { title: "Build a view", description: "Renewals sorted by risk", prompt: "Build me a renewals view" },
             "Build me a subscriptions tracker",
             "Where did my dining budget go?",
           ]}
@@ -94,7 +94,7 @@ describe("lane pick 4B — landing starter cards", () => {
   it("cards without strings render no chip row and no micro-label", async () => {
     render(
       <VendoProvider client={client}>
-        <VendoThread discoverability="quiet" suggestions={[{ title: "Build a view", prompt: "p" }]} />
+        <VendoThread discoverability="quiet" suggestions={[{ title: "Build a view", description: "Renewals sorted by risk", prompt: "p" }]} />
       </VendoProvider>,
     );
     await screen.findByRole("button", { name: /Build a view/ });

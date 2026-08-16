@@ -79,6 +79,7 @@ describe("AutomationCard", () => {
           description="Emails you when checking dips below $2,000."
           sponsor={{ subject: "user_1", display: "Dana" }}
           trigger={{
+            id: "main",
             on: { kind: "schedule", cron: "0 8 * * *" },
             run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
           }}
@@ -115,6 +116,7 @@ describe("AutomationCard", () => {
             enabled
             description={description}
             trigger={{
+              id: "main",
               on: { kind: "schedule", cron: "0 8 * * *" },
               run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
             }}
@@ -165,6 +167,7 @@ describe("AutomationCard", () => {
           name="Low balance alert"
           enabled={false}
           trigger={{
+            id: "main",
             on: { kind: "schedule", cron: "0 8 * * *" },
             run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
           }}

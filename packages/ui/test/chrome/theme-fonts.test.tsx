@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { ChromeRoot } from "../../src/chrome/index.js";
 import { VendoProvider } from "../../src/context.js";
-import { TreeView } from "../../src/tree/index.js";
+import { TreeView, type WalkTree } from "../../src/tree/index.js";
 
 /**
  * Generated code mounts natively in the host page now (`InClientMount`), so the
@@ -24,7 +24,7 @@ afterEach(() => {
     .forEach((style) => style.remove());
 });
 
-const generatedTree: UIPayload = {
+const generatedTree: WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT } = {
   formatVersion: VENDO_TREE_FORMAT,
   root: "root",
   nodes: [

@@ -8,10 +8,9 @@
 // The state rides ONE attribute on the EXISTING button (`data-vendo-pin`), the
 // same shape `data-vendo-suggest` uses on the expand affordance: no new button,
 // no new component, no toast.
-import type { Thread } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type Thread, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoThread, type VendoThreadProps } from "../../src/chrome/index.js";
 import { ThreadPart } from "../../src/chrome/thread/parts.js";
 import { createWireServer } from "../wire-server.js";
@@ -56,7 +55,7 @@ describe("the pin nudge on the in-thread card", () => {
   function card(appId: string, restored: boolean, streaming = false) {
     render(
       <VendoProvider client={client} onPin={() => {}}>
-        <ThreadPart part={view(appId, "Spending board", streaming)} partKey="p0" role="assistant" restored={restored} />
+        <ThreadPart part={view(appId, "Spending board", streaming)} partKey="p0" role="assistant" restored={restored} risks={new Map()} />
       </VendoProvider>,
     );
   }

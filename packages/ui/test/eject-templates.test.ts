@@ -28,7 +28,11 @@ afterAll(() => {
 describe("eject template assembly", () => {
   it("assembles the thread surface into dist with a generated header and manifest", async () => {
     const { assembleEjectTemplates } = await lib();
-    const manifest = await assembleEjectTemplates(PACKAGE_DIR);
+    // The lib seeds `surfaces` as `{}`, so inference loses the manifest's shape.
+    const manifest = (await assembleEjectTemplates(PACKAGE_DIR)) as {
+      version: string;
+      surfaces: Record<"thread", { component: string; sourceBase: string; sourceDir: string; files: string[] }>;
+    };
 
     const version = (JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) as {
       version: string;

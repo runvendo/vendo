@@ -1,6 +1,5 @@
 /** VendoProvider + the internal context every hook and surface reads (08 §2). */
 import type {
-  ComponentRegistry,
   ComponentRegistryEntry,
   VendoNavigation,
   VendoRouteMap,
@@ -85,14 +84,17 @@ export const VendoContext = createContext<VendoContextValue | null>(null);
 
 /** 08 §2 (amended 2026-07-18): the components input — the plain name→component
  * map, or the 01 §14 name-keyed ComponentRegistry (the same object the server
- * takes as `catalog`). */
-export type HostComponentsInput = Record<string, ComponentType> | ComponentRegistry;
+ * takes as `catalog`). The choice is per ENTRY, which is how hostComponentMap
+ * has always read it; a union of the two whole-map forms could not express a
+ * mixed one. `ComponentType<never>` because a host component declares its own
+ * required props and `ComponentType`'s default `{}` rejects every one of them. */
+export type HostComponentsInput = Record<string, ComponentType<never> | ComponentRegistryEntry>;
 
 /** Safe narrow: a plain-map value is a function/class component or an exotic
  * React component object ($$typeof/render/type — never a `component` field),
  * while a registry entry always carries `component` plus its REQUIRED string
  * `description` (01 §14). Both checks together rule out misdetection. */
-function isRegistryEntry(value: ComponentType | ComponentRegistryEntry): value is ComponentRegistryEntry {
+function isRegistryEntry(value: ComponentType<never> | ComponentRegistryEntry): value is ComponentRegistryEntry {
   return typeof value === "object" && value !== null
     && "component" in value
     && typeof (value as ComponentRegistryEntry).description === "string";
@@ -105,7 +107,7 @@ export function hostComponentMap(components: HostComponentsInput | undefined): R
   if (components === undefined) return {};
   const map: Record<string, ComponentType> = {};
   for (const [name, value] of Object.entries(components)) {
-    map[name] = isRegistryEntry(value) ? (value.component as ComponentType) : value;
+    map[name] = (isRegistryEntry(value) ? value.component : value) as ComponentType;
   }
   return map;
 }

@@ -9,10 +9,9 @@
 //     sent text paints as a blank line (host sendMessage / prefill bridges
 //     can carry one even though the composer trims its own drafts).
 // These tests pin both fixes.
-import type { Thread } from "@vendoai/core";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type Thread, type VendoClient } from "../../src/index.js";
 import { VendoThread } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { createWireServer } from "../wire-server.js";

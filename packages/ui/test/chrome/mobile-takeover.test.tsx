@@ -127,7 +127,7 @@ describe("mobile takeover (ENG-228)", () => {
     const { container } = render(
       <VendoProvider client={client}><VendoPalette /><VendoOverlay launcher="none" /></VendoProvider>,
     );
-    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog.classList.contains("fl-takeover")).toBe(true);
     expect(container.contains(dialog)).toBe(false);
@@ -139,7 +139,7 @@ describe("mobile takeover (ENG-228)", () => {
     render(
       <VendoProvider client={client}><VendoPalette /><VendoOverlay launcher="none" /></VendoProvider>,
     );
-    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog.classList.contains("fl-takeover")).toBe(false);
   });
@@ -182,11 +182,11 @@ describe("mobile takeover (ENG-228)", () => {
       </VendoProvider>,
     );
     expect(panel()).toBeTruthy();
-    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     // No palette dialog ever mounts — the keybinding owns ONE surface.
     expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
-    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
   });
 

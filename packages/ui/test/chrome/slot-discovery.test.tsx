@@ -4,15 +4,15 @@
 // poller per client — every mounted slot rides the same GET /apps/placements.
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoProvider, createVendoClient, useSlotApp, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, useSlotApp, type PlacementEntry, type VendoClient } from "../../src/index.js";
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
-const entry = (overrides: Partial<{ slot: string; app: string; title: string; status: string }> = {}) => ({
+const entry = (overrides: Partial<PlacementEntry> = {}): PlacementEntry => ({
   slot: "hero",
   app: "app_1",
   title: "Invoices",
-  status: "ready" as const,
+  status: "ready",
   ...overrides,
 });
 

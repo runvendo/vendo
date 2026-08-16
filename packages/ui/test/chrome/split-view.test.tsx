@@ -4,11 +4,10 @@
 // tests then pin the overlay behaviors: expand/collapse without a thread
 // remount, feature selection from the rail, the Escape order (collapse first,
 // close second), and the subtle expand suggestion when an embed lands.
-import type { Thread } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type Thread, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoThread, type VendoThreadProps } from "../../src/chrome/index.js";
 import {
   escapeIntent,
@@ -430,7 +429,8 @@ describe("VendoOverlay split view", () => {
     }, [appIds]);
     useEffect(() => {
       if (split === null) return;
-      for (const appId of appIds.slice(0, arrived)) split.autoStage(appId);
+      // Build keys as parts.tsx forms them: `${message.id}-${index}-${appId}`.
+      for (const [index, appId] of appIds.slice(0, arrived).entries()) split.autoStage(appId, `msg_1-${index}-${appId}`);
     }, [split, appIds, arrived]);
     return null;
   }

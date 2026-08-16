@@ -33,8 +33,10 @@ function stubLayout(columnWidth: number, clientWidth: number): () => void {
   }
   return () => {
     globalThis.ResizeObserver = observers;
-    delete (HTMLElement.prototype as Partial<HTMLElement>).offsetWidth;
-    delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
+    // `delete` needs a writable view — both props are readonly on HTMLElement.
+    const proto = HTMLElement.prototype as Partial<Record<"offsetWidth" | "clientWidth", number>>;
+    delete proto.offsetWidth;
+    delete proto.clientWidth;
   };
 }
 

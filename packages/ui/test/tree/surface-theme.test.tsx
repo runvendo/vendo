@@ -7,8 +7,8 @@
 // `var(…, fallback)` carries, which is why a screenshot could not see it.
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT } from "@vendoai/apps/contract";
-import type { ToolOutcome } from "@vendoai/core";
+import type { VendoTheme } from "@vendoai/apps/contract";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { TreeView, type WalkTree } from "../../src/tree/index.js";
 import { VendoProvider, createVendoClient } from "../../src/index.js";
 import { ChromeRoot } from "../../src/chrome/chrome-root.js";
@@ -20,7 +20,7 @@ const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 /** Nothing in the default theme and no brick fallback is this color. */
 const HOST_ACCENT = "#ff00aa";
 
-const tree: WalkTree = {
+const tree: WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT } = {
   formatVersion: VENDO_TREE_FORMAT,
   root: "root",
   nodes: [
@@ -41,10 +41,12 @@ function resolvedAccent(from: HTMLElement): string {
   return "";
 }
 
+// `theme` is a SHALLOW `Partial<VendoTheme>`, so overriding ONE color needs a
+// cast; resolveTheme spreads `colors` over the defaults at runtime.
 describe("surface theming does not depend on DOM ancestry", () => {
   it("resolves the host theme on a surface mounted OUTSIDE ChromeRoot", () => {
     render(
-      <VendoProvider client={createVendoClient({ baseUrl: "http://vendo.test/api/vendo" })} theme={{ colors: { accent: HOST_ACCENT } }}>
+      <VendoProvider client={createVendoClient({ baseUrl: "http://vendo.test/api/vendo" })} theme={{ colors: { accent: HOST_ACCENT } as VendoTheme["colors"] }}>
         <TreeView tree={tree} components={{}} onAction={ok} />
       </VendoProvider>,
     );
@@ -55,7 +57,7 @@ describe("surface theming does not depend on DOM ancestry", () => {
 
   it("resolves the same value inside ChromeRoot — one mapping, nothing to disagree about", () => {
     render(
-      <VendoProvider client={createVendoClient({ baseUrl: "http://vendo.test/api/vendo" })} theme={{ colors: { accent: HOST_ACCENT } }}>
+      <VendoProvider client={createVendoClient({ baseUrl: "http://vendo.test/api/vendo" })} theme={{ colors: { accent: HOST_ACCENT } as VendoTheme["colors"] }}>
         <ChromeRoot>
           <TreeView tree={tree} components={{}} onAction={ok} />
         </ChromeRoot>

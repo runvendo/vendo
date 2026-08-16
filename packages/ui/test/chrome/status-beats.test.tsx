@@ -28,7 +28,7 @@ import { createWireServer } from "../wire-server.js";
 describe("the status channel reaches the screen", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
-  let release = () => undefined;
+  let release: () => void = () => undefined;
 
   beforeEach(async () => {
     wire = await createWireServer();

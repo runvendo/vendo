@@ -372,7 +372,7 @@ describe("connect dock + tray (ENG-225)", () => {
     // broker), then navigated to the real OAuth URL once initiate resolves. The
     // stand-in is what a browser that ALLOWS the popup hands back.
     const popup = { location: { replace: vi.fn() }, close: vi.fn() };
-    const open = vi.fn(() => popup);
+    const open = vi.fn((_url: string, _target: string, _features: string) => popup);
     vi.stubGlobal("open", open);
     render(
       <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>,
@@ -525,7 +525,7 @@ describe("connect dock + tray (ENG-225)", () => {
   // the other. Pre-existing in the panel post-#1051; the tray's old
   // surface-wide `disabled` was hiding it here.
   it("gives each concurrent connect its own sign-in window", async () => {
-    const open = vi.fn(() => ({ location: { replace: vi.fn() }, close: vi.fn() }));
+    const open = vi.fn((_url: string, _target: string, _features: string) => ({ location: { replace: vi.fn() }, close: vi.fn() }));
     vi.stubGlobal("open", open);
     holdThePoll();
     const tray = await openTray();

@@ -7,11 +7,10 @@
  *  no beat because its card IS that step, and a FAILED turn grows no failure
  *  furniture at all — the ✕ stays in the record and the agent's prose carries
  *  the recovery. */
-import type { Thread } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type Thread, type VendoClient } from "../../src/index.js";
 import { VendoThread } from "../../src/chrome/index.js";
 import { toolResultSummary } from "../../src/chrome/build-beat.js";
 import { SplitViewContext, type SplitViewContextValue } from "../../src/chrome/split-view.js";
@@ -116,7 +115,7 @@ describe("the transcript's beats", () => {
   // position while the call runs, ticks when it settles, and the closed turn
   // folds it into one row that reopens on click.
   it("beats a running call in-transcript, then folds the settled turn into one reopenable row", { timeout: 20_000 }, async () => {
-    let release = () => undefined;
+    let release: () => void = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     expect(await screen.findByText("Existing thread")).toBeTruthy();
