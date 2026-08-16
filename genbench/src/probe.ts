@@ -32,6 +32,10 @@ const CLICK_MS = 5_000;
  */
 const EFFECT_MS = 2_000;
 
+/** Enough of a confirmation for a judge to grade what it says, and not so much
+ *  that a dialog of fine print becomes the whole trace. */
+const DIALOG_CHARS = 500;
+
 export interface Fired {
   readonly name: string;
   readonly args: unknown;
@@ -39,8 +43,11 @@ export interface Fired {
 
 export interface Probed {
   readonly label: string;
-  /** A `[role=dialog]` stood between the press and the call, and was confirmed. */
-  readonly confirmed: boolean;
+  /** The visible text of a `[role=dialog]` the press opened. Nothing inside it
+   *  is pressed: which control confirms is a judgement, not a lookup, and a robot
+   *  that guesses at it grades its own guess. What the dialog SAYS is the
+   *  evidence, and the judge is who reads it. Absent when none opened. */
+  readonly dialog?: string;
   /** The press visibly moved the screen — a dialog opened, a tab switched, a row
    *  was dismissed. What tells a control that only changes local state apart from
    *  one that is dead, since neither asks the host for anything. */
@@ -109,18 +116,12 @@ export async function probe(visit: Visit): Promise<Probed[]> {
 
     // Read after the press has landed, so a confirmation the runtime paints a
     // frame late is still a confirmation and not a control that did nothing.
+    // `isVisible` first because it answers on a missing element instead of
+    // waiting for one, which every press that opens no dialog is.
     const dialog = visit.page.locator("[role=dialog]").first();
-    const confirmed = await dialog.isVisible().catch(() => false);
-    if (confirmed) {
-      // Measured from the screen WITH the dialog on it, not from before the
-      // press: the dialog opening already moved the page, so a wait against the
-      // earlier state would be satisfied before the confirm had done anything.
-      const opened = await look(visit.page);
-      // The primary action sits last in a confirmation; everything before it is a
-      // way out, and taking one of those would record the press as firing nothing.
-      await dialog.locator(ACTIONABLE).last().click({ timeout: CLICK_MS }).catch(() => undefined);
-      await settle(visit.page, opened);
-    }
+    const said = (await dialog.isVisible().catch(() => false))
+      ? (await dialog.innerText().catch(() => "")).trim().slice(0, DIALOG_CHARS)
+      : undefined;
 
     // A press that navigated away — a link with an href — leaves no screen to
     // read: it went somewhere, which is the change, and it asked the host for
@@ -130,7 +131,7 @@ export async function probe(visit: Visit): Promise<Probed[]> {
     if (after === undefined) await visit.reset();
     trace.push({
       label: (text || aria || "").trim() || `control ${index + 1}`,
-      confirmed,
+      ...(said === undefined ? {} : { dialog: said }),
       changed: after === undefined || after.text !== before.text || after.elements !== before.elements,
       // Only what THIS press asked for. The recorder is the page's, not the
       // press's, so handing over the whole array credited one load-time call to

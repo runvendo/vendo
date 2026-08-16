@@ -106,36 +106,45 @@ const STATE_ONLY = fixture(`document.getElementById("go").addEventListener("clic
   }, 50));`);
 
 /**
- * The whole confirmation chain: the press opens a `[role=dialog]` with a way out
- * and a primary action, in that order, a beat after the click.
+ * The whole confirmation chain: the press opens a `[role=dialog]` with a message,
+ * a way out and a primary action, a beat after the click.
  *
  * The dialog is BUILT on the press rather than sitting hidden in the markup, the
  * way a real screen mounts one — so the page the probe counts its candidates on
  * has exactly the one button, and the dialog's own controls are never graded as
  * screens of their own.
  */
-const chain = (attachPrimary: string): string =>
+const MESSAGE = "Cancel this transfer? It cannot be undone.";
+const chain = (attachPrimary: string, said = MESSAGE): string =>
   fixture(`document.getElementById("go").addEventListener("click", () =>
   setTimeout(() => {
     var dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
+    var message = document.createElement("p");
+    message.textContent = ${JSON.stringify(said)};
     var keep = document.createElement("button");
     keep.textContent = "Keep it";
     keep.addEventListener("click", () => dialog.remove());
     var primary = document.createElement("button");
     primary.textContent = "Yes, cancel it";
     ${attachPrimary}
-    dialog.append(keep, primary);
+    dialog.append(message, keep, primary);
     document.getElementById("root").append(dialog);
   }, 50));`);
 
 const CONFIRMED = chain(`primary.addEventListener("click", () =>
       window.vendo.callTool("cancel_transfer", { id: "tr_1" }));`);
 
-/** The same chain with the primary's handler never attached — a screen that asks
- *  "are you sure?", is told yes, and does nothing. Indistinguishable from the one
- *  above in a screenshot, and the exact thing a dialog's repaint could hide. */
+/** The same chain with the primary's handler never attached. The two are one
+ *  page to this probe, on purpose: which control confirms is a judgement, and a
+ *  robot pressing the one it guessed at would be grading its own guess. */
 const CONFIRMED_DEAD = chain("");
+
+/** The whole record either chain leaves. `innerText` is the screen as rendered,
+ *  so the exact spacing between the message and the buttons is the browser's to
+ *  decide; what is pinned is that the words a person reads are captured, and
+ *  that `calls` is empty because nothing inside the dialog was pressed. */
+const OPENED = [{ label: "Cancel transfer", dialog: expect.stringContaining(MESSAGE), changed: true, calls: [] }];
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
@@ -159,7 +168,7 @@ describe("the click probe grades what a browser actually does", () => {
   it("passes a button whose handler calls a real tool with valid arguments", async () => {
     const trace = await traceOf(WIRED);
     expect(trace).toEqual([
-      { label: "Cancel transfer", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+      { label: "Cancel transfer", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
     ]);
     expect(wiredActions(trace, world).pass).toBe(true);
   });
@@ -171,14 +180,14 @@ describe("the click probe grades what a browser actually does", () => {
     // still empty here and a wired control is graded dead. Every interactive
     // screen presses through a runtime, so every one of them looked like this.
     expect(trace).toEqual([
-      { label: "Cancel transfer", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+      { label: "Cancel transfer", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
     ]);
     expect(wiredActions(trace, world).pass).toBe(true);
   });
 
   it("passes a button that only changes the screen, and says that is what it did", async () => {
     const trace = await traceOf(STATE_ONLY);
-    expect(trace).toEqual([{ label: "Cancel transfer", confirmed: false, changed: true, calls: [] }]);
+    expect(trace).toEqual([{ label: "Cancel transfer", changed: true, calls: [] }]);
 
     const result = wiredActions(trace, world);
     expect(result.pass).toBe(true);
@@ -187,7 +196,7 @@ describe("the click probe grades what a browser actually does", () => {
 
   it("fails the same button with no handler attached", async () => {
     const trace = await traceOf(DEAD);
-    expect(trace).toEqual([{ label: "Cancel transfer", confirmed: false, changed: false, calls: [] }]);
+    expect(trace).toEqual([{ label: "Cancel transfer", changed: false, calls: [] }]);
 
     const result = wiredActions(trace, world);
     expect(result.pass).toBe(false);
@@ -199,7 +208,7 @@ describe("the click probe grades what a browser actually does", () => {
 
     // One control, one press, and it did nothing: the load-time fetch was on the
     // recorder before the button was ever touched.
-    expect(trace).toEqual([{ label: "Cancel transfer", confirmed: false, changed: false, calls: [] }]);
+    expect(trace).toEqual([{ label: "Cancel transfer", changed: false, calls: [] }]);
     expect(wiredActions(trace, world).pass).toBe(false);
     expect(wiredActions(trace, world).bindings[0]).toMatchObject({ effect: "none" });
   });
@@ -227,46 +236,44 @@ describe("the click probe grades what a browser actually does", () => {
   });
 
   /**
-   * The confirmation chain, both ways, and the one case where a screen that moved
-   * is still dead.
+   * The confirmation chain, both ways, and they are the SAME record.
    *
-   * A dialog opening is a visible change, so the state-only rule on its own would
-   * pass a screen that asks "are you sure?", is told yes, and calls nothing — the
-   * precise failure the probe replaced a static scan to catch. Being followed
-   * through is what separates the two: the pair below differs only by whether the
-   * primary action has a handler.
+   * The probe used to press the dialog's last control and grade what followed. It
+   * cannot: which control confirms is a judgement — "Cancel" in a dialog about
+   * cancelling means the opposite of "Cancel" beside it — so a robot pressing the
+   * one it guessed at was grading its own guess, and the two pages below are
+   * exactly where that showed. Now it records the dialog and its words, presses
+   * nothing inside, and the judge reads what the screen actually asked.
    */
-  it("passes a confirmation whose primary action calls a real tool", async () => {
+  it("records the dialog a press opened, and presses nothing inside it", async () => {
     const trace = await traceOf(CONFIRMED);
-    expect(trace).toEqual([
-      {
-        label: "Cancel transfer",
-        confirmed: true,
-        changed: true,
-        calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }],
-      },
-    ]);
+
+    // The primary action IS wired here — so a call in `calls` would be the probe
+    // having pressed it. There is none.
+    expect(trace).toEqual(OPENED);
 
     const result = wiredActions(trace, world);
     expect(result.pass).toBe(true);
-    expect(result.bindings[0]).toMatchObject({ effect: "tool", tool: "cancel_transfer" });
+    expect(result.bindings[0]).toMatchObject({ effect: "state" });
   });
 
-  it("fails a confirmation that was followed through and still called nothing", async () => {
+  it("no longer convicts a confirmation nobody followed through", async () => {
     const trace = await traceOf(CONFIRMED_DEAD);
 
-    // The screen DID move — the dialog is on it — so this is the one press that
-    // changed something and is dead anyway.
-    expect(trace).toEqual([{ label: "Cancel transfer", confirmed: true, changed: true, calls: [] }]);
-
-    const result = wiredActions(trace, world);
-    expect(result.pass).toBe(false);
-    expect(result.bindings[0]).toMatchObject({ effect: "none" });
+    // The wired chain's record exactly: the harness cannot tell the two apart
+    // and does not pretend to.
+    expect(trace).toEqual(OPENED);
+    expect(wiredActions(trace, world).pass).toBe(true);
 
     // The dialog's own buttons were never graded as controls of their own: the
     // candidates are counted on the untouched page, where the dialog does not
-    // exist yet. That is why a "Keep it" dismiss cannot be caught by the rule
-    // above — the probe only ever presses a dialog's LAST control.
+    // exist yet.
     expect(trace).toHaveLength(1);
+  });
+
+  it("caps a dialog of fine print instead of letting it become the trace", async () => {
+    const trace = await traceOf(chain("", "x".repeat(900)));
+
+    expect(trace[0]!.dialog).toBe("x".repeat(500));
   });
 });

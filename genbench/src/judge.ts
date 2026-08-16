@@ -163,17 +163,22 @@ function traceText(trace: readonly Probed[]): string {
   return trace
     .map((probed) => {
       const asked = probed.calls.map((call) => `${call.name}(${JSON.stringify(call.args)})`).join(", ");
-      const step = probed.confirmed ? " (a confirmation step appeared, and was confirmed)" : "";
+      // A confirmation is where the probe STOPS, so its words are the whole of
+      // that press's evidence: quoted verbatim, because "asks before it cancels
+      // two transfers" is graded off what the dialog said and nothing else.
+      //
       // A control that only changes local state asked the host for nothing and is
       // still a working control; "called nothing" alone would read to the judge as
       // a dead button and cost the screen a correctness line it earned.
       const did =
-        asked !== ""
-          ? `called ${asked}`
-          : probed.changed
-            ? "called nothing, and changed the screen"
-            : "called nothing, and changed nothing";
-      return `pressed "${probed.label}"${step} — ${did}`;
+        probed.dialog !== undefined
+          ? `opened a confirmation: ${JSON.stringify(probed.dialog)}`
+          : asked !== ""
+            ? `called ${asked}`
+            : probed.changed
+              ? "called nothing, and changed the screen"
+              : "called nothing, and changed nothing";
+      return `pressed "${probed.label}" — ${did}`;
     })
     .join("\n");
 }

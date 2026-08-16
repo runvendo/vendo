@@ -358,8 +358,8 @@ describe("the preview page", () => {
   it("marks a state-only control as a pass, with the reason it passed, and a dead one as a fail", async () => {
     const graded = wiredActions(
       [
-        { label: "Details", confirmed: false, changed: true, calls: [] },
-        { label: "Refresh", confirmed: false, changed: false, calls: [] },
+        { label: "Details", changed: true, calls: [] },
+        { label: "Refresh", changed: false, calls: [] },
       ],
       world,
     );
@@ -403,7 +403,7 @@ describe("the preview page", () => {
    *  the check's own reason has to be readable beside them or the column shows a
    *  red mark over a row of green ticks. */
   it("prints why an action case failed when no single press did", async () => {
-    const unproven = wiredActions([{ label: "Details", confirmed: false, changed: true, calls: [] }], world, ["action"]);
+    const unproven = wiredActions([{ label: "Details", changed: true, calls: [] }], world, ["action"]);
     const html = await preview(
       [
         {
@@ -435,8 +435,8 @@ describe("the preview page", () => {
   it("tells a screen whose controls all held apart from one with nothing to press", async () => {
     const live = wiredActions(
       [
-        { label: "Cancel", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
-        { label: "Details", confirmed: false, changed: true, calls: [] },
+        { label: "Cancel", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+        { label: "Details", changed: true, calls: [] },
       ],
       world,
     );

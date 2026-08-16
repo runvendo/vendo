@@ -37,7 +37,7 @@ export const HARNESS_CONTRACT = `THE PAGE — the seam every screen is scored th
 
 - SELF-CONTAINED. Inline every style and every script. The page is opened with NO network at all, so a CDN link, a webfont URL or an import of anything paints a blank screen.
 - WIRED. Every control a person can press must call \`window.vendo.callTool("<tool name>", { ...arguments })\`, with arguments that tool's input schema accepts. \`window.vendo\` is already on the page before anything you write runs — use it, do not define it.
-- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`, or the call behind it is never seen.
+- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`. The harness records that it opened and the text it shows, and presses nothing inside it — what the dialog SAYS is what is graded.
 - FINISHED. The screen is considered settled two frames after the page loads, and it is shot then. Draw synchronously: anything painted later may not be in the picture anyone grades.
 - HONEST. Every number and every date on the screen must come from the tool data above — shown as it is, or computed from it. Anything else is graded as invented.
 - SIZED. It is shot at ${VIEWPORT.width}x${VIEWPORT.height}, and what a person sees there is all anyone sees.`;
