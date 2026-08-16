@@ -1,0 +1,71 @@
+---
+title: "E-MCP-009"
+sidebarTitle: "E-MCP-009"
+description: "The MCP door is wired but VENDO_BASE_URL is not set."
+---
+
+# E-MCP-009
+
+<Warning>
+**what doctor prints** (broken)
+
+the MCP door is wired but VENDO_BASE_URL is not set — discovery, the issuer
+and the token audience all derive from it, so the door advertises whatever
+origin a request happens to carry and outside agents are pointed at the wrong
+server (it surfaces later as "Claude can't find my server"). Set
+VENDO_BASE_URL to this deployment's public origin where you deploy, or pass
+mcp: { baseUrl } in the composition.
+</Warning>
+
+The door is open, but it does not know its own public address. Everything
+that depends on that address, discovery documents, the issuer, the token
+audience, is wrong.
+
+`check mcp/base-url` · `error_code E-MCP-009` · `doctor exits 1`
+
+## What you're seeing
+
+This check runs whenever a composition passes `mcp` to `createVendo`. It is a
+static check: no dev server or network call is needed, only the composition
+source and the environment.
+
+## Why
+
+The door derives its discovery documents, its OAuth issuer, its resource
+identifiers, and the RFC 8707 audience it binds tokens to, all from one
+value: the deployment's public base URL. Without it, the door falls back to
+guessing the origin from whatever request happens to reach it, which is
+unreliable behind a proxy, a load balancer, or any host with more than one
+public name.
+
+Nothing looks wrong on your own machine, because your own requests carry a
+consistent origin. It shows up later, whenever a client calling in from
+somewhere else gets pointed at a URL that is not actually the door.
+
+## The fix
+
+Set `VENDO_BASE_URL` to the deployment's full public origin, path prefix
+included, in the environment you deploy to:
+
+```bash
+VENDO_BASE_URL=https://your-app.example.com
+```
+
+Or name it directly in the composition instead, which wins over the
+environment variable:
+
+```ts
+createVendo({
+  mcp: { baseUrl: "https://your-app.example.com" }, // [!code focus]
+});
+```
+
+Re-run doctor once the value is set; the discovery documents and the token
+audience follow it automatically.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-001" href="/production/troubleshooting/e-mcp-001">protected-resource metadata</Card>
+  <Card title="E-MCP-005" href="/production/troubleshooting/e-mcp-005">server.json remote mismatch</Card>
+</CardGroup>

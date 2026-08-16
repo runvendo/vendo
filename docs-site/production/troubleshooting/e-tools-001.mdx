@@ -1,0 +1,59 @@
+---
+title: "E-TOOLS-001"
+sidebarTitle: "E-TOOLS-001"
+description: "Every extracted host tool is disabled or excluded."
+---
+
+# E-TOOLS-001
+
+<Warning>
+**what doctor prints** (broken)
+
+zero live host tools — all 12 extracted tools are disabled or excluded;
+review the audience exclusions in .vendo/overrides.json and re-enable the
+end-user surface (disabled: false)
+</Warning>
+
+Extraction found host tools, but every single one of them is turned off. The
+embedded agent cannot call a single host API.
+
+`check tools/live-surface` · `error_code E-TOOLS-001` · `doctor exits 1`
+
+## What you're seeing
+
+Doctor reads `.vendo/tools.json` plus any overrides in
+`.vendo/overrides.json`, and counts how many tools are actually live once
+both are applied. This check fails when that live count is zero and the
+extracted catalog is not empty (a genuinely empty catalog is
+[E-TOOLS-002](/production/troubleshooting/e-tools-002) instead).
+
+## Why
+
+Extraction excludes operator and internal endpoints from the end-user
+surface by default. On some hosts, every extracted tool falls into that
+excluded audience, or a hand-written override disabled the rest, and nothing
+is left for the agent to call.
+
+## The fix
+
+Open `.vendo/overrides.json` and check which tools are marked disabled or
+excluded. Re-enable the ones your users should reach:
+
+```json
+{
+  "tools": {
+    "host_invoices_list": { "disabled": false } // [!code focus]
+  }
+}
+```
+
+If the audience classification looks wrong across the board, re-run `vendo
+init` extraction instead of hand-editing every entry.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-TOOLS-002" href="/production/troubleshooting/e-tools-002">tool surface is empty</Card>
+  <Card title="E-TOOLS-003" href="/production/troubleshooting/e-tools-003">tools ungraded</Card>
+  <Card title="E-TOOLS-004" href="/production/troubleshooting/e-tools-004">tools with no schema</Card>
+</CardGroup>

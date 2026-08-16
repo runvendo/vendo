@@ -1,0 +1,61 @@
+---
+title: "E-MCP-001"
+sidebarTitle: "E-MCP-001"
+description: "MCP protected-resource metadata did not resolve at the door's well-known path."
+---
+
+# E-MCP-001
+
+<Warning>
+**what doctor prints** (broken)
+
+MCP protected-resource metadata resolves (404)
+</Warning>
+
+The door's OAuth discovery document is missing or broken. Nothing that talks
+to the door over MCP can find out how to authorize against it.
+
+`check mcp/protected-resource` · `error_code E-MCP-001` · `doctor exits 1`
+
+## What you're seeing
+
+`vendo doctor` runs only when the composition reports `blocks.mcp: true`. It
+GETs the protected-resource metadata document and the response either never
+arrives, arrives with a non-2xx status, or arrives without a `resource` field.
+
+## Why
+
+RFC 9728 requires an MCP resource server to publish protected-resource
+metadata at a path-inserted well-known URL. A door mounted at
+`/api/vendo/mcp` must serve it at
+`/.well-known/oauth-protected-resource/api/vendo/mcp`, not at the bare
+`/.well-known/oauth-protected-resource`. Doctor fetches exactly that path and
+checks the body for a `resource` string.
+
+The `(404)` in the printed line is whichever HTTP status the origin actually
+returned. When the fetch itself never gets a response, doctor prints
+`MCP protected-resource metadata resolves is unreachable` instead.
+
+## The fix
+
+Confirm the composition passes `mcp: true` (or an `mcp: {...}` object) to
+`createVendo`, with a working `auth`/`oauth` seam under it. Confirm the
+`.well-known` route is actually reachable at the deployment's origin, not
+swallowed by a reverse proxy or a catch-all middleware in front of the app.
+
+Then confirm the `--url` (or `VENDO_URL`) doctor was run with matches the
+real mount:
+
+```bash
+npx vendo doctor --url http://localhost:3000/api/vendo
+```
+
+Re-run doctor once the document resolves.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-002" href="/production/troubleshooting/e-mcp-002">authorization-server metadata</Card>
+  <Card title="E-MCP-003" href="/production/troubleshooting/e-mcp-003">server card</Card>
+  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">missing VENDO_BASE_URL</Card>
+</CardGroup>

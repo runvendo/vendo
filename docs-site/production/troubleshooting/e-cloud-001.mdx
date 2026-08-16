@@ -1,0 +1,52 @@
+---
+title: "E-CLOUD-001"
+sidebarTitle: "E-CLOUD-001"
+description: "VENDO_API_KEY is set but not usable."
+---
+
+# E-CLOUD-001
+
+<Warning>
+**what doctor prints** (warning)
+
+VENDO_API_KEY is set but not usable: malformed
+</Warning>
+
+`VENDO_API_KEY` is present in the environment, but it does not look like a
+real Vendo Cloud key.
+
+`check cloud/key` · `error_code E-CLOUD-001` · `doctor exits 0` (warning only)
+
+## What you're seeing
+
+Doctor checks the shape of `VENDO_API_KEY` locally: it expects the `vnd_`
+prefix followed by 40 hex characters. This is a shape check only, doctor
+never validates a key against a server.
+
+## Why
+
+A key that is well-formed but revoked, expired, or from a different project
+passes this check and only surfaces on the first real Cloud service call
+(the model gateway, the hosted store, the Cloud sandbox, the Cloud broker).
+This check exists to catch the earlier, simpler failure: a copy-paste error,
+a truncated value, a placeholder that never got replaced.
+
+## The fix
+
+Re-copy the key from the Vendo Cloud console's keys page, in case the value
+was truncated or mistyped. Or mint a fresh one:
+
+```bash
+vendo login
+```
+
+Your human approves a device code in the browser (non-interactive runs print
+the URL and code to approve instead), and the minted key lands in
+`.env.local`. Restart the dev server and re-run doctor.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-TURN-001" href="/production/troubleshooting/e-turn-001">live model turn did not answer</Card>
+  <Card title="E-LIVE-004" href="/production/troubleshooting/e-live-004">no execution venue configured</Card>
+</CardGroup>

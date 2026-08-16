@@ -1,0 +1,56 @@
+---
+title: "E-MCP-003"
+sidebarTitle: "E-MCP-003"
+description: "The MCP server card did not parse."
+---
+
+# E-MCP-003
+
+<Warning>
+**what doctor prints** (broken)
+
+MCP server card parses (404)
+</Warning>
+
+The door is supposed to describe itself at a well-known path before any
+handshake starts. That description is missing or malformed.
+
+`check mcp/server-card` · `error_code E-MCP-003` · `doctor exits 1`
+
+## What you're seeing
+
+Doctor's third discovery probe, run after the protected-resource and
+authorization-server documents both resolve. It GETs
+`<origin>/.well-known/mcp/server-card.json`.
+
+## Why
+
+Doctor expects a JSON object carrying a `name` string and a `transports`
+array. Either the route answers with the wrong status, the body is not JSON,
+or the body is JSON that is missing one of those two fields.
+
+As with the other discovery checks, the `(404)` in the printed line is
+whatever status the origin actually returned; an unreachable origin prints
+`MCP server card parses is unreachable` instead.
+
+## The fix
+
+Check that the door's well-known routes are mounted at the origin doctor
+probed, and that nothing in front of the app (a proxy, a catch-all rewrite,
+a CDN edge rule) rewrites or intercepts the card response before it reaches
+the caller.
+
+```bash
+curl -s https://your-app.example.com/.well-known/mcp/server-card.json
+```
+
+A correct response is a JSON object with `name` and `transports` set. Re-run
+doctor once it comes back clean.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-001" href="/production/troubleshooting/e-mcp-001">protected-resource metadata</Card>
+  <Card title="E-MCP-002" href="/production/troubleshooting/e-mcp-002">authorization-server metadata</Card>
+  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
+</CardGroup>
