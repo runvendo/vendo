@@ -87,6 +87,9 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       // screen through `vendo_make` and never has to decide "new or change?"
       // first. Losing it from this list is losing the front door.
       "vendo_make",
+      // The read that keeps a `slot` argument honest: without it an outside
+      // agent can only guess a slot id, and a guess lands nowhere.
+      "vendo_slots_list",
     ]);
   });
 

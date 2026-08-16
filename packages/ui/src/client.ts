@@ -180,7 +180,7 @@ export interface VendoClient {
     /** GET /slots — every reported destination, newest first. */
     list(): Promise<SlotEntry[]>;
     /** POST /slots — mounted slots saying they exist; batched, idempotent. */
-    report(slots: readonly { id: string; label: string }[]): Promise<void>;
+    report(slots: readonly { id: string; label: string; description?: string }[]): Promise<void>;
   };
 
   status(): Promise<VendoStatus>;

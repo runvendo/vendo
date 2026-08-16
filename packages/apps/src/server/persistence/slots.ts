@@ -32,6 +32,9 @@ export { SLOT_DECAY_MS };
 export interface SlotDescriptor {
   id: string;
   label: string;
+  /** What the spot is FOR, in the host developer's own words — the sentence an
+   *  agent reads to pick between two slots a label alone cannot separate. */
+  description?: string;
 }
 
 /** A registered slot, as the registry answers it. */
@@ -54,11 +57,11 @@ const rowId = (subject: string, slotId: string): string =>
 const slotOf = (record: VendoRecord): SlotRecord | undefined => {
   const data = record.data as Partial<SlotRecord> | null;
   if (data === null || typeof data !== "object") return undefined;
-  const { id, label, lastSeen } = data;
+  const { id, label, description, lastSeen } = data;
   if (typeof id !== "string" || typeof label !== "string" || typeof lastSeen !== "string") {
     return undefined;
   }
-  return { id, label, lastSeen };
+  return { id, label, lastSeen, ...(typeof description === "string" ? { description } : {}) };
 };
 
 export const createSlotRegistry = (engine: EngineOps): SlotRegistry => {
@@ -70,9 +73,9 @@ export const createSlotRegistry = (engine: EngineOps): SlotRegistry => {
       // Plain put, last write wins, no compare-and-swap: two tabs reporting the
       // same slot are reporting the SAME fact, so there is nothing to
       // arbitrate — and a renamed label is meant to overwrite the old one.
-      await Promise.all(slots.map(({ id, label }) => engine.put(SLOTS_COLLECTION, {
+      await Promise.all(slots.map(({ id, label, description }) => engine.put(SLOTS_COLLECTION, {
         id: rowId(subject, id),
-        data: { id, label, lastSeen },
+        data: { id, label, lastSeen, ...(description === undefined ? {} : { description }) },
         refs: { subject },
       })));
     },

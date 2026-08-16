@@ -26,6 +26,7 @@ import {
   VENDO_APPS_PIN_TOOL,
   VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
+  VENDO_SLOTS_LIST_TOOL,
   type ToolListing,
   type ToolResult,
 } from "@vendoai/core";
@@ -212,6 +213,43 @@ describe("a slot-targeted make, over the MCP door", () => {
 });
 
 describe("pin and unpin, over the MCP door", () => {
+  it("pins to a slot the list tool handed back, so the id is never invented", async () => {
+    const { vendo, store } = await host();
+    // The host's page reports its slot the way a browser does — the real route,
+    // no fixture. Nothing else in this test tells the server the slot exists.
+    await vendo.handler(new Request("https://host.test/api/vendo/slots", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slots: [{
+          id: "dashboard.main",
+          label: "Dashboard",
+          description: "main dashboard area, where users keep KPI views",
+        }],
+      }),
+    }));
+
+    const door = await openDoor(vendo, await bearer(vendo));
+    const listed = JSON.parse((await door.callTool(VENDO_SLOTS_LIST_TOOL, {})).text) as
+      { id: string; label: string; description?: string }[];
+    expect(listed).toEqual([{
+      id: "dashboard.main",
+      label: "Dashboard",
+      description: "main dashboard area, where users keep KPI views",
+    }]);
+
+    const made = await door.callTool(VENDO_MAKE_TOOL, { request: "my spending this month" });
+    const { id } = makeReceiptSchema.parse(JSON.parse(made.text));
+    // The id the caller pins with is the one the LIST answered with, never a
+    // literal typed into this test — which is the whole point of the tool.
+    const pinned = await door.callTool(VENDO_APPS_PIN_TOOL, { app: id, slot: listed[0]!.id });
+
+    expect(pinned.isError).toBeFalsy();
+    expect(await placementRows(store)).toEqual([
+      expect.objectContaining({ slot: "dashboard.main", appId: id }),
+    ]);
+  });
+
   it("writes the row on pin and removes it on unpin", async () => {
     const { vendo, store } = await host();
     const door = await openDoor(vendo, await bearer(vendo));

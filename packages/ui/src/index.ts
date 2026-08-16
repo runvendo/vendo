@@ -14,6 +14,11 @@ export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedSta
 // The components behind the frozen prop contracts, exported from the root so
 // a BYO chat page needs only `@vendoai/ui`.
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
+// The slot itself, from the ROOT: a host mounting one only has @vendoai/vendo
+// as a direct dependency, and the "@vendoai/ui/chrome" subpath does not resolve
+// under pnpm strict linking (the same TS2307 story as VendoOverlay's).
+export { VendoSlot } from "./chrome/vendo-slot.js";
+export type { ParkedPress } from "./tree/renderer.js";
 export * from "./hooks/index.js";
 // Dev-only rails: the `data-vendo-debug` feed a host's workbench pane reads,
 // and the check that decides whether such a surface renders at all.
