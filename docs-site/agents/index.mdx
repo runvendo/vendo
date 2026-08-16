@@ -141,23 +141,9 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    account, or they bring their own Anthropic or OpenAI key. Say what each
    option gets their users, not what it configures.
 
-   Re-run init with their answers as flags. That run writes:
-
-   ```bash
-   npx vendo init --agent --use-case embedded --auth clerk --byo
-   ```
-
-   `status` tells you which run you got: the questions, or the write. Every
-   answer on the first call skips the ask pass and writes in one go, which is
-   right only when your human has already told you everything.
-
-   `--auth` takes `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, or `none`.
-   `--byo` means your human brings their own model key; `--cloud-key <key>`
-   answers with an existing Vendo Cloud key. A `VENDO_API_KEY` already sitting
-   in `.env.local` needs neither: init merges it into the run's env, uses it as
-   it is, and never asks. If they bring their own key, tell them to put it in
-   `.env.local` as `ANTHROPIC_API_KEY=...` or `OPENAI_API_KEY=...` and to tell
-   you when it is there. It never passes through your chat.
+   Take the model answer first, before you re-run anything. It is the one
+   answer that has no flag: the Vendo Cloud pick is a login you run now, and
+   the key only counts once login has written it to `.env.local`.
    If they choose Vendo Cloud, drive the login as a bounded loop —
    never a single blocking call:
 
@@ -186,6 +172,24 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    no key ever transits your transcript; the raw protocol is
    [auth.md](https://vendo.run/auth.md)). If they bring a provider key,
    never assume it exists — ask where it is set.
+
+   Now re-run init with their answers as flags. That run writes:
+
+   ```bash
+   npx vendo init --agent --use-case embedded --auth clerk --byo
+   ```
+
+   `status` tells you which run you got: the questions, or the write. Every
+   answer on the first call skips the ask pass and writes in one go, which is
+   right only when your human has already told you everything.
+
+   `--auth` takes `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, or `none`.
+   `--byo` means your human brings their own model key; `--cloud-key <key>`
+   answers with an existing Vendo Cloud key. A `VENDO_API_KEY` already sitting
+   in `.env.local` needs neither: init merges it into the run's env, uses it as
+   it is, and never asks. If they bring their own key, tell them to put it in
+   `.env.local` as `ANTHROPIC_API_KEY=...` or `OPENAI_API_KEY=...` and to tell
+   you when it is there. It never passes through your chat.
    `--framework <next|express|custom>` is required only when detection fails
    (init errors with that exact instruction rather than guessing); `custom` is
    the answer for every non-Next, non-Express host. See the
@@ -234,18 +238,18 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    A slot is markup, so wiring one is your paste:
 
    ```tsx
-   import { VendoSlot } from "@vendoai/ui/chrome";
+   import { VendoSlot } from "@vendoai/vendo/react";
 
    <VendoSlot id="home-hero" label="Dashboard hero">
      <YourOriginalCard />
    </VendoSlot>
    ```
 
-   Add `@vendoai/ui` as a direct dependency. Always give a `label`: it is what
-   a person picking a destination reads and what an assistant matches a request
-   against, so write it as meaning, not as an id. A slot with children renders
-   them untouched while it is empty; a slot with none shows users an invitation
-   with prompt chips instead, which is the hint that this space builds itself.
+   Always give a `label`: it is what a person picking a destination reads and
+   what an assistant matches a request against, so write it as meaning, not as
+   an id. A slot with children renders them untouched while it is empty; a slot
+   with none shows users an invitation with prompt chips instead, which is the
+   hint that this space builds itself.
    Filled, it holds one view per person. On the own-loop path pass `onAuthor`
    so pressing an empty slot opens your human's own chat rather than Vendo's
    palette. See
