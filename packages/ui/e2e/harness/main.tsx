@@ -1688,20 +1688,26 @@ function composerThreadClient(client: VendoClient): VendoClient {
  */
 function arrivalClient(client: VendoClient): VendoClient {
   const app = { format: "vendo/app@1", id: "app_arrival", name: "Spending", ui: "tree" as const };
-  let opened = false;
+  let rendered = false;
   return {
     ...client,
     // No pending asks: a waiting decision outranks the dot by design (the pill
     // shows the numbered badge instead), so the arrival mark can only be judged
     // on a pill with nothing else to say.
     approvals: { ...client.approvals, pending: async () => [] },
+    // The render under proof is the one in the THREAD: the card draws the app
+    // from its view part and opens nothing, so the server marks it when the
+    // person reads the conversation back (wire/threads.ts).
+    threads: {
+      ...client.threads,
+      get: (async (id: string) => {
+        rendered = true;
+        return { id, subject: "browser-user", messages: [], createdAt: NOW, updatedAt: NOW };
+      }) as VendoClient["threads"]["get"],
+    },
     apps: {
       ...client.apps,
-      list: async () => [opened ? app : { ...app, unseen: true }],
-      open: (async () => {
-        opened = true;
-        return { kind: "tree", payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } };
-      }) as VendoClient["apps"]["open"],
+      list: async () => [rendered ? app : { ...app, unseen: true }],
     },
   };
 }
@@ -1710,9 +1716,9 @@ function ArrivalDotScenario() {
   const client = useMemo(() => arrivalClient(baseClient), []);
   return (
     <VendoProvider client={client} components={components} theme={mapleTheme}>
-      {/* The person's render, in the one gesture a spec can drive: this is the
-          same call the embed makes when it puts the app on screen. */}
-      <button type="button" onClick={() => void client.apps.open("app_arrival")}>Render Spending</button>
+      {/* The person's render, in the one gesture a spec can drive: reading the
+          conversation back is what a thread render costs on the wire. */}
+      <button type="button" onClick={() => void client.threads.get("thr_arrival")}>Open the conversation</button>
       <VendoOverlay />
     </VendoProvider>
   );

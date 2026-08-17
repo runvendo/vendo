@@ -23,7 +23,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  toVendoWirePart,
   VENDO_APP_FORMAT,
+  vendoViewPart,
   type AppDocument,
   type Principal,
   type RunContext,
@@ -60,7 +62,7 @@ const agentCtx: RunContext = {
   sessionId: "s_agent",
 };
 
-async function setup(): Promise<Vendo> {
+async function setup(): Promise<{ vendo: Vendo; store: VendoStore }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-apps-seen-"));
   const store: VendoStore = createStore({ dataDir });
   cleanups.push(async () => {
@@ -73,12 +75,36 @@ async function setup(): Promise<Vendo> {
     data: { subject: ADA.subject, enabled: false, doc: doc("app_arrival", "Spending") },
     refs: { subject: ADA.subject },
   });
-  return createVendo({
+  const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async (req) => (req.headers.get("x-test-user") === null
       ? null
       : { kind: "user", subject: req.headers.get("x-test-user") as string }),
     store,
+  });
+  return { vendo, store };
+}
+
+/** The thread the person will open, carrying the view part a turn left behind.
+ *  Built with the REAL producer (`vendoViewPart` plus its wire envelope), so the
+ *  part this consumer counts is the one the four emitters actually write. */
+async function seedRenderedThread(store: VendoStore): Promise<void> {
+  const view = vendoViewPart({
+    appId: "app_arrival",
+    payload: {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+    },
+  });
+  if (view === undefined) throw new Error("the view part fixture does not parse");
+  await store.records("vendo_threads").put({
+    id: "thr_arrival",
+    data: {
+      subject: ADA.subject,
+      messages: [{ id: "m_view", role: "assistant", parts: [toVendoWirePart(view.part, view.streamId)] }],
+    },
+    refs: { subject: ADA.subject },
   });
 }
 
@@ -97,7 +123,7 @@ async function unseen(vendo: Vendo): Promise<boolean | undefined> {
 
 describe("an app is seen when a PERSON renders it, not when an agent reads it", () => {
   it("stays unseen through an agent's open and clears on the person's own", async () => {
-    const vendo = await setup();
+    const { vendo } = await setup();
 
     // 1 — nobody has looked at it yet.
     expect(await unseen(vendo)).toBe(true);
@@ -110,6 +136,27 @@ describe("an app is seen when a PERSON renders it, not when an agent reads it", 
 
     // 3 — Ada's browser asks for the surface.
     expect((await request(vendo, "/apps/app_arrival/open")).status).toBe(200);
+    expect(await unseen(vendo)).toBeUndefined();
+  });
+
+  /**
+   * The thread render. The card draws the app from the `data-vendo-view` part
+   * itself and never opens anything, so the transcript read is the only server
+   * event a thread render has — and an away run WRITES that part into a sponsor's
+   * thread while nobody is watching, which is why the part existing cannot be the
+   * mark.
+   */
+  it("stays unseen while the view part merely sits in the transcript, and clears when the person opens it", async () => {
+    const { vendo, store } = await setup();
+    expect(await unseen(vendo)).toBe(true);
+
+    // The negative control: the part is in the thread — written exactly as an
+    // away run leaves it — and nobody has read the conversation.
+    await seedRenderedThread(store);
+    expect(await unseen(vendo)).toBe(true);
+
+    // The positive: Ada opens the conversation, which renders the app.
+    expect((await request(vendo, "/threads/thr_arrival")).status).toBe(200);
     expect(await unseen(vendo)).toBeUndefined();
   });
 });
