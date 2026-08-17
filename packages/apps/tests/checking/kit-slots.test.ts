@@ -115,9 +115,9 @@ describe("the Kit's slots", () => {
     expect(header).toContain("<Stack> takes no element in its props");
 
     const [childless] = issuesFor("Accordion", {
-      items: [{ label: "Rows", content: element("DataTable", { children: [element("Text")] }) }],
+      items: [{ label: "Rows", content: element("LineChart", { children: [element("Text")] }) }],
     });
-    expect(childless).toContain('prop "items[0].content" nests 1 node inside <DataTable>');
+    expect(childless).toContain('prop "items[0].content" nests 1 node inside <LineChart>');
     expect(childless).toContain("renders nothing nested inside it");
 
     // …and a legal component in the same slot still passes, contract and all.

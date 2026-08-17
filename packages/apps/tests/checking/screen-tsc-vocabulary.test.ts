@@ -91,6 +91,9 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <DataTable rows={cashflow.data} sortBy="label asc" limit={20} searchable={true} paginate={10}
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
+    <DataTable rows={cashflow.data} columns={[{ key: "label", label: "Period" }, { key: "in", label: "In", align: "end" }]}>
+      <TableRow><Text text="Period"/><Money amount={42}/></TableRow>
+    </DataTable>
     <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In", format: "money" }]} columns={2}/>
     <Calendar items={cashflow.data} month="2026-01" dateField="label" titleField="label" amountField="in" statusField="label" tones={{ Jan: "success" }}/>
     <KeyValue record={cashflow.data[0]} items={[{ key: "label", label: "Period" }, { key: "in", format: "money" }]} dividers={true}/>
