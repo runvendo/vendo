@@ -672,6 +672,28 @@ describe("automations enable and grant capture", () => {
       consumedAt: NOW.toISOString(),
     });
   });
+
+  /** Design §3's voice law — a consent sentence may never print an identifier at
+   *  someone. A steps record has no name field, so its first step is what names
+   *  it, and it has to arrive in words. */
+  it("names a steps automation in the consent sentence in words, not in its step's identifier", async () => {
+    const invoicesTool: ToolDescriptor = {
+      name: "host_invoices_list",
+      description: "List invoices.",
+      inputSchema: { type: "object" },
+      risk: "read",
+    };
+    const engine = createAutomations({ tools: registry([invoicesTool]), guard, store, now: () => NOW });
+    const record = await create(engine, {
+      id: "atm_named_steps",
+      when: { event: "go" },
+      task: { kind: "steps", steps: [{ id: "list", tool: invoicesTool.name }] },
+    });
+
+    const { missing } = await engine.enable(record.id, ctx());
+
+    expect(missing[0]?.inputPreview).toContain('Allow "Invoices list" to');
+  });
 });
 
 describe("grant sets: one set per enable, dedupe against pending", () => {
