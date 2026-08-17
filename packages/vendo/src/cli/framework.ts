@@ -93,9 +93,20 @@ export async function nextConfigPath(root: string): Promise<string | null> {
   return null;
 }
 
+/** The source with every comment BLANKED to spaces rather than removed, so it
+    stays the same LENGTH and an index into it is an index into the original.
+    A commented-out `serverExternalPackages` line is exactly what a host
+    debugging its bundle leaves behind, and reading one as configuration greened
+    E-CFG-004 on a host that was still broken. Deliberately not a parser: it
+    blanks a `//` inside a string literal too, and the cost of that is a printed
+    paste instead of an edit — never a wrong edit. */
+export function blankComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
+}
+
 /** Which externals a next.config's TEXT does not already carry. */
 export function missingServerExternals(source: string): string[] {
-  const listed = SERVER_EXTERNALS_ARRAY.exec(source)?.[2] ?? "";
+  const listed = SERVER_EXTERNALS_ARRAY.exec(blankComments(source))?.[2] ?? "";
   return NEXT_SERVER_EXTERNALS.filter((name) => !listed.includes(`"${name}"`) && !listed.includes(`'${name}'`));
 }
 

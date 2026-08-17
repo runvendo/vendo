@@ -2117,6 +2117,29 @@ describe("the next.config repair (Next hosts)", () => {
     expect(config).toContain("reactStrictMode: true");
   });
 
+  /** A commented-out list is what a host debugging its bundle leaves behind.
+      Reading one as real configuration skipped the repair AND, on the branch
+      that splices, wrote the names into the comment. */
+  it("ignores a commented-out list and adds the real property", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      'const nextConfig = {\n  // serverExternalPackages: ["esbuild"],\n  reactStrictMode: true,\n};\n\nexport default nextConfig;\n');
+    expect(await run(root, output())).toBe(0);
+    const config = await readFile(join(root, "next.config.ts"), "utf8");
+    expect(config).toContain('serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(config, "the host's comment is left exactly as they wrote it").toContain('  // serverExternalPackages: ["esbuild"],');
+  });
+
+  it("ignores a commented-out export when picking the object to edit", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      "/* export default { reactStrictMode: false }; */\nexport default { reactStrictMode: true };\n");
+    expect(await run(root, output())).toBe(0);
+    const config = await readFile(join(root, "next.config.ts"), "utf8");
+    expect(config).toContain("/* export default { reactStrictMode: false }; */");
+    expect(config).toMatch(/export default \{\n {2}serverExternalPackages/);
+  });
+
   it("splices only the missing names into a list the host already keeps", async () => {
     const root = await fixture();
     await writeFile(join(root, "next.config.ts"),

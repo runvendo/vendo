@@ -986,6 +986,29 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(exit).toBe(1);
   });
 
+  /** A commented-out list is what a host debugging its bundle leaves behind.
+   *  Read as configuration it greened this check on a still-broken host. */
+  it("fails E-CFG-004 when the only externals list is commented out", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "next.config.ts"),
+      '// serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],\n'
+      + "export default { reactStrictMode: true };\n", "utf8");
+    const { exit, report } = await jsonChecks({ targetDir: root });
+    expect(report.checks.find((entry) => entry.id === "config/next-externals"))
+      .toMatchObject({ status: "broken", error_code: "E-CFG-004" });
+    expect(exit).toBe(1);
+  });
+
+  it("fails E-CFG-004 when the list is inside a block comment", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "next.config.ts"),
+      '/* serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"], */\n'
+      + "export default {};\n", "utf8");
+    const { report } = await jsonChecks({ targetDir: root });
+    expect(report.checks.find((entry) => entry.id === "config/next-externals"))
+      .toMatchObject({ status: "broken", error_code: "E-CFG-004" });
+  });
+
   it("fails E-CFG-004 when a Next host has no next.config at all", async () => {
     const root = await healthy();
     await rm(join(root, "next.config.ts"));

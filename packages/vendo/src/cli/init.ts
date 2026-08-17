@@ -14,7 +14,7 @@ import { initQuestions } from "./init-questions.js";
 import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
-import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, SERVER_EXTERNALS_ARRAY, detectFramework, detectVendoWiring, missingServerExternals, nextConfigPath, workspaceHostCandidates, type HostFramework } from "./framework.js";
+import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, SERVER_EXTERNALS_ARRAY, blankComments, detectFramework, detectVendoWiring, missingServerExternals, nextConfigPath, workspaceHostCandidates, type HostFramework } from "./framework.js";
 import {
   AUTH_FAMILY_INFO,
   detectAuthPreset,
@@ -527,30 +527,38 @@ const EXPORTED_CONFIG_OBJECT = new RegExp(String.raw`(?:export\s+default|module\
 const EXPORTED_CONFIG_NAME = /(?:export\s+default|module\.exports\s*=)[^;{]*?([\w$]+)\)?\s*;?\s*$/m;
 
 /** Where a property may be inserted: just past the `{` of the object this
-    config EXPORTS. Anchored on the export, so an earlier
-    `const withAnalyzer = require("…")({ … })` can never be taken for the
-    config. Null when the file exports something this cannot read as an object
-    literal — a dynamic config is the developer's paste, never a rewrite. */
-function configObjectBrace(raw: string): number | null {
-  const name = EXPORTED_CONFIG_NAME.exec(raw)?.[1];
+    config EXPORTS. Takes comment-BLANKED source (see `blankComments`), so a
+    commented-out export is never taken for the real one. Anchored on the export,
+    so an earlier `const withAnalyzer = require("…")({ … })` is not either. Null
+    when the file exports something this cannot read as an object literal — a
+    dynamic config is the developer's paste, never a rewrite. */
+function configObjectBrace(code: string): number | null {
+  const name = EXPORTED_CONFIG_NAME.exec(code)?.[1];
   const opener = name === undefined
     ? EXPORTED_CONFIG_OBJECT
     : new RegExp(String.raw`\b(?:const|let|var)\s+${name}\s*(?::[^=;{]*)?=${CONFIG_OBJECT_TAIL}`);
-  const match = opener.exec(raw);
+  const match = opener.exec(code);
   return match === null ? null : match.index + match[0].length;
 }
 
 /** The next.config a Next host needs, given what it is missing: the names
     spliced into the list it already keeps, or the whole property at the top of
-    the object it exports. Null when neither shape is there. */
+    the object it exports. Null when neither shape is there.
+
+    Every offset is read off the comment-blanked source, which `blankComments`
+    keeps the same length as `raw` — so a commented-out list is neither read as
+    configuration nor written into, and the edit still lands on the real text. */
 function nextConfigWithExternals(raw: string, missing: readonly string[]): string | null {
   const names = missing.map((name) => JSON.stringify(name)).join(", ");
-  if (SERVER_EXTERNALS_ARRAY.test(raw)) {
+  const code = blankComments(raw);
+  const array = SERVER_EXTERNALS_ARRAY.exec(code);
+  if (array !== null) {
     // Prepended, so a list written one name per line keeps its own indentation.
-    return raw.replace(SERVER_EXTERNALS_ARRAY, (_match, head: string, listed: string) =>
-      `${head}${names}${listed.trim() === "" ? "" : `,${listed.startsWith("\n") ? "" : " "}`}${listed}`);
+    const at = array.index + array[1]!.length;
+    const listed = array[2]!;
+    return `${raw.slice(0, at)}${names}${listed.trim() === "" ? "" : `,${listed.startsWith("\n") ? "" : " "}`}${raw.slice(at)}`;
   }
-  const brace = configObjectBrace(raw);
+  const brace = configObjectBrace(code);
   return brace === null ? null : `${raw.slice(0, brace)}\n  ${NEXT_SERVER_EXTERNALS_LINE}${raw.slice(brace)}`;
 }
 
