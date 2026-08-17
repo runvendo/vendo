@@ -147,6 +147,30 @@ function createPoller(client: VendoClient): Poller {
     }
   };
 
+  /** Send everything queued, batched and capped. Latched-forbidden holds the
+   *  queue in place — a microtask committed before the latch closed must not
+   *  slip a write out either. */
+  const flushReports = (): void => {
+    flushing = false;
+    if (identity.forbidden() || queued.length === 0) return;
+    const batch = queued;
+    queued = [];
+    const sending = batch.slice(0, SLOTS_REPORT_MAX);
+    if (sending.length < batch.length) {
+      // Forgotten, not dropped: the overflow is reported by the next page
+      // that mounts it, once the slots already in the registry are quiet.
+      forget(batch.slice(SLOTS_REPORT_MAX));
+      if (developmentMode()) {
+        log({
+          code: "ui.slots-report-overflow",
+          level: "warn",
+          message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
+        });
+      }
+    }
+    void client.slots.report(sending).catch(() => forget(sending));
+  };
+
   // Self-scheduling, never setInterval: the next tick is armed only once the
   // current read settles, so a slow wire cannot stack overlapping requests.
   const tick = async (): Promise<void> => {
@@ -161,7 +185,10 @@ function createPoller(client: VendoClient): Poller {
     if (running) return;
     running = true;
     stopIdentity = identity.subscribe(() => {
-      if (running && !identity.forbidden()) void read();
+      if (running && !identity.forbidden()) {
+        void read();
+        flushReports();
+      }
     });
     stopPin = onPinAnnounced(() => {
       void read();
@@ -250,29 +277,15 @@ function createPoller(client: VendoClient): Poller {
       if (at !== undefined && Date.now() - at < SLOT_REPORT_REFRESH_MS) return;
       reported.set(key, Date.now());
       queued.push(entry);
+      // While the wire refuses this visitor, the report is HELD in the queue,
+      // never sent (greptile on #1442: a slot mounting AFTER the latch closed
+      // still wrote POST /slots). The latch-open subscription flushes it.
+      if (identity.forbidden()) return;
       if (flushing) return;
       flushing = true;
       // The same deferral the first placements read uses: every slot mounting in
       // one React commit lands in ONE POST instead of one request per slot.
-      queueMicrotask(() => {
-        flushing = false;
-        const batch = queued;
-        queued = [];
-        const sending = batch.slice(0, SLOTS_REPORT_MAX);
-        if (sending.length < batch.length) {
-          // Forgotten, not dropped: the overflow is reported by the next page
-          // that mounts it, once the slots already in the registry are quiet.
-          forget(batch.slice(SLOTS_REPORT_MAX));
-          if (developmentMode()) {
-            log({
-              code: "ui.slots-report-overflow",
-              level: "warn",
-              message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
-            });
-          }
-        }
-        void client.slots.report(sending).catch(() => forget(sending));
-      });
+      queueMicrotask(flushReports);
     },
   };
 

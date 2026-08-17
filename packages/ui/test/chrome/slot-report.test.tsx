@@ -55,6 +55,23 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
     await waitFor(() => expect(wire.state.slots.map(slot => slot.label)).toEqual(["Insights"]));
   });
 
+  // Greptile on #1442: the tick's renew() was gated, but a slot that MOUNTS
+  // after the latch closed still flushed its own POST /slots. Held, not lost:
+  // the report goes out the moment the identity signal opens the latch.
+  it("holds a late-mounting slot's report while forbidden, and sends it on the identity signal", async () => {
+    const { identityState } = await import("../../src/hooks/identity-state.js");
+    const { VendoError } = await import("@vendoai/core");
+    identityState(client).note(new VendoError("forbidden", "no identity for this request"));
+    render(<VendoProvider client={client}><VendoSlot id="net-worth-card" /></VendoProvider>);
+    // A full settle window: no report write, and no placements read either.
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(reports()).toHaveLength(0);
+    // Sign-in announced: the held report goes out, once.
+    window.dispatchEvent(new Event("vendo:identity-changed"));
+    await waitFor(() => expect(wire.state.slots.map(slot => slot.label)).toEqual(["Net worth card"]));
+    expect(reports()).toHaveLength(1);
+  });
+
   it("sends a whole page of slots as ONE report", async () => {
     render(
       <VendoProvider client={client}>
