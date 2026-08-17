@@ -31,6 +31,17 @@ function hidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
+const MAX_POLL_MS = 60_000;
+
+/** Consecutive failures widen the cadence (×2, capped) instead of hammering a
+    wire that is already saying no — an idle host once made 75 rate-limited
+    calls in 8 minutes at a flat 3s. Jittered so the several pollers one page
+    mounts stop re-colliding on every retry. */
+function nextDelay(pollMs: number, failures: number): number {
+  if (failures === 0) return pollMs;
+  return Math.min(pollMs * 2 ** failures, MAX_POLL_MS) * (0.75 + Math.random() / 2);
+}
+
 /** Drive one async source into a `{ data, error, isLoading, refresh }` view.
  *
  * `fetcher` must be memoised by the caller (stable across renders while its
@@ -45,6 +56,7 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
   const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
   const loadedRef = useRef(false);
+  const failuresRef = useRef(0);
 
   const refresh = useCallback(async () => {
     const generation = (generationRef.current += 1);
@@ -55,9 +67,11 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
       setData(next);
       setError(undefined);
       loadedRef.current = true;
+      failuresRef.current = 0;
     } catch (reason) {
       if (generation !== generationRef.current) return;
       setError(asError(reason));
+      failuresRef.current += 1;
     } finally {
       if (generation === generationRef.current) setIsLoading(false);
     }
@@ -86,7 +100,7 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       if (!hidden()) await refresh();
-      if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
+      if (!cancelled) timer = setTimeout(() => void tick(), nextDelay(pollMs, failuresRef.current));
     };
     timer = setTimeout(() => void tick(), pollMs);
     const onVisible = () => {
