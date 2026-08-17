@@ -143,15 +143,16 @@ describe("a model-built table row, VM to paint", () => {
     expect(screen.queryByText(/128,?450/u)).toBeNull();
   });
 
-  it("puts each cell in its own column, with no box between the row and its cells", () => {
+  it("puts each cell in its own column, with NOTHING between the row and its cells", () => {
     const { container } = paint(BALANCES);
     const body = container.querySelectorAll("tbody tr");
     expect(body).toHaveLength(2);
-    // The row node's shell generates no box: a plain div here takes an anonymous
-    // table-cell box and every cell slides one column out of its header.
-    const shell = body[0]!.firstElementChild as HTMLElement;
-    expect(shell.getAttribute("data-vendo-node-id")).toContain("TableRow");
-    expect(shell.style.display).toBe("contents");
+    // The row node's shell is no element at all. `<tr>` admits only cells, so
+    // any element here — even a `display: contents` one — is invalid nesting
+    // React warns about in every host developer's console, and a div that is
+    // NOT boxless takes an anonymous table-cell box that slides every cell one
+    // column out of its header.
+    expect([...body[0]!.children].map((child) => child.tagName)).toEqual(["TD", "TD", "TD"]);
     expect([...body[0]!.querySelectorAll("td")].map((td) => td.style.textAlign))
       .toEqual(["left", "right", "right"]);
   });

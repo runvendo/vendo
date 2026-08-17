@@ -640,13 +640,25 @@ function rendersKitOverlay(node: TreeNode, components: NodeRendererProps["compon
   return resolveBuiltin(node, components) === KIT_COMPONENTS[node.component];
 }
 
-/** Whether this node's shell must generate NO box — decided, like the overlay
- *  clause above, by the resolution that picks the implementation and never by
- *  the component's name. A TableRow renders the `<td>`s of the `<tr>` DataTable
- *  drew, and a div between the two takes an anonymous table-cell box that
- *  pushes every cell out of its column. */
-function shellIsBoxless(node: TreeNode, components: NodeRendererProps["components"]): boolean {
-  return rendersKitOverlay(node, components) || resolveBuiltin(node, components) === KIT_COMPONENTS.TableRow;
+/**
+ * How much box a node's shell may generate — decided, like the overlay clause
+ * above, by the resolution that picks the implementation and never by the
+ * component's name.
+ *
+ * "contents" is an overlay brick: it paints on the body-level host, so an empty
+ * div left where it was written is still a flex item and takes a whole gap out
+ * of the Stack around it. It keeps its element, because that element is how the
+ * node is addressed (`data-vendo-node-id`).
+ *
+ * "none" is a table row, which may not have an element AT ALL: `<tr>` admits
+ * only cells, so even a boxless div is invalid there and React says so in every
+ * host developer's dev console. Nothing is lost by dropping it — no `src` reads
+ * `data-vendo-node-id`, and `playNodeMotion` animates height/opacity/transform,
+ * every one of which is inert on a shell that generates no box.
+ */
+function shellBox(node: TreeNode, components: NodeRendererProps["components"]): "box" | "contents" | "none" {
+  if (resolveBuiltin(node, components) === KIT_COMPONENTS.TableRow) return "none";
+  return rendersKitOverlay(node, components) ? "contents" : "box";
 }
 
 /** V4 — one component family: the Kit is the only built-in set, plus the display
@@ -746,7 +758,7 @@ function NodeRenderer(props: NodeRendererProps) {
       nodeId={node.id}
       outcome={outcome}
       mark={props.marks.get(node.id)}
-      boxless={shellIsBoxless(node, props.components)}
+      shell={shellBox(node, props.components)}
     >
       {content}
       {notice(node.id, outcome)}
@@ -762,26 +774,26 @@ function NodeRenderer(props: NodeRendererProps) {
  * the render that carries the change and never on a first paint, so the effect
  * plays exactly one beat per node per repaint (repaint-motion.ts).
  */
-function NodeShell({ nodeId, outcome, mark, boxless, children }: {
+function NodeShell({ nodeId, outcome, mark, shell, children }: {
   nodeId: string;
   outcome: ToolOutcome | undefined;
   mark: NodeMark | undefined;
-  /** Whether this shell must generate NO box (`shellIsBoxless`): an overlay
-   *  brick paints on the body-level host (overlay-portal.tsx), so an empty div
-   *  left where it was written is still a flex item and takes a whole gap out of
-   *  the Stack around it — and a table row's cells belong to their `<tr>`. */
-  boxless: boolean;
+  /** How much box this shell may generate (`shellBox`). */
+  shell: "box" | "contents" | "none";
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useMotionLayoutEffect(() => {
     if (mark !== undefined && box.current !== null) playNodeMotion(box.current, mark);
   }, [mark]);
+  // A row's cells belong to their `<tr>` and nothing else may stand between
+  // them — not even a boxless div, which is invalid table nesting and warns.
+  if (shell === "none") return <>{children}</>;
   return (
     <div
       ref={box}
       data-vendo-node-id={nodeId}
-      {...(boxless ? { style: { display: "contents" } } : {})}
+      {...(shell === "contents" ? { style: { display: "contents" } } : {})}
       data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
       {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
     >
