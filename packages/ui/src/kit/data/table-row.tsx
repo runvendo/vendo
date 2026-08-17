@@ -25,16 +25,22 @@ export function TableRow({ children, style }: TableRowProps) {
   const columns = table?.columns ?? [];
   const cells = Children.toArray(children);
   // Outside a DataTable there are no columns to place cells against, and no
-  // fold. Fail SOFT on the count too: a row that showed none of its cells
-  // would be a blank line where the model wrote content.
+  // fold — the children themselves say how many cells there are.
   const visible = table?.visible ?? cells.length;
+  /**
+   * A cell per COLUMN, not per child: a row that was written short still
+   * occupies the whole grid, so one missing cell cannot slide the rest of the
+   * row out from under its headers. And never zero — a row that paints nothing
+   * is not a row, it is a component that vanished when used alone.
+   */
+  const painted = Math.max(visible, 1);
   return (
     <>
-      {cells.slice(0, visible).map((cell, i) => (
+      {Array.from({ length: painted }, (_unused, i) => (
         // A row generates no box of its own — its cells ARE the row, so `style`
         // dresses each of them.
         <td key={i} style={{ padding: cellPad, textAlign: alignCss(columns[i]?.align), ...style }}>
-          {cell}
+          {cells[i]}
           {/* DataTable folds the columns past the surface width into the first
               cell, and cannot reach into a model-built row to do it — so the
               row folds its own, off the same count and the same labels. */}
