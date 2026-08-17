@@ -1,5 +1,5 @@
 import type { UIPayload } from "@vendoai/core";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ComponentProps, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVendoProvider, useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
@@ -607,6 +607,20 @@ function SignedOutNotice({ notice }: { notice?: string | undefined }) {
   );
 }
 
+/** The rail's one branch, outside the shell function on purpose: VendoOverlay
+ *  sits at the lint complexity ceiling, and where the conversation yields to
+ *  the signed-out line is its own small decision. The thread element is built
+ *  by the caller either way — it only MOUNTS when the visitor is signed in. */
+function RailBody({ signedOut, notice, prefillScope, children }: {
+  signedOut: boolean;
+  notice?: string | undefined;
+  prefillScope: ComponentProps<typeof PrefillScopeContext.Provider>["value"];
+  children: ReactNode;
+}) {
+  if (signedOut) return <SignedOutNotice notice={notice} />;
+  return <PrefillScopeContext.Provider value={prefillScope}>{children}</PrefillScopeContext.Provider>;
+}
+
 /** 08-ui §4 — floating modal launcher with focus containment and restoration.
  *  Supported entry API (ENG-220): positioned launcher by default, controlled +
  *  uncontrolled programmatic open/close, panel portaled to document.body with
@@ -1102,19 +1116,15 @@ export function VendoOverlay({
               }}
             />
             <div className="fl-split-rail" key="rail">
-              {signedOut ? (
-                <SignedOutNotice notice={signedOutNotice} />
-              ) : (
-                <PrefillScopeContext.Provider value={prefillScope.current}>
-                  <Thread
-                    key={`${conversationKey ?? 0}:${conversationEpoch}:${resumeThreadId ?? "new"}`}
-                    {...resumeThreadProps(resumeThreadId)}
-                    discoverability={dial}
-                    firstRunGreeting={greeting}
-                    onThreadId={adoptThreadId}
-                  />
-                </PrefillScopeContext.Provider>
-              )}
+              <RailBody signedOut={signedOut} notice={signedOutNotice} prefillScope={prefillScope.current}>
+                <Thread
+                  key={`${conversationKey ?? 0}:${conversationEpoch}:${resumeThreadId ?? "new"}`}
+                  {...resumeThreadProps(resumeThreadId)}
+                  discoverability={dial}
+                  firstRunGreeting={greeting}
+                  onThreadId={adoptThreadId}
+                />
+              </RailBody>
             </div>
           </div>
         </SplitViewContext.Provider>

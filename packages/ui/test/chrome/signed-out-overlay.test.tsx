@@ -79,6 +79,13 @@ describe("the overlay's signed-out panel", () => {
     }
     mount();
     await waitFor(() => expect(document.querySelector(".fl-signedout")).toBeTruthy(), { timeout: 10_000 });
+    // Greptile on #1445: the refused warm must not permanently mark the client
+    // as warmed — after sign-in the remounted conversation re-primes the cache.
+    wire.state.failures.length = 0;
+    window.dispatchEvent(new Event("vendo:identity-changed"));
+    await waitFor(() => expect(document.querySelector(".fl-signedout")).toBeNull());
+    const warms = () => wire.requests.filter(r => r.method === "POST" && r.path === "/threads/warm").length;
+    await waitFor(() => expect(warms()).toBeGreaterThanOrEqual(2));
   });
 
   it("the identity signal brings the conversation back", async () => {

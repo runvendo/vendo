@@ -199,7 +199,15 @@ export function useVendoThread(threadId?: string) {
     // Still best-effort, but a forbidden refusal feeds the page-wide latch
     // (H2-E): the warm call is often the overlay's FIRST wire contact, so it
     // is what tells the signed-out panel to render without waiting for a poll.
-    client.threads.warm().catch((reason: unknown) => identityState(client).note(reason));
+    // A refused warm also FORGETS its mark (greptile on #1445): it primed
+    // nothing, and the conversation that remounts after sign-in deserves the
+    // warm cache the mark would have denied it. Ordinary failures keep the
+    // mark — once per page life stays the rule for everything but a refusal.
+    client.threads.warm().catch((reason: unknown) => {
+      const identity = identityState(client);
+      identity.note(reason);
+      if (identity.forbidden()) warmedClients.delete(client);
+    });
   }, [client]);
   // Beats belong to the RUNNING turn: clearing on the settle (rather than on the
   // next turn's start) is one rule that answers both halves of §3.4's ephemeral
