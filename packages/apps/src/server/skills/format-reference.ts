@@ -42,57 +42,64 @@ export default function Overview() { … }
 
 Those two imports are everything there is. Nothing else can be loaded.
 
-**Data — \`useQuery("tool_name")\`.** Synchronous, and it hands back the tool's
-result exactly as the tool returns it, so read the field names off the tool's own
-schema. Money arrives in whatever unit that schema says: divide a \`_cents\` field
-by 100 where you read it, because the components format and never convert.
+## Data — \`useQuery("tool_name")\`
 
-**Actions — \`tools.<tool_name>(args)\`, inside an event handler only.** Never
-during render. \`await\` it when you need the result; the host runs the tool and
-answers. When an awaited call succeeds, every \`useQuery\` on the screen re-runs
-and the screen re-renders with fresh data on its own — so never patch state to
-mirror what the refresh will bring back. Destructive and money-moving calls are
-confirmed by the product OUTSIDE your screen — the guard asks the person before
-the call runs — so never build a confirm step of your own: no "are you sure"
-panel, no second button, no \`confirming\` state. The exception is a confirmation
-the person ASKED for, or one press that fires a whole batch of calls: that one is
-part of their app, and it is a \`<Modal>\` saying how many, with the button that
-runs the loop LAST in its \`footer\` — that footer is a right-aligned row, so the
-last button is the one a person reaches for. A guarded host still asks once per
-call on top of it, and that is the trade: only your Modal can say how many, and
-being asked twice beats a batch that goes out silently.
+- Synchronous, and it hands back the tool's result EXACTLY as the tool returns
+  it — read the field names off the tool's own schema.
+- Money in tool data is usually CENTS: \`amount_cents: 2850\` means $28.50. Every
+  money component takes DOLLARS and never converts — divide by 100 where you
+  read it (\`amount_cents / 100\`), or the screen shows $2,850.00.
 
-**Components — the catalog below, and nothing else.** Every component already
-carries this product's own theme, so anything with behavior — a table, a number,
-a date, a control — is a component, never HTML you assemble yourself. That holds
-inside a sentence too: an amount in prose is an inline \`<Money>\`, never a \`$\`
-and a \`toFixed\` you typed, which lose the grouping and the host's own currency.
+## Actions — \`tools.<tool_name>(args)\`
 
-**Tables — bind the plain values, MAP the rest.** A \`<DataTable>\` column binds a
-plain field straight off the row, and that stays the right way to show one. A
-cell that needs arithmetic has nowhere to put it — money in cents, a rate, a
-total, anything derived — so paint those rows yourself: one \`<TableRow>\` per
-record as the table's children, its children being that row's cells in column
-order, and do the math inline: \`<Money amount={row.amount_cents / 100}/>\`. A
-per-row control goes there too. \`rows\` and \`columns\` are required either way.
+- Inside an event handler only, never during render. \`await\` it when you need
+  the result; the host runs the tool and answers.
+- When an awaited call succeeds, every \`useQuery\` on the screen re-runs and the
+  screen re-renders with fresh data on its own — never patch state to mirror
+  what the refresh will bring back.
+- Destructive and money-moving calls are confirmed by the product OUTSIDE your
+  screen — the guard asks the person before the call runs — so never build a
+  confirm step of your own: no "are you sure" panel, no second button, no
+  \`confirming\` state.
+- The exception: a confirmation the person ASKED for, or one press that fires a
+  whole batch of calls. That one is part of their app — a \`<Modal>\` saying how
+  many, with the button that runs the loop LAST in its \`footer\` (that footer is
+  a right-aligned row, so the last button is the one a person reaches for). A
+  guarded host still asks once per call on top of it, and that is the trade:
+  only your Modal can say how many, and being asked twice beats a batch that
+  goes out silently.
 
-**Layout — the display tags, plus \`style\`.** \`${DISPLAY_TAG_NAMES.join("`, `")}\`
-are yours to arrange with, and they take children and an inline \`style\` and
-nothing else: no \`className\`, no \`id\`, no handlers. Style them off the host's own
-CSS variables (\`var(--vendo-color-accent)\`, \`var(--vendo-density-content-gap)\`)
-so the screen stays branded — a hard-coded color is your color, not the
-product's; every variable there is, and what each one means, is listed at the end
-of this file. There is no network in here, so a style that fetches (\`url(…)\`) is
-dropped.
-\`key={…}\` on every row you \`.map\`. Dates go to the date
-component as the ISO string you were given — there is no clock in here, so no
-\`new Date()\`; and no \`fetch\`, \`localStorage\` or \`setTimeout\` either, because
-there is no network, no storage and no timers.
+## Components and plain HTML
 
-**State — \`useState\`.** Inputs are controlled: \`value={x}\` with
-\`onChange={(e) => setX(e.target.value)}\`. A handler receives a plain
-\`{ target: { value } }\` — a checkbox, \`{ target: { checked } }\` — and there is no
-\`preventDefault\` to call: \`<Form>\` submits itself.
+- Prefer the catalog: a component already carries this product's theme and
+  formatting, and its props are checked — a \`<Money>\` is never mis-grouped, a
+  \`<DateTime>\` never prints "Invalid Date".
+- Beside it you have plain display HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` — used the way you'd use
+  it anywhere: headings, prose, lists, and any structure the catalog doesn't
+  offer.
+- Display tags take children and an inline \`style\`, nothing else — no handlers,
+  so anything that ACTS is a component.
+- Whatever you build yourself, style it off the host's own CSS variables
+  (\`var(--vendo-color-accent)\`, \`var(--vendo-density-content-gap)\`), never
+  hard-coded values — a hard-coded color is your color, not the product's; every
+  variable there is, and what each one means, is listed at the end of this file.
+- Figures in prose still go through the value components: an amount in a
+  sentence is an inline \`<Money>\`, never a \`$\` and a \`toFixed\` you typed —
+  those lose the grouping and the host's currency.
+
+## The sandbox
+
+- No network, no storage, no timers, no clock: no \`fetch\`, no \`localStorage\`,
+  no \`setTimeout\`, no \`new Date()\`. A style that fetches (\`url(…)\`) is dropped.
+- Dates go to the date component as the ISO string you were given.
+- \`key={…}\` on every row you \`.map\`.
+
+## State — \`useState\`
+
+- Inputs are controlled: \`value={x}\` with \`onChange={(e) => setX(e.target.value)}\`.
+- A handler receives a plain \`{ target: { value } }\` — a checkbox,
+  \`{ target: { checked } }\`.
+- There is no \`preventDefault\` to call: \`<Form>\` submits itself.
 
 Save errors tell you exactly what to fix. Fix and save again.
 
@@ -103,7 +110,7 @@ Save errors tell you exactly what to fix. Fix and save again.
 The ask: "let me cancel a transfer before it goes out."
 
 \`\`\`tsx
-import { Button, DataTable, DateTime, Money, Stack, TableRow, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
@@ -112,36 +119,30 @@ export default function PendingTransfers() {
     <Stack gap={12}>
       <Text text="Transfers waiting to go out" variant="heading" />
 
-      <DataTable
-        rows={pending.data}
-        columns={[
-          { key: "recipient", label: "To" },
-          { key: "amount_cents", label: "Amount", align: "end" },
-          { key: "scheduled_for", label: "Goes out" },
-          { label: "", align: "end" },
-        ]}
-        emptyState="Nothing is waiting to go out."
-      >
-        {pending.data.map((transfer) => (
-          <TableRow key={transfer.id}>
-            <Text text={transfer.recipient} />
-            <Money amount={transfer.amount_cents / 100} />
-            <DateTime value={transfer.scheduled_for} mode="date" />
-            <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
-          </TableRow>
-        ))}
-      </DataTable>
+      {pending.data.length === 0 ? (
+        <Text text="Nothing is waiting to go out." variant="caption" />
+      ) : (
+        pending.data.map((transfer) => (
+          <Card key={transfer.id} title={transfer.recipient}>
+            <Row justify="between" align="center">
+              <Stack gap={4}>
+                <Money amount={transfer.amount_cents / 100} />
+                <DateTime value={transfer.scheduled_for} mode="date" />
+              </Stack>
+              <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
+            </Row>
+          </Card>
+        ))
+      )}
     </Stack>
   );
 }
 \`\`\`
 
-Nothing on that screen is typed in: every value is read off the query, the cents
-field is divided where it is read instead of being handed to a money column that
-would show it a hundred times over, every number and date is formatted by the
-component showing it, the empty list says so in one honest line, and the one
-thing that changes the product files its call straight from the press — the
-product does the asking.
+Nothing on that screen is typed in: every value is read off the query, every
+number and date is formatted by the component showing it, the empty list says so
+in one honest line, and the one thing that changes the product files its call
+straight from the press — the product does the asking.
 
 ---
 

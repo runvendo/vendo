@@ -126,10 +126,10 @@ describe("the reference only teaches what a screen really has", () => {
     // The display bricks are the ONLY HTML in the check's program, and they take
     // children and a style and nothing else — so `className` is still a type
     // error, and a color the model invents is still unbranded.
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/nothing else: no `className`, no `id`, no handlers/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/take children and an inline `style`, nothing else — no handlers/);
     expect(VENDO_FORMAT_REFERENCE).toMatch(/var\(--vendo-color-accent\)/);
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/no `fetch`, `localStorage` or `setTimeout`/);
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/there is no clock in here, so no\s+`new Date\(\)`/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/no `fetch`, no `localStorage`,\s+no `setTimeout`/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/no timers, no clock:[\s\S]*no `new Date\(\)`/);
   });
 
   /** V4 retired the legacy prewired family — the Kit is the ONE component source,
@@ -188,7 +188,7 @@ describe("the reference only teaches what a screen really has", () => {
 
   it("lands the section in the reference, where the layout paragraph points", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("# The host's CSS variables");
-    expect(VENDO_FORMAT_REFERENCE).toContain("listed at the end\nof this file");
+    expect(VENDO_FORMAT_REFERENCE).toContain("is listed at the end of this file");
   });
 
   it("carries the whole catalog, one line per component, generated from the specs", () => {
