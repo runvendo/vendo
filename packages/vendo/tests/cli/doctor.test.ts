@@ -1009,6 +1009,18 @@ describe("vendo doctor error codes + fix_refs", () => {
       .toMatchObject({ status: "broken", error_code: "E-CFG-004" });
   });
 
+  /** Next hard-fatals on a package named in both lists, so the fix is two
+   *  steps for a source-linked host and the message has to say so. */
+  it("names the transpilePackages conflict in the E-CFG-004 message", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "next.config.ts"),
+      'export default { transpilePackages: ["@vendoai/apps"] };\n', "utf8");
+    const { report } = await jsonChecks({ targetDir: root });
+    const check = report.checks.find((entry) => entry.id === "config/next-externals");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-CFG-004" });
+    expect(check?.message).toContain("Remove @vendoai/apps from transpilePackages first");
+  });
+
   it("fails E-CFG-004 when a Next host has no next.config at all", async () => {
     const root = await healthy();
     await rm(join(root, "next.config.ts"));

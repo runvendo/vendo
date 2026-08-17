@@ -14,7 +14,7 @@ import { initQuestions } from "./init-questions.js";
 import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
-import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, SERVER_EXTERNALS_ARRAY, blankComments, detectFramework, detectVendoWiring, missingServerExternals, nextConfigPath, workspaceHostCandidates, type HostFramework } from "./framework.js";
+import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, SERVER_EXTERNALS_ARRAY, blankComments, detectFramework, detectVendoWiring, missingServerExternals, nextConfigPath, transpileConflictNote, transpiledServerExternals, workspaceHostCandidates, type HostFramework } from "./framework.js";
 import {
   AUTH_FAMILY_INFO,
   detectAuthPreset,
@@ -1237,9 +1237,22 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     if (missing.length > 0) {
       const absolute = found ?? join(root, "next.config.mjs");
       const path = relative(root, absolute);
-      const after = before === null ? NEXT_CONFIG_SCAFFOLD : nextConfigWithExternals(before, missing);
-      if (after === null) edits.push({ file: path, lines: [`… add inside the config object: ${NEXT_SERVER_EXTERNALS_LINE}`], why: NEXT_EXTERNALS_WHY });
-      else changes.push({ absolute, path, before, after, diff: diff(path, before, after) });
+      // A host that TRANSPILES one of these keeps the paste whatever its shape:
+      // Next hard-fatals on a package named in both lists, so writing the
+      // property for them would brick the dev server this run just wired.
+      const conflicting = before === null ? [] : transpiledServerExternals(before);
+      const after = conflicting.length > 0
+        ? null
+        : before === null
+          ? NEXT_CONFIG_SCAFFOLD
+          : nextConfigWithExternals(before, missing);
+      if (after === null) {
+        edits.push({
+          file: path,
+          lines: [`… add inside the config object: ${NEXT_SERVER_EXTERNALS_LINE}`],
+          why: conflicting.length === 0 ? NEXT_EXTERNALS_WHY : `${transpileConflictNote(conflicting)} ${NEXT_EXTERNALS_WHY}`,
+        });
+      } else changes.push({ absolute, path, before, after, diff: diff(path, before, after) });
     }
   }
   // Agent surface: a host that already uses skills (.claude/ exists) gets the

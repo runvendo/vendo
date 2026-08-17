@@ -23,15 +23,17 @@ const nextConfig: NextConfig = {
   // only part of it leaves one bundle holding a src copy and a dist copy of
   // the same module, and state keyed by module identity (harnesses' WeakMap of
   // adapter slots, store's of internals) then splits silently across the two.
-  // @vendoai/store is the lone holdout — it is externalized for PGlite above,
-  // and node cannot require .ts. `next build` skips the block entirely and
+  // @vendoai/apps and @vendoai/store are the holdouts — both are externalized
+  // above (apps for its runtime esbuild import, store for PGlite), and an
+  // externalized package must not stay aliased here: Turbopack HARD-FATALS on a
+  // package named in BOTH transpilePackages and serverExternalPackages, and node
+  // cannot require .ts anyway. `next build` skips the block entirely and
   // resolves dist/ like a published install would.
   ...(process.env.NODE_ENV === "development"
     ? {
         transpilePackages: [
           "@vendoai/actions",
           "@vendoai/agents",
-          "@vendoai/apps",
           "@vendoai/automations",
           "@vendoai/core",
           "@vendoai/guard",
@@ -49,10 +51,6 @@ const nextConfig: NextConfig = {
             "@vendoai/actions/presets/auth-js": "../../packages/actions/src/presets/auth-js.ts",
             "@vendoai/actions/sync": "../../packages/actions/src/sync/public.ts",
             "@vendoai/agents": "../../packages/agents/src/index.ts",
-            "@vendoai/apps": "../../packages/apps/src/server/index.ts",
-            "@vendoai/apps/contract": "../../packages/apps/src/contract/index.ts",
-            "@vendoai/apps/e2b": "../../packages/apps/src/server/escalation/e2b/index.ts",
-            "@vendoai/apps/testing": "../../packages/apps/src/server/testing/index.ts",
             "@vendoai/automations": "../../packages/automations/src/index.ts",
             "@vendoai/core": "../../packages/core/src/index.ts",
             "@vendoai/core/conformance": "../../packages/core/src/conformance/index.ts",
