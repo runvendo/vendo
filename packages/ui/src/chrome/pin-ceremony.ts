@@ -52,10 +52,11 @@ export interface PinCeremonyOptions {
    *  VendoSlot; with several mounted and no id there is no way to know, so the
    *  panel still dismisses and nothing flies. */
   slot?: string;
-  /** The placement write, when the caller makes one. The ring is a claim that the
-   *  pin LANDED, so it waits on this and never fires if the write is refused —
-   *  the flight itself is unconditional. Omitted (a host running its own write),
-   *  the ring fires on arrival. */
+  /** What confirms the pin actually happened — Vendo's placement write, or the
+   *  host's own. The ring is a claim that the pin LANDED, so it waits on this and
+   *  never fires unless it resolves; the flight itself is unconditional. Omitted,
+   *  the caller is asserting the pin is already done, and the ring fires on
+   *  arrival. */
   confirmed?: Promise<unknown>;
   /** Dismiss the surface the card is in. Called ONCE, after the ghost is clear
    *  and before anything is measured — so a pin dismisses the panel even when
@@ -349,17 +350,21 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
   const { client, onPin, pinSlot } = useVendoProvider();
   const pin = useCallback(
     (app: { appId: string; payload: unknown }) => {
-      // Started BEFORE the ceremony so the ring has the write to wait on. The
-      // flight still plays on this tick; only the ring is held for the answer.
+      // SOMETHING has to confirm the pin in every config, because the ring claims
+      // the app is really there: Vendo's write when there is a slot, the host's
+      // own `onPin` when there is not. Never confirmed means never resolved, and
+      // an unresolved promise draws no ring — a pin the host silently dropped
+      // gets the flight and no claim that it landed.
+      let confirm = () => {};
       const written = pinSlot === undefined ? undefined : client.apps.place(app.appId, pinSlot);
       playPinCeremony({
         appId: app.appId,
         ...(pinSlot === undefined ? {} : { slot: pinSlot }),
-        confirmed: written,
+        confirmed: new Promise<void>(resolve => { confirm = () => resolve(); }),
         dismiss: () => void openVendoConversation({ close: true }),
       });
-      // No write to wait for means no await at all, so a host that wired only
-      // `onPin` still announces inside the click that asked for it.
+      // No write to wait for means no await before the announcement, so a host
+      // that wired only `onPin` still announces inside the click that asked.
       void (async () => {
         if (written !== undefined) {
           try {
@@ -385,7 +390,10 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
           }
         }
         announcePin(app.appId);
-        onPin?.(app);
+        // Awaited, so a host that mirrors the pin asynchronously holds the ring
+        // until its own write answers — the only confirmation this config has.
+        await onPin?.(app);
+        confirm();
       })();
     },
     [client, onPin, pinSlot],

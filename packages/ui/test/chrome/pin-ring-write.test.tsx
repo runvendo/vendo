@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-// The confirmation ring is gated on the WRITE, not on the flight's timer. It
-// used to fire from `flight.onfinish` whatever the outcome, so a refused
-// `apps.place` still drew "it landed" over a slot that stayed empty. The write
-// here is REAL on both sides — a live fixture wire, and a client pointed at one
-// that has since shut down.
+// The confirmation ring is gated on the pin being CONFIRMED, not on the flight's
+// timer. It used to fire from `flight.onfinish` whatever the outcome, so a
+// refused `apps.place` still drew "it landed" over a slot that stayed empty.
+// Every host config has to be gated, so every config is covered here: Vendo's
+// own write (live fixture wire, and a client pointed at one that has since shut
+// down), and an `onPin`-only host, whose own mirror is the only confirmation
+// there is.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { usePinAction } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
@@ -15,14 +18,16 @@ import { createWireServer } from "../wire-server.js";
 let flights: { onfinish: (() => void) | null }[] = [];
 
 const ring = () => document.querySelector("[data-vendo-pin-ring]");
+/** Past every microtask the ring could still be waiting on. */
+const settled = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 function PinButton() {
   const pin = usePinAction();
   return pin ? <button type="button" onClick={() => pin({ appId: "app_1", payload: {} })}>Pin</button> : null;
 }
 
-/** Click Pin and land the ghost: everything the ring waits for except the write. */
-async function pinAndLand(client: VendoClient): Promise<void> {
+/** Click Pin and land the ghost: everything the ring waits for except the pin. */
+async function pinAndLand(tree: ReactElement): Promise<void> {
   const card = document.createElement("div");
   card.className = "vendo-root";
   card.innerHTML = `<div data-vendo-app-embed="app_1">Your view</div>`;
@@ -30,7 +35,7 @@ async function pinAndLand(client: VendoClient): Promise<void> {
   slot.setAttribute("data-vendo-slot", "hero");
   document.body.append(card, slot);
 
-  render(<VendoProvider client={client} pinSlot="hero"><PinButton /></VendoProvider>);
+  render(tree);
   fireEvent.click(screen.getByRole("button", { name: "Pin" }));
   // The ceremony measures on rAF×2, so the payoff plays over the bare page.
   await new Promise<void>(resolve =>
@@ -39,10 +44,11 @@ async function pinAndLand(client: VendoClient): Promise<void> {
   flights[0]!.onfinish!();
 }
 
-describe("the settle ring answers to the placement write", () => {
+describe("the settle ring answers to the pin, never to the timer", () => {
   const originalAnimate = Element.prototype.animate;
   const originalRect = Element.prototype.getBoundingClientRect;
   let wire: Awaited<ReturnType<typeof createWireServer>>;
+  let client: VendoClient;
 
   beforeEach(async () => {
     flights = [];
@@ -57,6 +63,7 @@ describe("the settle ring answers to the placement write", () => {
       return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: laidOut ? 300 : 0, height: laidOut ? 200 : 0 } as DOMRect;
     };
     wire = await createWireServer();
+    client = createVendoClient({ baseUrl: wire.url });
   });
 
   afterEach(async () => {
@@ -69,7 +76,7 @@ describe("the settle ring answers to the placement write", () => {
   });
 
   it("rings once the write lands", async () => {
-    await pinAndLand(createVendoClient({ baseUrl: wire.url }));
+    await pinAndLand(<VendoProvider client={client} pinSlot="hero"><PinButton /></VendoProvider>);
     await waitFor(() => expect(ring()).toBeTruthy());
   });
 
@@ -80,9 +87,27 @@ describe("the settle ring answers to the placement write", () => {
     const dead = createVendoClient({ baseUrl: goneUrl });
     const place = vi.spyOn(dead.apps, "place");
 
-    await pinAndLand(dead);
+    await pinAndLand(<VendoProvider client={dead} pinSlot="hero"><PinButton /></VendoProvider>);
 
     await expect(place.mock.results[0]!.value as Promise<unknown>).rejects.toThrow();
     expect(ring()).toBeNull();
+  });
+
+  it("waits on the host's own onPin when that is the only confirmation there is", async () => {
+    // A host wiring onPin and no pinSlot is supported, and Vendo writes nothing
+    // in that config — so the ring has to hold for the host's mirror. It used to
+    // fire on the flight's timer here, claiming a landing for a pin nobody had
+    // confirmed and that the host may still drop.
+    let mirrored = () => {};
+    const onPin = vi.fn(() => new Promise<void>(resolve => { mirrored = () => resolve(); }));
+
+    await pinAndLand(<VendoProvider client={client} onPin={onPin}><PinButton /></VendoProvider>);
+
+    expect(onPin).toHaveBeenCalledWith({ appId: "app_1", payload: {} });
+    await settled();
+    expect(ring()).toBeNull();
+
+    mirrored();
+    await waitFor(() => expect(ring()).toBeTruthy());
   });
 });
