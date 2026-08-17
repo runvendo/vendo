@@ -11,7 +11,20 @@ export const WAFER_MODEL_IDS = {
 
 export const WAFER_BASE_URL = "https://pass.wafer.ai/v1";
 
-export type ModelAlias = "opus" | "sonnet" | "haiku" | keyof typeof WAFER_MODEL_IDS;
+/** The bought product's own model line. Thesys C1 does not let a host choose a
+ *  model the way the other columns do — the column IS the product — so it has
+ *  exactly one alias, and `contenders` in `run.ts` is what keeps it to it. This
+ *  is their newest FIRST-PARTY (non-OpenRouter) Anthropic model, read off
+ *  docs.thesys.dev/api-reference/models-and-compatibility on 2026-08-16 and
+ *  confirmed against the live endpoint. */
+export const THESYS_MODEL_IDS = { c1: "c1/anthropic/claude-sonnet-4.6/v-20260331" } as const;
+
+export type ModelAlias =
+  | "opus"
+  | "sonnet"
+  | "haiku"
+  | keyof typeof WAFER_MODEL_IDS
+  | keyof typeof THESYS_MODEL_IDS;
 
 /**
  * Pinned ids. Each one was checked against the live API through
@@ -29,6 +42,7 @@ export const MODEL_IDS: Readonly<Record<ModelAlias, string>> = {
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001",
   ...WAFER_MODEL_IDS,
+  ...THESYS_MODEL_IDS,
 };
 
 interface ModelPrice {
@@ -51,6 +65,12 @@ const PRICING: Readonly<Record<string, ModelPrice>> = {
   // against the one multiplier below; its token counts are exact either way.
   "glm5.2-fast": { inputPerMTok: 2.1, outputPerMTok: 6.6 },
   "DeepSeek-V4-Flash-0731-Fast": { inputPerMTok: 0.28, outputPerMTok: 0.56 },
+  // Thesys passes the underlying provider's per-token rates through with no
+  // markup ("same rates as the models themselves … no markups",
+  // thesys.dev/pricing), so this row is Anthropic's Sonnet 4.6 list rate. Their
+  // flat per-call platform fee is not a token rate and is billed by the driver
+  // (`THESYS_CALL_USD` in `thesys.ts`) rather than smuggled in here.
+  "c1/anthropic/claude-sonnet-4.6/v-20260331": { inputPerMTok: 3, outputPerMTok: 15 },
 };
 
 /** Cache reads bill at a tenth of the input rate; 5-minute cache writes at 1.25x. */

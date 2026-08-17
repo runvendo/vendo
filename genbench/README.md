@@ -2,11 +2,14 @@
 
 Answers "why not build this in-house?" with numbers.
 
-It runs hand-written prompts through three contenders — the real Vendo pipeline
-and two raw-Claude baselines — against fourteen fictional products defined
-entirely in JSON, scores what comes back, and measures time and money. Every contender
-gets the same model, the same tools, the same schemas, the same design brief and
-the same harness contract, because that equivalence is the whole claim.
+It runs hand-written prompts through four contenders — the real Vendo pipeline,
+two raw-Claude baselines and one bought product — against fourteen fictional
+products defined entirely in JSON, scores what comes back, and measures time and
+money. The three in-house contenders get the same model, the same tools, the same
+schemas, the same design brief and the same harness contract, because that
+equivalence is the whole claim; the bought product gets the same world and is
+configured as its own vendor says to configure it, which is a different claim and
+is spelled out under [The bought product](#the-bought-product).
 
 ## The contenders
 
@@ -15,9 +18,10 @@ the same harness contract, because that equivalence is the whole claim.
 | `vendo` | the real product: the screen assembler, the guard, the apps runtime, the compiler and the Kit. Its artifact is the TSX screen it saved (`artifact.tsx`), and the page is that screen's compiled payload mounted through the product's own renderer |
 | `diy` | the cheap in-house build: ONE `streamText` call, one HTML document, no product. Its artifact IS the page — no compile, no Kit, no mount |
 | `claude-code` | the strong in-house build: the stock Claude Agent SDK with its stock loadout — Bash included — writing and rewriting one `index.html` in a scratch directory. What is taken away is isolation and not capability: the operator's own settings, MCP config and shell environment stay out, because a laptop's private tooling would silently become this column's advantage. Its artifact IS the page too, and it is billed by its own session rather than by the run's meter |
+| `thesys` | the BOUGHT build: Thesys C1 (docs.thesys.dev), a hosted generative-UI API — the closest competing product on the market. Not another way to prompt a model, but a purchase: their model, their system prompt, their UI DSL, their React renderer. Its artifact IS the page, with their renderer inlined into it. See [The bought product](#the-bought-product) |
 
-All three are handed the same thing, and that is asserted rather than
-asserted-to-be. There are exactly **two shared texts** — `worldBlock` in
+The three in-house columns are handed the same thing, and that is asserted rather
+than asserted-to-be. There are exactly **two shared texts** — `worldBlock` in
 `src/vendo.ts`, the world every contender is briefed on, and `HARNESS_CONTRACT`
 in `src/render.ts`, the mechanical seam every page-writing contender must satisfy
 — and both baselines send both. `tests/diy.test.ts` then compares the prompt each
@@ -38,6 +42,52 @@ the theme through `applyThemeVars`, and hands its writer the shipped
 `building-apps` skill and format reference — which is where that column's
 equivalent guidance (how a screen calls a tool, when to confirm) already lives.
 
+### The bought product
+
+`thesys` answers a different question from the other three: not "why not build
+this in-house?" but "why not buy the closest thing already on the market?". It is
+**product against product**, and it is configured best-effort, the way the
+vendor's own docs say to configure it. Everything about that configuration is in
+`src/thesys.ts` and can be read and argued with.
+
+- **It gets the same world.** `worldBlock` — the same bytes the two baselines and
+  the screen assembler are handed — is its entire system prompt, and the case is
+  its entire user turn. `tests/thesys.test.ts` asserts that the request really on
+  the wire is exactly those two messages and nothing else.
+- **It is NOT sent the harness contract**, and it is exempt from the byte-equality
+  prompt test that covers `diy` and `claude-code`. Two reasons, and they are the
+  same reason twice: the system prompt this column actually runs on is the
+  **vendor's** — roughly 18k tokens of it, billed to us and unobservable — so
+  there is no byte to compare; and none of the page's mechanics are asked of the
+  model here. Its wiring is **mechanical**, done by the driver exactly as
+  `mount.tsx` does it for the vendo column, so a contract telling the model to
+  wire `window.vendo` would be coaching it on work it does not do.
+- **Its model is the vendor's, not ours.** `c1/anthropic/claude-sonnet-4.6/v-20260331`,
+  their newest first-party (non-OpenRouter) Anthropic model. A host does not pick
+  the model here the way it does in every other column, so this contender runs
+  that one alias and nothing else, and no other contender may run it.
+- **The world's tools are declared as C1 custom actions**
+  (`metadata.thesys.c1_custom_actions`, a JSON *string* on the wire), with the
+  same derived input schemas the vendo registry serves — so their model attaches
+  real action types and schema'd params to the controls it generates, and a press
+  reaches `window.vendo.callTool` through their own `onAction`.
+- **Its theming is a mapping, and it is published.** `crayonTheme` in
+  `src/thesys.ts` maps the world's `VendoTheme` colours, font family and corner
+  radii onto their theme tokens. Their `Theme` type is undocumented, so the names
+  were read off the type and presets they ship. Their ladder is finer than a
+  `VendoTheme`'s: anything the world does not name — the wider radii, the shadows
+  — keeps their default, and this column wears that difference honestly.
+
+What it is **not** given: a second model turn. Their product refreshes a screen
+after a press by generating again, and this benchmark grades one generation per
+case for every column — so a press is recorded and the screen does not move. That
+is a real difference between the products, and it is reported rather than patched
+around.
+
+Everything after the bytes land is the same code for every column: the same
+injected recorder, the same `@font-face`, the same screenshot, the same click
+probe, the same floor and the same judge.
+
 Every page then carries the SAME injected recorder (`seam` in `src/render.ts`)
 and the SAME `@font-face` (`fontFace`, below), so `window.vendo.callTool` means
 one thing whoever wrote the page, every column is shot in the world's own face,
@@ -54,7 +104,7 @@ timeout is recorded as its own failure without touching its siblings. Column
 order is the declaration order in `DRIVERS`, never the order they finished.
 
 The case budget is **per contender** (`CASE_TIMEOUT_MS`), not one number for the
-row: `vendo` and `diy` answer in one call and keep a five-minute bound, while
+row: `vendo`, `diy` and `thesys` answer in one call and keep a five-minute bound, while
 `claude-code` runs its own ten-minute wall clock inside the driver before it has
 delivered anything, so its case gets twelve. A shared five-minute bound would
 have ended that column early and reported a timeout the contender never had.
@@ -68,7 +118,7 @@ ANTHROPIC_API_KEY=… pnpm genbench run --prompt spend-overview
 
 Each case writes `runs/<run>/<contender>/<case>/`, where `<contender>` is the
 column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-opus`,
-`claude-code-haiku`:
+`claude-code-haiku`, `thesys-c1`:
 
 | file | what it is |
 | --- | --- |
@@ -118,6 +168,12 @@ Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
 `--world <name>` (default `maple`) or `--world all` for every world in one run
 folder — which is the only way to get one number for the whole corpus.
 
+The bought column runs on its own alias and its own key, so racing it against the
+in-house three is `--models sonnet,c1` with `THESYS_API_KEY` set beside
+`ANTHROPIC_API_KEY`. Asking for `c1` without that key fails before the first
+case rather than a case and a browser later; asking for it without `thesys` in
+`--contenders` produces no column, because no other harness may run that alias.
+
 A `--prompt` run opens the preview on macOS when it finishes — that is one
 person watching one case, and a window is the point of it. A full run prints the
 path instead, and `CI` or `GENBENCH_NO_OPEN=1` suppresses the window entirely.
@@ -150,6 +206,15 @@ Every dollar comes from the price table in `src/meter.ts`, **priced as of
 token counts beside every dollar are the durable number — the dollars are a
 reading of that table on the day the run happened, so two runs' dollars only
 compare if the table did not move between them.
+
+The bought column is priced the same way, plus a fee no in-house column has.
+Thesys pass through the underlying provider's token rates with no markup, so its
+row is Anthropic's Sonnet 4.6 list rate ($3/$15), and their flat **$0.002 per API
+call** — the Build plan's rate, read 2026-08-16 — is added by the driver rather
+than smuggled into the token table. A plan's included calls are a subscription no
+other column has, and this benchmark does not model one. In practice one case on
+this column is a few cents: its prompt carries their own ~18k-token system prompt,
+which is billed to us on every call and cannot be read.
 
 ## The world
 

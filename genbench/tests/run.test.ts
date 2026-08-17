@@ -294,7 +294,7 @@ describe("--models", () => {
  *  harness should not spend the other two's tokens on the same case. */
 describe("--contenders", () => {
   it("races every driver when nobody narrows the row", () => {
-    expect(parseArgs(["run"]).contenders).toEqual(["vendo", "diy", "claude-code"]);
+    expect(parseArgs(["run"]).contenders).toEqual(["vendo", "diy", "claude-code", "thesys"]);
   });
 
   it("narrows the row to the drivers named", () => {

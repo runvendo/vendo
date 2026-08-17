@@ -14,6 +14,7 @@ import { judge, JudgeContract, rubricLines, type JudgeResult } from "./judge.js"
 import {
   meteredModel,
   MODEL_IDS,
+  THESYS_MODEL_IDS,
   WAFER_BASE_URL,
   WAFER_MODEL_IDS,
   type Meter,
@@ -23,11 +24,12 @@ import {
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
 import { tally, writePreview, writeSummary } from "./report.js";
+import { thesysDriver, thesysProvider } from "./thesys.js";
 import { TriageContract } from "./triage.js";
 import { vendoDriver } from "./vendo.js";
 import { caseHash, loadCases, loadWorld, worldForCase, type Case, type CaseShape, type Lane, type World } from "./world.js";
 
-export type HarnessId = "vendo" | "diy" | "claude-code";
+export type HarnessId = "vendo" | "diy" | "claude-code" | "thesys";
 
 export interface ContenderId {
   readonly harness: HarnessId;
@@ -143,6 +145,7 @@ const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
   vendo: vendoDriver,
   diy: diyDriver,
   "claude-code": (model) => claudeCodeDriver({ model }),
+  thesys: thesysDriver,
 };
 
 const HARNESS_IDS = Object.keys(DRIVERS) as readonly HarnessId[];
@@ -210,14 +213,21 @@ function asJobs(value: string): number {
 /** Every contender that has a driver today, in every model that driver can
  *  think with. Claude Code spawns its own Anthropic engine and never reads
  *  `meter.model`, so a Wafer alias would reach its Agent SDK as an Anthropic id
- *  and the column would report the harness's mistake as the model's score. */
+ *  and the column would report the harness's mistake as the model's score.
+ *  `thesys` is a PRODUCT rather than a harness over a model — the vendor picks
+ *  it, not us — so it runs its own alias and nothing else, and no other column
+ *  may run that alias: it only resolves at their endpoint. */
 export function contenders(
   models: readonly ModelAlias[],
   harnesses: readonly HarnessId[] = HARNESS_IDS,
 ): readonly ContenderId[] {
   const row = harnesses.flatMap((harness) =>
     models
-      .filter((model) => harness !== "claude-code" || !Object.hasOwn(WAFER_MODEL_IDS, model))
+      .filter((model) =>
+        Object.hasOwn(THESYS_MODEL_IDS, model)
+          ? harness === "thesys"
+          : harness !== "thesys" && (harness !== "claude-code" || !Object.hasOwn(WAFER_MODEL_IDS, model)),
+      )
       .map((model) => ({ harness, model, slug: `${harness}-${model}` })),
   );
   if (row.length === 0) {
@@ -266,6 +276,7 @@ export const CASE_TIMEOUT_MS: Readonly<Record<HarnessId, number>> = {
   vendo: 5 * 60_000,
   diy: 5 * 60_000,
   "claude-code": WALL_CLOCK_MS + 2 * 60_000,
+  thesys: 5 * 60_000,
 };
 
 /**
@@ -412,11 +423,15 @@ async function main(argv: readonly string[]): Promise<number> {
   // Demanded up front rather than at the first call, which is a case and a
   // browser later. The Anthropic key is still required whatever was asked for:
   // the judge and the honesty check run on it, whoever built the screen.
-  const waferKey = process.env.WAFER_API_KEY;
-  const wanted = args.models.filter((alias) => Object.hasOwn(WAFER_MODEL_IDS, alias));
-  if (wanted.length > 0 && (waferKey === undefined || waferKey === "")) {
-    console.error(`genbench: WAFER_API_KEY is not set, and it is what serves ${wanted.join(", ")}`);
-    return 1;
+  for (const [name, ids] of [
+    ["WAFER_API_KEY", WAFER_MODEL_IDS],
+    ["THESYS_API_KEY", THESYS_MODEL_IDS],
+  ] as const) {
+    const wanted = args.models.filter((alias) => Object.hasOwn(ids, alias));
+    if (wanted.length > 0 && (process.env[name] ?? "") === "") {
+      console.error(`genbench: ${name} is not set, and it is what serves ${wanted.join(", ")}`);
+      return 1;
+    }
   }
 
   // The row is built once, here, for the same reason the keys are demanded
@@ -431,7 +446,8 @@ async function main(argv: readonly string[]): Promise<number> {
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const runDir = join(root, "runs", runId);
   const anthropic = createAnthropic({ apiKey });
-  const wafer = createOpenAICompatible({ name: "wafer", baseURL: WAFER_BASE_URL, apiKey: waferKey });
+  const wafer = createOpenAICompatible({ name: "wafer", baseURL: WAFER_BASE_URL, apiKey: process.env.WAFER_API_KEY });
+  const thesys = thesysProvider({ apiKey: process.env.THESYS_API_KEY });
   const bundle = await bundleMount();
   const shooter = await openBrowser();
   const results: CaseResult[] = [];
@@ -448,7 +464,11 @@ async function main(argv: readonly string[]): Promise<number> {
     const modelId = MODEL_IDS[contender.model];
     // Its own meter, so a sibling's tokens and a sibling's clock are never
     // charged to this column.
-    const provider = Object.hasOwn(WAFER_MODEL_IDS, contender.model) ? wafer : anthropic;
+    const provider = Object.hasOwn(WAFER_MODEL_IDS, contender.model)
+      ? wafer
+      : Object.hasOwn(THESYS_MODEL_IDS, contender.model)
+        ? thesys
+        : anthropic;
     const meter = meteredModel(provider(modelId), modelId);
 
     /** Evidence as it is produced, not as it is returned. Losing the outer race

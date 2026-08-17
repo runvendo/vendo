@@ -28,6 +28,7 @@ const BROWSER_SUITES = [
   "tests/probe.test.ts",
   "tests/render.test.ts",
   "tests/seam.test.ts",
+  "tests/thesys.test.ts",
 ];
 
 export default defineConfig({

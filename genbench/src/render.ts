@@ -62,7 +62,10 @@ export async function bundleMount(): Promise<string> {
   return result.outputFiles[0]!.text;
 }
 
-const jsonScript = (id: string, value: unknown): string =>
+/** Data a page reads back at mount, escaped once, in one place: `pageHtml` below
+ *  and the thesys column's own page builder both write through this, so the one
+ *  `</script` hazard has one spelling. */
+export const jsonScript = (id: string, value: unknown): string =>
   `<script type="application/json" id="${id}">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>`;
 
 /**
