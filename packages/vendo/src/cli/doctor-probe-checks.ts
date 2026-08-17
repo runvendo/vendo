@@ -312,9 +312,9 @@ export async function reportMachines(run: DoctorRun): Promise<void> {
     }
     const declaresSchedules = machines.some((machine) => (machine.schedules?.length ?? 0) > 0);
     if (body.scheduleCallerConfigured === true) {
-      run.pass("machines/schedule-caller", "schedule caller configured (VENDO_TICK_SECRET); point an external cron at POST /api/vendo/tick");
+      run.pass("machines/schedule-caller", "schedule caller configured; a waker can reach POST /api/vendo/tick");
     } else if (declaresSchedules) {
-      run.warn("machines/schedule-caller", "E-SCHED-001", "apps declare vendo.json schedules but no schedule caller is configured — set VENDO_TICK_SECRET and point an external cron (Vercel cron, GitHub Actions, crontab) at POST /api/vendo/tick");
+      run.warn("machines/schedule-caller", "E-SCHED-001", "apps declare vendo.json schedules but no schedule caller is configured — set VENDO_API_KEY and Vendo Cloud's heartbeat wakes this deployment, or set VENDO_TICK_SECRET and point an external cron (Vercel cron, GitHub Actions, crontab) at POST /api/vendo/tick");
     } else if (machines.length > 0) {
       run.note("  no schedule caller configured (VENDO_TICK_SECRET unset) — needed once an app declares vendo.json schedules");
     }

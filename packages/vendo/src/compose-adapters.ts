@@ -190,6 +190,11 @@ export const composeReady = (composition: VendoComposition): Pick<VendoCompositi
       // call: a partial composition in a unit test may not have composed
       // automations at all.
       composition.startDevAutomationsTicker?.();
+      // Enrol with Cloud's heartbeat — the deployed process's only waker. NOT
+      // chained into the latch: a console round-trip must not delay the first
+      // request, and it never rejects (it shouts instead), so nothing here can
+      // turn a Cloud blip into a deployment that refuses to serve.
+      void composition.enrolForCloudTicks?.();
     }
     return readyState;
   };

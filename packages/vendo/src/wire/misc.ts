@@ -1,9 +1,9 @@
 import { signedWebhookBytes, verifySignature } from "@vendoai/automations";
 import { log, VendoError } from "@vendoai/core";
 import { computeImpact } from "../sync-impact.js";
+import { tickSecret } from "../tick-enrolment.js";
 import {
   VERSION,
-  environment,
   hex,
   json,
   orgsCloudRequired,
@@ -88,9 +88,11 @@ async function tickSignatureValid(request: Request, secret: string): Promise<boo
 /** The two credentials the ONE wake endpoint takes, side by side and against
     the SAME secret: the host's own `Bearer $VENDO_TICK_SECRET` (a Vercel cron,
     a GitHub Action, crontab) and a standard-webhooks signature (Vendo Cloud's
-    heartbeat). A deployment configures one thing and either waker works. */
+    heartbeat). A deployment configures one thing — or, with a Cloud key, nothing
+    at all: `tickSecret` derives the secret enrolment published (tick-enrolment.ts)
+    and VENDO_TICK_SECRET stays the BYO override that wins. Either waker works. */
 async function tickAuthorized(request: Request): Promise<boolean> {
-  const secret = environment("VENDO_TICK_SECRET");
+  const secret = await tickSecret();
   if (secret === undefined) return false;
   return await timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`)
     || await tickSignatureValid(request, secret);
@@ -158,7 +160,8 @@ export const systemRoutes: RouteEntry[] = [
           message: "POST /api/vendo/tick needs a credential and this request carried none that verified. "
             + "Send either `Authorization: Bearer $VENDO_TICK_SECRET`, or a standard-webhooks signature "
             + "(webhook-id, webhook-timestamp, webhook-signature) over the empty body, signed with that same secret. "
-            + "Set VENDO_TICK_SECRET on this deployment if it has none.",
+            + "If this deployment has no secret at all: set VENDO_API_KEY and Vendo Cloud's heartbeat wakes it with "
+            + "nothing further to configure, or set VENDO_TICK_SECRET and point your own cron here.",
         },
       }, 401);
     }
