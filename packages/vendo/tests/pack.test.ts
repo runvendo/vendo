@@ -2,18 +2,25 @@ import {
   VENDO_MAKE_TOOL,
   VENDO_TREE_FORMAT,
   VENDO_VIEW_STREAM,
+  VendoError,
   parseVendoToolEnvelope,
+  setLogger,
   vendoAppRefSchema,
   vendoApprovalRefSchema,
   type AgentRunner,
   type Json,
   type ToolDescriptor,
+  type VendoLogEvent,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { buildVendoToolPack, type VendoPackTool } from "../src/pack.js";
 import { VENDO_DELEGATE_TOOL } from "../src/tool-pack.js";
 import { boundRegistry, ctx, testGuard, type TestToolImplementation } from "../src/agent-doubles.test-util.js";
+
+afterEach(() => {
+  setLogger(undefined);
+});
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
@@ -205,6 +212,39 @@ describe("buildVendoToolPack — guard-bound execution", () => {
     expect(output).toEqual({
       status: "error",
       error: { code: "execution", message: "Tool execution failed." },
+    });
+  });
+
+  it("tells the OPERATOR what actually threw — the sentence above says nothing", async () => {
+    const logs: VendoLogEvent[] = [];
+    setLogger((event) => { logs.push(event); });
+    const rejecting = {
+      descriptors: async () => [descriptor("host_lookup")],
+      execute: async () => {
+        throw new Error("the invoices upstream timed out");
+      },
+    };
+    const tools = await buildVendoToolPack({ registry: rejecting, runner: nullRunner });
+    await tools.find((tool) => tool.name === "vendo_host_lookup")!.execute({}, { ctx: ctx() });
+
+    // The catch used to bind nothing and print nothing anywhere, so a host door
+    // failing on every call looked identical to one nobody had wired.
+    const failed = logs.find((event) => event.code === "vendo.pack-execute-failed");
+    expect((failed?.data?.["error"] as Error | undefined)?.message).toBe("the invoices upstream timed out");
+  });
+
+  it("forwards a VendoError's own code and message — those were written FOR the model", async () => {
+    const rejecting = {
+      descriptors: async () => [descriptor("host_lookup")],
+      execute: async () => {
+        throw new VendoError("not-found", "invoice inv_9 does not exist. List them first.");
+      },
+    };
+    const tools = await buildVendoToolPack({ registry: rejecting, runner: nullRunner });
+    const output = await tools.find((tool) => tool.name === "vendo_host_lookup")!.execute({}, { ctx: ctx() });
+    expect(output).toEqual({
+      status: "error",
+      error: { code: "not-found", message: "invoice inv_9 does not exist. List them first." },
     });
   });
 
@@ -470,6 +510,19 @@ describe("vendo_delegate", () => {
     ) as { status: string; refs: unknown[] };
     expect(output.status).toBe("error");
     expect(output.refs).toEqual([]);
+  });
+
+  it("tells the OPERATOR why the delegated run died", async () => {
+    const logs: VendoLogEvent[] = [];
+    setLogger((event) => { logs.push(event); });
+    const runner: AgentRunner = async () => {
+      throw new Error("the delegated agent lost its provider key");
+    };
+    const { byName } = await pack({ runner });
+    await byName.get(VENDO_DELEGATE_TOOL)!.execute({ task: "anything" }, { ctx: ctx() });
+
+    const failed = logs.find((event) => event.code === "vendo.pack-delegate-failed");
+    expect((failed?.data?.["error"] as Error | undefined)?.message).toBe("the delegated agent lost its provider key");
   });
 
   // runvendo/flowlet#822 defect 2, generalized: `vendo_make` answers a failed

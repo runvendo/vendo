@@ -1,3 +1,4 @@
+import { log } from "@vendoai/core";
 import type {
   ApprovalId,
   DeniedNeeds,
@@ -390,8 +391,16 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           });
         }
         return finish(toToolResult(outcome), outcome);
-      } catch {
-        // §1.1: call() never throws. A bug anywhere above becomes a result.
+      } catch (error) {
+        // §1.1: call() never throws. A bug anywhere above becomes a result — and
+        // the operator hears WHICH bug, because the sentence below is the same one
+        // for every one of them.
+        log({
+          code: "harnesses.tool-call-failed",
+          level: "error",
+          message: `[vendo] ${name} could not be called:`,
+          data: { error },
+        });
         return finish(executionError());
       }
     },

@@ -3,7 +3,9 @@ import {
   VENDO_APP_REF_KIND,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
+  VendoError,
   canonicalJson,
+  log,
   type AgentRunner,
   type Json,
   type RunContext,
@@ -145,7 +147,18 @@ async function guardedExecute(
 ): Promise<ToolOutcome> {
   try {
     return await registry.execute(call, ctx);
-  } catch {
+  } catch (error) {
+    // A VendoError was authored FOR the model, so it travels verbatim
+    // (`vendo-verbs.ts`, same reasoning). Anything else is ours: the operator gets
+    // the cause and the model gets the sentence below, because a `catch {}` that
+    // binds nothing makes a door failing on every call look like one nobody wired.
+    if (error instanceof VendoError) return { status: "error", error: { code: error.code, message: error.message } };
+    log({
+      code: "vendo.pack-execute-failed",
+      level: "error",
+      message: `[vendo] ${call.tool} failed:`,
+      data: { error },
+    });
     return executionError();
   }
 }
@@ -286,7 +299,15 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
         );
         const result: VendoDelegateResult = { status: report.status, summary: report.summary, refs };
         return result;
-      } catch {
+      } catch (error) {
+        // The summary is the CALLING agent's to read and stays a sentence it can
+        // act on; the operator is the one who needs the runner's own words.
+        log({
+          code: "vendo.pack-delegate-failed",
+          level: "error",
+          message: "[vendo] the delegated run threw:",
+          data: { error },
+        });
         const result: VendoDelegateResult = {
           status: "error",
           summary: "The delegated run could not be completed.",

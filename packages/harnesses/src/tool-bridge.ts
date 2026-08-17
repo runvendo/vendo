@@ -3,6 +3,7 @@ import {
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
+  VendoError,
   toVendoWirePart,
   vendoAutomationPartSchema,
   vendoCitationsPartSchema,
@@ -248,8 +249,22 @@ export async function guardedCall(
   if (outcome === undefined) {
     try {
       outcome = await options.registry.execute(call, options.ctx);
-    } catch {
-      outcome = executionError();
+    } catch (error) {
+      // A VendoError was authored FOR the model and travels verbatim; anything
+      // else keeps the generic sentence (consumer-voice law, §3) and the operator
+      // gets the cause — a `catch {}` that binds nothing made a door failing on
+      // every call indistinguishable from one nobody had wired.
+      if (error instanceof VendoError) {
+        outcome = { status: "error", error: { code: error.code, message: error.message } };
+      } else {
+        log({
+          code: "harnesses.tool-execute-failed",
+          level: "error",
+          message: `[vendo] ${descriptor.name} failed:`,
+          data: { error },
+        });
+        outcome = executionError();
+      }
     }
   }
 

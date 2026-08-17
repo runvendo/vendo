@@ -268,22 +268,47 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     expect(operatorLog(notes.mock.calls)).toContain("has no row yet");
   }, 120_000);
 
+  it("a LAST save the seam refused is not a finished screen, whatever an earlier save painted", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const walked = await walk([
+      // 1. A screen that paints: the row lands and the person is looking at it.
+      saveApp(SPENDING, "c1"),
+      // 2. The save meant to replace it never reaches the screen.
+      saveApp(BROKEN, "c2"),
+      // 3. The loop signs off anyway — models do, and no prompt stops them.
+      () => speak("Your card is live!"),
+    ]);
+
+    // THE DEFECT: `assembled` says only that bytes landed ONCE, so the run used to
+    // answer with these words and a ready receipt over the step-1 screen, which is
+    // "your card is live" printed over a stale card.
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).not.toBe("ready");
+    expect(receipt.say).not.toContain("Your card is live!");
+    // The floor's own sentence travels the whole way out, so what the person hears
+    // is what actually happened to the screen they asked for.
+    expect(receipt.say).toContain("does not compile as TSX");
+  }, 120_000);
+
   it("a refused save's DECISIONS have nowhere to land, and that is not a fault", async () => {
-    // A run whose only save was refused is `assembled` — the bytes landed — but no
-    // paint means no row, so the memory door answers `not-found` on a write that
-    // was never possible. It used to warn about it, which sends an operator
-    // looking for a broken store behind an expected state.
+    // A run whose only save was refused answers with the floor, not with a screen:
+    // no paint, no row, and nothing for decisions to hang off. The memory door is
+    // never asked, so it never answers `not-found` — which it used to WARN about,
+    // sending an operator looking for a broken store behind an expected state.
     const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const notes = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await walk([
+    const walked = await walk([
       saveApp(BROKEN, "c1", "Totals are the host's; this screen only lists."),
       () => speak("done"),
     ]);
 
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).toBe("failed");
     expect(operatorLog(warnings.mock.calls)).not.toContain("decisions were not recorded");
-    expect(operatorLog(notes.mock.calls)).toContain("has no row yet");
   }, 120_000);
 
   it("a save that DOES reach the screen still lands the row, the paint and a ready receipt", async () => {
