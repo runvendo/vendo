@@ -147,6 +147,24 @@ function createPoller(client: VendoClient): Poller {
     }
   };
 
+  /** The held queue's OWN wake, independent of the poller lifecycle (greptile
+   *  on #1442, round three): a useReportSlot-only mount never calls start(),
+   *  so no other subscription exists to flush what it held. Lazy — created
+   *  only when something is actually held — and self-disposing on the first
+   *  open transition, so a signed-in page carries no extra listener. It
+   *  deliberately survives stop(): it belongs to the queue, not to the
+   *  placement listeners (round two's stranding was scoping it wrong). */
+  let stopHeldFlush: (() => void) | undefined;
+  const ensureHeldFlush = (): void => {
+    if (stopHeldFlush !== undefined) return;
+    stopHeldFlush = identity.subscribe(() => {
+      if (identity.forbidden()) return;
+      stopHeldFlush?.();
+      stopHeldFlush = undefined;
+      flushReports();
+    });
+  };
+
   /** Send everything queued, batched and capped. Latched-forbidden holds the
    *  queue in place — a microtask committed before the latch closed must not
    *  slip a write out either. The stamp is written HERE, at send time: an
@@ -155,7 +173,11 @@ function createPoller(client: VendoClient): Poller {
    *  reason — never stamped, reported by the next page that mounts it). */
   const flushReports = (): void => {
     flushing = false;
-    if (identity.forbidden() || queued.length === 0) return;
+    if (identity.forbidden()) {
+      if (queued.length > 0) ensureHeldFlush();
+      return;
+    }
+    if (queued.length === 0) return;
     const batch = queued;
     queued = [];
     const sending = batch.slice(0, SLOTS_REPORT_MAX);
@@ -286,8 +308,12 @@ function createPoller(client: VendoClient): Poller {
       if (!queued.some(item => keyOf(item) === key)) queued.push(entry);
       // While the wire refuses this visitor, the report is HELD in the queue,
       // never sent (greptile on #1442: a slot mounting AFTER the latch closed
-      // still wrote POST /slots). The latch-open subscription flushes it.
-      if (identity.forbidden()) return;
+      // still wrote POST /slots). The queue's own wake flushes it on sign-in,
+      // whether or not any placements listener ever started the poller.
+      if (identity.forbidden()) {
+        ensureHeldFlush();
+        return;
+      }
       if (flushing) return;
       flushing = true;
       // The same deferral the first placements read uses: every slot mounting in

@@ -72,29 +72,50 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
     expect(reports()).toHaveLength(1);
   });
 
-  // Greptile round two on #1442: a held report must survive the poller's full
-  // teardown. Mount-while-forbidden, unmount (stop() tears the identity
-  // subscription), sign in with nothing mounted, then remount inside the
-  // refresh window — the stamp-at-queue-time design left the slot silenced
-  // for the whole window; stamping at SEND time means the remount re-arms
-  // the flush and the report finally lands.
-  it("a report held through unmount and sign-in still lands when the slot remounts", async () => {
+  // Greptile rounds two + three on #1442: a held report must survive the
+  // poller's full teardown. The queue carries its OWN wake (independent of
+  // placement listeners, surviving stop()), so the report lands at sign-in
+  // even with nothing mounted — and the send-time stamp means the remount
+  // that follows sends no duplicate.
+  it("a report held through unmount lands at sign-in, and the remount sends no duplicate", async () => {
     const { identityState } = await import("../../src/hooks/identity-state.js");
     const { VendoError } = await import("@vendoai/core");
     identityState(client).note(new VendoError("forbidden", "no identity for this request"));
     const first = render(<VendoProvider client={client}><VendoSlot id="net-worth-card" /></VendoProvider>);
     await new Promise(resolve => setTimeout(resolve, 100));
     expect(reports()).toHaveLength(0);
-    // The last listener unmounts: stop() runs, the identity subscription dies.
+    // The last listener unmounts: stop() runs; the queue's wake survives it.
     first.unmount();
-    // Sign-in lands while nothing is mounted — nothing to flush yet, no crash.
+    // Sign-in lands while nothing is mounted: the held report goes out NOW.
     window.dispatchEvent(new Event("vendo:identity-changed"));
+    await waitFor(() => expect(wire.state.slots.map(slot => slot.label)).toEqual(["Net worth card"]));
+    expect(reports()).toHaveLength(1);
+    // The same slot remounts inside SLOT_REPORT_REFRESH_MS: stamped at send
+    // time, so the remount adds nothing.
+    render(<VendoProvider client={client}><VendoSlot id="net-worth-card" /></VendoProvider>);
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(reports()).toHaveLength(1);
+  });
+
+  // Greptile round three on #1442: a useReportSlot-ONLY mount never starts the
+  // placements poller, so no identity subscription exists to flush its held
+  // report — the queue needs its own wake, independent of the poller lifecycle.
+  it("a report-only slot held while forbidden lands on the identity signal", async () => {
+    const { identityState } = await import("../../src/hooks/identity-state.js");
+    const { useReportSlot } = await import("../../src/hooks/use-placements.js");
+    const { VendoError } = await import("@vendoai/core");
+    identityState(client).note(new VendoError("forbidden", "no identity for this request"));
+    function ReportOnly() {
+      useReportSlot("net-worth-card", "Net worth card", true);
+      return null;
+    }
+    render(<VendoProvider client={client}><ReportOnly /></VendoProvider>);
     await new Promise(resolve => setTimeout(resolve, 100));
     expect(reports()).toHaveLength(0);
-    // The same slot remounts well inside SLOT_REPORT_REFRESH_MS: the report
-    // must land now, not after the refresh window.
-    render(<VendoProvider client={client}><VendoSlot id="net-worth-card" /></VendoProvider>);
+    // Sign-in: the held report goes out with no placements listener anywhere.
+    window.dispatchEvent(new Event("vendo:identity-changed"));
     await waitFor(() => expect(wire.state.slots.map(slot => slot.label)).toEqual(["Net worth card"]));
+    expect(reports()).toHaveLength(1);
   });
 
   it("sends a whole page of slots as ONE report", async () => {
