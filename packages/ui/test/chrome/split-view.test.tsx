@@ -50,9 +50,11 @@ describe("splitViewReducer (state machine)", () => {
     expect(featuredEmbed(state)?.appId).toBe("app_a");
   });
 
-  it("ignores featuring an unknown app", () => {
+  it("records featuring an app the thread has not embedded, and stages nothing rather than another app", () => {
     const state = splitViewReducer(initialSplitViewState, embed("app_a"));
-    expect(splitViewReducer(state, { type: "feature", appId: "app_zz" })).toBe(state);
+    const picked = splitViewReducer(state, { type: "feature", appId: "app_zz" });
+    expect(picked.selectedAppId).toBe("app_zz");
+    expect(featuredEmbed(picked)).toBeUndefined();
   });
 
   it("re-registering an app updates its payload in place (no reorder)", () => {
