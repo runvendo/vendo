@@ -149,25 +149,25 @@ function createPoller(client: VendoClient): Poller {
 
   /** Send everything queued, batched and capped. Latched-forbidden holds the
    *  queue in place — a microtask committed before the latch closed must not
-   *  slip a write out either. */
+   *  slip a write out either. The stamp is written HERE, at send time: an
+   *  entry that never went out carries no stamp, so nothing held can silence
+   *  its own slot's next mount (overflow needs no forget() for the same
+   *  reason — never stamped, reported by the next page that mounts it). */
   const flushReports = (): void => {
     flushing = false;
     if (identity.forbidden() || queued.length === 0) return;
     const batch = queued;
     queued = [];
     const sending = batch.slice(0, SLOTS_REPORT_MAX);
-    if (sending.length < batch.length) {
-      // Forgotten, not dropped: the overflow is reported by the next page
-      // that mounts it, once the slots already in the registry are quiet.
-      forget(batch.slice(SLOTS_REPORT_MAX));
-      if (developmentMode()) {
-        log({
-          code: "ui.slots-report-overflow",
-          level: "warn",
-          message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
-        });
-      }
+    if (sending.length < batch.length && developmentMode()) {
+      log({
+        code: "ui.slots-report-overflow",
+        level: "warn",
+        message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
+      });
     }
+    const now = Date.now();
+    for (const entry of sending) reported.set(keyOf(entry), now);
     void client.slots.report(sending).catch(() => forget(sending));
   };
 
@@ -273,10 +273,17 @@ function createPoller(client: VendoClient): Poller {
       // with ("sales", "report Q3") and the second slot never reaches the
       // registry — it is a destination the picker can never offer.
       const key = keyOf(entry);
+      // The stamp belongs to a report that actually went out (flushReports
+      // sets it at send time; the send-failure path forgets it for the same
+      // reason). Stamping at queue time stranded a HELD report: a slot that
+      // mounted latched, unmounted, and remounted after sign-in read its own
+      // stale stamp and stayed silent for the whole refresh window (greptile
+      // on #1442, round two). A held duplicate is deduped against the queue
+      // itself — and the flush still re-arms, so a remount is what finally
+      // sends a queue the torn-down identity subscription left behind.
       const at = reported.get(key);
       if (at !== undefined && Date.now() - at < SLOT_REPORT_REFRESH_MS) return;
-      reported.set(key, Date.now());
-      queued.push(entry);
+      if (!queued.some(item => keyOf(item) === key)) queued.push(entry);
       // While the wire refuses this visitor, the report is HELD in the queue,
       // never sent (greptile on #1442: a slot mounting AFTER the latch closed
       // still wrote POST /slots). The latch-open subscription flushes it.
