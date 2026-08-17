@@ -2,15 +2,15 @@
 // The confirmation ring is gated on the pin being CONFIRMED, not on the flight's
 // timer. It used to fire from `flight.onfinish` whatever the outcome, so a
 // refused `apps.place` still drew "it landed" over a slot that stayed empty.
-// Every host config has to be gated, so every config is covered here: Vendo's
-// own write (live fixture wire, and a client pointed at one that has since shut
-// down), and an `onPin`-only host, whose own mirror is the only confirmation
-// there is.
+// Every config has to be gated, so every config is covered here: Vendo's own
+// write (live fixture wire, and a client pointed at one that has since shut
+// down), an `onPin`-only host, whose own mirror is the only confirmation there
+// is, and a direct caller of the public `playPinCeremony` that confirms nothing.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { usePinAction } from "../../src/chrome/index.js";
+import { playPinCeremony, usePinAction } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 /** jsdom ships no Web Animations API. Only the ghost's flight is kept — it is
@@ -26,22 +26,31 @@ function PinButton() {
   return pin ? <button type="button" onClick={() => pin({ appId: "app_1", payload: {} })}>Pin</button> : null;
 }
 
-/** Click Pin and land the ghost: everything the ring waits for except the pin. */
-async function pinAndLand(tree: ReactElement): Promise<void> {
+/** The two ends of the flight: the card the ghost copies, and the slot it
+ *  lands in. */
+function stage(): void {
   const card = document.createElement("div");
   card.className = "vendo-root";
   card.innerHTML = `<div data-vendo-app-embed="app_1">Your view</div>`;
   const slot = document.createElement("div");
   slot.setAttribute("data-vendo-slot", "hero");
   document.body.append(card, slot);
+}
 
-  render(tree);
-  fireEvent.click(screen.getByRole("button", { name: "Pin" }));
-  // The ceremony measures on rAF×2, so the payoff plays over the bare page.
+/** The ceremony measures on rAF×2, so the payoff plays over the bare page. */
+async function land(): Promise<void> {
   await new Promise<void>(resolve =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
   flights[0]!.onfinish!();
+}
+
+/** Click Pin and land the ghost: everything the ring waits for except the pin. */
+async function pinAndLand(tree: ReactElement): Promise<void> {
+  stage();
+  render(tree);
+  fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+  await land();
 }
 
 describe("the settle ring answers to the pin, never to the timer", () => {
@@ -109,5 +118,17 @@ describe("the settle ring answers to the pin, never to the timer", () => {
 
     mirrored();
     await waitFor(() => expect(ring()).toBeTruthy());
+  });
+
+  it("draws no ring for a caller that confirms nothing at all", async () => {
+    // `playPinCeremony` is a public export, so "confirmed nothing" is a shipped
+    // path and not an internal detail. It gets the flight; it does not get to
+    // claim the app landed.
+    stage();
+    playPinCeremony({ appId: "app_1", slot: "hero" });
+    await land();
+
+    await settled();
+    expect(ring()).toBeNull();
   });
 });

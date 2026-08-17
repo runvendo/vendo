@@ -55,8 +55,8 @@ export interface PinCeremonyOptions {
   /** What confirms the pin actually happened — Vendo's placement write, or the
    *  host's own. The ring is a claim that the pin LANDED, so it waits on this and
    *  never fires unless it resolves; the flight itself is unconditional. Omitted,
-   *  the caller is asserting the pin is already done, and the ring fires on
-   *  arrival. */
+   *  nothing confirms the pin and there is no ring: a caller cannot get the claim
+   *  without supplying what backs it. */
   confirmed?: Promise<unknown>;
   /** Dismiss the surface the card is in. Called ONCE, after the ghost is clear
    *  and before anything is measured — so a pin dismisses the panel even when
@@ -264,9 +264,7 @@ export function playPinCeremony({ appId, slot, confirmed, dismiss = () => {} }: 
     return;
   }
   const lifted = source !== null && from !== null && !reduced ? liftGhost(source, from) : null;
-  const settle = confirmed === undefined
-    ? pulse
-    : (destination: Element) => void confirmed.then(() => pulse(destination), () => {});
+  const settle = (destination: Element) => void confirmed?.then(() => pulse(destination), () => {});
 
   dismiss();
 
