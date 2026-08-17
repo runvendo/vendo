@@ -62,6 +62,14 @@ function mcpComposition(source: string): { wired: boolean; baseUrl: boolean } {
   };
 }
 
+/** Every composition on disk, graded. */
+async function mcpCompositions(root: string): Promise<Array<{ wired: boolean; baseUrl: boolean }>> {
+  const sources = await Promise.all(
+    COMPOSITION_PATHS.map((segments) => readOptional(join(root, ...segments))),
+  );
+  return sources.filter((source) => source !== null).map(mcpComposition);
+}
+
 /**
  * E-MCP-009 — an MCP-wired host that never set `VENDO_BASE_URL`.
  *
@@ -74,10 +82,7 @@ function mcpComposition(source: string): { wired: boolean; baseUrl: boolean } {
  */
 export async function checkMcpBaseUrl(run: DoctorRun): Promise<void> {
   const { root, env } = run;
-  const sources = await Promise.all(
-    COMPOSITION_PATHS.map((segments) => readOptional(join(root, ...segments))),
-  );
-  const compositions = sources.filter((source) => source !== null).map(mcpComposition);
+  const compositions = await mcpCompositions(root);
   if (!compositions.some((composition) => composition.wired)) return;
   if (compositions.some((composition) => composition.wired && composition.baseUrl)) {
     run.pass("mcp/base-url", "the MCP door's public base URL is set in the composition (mcp.baseUrl)");
@@ -95,9 +100,17 @@ export async function checkMcpBaseUrl(run: DoctorRun): Promise<void> {
 /** 10-mcp §5 — the official registry artifacts a published host keeps on disk.
  *  Absent files say nothing: `server.json` arrives only once a host publishes,
  *  and the HTTP challenge file only when the registry verifies by URL rather
- *  than DNS. Present ones must parse. */
+ *  than DNS. Present ones must parse.
+ *
+ *  `server.json` is graded only on the same MCP evidence E-MCP-009 fires on.
+ *  The name is generic, and the fetched half reached this check only once a
+ *  live door reported an MCP posture — so grading every root's `server.json`
+ *  failed doctor on unrelated application config, over registry metadata the
+ *  project never had. The challenge file needs no such gate: nothing but the
+ *  registry writes `public/.well-known/mcp-registry-auth`. */
 export async function checkMcpArtifacts(run: DoctorRun): Promise<void> {
-  const serverJson = await readOptional(join(run.root, "server.json"));
+  const wired = (await mcpCompositions(run.root)).some((composition) => composition.wired);
+  const serverJson = wired ? await readOptional(join(run.root, "server.json")) : null;
   if (serverJson !== null) {
     try {
       const errors = validateRegistryServer(JSON.parse(serverJson) as unknown);

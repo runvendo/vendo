@@ -1276,8 +1276,30 @@ describe("vendo doctor error codes + fix_refs", () => {
   // The registry artifacts a published host keeps on disk. Absent files say
   // nothing; present ones are graded, with no registry round-trip.
   describe("the MCP registry artifacts on disk", () => {
-    it("fails E-MCP-004 when server.json does not meet the registry requirements", async () => {
+    /** A host that actually opened the MCP door — the evidence `server.json` is
+     *  registry metadata at all. It names its own baseUrl so E-MCP-009 stays
+     *  out of the way of what these tests are grading. */
+    async function publishedHost(): Promise<string> {
       const root = await healthy();
+      await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+        'export const { GET } = createVendo({ mcp: { baseUrl: "https://app.acme.com" } });\n');
+      return root;
+    }
+
+    // Regression (Greptile P1 on #1385): `server.json` is a generic filename,
+    // and the fetched half only reached this check once a live door reported an
+    // MCP posture. Running it on every root made an unrelated file fail doctor
+    // over registry metadata the project never had.
+    it("says nothing about a root server.json when no MCP door is wired", async () => {
+      const root = await healthy();
+      await writeFile(join(root, "server.json"), "{not json");
+      const { exit, report } = await jsonChecks({ targetDir: root });
+      expect(report.checks.some((entry) => entry.id === "mcp/server-json")).toBe(false);
+      expect(exit).toBe(0);
+    });
+
+    it("fails E-MCP-004 when server.json does not meet the registry requirements", async () => {
+      const root = await publishedHost();
       await writeFile(join(root, "server.json"), JSON.stringify({
         $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         name: "com.example/maple",
@@ -1293,7 +1315,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
 
     it("fails E-MCP-006 when server.json is not valid JSON", async () => {
-      const root = await healthy();
+      const root = await publishedHost();
       await writeFile(join(root, "server.json"), "{not json");
       const { exit, report } = await jsonChecks({ targetDir: root });
       expect(exit).toBe(1);

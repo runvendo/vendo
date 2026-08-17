@@ -19,9 +19,10 @@ can even check its schema.
 
 ## What you're seeing
 
-Doctor reads `server.json` from the repo root and calls `JSON.parse` on it.
-This check fires when that parse throws: a stray comma, an unterminated
-string, a hand-edit that broke the syntax.
+When your composition opens the MCP door, doctor reads `server.json` from the
+repo root and calls `JSON.parse` on it. This check fires when that parse
+throws: a stray comma, an unterminated string, a hand-edit that broke the
+syntax. A project with no MCP door is never graded on a file of that name.
 
 ## Why
 
