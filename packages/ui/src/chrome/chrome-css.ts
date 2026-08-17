@@ -2214,12 +2214,22 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
 .fl-slot-filled[data-vendo-revealed] .fl-remix-pill:active { transform: scale(.97); }
 /* ===== END S3 ✦ chrome on pinned apps (lane L2) ============================ */
 
-/* ==================== S3 · WET PAINT (lane L3 · append-only fence) ====================
-   A section the renderer has not resolved yet carries data-vendo-wet="1"
-   (tree/renderer.tsx, isWet), and wet ink reads unfinished: dim and slightly
-   desaturated. Drying is the removal of that attribute — the node shell is the one
-   box that survives the swap from silhouette to real component, so the section
-   transitions to full ink in place instead of popping.
+/* ===== BEGIN S3 wet paint (lane L3) ========================================
+   Every node of a STILL-STREAMING payload carries data-vendo-wet="1"
+   (tree/renderer.tsx), and wet ink reads unfinished: dim and slightly
+   desaturated. Assembly is the case this exists for — a partial tree's nodes
+   resolve to real components long before their props arrive, so keying the dim
+   on "the component has not resolved" left the half-built app painting at full
+   strength, reading finished-but-blank instead of in-progress.
+
+   Drying is the removal of the attribute. The node shell survives the swap from
+   silhouette to real component, so the region transitions to full ink in place
+   instead of popping, and the last node drying is the finish the hairline marks.
+
+   The nested reset is load-bearing, not tidiness: opacity MULTIPLIES down the
+   tree, so without it a node four deep would paint at .55^4 and vanish. Only the
+   outermost wet box dims, which is also what makes a forming region read as one
+   wash rather than a gradient.
 
    The transition IS the whole effect: no keyframes, no stagger, no loop. §8's
    one-animation law still holds, because a discrete 200ms state change is not a
@@ -2228,9 +2238,10 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
    Reduced motion keeps the dim and drops the transition, so the unfinished state
    still reads statically: the media query below gates only the transition, and the
    [data-vendo-motion="reduced"] root kill-switch never touches opacity or filter. */
-[data-vendo-wet="1"] { opacity: .55; filter: saturate(.65); }
+.vendo-root [data-vendo-wet="1"] { opacity: .55; filter: saturate(.65); }
+.vendo-root [data-vendo-wet="1"] [data-vendo-wet="1"] { opacity: 1; filter: none; }
 @media (prefers-reduced-motion: no-preference) {
-  [data-vendo-node-id] { transition: opacity .2s ease, filter .2s ease; }
+  .vendo-root [data-vendo-node-id] { transition: opacity .2s ease, filter .2s ease; }
 }
 
 /* The finish: the last section dries and the boot hairline runs its sweep out to
@@ -2250,5 +2261,6 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
   from { opacity: 1; transform: scaleX(1); }
   60%  { opacity: 1; transform: scaleX(3.85); }
   to   { opacity: 0; transform: scaleX(3.85); } }
+/* ===== END S3 wet paint (lane L3) ========================================== */
 
 `;

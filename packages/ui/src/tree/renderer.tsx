@@ -697,17 +697,6 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
     );
 }
 
-/** A section whose implementation has not arrived yet, so what the reader sees is
- *  a silhouette: it paints WET (dim, desaturated) until the real thing lands and
- *  the attribute drops. Mid-stream only — an unresolved name in a FINAL payload
- *  is a notice, and a verdict is not unfinished. */
-function isWet(node: TreeNode, props: NodeRendererProps): boolean {
-  if (!props.streaming) return false;
-  return node.source === "generated"
-    ? props.generated[node.component] === undefined
-    : resolveBuiltin(node, props.components) === undefined;
-}
-
 function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
   if (!node) {
@@ -770,7 +759,7 @@ function NodeRenderer(props: NodeRendererProps) {
       outcome={outcome}
       mark={props.marks.get(node.id)}
       shell={shellBox(node, props.components)}
-      wet={isWet(node, props)}
+      wet={props.streaming}
     >
       {content}
       {notice(node.id, outcome)}
@@ -792,11 +781,14 @@ function NodeShell({ nodeId, outcome, mark, shell, wet, children }: {
   mark: NodeMark | undefined;
   /** How much box this shell may generate (`shellBox`). */
   shell: "box" | "contents" | "none";
-  /** Still forming. The shell is the one box that survives the swap from
-   *  silhouette to real component, so dropping the attribute here is what lets
-   *  the section transition to full ink instead of popping. Only a "box" carries
-   *  it: "none" emits no element and "contents" generates none, and opacity and
-   *  filter are both inert on a shell with no box. */
+  /** This node belongs to a payload that is still streaming, so nothing about it
+   *  is final yet — not the component that resolved, not the props still to come.
+   *  The shell is the one box that survives the swap from silhouette to real
+   *  component, so dropping the attribute here is what lets the region transition
+   *  to full ink instead of popping. Nested wet shells do not compound; the CSS
+   *  resets all but the outermost. Only a "box" can carry it — "none" emits no
+   *  element and "contents" generates none, and a shell with no box is one that
+   *  opacity and filter are both inert on. */
   wet: boolean;
   children: ReactNode;
 }) {
