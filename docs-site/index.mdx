@@ -4,18 +4,9 @@ sidebarTitle: "Quickstart"
 description: "One paste. Your coding agent installs Vendo, runs init, and wires it into whatever your repo already is."
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
 
-<AgentPrompt
-  title="Prompt"
-  prompt={`Set up Vendo in this repo.
-
-Install @vendoai/vendo, then run npx vendo init.
-Read what it detects: my framework, my API routes, my auth.
-Wire up exactly what it prints, and nothing more.
-Ask me before creating any account or key.
-Done when my app runs and the agent answers from my own API.`}
-/>
+<AgentPromptCard />
 
 Your agent picks the right setup for your repo. You confirm it.
 

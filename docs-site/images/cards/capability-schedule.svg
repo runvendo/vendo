@@ -1,0 +1,30 @@
+<svg width="640" height="400" viewBox="0 0 640 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A schedule firing runs that complete with nobody watching">
+  <rect width="640" height="400" fill="#f7f7fa"/>
+  <!-- the clock -->
+  <circle cx="150" cy="200" r="66" fill="#ffffff" stroke="#e3e3ec" stroke-width="2.5"/>
+  <circle cx="150" cy="146" r="3" fill="#d9d9e3"/>
+  <circle cx="150" cy="254" r="3" fill="#d9d9e3"/>
+  <circle cx="96" cy="200" r="3" fill="#d9d9e3"/>
+  <circle cx="204" cy="200" r="3" fill="#d9d9e3"/>
+  <path d="M150,200 L150,162 M150,200 L176,214" stroke="#6c3bff" stroke-width="4.5" stroke-linecap="round"/>
+  <circle cx="150" cy="200" r="5" fill="#6c3bff"/>
+  <text x="150" y="308" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">every morning</text>
+  <!-- fires -->
+  <line x1="232" y1="200" x2="292" y2="200" stroke="#c9bcff" stroke-width="3"/>
+  <path d="M288,191 L300,200 L288,209 Z" fill="#c9bcff"/>
+  <!-- the run log -->
+  <rect x="312" y="106" width="280" height="188" rx="14" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <path transform="translate(340,136)" d="M0,-11 C1.7,-4 4,-1.7 11,0 C4,1.7 1.7,4 0,11 C-1.7,4 -4,1.7 -11,0 C-4,-1.7 -1.7,-4 0,-11 Z" fill="#6c3bff"/>
+  <rect x="362" y="129" width="120" height="13" rx="6.5" fill="#e6ddff"/>
+  <text x="568" y="142" text-anchor="end" font-family="ui-monospace, Menlo, monospace" font-size="19" fill="#a78bfa">07:00</text>
+  <circle cx="342" cy="176" r="9" fill="#6c3bff"/>
+  <path d="M337.5,176 l3,3 l6,-6.5" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="362" y="170" width="150" height="10" rx="5" fill="#ececf2"/>
+  <circle cx="342" cy="208" r="9" fill="#6c3bff"/>
+  <path d="M337.5,208 l3,3 l6,-6.5" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="362" y="202" width="118" height="10" rx="5" fill="#ececf2"/>
+  <circle cx="342" cy="240" r="9" fill="#6c3bff"/>
+  <path d="M337.5,240 l3,3 l6,-6.5" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="362" y="234" width="134" height="10" rx="5" fill="#ececf2"/>
+  <text x="452" y="338" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">ran while nobody watched</text>
+</svg>

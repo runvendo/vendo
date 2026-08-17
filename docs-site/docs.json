@@ -56,7 +56,7 @@
             ]
           },
           {
-            "group": "Give it to your agent",
+            "group": "Install with your agent",
             "pages": [
               "give-it-to-your-agent"
             ]
@@ -79,21 +79,21 @@
             ]
           },
           {
-            "group": "In your backend",
-            "pages": [
-              "backend/quickstart",
-              "backend/converse",
-              "backend/run",
-              "backend/your-own-surface"
-            ]
-          },
-          {
             "group": "From outside agents",
             "pages": [
               "outside-agents/quickstart",
               "outside-agents/how-the-door-works",
               "outside-agents/your-own-agent",
               "outside-agents/service-keys-and-broker"
+            ]
+          },
+          {
+            "group": "In your backend",
+            "pages": [
+              "backend/quickstart",
+              "backend/converse",
+              "backend/run",
+              "backend/your-own-surface"
             ]
           },
           {

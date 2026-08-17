@@ -16,13 +16,13 @@ The answer is usually a screen, not a paragraph.
     <video
       className="vendo-loop"
       width="1200"
-      height="592"
+      height="750"
       poster="/images/ui/hero-generated-view.png"
       autoPlay
       loop
       muted
       playsInline
-      aria-label="Someone asks for a view of their upcoming renewals. A Renewals radar screen builds in place, with counts for renewals due, accounts at risk, and the next one up, over a list of accounts and their renewal dates."
+      aria-label="In the Maple demo bank, someone types Show me where my money went this month. The agent reads their spending, and a Spending this month screen builds in place: a donut of $9,381.14 in total spend over a ranked list of categories, Housing at 51% and $4,786.40 first, with a Pin to dashboard button in its header."
     >
       <source
         src="/images/ui/loop-view-arrival.mp4"
@@ -35,16 +35,16 @@ The answer is usually a screen, not a paragraph.
     <video
       className="vendo-loop"
       width="1200"
-      height="592"
+      height="750"
       poster="/images/ui/hero-approval.png"
       autoPlay
       loop
       muted
       playsInline
-      aria-label="An approval card reads Needs your approval, Post to #renewals in Slack, and quotes the exact message with Approve and Deny beneath it. After approval, a toast confirms the post went out as you."
+      aria-label="Someone types Move $200 from my checking account to savings. The write stops for approval: a card asks Send $200.00 to Maple Savings ··8820, notes that it sends now as you and can't be undone, and offers Approve and Deny. Approve resumes the call, and the thread answers Done, $200.00 moved to savings, Maple Checking is now at $9,212.20."
     >
       <source
-        src="/images/ui/loop-approval-toast.mp4"
+        src="/images/ui/loop-approval-transfer.mp4"
         type="video/mp4"
         media="(prefers-reduced-motion: no-preference)"
       />
@@ -77,6 +77,33 @@ that spot, re-running on every open, so it opens on today's numbers.
   />
 </Frame>
 
+## What it can reach
+
+The agent's hands are a fixed set, and nothing outside it exists. Wherever a
+tool came from, it crosses the same guard on the way out.
+
+<div className="direction-cards">
+  <CardGroup cols={3}>
+    <Card title="Your API" href="/capabilities/api-tools" img="/images/cards/capability-api.svg">
+      One command reads your OpenAPI, tRPC, server actions, or routes and writes
+      the tool set.
+
+      API tools →
+    </Card>
+    <Card title="Their accounts" href="/capabilities/connected-accounts" img="/images/cards/capability-accounts.svg">
+      Each user connects their own Gmail, Slack, or GitHub once, and later calls
+      run as them.
+
+      Connected accounts →
+    </Card>
+    <Card title="On a schedule" href="/capabilities/automations" img="/images/cards/capability-schedule.svg">
+      The same tools, fired by a cron or an event, with nobody there to watch.
+
+      Automations →
+    </Card>
+  </CardGroup>
+</div>
+
 ## It acts as the signed-in user
 
 Every call runs inside your process, through your routes and your auth, carrying
@@ -97,31 +124,6 @@ Approved or blocked, every call writes an audit line.
     height="582"
   />
 </Frame>
-
-## What it can reach
-
-The agent's hands are a fixed set, and nothing outside it exists. Wherever a
-tool came from, it crosses the same guard on the way out.
-
-<CardGroup cols={3}>
-  <Card title="Your API" href="/capabilities/api-tools">
-    One command reads your OpenAPI, tRPC, server actions, or routes and writes
-    the tool set.
-
-    API tools →
-  </Card>
-  <Card title="Their accounts" href="/capabilities/connected-accounts">
-    Each user connects their own Gmail, Slack, or GitHub once, and later calls
-    run as them.
-
-    Connected accounts →
-  </Card>
-  <Card title="On a schedule" href="/capabilities/automations">
-    The same tools, fired by a cron or an event, with nobody there to watch.
-
-    Automations →
-  </Card>
-</CardGroup>
 
 ## Where it lives in your product
 

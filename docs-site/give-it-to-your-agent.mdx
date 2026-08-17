@@ -1,23 +1,14 @@
 ---
-title: "Give it to your agent"
+title: "Install with your agent"
 description: "Paste one prompt into your coding agent. It installs Vendo, runs init, and checks its own work."
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
 
 You don't install Vendo by hand. Paste this into Claude Code, Cursor, or
 whatever agent lives in your repo:
 
-<AgentPrompt
-  title="Prompt"
-  prompt={`Set up Vendo in this repo.
-
-Install @vendoai/vendo, then run npx vendo init.
-Read what it detects: my framework, my API routes, my auth.
-Wire up exactly what it prints, and nothing more.
-Ask me before creating any account or key.
-Done when my app runs and the agent answers from my own API.`}
-/>
+<AgentPromptCard />
 
 ## What your agent will do
 

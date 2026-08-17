@@ -45,12 +45,18 @@ html.dark img[src$="/images/logos/mastra.svg"] {
    aspect-ratio is not redundant with the width/height attributes: a poster of a
    different shape overrides the attribute ratio, so the box resized by 27px the
    moment the first video frame painted. Pinning the ratio and letting the
-   poster letterbox inside it holds the layout still. */
+   poster letterbox inside it holds the layout still.
+
+   16:10, not the 2:1 the first (mocked-up) pair used: as thirds of a two-column
+   row these paint 264px wide, and the surface they film — an assistant panel
+   over a page — is portrait. A 2:1 band of it put 14px UI text at 3px on
+   screen, unreadable at any bitrate; the taller box shows the whole panel and
+   buys back 35px of height for it. */
 .vendo-loop {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 1200 / 592;
+  aspect-ratio: 1200 / 750;
   object-fit: contain;
   background: #fff;
 }
@@ -218,6 +224,17 @@ html.dark img[src$="/images/logos/mastra.svg"] {
   color: rgba(243, 242, 247, 0.82);
 }
 
+/* The prompt is literal one-span-per-line markup (Mintlify strips JSX
+   expressions from SSR, so real newlines can't survive). Blocks restore the
+   line breaks; the gap class is the blank line between paragraphs. */
+.vendo-agent-prompt-line {
+  display: block;
+}
+
+.vendo-agent-prompt-line-gap {
+  margin-top: 1lh;
+}
+
 /* Masking the text rather than painting a gradient over it: the prompt fades
    into whatever the card's background happens to be, in either theme. */
 .vendo-agent-prompt-clip:not([data-expanded]) .vendo-agent-prompt-pre {
@@ -305,6 +322,12 @@ html.dark img[src$="/images/logos/mastra.svg"] {
   .vendo-agent-prompt-toggle svg {
     transition: none;
   }
+}
+
+/* The buttons hydrate after first paint; holding their row's height means the
+   card doesn't grow when they arrive. */
+.vendo-agent-prompt-controls {
+  min-height: 2.25rem;
 }
 
 .vendo-agent-prompt-copy {

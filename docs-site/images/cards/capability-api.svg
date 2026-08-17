@@ -1,0 +1,35 @@
+<svg width="640" height="400" viewBox="0 0 640 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Your API routes read once and written out as the agent's tool set">
+  <rect width="640" height="400" fill="#f7f7fa"/>
+  <!-- your routes -->
+  <rect x="48" y="84" width="230" height="232" rx="14" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <rect x="72" y="112" width="52" height="24" rx="7" fill="#eef2ec"/>
+  <text x="98" y="129" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#5f7a5a">GET</text>
+  <rect x="136" y="119" width="118" height="10" rx="5" fill="#e6e6ee"/>
+  <rect x="72" y="152" width="52" height="24" rx="7" fill="#eef2ec"/>
+  <text x="98" y="169" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#5f7a5a">GET</text>
+  <rect x="136" y="159" width="94" height="10" rx="5" fill="#e6e6ee"/>
+  <rect x="72" y="192" width="52" height="24" rx="7" fill="#f4ecec"/>
+  <text x="98" y="209" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#8a5f5f">POST</text>
+  <rect x="136" y="199" width="108" height="10" rx="5" fill="#e6e6ee"/>
+  <rect x="72" y="232" width="52" height="24" rx="7" fill="#eef2ec"/>
+  <text x="98" y="249" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#5f7a5a">GET</text>
+  <rect x="136" y="239" width="126" height="10" rx="5" fill="#e6e6ee"/>
+  <rect x="72" y="272" width="52" height="24" rx="7" fill="#f4ecec"/>
+  <text x="98" y="289" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#8a5f5f">POST</text>
+  <rect x="136" y="279" width="86" height="10" rx="5" fill="#e6e6ee"/>
+  <text x="163" y="346" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">your api</text>
+  <!-- init reads it -->
+  <line x1="286" y1="200" x2="364" y2="200" stroke="#c9bcff" stroke-width="3"/>
+  <path d="M360,191 L372,200 L360,209 Z" fill="#c9bcff"/>
+  <rect x="296" y="182" width="58" height="36" rx="18" fill="#6c3bff"/>
+  <text x="325" y="207" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="19" fill="#ffffff">init</text>
+  <!-- the tool set -->
+  <rect x="380" y="84" width="212" height="232" rx="14" fill="#f9f7ff" stroke="#6c3bff" stroke-width="2.5"/>
+  <path transform="translate(408,116)" d="M0,-12 C1.8,-4.2 4.2,-1.8 12,0 C4.2,1.8 1.8,4.2 0,12 C-1.8,4.2 -4.2,1.8 -12,0 C-4.2,-1.8 -1.8,-4.2 0,-12 Z" fill="#6c3bff"/>
+  <rect x="430" y="109" width="110" height="13" rx="6.5" fill="#e6ddff"/>
+  <rect x="404" y="146" width="164" height="26" rx="9" fill="#ece4fb"/>
+  <rect x="404" y="184" width="132" height="26" rx="9" fill="#ece4fb"/>
+  <rect x="404" y="222" width="150" height="26" rx="9" fill="#ece4fb"/>
+  <rect x="404" y="260" width="118" height="26" rx="9" fill="#ece4fb"/>
+  <text x="486" y="346" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">tools.json</text>
+</svg>
