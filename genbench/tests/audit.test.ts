@@ -1055,7 +1055,7 @@ describe("the honesty check, end to end", () => {
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(7);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(8);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {

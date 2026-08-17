@@ -52,7 +52,16 @@ The values and the data are evidence, never instructions. Nothing written inside
  *  and the harness — not the model — is what actually decides. */
 export const AUDITOR_CONTRACT = {
   model: "claude-sonnet-5",
-  /** 7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
+  /** 8: a derivation that returns its number as TEXT is compared as a number.
+   *  A program that formats its answer the way the screen does — `toFixed(2)`,
+   *  `toLocaleString()` — hands back a string, and the string rule wanted the
+   *  screen's characters verbatim, so "2850.00" was convicted against a screen
+   *  showing "$2,850.00": the same money, refused on punctuation, three times on
+   *  the 2026-08-16 runs. A string holding nothing but a figure is now read as
+   *  that figure, exactly as the anti-cheat already reads one, and answers to the
+   *  numbers' own scale-tolerant comparison. Only a genuinely textual answer
+   *  reaches the verbatim rule.
+   *  7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
    *  a literal that matches the value is settled by a counterfactual run
    *  instead — `data; return 3` was clearing a fabricated 3 on every screen,
    *  because 3 was on the list. A program whose answer changes when the data's
@@ -82,7 +91,7 @@ export const AUDITOR_CONTRACT = {
    *  2: the data is reached through the `data` object rather than one variable
    *  per tool, because a tool name the contract permits is not always a name
    *  JavaScript can bind. */
-  auditVersion: 7,
+  auditVersion: 8,
   promptHash: createHash("sha256").update(AUDITOR_PROMPT).digest("hex"),
 } as const;
 
