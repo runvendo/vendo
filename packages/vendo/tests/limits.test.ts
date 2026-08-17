@@ -10,12 +10,23 @@
  * OPEN stops limiting silently, which is strictly worse than refusing a turn:
  * the host believes they have a cap, and every user is unlimited.
  */
-import { setLogger, type LimitUser, type RunContext, type StoreOps, type VendoLogEvent } from "@vendoai/core";
+import {
+  setLogger,
+  VENDO_MAKE_TOOL,
+  VENDO_VIEW_STREAM,
+  VendoError,
+  type LimitUser,
+  type RunContext,
+  type StoreOps,
+  type VendoLogEvent,
+  type VendoViewStreamingToolCall,
+  type VendoViewStreamUpdate,
+} from "@vendoai/core";
 import { memoryStoreOps } from "@vendoai/core/conformance";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createComposition } from "../src/compose-context.js";
-import { createLimiter } from "../src/limits.js";
+import { createLimiter, limitGenerations } from "../src/limits.js";
 import { createVendo } from "../src/server.js";
 
 type Meter = NonNullable<StoreOps["usage"]>;
@@ -109,6 +120,40 @@ describe("the limiter fails CLOSED", () => {
 
     await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: false });
     expect(events.filter((event) => event.code === "limits.callback_error")).toHaveLength(1);
+  });
+
+  it("denies without claiming a cap when the METER itself is unreachable", async () => {
+    logged();
+    // The count is a live store read, so Vendo Cloud's own rate limit lands
+    // here — and telling that user they hit the host's cap is a lie about
+    // something that was never counted.
+    const busy: Meter = {
+      ...meter(),
+      count: () => Promise.reject(new VendoError("unavailable", "Too many requests. Try again shortly.")),
+    };
+    const limiter = createLimiter({
+      callback: async ({ count }) => (await count("generation")) < 5,
+      ops: busy,
+    });
+    const parts: VendoViewStreamUpdate[] = [];
+    const call: VendoViewStreamingToolCall = {
+      id: "call_1",
+      tool: VENDO_MAKE_TOOL,
+      args: {},
+      [VENDO_VIEW_STREAM]: (update) => parts.push(update),
+    };
+    const tools = limitGenerations({
+      descriptors: async () => [],
+      execute: async () => ({ status: "ok", output: {} }),
+    }, limiter);
+
+    // Still CLOSED: the build does not run.
+    const outcome = await tools.execute(call, ctxFor());
+    expect(outcome).toMatchObject({ status: "blocked" });
+    expect((outcome as { reason: string }).reason).not.toContain("reached a limit");
+    expect((outcome as { reason: string }).reason).toMatch(/busy|again/i);
+    // And the person's card says the same thing, not "you hit your limit".
+    expect(parts[0]?.part).toMatchObject({ type: "data-vendo-limit", message: expect.stringMatching(/busy|again/i) });
   });
 
   it("denies on a pool the user is not in — an unknown meter is never a zero", async () => {

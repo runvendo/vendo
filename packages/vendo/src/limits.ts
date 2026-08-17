@@ -30,11 +30,15 @@ import type { VendoComposition } from "./compose-context.js";
 
 /** The decision a choke point acts on — `LimitDecision`'s two forms collapsed to
     one, so no caller re-derives the boolean/object grammar. */
-export type LimitVerdict = { allow: true } | { allow: false; message?: string };
+export type LimitVerdict = { allow: true } | { allow: false; message?: string; retryable?: true };
 
 export interface Limiter {
   gate(action: LimitAction, ctx: RunContext): Promise<LimitVerdict>;
 }
+
+/** The sentence for a limit that could not be CHECKED — told to the agent and
+    to the person alike, and the one thing it must not sound like is a cap. */
+const SERVICE_BUSY = "Vendo Cloud is busy right now, so this limit could not be checked — this is temporary, not a cap.";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -92,7 +96,13 @@ export function createLimiter({ callback, ops }: {
           message: `[vendo] the limits policy failed for ${subject}; DENYING the ${action} (a limits policy that fails open stops limiting):`,
           data: { error },
         });
-        return { allow: false };
+        // The count is a live store read, so the policy can fail because Vendo
+        // Cloud is rate-limiting or down (`unavailable`) rather than because
+        // this user spent anything. Still a DENY — but never dressed as a cap
+        // they reached, because nothing was counted.
+        return error instanceof VendoError && error.code === "unavailable"
+          ? { allow: false, message: SERVICE_BUSY, retryable: true }
+          : { allow: false };
       }
       if (decision !== true) return decision === false ? { allow: false } : decision;
       // Awaited, not fire-and-forget: the next action's count has to see this
@@ -105,12 +115,15 @@ export function createLimiter({ callback, ops }: {
 
 /** What the AGENT is told when a build was refused — FACTS, like every other
  *  refusal on this registry (`ask-user.ts`, apps' `FORBIDDEN_FACTS`): what did
- *  not happen, the host's own sentence when the policy wrote one, and that the
- *  call is not worth repeating. The person is told by the card beside it. */
-const generationDenied = (message: string | undefined): string =>
-  "The app was not built: this user has reached a limit the host's own policy sets."
-  + `${message === undefined ? "" : ` The host says: ${message}`}`
-  + " Calling again gets the same answer, and there is no other way to build it.";
+ *  not happen, the host's own sentence when the policy wrote one, and whether
+ *  the call is worth repeating — a cap never is, a busy meter is. The person is
+ *  told by the card beside it. */
+const generationDenied = (verdict: Extract<LimitVerdict, { allow: false }>): string =>
+  verdict.retryable === true
+    ? `The app was not built: ${SERVICE_BUSY} Nothing was counted against this user, so the same call is worth making again.`
+    : "The app was not built: this user has reached a limit the host's own policy sets."
+      + `${verdict.message === undefined ? "" : ` The host says: ${verdict.message}`}`
+      + " Calling again gets the same answer, and there is no other way to build it.";
 
 /** The generation choke — `vendo_make`, the ONE door an app is built through,
  *  asked before it runs. A deny answers the agent with the same `blocked`
@@ -136,9 +149,13 @@ export const limitGenerations = (tools: ToolRegistry, limiter: Limiter): ToolReg
     if (verdict.allow) return tools.execute(call, ctx);
     (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM]?.({
       id: `vendo-limit:${call.id}`,
-      part: { type: "data-vendo-limit", ...(verdict.message === undefined ? {} : { message: verdict.message }) },
+      part: {
+        type: "data-vendo-limit",
+        ...(verdict.message === undefined ? {} : { message: verdict.message }),
+        ...(verdict.retryable === undefined ? {} : { retryable: verdict.retryable }),
+      },
     });
-    return { status: "blocked", reason: generationDenied(verdict.message) };
+    return { status: "blocked", reason: generationDenied(verdict) };
   },
 });
 

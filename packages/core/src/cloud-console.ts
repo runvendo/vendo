@@ -10,10 +10,10 @@ import { deploymentIdentityHeaders } from "./deployment-identity.js";
  * environment. */
 
 /** Console error codes forwarded as-is when they are wire-legal VendoError
- * codes (same posture as the cloudApps share/publish client). The
- * console's "unavailable"/"unauthorized"/"quota-exhausted" have no VendoError
- * twin; unknown codes fall to each adapter's own tail, and the 402/401 →
- * cloud-required mapping handles the meter/key cases. */
+ * codes (same posture as the cloudApps share/publish client). The console's
+ * "unauthorized"/"quota-exhausted" have no VendoError twin; unknown codes fall
+ * to each adapter's own tail, and the 402/401 → cloud-required mapping handles
+ * the meter/key cases. */
 export const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
   "validation",
   "blocked",
@@ -21,7 +21,22 @@ export const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
   "cloud-required",
   "not-found",
   "conflict",
+  "forbidden",
+  "unavailable",
 ] satisfies VendoErrorCode[]);
+
+/** The bare-status reading, for an answer whose envelope carries no code this
+ * table knows — an edge proxy's plain-text 429, an upstream 5xx. Mirrors
+ * store-wire's STATUS_TO_CODE, retryable half: 501 is deliberately absent,
+ * since "this mount does not serve the op" is what each adapter's own tail
+ * says better. */
+const STATUS_TO_CODE: Record<number, VendoErrorCode> = {
+  429: "unavailable",
+  500: "unavailable",
+  502: "unavailable",
+  503: "unavailable",
+  504: "unavailable",
+};
 
 export const toArrayBuffer = (value: Uint8Array): ArrayBuffer => value.slice().buffer as ArrayBuffer;
 
@@ -30,8 +45,12 @@ export const toArrayBuffer = (value: Uint8Array): ArrayBuffer => value.slice().b
  * same mapping as cloudConnections. 401 (bad/revoked key) is the same "fix
  * your Cloud standing" story for the host operator, so it keeps the ENG-295
  * client's cloud-required mapping — with the server's own message preserved.
- * Wire-legal codes forward as VendoErrors; anything else (unknown codes, 5xx,
- * non-JSON bodies) goes to the adapter's own `onUnknownCode` tail. */
+ * Wire-legal codes forward as VendoErrors, and a rate limit or an upstream
+ * failure reads as one from the bare status when the envelope has no code we
+ * know — a plain Error there fails every `instanceof VendoError` downstream
+ * (the wire's status mapping, the harness's overlay, the store's retry), so a
+ * 429 arrived as "unhandled wire error". Anything else (unknown codes on other
+ * statuses) goes to the adapter's own `onUnknownCode` tail. */
 export async function raiseCloudError(
   response: Response,
   service: string,
@@ -55,6 +74,8 @@ export async function raiseCloudError(
   if (code !== undefined && CLOUD_ERROR_CODES.has(code)) {
     throw new VendoError(code as VendoErrorCode, message);
   }
+  const byStatus = STATUS_TO_CODE[response.status];
+  if (byStatus !== undefined) throw new VendoError(byStatus, message);
   return onUnknownCode(code, message);
 }
 

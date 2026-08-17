@@ -213,12 +213,13 @@ function modelFamilyOf(models: ResolvedModels<LanguageModel>): string | null {
 /** The whole of a message the host's policy refused: the card the chat surface
  *  renders, and nothing else. No thread row, no transcript, no model call — the
  *  point of the choke is that a denied message costs nothing. */
-const limitResponse = (message: string | undefined): Response => createUIMessageStreamResponse({
+const limitResponse = (verdict: { message?: string; retryable?: true }): Response => createUIMessageStreamResponse({
   stream: createUIMessageStream<UIMessage>({
     execute: ({ writer }) => {
       writer.write(toVendoWirePart({
         type: "data-vendo-limit",
-        ...(message === undefined ? {} : { message }),
+        ...(verdict.message === undefined ? {} : { message: verdict.message }),
+        ...(verdict.retryable === undefined ? {} : { retryable: verdict.retryable }),
       }) as never);
     },
   }),
@@ -399,7 +400,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // recording): asked BEFORE the thread is resolved, so a refused message
       // costs no read, no write and no model call.
       const verdict = await config.limiter?.gate("message", input.ctx);
-      if (verdict?.allow === false) return limitResponse(verdict.message);
+      if (verdict?.allow === false) return limitResponse(verdict);
       // The turn's opening reads, in ONE call where the store serves it: the
       // thread row, the workspace index, and the harness slot. Each part is
       // exactly what its own op answers, so the doors below decide on the same

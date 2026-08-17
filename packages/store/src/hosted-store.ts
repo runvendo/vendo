@@ -102,9 +102,10 @@ const invalidResponse = (what: string): never => {
 };
 
 /** The console's "unauthorized"/"quota-exhausted" have no VendoError twin;
- * both ride the shared 402/401 → cloud-required mapping. Anything else
- * (unknown codes, 5xx, non-JSON bodies) is carried on a plain Error with the
- * server's code attached — the packages/apps cloud client's posture. */
+ * both ride the shared 402/401 → cloud-required mapping, and a rate limit or an
+ * upstream 5xx rides its status → unavailable. What is left — a code no table
+ * knows — is carried on a plain Error with the server's code attached, the
+ * packages/apps cloud client's posture. */
 const raiseStoreError = (response: Response): Promise<never> =>
   raiseCloudError(response, "store", (code, message) => {
     throw Object.assign(new Error(message), { code: code ?? "unavailable" });
@@ -348,6 +349,25 @@ const base64ToBytes = (value: string): Uint8Array => Uint8Array.from(atob(value)
 const isTimeout = (error: unknown): boolean =>
   error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 
+/** Worth sending again: no answer came back, or the answer was the SERVER's own
+ * transient refusal — a rate limit or an upstream failure, both `unavailable`
+ * whichever half read the response (raiseCloudError, parseStoreWireError). A
+ * business refusal (conflict, blocked, not-found) is an answer, and gets one
+ * attempt. */
+const isRetryable = (error: unknown): boolean =>
+  isTimeout(error) || (error instanceof VendoError && error.code === "unavailable");
+
+/** How long to hold before that one retry. The console asks in Retry-After
+ * (seconds); capped, because a busy service must not outlast the caller's own
+ * patience, and floored at a short pause when it asked for nothing — an instant
+ * replay is just a second request into the same rate limit. */
+const RETRY_AFTER_CAP_MS = 10_000;
+const DEFAULT_RETRY_MS = 250;
+const retryAfterMs = (response: Response): number | undefined => {
+  const seconds = Number(response.headers.get("retry-after"));
+  return seconds > 0 ? Math.min(seconds * 1_000, RETRY_AFTER_CAP_MS) : undefined;
+};
+
 /** The protocol's own client half owns the mapping (parseStoreWireError): an
  * enveloped code wins, recognized statuses map, everything else degrades to
  * not-implemented rather than blaming the caller. The one exception is a BARE
@@ -409,7 +429,12 @@ function storeWireClient(
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     fetchImpl: options.fetch ?? defaultFetch,
-    raise,
+    // The Response is gone by the time the retry below sees the error, so the
+    // wait the console asked for rides on it.
+    raise: (response) => raise(response).catch((error: unknown) => {
+      const wait = retryAfterMs(response);
+      throw wait === undefined ? error : Object.assign(error as object, { retryAfterMs: wait });
+    }),
   });
 
   const wire = async (op: StoreWireOp, path: string, init?: RequestInit): Promise<Response> => {
@@ -417,7 +442,12 @@ function storeWireClient(
     try {
       // The retry sends the SAME init — same key, same body — so a mutation
       // the server already applied is deduped instead of applied twice.
-      return await attempt().catch((error: unknown) => (isTimeout(error) ? attempt() : Promise.reject(error)));
+      return await attempt().catch(async (error: unknown) => {
+        if (!isRetryable(error)) throw error;
+        const wait = (error as { retryAfterMs?: number }).retryAfterMs ?? DEFAULT_RETRY_MS;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        return attempt();
+      });
     } catch (error) {
       // A 501 (or an enveloped not-implemented) means this mount does not
       // serve this op: name it, and let it surface as a failure — never a

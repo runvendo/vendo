@@ -386,11 +386,16 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // sentence is what they read when the policy wrote one (limitNotice).
     // Unlike the failures above there is nothing to validate: a denial with no
     // sentence is the ordinary case, and the card is exactly what it is for.
+    // `retryable` is the one thing the headline turns on: the meter could not be
+    // READ, so nothing was counted, and naming a cap would blame the person for
+    // a number that was never measured.
     const data = partData(part) as Partial<VendoLimitPart>;
     return (
       <ThreadNoticeBlock
         marker="data-vendo-limit"
-        headline={<>You&rsquo;ve reached your limit</>}
+        headline={data.retryable === true
+          ? <>Couldn&rsquo;t check your limit</>
+          : <>You&rsquo;ve reached your limit</>}
         detail={limitNotice(data.message)}
       />
     );

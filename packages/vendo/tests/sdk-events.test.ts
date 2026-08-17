@@ -260,6 +260,24 @@ describe("the batched uploader the miss stream and this one share", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps a rate-limited batch — a 429 is a WAIT, not a refusal", async () => {
+    const sent: number[] = [];
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      sent.push((JSON.parse(String(init?.body)) as { events: unknown[] }).events.length);
+      return sent.length === 1
+        ? new Response("Too many requests. Try again shortly.", { status: 429 })
+        : okJson();
+    });
+    const stream = uploader(fetchImpl as unknown as typeof fetch, { retryDelaysMs: [0, 0] });
+
+    stream.enqueue(event("e_429"));
+    await stream.flush();
+
+    // The SAME batch went again. Dropping it loses exactly the reports Vendo
+    // needs while an account is being rate-limited.
+    expect(sent).toEqual([1, 1]);
+  });
+
   it("gives up after the last retry delay without throwing", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"));
     const stream = uploader(fetchImpl, { retryDelaysMs: [0] });
