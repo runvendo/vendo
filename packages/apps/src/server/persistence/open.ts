@@ -524,13 +524,10 @@ const formingTreeOf = (app: AppDocument): UIPayload | undefined => {
  * the app: `formingTreeOf` reads the row, so a poll costs a document read and the
  * build window carries no render load at all.
  *
- * A COMPONENT SCREEN therefore rides no geometry today, and that is a limit rather
- * than a choice: `screenDocument` (write-surface.ts) deliberately stores no tree
- * for one, because a screen's tree is what RENDERING it produces. Its silhouette
- * exists only inside a paint, and paying for one per poll is the load this
- * function was rewritten to remove. Making screens form too means persisting their
- * geometry once where the build already computes it — a producer-side change,
- * outside this seam.
+ * A COMPONENT SCREEN therefore rides no geometry, and reads its beat bar instead:
+ * `screenDocument` (write-surface.ts) stores no tree for one, because a screen's
+ * tree is what RENDERING it produces. Its silhouette exists only inside a paint,
+ * and paying for a paint per poll is the load this function exists to avoid.
  */
 export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
   (app: AppDocument, ctx: RunContext, options?: { pending?: boolean }) => Promise<OpenSurface | PendingSurface>
