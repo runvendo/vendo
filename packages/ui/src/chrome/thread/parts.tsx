@@ -249,6 +249,30 @@ function ToolCallPart({ part, risks, count, connectLive, hideBeats, turnLive, re
   return <BuildBeat part={part} risk={risks.get(part.toolCallId) ?? "read"} count={count} />;
 }
 
+/** The limits card at its transcript position: the host's limits policy turned
+    this request away — the message at the door, or the generation mid-turn. The
+    person is told by the SURFACE, because the agent never ran to tell them
+    itself, and the host's own sentence is what they read when the policy wrote
+    one (limitNotice). Unlike the failure notices there is nothing to validate: a
+    denial with no sentence is the ordinary case, and the card is exactly what it
+    is for.
+
+    `retryable` is the one thing the headline turns on: the meter could not be
+    READ, so nothing was counted, and naming a cap would blame the person for a
+    number that was never measured. */
+function LimitPart({ part }: { part: UIMessage["parts"][number] }) {
+  const data = partData(part) as Partial<VendoLimitPart>;
+  return (
+    <ThreadNoticeBlock
+      marker="data-vendo-limit"
+      headline={data.retryable === true
+        ? <>Couldn&rsquo;t check your limit</>
+        : <>You&rsquo;ve reached your limit</>}
+      detail={limitNotice(data.message)}
+    />
+  );
+}
+
 /** One stream part in a turn: text (user verbatim / assistant markdown with the
     ENG-217 caret choreography), assistant files, tool build beats, and the
     generated-view app card (06-apps §§8–9). */
@@ -379,27 +403,7 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
       />
     );
   }
-  if (part.type === "data-vendo-limit") {
-    // The host's limits policy turned this request away — the message at the
-    // door, or the generation mid-turn. The person is told by the SURFACE,
-    // because the agent never ran to tell them itself, and the host's own
-    // sentence is what they read when the policy wrote one (limitNotice).
-    // Unlike the failures above there is nothing to validate: a denial with no
-    // sentence is the ordinary case, and the card is exactly what it is for.
-    // `retryable` is the one thing the headline turns on: the meter could not be
-    // READ, so nothing was counted, and naming a cap would blame the person for
-    // a number that was never measured.
-    const data = partData(part) as Partial<VendoLimitPart>;
-    return (
-      <ThreadNoticeBlock
-        marker="data-vendo-limit"
-        headline={data.retryable === true
-          ? <>Couldn&rsquo;t check your limit</>
-          : <>You&rsquo;ve reached your limit</>}
-        detail={limitNotice(data.message)}
-      />
-    );
-  }
+  if (part.type === "data-vendo-limit") return <LimitPart part={part} />;
   if (part.type === "data-vendo-step-limit") {
     // 2026-08-10 ruling — the step-cap notice is SYSTEM chrome, persisted. The
     // harness used to splice this sentence into the assistant's own text,
