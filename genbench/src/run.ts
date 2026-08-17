@@ -273,7 +273,12 @@ export function contenders(
       `genbench: ${asked.join(", ")} has no column for ${models.join(", ")} — name an Anthropic model, or another contender`,
     );
   }
-  return row;
+  // By slug, because the slug IS the column: it names the evidence directory and
+  // the report column, so `vendo,vendo:sonnet` has to be one column asked for
+  // twice rather than two contenders racing to overwrite one folder and be
+  // counted twice in the summary. The Map keeps the position of the first
+  // mention, which is the same doctrine as declaration order being column order.
+  return [...new Map(row.map((contender) => [contender.slug, contender])).values()];
 }
 
 /**
