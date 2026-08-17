@@ -17,6 +17,7 @@
  */
 import { DISPLAY_TAG_NAMES } from "../../contract/kit/index.js";
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
+import { VENDO_THEME_VARIABLE_NAMES } from "../../contract/theme.js";
 import { HOT_PATH_FILES } from "../generation/render-seam.js";
 import { componentsPromptSection } from "../generation/contracts/sections.js";
 
@@ -72,7 +73,8 @@ are yours to arrange with, and they take children and an inline \`style\` and
 nothing else: no \`className\`, no \`id\`, no handlers. Style them off the host's own
 CSS variables (\`var(--vendo-color-accent)\`, \`var(--vendo-density-content-gap)\`)
 so the screen stays branded — a hard-coded color is your color, not the
-product's. There is no network in here, so a style that fetches (\`url(…)\`) is
+product's; every variable there is, and what each one means, is listed at the end
+of this file. There is no network in here, so a style that fetches (\`url(…)\`) is
 dropped.
 \`key={…}\` on every row you \`.map\`. Dates go to the date
 component as the ISO string you were given — there is no clock in here, so no
@@ -141,5 +143,82 @@ names and types are exact — an unknown prop fails the checks.
 
 `;
 
+/**
+ * What each variable is FOR, one short line each — never what it is SET to: the
+ * values are this host's and per-theme, and the briefing pack carries them.
+ *
+ * Only the MEANINGS live here. The names the section prints are walked off
+ * `VENDO_THEME_VARIABLE_NAMES`, which is read off `themeCssVariables` itself, so
+ * a variable added or renamed reaches the manual the day it is emitted and a
+ * meaning left behind fails the drift test instead of teaching a dead name.
+ */
+const VARIABLE_MEANINGS: Record<string, string> = {
+  "--vendo-color-success": "a completed or positive state",
+  "--vendo-color-warning": "something that needs attention, not yet wrong",
+  "--vendo-color-surface-raised": "a panel resting on a surface",
+  "--vendo-color-background": "the page behind everything",
+  "--vendo-color-surface": "a panel resting on the page",
+  "--vendo-color-text": "body text",
+  "--vendo-color-muted": "secondary text and labels",
+  "--vendo-color-accent": "the brand color — the primary action",
+  "--vendo-color-accent-text": "text and icons sitting on the accent",
+  "--vendo-color-danger": "destructive and error",
+  "--vendo-color-border": "hairlines, outlines and dividers",
+  "--vendo-color-scheme": "`light` or `dark`, derived from the background",
+  "--vendo-font-family": "the body text face",
+  "--vendo-heading-family": "the heading face — set only when this host has one",
+  "--vendo-mono-family": "the monospace face, for code and figures",
+  "--vendo-font-size": "the body text size",
+  "--vendo-base-size": "that same size, as the anchor the type scale derives from",
+  "--vendo-font-weight-normal": "the body weight",
+  "--vendo-font-weight-emphasis": "the weight for emphasis and headings",
+  "--vendo-letter-spacing": "the body tracking",
+  "--vendo-line-height": "the body leading",
+  "--vendo-line-height-heading": "the tighter leading a heading takes",
+  "--vendo-radius-small": "the corner radius of a control or badge",
+  "--vendo-radius-medium": "the corner radius of a card or input",
+  "--vendo-radius-large": "the corner radius of a panel or sheet",
+  "--vendo-shadow-small": "the hover lift",
+  "--vendo-shadow-medium": "anything resting above a surface",
+  "--vendo-shadow-large": "an overlay floating over the page",
+  "--vendo-border-width": "the hairline thickness",
+  "--vendo-chart-1": "the first chart series color — the accent itself",
+  "--vendo-chart-2": "the second chart series color",
+  "--vendo-chart-3": "the third chart series color",
+  "--vendo-chart-4": "the fourth chart series color",
+  "--vendo-chart-5": "the fifth chart series color",
+  "--vendo-chart-6": "the sixth chart series color",
+  "--vendo-density": "`comfortable` or `compact` — which spacing scale is in force",
+  "--vendo-density-control-height": "the height of a button or input",
+  "--vendo-density-control-padding": "the padding inside a button or input",
+  "--vendo-density-card-padding": "the padding inside a card",
+  "--vendo-density-content-gap": "the gap between blocks stacked in a column",
+  "--vendo-density-inline-gap": "the gap between items sitting in a row",
+  "--vendo-density-field-gap": "the gap between a label and its field",
+  "--vendo-density-table-padding": "the padding inside a table cell",
+  "--vendo-density-badge-height": "the height of a badge",
+  "--vendo-density-badge-padding": "the padding inside a badge",
+  "--vendo-density-stat-padding": "the padding inside a stat",
+  "--vendo-density-tabs-padding": "the padding around a tab strip",
+  "--vendo-density-tab-height": "the height of one tab",
+  "--vendo-density-tab-padding": "the padding inside one tab",
+  "--vendo-motion": "`full` or `reduced`",
+  "--vendo-motion-duration": "one transition's duration — `0ms` when motion is reduced",
+  "--vendo-motion-easing": "the easing curve a transition uses",
+};
+
+/** The VARIABLES section, generated the way the catalog is. */
+const variablesPromptSection = (): string => `---
+
+# The host's CSS variables
+
+Every one of these is already set on your screen, at this product's own values.
+Use the NAME — the values are in the brief, and a copied value stops being the
+product's the moment its theme changes. A name outside this list resolves to
+nothing and the declaration it was in silently falls back.
+
+${VENDO_THEME_VARIABLE_NAMES.map((name) => `\`${name}\` — ${VARIABLE_MEANINGS[name]}`).join("\n")}
+`;
+
 /** The reference as it lands on disk. */
-export const VENDO_FORMAT_REFERENCE = `${CHAPTER}${componentsPromptSection()}\n`;
+export const VENDO_FORMAT_REFERENCE = `${CHAPTER}${componentsPromptSection()}\n\n${variablesPromptSection()}`;

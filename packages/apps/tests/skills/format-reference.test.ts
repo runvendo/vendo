@@ -15,7 +15,7 @@
  * reshape pipe left in the reference to check.
  */
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
-import { KIT_COMPONENT_NAMES } from "../../src/contract/index.js";
+import { KIT_COMPONENT_NAMES, VENDO_THEME_VARIABLE_NAMES } from "../../src/contract/index.js";
 import { checkComponentScreen } from "../../src/server/checking/component-screen.js";
 import { SCREEN_MODULE, screenCatalog } from "../../src/server/checking/screen-typings.js";
 import { describe, expect, it } from "vitest";
@@ -150,6 +150,24 @@ describe("the reference only teaches what a screen really has", () => {
   it("says the save's own errors teach the repair, without naming a verb to call", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("Save errors tell you exactly what to fix. Fix and save again.");
     expect(VENDO_FORMAT_REFERENCE).not.toContain("`validate`");
+  });
+
+  /** The manual tells a model to style off the host's variables, so it has to say
+   *  which ones exist: a guessed name resolves to nothing and the declaration
+   *  falls back with no error anywhere. The section is walked off the EMITTER, so
+   *  this compares the names it prints against what `themeCssVariables` really
+   *  sets — the drift a hand-copied list would hide. */
+  it("names every CSS variable the host really sets, in the order it sets them", () => {
+    const named = [...VENDO_FORMAT_REFERENCE.matchAll(/^`(--vendo-[a-z0-9-]+)` — (.*)$/gm)];
+
+    expect(named.map(([, name]) => name)).toEqual([...VENDO_THEME_VARIABLE_NAMES]);
+    // Names alone would be a list to copy; the point is knowing which to reach for.
+    expect(named.filter(([, , meaning]) => (meaning ?? "").trim() === "" || meaning === "undefined")).toEqual([]);
+  });
+
+  it("lands the section in the reference, where the layout paragraph points", () => {
+    expect(VENDO_FORMAT_REFERENCE).toContain("# The host's CSS variables");
+    expect(VENDO_FORMAT_REFERENCE).toContain("listed at the end\nof this file");
   });
 
   it("carries the whole catalog, one line per component, generated from the specs", () => {
