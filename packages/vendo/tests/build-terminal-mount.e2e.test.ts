@@ -319,7 +319,19 @@ describe("a screen mounts only once its build is terminal", () => {
       // …which the wire turns into the `{kind:"pending"}` every embed already
       // keeps polling on (`use-app.ts`, `chrome/embeds.tsx`).
       expect(midBuild.wireStatus, `build ${index}`).toBe(200);
-      expect(JSON.parse(midBuild.wireBody), `build ${index}`).toEqual({ kind: "pending" });
+      // S4 made the pending answer ADDITIVE: it may now carry the forming tree,
+      // so the embed paints assembly instead of a blind bar. That tree is
+      // GEOMETRY ONLY, which is what keeps this file's law intact — the draft's
+      // double count is exactly the number nobody may be shown, so it must be
+      // absent from the body even though the shape of the app is present.
+      const body = JSON.parse(midBuild.wireBody) as {
+        kind: string;
+        tree?: { nodes?: Array<Record<string, unknown>> };
+      };
+      expect(body.kind, `build ${index}`).toBe("pending");
+      expect(body.tree?.nodes?.length, `build ${index}`).toBeGreaterThan(0);
+      expect(body.tree?.nodes?.some((node) => "props" in node), `build ${index}`).toBe(false);
+      expect(midBuild.wireBody, `build ${index}`).not.toContain(String(DRAFT_TOTAL));
     }
 
     // And once both builds are terminal, what mounts is the LAST repair — never
