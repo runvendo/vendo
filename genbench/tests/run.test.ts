@@ -337,6 +337,16 @@ describe("--contenders", () => {
     ]);
   });
 
+  /** A bare harness and a pinned pair can name the same column, and the slug is
+   *  the evidence directory: two of them would race to overwrite one
+   *  `vendo-sonnet/<case>` folder and be counted twice in the summary. Asking for
+   *  a column twice is asking for that column. */
+  it("collapses a column named twice into the one column, where it was first named", () => {
+    const only = parseArgs(["run", "--contenders", "diy:gemini,vendo,vendo:sonnet"]).contenders;
+
+    expect(contenders(["sonnet"], only).map((contender) => contender.slug)).toEqual(["diy-gemini", "vendo-sonnet"]);
+  });
+
   it("refuses a pair naming a model or a harness nothing here has", () => {
     expect(() => parseArgs(["run", "--contenders", "diy:gpt-9"])).toThrow(/unknown model "gpt-9"/);
     expect(() => parseArgs(["run", "--contenders", "langchain:sonnet"])).toThrow(/unknown contender "langchain"/);
