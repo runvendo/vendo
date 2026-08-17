@@ -347,8 +347,13 @@ describe("assembly writes through the real path and the seam paints it", () => {
     // …and the gauntlet refused to put them on screen, so no view and no row.
     expect(screen.emitted).toHaveLength(0);
     expect(screen.deliveredCalls).toHaveLength(0);
-    // The front door is what turns this into a fall-through: it finds no ROW.
-    expect(result.kind).toBe("assembled");
+    // The run says so itself, in the floor's own words. It used to answer
+    // `assembled` and leave the front door to notice there was no ROW — which held
+    // only while the refused save was also the run's first.
+    expect(result).toEqual({
+      kind: "unavailable",
+      why: expect.stringContaining("does not compile as TSX"),
+    });
   });
 
   /** The gate is FAIL-OPEN by design (`validate-gate.ts`): a validate that could

@@ -496,15 +496,21 @@ interface RunRecord {
   /** Did the LAST save reach the person's SCREEN? A landed save is not a finished
    *  screen — bytes the seam declines to paint leave a row-less app the hand
    *  already sent back to the floor — and only a finished screen faces the
-   *  reviewer. Absent paint information (an unwrapped workspace) claims nothing,
-   *  exactly as the hand's own gate does. */
-  painted: boolean;
+   *  reviewer, or is reported as one. `undefined` claims NOTHING and is not
+   *  `false`: no save has faced the question, or the workspace is unwrapped and
+   *  there is no paint to read, exactly as the hand's own gate reads it. */
+  painted?: boolean;
   title?: string;
   escalated?: string;
   /** The run is over and the screen is not why: the DEPLOYMENT could not check
    *  it, in the floor's own words. Nothing this loop writes changes that, so the
    *  words become the run's answer instead of a repair round. */
   blocked?: string;
+  /** Why the LAST save did not reach the screen, in the floor's own sentences.
+   *  The run's answer when it ends there: `assembled` says only that bytes landed
+   *  ONCE, so a "here it is" over whatever an earlier save painted is a stale card
+   *  under a live one's words. */
+  refused?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
@@ -557,7 +563,7 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
-  const record: RunRecord = { assembled: false, painted: false };
+  const record: RunRecord = { assembled: false };
   /** This run's own stop switch, beside the caller's: a hand that learns the
    *  deployment cannot check screens ends the drive the same way a caller hanging
    *  up does, rather than letting the loop pay for another step. */
@@ -623,9 +629,8 @@ export async function assembleScreen(
      * anything more would second-guess the seam. `painted` absent means an
      * unwrapped workspace — nothing known, so nothing claimed.
      */
-    const painted = paintedIn(committed);
-    record.painted = painted?.includes(input.appId) ?? false;
-    if (painted !== undefined && !record.painted) {
+    record.painted = paintedIn(committed)?.includes(input.appId);
+    if (record.painted === false) {
       const { blocking, environment } = surface.screenIssues?.() ?? { blocking: [] };
       // A refusal about the DEPLOYMENT is not a screen this loop can fix: no
       // compiler where the checks run refuses every screen, so handing these
@@ -636,6 +641,12 @@ export async function assembleScreen(
         stop.abort();
         return { saved: true, painted: false, note: record.blocked };
       }
+      // The same sentences are also the RUN's answer if this save turns out to be
+      // its last one. A repair round may still fix it — that is what the
+      // instruction below is for — but nothing that comes after can make an
+      // unpainted save into a screen, and the person hears why rather than the
+      // closing words of a screen they cannot see.
+      record.refused = blocking.join(" ");
       const instruction = repairInstruction(blocking.length === 0 ? [] : [{
         path: `${directory}/${APP_FILE}`,
         appId: input.appId,
@@ -658,7 +669,7 @@ export async function assembleScreen(
     return {
       saved: true,
       // Omitted, never `false`, on an unwrapped workspace: this loop does not know.
-      ...(painted === undefined ? {} : { painted: record.painted }),
+      ...(record.painted === undefined ? {} : { painted: record.painted }),
       ...(queries.length === 0 ? {} : { data: queries.map(queryNote) }),
       note: "That save landed.",
     };
@@ -879,8 +890,15 @@ export async function assembleScreen(
   // to avoid. `status: "building"` is the honest receipt, and the front door
   // stamps it.
   if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
-  // A model failure AFTER a screen already painted is not a failed screen.
-  if (record.assembled) {
+  // A model failure AFTER a screen already painted is not a failed screen — but
+  // `assembled` alone is not that screen. It says bytes landed ONCE; `painted`
+  // says whether the LAST save reached the person, and a run that ends on a
+  // refused save leaves them looking at whatever an earlier one left there. Live:
+  // a multi-save build whose first save cleared the floor and whose last did not
+  // answered "Your card is live!" over a stale card, because a row existed and
+  // this gate never asked about the paint. `undefined` is neither answer — an
+  // unwrapped workspace has no paint to judge — so only a `false` refuses.
+  if (record.assembled && record.painted !== false) {
     /**
      * THE MANDATORY REVIEWER PASS — every finished screen faces it, and it is the
      * only thing that asks: this loadout carries no `validate` verb, so nothing
@@ -899,11 +917,10 @@ export async function assembleScreen(
      * survives it stands — the screen has already painted, and the honest thing is
      * to leave it rather than take it away.
      *
-     * `record.painted` is the gate, not `record.assembled`. A save that landed bytes
-     * the seam declined to paint is not a finished screen: the hand already handed
-     * that loop the floor's own sentences, the app has no row for the reviewer's
-     * row-scoped door to find, and asking again here would only spend the person's
-     * time repeating it.
+     * `record.painted` gates it here too, for the one case the outcome gate above
+     * lets through unjudged: an unwrapped workspace, which has no paint and no row
+     * for the reviewer's row-scoped door to find, so asking would spend the
+     * person's time on a door that can only answer `not-found`.
      */
     const appPath = `${directory}/${APP_FILE}`;
     const instruction = record.painted ? await judgeScreen(surface, input.appId, appPath) : undefined;
@@ -935,7 +952,9 @@ export async function assembleScreen(
       ...(say === "" ? {} : { say }),
     };
   }
-  return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
+  // The floor's own sentences first: they name what is wrong with the screen the
+  // person asked for, which no sentence about the loop can.
+  return { kind: "unavailable", why: record.refused || failure || "assembly produced nothing that renders" };
 }
 
 // ─── The `vendo_make` route ──────────────────────────────────────────────────

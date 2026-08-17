@@ -2,11 +2,15 @@
  * Build contract §1.1 (the three-status surface a harness sees) and §1.4
  * (approvals wait or fail — they never suspend a run).
  */
-import type { Harness, ToolOutcome, ToolRegistry } from "@vendoai/core";
+import { setLogger, type Harness, type ToolOutcome, type ToolRegistry, type VendoLogEvent } from "@vendoai/core";
 import { CAPABILITY_MISS_TOOL_NAME, type CapabilityMissReporter } from "../src/capability-miss.js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTurnTools, type MirrorEvent } from "../src/turn-tools.js";
 import { boundRegistry, ctx, readTool, testGuard } from "../src/test-doubles.test-util.js";
+
+afterEach(() => {
+  setLogger(undefined);
+});
 
 function harness(options: {
   registry: ToolRegistry;
@@ -255,6 +259,44 @@ describe("turn.tools.call — §1.1 outcome mapping", () => {
     expect(result.status).toBe("error");
     // The raw internal message never reaches a harness (consumer-voice law).
     expect(JSON.stringify(result)).not.toContain("registry exploded");
+  });
+
+  it("tells the OPERATOR what the registry threw — the generic result says nothing", async () => {
+    const logs: VendoLogEvent[] = [];
+    setLogger((event) => { logs.push(event); });
+    const guard = testGuard();
+    const registry: ToolRegistry = {
+      descriptors: async () => [readTool("look")],
+      execute: async () => {
+        throw new Error("registry exploded");
+      },
+    };
+    const { tools } = harness({ registry, guard });
+    await tools.call("look", {});
+
+    // The catch used to bind nothing and print nothing, so a door failing on every
+    // call and a door nobody wired looked the same from outside.
+    const failed = logs.find((event) => event.code === "harnesses.tool-execute-failed");
+    expect((failed?.data?.["error"] as Error | undefined)?.message).toBe("registry exploded");
+  });
+
+  it("tells the OPERATOR about a bug ABOVE the registry too", async () => {
+    const logs: VendoLogEvent[] = [];
+    setLogger((event) => { logs.push(event); });
+    const guard = testGuard();
+    const registry = boundRegistry({ look: { descriptor: readTool("look"), execute: () => 1 } }, guard);
+    const capabilityMiss: CapabilityMissReporter = {
+      ...reporterDouble(),
+      execute: async () => {
+        throw new Error("the telemetry row would not write");
+      },
+    };
+    const { tools } = harness({ registry, guard, capabilityMiss });
+    const result = await tools.call(CAPABILITY_MISS_TOOL_NAME, { why: "no such tool" });
+
+    expect(result.status).toBe("error");
+    const failed = logs.find((event) => event.code === "harnesses.tool-call-failed");
+    expect((failed?.data?.["error"] as Error | undefined)?.message).toBe("the telemetry row would not write");
   });
 
   it("never throws — an unknown tool name becomes an error result", async () => {
