@@ -20,7 +20,8 @@
  * The preamble is `kitPrompt`'s, unchanged — the two laws do not depend on the
  * layout.
  */
-import { z, type ZodTypeAny } from "zod";
+import type { ZodTypeAny } from "zod";
+import { zodShape } from "./zod-shape.js";
 import { KIT_ICON_NAMES } from "./icon-names.gen.js";
 import { PREAMBLE, promptExamples } from "./kit-prompt.js";
 import {
@@ -54,10 +55,6 @@ const LEGEND = [
 /** data first: law 1 is the one a line must not bury. */
 const CLASS_ORDER: readonly PropClass[] = ["data", "config", "copy"];
 
-/** Which zod construct this is — the one cast the walker below needs. */
-const kind = (schema: ZodTypeAny): string | undefined =>
-  (schema as unknown as { _def: { typeName?: string } })._def.typeName;
-
 /**
  * A prop's type, COMPACT, walked off its own zod schema — nothing here is
  * hand-written, so a schema that changes changes the prompt in the same commit.
@@ -71,36 +68,35 @@ const kind = (schema: ZodTypeAny): string | undefined =>
  * `on*` prop is a function the screen writes, a slot holds elements — and
  * anything outside the vocabulary degrades to `any` rather than to a lie.
  */
-const typeText = (schema: ZodTypeAny): string => {
-  const def = (schema as unknown as { _def: { typeName?: string } })._def;
-  switch (def.typeName) {
-    case z.ZodFirstPartyTypeKind.ZodString:
-      return schema.description === ACTION_PROP_DESCRIPTION ? "fn" : "string";
-    case z.ZodFirstPartyTypeKind.ZodNumber: return "number";
-    case z.ZodFirstPartyTypeKind.ZodBoolean: return "boolean";
-    case z.ZodFirstPartyTypeKind.ZodUnknown:
-    case z.ZodFirstPartyTypeKind.ZodAny:
-      return schema.description === SLOT_PROP_DESCRIPTION ? "element" : "any";
-    case z.ZodFirstPartyTypeKind.ZodEnum:
-      return (def as { values: readonly string[] }).values.map((value) => JSON.stringify(value)).join("|");
-    case z.ZodFirstPartyTypeKind.ZodUnion:
-      return (def as { options: readonly ZodTypeAny[] }).options.map((option) => typeText(option)).join("|");
-    case z.ZodFirstPartyTypeKind.ZodArray: {
-      const item = typeText((def as { type: ZodTypeAny }).type);
+const typeText = (schema: ZodTypeAny | undefined): string => {
+  const shape = zodShape(schema);
+  switch (shape.kind) {
+    case "string":
+      return schema?.description === ACTION_PROP_DESCRIPTION ? "fn" : "string";
+    case "number": return "number";
+    case "boolean": return "boolean";
+    case "unknown":
+    case "any":
+      return schema?.description === SLOT_PROP_DESCRIPTION ? "element" : "any";
+    case "enum":
+      return (shape.values ?? []).map((value) => JSON.stringify(value)).join("|");
+    case "union":
+      return (shape.options ?? []).map((option) => typeText(option)).join("|");
+    case "array": {
+      const item = typeText(shape.inner);
       return item.includes("|") ? `(${item})[]` : `${item}[]`;
     }
-    case z.ZodFirstPartyTypeKind.ZodRecord:
-      return `{[key]: ${typeText((def as { valueType: ZodTypeAny }).valueType)}}`;
-    case z.ZodFirstPartyTypeKind.ZodObject: {
-      const shape = (schema as unknown as { shape: Record<string, ZodTypeAny> }).shape;
-      const fields = Object.entries(shape).map(([name, field]) =>
-        `${name}${kind(field) === z.ZodFirstPartyTypeKind.ZodOptional ? "?" : ""}`);
+    case "record":
+      return `{[key]: ${typeText(shape.valueType)}}`;
+    case "object": {
+      const fields = Object.entries(shape.shape ?? {}).map(([name, field]) =>
+        `${name}${zodShape(field).kind === "optional" ? "?" : ""}`);
       return `{${fields.join(", ")}}`;
     }
-    case z.ZodFirstPartyTypeKind.ZodNullable:
-      return `${typeText((def as { innerType: ZodTypeAny }).innerType)}|null`;
-    case z.ZodFirstPartyTypeKind.ZodOptional:
-      return typeText((def as { innerType: ZodTypeAny }).innerType);
+    case "nullable":
+      return `${typeText(shape.inner)}|null`;
+    case "optional":
+      return typeText(shape.inner);
     default: return "any";
   }
 };

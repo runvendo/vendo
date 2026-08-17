@@ -36,7 +36,8 @@ import {
   type KitComponentSpec,
   type NormalizedCatalog,
 } from "../../contract/index.js";
-import { z, type ZodTypeAny } from "zod";
+import type { ZodTypeAny } from "zod";
+import { zodShape } from "../../contract/kit/zod-shape.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
 
 /**
@@ -104,54 +105,54 @@ const WIRE_SLOT_DECLARATION = `declare type ${SLOT_TYPE} = any;`;
  *  direct walker beats a converter dependency (see the module note in the PR).
  *  Anything outside the vocabulary degrades to `any`: a prop we cannot type
  *  precisely must never become a false positive. */
-const zodTypeText = (schema: ZodTypeAny, depth = 0, note?: TypeNote): string => {
+export const zodTypeText = (schema: ZodTypeAny | undefined, depth = 0, note?: TypeNote): string => {
   if (depth > 8) {
     note?.("the schema nests deeper than 8 levels — typed as any below that");
     return "any";
   }
-  const def = (schema as unknown as { _def: { typeName?: string } })._def;
-  switch (def.typeName) {
-    case z.ZodFirstPartyTypeKind.ZodString: return "string";
-    case z.ZodFirstPartyTypeKind.ZodNumber: return "number";
-    case z.ZodFirstPartyTypeKind.ZodBoolean: return "boolean";
-    case z.ZodFirstPartyTypeKind.ZodNull: return "null";
+  const shape = zodShape(schema);
+  switch (shape.kind) {
+    case "string": return "string";
+    case "number": return "number";
+    case "boolean": return "boolean";
+    case "null": return "null";
     // `any` is these two's FAITHFUL type, not a degradation — no note. A SLOT is
     // the one exception: it holds an element, and `any` admitted the closure that
     // cannot work — see {@link SLOT_TYPE}.
-    case z.ZodFirstPartyTypeKind.ZodUnknown:
-    case z.ZodFirstPartyTypeKind.ZodAny:
-      return schema.description === SLOT_PROP_DESCRIPTION ? SLOT_TYPE : "any";
-    case z.ZodFirstPartyTypeKind.ZodEnum:
-      return (def as { values: readonly string[] }).values.map((value) => JSON.stringify(value)).join(" | ");
-    case z.ZodFirstPartyTypeKind.ZodLiteral:
-      return JSON.stringify((def as { value: unknown }).value);
-    case z.ZodFirstPartyTypeKind.ZodArray:
-      return `Array<${zodTypeText((def as { type: ZodTypeAny }).type, depth + 1, note)}>`;
-    case z.ZodFirstPartyTypeKind.ZodUnion:
-      return (def as { options: readonly ZodTypeAny[] }).options.map((option) => zodTypeText(option, depth + 1, note)).join(" | ");
-    case z.ZodFirstPartyTypeKind.ZodRecord:
-      return `Record<string, ${zodTypeText((def as { valueType: ZodTypeAny }).valueType, depth + 1, note)}>`;
-    case z.ZodFirstPartyTypeKind.ZodObject: {
-      const shape = (schema as unknown as { shape: Record<string, ZodTypeAny> }).shape;
-      const fields = Object.entries(shape).map(([name, field]) => {
-        const inner = (field as unknown as { _def: { typeName?: string; innerType?: ZodTypeAny } })._def;
-        const optional = inner.typeName === z.ZodFirstPartyTypeKind.ZodOptional;
-        return `${name}${optional ? "?" : ""}: ${zodTypeText(optional ? inner.innerType as ZodTypeAny : field, depth + 1, at(note, name))}`;
+    case "unknown":
+    case "any":
+      return schema?.description === SLOT_PROP_DESCRIPTION ? SLOT_TYPE : "any";
+    // One case for both: a literal is an enum of one, and zod 4 spells it as a
+    // list either way.
+    case "enum":
+    case "literal":
+      return (shape.values ?? []).map((value) => JSON.stringify(value)).join(" | ");
+    case "array":
+      return `Array<${zodTypeText(shape.inner, depth + 1, note)}>`;
+    case "union":
+      return (shape.options ?? []).map((option) => zodTypeText(option, depth + 1, note)).join(" | ");
+    case "record":
+      return `Record<string, ${zodTypeText(shape.valueType, depth + 1, note)}>`;
+    case "object": {
+      const fields = Object.entries(shape.shape ?? {}).map(([name, field]) => {
+        const inner = zodShape(field);
+        const optional = inner.kind === "optional";
+        return `${name}${optional ? "?" : ""}: ${zodTypeText(optional ? inner.inner : field, depth + 1, at(note, name))}`;
       });
       // A passthrough object keeps what it does not declare, and the printer must
       // say so: a chart's series descriptor carries that one series' engine props
       // beside `key`, and a closed type makes writing one an excess-property error.
-      if ((def as { unknownKeys?: string }).unknownKeys === "passthrough") fields.push(ENGINE_INDEX);
+      if (shape.passthrough === true) fields.push(ENGINE_INDEX);
       return fields.length === 0 ? "{}" : `{ ${fields.join("; ")} }`;
     }
-    case z.ZodFirstPartyTypeKind.ZodOptional:
-      return zodTypeText((def as { innerType: ZodTypeAny }).innerType, depth + 1, note);
-    case z.ZodFirstPartyTypeKind.ZodNullable:
-      return `${zodTypeText((def as { innerType: ZodTypeAny }).innerType, depth + 1, note)} | null`;
-    case z.ZodFirstPartyTypeKind.ZodEffects:
-      return zodTypeText((def as { schema: ZodTypeAny }).schema, depth + 1, note);
+    case "optional":
+      return zodTypeText(shape.inner, depth + 1, note);
+    case "nullable":
+      return `${zodTypeText(shape.inner, depth + 1, note)} | null`;
+    case "effects":
+      return zodTypeText(shape.inner, depth + 1, note);
     default:
-      note?.(`zod ${def.typeName ?? "construct"} is not in the printer's vocabulary — typed as any`);
+      note?.(`zod ${shape.tag ?? "construct"} is not in the printer's vocabulary — typed as any`);
       return "any";
   }
 };
