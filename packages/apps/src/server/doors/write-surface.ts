@@ -26,7 +26,7 @@ import { rungFor } from "../persistence/edit-journal.js";
 import { findingLine } from "./build-messages.js";
 import { generationDependencies } from "../runtime/generation-context.js";
 import type { AppData } from "../../contract/index.js";
-import { APPS_COLLECTION, appRecordInput, enabledAfterDocumentEdit, rowFromRecord } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
 
@@ -129,9 +129,7 @@ const createAuthoredSaver = (
         }
         // Asserted a SECOND time, because the append is itself a store round
         // trip and the first check alone leaves it inside the TOCTOU window.
-        // Its answer is also the arm bit this write must keep — read after the
-        // window, never from the stale baseline row.
-        enabled = enabledAfterDocumentEdit(previous, document, await assertCurrent());
+        enabled = await assertCurrent();
       }
       const appRow = appRecordInput(
         document,
@@ -508,8 +506,14 @@ export const createWriteSurface = (
 
     async schedule(appId, cron, ctx) {
       const previous = await requireOwned(appId, ctx);
-      const trigger = (previous.triggers ?? []).find((candidate) => candidate.on.kind === "schedule");
-      if (trigger === undefined) {
+      const seam = config.automations;
+      // Dead ids drop out of `resolve`, so an app whose only scheduled
+      // automation was deleted reads exactly like one that never had one.
+      const record = seam === undefined
+        ? undefined
+        : (await seam.resolve(previous.automations ?? [], ctx))
+          .find((candidate) => candidate.when.kind === "schedule");
+      if (seam === undefined || record === undefined) {
         throw new VendoError(
           "validation",
           `app ${appId} has no schedule to change. A schedule needs something to run, and building that is `
@@ -518,21 +522,20 @@ export const createWriteSurface = (
           { appId },
         );
       }
-      // Exactly one of cron/every/at may be set (core `triggerSchema`), so
-      // choosing a cron REPLACES whichever the app carried. The cron string
-      // itself is validated by the arming leg below, which is the one place that
-      // knows the parser.
-      await updateAppDocument(appId, (document) => ({
-        ...document,
-        triggers: (document.triggers ?? []).map((candidate) =>
-          candidate.id === trigger.id ? { ...candidate, on: { kind: "schedule" as const, cron } } : candidate),
-      }));
-      if (config.armAutomation === undefined) {
-        // No automations engine composed: the cron is stored, and saying it is
-        // armed would be a lie.
-        return { appId, cron, enabled: false, missing: 0 };
-      }
-      const armed = await config.armAutomation(appId, trigger.id, ctx);
+      // Through the ONE create operation, under the record's own id — same id
+      // means REPLACED, so changing when an automation runs is not a second
+      // write path onto it. The cron string itself is validated in there, which
+      // is the one place that knows the parser.
+      await seam.create({
+        id: record.id,
+        owner: record.owner,
+        when: cron,
+        task: record.task,
+        authoredBy: record.authoredBy,
+        ...(record.agent === undefined ? {} : { agent: record.agent }),
+        ...(record.timezone === undefined ? {} : { timezone: record.timezone }),
+      }, ctx);
+      const armed = await seam.enable(record.id, ctx);
       return { appId, cron, enabled: armed.enabled, missing: armed.missing.length };
     },
   };
