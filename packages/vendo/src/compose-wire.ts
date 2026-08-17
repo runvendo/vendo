@@ -176,6 +176,9 @@ export const vendoInstance = (
     },
     apps,
     automations,
+    // The adopted agent, read back: `vendo.agent` is the value the host passed,
+    // not a second one — the same object its `.on()` declarations hang off.
+    ...(composition.config.agent === undefined ? {} : { agent: composition.config.agent }),
     actions,
     // The adapter rule's object, exactly as selected: an explicitly passed
     // adapter is handed back untouched. The cache-invalidating wrapper is an

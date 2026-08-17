@@ -209,6 +209,18 @@ export function toTriggerSource(when: When): TriggerSource {
     if (when.event === "") invalid("the event name is empty", "a host event is named", '{ event: "payment.failed" }');
     return { kind: "host-event", event: when.event };
   }
+  // The webhook arm is the FALL-THROUGH, so it has to prove the key is there
+  // rather than merely non-empty: absent is not empty, and an object with none of
+  // the five keys — which is what an untyped wire body is — used to walk in here
+  // and leave with `connector: undefined`, an automation nothing can ever trigger
+  // that its owner is nonetheless shown as armed.
+  if (!("webhook" in when)) {
+    invalid(
+      "this names no trigger",
+      "a trigger is a cron string, or one of { every }, { at }, { event }, { webhook }",
+      '{ every: "1d" }',
+    );
+  }
   if (when.webhook === "") invalid("the webhook name is empty", "a webhook names its connector", '{ webhook: "stripe" }');
   return { kind: "external", connector: when.webhook };
 }

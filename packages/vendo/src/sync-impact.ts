@@ -1,7 +1,9 @@
 import {
+  automationRecordSchema,
   VENDO_TREE_FORMAT,
   VendoError,
   type AppDocument,
+  type AutomationRecord,
   type PermissionGrant,
   type StoreOps,
   type VendoRecord,
@@ -15,16 +17,11 @@ export interface ToolImpact {
   grants: number;
 }
 
-/** The app row as this reader takes it OFF the store.
- *
- *  `doc` goes through `appDocumentSchema`, not a cast, because that schema is
- *  where a pre-list document's single `trigger` becomes the one-item `triggers`
- *  list every reader below expects. Casting the raw row left `doc.triggers`
- *  undefined on every automation armed before the list shipped, so `vendo sync`
- *  told those deployments that changing a tool would affect NO automations —
- *  which reads as "nothing to worry about" and is the one wrong answer that
- *  costs something. `appRowSchema` is the contract's one definition of the
- *  stored row; this reader needs two of its three fields. */
+/** The app row as this reader takes it OFF the store. `appRowSchema` is the
+ *  contract's one definition of the stored row, and it is parsed rather than
+ *  cast: `sync` telling a deployment that changing a tool would affect NOTHING
+ *  reads as "nothing to worry about", which is the one wrong answer here that
+ *  costs something. This reader needs two of its three fields. */
 const storedAppSchema = appRowSchema.pick({ enabled: true, doc: true });
 
 async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecord[]> {
@@ -73,13 +70,26 @@ function referencedTools(doc: AppDocument): Set<string> {
       if (!name.startsWith("fn:")) tools.add(name);
     }
   }
-  for (const trigger of doc.triggers ?? []) {
-    if (trigger.run.kind !== "steps") continue;
-    for (const step of trigger.run.steps) {
-      if (!step.tool.startsWith("fn:")) tools.add(step.tool);
-    }
+  return tools;
+}
+
+/** An automation's own tool references. Only a STEPS task names tools ahead of
+ *  time — a goal task decides at run time, so it can promise nothing here. */
+function automationTools(record: AutomationRecord): Set<string> {
+  const tools = new Set<string>();
+  if (record.task.kind !== "steps") return tools;
+  for (const step of record.task.steps) {
+    if (!step.tool.startsWith("fn:")) tools.add(step.tool);
   }
   return tools;
+}
+
+/** What a person reads in the report. A record has no name — it has a WHEN,
+ *  which is the thing they would recognize it by. */
+function automationTitle(when: AutomationRecord["when"]): string {
+  if (when.kind === "host-event") return `on ${when.event}`;
+  if (when.kind === "external") return `on ${when.connector}`;
+  return when.cron ?? when.every ?? when.at ?? "on a schedule";
 }
 
 function activeGrant(grant: PermissionGrant, now: string): boolean {
@@ -98,8 +108,9 @@ export async function computeImpact(
       + "or a StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
     );
   }
-  const [appRecords, grantRecords] = await Promise.all([
+  const [appRecords, automationRecords, grantRecords] = await Promise.all([
     allRecords(ops, "vendo_apps"),
+    allRecords(ops, "vendo_automations"),
     allRecords(ops, "vendo_grants"),
   ]);
   // A row that will not parse is skipped rather than thrown on: `sync` is
@@ -109,6 +120,10 @@ export async function computeImpact(
     const parsed = storedAppSchema.safeParse(record.data);
     return parsed.success ? [parsed.data] : [];
   }).filter((app) => app.enabled);
+  const automations = automationRecords.flatMap((record) => {
+    const parsed = automationRecordSchema.safeParse(record.data);
+    return parsed.success && parsed.data.armed ? [parsed.data] : [];
+  });
   const now = new Date().toISOString();
   const grants = grantRecords
     .map((record) => record.data as unknown as PermissionGrant)
@@ -117,10 +132,12 @@ export async function computeImpact(
   return tools.map((tool) => {
     const impact: ToolImpact = { tool, apps: [], automations: [], grants: 0 };
     for (const app of apps) {
-      if (!referencedTools(app.doc).has(tool)) continue;
-      const reference = { id: app.doc.id, title: app.doc.name };
-      if ((app.doc.triggers ?? []).length === 0) impact.apps.push(reference);
-      else impact.automations.push(reference);
+      if (referencedTools(app.doc).has(tool)) impact.apps.push({ id: app.doc.id, title: app.doc.name });
+    }
+    for (const automation of automations) {
+      if (automationTools(automation).has(tool)) {
+        impact.automations.push({ id: automation.id, title: automationTitle(automation.when) });
+      }
     }
     impact.grants = grants.filter((grant) => grant.tool === tool).length;
     return impact;

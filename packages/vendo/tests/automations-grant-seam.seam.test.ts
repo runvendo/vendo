@@ -11,13 +11,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  VENDO_APP_FORMAT,
-  type AppDocument,
-  type Principal,
-  type RunContext,
-  type ToolDescriptor,
-  type ToolRegistry,
+import { automationsInternals } from "@vendoai/automations";
+import type {
+  AutomationId,
+  Principal,
+  RunContext,
+  ToolDescriptor,
+  ToolRegistry,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
@@ -48,18 +48,7 @@ const host: ToolRegistry = {
   },
 };
 
-const doc: AppDocument = {
-  format: VENDO_APP_FORMAT,
-  id: "app_seam",
-  name: "Nightly sweep",
-  triggers: [{
-    id: "main",
-    on: { kind: "host-event", event: "go" },
-    run: { kind: "steps", steps: [{ id: "read", tool: readAccounts.name }] },
-  }],
-};
-
-async function setup(): Promise<Vendo> {
+async function setup(): Promise<{ vendo: Vendo; id: AutomationId }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-grant-seam-"));
   const store: VendoStore = createStore({ dataDir });
   cleanups.push(async () => {
@@ -74,19 +63,22 @@ async function setup(): Promise<Vendo> {
   });
   vendo.actions.add(host);
   await store.ensureSchema();
-  await store.records("vendo_apps").put({
-    id: doc.id,
-    data: { subject: principal.subject, enabled: false, doc },
-    refs: { subject: principal.subject },
-  });
-  return vendo;
+  // Disarmed at creation: `enable` is the consent moment this test is about.
+  const record = await automationsInternals(vendo.automations).create({
+    owner: principal,
+    when: { event: "go" },
+    task: { kind: "steps", steps: [{ id: "read", tool: readAccounts.name }] },
+    authoredBy: "chat",
+    armed: false,
+  }, ctx);
+  return { vendo, id: record.id };
 }
 
 describe.sequential("CHECK: the grant automations asks the GUARD to mint is the grant automations reads back", () => {
-  it("arms the trigger — enable, decide through the real guard, enable again with nothing missing", async () => {
-    const vendo = await setup();
+  it("arms the automation — enable, decide through the real guard, enable again with nothing missing", async () => {
+    const { vendo, id } = await setup();
 
-    const first = await vendo.automations.enable(doc.id, "main", ctx);
+    const first = await vendo.automations.enable(id, ctx);
     expect(first.missing.length).toBeGreaterThan(0);
 
     await vendo.guard.approvals.decide(first.missing.map((ask) => ask.id), { approve: true }, principal);
@@ -94,14 +86,14 @@ describe.sequential("CHECK: the grant automations asks the GUARD to mint is the 
     // The consumer side: the same live-grant read every firing asks its three
     // authority questions from. A row the guard wrote somewhere automations
     // cannot see would leave this asking for consent forever.
-    const again = await vendo.automations.enable(doc.id, "main", ctx);
+    const again = await vendo.automations.enable(id, ctx);
     expect(again.missing).toEqual([]);
     expect(again.enabled).toBe(true);
   });
 
-  it("writes ONE grant row, scoped to the subject, the app and the trigger the person armed", async () => {
-    const vendo = await setup();
-    const first = await vendo.automations.enable(doc.id, "main", ctx);
+  it("writes ONE grant row, scoped to the subject and the automation the person armed", async () => {
+    const { vendo, id } = await setup();
+    const first = await vendo.automations.enable(id, ctx);
     await vendo.guard.approvals.decide(first.missing.map((ask) => ask.id), { approve: true }, principal);
 
     const grants = await vendo.guard.grants.list(principal);
@@ -110,8 +102,7 @@ describe.sequential("CHECK: the grant automations asks the GUARD to mint is the 
     expect(grants[0]).toMatchObject({
       subject: principal.subject,
       tool: readAccounts.name,
-      appId: doc.id,
-      triggerId: "main",
+      automationId: id,
       source: "automation",
       duration: "standing",
       scope: { kind: "tool" },

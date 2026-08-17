@@ -17,15 +17,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { triggerKey } from "@vendoai/automations";
+import { automationsInternals } from "@vendoai/automations";
 import {
-  DEFAULT_TRIGGER_ID,
-  TRIGGER_KIND_REF_PRESENT,
-  VENDO_APP_FORMAT,
   VENDO_MAKE_TOOL,
-  triggerKindRefKey,
   vendoLimitPartSchema,
-  type AppDocument,
   type LimitAction,
   type LimitsCallback,
   type Principal,
@@ -191,31 +186,14 @@ describe("the generation choke — the agent is told, and the turn goes on", () 
 
 describe("the generation choke and the AUTOMATION venue", () => {
   /** An armed host-event automation whose one step IS the build door. */
-  const arm = async (vendo: Vendo, appId: string): Promise<void> => {
-    const doc: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: appId,
-      name: "Nightly build",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "host-event", event: "go" },
-        run: {
-          kind: "steps",
-          // Step args are JSONata, so the request is a quoted literal.
-          steps: [{ id: "build", tool: VENDO_MAKE_TOOL, args: { request: "'a spending dashboard'" } }],
-        },
-      }],
-    };
-    await vendo.store.records("vendo_apps").put({
-      id: appId,
-      data: { subject: principal.subject, enabled: true, doc },
-      refs: { subject: principal.subject, [triggerKindRefKey("host-event")]: TRIGGER_KIND_REF_PRESENT },
-    });
-    await vendo.store.records("automations:armed").put({
-      id: triggerKey(appId, DEFAULT_TRIGGER_ID),
-      data: { appId, triggerId: DEFAULT_TRIGGER_ID },
-      refs: { app_id: appId },
-    });
+  const arm = async (vendo: Vendo): Promise<void> => {
+    await automationsInternals(vendo.automations).create({
+      owner: principal,
+      when: { event: "go" },
+      // Step args are JSONata, so the request is a quoted literal.
+      task: { kind: "steps", steps: [{ id: "build", tool: VENDO_MAKE_TOOL, args: { request: "'a spending dashboard'" } }] },
+      authoredBy: "chat",
+    }, { principal, venue: "automation", presence: "away", sessionId: "session_limits_enforcement" });
   };
 
   it("never asks the policy about a firing, and meters nothing for it", async () => {
@@ -226,7 +204,7 @@ describe("the generation choke and the AUTOMATION venue", () => {
       limits: ({ action }) => { asked.push(action); return false; },
       turns: [],
     });
-    await arm(vendo, "app_limits_automation");
+    await arm(vendo);
 
     expect(await vendo.emit("go", {}, principal)).toHaveLength(1);
 

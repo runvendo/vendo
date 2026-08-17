@@ -27,6 +27,7 @@ import {
   VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
   VENDO_SLOTS_LIST_TOOL,
+  descriptorHash,
   type ToolListing,
   type ToolResult,
 } from "@vendoai/core";
@@ -45,7 +46,6 @@ import {
   runHarnessTurn,
   runUnattendedTurn,
   screenModel,
-  tapWhenItAppears,
   tempStore,
 } from "../src/mcp-door.test-util.js";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -87,9 +87,36 @@ interface Host {
  *  through the same guard-bound registry the listing came from. */
 type OnTurn = (tools: { call(name: string, args: unknown): Promise<ToolResult> }) => Promise<void>;
 
-/** One firing of a scheduled automation. `runUnattendedTurn` carries no app,
- *  and 05 §6 binds an away run's captured authority to the app it runs for, so
- *  a firing that means to spend a grant has to name one. */
+/** One firing of THE SAME scheduled automation, twice. An automation is a record
+ *  consented to on its own, so `trigger.automationId` — not the app id — is what
+ *  the guard matches an away grant on, and a firing that is nobody's automation
+ *  holds no away authority at all (core `TriggerRef.automationId`). Both firings
+ *  therefore name one id: the second is what spends what the first parked. */
+const NIGHTLY_AUTOMATION = "atm_nightly";
+
+/** The standing, automation-sourced grant an armed record's consent capture
+ *  leaves behind — the ONLY thing that authorizes an away call. */
+const seedAutomationGrant = async (vendo: Vendo, tool: string): Promise<void> => {
+  const descriptor = (await vendo.actions.descriptors()).find((entry) => entry.name === tool);
+  if (descriptor === undefined) throw new Error(`no descriptor for ${tool}`);
+  const id = `grt_${NIGHTLY_AUTOMATION}_${tool}`;
+  await vendo.store.records("vendo_grants").put({
+    id,
+    data: {
+      id,
+      subject: principal.subject,
+      tool,
+      descriptorHash: descriptorHash(descriptor),
+      scope: { kind: "tool" },
+      duration: "standing",
+      automationId: NIGHTLY_AUTOMATION,
+      source: "automation",
+      grantedAt: new Date().toISOString(),
+    },
+    refs: { subject: principal.subject, tool, automation_id: NIGHTLY_AUTOMATION },
+  });
+};
+
 const fireAutomation = async (vendo: Vendo, threadId: string): Promise<void> => {
   const response = await vendo.harness.stream({
     threadId,
@@ -100,7 +127,7 @@ const fireAutomation = async (vendo: Vendo, threadId: string): Promise<void> => 
       presence: "away",
       sessionId: `session_${threadId}`,
       appId: "app_nightly",
-      trigger: { runId: `run_${threadId}`, kind: "schedule" },
+      trigger: { runId: `run_${threadId}`, kind: "schedule", automationId: NIGHTLY_AUTOMATION },
     },
   } as never);
   await response.text();
@@ -293,9 +320,8 @@ describe("THE LAW, for a tool whose whole effect is on a person's screen", () =>
    *
    * Nothing is stubbed on either side: the call crosses the same guard-bound
    * registry that refuses the pin tool above, on a real away run holding the
-   * real captured authority such a run needs (05 §6 — parked on the first
-   * firing, granted by one present tap, spent by the second). The "no
-   * placement" half is read straight out of the store's rows.
+   * real captured authority such a run needs (05 §6). The "no placement" half is
+   * read straight out of the store's rows.
    */
   it("builds a slot-bearing make on an unattended run and takes no slot", async () => {
     const outcomes: ToolResult[] = [];
@@ -306,11 +332,14 @@ describe("THE LAW, for a tool whose whole effect is on a person's screen", () =>
       }));
     });
 
-    // First firing: away runs hold only captured authority, so this parks a
-    // card. The person taps it once, present, and the automation fires again.
+    // An away run's authority is minted by ARMING the automation and nothing
+    // else: the guard matches an away grant on `source: "automation"` plus the
+    // record's own id (guard `presenceMatches`), and the approvals door mints
+    // `source: "chat"` — so a mid-firing tap can no longer authorize one. Seed
+    // exactly what `enable()` would have minted on approval, as the sibling
+    // away-run suites do.
+    await seedAutomationGrant(vendo, VENDO_MAKE_TOOL);
     await fireAutomation(vendo, "thr_nightly_1");
-    await tapWhenItAppears(vendo, VENDO_MAKE_TOOL, true);
-    await fireAutomation(vendo, "thr_nightly_2");
 
     // Not blocked, and not a refusal dressed as an error: the app was made.
     const outcome = outcomes.at(-1);

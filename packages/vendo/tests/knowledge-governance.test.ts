@@ -2,8 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
+import { automationsInternals } from "@vendoai/automations";
 import {
-  DEFAULT_TRIGGER_ID,
   descriptorHash,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
@@ -206,30 +206,14 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
   it("automation: a granted away step run reaches the tool and still sees only public docs", async () => {
     const adapter = spyAdapter();
     const vendo = await compose({ knowledge: adapter });
-    const doc: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_gov_auto",
-      name: "Escalation digest",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "host-event", event: "gov-check" },
-        // Step args are JSONata expressions — a literal query needs quotes.
-        run: { kind: "steps", steps: [{ id: "kb", tool: "vendo_knowledge_search", args: { query: "'escalation'" } }] },
-      }],
-    };
     await vendo.store.ensureSchema();
-    await vendo.store.records("vendo_apps").put({
-      id: doc.id,
-      data: { subject: principal.subject, enabled: true, doc },
-      refs: { subject: principal.subject, trigger_kind: "host-event" },
-    });
-    // An armed automation is TWO rows: the app row's `enabled` above and the
-    // per-(app, trigger) armed row `enable()` writes.
-    await vendo.store.records("automations:armed").put({
-      id: `${doc.id}:${DEFAULT_TRIGGER_ID}`,
-      data: { appId: doc.id, triggerId: DEFAULT_TRIGGER_ID },
-      refs: { app_id: doc.id },
-    });
+    const automation = await automationsInternals(vendo.automations).create({
+      owner: principal,
+      when: { event: "gov-check" },
+      // Step args are JSONata expressions — a literal query needs quotes.
+      task: { kind: "steps", steps: [{ id: "kb", tool: "vendo_knowledge_search", args: { query: "'escalation'" } }] },
+      authoredBy: "chat",
+    }, { principal, venue: "automation", presence: "away", sessionId: "session_knowledge_governance" });
     // Away automation runs execute only under a standing grant (05 §2) — seed
     // one, exactly what enable() would have minted on approval.
     const descriptor = (await vendo.actions.descriptors()).find((entry) => entry.name === "vendo_knowledge_search");
@@ -243,11 +227,11 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
         descriptorHash: descriptorHash(descriptor!),
         scope: { kind: "tool" },
         duration: "standing",
-        appId: doc.id,
+        automationId: automation.id,
         source: "automation",
         grantedAt: new Date().toISOString(),
       },
-      refs: { subject: principal.subject, tool: "vendo_knowledge_search", app_id: doc.id },
+      refs: { subject: principal.subject, tool: "vendo_knowledge_search", automation_id: automation.id },
     });
 
     await vendo.emit("gov-check", {}, principal);
@@ -258,7 +242,7 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
     // The step genuinely ran and answered: run ok, and the engine served the
     // PUBLIC doc only. (Run records persist step statuses, not tool outputs,
     // so leakage is asserted at the served-hits level plus the record JSON.)
-    const { runs } = await vendo.automations.runs.list({ appId: doc.id }, {
+    const { runs } = await vendo.automations.runs.list({ automationId: automation.id }, {
       principal,
       venue: "automation",
       presence: "present",

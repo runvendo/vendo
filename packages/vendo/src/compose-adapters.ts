@@ -176,7 +176,12 @@ export const composeReady = (composition: VendoComposition): Pick<VendoCompositi
   let readyState: Promise<void> | undefined;
   const ready = (): Promise<void> => {
     if (readyState === undefined) {
-      readyState = store.ensureSchema();
+      // BOOT, in the only place this process has both the whole set of `.on()`
+      // declarations (collected at module load) and a store it may write to:
+      // schema first, then the code-authored automations are reconciled against
+      // what is stored. Chained rather than fired-and-forgotten, so a tick that
+      // arrives on the same first touch cannot fire a stale record set.
+      readyState = store.ensureSchema().then(() => composition.bootReconcile?.());
       // No unhandled rejection before a handler/emit awaits the latch.
       void readyState.catch(() => undefined);
       composition.startBackgroundSweep();

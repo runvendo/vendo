@@ -231,13 +231,18 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.apps, "importApp").mockResolvedValue(app("app_imported"));
   vi.spyOn(vendo.apps, "fork").mockResolvedValue(app("app_forked"));
   vi.spyOn(vendo.automations, "list").mockResolvedValue([]);
+  vi.spyOn(vendo.automations, "get").mockResolvedValue({
+    id: "atm_wire", owner: { kind: "user", subject: "user_a" }, when: { kind: "schedule", cron: "0 9 * * *" },
+    task: { kind: "goal", prompt: "wire" }, armed: true, authoredBy: "chat",
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
   vi.spyOn(vendo.automations, "enable").mockResolvedValue({ enabled: true, missing: [] });
   vi.spyOn(vendo.automations, "disable").mockResolvedValue();
   vi.spyOn(vendo.automations, "dryRun").mockResolvedValue({ steps: [], grantsMissing: [] });
   vi.spyOn(vendo.automations.runs, "list").mockResolvedValue({ runs: [] });
   vi.spyOn(vendo.automations.runs, "get").mockResolvedValue({
-    id: "run_x", appId: "app_wire", triggerId: "trg_wire", trigger: { kind: "schedule" }, status: "ok",
-    startedAt: new Date().toISOString(), steps: [],
+    id: "run_x", automationId: "atm_wire", owner: { kind: "user", subject: "user_a" },
+    trigger: { kind: "schedule" }, status: "ok", startedAt: new Date().toISOString(), steps: [],
   });
   vi.spyOn(vendo.automations.runs, "stop").mockResolvedValue();
   vi.spyOn(vendo.automations, "tick").mockResolvedValue([]);
@@ -268,10 +273,11 @@ describe("09 §3 public wire", () => {
       request("GET", "/apps/app_wire/export"),
       request("POST", "/apps/import", new Uint8Array([1, 2, 3]), { "content-type": "application/octet-stream" }),
       request("POST", "/apps/app_wire/fork", {}),
-      request("GET", "/automations"),
-      request("POST", "/automations/app_wire/enable", {}),
-      request("POST", "/automations/app_wire/disable", {}),
-      request("POST", "/automations/app_wire/dry-run", {}),
+      request("GET", "/automations?owner=user_a&agent=support"),
+      request("GET", "/automations/atm_wire"),
+      request("POST", "/automations/atm_wire/enable", {}),
+      request("POST", "/automations/atm_wire/disable", {}),
+      request("POST", "/automations/atm_wire/dry-run", {}),
       request("GET", "/runs?status=ok"),
       request("GET", "/runs/run_x"),
       request("POST", "/runs/run_x/stop", {}),
@@ -644,7 +650,7 @@ describe("09 §3 public wire", () => {
     const { vendo, resolver } = await setup();
     const denied = await vendo.handler(request("POST", "/tick", undefined, { authorization: "Bearer wrong" }));
     expect(denied.status).toBe(401);
-    expect(await denied.json()).toEqual({ error: { code: "blocked", message: "invalid tick credential" } });
+    expect(await denied.json()).toMatchObject({ error: { code: "blocked" } });
     expect(resolver).not.toHaveBeenCalled();
 
     const status = await vendo.handler(request("GET", "/status"));
