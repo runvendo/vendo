@@ -18,16 +18,27 @@ import { createRoot } from "react-dom/client";
 
 const read = <T,>(id: string): T => JSON.parse(document.getElementById(id)!.textContent!) as T;
 
+/** Their renderer hands `onAction` every param slot the action declares, the
+ *  ones it did not fill included, so a perfect press arrives as
+ *  `{ id: "tr_1", url: undefined, context: undefined }`. The floor's `checkArgs`
+ *  walks the object's own keys and rejects the first the tool's schema does not
+ *  declare, so those empties scored a correct press as `unknown argument "url"`.
+ *  Dropped here, on the driver's side of the seam, because a key with no value
+ *  is not an argument the vendor's model passed — every other column reaches the
+ *  same floor with the same rule. */
+const given = (params: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined));
+
 // `isStreaming` is false because the whole answer is already here: this column
 // generates once, and the page is assembled after the generation has landed.
 // `onAction` is where their product meets the harness — the action's own type
 // and params, straight into the one seam every column answers through.
 createRoot(document.getElementById("root")!).render(
-  <ThemeProvider theme={read<Record<string, string>>("crayon-theme")}>
+  <ThemeProvider theme={read<Record<string, string | string[]>>("crayon-theme")}>
     <C1Component
       c1Response={read<string>("c1")}
       isStreaming={false}
-      onAction={(event) => window.vendo.callTool(event.type ?? "", event.params ?? {})}
+      onAction={(event) => window.vendo.callTool(event.type ?? "", given(event.params ?? {}))}
     />
   </ThemeProvider>,
 );

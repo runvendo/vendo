@@ -72,11 +72,13 @@ vendor's own docs say to configure it. Everything about that configuration is in
   real action types and schema'd params to the controls it generates, and a press
   reaches `window.vendo.callTool` through their own `onAction`.
 - **Its theming is a mapping, and it is published.** `crayonTheme` in
-  `src/thesys.ts` maps the world's `VendoTheme` colours, font family and corner
-  radii onto their theme tokens. Their `Theme` type is undocumented, so the names
-  were read off the type and presets they ship. Their ladder is finer than a
-  `VendoTheme`'s: anything the world does not name — the wider radii, the shadows
-  — keeps their default, and this column wears that difference honestly.
+  `src/thesys.ts` maps the world's `VendoTheme` colours, font family, corner
+  radii and chart palette onto their theme tokens. Their `Theme` type is
+  undocumented, so the names were read off the type and presets they ship — their
+  charts take a ten-step ramp of one hue, so the world's single accent is mixed
+  into one. Their ladder is finer than a `VendoTheme`'s: anything the world does
+  not name — the wider radii, the shadows — keeps their default, and this column
+  wears that difference honestly.
 
 What it is **not** given: a second model turn. Their product refreshes a screen
 after a press by generating again, and this benchmark grades one generation per

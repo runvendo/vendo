@@ -15,11 +15,12 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { wiredActions } from "../src/floor.js";
 import { meteredModel, MODEL_IDS, usdFor } from "../src/meter.js";
 import { probe } from "../src/probe.js";
 import { authoredPage, HARNESS_CONTRACT, openBrowser } from "../src/render.js";
 import type { RunOutcome } from "../src/run.js";
-import { thesysDriver, thesysProvider, THESYS_CALL_USD } from "../src/thesys.js";
+import { crayonTheme, thesysDriver, thesysProvider, THESYS_CALL_USD } from "../src/thesys.js";
 import { worldBlock } from "../src/vendo.js";
 import { loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
@@ -136,6 +137,26 @@ describe("the thesys driver", () => {
   });
 });
 
+describe("the world's brand in the vendor's tokens", () => {
+  /** Their charts read `defaultChartPalette` off the theme and fall back to
+   *  their own blue when it is unset (`palette = customPalette ||
+   *  paletteFromTheme || paletteFromChartTheme.colors` in their
+   *  `Charts/utils/PalletUtils`). Leaving it unset painted a Maple chart in
+   *  another product's blue, which is our mapping missing a token they honour
+   *  rather than a limit of theirs. */
+  it("paints the world's charts in the world's accent, not the vendor's default", () => {
+    const palette = crayonTheme(world.theme).defaultChartPalette;
+
+    expect(palette.length).toBeGreaterThan(5);
+    // A ramp OF the accent: its darkest steps keep the accent's own hue order
+    // (a green world stays greenest in green), and none of it is their blue.
+    for (const step of palette) expect(step).toMatch(/^#[0-9a-f]{6}$/i);
+    const [r, g, b] = [1, 3, 5].map((at) => parseInt(palette.at(-1)!.slice(at, at + 2), 16));
+    expect(g).toBeGreaterThan(r!);
+    expect(g).toBeGreaterThan(b!);
+  });
+});
+
 describe("the page the vendor's renderer paints", () => {
   /** A SEAM test: the driver's real page, the vendor's real renderer, the
    *  harness's real recorder and the harness's real probe, in a real browser
@@ -153,6 +174,17 @@ describe("the page the vendor's renderer paints", () => {
         expect(shot.renders).toBe(true);
         expect(shot.visibleText).toContain("Alex Rivera");
 
+        // The judge's SOURCE channel is this DOM with script bodies dropped
+        // (`render.ts`), the same mechanical rule for every column. Their
+        // renderer's stylesheet rides in a `<style>`, which that rule does not
+        // drop, so anything bulky inlined THERE lands in the judge's prompt:
+        // inlining their font files as data URLs put this column alone past the
+        // grader's context (1.69M tokens) and made it ungradeable. Asserted on
+        // the driver's own page, because the harness injects the world's face as
+        // a data URL afterwards and that one belongs to every column alike.
+        expect(outcome.artifact).not.toMatch(/data:font/i);
+        expect(shot.dom.length).toBeLessThan(1_000_000);
+
         // Their action dispatch, through `window.vendo.callTool`, with the
         // action's own type and params — which is what the floor scores.
         const trace = await probe(visit);
@@ -160,6 +192,23 @@ describe("the page the vendor's renderer paints", () => {
           name: "cancel_transfer",
           args: { id: "tr_1" },
         });
+
+        // `toContainEqual` treats an undefined-valued key as absent, so the
+        // assertion above holds even when the dispatch carries junk. The floor
+        // does NOT: `checkArgs` walks the object's own keys and rejects the
+        // first one the tool's schema does not declare. Their renderer hands
+        // `onAction` every param slot it knows, undefined ones included, so
+        // this is the assertion that speaks for the score.
+        const cancels = trace.flatMap((pressed) => pressed.calls).filter((call) => call.name === "cancel_transfer");
+        expect(cancels.length).toBeGreaterThan(0);
+        for (const call of cancels) expect(Object.keys(call.args as object)).toEqual(["id"]);
+
+        // The real floor verdict, on the real trace: a perfect press must score.
+        const scored = wiredActions(trace, world, caseFor("pending-transfers").tags);
+        expect(scored.bindings.filter((binding) => binding.tool === "cancel_transfer")).not.toHaveLength(0);
+        for (const binding of scored.bindings.filter((binding) => binding.tool === "cancel_transfer")) {
+          expect(binding.argsValid).toBe(true);
+        }
       } finally {
         await visit.close();
       }
