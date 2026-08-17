@@ -415,6 +415,33 @@ export function storeAdapterConformance(opts: {
         );
       }),
 
+      /** 01-core §12: idempotency.claim reserves a fresh key and replays a recorded answer. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.claim returns 'claimed' when fresh, and replays what record wrote", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined || ledger.claim === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_1" };
+        assert(await ledger.claim(scope, "hash_a") === "claimed", "a fresh key should claim as 'claimed'");
+        await ledger.record(scope, "hash_a", { status: 200, result: { committed: 1 } });
+        assertDeepEqual(
+          await ledger.claim(scope, "hash_a"),
+          { status: 200, result: { committed: 1 } },
+          "the claim replay did not return the recorded status and result",
+        );
+      }),
+
+      /** 01-core §12: idempotency.claim refuses a reserved key carrying a different request. */
+      readyAdapterCase(opts, "01-core §12 — idempotency.claim refuses a held key carrying a different request", async (adapter) => {
+        const ledger = adapter.idempotency;
+        if (ledger === undefined || ledger.claim === undefined) return;
+        const scope = { tenant: "tenant_a", op: "workspace.commit", key: "idem_claim_2" };
+        assert(await ledger.claim(scope, "hash_a") === "claimed", "a fresh key should claim as 'claimed'");
+        const refusal = await ledger.claim(scope, "hash_b").then(() => null, (error: unknown) => error);
+        assert(
+          (refusal as { code?: unknown } | null)?.code === "conflict",
+          `a held key claimed with a different request hash should throw conflict, got ${String(refusal)}`,
+        );
+      }),
+
       /** 01-core §12: blob list filters keys by prefix. */
       readyAdapterCase(opts, "01-core §12 — blobs.list filters by prefix", async (adapter) => {
         const blobs = adapter.blobs("conformance_blob_list");

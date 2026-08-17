@@ -500,6 +500,22 @@ export function memoryStoreAdapter(
     // so the ledger cannot commit while the mutation it gates rolls back. A
     // hosted mount earns the same guarantee by putting it in the same database.
     idempotency: {
+      async claim(scope, requestHash) {
+        const key = ledgerKey(scope);
+        const held = ledger.get(key);
+        if (held === undefined) {
+          ledger.set(key, { requestHash, answer: { status: 0, result: {} } });
+          return "claimed";
+        }
+        if (held.requestHash !== requestHash) {
+          throw new VendoError(
+            "conflict",
+            `idempotency key ${scope.key} was already used with a different request body`,
+          );
+        }
+        if (held.answer.status === 0) return null;
+        return { status: held.answer.status, result: jsonCopy(held.answer.result) };
+      },
       async check(scope, requestHash) {
         const held = ledger.get(ledgerKey(scope));
         if (held === undefined) return null;
@@ -509,13 +525,13 @@ export function memoryStoreAdapter(
             `idempotency key ${scope.key} was already used with a different request body`,
           );
         }
+        if (held.answer.status === 0) return null;
         return { status: held.answer.status, result: jsonCopy(held.answer.result) };
       },
       async record(scope, requestHash, answer) {
         const key = ledgerKey(scope);
-        // First writer wins: the answer a replay has already been handed must
-        // not change under it.
-        if (ledger.has(key)) return;
+        const held = ledger.get(key);
+        if (held !== undefined && (held.answer.status !== 0 || held.requestHash !== requestHash)) return;
         ledger.set(key, { requestHash, answer: { status: answer.status, result: jsonCopy(answer.result) } });
       },
     },
