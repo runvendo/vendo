@@ -122,9 +122,11 @@ POST /api/vendo/tick
 A duplicate knock claims nothing and fires nothing. Three things can knock: a
 cron in your own infrastructure, your dev server's own ticker, or Vendo Cloud.
 
-Set `VENDO_TICK_SECRET` whichever of them knocks. The door takes a bearer token
-**or** a standard-webhooks signature, and both are checked against that one
-secret — with it unset every knock is refused, Cloud's included.
+With a Cloud key there is nothing to set: the deployment derives the secret from
+`VENDO_API_KEY` and publishes it, with its own URL, when it boots. Without one,
+set `VENDO_TICK_SECRET` yourself. The door takes a bearer token **or** a
+standard-webhooks signature, and both are checked against that one secret — with
+neither a key nor a secret, every knock is refused.
 
 <Note>
   Cloud's heartbeat is an **alarm clock, not a brain**. It calls `/api/vendo/tick`

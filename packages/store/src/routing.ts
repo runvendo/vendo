@@ -542,11 +542,10 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
           }
           return automationRecord(row);
         },
-        // The fire claim's arbitration (01 §12): two ticks read the same armed
-        // record and both try to claim it; the revision counter decides, so the
-        // loser gets null instead of a second run. Cross-subject writes lose
-        // here too — insertIfAbsent finds the id taken, the CAS's guarded WHERE
-        // fails.
+        // Optimistic concurrency on the row itself (01 §12). Nothing claims a
+        // fire through it — the tick arbitrates on the schedule cursor — but
+        // cross-subject writes lose here too: insertIfAbsent finds the id
+        // taken, the CAS's guarded WHERE fails.
         atomic: {
           async insertIfAbsent(record) {
             requireRecordId(record.id);

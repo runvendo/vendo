@@ -131,7 +131,7 @@ describe("vendo_automate", () => {
     // What it got, preserved — the bar is that the author never has to guess
     // which of their two arguments was the problem.
     expect(message).toContain("7");
-    expect(message).toContain("https://vendo.run/docs/capabilities/automations");
+    expect(message).toContain("https://docs.vendo.run/capabilities/automations");
   });
 
   it("says so when no automations engine is composed, rather than reporting a schedule that runs", async () => {

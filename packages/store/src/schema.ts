@@ -74,7 +74,10 @@ import type { Db } from "./db-postgres.js";
     principal-owned record per row, `subject` (the owner) the erase-cascade
     selector — a row carries a live webhook signing key, so a record that
     outlived its owner's erasure would be a hole, not an untidiness — and
-    `revision` the CAS counter a fire claim turns. `vendo_runs` re-keys `app_id`
+    `revision` the optimistic-concurrency counter the row's atomic verbs turn.
+    No caller claims a fire through it: the tick arbitrates on the schedule
+    cursor instead (packages/automations/src/ingestion-surface.ts).
+    `vendo_runs` re-keys `app_id`
     to `automation_id`, because a run belongs to the record that fired it and an
     automation holds no app reference at all; `vendo_grants` re-keys `trigger_id`
     to `automation_id` for the same reason — the trigger it named lived inside an

@@ -164,16 +164,21 @@ Once a minute, Cloud calls every enrolled deployment:
 POST https://your-app.example.com/api/vendo/tick
 ```
 
-The body is empty and the call is signed with your `VENDO_TICK_SECRET`, so your
-deployment can tell it is Cloud. Set that secret even with a key — the door
-checks every credential against it. Cloud holds no schedule, decides nothing
-about what is due, and never writes a run: your engine answers
+Enrolling is not a step you take: a deployment with a key derives the tick
+secret from that key and registers itself — its public URL and that secret —
+every time it boots, so a redeploy re-enrols itself. Set `VENDO_BASE_URL` to the
+deployment's full public URL and there is nothing else to configure.
+
+The body is empty and the call carries a standard-webhooks signature over that
+secret, so your deployment can tell it is Cloud. Cloud holds no schedule, decides
+nothing about what is due, and never writes a run: your engine answers
 `202 { fired: n }`, and the ledger the console shows you is the one your
 deployment wrote. A duplicate knock claims nothing.
 
-Without a key, that knock is yours to wire: any cron sending the same secret as
-a bearer token. A development process is the exception either way — Cloud cannot
-reach a localhost wire, so a dev process runs its own ticker.
+Without a key, that knock is yours to wire: set `VENDO_TICK_SECRET` and have any
+cron send it as a bearer token. That variable also overrides the derived secret
+when you do have a key. A development process is the exception either way —
+Cloud cannot reach a localhost wire, so a dev process runs its own ticker.
 
 External triggers ride the Composio connectors. Connect the account once in the
 console; `hooks.vendo.run` is the public URL the service posts to, and it

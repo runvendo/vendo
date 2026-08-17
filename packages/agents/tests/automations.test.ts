@@ -92,7 +92,7 @@ describe("agent.on() — declaration", () => {
     expect(message).toContain('"every monday" is not a cron expression'); // what
     expect(message).toContain("a cron expression has exactly 5 fields"); // why
     expect(message).toContain('Did you mean "0 9 * * 1"?'); // did-you-mean, and it IS Monday
-    expect(message).toContain("https://vendo.run/docs/capabilities/automations"); // docs
+    expect(message).toContain("https://docs.vendo.run/capabilities/automations"); // docs
     // Declaration-time means nothing was collected: the process fails at module
     // load, not at 2am on a Monday that never comes.
     expect(agentAutomations(a)).toEqual([]);
