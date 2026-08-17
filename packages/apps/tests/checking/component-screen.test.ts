@@ -665,6 +665,47 @@ export default function S() { return <Text text="x" variant="enormous" />; }
     expect(text).not.toContain('prop "variant" prop "variant"');
   });
 
+  it("never reads `key` as a prop — a mapped row writes one, and the real fault is the one named", async () => {
+    const mapped = (row: string) => checkComponentScreen({
+      source: `import { DataTable, Money, TableRow, Text, useQuery } from "@vendo/screen";
+export default function S() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <DataTable rows={pending.data} columns={[{ key: "recipient", label: "To" }, { key: "amount_cents", label: "Amount" }]}>
+      {pending.data.map((transfer) => (
+        <TableRow key={transfer.id}>
+          <Text text={transfer.recipient} />
+          ${row}
+        </TableRow>
+      ))}
+    </DataTable>
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable", "TableRow"],
+      runQuery: async () => ROWS,
+    });
+
+    // The pattern the Kit prompt teaches, `key` and all.
+    expect(await mapped("<Money amount={transfer.amount_cents / 100} />")).toMatchObject({ ok: true, issues: [] });
+
+    // …and where the KEYED element is broken, `key` must not be what the repair
+    // is told about: it rides along in every element-level props error, and the
+    // model would strip the one attribute React requires — losing the real fault,
+    // which the compiler reports only once, on the same tag.
+    const sentences = async (cell: string): Promise<string> =>
+      (await mapped(cell)).issues.map(({ message }) => message).join("\n");
+    for (const [broken, fault] of [
+      ['<Money amount={1} sparkle={true} />', 'sets unknown prop "sparkle"'],
+      ["<Money amount={transfer.recipient} />", 'prop "amount" on <Money> takes number'],
+    ] as const) {
+      const keyed = await sentences(broken.replace("<Money ", "<Money key={transfer.id} "));
+      expect(keyed).toContain(fault);
+      expect(keyed).toBe(await sentences(broken));
+    }
+  });
+
   it("refuses a field the tool's declared response does not carry, and names the real ones", async () => {
     const { text } = await refusal(`import { Text, useQuery } from "@vendo/screen";
 export default function S() {
