@@ -1,0 +1,15 @@
+<content thesys="true" version="2">
+```openui-lang
+root = Card([header, transferTable])
+header = Header(&quot;Pending Transfers&quot;, &quot;2 transfers awaiting processing&quot;)
+transferTable = Table([colRecipient, colAmount, colStatus, colAction], [row1, row2])
+colRecipient = Col(&quot;Recipient&quot;, &quot;string&quot;)
+colAmount = Col(&quot;Amount&quot;, &quot;number&quot;)
+colStatus = Col(&quot;Status&quot;, &quot;string&quot;)
+colAction = Col(&quot;Action&quot;, &quot;action&quot;)
+row1 = [&quot;Alex Rivera&quot;, &quot;$250.00&quot;, Tag(&quot;Pending&quot;, &quot;warning&quot;), ButtonGroup([btn1], &quot;row&quot;)]
+btn1 = Button(&quot;Cancel&quot;, { type: &quot;cancel_transfer&quot;, params: { id: &quot;tr_1&quot; } }, &quot;primary&quot;, &quot;destructive&quot;, &quot;small&quot;)
+row2 = [&quot;Jordan Avery&quot;, &quot;$60.00&quot;, Tag(&quot;Pending&quot;, &quot;warning&quot;), ButtonGroup([btn2], &quot;row&quot;)]
+btn2 = Button(&quot;Cancel&quot;, { type: &quot;cancel_transfer&quot;, params: { id: &quot;tr_2&quot; } }, &quot;primary&quot;, &quot;destructive&quot;, &quot;small&quot;)
+```
+</content>
