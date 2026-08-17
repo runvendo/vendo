@@ -93,11 +93,41 @@ export async function nextConfigPath(root: string): Promise<string | null> {
   return null;
 }
 
+/** The source with every comment BLANKED to spaces rather than removed, so it
+    stays the same LENGTH and an index into it is an index into the original.
+    A commented-out `serverExternalPackages` line is exactly what a host
+    debugging its bundle leaves behind, and reading one as configuration greened
+    E-CFG-004 on a host that was still broken. Deliberately not a parser: it
+    blanks a `//` inside a string literal too, and the cost of that is a printed
+    paste instead of an edit — never a wrong edit. */
+export function blankComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
+}
+
+const TRANSPILE_ARRAY = /transpilePackages\s*:\s*\[([^\]]*)/;
+
+const listsName = (list: string, name: string): boolean =>
+  list.includes(`"${name}"`) || list.includes(`'${name}'`);
+
 /** Which externals a next.config's TEXT does not already carry. */
 export function missingServerExternals(source: string): string[] {
-  const listed = SERVER_EXTERNALS_ARRAY.exec(source)?.[2] ?? "";
-  return NEXT_SERVER_EXTERNALS.filter((name) => !listed.includes(`"${name}"`) && !listed.includes(`'${name}'`));
+  const listed = SERVER_EXTERNALS_ARRAY.exec(blankComments(source))?.[2] ?? "";
+  return NEXT_SERVER_EXTERNALS.filter((name) => !listsName(listed, name));
 }
+
+/** Which of those the host TRANSPILES — the one state where the property must
+    not be written for them. Next REFUSES a package named in both lists and
+    hard-fatals at boot, so a source-linked host (our own demo-bank was one)
+    that follows the advice unedited loses its dev server. */
+export function transpiledServerExternals(source: string): string[] {
+  const listed = TRANSPILE_ARRAY.exec(blankComments(source))?.[1] ?? "";
+  return NEXT_SERVER_EXTERNALS.filter((name) => listsName(listed, name));
+}
+
+/** The extra sentence init's paste and doctor's finding both carry in that
+    state: the fix is two steps, and doing only the second one bricks the host. */
+export const transpileConflictNote = (conflicting: readonly string[]): string =>
+  `Remove ${conflicting.join(", ")} from transpilePackages first — Next refuses a package named in both lists and hard-fatals at boot.`;
 
 /** The workspace packages that look like the real host, for an init run one
     level too high: a monorepo root declares neither next nor express, so

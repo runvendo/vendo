@@ -7,7 +7,7 @@ import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
-import { NEXT_SERVER_EXTERNALS } from "../../src/cli/framework.js";
+import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE } from "../../src/cli/framework.js";
 import { firstSentence, prettyThemeReview, runInit, type InitReceipt } from "../../src/cli/init.js";
 import type { InitQuestions } from "../../src/cli/init-questions.js";
 import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
@@ -2117,6 +2117,29 @@ describe("the next.config repair (Next hosts)", () => {
     expect(config).toContain("reactStrictMode: true");
   });
 
+  /** A commented-out list is what a host debugging its bundle leaves behind.
+      Reading one as real configuration skipped the repair AND, on the branch
+      that splices, wrote the names into the comment. */
+  it("ignores a commented-out list and adds the real property", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      'const nextConfig = {\n  // serverExternalPackages: ["esbuild"],\n  reactStrictMode: true,\n};\n\nexport default nextConfig;\n');
+    expect(await run(root, output())).toBe(0);
+    const config = await readFile(join(root, "next.config.ts"), "utf8");
+    expect(config).toContain('serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(config, "the host's comment is left exactly as they wrote it").toContain('  // serverExternalPackages: ["esbuild"],');
+  });
+
+  it("ignores a commented-out export when picking the object to edit", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      "/* export default { reactStrictMode: false }; */\nexport default { reactStrictMode: true };\n");
+    expect(await run(root, output())).toBe(0);
+    const config = await readFile(join(root, "next.config.ts"), "utf8");
+    expect(config).toContain("/* export default { reactStrictMode: false }; */");
+    expect(config).toMatch(/export default \{\n {2}serverExternalPackages/);
+  });
+
   it("splices only the missing names into a list the host already keeps", async () => {
     const root = await fixture();
     await writeFile(join(root, "next.config.ts"),
@@ -2135,6 +2158,30 @@ describe("the next.config repair (Next hosts)", () => {
     expect(receiptOf(sink.logs).wrote).toContain("next.config.mjs");
     expect(await run(root, output())).toBe(0);
     expect(await readFile(join(root, "next.config.mjs"), "utf8")).toBe(written);
+  });
+
+  /** Next hard-fatals at boot on a package named in BOTH transpilePackages and
+      serverExternalPackages (our own demo-bank hit it). A source-linked host
+      that transpiles @vendoai/apps must therefore get the paste, never the
+      write: init following its own advice would brick their dev server. */
+  it("keeps the paste when the host transpiles a package we would externalize", async () => {
+    const root = await fixture();
+    const source = 'const nextConfig = {\n  transpilePackages: ["@vendoai/apps"],\n};\n\nexport default nextConfig;\n';
+    await writeFile(join(root, "next.config.ts"), source);
+    const sink = output();
+    expect(await agentRun(root, sink)).toBe(0);
+    expect(await readFile(join(root, "next.config.ts"), "utf8"), "init must not brick the host").toBe(source);
+    const paste = receiptOf(sink.logs).pasteEdits.find((edit) => edit.file === "next.config.ts");
+    expect(paste?.lines.join("\n")).toContain(NEXT_SERVER_EXTERNALS_LINE);
+    expect(paste?.why).toContain("Remove @vendoai/apps from transpilePackages first");
+  });
+
+  it("still edits when the transpilePackages entry is only a comment", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      'const nextConfig = {\n  // transpilePackages: ["@vendoai/apps"],\n};\n\nexport default nextConfig;\n');
+    expect(await run(root, output())).toBe(0);
+    expect(await readFile(join(root, "next.config.ts"), "utf8")).toContain(NEXT_SERVER_EXTERNALS_LINE);
   });
 
   it("hands back the paste instead of rewriting a config it cannot read", async () => {
