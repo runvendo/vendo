@@ -50,13 +50,11 @@ const APP_DOCUMENT_FIELDS = [
   "name",
   "description",
   "ui",
-  "tree",
   "components",
   "storage",
-  // A component screen IS its `app.tsx` (open.ts reads `source[SCREEN_FILE]`
-  // before `tree`), so an archive without `source` carries the document's
-  // metadata and nothing that can ever open. Inline only — see
-  // {@link assertPortableSource}.
+  // A component screen IS its `app.tsx` (open.ts reads `source[SCREEN_FILE]`),
+  // so an archive without `source` carries the document's metadata and nothing
+  // that can ever open. Inline only — see {@link assertPortableSource}.
   "source",
   "machine",
   "egress",
@@ -98,6 +96,21 @@ const assertPortableSource = (document: unknown): void => {
       );
     }
   }
+};
+
+/**
+ * A `tree` with no `source` beside it is an app exported before an app was its
+ * own `app.tsx` — the layout WAS the artifact. Nothing here can turn one back
+ * into a screen, and the field list below drops it, so importing quietly would
+ * mint a row that can never open. Refused instead, in those words.
+ */
+const assertOpenableSource = (document: unknown): void => {
+  if (!isRecord(document) || document["tree"] === undefined || document["source"] !== undefined) return;
+  throw validationError(
+    "this .vendoapp holds a stored layout and no source: it was exported before an app was its own"
+    + " app.tsx, so there is nothing in it that can open — re-export it from a deployment that still"
+    + " has the app's source",
+  );
 };
 
 const validateImportedDocument = (input: unknown): AppDocument => {
@@ -231,6 +244,7 @@ export const createAppInterchange = (
         ? parseArchive(source)
         : { document: source, hasAppDirectory: false };
       assertPortableSource(parsed.document);
+      assertOpenableSource(parsed.document);
       const imported = validateImportedDocument(withFreshIdentity(parsed.document, appId));
       await dependencies.engine.put(
         APPS_COLLECTION,

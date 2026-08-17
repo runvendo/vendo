@@ -295,7 +295,6 @@ const createSurfaceFlip = (deps: Pick<AppsRuntimeContext, "requireOwned" | "pers
       } else if (lane.server.servesUi === true && lane.server.servedOk === true) {
         const base = await requireOwned(appId, ctx);
         const flipped = structuredClone(base);
-        delete flipped.tree;
         delete flipped.components;
         delete flipped.componentTools;
         delete flipped.seed;

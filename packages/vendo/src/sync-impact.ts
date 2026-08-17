@@ -1,6 +1,5 @@
 import {
   automationRecordSchema,
-  VENDO_TREE_FORMAT,
   VendoError,
   type AppDocument,
   type AutomationRecord,
@@ -35,36 +34,10 @@ async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecor
   return records;
 }
 
-function collectActions(value: unknown, tools: Set<string>): void {
-  if (Array.isArray(value)) {
-    for (const item of value) collectActions(item, tools);
-    return;
-  }
-  if (typeof value !== "object" || value === null) return;
-  const record = value as Record<string, unknown>;
-  for (const key of ["action", "$action"] as const) {
-    const reference = record[key];
-    if (typeof reference === "string" && !reference.startsWith("fn:")) tools.add(reference);
-  }
-  for (const nested of Object.values(record)) collectActions(nested, tools);
-}
-
 function referencedTools(doc: AppDocument): Set<string> {
   const tools = new Set<string>();
-  if (doc.tree?.formatVersion === VENDO_TREE_FORMAT) {
-    const tree = doc.tree as {
-      queries?: Array<{ tool?: unknown }>;
-      nodes?: Array<{ props?: unknown }>;
-    };
-    for (const query of tree.queries ?? []) {
-      if (typeof query.tool === "string" && !query.tool.startsWith("fn:")) tools.add(query.tool);
-    }
-    for (const node of tree.nodes ?? []) collectActions(node.props, tools);
-  }
   // The compiler-stamped manifest of what each island's SOURCE calls through
-  // the ambient `tools` API. Those calls are in generated code, so they never
-  // appear in tree.queries or node props — without this, an app full of islands
-  // reports zero references for every tool it actually runs.
+  // the ambient `tools` API — the only place a document names a tool.
   for (const names of Object.values(doc.componentTools ?? {})) {
     for (const name of names) {
       if (!name.startsWith("fn:")) tools.add(name);

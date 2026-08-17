@@ -158,7 +158,6 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
       { name: "unattended-irreversibility", kind: "judgment" as const, rule: NO_UNATTENDED },
     ];
     const layer = createCheckingLayer({
-      deps: deps(model),
       checks: [reviewerCheck(deps(model), samples, judgmentRules(packChecks)), ...packChecks],
     });
 
@@ -300,7 +299,7 @@ describe("the AI reviewer", () => {
       where: '<Button> labeled "Remind client"',
       message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
     }]));
-    const layer = createCheckingLayer({ deps: deps(model), checks: [reviewerCheck(deps(model), samples)] });
+    const layer = createCheckingLayer({ checks: [reviewerCheck(deps(model), samples)] });
 
     // An app with no title: one fact finding, alongside whatever the reviewer says.
     const findings = await layer.run({

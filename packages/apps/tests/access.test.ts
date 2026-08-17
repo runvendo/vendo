@@ -16,6 +16,7 @@ import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { screenDocument } from "../src/server/testing/screen-document.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 // One copy of the AppAccess stand-in, shared with served-orgs.test.ts.
 import { seedGrantRows as seedGrants, storeAccessFixture as storeAccess } from "./app-access-fixture.js";
@@ -282,15 +283,7 @@ describe("§9.9 — the additive, ctx-aware venue-state slot", () => {
           : { adoption: { automation: "nightly digest" } };
       },
     });
-    const app: AppDocument = {
-      ...doc("app_venue"),
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-    };
+    const app = screenDocument("app_venue");
     await seedAppRow(engineOverAdapter(store), app, "acme");
     await seedGrants(store, "app_venue", { "user:kim": "viewer", "user:dana": "editor" });
 
@@ -312,15 +305,7 @@ describe("§9.3 — the MCP door inherits can() rather than re-deriving it", () 
     // there is no second permission path to police. This exercises exactly that
     // triple at viewer level and for a stranger.
     const { runtime, store } = setup();
-    const app: AppDocument = {
-      ...doc("app_door"),
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-    };
+    const app = screenDocument("app_door");
     await seedAppRow(engineOverAdapter(store), app, "acme");
     await seedGrants(store, "app_door", { "user:kim": "viewer" });
 

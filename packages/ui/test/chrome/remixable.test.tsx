@@ -205,8 +205,7 @@ describe("Remixable — the wrapper fork gesture + in-place mount", () => {
 
   it("keeps the ORIGINAL rendered for a REJECTED review-kind remix, with the note in the ✦ popover", async () => {
     const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
-    const stored = wire.state.apps.find(app => app.id === forked.id)!;
-    (stored.tree as unknown as { inClient: unknown }).inClient = {
+    wire.state.surfaces.get(forked.id)!["inClient"] = {
       granted: false,
       versionHash: "sha256:v1",
       reason: "pending-review",
@@ -224,8 +223,7 @@ describe("Remixable — the wrapper fork gesture + in-place mount", () => {
 
   it("reports BOTH states when an older approved version serves while the current one is pending review", async () => {
     const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
-    const stored = wire.state.apps.find(app => app.id === forked.id)!;
-    (stored.tree as unknown as { inClient: unknown }).inClient = {
+    wire.state.surfaces.get(forked.id)!["inClient"] = {
       granted: true,
       versionHash: "sha256:v1",
       approvedBy: "host-admin",
@@ -241,8 +239,7 @@ describe("Remixable — the wrapper fork gesture + in-place mount", () => {
 
   it("reports BOTH states when an older approved version serves and the current one was rejected", async () => {
     const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
-    const stored = wire.state.apps.find(app => app.id === forked.id)!;
-    (stored.tree as unknown as { inClient: unknown }).inClient = {
+    wire.state.surfaces.get(forked.id)!["inClient"] = {
       granted: true,
       versionHash: "sha256:v1",
       approvedBy: "host-admin",
@@ -260,8 +257,7 @@ describe("Remixable — the wrapper fork gesture + in-place mount", () => {
     // Seed a fork whose open payload carries the SERVER-authoritative venue
     // verdict (lane W1c owns minting it; the popover only renders it).
     const forked = await client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
-    const stored = wire.state.apps.find(app => app.id === forked.id)!;
-    (stored.tree as unknown as { inClient: unknown }).inClient = {
+    wire.state.surfaces.get(forked.id)!["inClient"] = {
       granted: true, versionHash: "sha256:v1", approvedBy: "host-admin", at: "2026-08-02T00:00:00.000Z",
     };
     mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);

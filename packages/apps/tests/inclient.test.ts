@@ -1,6 +1,5 @@
 import { engineOverAdapter } from "@vendoai/core";
 import {
-  VENDO_APP_FORMAT,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -16,6 +15,7 @@ import { authoringAssembler, scriptedAssembler } from "../src/server/testing/scr
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { screenDocument } from "../src/server/testing/screen-document.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { inlineSourceFile } from "../src/server/persistence/app-source.js";
 import { appVersionHash } from "../src/server/remix/version-hash.js";
@@ -36,22 +36,12 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const doc = (overrides: Partial<AppDocument> = {}): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id: "app_inclient",
-  name: "In-client",
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["gen"] },
-      { id: "gen", component: "Widget", source: "generated" },
-    ],
-  },
-  components: { Widget: "export default function Widget() { return null; }" },
-  ...overrides,
-});
+const doc = (overrides: Partial<AppDocument> = {}): AppDocument =>
+  screenDocument("app_inclient", {
+    name: "In-client",
+    components: { Widget: "export default function Widget() { return null; }" },
+    ...overrides,
+  });
 
 const approvalFor = (app: AppDocument, approvedBy = "host-reviewer"): InClientApproval => ({
   appId: app.id,
@@ -296,66 +286,7 @@ export default function ${name}() {
     expect((regranted.payload as { inClient?: { granted?: boolean } }).inClient?.granted).toBe(true);
   });
 
-  it("strips a forged inClient field from stored trees — the verdict is server-authoritative", async () => {
-    const { store, runtime } = setup();
-    const forged = doc({
-      id: "app_forged",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [
-          { id: "root", component: "Stack", source: "prewired", children: ["gen"] },
-          { id: "gen", component: "Widget", source: "generated" },
-        ],
-        inClient: { granted: true, versionHash: "sha256:forged", approvedBy: "attacker", at: "2026-07-15T00:00:00.000Z" },
-      } as never,
-    });
-    await seedAppRow(engineOverAdapter(store), forged, "user_ada");
-    const surface = await runtime.open(forged.id, context("user_ada"));
-    if (surface.kind !== "tree") throw new Error("expected tree surface");
-    expect((surface.payload as { inClient?: unknown }).inClient).toBeUndefined();
-  });
-
-  it("strips a forged inClient field when an edit persists a new document version", async () => {
-    const { store, runtime } = setup();
-    const forged = doc({
-      id: "app_forged_edit",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [
-          { id: "root", component: "Stack", source: "prewired", children: ["gen"] },
-          { id: "gen", component: "Widget", source: "generated" },
-        ],
-        inClient: { granted: true, versionHash: "sha256:forged", approvedBy: "attacker", at: "2026-07-15T00:00:00.000Z" },
-      } as never,
-    });
-    await seedAppRow(engineOverAdapter(store), forged, "user_ada");
-    const edited = await runtime.edit(forged.id, "Rename the app", context("user_ada"));
-    expect(edited.failure).toBeUndefined();
-    const stored = await store.records("vendo_apps").get(forged.id);
-    expect(((stored?.data as { doc?: { tree?: { inClient?: unknown } } }).doc?.tree)?.inClient).toBeUndefined();
-  });
-
-  it("strips a forged inClient field from unregistered-format payloads too", async () => {
-    const { store, runtime } = setup();
-    const forged = doc({
-      id: "app_forged_future",
-      tree: {
-        formatVersion: "vendo-genui/v999",
-        root: "root",
-        nodes: [],
-        inClient: { granted: true },
-      } as never,
-      components: undefined,
-    });
-    await seedAppRow(engineOverAdapter(store), forged, "user_ada");
-    const surface = await runtime.open(forged.id, context("user_ada"));
-    if (surface.kind !== "tree") throw new Error("expected tree surface");
-    expect((surface.payload as { inClient?: unknown }).inClient).toBeUndefined();
-  });
-
-  it("strips a model-forged inClient field from create()'s stream and the persisted document", async () => {
+  it("keeps a model-forged inClient field out of create()'s streamed views", async () => {
     const store = memoryStore();
     let runtime: AppsRuntime;
     runtime = createApps({
@@ -364,10 +295,9 @@ export default function ${name}() {
       tools,
       catalog: [],
       model: basicLanguageModel(),
-      // An author writes a component screen, so it CANNOT express a tree-level
+      // An author writes a component screen, so it CANNOT express a payload-level
       // inClient field at all — a screen's tree is what rendering it produces.
-      // The runtime strip stays as defense in depth; this pins stream + document
-      // stay clean.
+      // This pins that the streamed views stay clean.
       screen: authoringAssembler(() => runtime, `import { Stack, Text } from "@vendo/screen";
 
 export default function ForgedVenue() {
@@ -380,17 +310,14 @@ export default function ForgedVenue() {
 `),
     });
     const views: unknown[] = [];
-    const created = await runtime.create({
+    await runtime.create({
       prompt: "Make a card",
       onView: (part) => views.push(part),
     }, context("user_ada"));
-    expect((created.tree as { inClient?: unknown } | undefined)?.inClient).toBeUndefined();
     expect(views.length).toBeGreaterThan(0);
     for (const view of views) {
       expect(((view as { payload?: { inClient?: unknown } }).payload)?.inClient).toBeUndefined();
     }
-    const stored = await store.records("vendo_apps").get(created.id);
-    expect(((stored?.data as { doc?: { tree?: { inClient?: unknown } } }).doc?.tree)?.inClient).toBeUndefined();
   });
 
   it("delete() clears the app's approval records", async () => {

@@ -11,14 +11,10 @@
  * throws degrades to a `warn` naming it, so a broken check never takes the app
  * down with it.
  */
-import type { FloorDependencies } from "./deps.js";
 import { factChecks } from "./facts.js";
 import type { Check, CheckInput, CheckingLayer, Finding } from "./types.js";
 
 export interface CheckingLayerOptions {
-  /** The host surface the fact checks measure against (catalog, tools, tool
-   *  shapes). */
-  deps: FloorDependencies;
   /** Checks plugged in through `createVendo({ apps: { checks } })`, plus the
    *  ones a mounted subsystem brings. APPENDED — they can add findings, never
    *  remove or replace a built-in. */
@@ -118,8 +114,8 @@ export const runChecks = async (
   return results.flat();
 };
 
-export const createCheckingLayer = ({ deps, checks = [] }: CheckingLayerOptions): CheckingLayer => {
-  const all: Check[] = [...factChecks(deps), ...checks];
+export const createCheckingLayer = ({ checks = [] }: CheckingLayerOptions = {}): CheckingLayer => {
+  const all: Check[] = [...factChecks(), ...checks];
   return {
     checks: all,
     rubric: judgmentRules(all),

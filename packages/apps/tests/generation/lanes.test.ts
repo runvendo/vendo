@@ -3,6 +3,7 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { SCREEN_FILE } from "../../src/contract/genui/component/index.js";
 import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
 import type { GeneratedAppDocument, HostToolInfo } from "../../src/server/generation/engine.js";
 import {
@@ -34,16 +35,32 @@ const tools: HostToolInfo[] = [
   { name: "vendo_apps_data_list", description: "Read app records.", risk: "read" },
 ];
 
+/** The app the lane is handed: it IS its `app.tsx`, which is the only artifact
+ *  a document carries. The lane never reads it — it hands the box the person's
+ *  own words — so this stands in for "a real app, unchanged by the lane". */
 const document = (): GeneratedAppDocument => ({
   format: VENDO_APP_FORMAT,
   name: "Invoices workspace",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "app",
-    nodes: [{ id: "app", component: "Stack", source: "prewired", children: [] }],
-  } as GeneratedAppDocument["tree"],
+  source: {
+    [SCREEN_FILE]: {
+      hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      bytes: SCREEN.length,
+      text: SCREEN,
+    },
+  },
 });
+
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function InvoicesWorkspace() {
+  return (
+    <Stack gap={12}>
+      <Text text="Invoices" variant="heading" />
+    </Stack>
+  );
+}
+`;
 
 /** The lane never asks a model anything — the box does. */
 const model = scriptedLanguageModel(() => "unused");

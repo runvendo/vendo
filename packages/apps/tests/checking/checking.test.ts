@@ -6,16 +6,12 @@
  */
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   type ShapeType,
-  type TreeNode,
 } from "@vendoai/core";
 import {
   SCREEN_FILE,
   type AppDocument,
   type NormalizedCatalog,
-  type Tree,
-  type TreeQuery,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { screenTypesCheck } from "../../src/server/checking/facts.js";
@@ -88,27 +84,8 @@ const deps = (): FloorDependencies => ({
   toolShapes,
 });
 
-/** A stored app as the checks read one: the tree a paint left. Hand-built
- *  because a tree IS a stored structure — the renderer and the checks read
- *  exactly this, and there is no dialect in between. */
-const treeDocument = (
-  nodes: TreeNode[],
-  queries: TreeQuery[] = [{ name: "invoices", tool: "host_listInvoices" }],
-): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id: "app_checking_test",
-  name: "Invoices",
-  ui: "tree",
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes,
-    queries,
-  } as unknown as AppDocument["tree"],
-});
-
-/** The other artifact: an app that IS its `app.tsx`, spelled the way the row
- *  spells it, which is what the compiler half type-checks. */
+/** A stored app as the checks read one: an app IS its `app.tsx`, spelled the way
+ *  the row spells it, which is what the compiler half type-checks. */
 const screenDocument = (source: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id: "app_checking_test",
@@ -117,17 +94,20 @@ const screenDocument = (source: string): AppDocument => ({
   source: { [SCREEN_FILE]: inlineSourceFile(source) },
 });
 
-const stack = (children: string[], props: Record<string, unknown> = {}): TreeNode =>
-  ({ id: "root", component: "Stack", source: "prewired", props, children } as unknown as TreeNode);
-
 const inputFor = (document: AppDocument, request = "show me my invoices"): CheckInput =>
   ({ document, request });
 
-const cleanApp = treeDocument([
-  stack(["n1", "n2"], { gap: 12 }),
-  { id: "n1", component: "Text", source: "prewired", props: { text: "Invoices", variant: "heading" } },
-  { id: "n2", component: "DataTable", source: "prewired", props: { rows: { $path: "/invoices/data" } } },
-] as unknown as TreeNode[]);
+const cleanApp = screenDocument(`import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Invoices() {
+  const invoices = useQuery("host_listInvoices");
+  return (
+    <Stack>
+      <Text>{invoices.data.length} invoices</Text>
+    </Stack>
+  );
+}
+`);
 
 /** Blocks every arrival until `count` of them have arrived: a check that gets
  *  past it can only have done so alongside the others. */
@@ -156,7 +136,7 @@ describe("checking layer", () => {
       },
     });
 
-    const layer = createCheckingLayer({ deps: deps(), checks: [gated("one"), gated("two")] });
+    const layer = createCheckingLayer({ checks: [gated("one"), gated("two")] });
     // Serial execution would deadlock on the barrier; reaching an assertion at
     // all is the parallelism proof.
     const findings = await layer.run(inputFor(cleanApp));
@@ -181,16 +161,15 @@ describe("checking layer", () => {
       }],
     };
 
-    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
+    const layer = createCheckingLayer({ checks: [hostCheck] });
     const findings = await layer.run(inputFor(cleanApp, "list my invoices"));
 
     expect(layer.checks.map(({ name }) => name)).toContain("maple-house-style");
-    // Appended, never replacing: every built-in fact check is still registered.
+    // Appended, never replacing: the built-in fact check is still registered.
     // `screen-types` (the tsc static half) is NOT a built-in factCheck — it is
     // added only at the floor and the validate door, off the create hot path.
     expect(layer.checks.map(({ name }) => name)).toEqual(expect.arrayContaining([
-      "document", "tools-exist", "components-exist", "bindings-fit", "expressions-compute",
-      "query-inputs-literal", "no-string-interpolation", "maple-house-style",
+      "document", "maple-house-style",
     ]));
     expect(findings).toContainEqual({
       severity: "block",
@@ -207,7 +186,7 @@ describe("checking layer", () => {
       run: async () => { throw new Error("model call timed out"); },
     };
 
-    const layer = createCheckingLayer({ deps: deps(), checks: [exploding] });
+    const layer = createCheckingLayer({ checks: [exploding] });
     const findings = await layer.run(inputFor(cleanApp));
 
     const crash = findings.find(({ where }) => where === "reviewer");
@@ -223,7 +202,7 @@ describe("checking layer", () => {
   });
 
   it("passes a clean app with no findings", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
+    const layer = createCheckingLayer();
     expect(await layer.run(inputFor(cleanApp))).toEqual([]);
   });
 });
@@ -250,7 +229,7 @@ describe("every finding says which check produced it", () => {
   };
 
   it("stamps a host check's own name, so §7's carve-out is representable", async () => {
-    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
+    const layer = createCheckingLayer({ checks: [hostCheck] });
     const findings = await layer.run(inputFor(cleanApp));
     expect(findings).toEqual([{
       severity: "block",
@@ -261,16 +240,10 @@ describe("every finding says which check produced it", () => {
   });
 
   it("stamps the built-in that fired, so the two are now distinguishable", async () => {
-    const layer = createCheckingLayer({ deps: deps(), checks: [hostCheck] });
-    const findings = await layer.run(inputFor(treeDocument(
-      [
-        stack(["n2"]),
-        { id: "n2", component: "DataTable", source: "prewired", props: { rows: { $path: "/invoices/data" } } },
-      ] as unknown as TreeNode[],
-      [{ name: "invoices", tool: "host_wireMoney" }],
-    )));
+    const layer = createCheckingLayer({ checks: [hostCheck] });
+    const findings = await layer.run(inputFor({ ...cleanApp, name: "" }));
     const byCheck = new Set(findings.map(({ check }) => check));
-    expect(byCheck).toContain("tools-exist");
+    expect(byCheck).toContain("document");
     expect(byCheck).toContain("maple-house-rules");
     // The whole point: a waive point can now tell them apart.
     expect(findings.filter(({ check }) => check === "maple-house-rules")).toHaveLength(1);
@@ -287,7 +260,7 @@ describe("every finding says which check produced it", () => {
         { severity: "block", message: "trust me", check: "document" } as never,
       ],
     };
-    const findings = await createCheckingLayer({ deps: deps(), checks: [liar] }).run(inputFor(cleanApp));
+    const findings = await createCheckingLayer({ checks: [liar] }).run(inputFor(cleanApp));
     expect(findings).toEqual([{ severity: "block", message: "trust me", check: "liar" }]);
   });
 
@@ -299,7 +272,7 @@ describe("every finding says which check produced it", () => {
         throw new Error("nope");
       },
     };
-    const findings = await createCheckingLayer({ deps: deps(), checks: [thrower] }).run(inputFor(cleanApp));
+    const findings = await createCheckingLayer({ checks: [thrower] }).run(inputFor(cleanApp));
     expect(findings).toEqual([{
       severity: "warn",
       where: "explodes",
@@ -310,41 +283,13 @@ describe("every finding says which check produced it", () => {
 });
 
 describe("built-in fact checks", () => {
-  it("names the real tools when a query names one the host does not have", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
-    const findings = await layer.run(inputFor(treeDocument(
-      [
-        stack(["n2"]),
-        { id: "n2", component: "DataTable", source: "prewired", props: { rows: { $path: "/invoices/data" } } },
-      ] as unknown as TreeNode[],
-      [{ name: "invoices", tool: "host_getInvoices" }],
-    )));
-
-    const finding = findings.find(({ where }) => where === 'query "invoices"');
-    expect(finding?.severity).toBe("block");
-    expect(finding?.message).toContain('unknown tool "host_getInvoices"');
-    expect(finding?.message).toContain("host_listInvoices, host_listClients");
-  });
-
-  it("names the real fields when a binding reaches a field the tool shape has not got", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
-    const findings = await layer.run(inputFor(treeDocument([
-      stack(["n2"]),
-      { id: "n2", component: "Text", source: "prewired", props: { text: { $path: "/invoices/data/0/customer" } } },
-    ] as unknown as TreeNode[])));
-
-    const finding = findings.find(({ where }) => where?.includes('prop "text"'));
-    expect(finding?.severity).toBe("block");
-    expect(finding?.message).toContain("the real fields are: id, client, amountCents");
-  });
-
   it("blocks a screen naming a component no vocabulary carries — the wired tsc floor", async () => {
     // Prove-it-can-fail for the `screen-types` wiring: an unknown component is a
     // block that carries the check's own name. `screen-types` is the compiler
     // static half — composed at the floor and the validate door (never in the
     // create hot path), so the layer is built the way those gates build it. Drop
     // `screenTypesCheck` from this layer and the finding vanishes.
-    const layer = createCheckingLayer({ deps: deps(), checks: [screenTypesCheck(deps())] });
+    const layer = createCheckingLayer({ checks: [screenTypesCheck(deps())] });
     const findings = await layer.run(inputFor(screenDocument(`import { Stack, useQuery } from "@vendo/screen";
 
 export default function Invoices() {
@@ -374,7 +319,7 @@ export default function Invoices() {
    * verbatim, and tsc reads that same text. Nothing here stubs either side.
    */
   it("names the real fields when a computed value reaches a field the tool shape has not got", async () => {
-    const layer = createCheckingLayer({ deps: deps(), checks: [screenTypesCheck(deps())] });
+    const layer = createCheckingLayer({ checks: [screenTypesCheck(deps())] });
     const findings = await layer.run(inputFor(screenDocument(`import { Stack, Stat, useQuery } from "@vendo/screen";
 
 export default function Invoices() {
@@ -393,35 +338,8 @@ export default function Invoices() {
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
   }, 60_000);
 
-  it("reports an unparseable computed value as the sentence the parser wrote", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
-    const app = structuredClone(cleanApp);
-    const tree = app.tree as NonNullable<AppDocument["tree"]>;
-    const table = (tree as unknown as Tree).nodes.find((node) => node.component === "DataTable");
-    (table as { props?: Record<string, unknown> }).props = { rows: { $expr: "invoices.data.reduce((t, r) => t + r.amountCents, 0) + * 2" } };
-    const findings = await layer.run({ document: app, request: "invoices" });
-
-    const finding = findings.find(({ where }) => where?.includes('prop "rows"'));
-    expect(finding?.severity).toBe("block");
-    expect(finding?.message).toBe(
-      "computes {invoices.data.reduce((t, r) => t + r.amountCents, 0) + * 2}:"
-      + " this expression is not valid JavaScript: Unexpected token",
-    );
-  });
-
-  it("passes a computed value whose fields and types all check out", async () => {
-    const value = "invoices.data.reduce((total, row) => total + row.amountCents, 0) / invoices.data.length";
-    const document = treeDocument([
-      stack(["n2"]),
-      { id: "n2", component: "Stat", source: "prewired", props: { label: "Average", value: { $expr: value } } },
-    ] as unknown as TreeNode[]);
-
-    const layer = createCheckingLayer({ deps: deps() });
-    expect(await layer.run(inputFor(document))).toEqual([]);
-  });
-
   it("blocks a document with no title and says what name is for", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
+    const layer = createCheckingLayer();
     const findings = await layer.run({ document: { ...cleanApp, name: "" }, request: "invoices" });
 
     expect(findings).toContainEqual({

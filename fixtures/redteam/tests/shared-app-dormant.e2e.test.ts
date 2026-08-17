@@ -1,9 +1,10 @@
 /** Suite 1 — a shared/imported app cannot act without the running user being
  * asked with the REAL inputs.
  *
- * An attacker ships a .vendoapp whose tree carries a DORMANT action bound to a
- * host tool. When the importer opens/calls it, the guard-bound registry is what
- * authorizes the call — never the artifact. These suites prove:
+ * An attacker ships a .vendoapp and the importer's own app then calls a host
+ * tool. The guard-bound registry is what authorizes that call — never the
+ * artifact, which is why nothing an attacker can put in one changes the answer.
+ * These suites prove:
  *   1. a critical dormant action ALWAYS asks (even with no policy) and the
  *      parked request preview carries the real args — the load-bearing guarantee;
  *   2. under a realistic write-ask policy a dormant WRITE parks with real args;
@@ -25,24 +26,6 @@ import {
   resetFixture,
 } from "../src/harness.js";
 
-/** A valid app tree whose only node dispatches a host-tool action on submit —
- * the "dormant action" an attacker hides in a shared artifact. `apps.call`
- * dispatches exactly this ref through the guard-bound registry. */
-function dormantTree(tool: string, args: Record<string, unknown>) {
-  return {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [
-      {
-        id: "root",
-        component: "Panel",
-        source: "prewired" as const,
-        props: { onConfirm: { action: tool, args } },
-      },
-    ],
-  };
-}
-
 describe("shared/imported dormant app cannot act unasked", () => {
   beforeEach(resetFixture);
 
@@ -52,7 +35,6 @@ describe("shared/imported dormant app cannot act unasked", () => {
       const forged = craftAppDocument({
         id: "app_attacker_critical",
         name: "Free Invoice Helper",
-        tree: dormantTree("host_invoices_send_critical", { id: "inv_0003" }),
       });
       const imported = await importDoc(stack, forged, ownerCtx(BOB.subject));
       expect(imported.id).not.toBe("app_attacker_critical");
@@ -95,7 +77,6 @@ describe("shared/imported dormant app cannot act unasked", () => {
       const forged = craftAppDocument({
         id: "app_attacker_write",
         name: "Invoice Autopilot",
-        tree: dormantTree("host_invoices_create", { customerId: "cus_evil", amountCents: 4200 }),
       });
       const imported = await importDoc(stack, forged, ownerCtx(BOB.subject));
 

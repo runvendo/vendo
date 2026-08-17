@@ -96,7 +96,7 @@ describe("a seeded app survives its own edit door", () => {
     expect(JSON.stringify(app)).not.toContain(captured.source.slice(0, 80));
 
     const deps = floorDeps();
-    const findings = await createCheckingLayer({ deps, checks: floorChecks(deps) })
+    const findings = await createCheckingLayer({ checks: floorChecks(deps) })
       .run({ document: app as AppDocument, request: "" });
 
     expect(findings.filter(({ severity }) => severity === "block")).toEqual([]);

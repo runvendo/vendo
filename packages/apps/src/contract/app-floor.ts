@@ -53,6 +53,15 @@ export interface CheckInput {
   document: AppDocument;
   /** The user's own words — what the app was asked to be. */
   request: string;
+  /**
+   * The tree the screen just RENDERED — set on the paint gate and nowhere else,
+   * because that is the only moment it exists. A check about what is on screen
+   * ("no unmasked account numbers") has nothing else to read, and no document
+   * carries it: a screen's tree is what rendering it produces, so this one is
+   * authoritative exactly because nothing stored it — it is this screen, on this
+   * data, one moment ago.
+   */
+  rendered?: { root: string; nodes: TreeNode[] };
 }
 
 /**

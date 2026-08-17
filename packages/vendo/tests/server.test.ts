@@ -28,6 +28,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 // "./server.js" — corpus-triage Task 9.
 import { authJs } from "../src/auth-presets/auth-js.js";
 import { fakeConsole } from "@vendoai/store/test-util";
+import { screenSource } from "./screen-fixture.js";
 import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "../src/server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -73,12 +74,15 @@ const app = (id = "app_wire"): AppDocument => ({
   id,
   name: "Wire app",
   ui: "tree",
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "ok" } }],
-  },
+  source: screenSource(),
 });
+
+/** What OPENING an app renders. A paint produces it; no document carries one. */
+const PAYLOAD = {
+  formatVersion: VENDO_TREE_FORMAT,
+  root: "root",
+  nodes: [{ id: "root", component: "Text", props: { text: "ok" } }],
+} as never;
 
 /**
  * Any prompt, as one flat string — every string leaf of it, in order.
@@ -221,7 +225,7 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.apps, "create").mockResolvedValue(app());
   vi.spyOn(vendo.apps, "get").mockResolvedValue(app());
   vi.spyOn(vendo.apps, "delete").mockResolvedValue();
-  vi.spyOn(vendo.apps, "open").mockResolvedValue({ kind: "tree", payload: app().tree! });
+  vi.spyOn(vendo.apps, "open").mockResolvedValue({ kind: "tree", payload: PAYLOAD });
   vi.spyOn(vendo.apps, "call").mockResolvedValue({ status: "ok", output: {} });
   vi.spyOn(vendo.apps, "edit").mockResolvedValue({
     app: app(), version: { at: new Date().toISOString(), intent: "edit", rung: 1 },

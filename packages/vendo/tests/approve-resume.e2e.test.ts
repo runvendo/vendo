@@ -12,6 +12,7 @@ import {
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
+import { screenSource } from "./screen-fixture.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 // W0 — the approve→resume engine fix (held-out gate C4/C11): a mutating in-app
@@ -84,11 +85,7 @@ async function harness() {
       id: "app_seed_id_is_replaced",
       name: "Client messenger",
       ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
+      source: screenSource(),
     } as AppDocument,
     ctx,
   );

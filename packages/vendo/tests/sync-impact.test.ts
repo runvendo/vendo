@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   type AppDocument,
   type PermissionGrant,
   type Principal,
@@ -20,18 +19,17 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_sync_impact" };
 
+/** An app that names a tool. A document names one in exactly one place now: the
+ *  compiler-stamped manifest of what each island's SOURCE calls through the
+ *  ambient `tools` API. */
 function plainApp(id: string, name: string, tool: string): AppDocument {
   return {
     format: VENDO_APP_FORMAT,
     id,
     name,
     ui: "tree",
-    tree: {
-      formatVersion: VENDO_TREE_FORMAT,
-      root: "root",
-      nodes: [{ id: "root", component: "Text", props: { text: name } }],
-      queries: [{ name: "widgets", tool }],
-    },
+    components: { Widgets: "export default function Widgets(){ return null; }" },
+    componentTools: { Widgets: [tool] },
   };
 }
 
@@ -114,12 +112,6 @@ describe("computeImpact", () => {
       id: "app_island",
       name: "Island dashboard",
       ui: "tree",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [{ id: "root", component: "OrdersPanel", props: {} }],
-        queries: [],
-      },
       componentTools: { OrdersPanel: ["host_get_orders"] },
     });
 

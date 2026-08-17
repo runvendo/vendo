@@ -78,11 +78,6 @@ const seedDoc = (automations?: string[]): AppDocument => ({
   id: APP_ID,
   name: "Invoice board",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "app",
-    nodes: [{ id: "app", component: "Stack", source: "prewired", children: [] }],
-  },
   storage: { results: { about: "Latest automation result.", kind: "records" } },
   ...(automations === undefined ? {} : { automations }),
 });

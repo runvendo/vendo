@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
 import {
+  sha256Hex,
   type AppDocument,
   type Principal,
   type ToolRegistry,
@@ -12,7 +13,7 @@ import type {
   VendoTheme,
 } from "@vendoai/apps/contract";
 import { createActions } from "@vendoai/actions";
-import { createApps, type AppsRuntime } from "@vendoai/apps";
+import { createApps, SCREEN_FILE, type AppsRuntime } from "@vendoai/apps";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -93,16 +94,30 @@ export const hostTools = [
   },
 ] as const;
 
+/** The smallest screen the gauntlet passes and the seam paints. An app IS its
+ *  `app.tsx`, so this is the whole fixture. */
+const FIXTURE_SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function InvoiceFixture() {
+  return (
+    <Stack gap={12}>
+      <Text text="MCP invoice fixture" variant="heading" />
+    </Stack>
+  );
+}
+`;
+
 const fixtureApp: AppDocument = {
   format: "vendo/app@1",
   id: FIXTURE_APP_ID,
   name: "MCP invoice fixture",
   description: "A rung-1 app served through the MCP Apps ride-along.",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { children: "Invoice fixture" } }],
-    data: { fixture: true },
+  source: {
+    [SCREEN_FILE]: {
+      hash: `sha256:${sha256Hex(FIXTURE_SCREEN)}`,
+      bytes: new TextEncoder().encode(FIXTURE_SCREEN).byteLength,
+      text: FIXTURE_SCREEN,
+    },
   },
 };
 

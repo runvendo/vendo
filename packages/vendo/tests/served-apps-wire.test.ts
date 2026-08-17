@@ -9,6 +9,7 @@ import {
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import { createStore, type VendoStore } from "@vendoai/store";
+import { screenSource } from "./screen-fixture.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -264,11 +265,7 @@ describe("the served lane is offered only where it can actually serve", () => {
       id: "app_replaced",
       name: "Invoice board",
       ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
+      source: screenSource(),
     } as AppDocument, ctx);
     // The junk answer fails the plan parse; the prompt was already captured.
     await vendo.apps.edit(imported.id, "Give me a drag-and-drop kanban board", ctx)

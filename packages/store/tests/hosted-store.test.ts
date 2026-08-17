@@ -507,11 +507,6 @@ async function demoHostJourney(store: VendoStore): Promise<void> {
     id: "app_budget",
     name: "Budget",
     ui: "tree" as const,
-    tree: {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [{ id: "root", component: "Text", props: { value: "Track spend" } }],
-    },
   };
   const apps = store.records("vendo_apps");
   await apps.put({ id: "app_budget", data: { subject, enabled: true, doc } });

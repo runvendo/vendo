@@ -16,6 +16,7 @@ import { createApps } from "../src/server/index.js";
 import { seedComponentName } from "../src/contract/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
+import { screenDocument } from "../src/server/testing/screen-document.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const encoder = new TextEncoder();
@@ -33,19 +34,12 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const document = (overrides: Partial<AppDocument> = {}): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id: "app_artifact_id_is_untrusted",
-  name: "Invoice Chaser",
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Invoices" } }],
-  },
-  storage: { invoices: { about: "Invoices being chased", refs: { invoice: "host.invoice" } } },
-  ...overrides,
-});
+const document = (overrides: Partial<AppDocument> = {}): AppDocument =>
+  screenDocument("app_artifact_id_is_untrusted", {
+    name: "Invoice Chaser",
+    storage: { invoices: { about: "Invoices being chased", refs: { invoice: "host.invoice" } } },
+    ...overrides,
+  });
 
 describe(".vendoapp interchange through createApps", () => {
   it("round-trips a copy with fresh ownership and empty data", async () => {
@@ -257,30 +251,27 @@ describe(".vendoapp interchange through createApps", () => {
     });
   });
 
-  it("fails rather than stripping fn surfaces when app files cannot be rebuilt", async () => {
-    const guard = guardFixture();
-    const runtime = createApps({ store: memoryStore(), guard, tools, catalog: [] });
-    const artifact = document({
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{
-          id: "root",
-          component: "Button",
-          props: { onClick: { action: "fn:send_invoice" } },
-        }],
-      },
-      machine: { snapshotRef: "fake:source_snapshot", provisionedAt: "2026-07-19T00:00:00.000Z" },
-    });
-    const { id: _id, machine: _machine, ...exported } = artifact;
+  it("refuses an archive that holds a stored layout and no source, rather than minting an app that cannot open", async () => {
+    // Exported before an app was its own `app.tsx`: the LAYOUT was the artifact.
+    // Nothing here can turn one back into a screen, and dropping it quietly
+    // would mint a row that never opens — so the copy fails, in those words.
+    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog: [] });
     const archive = zipSync({
-      "app.json": encoder.encode(JSON.stringify(exported)),
-      "app/server.js": encoder.encode("export const ready = true;"),
+      "app.json": encoder.encode(JSON.stringify({
+        format: VENDO_APP_FORMAT,
+        name: "Invoice Chaser",
+        ui: "tree",
+        tree: {
+          formatVersion: "vendo-genui/v2",
+          root: "root",
+          nodes: [{ id: "root", component: "Text", props: { text: "Invoices" } }],
+        },
+      })),
     });
 
     await expect(runtime.importApp(archive, context("user_ada"))).rejects.toMatchObject({
       code: "validation",
-      message: expect.stringContaining("fn: references require a machine"),
+      message: expect.stringContaining("holds a stored layout and no source"),
     });
   });
 

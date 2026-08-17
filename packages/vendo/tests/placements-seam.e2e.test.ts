@@ -134,11 +134,6 @@ const seedDoc = (id: string, name: string): AppDocument => ({
   id,
   name,
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-  },
 });
 
 interface Entry { slot: string; app: string; title: string; status: string }

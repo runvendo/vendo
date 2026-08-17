@@ -178,11 +178,6 @@ async function seedApp(umbrella: Umbrella): Promise<void> {
         id: FIXTURE_APP_ID,
         name: "Umbrella invoice app",
         description: "A rung-1 app for the umbrella apps-call leg.",
-        tree: {
-          formatVersion: "vendo-genui/v2",
-          root: "root",
-          nodes: [{ id: "root", component: "Text", props: { children: "Umbrella fixture" } }],
-        },
       },
     },
     refs: { subject: SUBJECT },

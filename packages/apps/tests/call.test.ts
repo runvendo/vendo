@@ -32,11 +32,6 @@ const app = (id: string): AppDocument => ({
   id,
   name: "Caller",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Caller" } }],
-  },
 });
 
 const setup = (tools?: ToolRegistry) => {

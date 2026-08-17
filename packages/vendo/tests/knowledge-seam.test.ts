@@ -2,8 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument, type Principal } from "@vendoai/core";
+import { type Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
+import { screenDocument, screenSource } from "./screen-fixture.js";
 import type { LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "../src/server.js";
@@ -214,18 +215,22 @@ describe("venue-app reachability (k8 T1)", () => {
         }],
       }),
     });
-    const doc: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_kb_view",
+    const doc = screenDocument("app_kb_view", {
       name: "Transfer limits helper",
-      ui: "tree",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [{ id: "root", component: "Text", props: { text: { $path: "/kb/hits/0/snippet" } } }],
-        queries: [{ name: "kb", tool: "vendo_knowledge_search", input: { query: "wire transfer limits" } }],
-      },
-    };
+      source: screenSource(`import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function TransferLimits() {
+  const kb = useQuery("vendo_knowledge_search", { query: "wire transfer limits" });
+  return (
+    <Stack gap={12}>
+      <Text text={kb.kind + " " + kb.outcome} />
+      <Text text={kb.hits[0].docId} />
+      <Text text={kb.hits[0].snippet} />
+    </Stack>
+  );
+}
+`),
+    });
     await vendo.store.ensureSchema();
     await vendo.store.records("vendo_apps").put({
       id: doc.id,
@@ -235,16 +240,12 @@ describe("venue-app reachability (k8 T1)", () => {
 
     const response = await vendo.handler(new Request("https://host.test/api/vendo/apps/app_kb_view/open"));
     expect(response.status).toBe(200);
-    const opened = await response.json() as { payload: { data: Record<string, unknown> } };
-    const kb = opened.payload.data["kb"] as {
-      kind: string;
-      outcome: string;
-      hits: Array<{ docId: string; snippet: string; visibility: string }>;
-    };
-    expect(kb.kind).toBe("vendo/knowledge-result@1");
-    expect(kb.outcome).toBe("answered");
-    expect(kb.hits[0]?.docId).toBe("doc-transfers");
-    expect(kb.hits[0]?.snippet).toContain("wire transfers");
+    // The answer is READ THROUGH THE RENDER: a screen's query resolves into the
+    // tree it paints, so what reached the app is exactly what is on screen.
+    const painted = JSON.stringify(await response.json());
+    expect(painted).toContain("vendo/knowledge-result@1 answered");
+    expect(painted).toContain("doc-transfers");
+    expect(painted).toContain("wire transfers");
 
     // The call crossed the guard perimeter AS the app venue — the audit row
     // is the reachability proof, not just the bound payload.

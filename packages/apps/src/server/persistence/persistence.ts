@@ -7,7 +7,6 @@ import {
 } from "@vendoai/core";
 import {
   admitAppDocument,
-  stripServerAuthoritativeFields,
   validateAppDocument,
   type AdmissionOrigin,
   type AppData,
@@ -49,6 +48,19 @@ export const listAllEngineRecords = (
   query: Omit<RecordQuery, "cursor"> = {},
 ): Promise<VendoRecord[]> => drain((page) => engine.list(collection, page), query);
 
+/**
+ * The stored `tree` is gone: an app IS its `app.tsx`, and a tree is what
+ * RENDERING one produces. Rows written before the field's removal still carry
+ * one, and `appDocumentSchema` is passthrough — so it is dropped on the way out
+ * of the store and on the way in, rather than refused. A document that predates
+ * this opens on its source and must not brick over a field nobody reads.
+ */
+const withoutStaleTree = <T extends object>(document: T): T => {
+  const copy = { ...document } as T & { tree?: unknown };
+  delete copy.tree;
+  return copy;
+};
+
 /** A document coming back OUT of the store. It passed admission on the way in;
  *  this is the read-side integrity check, and it runs admission's inner half
  *  directly because a read has no origin. */
@@ -60,7 +72,7 @@ export const validateDocument = (input: unknown, appId: AppId): AppDocument => {
       : result.error.message;
     throw new VendoError("validation", `invalid app document for ${appId}`, { appId, reason });
   }
-  return structuredClone(result.app);
+  return withoutStaleTree(structuredClone(result.app));
 };
 
 /**
@@ -141,18 +153,8 @@ export const appRecordInput = (
   enabled: boolean,
   origin: AdmissionOrigin,
 ): AppRecordWrite => {
-  const doc = admitDocument(app, app.id, origin) as AppDocument & { session?: unknown };
+  const doc = withoutStaleTree(admitDocument(app, app.id, origin)) as AppDocument & { session?: unknown };
   delete doc.session;
-  // 06-apps §§8–9 — the venue verdict, the drift report, the data-unavailable
-  // claim and CDN furnishing packages are SERVER-AUTHORITATIVE: only code that
-  // verified the hash, compared the baseline, or ran the queries may assert
-  // them, and none of that is a stored fact. `open.ts` strips them on the way
-  // OUT, which kept a forged claim off the wire but left it in the row — three
-  // write paths each remembered to strip first and `importApp` did not, so an
-  // untrusted `.vendoapp` could seed one. Stripping HERE is the same argument
-  // as validating here: the door is what makes "it is in the database" mean
-  // one thing, and a reader that forgets is no longer able to be wrong.
-  if (doc.tree !== undefined) stripServerAuthoritativeFields(doc.tree);
   return {
     id: app.id,
     data: { subject, enabled, doc },

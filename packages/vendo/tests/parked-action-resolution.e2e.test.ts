@@ -12,6 +12,7 @@ import {
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore, createStoreOps } from "@vendoai/store";
+import { screenSource } from "./screen-fixture.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByoApprovals } from "../src/byo-approvals.js";
 
@@ -119,11 +120,7 @@ async function harness() {
       id: "app_seed_id_is_replaced",
       name: "Client messenger",
       ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
+      source: screenSource(),
     } as AppDocument,
     ctx,
   );

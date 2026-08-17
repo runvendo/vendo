@@ -17,14 +17,11 @@ import {
   type Json,
   type RunContext,
   type UIPayload,
-  vendoViewPart,
 } from "@vendoai/core";
 import {
-  componentSources,
   type AppDocument,
   type ScreenAssembler,
   type Tree,
-  stripServerAuthoritativeFields,
 } from "../../contract/index.js";
 import {
   BUILD_WATCHDOG_REASON,
@@ -40,12 +37,10 @@ import {
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { checkComponentScreen, reviewComponentScreenInput } from "../checking/component-screen.js";
 import { screenCatalog } from "../checking/screen-typings.js";
-import { queryEvidence } from "../checking/evidence.js";
 import { createAppFloor, floorChecks } from "../checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
 import { reviewerCheck } from "../checking/reviewer.js";
 import { generationDependencies, resolveProvider } from "../runtime/generation-context.js";
-import { createProgressiveQueryResolver } from "../persistence/open.js";
 import type { EngineOps } from "../persistence/engine.js";
 import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
@@ -215,49 +210,12 @@ const routeThroughAssembler = async (
   return { kind: "escalate", why: routed.why };
 };
 
-/**
- * The streamed view parts are last-write-wins, so the built app settles the
- * stream. On a resolver failure emit nothing rather than a data-less tree that
- * would blank the screen.
- */
-const paintSettledTree = async (
-  caller: AppsRuntimeContext["caller"],
-  app: AppDocument,
-  ctx: RunContext,
-  onView: CreateInput["onView"],
-  appId: AppId,
-): Promise<void> => {
-  if (onView === undefined || app.tree?.formatVersion !== VENDO_TREE_FORMAT) return;
-  const tree = assembleTree({
-    tree: app.tree,
-    components: componentSources(app.components),
-    componentTools: app.componentTools,
-  });
-  stripServerAuthoritativeFields(tree);
-  const resolver = createProgressiveQueryResolver(caller, app, ctx);
-  resolver.update(tree);
-  tree.data = await resolver.complete().catch(() => tree.data ?? {});
-  emitView(onView, appId, tree);
-};
-
-/** 06-apps §§8–9 — the venue verdict and drift report are server-authoritative
- *  and a model-written tree must never smuggle either into the live stream: a
- *  freshly generated app has no approval and no drifted pins by definition.
- *
- *  Built through `vendoViewPart`, the ONE producer of a view part, so this door
- *  and the render seam cannot emit two different shapes. */
-const emitView = (onView: CreateInput["onView"], appId: AppId, payload: Tree): void => {
-  stripServerAuthoritativeFields(payload);
-  const view = vendoViewPart({ appId, payload: payload as unknown as UIPayload });
-  if (view !== undefined) onView?.(view.part);
-};
-
 const createCreateDoor = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
+    "config" | "engine" | "lifecycle" | "claimSlot" | "generationToolContext"
     | "reportLifecycle" | "runServerWork">,
 ): AppsRuntime["create"] => {
-  const { config, engine, caller, lifecycle, claimSlot, generationToolContext } = deps;
+  const { config, engine, lifecycle, claimSlot, generationToolContext } = deps;
   const { reportLifecycle, runServerWork } = deps;
   return async (input, ctx) => {
     if (config.model === undefined) {
@@ -298,8 +256,7 @@ const createCreateDoor = (
       return failBuild(NO_MACHINE, false, [NO_MACHINE], "not-implemented");
     }
     // No screen yet: the box has not written anything for one to show. The row
-    // is what makes this a real app — it lists, opens and takes an edit — and
-    // the paint below stays silent until there is something to paint.
+    // is what makes this a real app — it lists, opens and takes an edit.
     let app: AppDocument = {
       format: "vendo/app@1",
       id: appId,
@@ -372,9 +329,9 @@ const createCreateDoor = (
     }
     // Reported OUTSIDE the try on purpose: reporting from inside it let a
     // throwing consumer re-enter this very catch as a second "server work
-    // failed", call the callback twice, and take `paintSettledTree` with it.
-    // The failure rides the same CreateServerWork envelope the success path
-    // publishes (#881) — `failed` is its failure half.
+    // failed" and call the callback twice. The failure rides the same
+    // CreateServerWork envelope the success path publishes (#881) — `failed`
+    // is its failure half.
     if (serverWorkFailed !== undefined) {
       input.onServerWork?.({ failed: serverWorkFailed });
       log({
@@ -383,7 +340,6 @@ const createCreateDoor = (
         message: `[vendo] server work failed for ${appId} (the screen stands, its server side does not): ${serverWorkFailed.join("; ")}`,
       });
     }
-    await paintSettledTree(caller, app, ctx, input.onView, appId);
     log({
       code: "apps.gen-create-complete",
       level: "info",
@@ -460,7 +416,7 @@ const createValidateDoor = (
     // Editor-scoped, like edit itself: checking the shape of an app you may
     // change is part of changing it, and a mere viewer is masked as ever.
     const document = await requireOwned(input.appId, ctx);
-    // The SAME floor create and edit run — the seven fact checks, the host's and
+    // The SAME floor create and edit run — the document check, the host's and
     // every plugged check, AND the AI reviewer. The reviewer was the
     // piece this door was missing: without it `validate` could not see invented
     // data, dishonest tool use, dead controls or dropped work, and could not
@@ -474,21 +430,14 @@ const createValidateDoor = (
     // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
     // unchanged: silence, a refusal and a failed request all mean no findings.
     //
-    // `samples` are the app's OWN queries, run (`queryEvidence`). This door used
-    // to pass none, on the reasoning that a verb call has run no queries — true,
-    // and it left the reviewer judging markup with nothing behind it, which is
-    // half its rubric switched off. A double-counted headline ($11,216 shown,
-    // ~$6,276 true, demo-bank 2026-08-06) is invisible in the markup and obvious
-    // beside the rows.
-    //
     // `request` is empty because a verb call carries no user text — the checks
     // that read it treat that as "no carve-out", which is the conservative
     // direction.
     const plugged = config.checks ?? [];
-    // A COMPONENT screen has no wire markup to print and no tree to fact-check: the
-    // app IS its `app.tsx`, so the gauntlet is its mechanical half and the reviewer
-    // reads the file itself. Both run over the STORED screen, which is the whole
-    // point of the row-scoped door — it judges what the person is about to keep.
+    // A COMPONENT screen IS its `app.tsx`, so the gauntlet is its mechanical half
+    // and the reviewer reads the file itself. Both run over the STORED screen,
+    // which is the whole point of the row-scoped door — it judges what the person
+    // is about to keep.
     const screen = componentScreenOf(document);
     if (screen !== undefined) {
       const runQuery = screenQueryRunner(caller, ctx);
@@ -511,7 +460,6 @@ const createValidateDoor = (
       // screen faces, reading the TSX and the rows its queries really returned
       // rather than printed wire (`reviewComponentScreenInput`).
       const judged = await createCheckingLayer({
-        deps,
         checks: [
           // No `samples`: the screen's rendering already carries what its queries
           // returned, under the same truncation the wire reviewer uses.
@@ -526,12 +474,10 @@ const createValidateDoor = (
       }).run({ document, request: "" });
       return { ok: !judged.some(({ severity }) => severity === "block"), findings: judged };
     }
-    const samples = await queryEvidence(document, config.tools, ctx);
     const findings = await createCheckingLayer({
-      deps,
       // The thorough door: the shared floor AND the reviewer. Off the
       // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-      checks: [...floorChecks(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
+      checks: [...floorChecks(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
     }).run({ document, request: "" });
     return { ok: !findings.some(({ severity }) => severity === "block"), findings };
   };

@@ -1,116 +1,64 @@
-import type { AppDocument } from "@vendoai/core";
+import { sha256Hex, type AppDocument } from "@vendoai/core";
+
+/** `@vendoai/apps` `SCREEN_FILE`, spelled out: this fixture composes through
+ *  `@vendoai/vendo` and does not depend on the apps package directly. */
+const SCREEN_FILE = "app.tsx";
 
 export const MCP_APPS_SUBJECT = "user_ada";
 export const MCP_APPS_FIXTURE_ID = "app_mcp_browser_fixture";
 export const MCP_APPS_INVOICE_ID = "inv_0003";
 export const MCP_APPS_UPDATED_MEMO = "Updated over MCP Apps";
 
-const invoiceActions = `
-import React from "react";
+/**
+ * The app, which IS its `app.tsx`. Its two controls call host tools from their
+ * own handlers, so a click travels the whole way: shim → MCP Apps host bridge →
+ * door tools → app runtime → guard → the fixture host.
+ */
+const screen = `import { useState } from "react";
+import { Button, Stack, Text, tools } from "@vendo/screen";
 
-export default function InvoiceActions({ onUpdate, onDelete }) {
-  const [updateState, setUpdateState] = React.useState("Update has not run");
-  const [deleteState, setDeleteState] = React.useState("Delete has not run");
-  const button = {
-    border: 0,
-    borderRadius: 10,
-    padding: "10px 14px",
-    fontWeight: 650,
-    cursor: "pointer",
-  };
-
-  async function updateInvoice() {
-    const outcome = await onUpdate();
-    setUpdateState("Updated: " + outcome.status);
-  }
-
-  async function deleteInvoice() {
-    const outcome = await onDelete();
-    setDeleteState("Delete: " + outcome.status);
-  }
-
+export default function InvoiceControl() {
+  const [updateState, setUpdateState] = useState("Update has not run");
+  const [deleteState, setDeleteState] = useState("Delete has not run");
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <button
-          type="button"
-          onClick={updateInvoice}
-          style={{ ...button, color: "white", background: "#3156d9" }}
-        >
-          Update invoice
-        </button>
-        <button
-          type="button"
-          onClick={deleteInvoice}
-          style={{ ...button, color: "#8f1f1f", background: "#fee7e7" }}
-        >
-          Delete invoice
-        </button>
-      </div>
-      <div aria-live="polite" style={{ display: "grid", gap: 4, color: "#535766", fontSize: 13 }}>
-        <span>{updateState}</span>
-        <span>{deleteState}</span>
-      </div>
-    </div>
+    <Stack gap={14}>
+      <Text text="LIVE MCP APPS RIDE-ALONG" variant="caption" />
+      <Text text="MCP invoice control" variant="heading" />
+      <Text text="Invoice ${MCP_APPS_INVOICE_ID} is rendered from the real door resource." />
+      <Button
+        label="Update invoice"
+        onClick={async () => {
+          const outcome = await tools.host_invoices_update({ id: "${MCP_APPS_INVOICE_ID}", memo: "${MCP_APPS_UPDATED_MEMO}" });
+          setUpdateState("Updated: " + outcome.status);
+        }}
+      />
+      <Button
+        label="Delete invoice"
+        variant="danger"
+        onClick={async () => {
+          const outcome = await tools.host_invoices_delete({ id: "${MCP_APPS_INVOICE_ID}" });
+          setDeleteState("Delete: " + outcome.status);
+        }}
+      />
+      <Text text={updateState} />
+      <Text text={deleteState} />
+    </Stack>
   );
 }
 `;
 
-/** A real stored rung-1 app whose generated controls exercise the shim's
- * nested jail, MCP Apps host bridge, door tools, app runtime, guard, and host. */
+/** A real stored rung-1 app whose controls exercise the shim, the MCP Apps host
+ * bridge, the door tools, the app runtime, the guard, and the host. */
 export const mcpBrowserFixture: AppDocument = {
   format: "vendo/app@1",
   id: MCP_APPS_FIXTURE_ID,
   name: "MCP invoice control",
   description: "A browser-driven MCP Apps ride-along fixture.",
-  components: { InvoiceActions: invoiceActions },
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Surface", source: "prewired", children: ["layout"] },
-      {
-        id: "layout",
-        component: "Stack",
-        source: "prewired",
-        props: { gap: 14 },
-        children: ["eyebrow", "title", "description", "divider", "actions"],
-      },
-      {
-        id: "eyebrow",
-        component: "Text",
-        source: "prewired",
-        props: { text: "LIVE MCP APPS RIDE-ALONG", variant: "caption" },
-      },
-      {
-        id: "title",
-        component: "Text",
-        source: "prewired",
-        props: { text: "MCP invoice control", variant: "heading" },
-      },
-      {
-        id: "description",
-        component: "Text",
-        source: "prewired",
-        props: { text: `Invoice ${MCP_APPS_INVOICE_ID} is rendered from the real door resource.` },
-      },
-      { id: "divider", component: "Divider", source: "prewired" },
-      {
-        id: "actions",
-        component: "InvoiceActions",
-        source: "generated",
-        props: {
-          onUpdate: {
-            $action: "host_invoices_update",
-            payload: { id: MCP_APPS_INVOICE_ID, memo: MCP_APPS_UPDATED_MEMO },
-          },
-          onDelete: {
-            $action: "host_invoices_delete",
-            payload: { id: MCP_APPS_INVOICE_ID },
-          },
-        },
-      },
-    ],
-    data: { fixture: true, invoiceId: MCP_APPS_INVOICE_ID },
+  source: {
+    [SCREEN_FILE]: {
+      hash: `sha256:${sha256Hex(screen)}`,
+      bytes: new TextEncoder().encode(screen).byteLength,
+      text: screen,
+    },
   },
 };

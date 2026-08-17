@@ -3,7 +3,6 @@ import { VENDO_APP_FORMAT } from "./formats.js";
 import type { AutomationId } from "./automation.js";
 import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
 import { sha256Hex } from "./sha256.js";
-import { uiPayloadSchema, type UIPayload } from "./genui/tree-node.js";
 
 /**
  * The seat's contents — what one entry of {@link AppDocument.components} holds.
@@ -271,7 +270,6 @@ export interface AppDocument {
   name: string;
   description?: string;
   ui?: "tree" | "http";
-  tree?: UIPayload;
   components?: Record<string, ComponentEntry>;
   /**
    * W4b — the compiler-stamped per-island tool manifest: for each generated
@@ -359,7 +357,6 @@ export const appDocumentSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   ui: z.enum(["tree", "http"]).optional(),
-  tree: uiPayloadSchema.optional(),
   components: z.record(componentEntrySchema).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),

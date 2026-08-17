@@ -5,15 +5,13 @@ import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { automationsInternals } from "@vendoai/automations";
 import {
   descriptorHash,
-  VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
-  type AppDocument,
   type KnowledgeAdapter,
   type KnowledgeContext,
   type KnowledgeQuery,
   type Principal,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
+import { screenDocument, screenSource } from "./screen-fixture.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "../src/server.js";
@@ -174,18 +172,20 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
   it("app: a live-view query binds only public hits into the opened tree", async () => {
     const adapter = spyAdapter();
     const vendo = await compose({ knowledge: adapter });
-    const doc: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_gov_kb",
+    const doc = screenDocument("app_gov_kb", {
       name: "Escalation helper",
-      ui: "tree",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [{ id: "root", component: "Text", props: { text: { $path: "/kb/hits/0/snippet" } } }],
-        queries: [{ name: "kb", tool: "vendo_knowledge_search", input: { query: "escalation" } }],
-      },
-    };
+      source: screenSource(`import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Escalations() {
+  const kb = useQuery("vendo_knowledge_search", { query: "escalation" });
+  return (
+    <Stack gap={12}>
+      <Text text={kb.hits[0].snippet} />
+    </Stack>
+  );
+}
+`),
+    });
     await vendo.store.ensureSchema();
     await vendo.store.records("vendo_apps").put({
       id: doc.id,

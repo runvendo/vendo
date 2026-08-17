@@ -200,10 +200,8 @@ describe("an app.tsx the harness wrote", () => {
     const row = await rowOf(store);
     expect(row?.subject).toBe("u1");
     expect(row?.doc?.name).toBe("Spending");
-    // The screen IS the app: it is stored as the app's own source file, and no
-    // tree snapshot rides along to go stale.
+    // The screen IS the app: it is stored as the app's own source file.
     expect(row?.doc?.source?.[SCREEN_FILE]?.text).toBe(SPEND);
-    expect(row?.doc?.tree).toBeUndefined();
   }, 60_000);
 
   it("opens — the tool that answered 'couldn't finish' three times in the live run", async () => {

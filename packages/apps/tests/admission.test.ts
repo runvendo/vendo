@@ -17,14 +17,15 @@
  *  2. the refusal says the SAME thing on every origin (a door that checked
  *     differently per caller would not be one door), and
  *  3. nothing lands in the store when a document is refused, and
- *  4. a document that is VALID but carries forged server-authoritative claims
- *     is sanitised on the way in, on every origin.
+ *  4. a stored `tree` — layout from before an app was its own `app.tsx` — is
+ *     dropped on the way in rather than refused, so a document older than the
+ *     field's removal still opens on its source.
  *
  * The removal proof this file exists for: comment out the `admitAppDocument`
  * call in `persistence.ts`'s row writer and every origin's refusal goes red at
  * once, not one of them.
  */
-import { VENDO_APP_FORMAT, VendoError, type RecordStore } from "@vendoai/core";
+import { VendoError, type RecordStore } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
   admitAppDocument,
@@ -34,6 +35,7 @@ import {
 } from "../src/contract/index.js";
 import { appRecordInput, rowFromRecord } from "../src/server/persistence/persistence.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
+import { screenDocument } from "../src/server/testing/screen-document.js";
 
 /** Every origin the contract declares. A new one must be added here, and the
  *  door must treat it exactly like the others. */
@@ -49,58 +51,14 @@ const ORIGINS: readonly AdmissionOrigin[] = [
 
 const SUBJECT = "user_1";
 
-const valid = (id: string): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id,
-  name: "Renewals",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Renewals" } }],
-  },
-} as AppDocument);
+const valid = (id: string): AppDocument => screenDocument(id, { name: "Renewals" });
 
-/**
- * A document that is perfectly VALID and still lies: it claims the in-client
- * venue granted it, claims a drifted pin, claims its data failed to load, and
- * smuggles a CDN package URL into a furnishing. Every one of those is
- * server-authoritative — only code that verified the hash, compared the
- * baseline or ran the queries may assert them.
- */
-const forged = (id: string): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id,
-  name: "Forged",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "hi" } }],
-    inClient: {
-      granted: true,
-      versionHash: "sha256:deadbeef",
-      approvedBy: "attacker",
-      at: "2026-01-01T00:00:00.000Z",
-    },
-    pinDrift: [{ slot: "s", component: "C", baseHash: "sha256:x", reason: "baseline-changed" }],
-    dataUnavailable: true,
-    furnishings: { Forged: { packages: { evil: "https://evil.example/x.js" } } },
-  },
-} as unknown as AppDocument);
-
-/** Refused for a CROSS-FIELD reason, not a schema typo: a generated node with
- *  no entry in the components map. Only the normative validator catches this —
- *  `appDocumentSchema` alone accepts it — so a door that skipped admission
- *  would let it through. */
-const invalid = (id: string): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id,
-  name: "Renewals",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Missing", source: "generated" }],
-  },
-} as unknown as AppDocument);
+/** Refused for a CROSS-FIELD reason, not a schema typo: an island tool manifest
+ *  naming a component the document does not carry. Only the normative validator
+ *  catches this — `appDocumentSchema` alone accepts it — so a door that skipped
+ *  admission would let it through. */
+const invalid = (id: string): AppDocument =>
+  screenDocument(id, { name: "Renewals", componentTools: { Missing: ["host_read"] } });
 
 const apps = (): RecordStore => memoryStore().records("vendo_apps");
 
@@ -141,7 +99,7 @@ describe("the one door in", () => {
 
     const distinct = new Set(reasons.values());
     expect([...distinct]).toHaveLength(1);
-    expect([...distinct][0]).toContain('references generated component "Missing"');
+    expect([...distinct][0]).toContain('componentTools names "Missing"');
   });
 
   it.each(ORIGINS)("admits a valid document written as %s, byte-identically", async (origin) => {
@@ -164,17 +122,22 @@ describe("the one door in", () => {
     }
   });
 
-  it.each(ORIGINS)("strips forged server-authoritative claims written as %s", async (origin) => {
+  it.each(ORIGINS)("drops a stale stored tree written as %s, and keeps the app", async (origin) => {
+    // Rows written before the `tree` field was removed still carry one. It is
+    // dropped rather than refused: the app IS its `app.tsx`, so a document that
+    // predates the removal still opens on its source and must not brick over a
+    // field nobody reads any more.
     const records = apps();
-    await records.put(appRecordInput(forged("app_forged"), SUBJECT, false, origin));
+    const stale = {
+      ...valid("app_stale"),
+      tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] },
+    } as AppDocument;
+    await records.put(appRecordInput(stale, SUBJECT, false, origin));
 
     // Read back through the real read path, not the object that was handed in.
-    const tree = rowFromRecord((await records.get("app_forged"))!).doc.tree as Record<string, unknown>;
-    expect(tree["inClient"]).toBeUndefined();
-    expect(tree["pinDrift"]).toBeUndefined();
-    expect(tree["dataUnavailable"]).toBeUndefined();
-    // The furnishing itself survives; only the CDN package claim inside it dies.
-    expect(tree["furnishings"]).toEqual({ Forged: {} });
+    const doc = rowFromRecord((await records.get("app_stale"))!).doc;
+    expect(doc).toEqual(valid("app_stale"));
+    expect(doc).not.toHaveProperty("tree");
   });
 
   it("leaves an honest document byte-identical — the strip is not a rewrite", async () => {

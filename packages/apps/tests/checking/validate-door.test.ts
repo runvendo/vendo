@@ -1,9 +1,9 @@
 /**
  * The `validate` VERB runs the whole floor — blueprint §7.1 item 3.
  *
- * The door was built with `createCheckingLayer({ deps, checks: config.checks })`
- * and nothing else, so it ran the seven deterministic fact checks and the host's
- * own plugged checks and SKIPPED the AI reviewer. `create` and `edit` ran it (via
+ * The door was built with `createCheckingLayer({ checks: config.checks })` and
+ * nothing else, so it ran the deterministic document check and the host's own
+ * plugged checks and SKIPPED the AI reviewer. `create` and `edit` ran it (via
  * `conductor.ts`'s `checkingFor`); the door did not. So the building-apps skill
  * teaches "validate after every edit — it is faster and surer than re-reading your
  * own work", and the thing it taught could not see invented data, dishonest tool

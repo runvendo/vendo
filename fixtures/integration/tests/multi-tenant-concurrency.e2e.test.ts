@@ -50,20 +50,12 @@ const TENANTS: Principal[] = [
   { kind: "user", subject: "user_dan" },
 ];
 
-/** A tenant-tagged single-node app document (no trigger). */
+/** A tenant-tagged app document (no trigger). */
 function tenantApp(subject: string): AppDocument {
   return {
     format: "vendo/app@1",
     id: "app_placeholder",
     name: `App for ${subject}`,
-    tree: {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [
-        { id: "root", component: "Stack", source: "prewired", children: ["t"] },
-        { id: "t", component: "Text", source: "prewired", props: { text: `Owned by ${subject}` } },
-      ],
-    },
   } as AppDocument;
 }
 

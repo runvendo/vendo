@@ -80,11 +80,6 @@ const seeded = (id: string, name: string): AppDocument => ({
   id,
   name,
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-  },
 });
 
 /** What the scripted SDK loop inside the box is handed: the box's own disk, and

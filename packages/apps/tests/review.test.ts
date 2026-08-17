@@ -1,6 +1,5 @@
 import { engineOverAdapter } from "@vendoai/core";
 import {
-  VENDO_APP_FORMAT,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -17,6 +16,7 @@ import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { screenDocument } from "../src/server/testing/screen-document.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { inlineSourceFile } from "../src/server/persistence/app-source.js";
 import { appVersionHash } from "../src/server/remix/version-hash.js";
@@ -55,29 +55,19 @@ const instantBaseline: SeedBaseline = {
   capturedAt: "2026-08-01T12:00:00.000Z",
 };
 
-const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id: `app_review_${slot.replaceAll("-", "_")}`,
-  name: `${slot} remix`,
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["fork"] },
-      { id: "fork", component: "Fork", source: "generated" },
-    ],
-  },
-  // A remix's provenance names the host component; the code is the person's
-  // own, under whatever name their build gave it.
-  seed: {
-    component: slot,
-    baseline: `sha256:${slot === "transfer-panel" ? "transfer" : "hero"}-base`,
-    instruction: "make it mine",
-  },
-  components: { Fork: "export default function Fork() { return <b>fork</b>; }" },
-  ...overrides,
-});
+const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument =>
+  screenDocument(`app_review_${slot.replaceAll("-", "_")}`, {
+    name: `${slot} remix`,
+    // A remix's provenance names the host component; the code is the person's
+    // own, under whatever name their build gave it.
+    seed: {
+      component: slot,
+      baseline: `sha256:${slot === "transfer-panel" ? "transfer" : "hero"}-base`,
+      instruction: "make it mine",
+    },
+    components: { Fork: "export default function Fork() { return <b>fork</b>; }" },
+    ...overrides,
+  });
 
 /** What every edit below saves — the app's name is its default export's. */
 const EDITED_SCREEN = `import { Stack, Text } from "@vendo/screen";
@@ -206,15 +196,7 @@ describe("approval swaps the served version", () => {
     // arrives in v2. The venue must still say "sent for review" even though
     // the SERVED document carries no review-kind pin of its own.
     const { store, runtime } = setup();
-    const v1 = doc("transfer-panel", {
-      seed: undefined,
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-      components: undefined,
-    });
+    const v1 = doc("transfer-panel", { seed: undefined, components: undefined });
     await seedAppRow(engineOverAdapter(store), v1, owner.principal.subject);
     await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, owner);
     const v1Hash = appVersionHash(await runtime.get(v1.id, owner) as AppDocument);

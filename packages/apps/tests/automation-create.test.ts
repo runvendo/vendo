@@ -44,11 +44,6 @@ describe("schedule on an app with no automation", () => {
       id: "app_view_only",
       name: "Links",
       ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "app",
-        nodes: [{ id: "app", component: "Stack", source: "prewired", children: [] }],
-      },
     }, ctx.principal.subject);
     await expect(runtime.schedule("app_view_only", "*/5 * * * *", ctx))
       .rejects.toThrow(/vendo_make/);

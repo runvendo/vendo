@@ -57,18 +57,19 @@ const SMOKE_VIEW = {
 };
 
 function app(id: string, name: string): AppDocument {
-  return {
-    format: "vendo/app@1",
-    id,
-    name,
-    ui: "tree",
-    tree: {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
-    },
-  };
+  return { format: "vendo/app@1", id, name, ui: "tree" };
 }
+
+/** What OPENING an app renders. A document carries none — a screen's tree is
+ *  what running it produces — so the fixture keeps them beside the rows, by id,
+ *  exactly as the real door produces one per open. */
+type Payload = Record<string, unknown>;
+
+const surfaceOf = (name: string): Payload => ({
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
+});
 
 /** The fixture's app shape, for callers outside this module (the browser
  *  harness seeds served/landing apps before the first request). */
@@ -106,22 +107,18 @@ export default function WeatherBoard() {
 `;
 
 function islandApp(): AppDocument {
-  return {
-    format: "vendo/app@1",
-    id: "app_island",
-    name: "Weather dashboard",
-    ui: "tree",
-    tree: {
-      formatVersion: "vendo-genui/v2",
-      root: "root",
-      nodes: [
-        { id: "root", component: "Stack", children: ["board"] },
-        { id: "board", component: "WeatherBoard", source: "generated" },
-      ],
-      components: { WeatherBoard: dashboardIslandSource },
-    },
-  };
+  return { format: "vendo/app@1", id: "app_island", name: "Weather dashboard", ui: "tree" };
 }
+
+const islandSurface = (): Payload => ({
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [
+    { id: "root", component: "Stack", children: ["board"] },
+    { id: "board", component: "WeatherBoard", source: "generated" },
+  ],
+  components: { WeatherBoard: dashboardIslandSource },
+});
 
 function approval(): ApprovalRequest {
   return {
@@ -314,6 +311,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
   const history: VersionEntry[] = [{ at: NOW, intent: "create", rung: 1 }];
   const state = {
     apps: [baseApp, automationApp, ...(options.islandApp === true ? [islandApp()] : [])],
+    /** What each app OPENS as, by id — see {@link surfaceOf}. */
+    surfaces: new Map<string, Payload>([
+      [baseApp.id, surfaceOf(baseApp.name)],
+      [automationApp.id, surfaceOf(automationApp.name)],
+      ["app_island", islandSurface()],
+    ]),
     /** Placement rows (2026-08-05): the fixture keeps the SHAPE the wire keeps
      *  per subject — one row per slot, and the entry's status is derived from
      *  the app list on read, never stored. */
@@ -1095,7 +1098,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
             { slot, appId: minted.id },
           ];
         }
-        minted.tree = {
+        state.surfaces.set(minted.id, {
           formatVersion: "vendo-genui/v2",
           root: "root",
           nodes: [
@@ -1103,7 +1106,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
             { id: `${componentName.toLowerCase()}-1`, component: componentName, source: "generated" },
           ],
           components: { [componentName]: `export default function Fork() { return <p>${component} fork</p>; }` },
-        } as AppDocument["tree"];
+        });
         minted.seed = { component, baseline: "sha256:fixture", instruction };
         state.apps.push(minted);
         return json(response, minted);
@@ -1131,6 +1134,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
           landing.seen += 1;
           if (landing.seen >= landing.after && !state.apps.some(item => item.id === landingId)) {
             state.apps.push(app(landingId, landing.name));
+            state.surfaces.set(landingId, surfaceOf(landing.name));
           }
         }
         const asked = (url.searchParams.get("slots") ?? "")
@@ -1188,13 +1192,13 @@ export async function createWireServer(options: WireServerOptions = {}) {
         // speed-core F5 — a prompt tagged [with-button] builds an app whose
         // root is an action-bound Button, so embed tests can click THROUGH
         // the served app and assert which app id the call targets.
-        if (prompt.includes("[with-button]")) {
-          created.tree = {
+        state.surfaces.set(created.id, prompt.includes("[with-button]")
+          ? {
             formatVersion: "vendo-genui/v2",
             root: "root",
             nodes: [{ id: "root", component: "Button", props: { label: "Refresh data", onClick: { $action: "host_refresh" } } }],
-          } as AppDocument["tree"];
-        }
+          }
+          : surfaceOf(prompt));
         state.apps.push(created);
         return json(response, created);
       }
@@ -1265,7 +1269,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
           // is a tree. Both must mount in a slot.
           const served = state.httpApps.get(id);
           if (served !== undefined) return json(response, { kind: "http", url: served });
-          return json(response, { kind: "tree", payload: state.apps[index]?.tree });
+          return json(response, { kind: "tree", payload: state.surfaces.get(id) });
         }
         if (action === "call" && method === "POST") return json(response, { status: "ok", output: parsedBody });
         if (action === "edit" && method === "POST") {

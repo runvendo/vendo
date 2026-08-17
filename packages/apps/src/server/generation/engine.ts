@@ -13,7 +13,6 @@ import {
 } from "@vendoai/core";
 import {
   type AppDocument,
-  type Tree,
 } from "../../contract/index.js";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { FloorDependencies } from "../checking/deps.js";
@@ -40,18 +39,6 @@ export interface GenerationDependencies extends FloorDependencies {
 }
 
 export type GeneratedAppDocument = Omit<AppDocument, "id">;
-
-/**
- * A stored document's `tree` (the open UIPayload the store speaks) and the
- * genui `Tree` are the same structure under two names. These two casts are the
- * ONLY bridge between them — an `as unknown as` on a tree anywhere else is a
- * smell. `asTree` trusts its caller about presence, exactly as the casts it
- * replaced did: guard `undefined` before converting.
- */
-export const asTree = (tree: GeneratedAppDocument["tree"]): Tree => tree as unknown as Tree;
-
-export const asPayload = (tree: Tree): NonNullable<GeneratedAppDocument["tree"]> =>
-  tree as unknown as NonNullable<GeneratedAppDocument["tree"]>;
 
 // Anthropic prompt-caching breakpoint (mirrors packages/agent/src/agent.ts's
 // CACHE_BREAKPOINT). providerOptions.anthropic is ignored by every other

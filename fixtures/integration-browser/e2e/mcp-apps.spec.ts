@@ -32,15 +32,11 @@ test("ENG-276: a real MCP client hosts the shim, executes an action, and parks a
   await expect(shim.getByText(`Invoice ${MCP_APPS_INVOICE_ID} is rendered from the real door resource.`))
     .toBeVisible();
 
-  const generated = shim
-    .frameLocator('iframe[title="Generated component: InvoiceActions"]')
-    .frameLocator('iframe[title="Generated Vendo component"]');
-
-  // Click inside the generated-component jail. The bridge forwards tools/call
-  // to the SDK client, then through the real door and app/runtime guard to the
-  // fixture host's PATCH endpoint.
-  await generated.getByRole("button", { name: "Update invoice" }).click();
-  await expect(generated.getByText("Updated: ok")).toBeVisible({ timeout: 20_000 });
+  // Click inside the shim. The bridge forwards tools/call to the SDK client,
+  // then through the real door and app/runtime guard to the fixture host's PATCH
+  // endpoint.
+  await shim.getByRole("button", { name: "Update invoice" }).click();
+  await expect(shim.getByText("Updated: ok")).toBeVisible({ timeout: 20_000 });
   await expect.poll(async () => {
     const response = await request.get(`/__test/host/invoice/${MCP_APPS_INVOICE_ID}`);
     const body = await response.json() as { invoice?: { memo?: string } };
@@ -55,10 +51,10 @@ test("ENG-276: a real MCP client hosts the shim, executes an action, and parks a
   });
 
   // The destructive ref traverses the same route but the guard parks it. Both
-  // the nested action control and the shim's tree outcome surface that state;
-  // the real host record remains untouched.
-  await generated.getByRole("button", { name: "Delete invoice" }).click();
-  await expect(generated.getByText("Delete: pending-approval")).toBeVisible({ timeout: 20_000 });
+  // the control and the shim's tree outcome surface that state; the real host
+  // record remains untouched.
+  await shim.getByRole("button", { name: "Delete invoice" }).click();
+  await expect(shim.getByText("Delete: pending-approval")).toBeVisible({ timeout: 20_000 });
   await expect(shim.getByRole("note", { name: "Action pending approval" }))
     .toContainText("Action is waiting for approval");
   await expect.poll(async () => {

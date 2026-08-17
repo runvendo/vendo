@@ -349,16 +349,11 @@ describe("existing-agents embeds", () => {
       mount(<VendoAppEmbed refValue={late} />);
       await waitFor(() => expect(screen.getByText(/Building/)).toBeDefined());
       // The build lands: the app becomes servable on a later poll.
-      wire.state.apps.push({
-        format: "vendo/app@1",
-        id: "app_late",
-        name: "Late app",
-        ui: "tree",
-        tree: {
-          formatVersion: "vendo-genui/v2",
-          root: "root",
-          nodes: [{ id: "root", component: "Text", props: { text: "Late app surface" } }],
-        },
+      wire.state.apps.push({ format: "vendo/app@1", id: "app_late", name: "Late app", ui: "tree" });
+      wire.state.surfaces.set("app_late", {
+        formatVersion: "vendo-genui/v2",
+        root: "root",
+        nodes: [{ id: "root", component: "Text", props: { text: "Late app surface" } }],
       });
       await waitFor(() => expect(screen.getByText("Late app surface")).toBeDefined(), { timeout: 5000 });
     });

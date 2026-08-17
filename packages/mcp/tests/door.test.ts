@@ -1549,15 +1549,13 @@ describe("createMcpDoor MCP protocol", () => {
   });
 
   it("adds apps tools metadata and serves the static MCP Apps resource", async () => {
-    const app: AppDocument = {
-      format: "vendo/app@1",
-      id: "app_1",
-      name: "Dashboard",
-      tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] },
-    };
+    const app: AppDocument = { format: "vendo/app@1", id: "app_1", name: "Dashboard" };
+    // What OPENING the app renders — the payload a paint produces, which is what
+    // the shim receives. No document carries one.
+    const payload = { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } as never;
     const apps: AppsRideAlong = {
       async list() { return [app]; },
-      async open() { return { kind: "tree", payload: app.tree! }; },
+      async open() { return { kind: "tree", payload }; },
       async call(_appId, _ref, args) { return { status: "ok", output: { received: args } as Json }; },
     };
     const harness = makeHarness({
@@ -1590,7 +1588,7 @@ describe("createMcpDoor MCP protocol", () => {
     expect(list._meta).toEqual(open._meta);
 
     const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
-    expect(opened.structuredContent).toEqual(app.tree);
+    expect(opened.structuredContent).toEqual(payload);
     const called = await connected.client.callTool({
       name: "vendo_apps_call",
       arguments: { appId: "app_1", ref: "host_lookup", args: { query: "x" } },

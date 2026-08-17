@@ -1,7 +1,9 @@
 import {
+  engineOverAdapter,
+  VENDO_APP_FORMAT,
+  VendoError,
   type RunContext,
   type ToolRegistry,
-  VendoError,
 } from "@vendoai/core";
 import type {
   ScreenAssembler,
@@ -12,6 +14,7 @@ import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
 
 // Incident (runvendo/vendo#492): the pack's vendo_make returns fast with a
@@ -110,6 +113,27 @@ describe("build-failure lifecycle (#492)", () => {
     const surface = await runtime.open(rows.records[0]!.id, ctx);
     expect(surface).toMatchObject({ kind: "failed" });
     expect((surface as { reason: string }).reason).toMatch(/\S/);
+  });
+
+  it("resolves a document with no screen as failed, not as a spinning embed", async () => {
+    // A row written back when a stored TREE was the artifact. The field is gone,
+    // so there is no layout to serve and never will be — terminal, and said as
+    // such, rather than an open that throws and an embed that polls to its
+    // deadline. (A remix is the one exception: its row lands before its screen,
+    // which is the not-found the build window turns into pending.)
+    const { runtime, store } = setup(throwingAssembler("unused"));
+    await seedAppRow(engineOverAdapter(store), {
+      format: VENDO_APP_FORMAT,
+      id: "app_legacy",
+      name: "Legacy",
+      ui: "tree",
+    }, "user_ada");
+
+    const surface = await runtime.open("app_legacy", context("user_ada"));
+    expect(surface).toMatchObject({ kind: "failed" });
+    expect((surface as { reason: string }).reason).toContain("has no screen");
+    // Nothing to retry: re-issuing the create would fail identically.
+    expect(surface).not.toHaveProperty("retryable");
   });
 
   it("still throws not-found (→ the wire's {kind:\"pending\"}) for an app that never persisted", async () => {

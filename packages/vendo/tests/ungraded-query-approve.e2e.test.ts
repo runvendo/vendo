@@ -13,6 +13,7 @@ import {
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
+import { screenSource } from "./screen-fixture.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 /**
@@ -86,26 +87,40 @@ async function harness() {
       id: "app_seed_id_is_replaced",
       name: "Spending view",
       ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        queries: [{ name: "insights", tool: "host_getSpendingInsights", input: { window: "30d" } }],
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
+      source: screenSource(`import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Spending() {
+  const insights = useQuery("host_getSpendingInsights", { window: "30d" });
+  return (
+    <Stack gap={12}>
+      <Text text={String(insights.dining) + " " + String(insights.groceries)} />
+    </Stack>
+  );
+}
+`),
     } as AppDocument,
     ctx,
   );
   return { guard, apps, host, appId: app.id };
 }
 
-/** What the surface actually renders for the query's slot. */
+/**
+ * What the surface actually renders for the query's slot, or `undefined` when
+ * the query has nothing to give it.
+ *
+ * A screen's tree is what RENDERING it produces, so a query that parks takes the
+ * whole render with it: the open refuses, in the gauntlet's own words, rather
+ * than painting a screen with a hole in it.
+ */
 async function renderedInsights(
   apps: Awaited<ReturnType<typeof harness>>["apps"],
   appId: string,
 ): Promise<Json | undefined> {
-  const surface = await apps.open(appId as Parameters<typeof apps.open>[0], ctx);
+  const surface = await apps.open(appId as Parameters<typeof apps.open>[0], ctx)
+    .catch(() => undefined);
+  if (surface === undefined) return undefined;
   if (surface.kind !== "tree") throw new Error(`expected a tree surface, got ${surface.kind}`);
-  return (surface.payload.data as Record<string, Json> | undefined)?.insights;
+  return JSON.stringify(surface.payload) as Json;
 }
 
 async function onlyPendingApproval(guard: Awaited<ReturnType<typeof harness>>["guard"]) {
@@ -126,7 +141,7 @@ describe.sequential("an ungraded app query parks, and the owner's yes actually l
 
     // THE BUG: before the fix this reopen minted a new call id, missed the
     // approval, and parked again — the region stayed empty forever.
-    expect(await renderedInsights(apps, appId)).toEqual({ dining: 41_200, groceries: 23_300 });
+    expect(await renderedInsights(apps, appId)).toContain("41200 23300");
     expect(host.reads()).toBe(1);
   });
 
@@ -161,7 +176,7 @@ describe.sequential("an ungraded app query parks, and the owner's yes actually l
     expect(await renderedInsights(apps, appId)).toBeUndefined();
     const reasked = await onlyPendingApproval(guard);
     await guard.approvals.decide(reasked, { approve: true }, principal);
-    expect(await renderedInsights(apps, appId)).toEqual({ dining: 41_200, groceries: 23_300 });
+    expect(await renderedInsights(apps, appId)).toContain("41200 23300");
     expect(host.reads()).toBe(1);
   });
 
@@ -177,7 +192,7 @@ describe.sequential("an ungraded app query parks, and the owner's yes actually l
     );
 
     for (let reopen = 0; reopen < 3; reopen += 1) {
-      expect(await renderedInsights(apps, appId)).toEqual({ dining: 41_200, groceries: 23_300 });
+      expect(await renderedInsights(apps, appId)).toContain("41200 23300");
     }
     expect(host.reads()).toBe(3);
     expect(await guard.approvals.pending(principal)).toHaveLength(0);

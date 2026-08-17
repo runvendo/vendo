@@ -23,10 +23,10 @@ describe("saved apps ride along as MCP Apps", () => {
           arguments: { appId: FIXTURE_APP_ID },
         });
         expect(opened.isError).not.toBe(true);
-        expect(opened.structuredContent).toMatchObject({
-          formatVersion: "vendo-genui/v2",
-          data: { fixture: true },
-        });
+        // The payload a paint produced: no document carries one, so this IS the
+        // app, rendered for this open.
+        expect(opened.structuredContent).toMatchObject({ formatVersion: "vendo-genui/v2" });
+        expect(JSON.stringify(opened.structuredContent)).toContain("MCP invoice fixture");
 
         const resource = await connected.client.readResource({ uri: SHIM_URI });
         expect(resource.contents).toHaveLength(1);

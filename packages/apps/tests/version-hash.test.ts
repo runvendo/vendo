@@ -12,11 +12,6 @@ const document = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   id: "app_original",
   name: "Maple snapshot",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Net worth" } }],
-  },
   ...overrides,
 });
 
@@ -24,7 +19,6 @@ describe("appVersionHash", () => {
   it("hashes canonical app content without copy identity or lineage", () => {
     const original = document({ forkedFrom: "app_template" });
     const reordered = {
-      tree: original.tree,
       ui: original.ui,
       name: original.name,
       id: "app_imported_copy",

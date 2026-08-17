@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
-} from "@vendoai/core";
+import { VENDO_APP_FORMAT } from "@vendoai/core";
 import {
   appDocumentSchema,
   validateAppDocument,
@@ -13,11 +10,6 @@ const minimal = () => ({
   id: "app_chat",
   name: "Support Chat",
   ui: "tree" as const,
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { value: "How can I help?" } }],
-  },
 });
 
 const invoiceChaser = () => ({
@@ -26,22 +18,6 @@ const invoiceChaser = () => ({
   name: "Invoice Chaser",
   description: "Follows up on overdue invoices every Monday.",
   ui: "tree" as const,
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", children: ["summary", "send"] },
-      { id: "summary", component: "InvoiceSummary", source: "generated" as const },
-      {
-        id: "send",
-        component: "Button",
-        source: "host" as const,
-        props: { onClick: { action: "fn:send_reminders", payload: { dryRun: true } } },
-      },
-    ],
-    data: { overdue: [] },
-    queries: [{ name: "overdue", tool: "fn:list_overdue", input: { days: 30 } }],
-  },
   components: { InvoiceSummary: "export default function InvoiceSummary(){ return null; }" },
   storage: {
     invoices: {
@@ -92,14 +68,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
   });
 
-  it("accepts unknown UI formats as opaque payloads", () => {
-    const document = {
-      ...minimal(),
-      tree: { formatVersion: "vendo-canvas/v2", opaque: { components: true, action: "fn:not_walked" } },
-    };
-    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
-  });
-
   it("classifies wrong or absent app format as version", () => {
     for (const document of [
       { ...minimal(), format: "vendo/app@2" },
@@ -113,21 +81,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
 
   it("rejects the reserved state storage collection", () => {
     expectValidation({ ...minimal(), storage: { state: { about: "Reserved" } } });
-  });
-
-  it("requires a machine for fn: query and prop action references", () => {
-    const query = {
-      ...minimal(),
-      tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
-    };
-    const action = {
-      ...minimal(),
-      tree: {
-        ...minimal().tree,
-        nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
-      },
-    };
-    for (const document of [query, action]) expectValidation(document);
   });
 
   it("rejects bad pin bases and host refs", () => {
@@ -144,18 +97,12 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expectValidation({ ...minimal(), seed: { component: "", baseline: "sha256:abc", instruction: "make it mine" } });
   });
 
-  it("enforces component limits even without a v1 tree", () => {
+  it("enforces the pinned component limits", () => {
     const base = { format: VENDO_APP_FORMAT, id: "app_x", name: "X" };
     expectValidation({ ...base, components: { Text: "export default () => null;" } }); // reserved
     expectValidation({ ...base, components: { "not-pascal": "x" } });
     expectValidation({ ...base, components: { Big: "x".repeat(65_537) } });
     expect(validateAppDocument({ ...base, components: { Gauge: "export default () => null;" } }).ok).toBe(true);
-    // opaque-format tree beside components: caps still apply
-    expectValidation({
-      ...base,
-      tree: { formatVersion: "vendo-canvas/v2" },
-      components: { Text: "x" },
-    });
   });
 
   it("validates componentTools against the components map and tool-name grammar", () => {
@@ -228,92 +175,6 @@ describe("appDocumentSchema machine field (execution-v2)", () => {
     expectValidation({
       ...minimal(),
       machine: { provisionedAt: "2026-07-19T12:00:00.000Z" },
-    });
-  });
-});
-
-describe("validateAppDocument walks a vendo-genui tree", () => {
-  it("accepts a tree whose generated nodes are backed by document-level components", () => {
-    const document = {
-      ...minimal(),
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [
-          { id: "root", component: "Stack", children: ["gauge"] },
-          { id: "gauge", component: "Gauge", source: "generated" as const },
-        ],
-      },
-      components: { Gauge: "export default function Gauge(){ return null; }" },
-    };
-    expect(appDocumentSchema.parse(document)).toEqual(document);
-    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
-  });
-
-  it("rejects components smuggled inside a tree with the tree validator's message", () => {
-    expectValidation(
-      { ...minimal(), tree: { ...minimal().tree, components: {} } },
-      "trees must not carry components (they live at the app-document level)",
-    );
-  });
-
-  it("rejects generated nodes with no definition in the document components", () => {
-    expectValidation(
-      {
-        ...minimal(),
-        tree: {
-          ...minimal().tree,
-          nodes: [{ id: "root", component: "Gauge", source: "generated" as const }],
-        },
-      },
-      'node "root" references generated component "Gauge" with no definition in components',
-    );
-  });
-
-  it("enforces document component limits beside a tree", () => {
-    expectValidation({ ...minimal(), components: { Text: "export default () => null;" } }); // reserved
-    expectValidation({ ...minimal(), components: { "not-pascal": "x" } });
-  });
-
-  it("requires a machine for fn: v2 query tools and prop actions", () => {
-    const withQuery = {
-      ...minimal(),
-      tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
-    };
-    expectValidation(withQuery, "fn: references require a machine");
-    // execution-v2: the machine satisfies the presence rule.
-    expect(validateAppDocument({
-      ...withQuery,
-      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
-    }).ok).toBe(true);
-    expectValidation(
-      {
-        ...minimal(),
-        tree: {
-          ...minimal().tree,
-          nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
-        },
-      },
-      "fn: references require a machine",
-    );
-  });
-
-  it("rejects malformed fn: prop actions in v2 nodes even when a machine exists", () => {
-    expectValidation({
-      ...minimal(),
-      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
-      tree: {
-        ...minimal().tree,
-        nodes: [{ id: "root", component: "Button", props: { onClick: { action: "fn:bad name" } } }],
-      },
-    });
-  });
-
-  it("rejects malformed fn: v2 query tools even when a machine exists", () => {
-    expectValidation({
-      ...minimal(),
-      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
-      tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
     });
   });
 });

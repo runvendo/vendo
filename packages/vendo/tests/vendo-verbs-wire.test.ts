@@ -14,15 +14,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  sha256Hex,
   type AppDocument,
   type Principal,
   type RunContext,
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
 } from "@vendoai/core";
 import {
   type ComponentRegistry,
 } from "@vendoai/apps/contract";
+import { SCREEN_FILE } from "@vendoai/apps";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -58,16 +59,23 @@ const catalog: ComponentRegistry = {
   },
 } as unknown as ComponentRegistry;
 
+/** The smallest screen the gauntlet passes and the seam paints. */
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function VerbsApp() {
+  return (
+    <Stack gap={12}>
+      <Text text="Ready" variant="heading" />
+    </Stack>
+  );
+}
+`;
+
 const app = (id: string, extra: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: "Verbs app",
   ui: "tree",
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "ok" } }],
-  },
   ...extra,
 } as AppDocument);
 
@@ -112,7 +120,9 @@ describe("the vendo verbs are on the one registry", () => {
 describe("validate", () => {
   it("checks a stored app through the real checking floor", async () => {
     const { vendo } = await compose();
-    await vendo.apps.importApp(app("app_seed"), ctx);
+    await vendo.apps.importApp(app("app_seed", {
+      source: { [SCREEN_FILE]: { hash: `sha256:${sha256Hex(SCREEN)}`, bytes: SCREEN.length, text: SCREEN } },
+    }), ctx);
     const [stored] = await vendo.apps.list(ctx);
 
     const outcome = await vendo.guardedTools.execute(
@@ -130,9 +140,9 @@ describe("validate", () => {
     // is broken", findings read as "your app is wrong". Only the second one
     // gets fixed.
     const { vendo } = await compose();
-    const broken = app("app_broken");
-    broken.tree!.nodes = [{ id: "root", component: "NoSuchComponent" }];
-    await vendo.apps.importApp(broken, ctx);
+    // An app with no `app.tsx` is an app with nothing in it — the floor's own
+    // document check says so rather than the door erroring.
+    await vendo.apps.importApp(app("app_broken"), ctx);
     const stored = (await vendo.apps.list(ctx)).find(({ name }) => name === "Verbs app");
 
     const outcome = await vendo.guardedTools.execute(

@@ -10,7 +10,6 @@
  */
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   sha256Hex,
   type AppId,
   type TreeNode,
@@ -23,7 +22,7 @@ import {
   type AppFloor,
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
-import { SCREEN_FILE, type FlatTree } from "../../contract/genui/component/index.js";
+import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { checkComponentScreen, screenName } from "./component-screen.js";
 import { screenCatalog } from "./screen-typings.js";
 import type { FloorDependencies } from "./deps.js";
@@ -43,13 +42,9 @@ const encoder = new TextEncoder();
  * lands (`persistence/app-source.ts`) — and a check reading the source here reads
  * what it would read off the store.
  *
- * The rendered TREE rides along because this is a PAINT gate and the render has
- * just happened: it is what the person is about to see, and a check about what is
- * on screen ("no unmasked account numbers") has nothing else to read. Nothing
- * stores it; the same reasoning that makes a stored snapshot untrustworthy makes
- * this one authoritative — it is this screen, on this data, one moment ago.
+ * The rendered tree rides BESIDE it, on `CheckInput.rendered` — see there.
  */
-const screenDocumentOf = (appId: AppId, source: string, rendered: FlatTree): AppDocument => ({
+const screenDocumentOf = (appId: AppId, source: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id: appId,
   name: screenName(source),
@@ -61,14 +56,6 @@ const screenDocumentOf = (appId: AppId, source: string, rendered: FlatTree): App
       text: source,
     },
   },
-  // Same two casts the paint itself makes: a `FlatNode` IS a `TreeNode` with both
-  // optional members present, and a stored document's `tree` and the genui `Tree`
-  // are one structure under two names.
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: rendered.root,
-    nodes: Object.values(rendered.nodes) as TreeNode[],
-  } as unknown as AppDocument["tree"],
 });
 
 /** A host check's finding as one refusal line, in the SAME shape the wire path's
@@ -232,8 +219,14 @@ export const createAppFloor = (
       // everywhere else: one that throws degrades to a `warn` and never takes the
       // app down with it. `request: ""` for the reason `check` passes it above.
       const findings = blocks(await runChecks(checks ?? [], {
-        document: screenDocumentOf(appId, source, checked.initialTree),
+        document: screenDocumentOf(appId, source),
         request: "",
+        // A `FlatNode` IS a `TreeNode` with both optional members present — the
+        // same reading the gauntlet's own tree stage takes of it.
+        rendered: {
+          root: checked.initialTree.root,
+          nodes: Object.values(checked.initialTree.nodes) as TreeNode[],
+        },
       }));
       if (findings.length > 0) return refuse(findings.map(refusalLine));
       // BEFORE the paint is handed back, because the source commit that follows it

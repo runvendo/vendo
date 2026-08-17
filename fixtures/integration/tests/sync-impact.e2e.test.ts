@@ -1,5 +1,5 @@
 /** ENG-261 — sync blast radius over the real composed wire and store. */
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument } from "@vendoai/core";
+import { VENDO_APP_FORMAT, type AppDocument } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
@@ -25,12 +25,9 @@ function plainApp(): AppDocument {
     id: "app_import_placeholder",
     name: "Invoice viewer",
     ui: "tree",
-    tree: {
-      formatVersion: VENDO_TREE_FORMAT,
-      root: "root",
-      nodes: [{ id: "root", component: "Text", props: { text: "Invoices" } }],
-      queries: [{ name: "invoices", tool: TOOL }],
-    },
+    // A document names a tool in exactly one place: the compiler-stamped
+    // manifest of what an island's SOURCE calls through the ambient `tools` API.
+    components: { Invoices: "export default function Invoices(){ return null; }" },
   };
 }
 
@@ -47,7 +44,13 @@ describe("ENG-261: sync impact through the composed wire", () => {
     const app = await importApp(stack, plainApp(), ADA);
     // Imported documents are intentionally disabled at rest and the public wire
     // has no enable route for plain apps; flip only that persisted operator bit.
-    await stack.sql("UPDATE vendo_apps SET enabled = true WHERE id = $1", [app.id]);
+    // The island tool manifest is written the same way, because the interchange
+    // field list does not copy `componentTools` — the impact reader needs a row
+    // that names a tool, and import is not the door that gives one.
+    await stack.sql(
+      `UPDATE vendo_apps SET enabled = true, doc = doc || $2::jsonb WHERE id = $1`,
+      [app.id, JSON.stringify({ componentTools: { Invoices: [TOOL] } })],
+    );
     const automated = await createAutomation(stack, {
       owner: ADA,
       when: { event: EVENT },

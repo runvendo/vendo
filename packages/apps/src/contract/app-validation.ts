@@ -4,22 +4,18 @@
  * Split from the document's shapes, which stay in `@vendoai/core`: core's own
  * store conformance kit parses a stored app row with `appDocumentSchema`
  * (`core/src/conformance/memory-store.ts`), so the shape has to be readable
- * from below. The validator does not — it reaches `validateTree`, the component
- * map and the fn-reference grammar, which are all app-generation format, and
- * they live here. One definition either way; the door re-exports both halves.
+ * from below. The validator does not — it reaches the component map, which is
+ * app-generation format and lives here. One definition either way; the door
+ * re-exports both halves.
  */
 import {
   safeErrorMessage,
   TOOL_NAME_PATTERN,
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   appDocumentSchema,
   type AppDocument,
-  type TreeNode,
 } from "@vendoai/core";
 import { componentMapError } from "./component-map.js";
-import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
-import { validateTree } from "./genui/tree.js";
 
 export type AppDocumentValidation =
   | { ok: true; app: AppDocument }
@@ -33,57 +29,11 @@ const fail = (code: string, message: string): AppDocumentValidation => ({
   error: { code, message },
 });
 
-/** Shared by the tree validation branches: collect every fn: reference a
- *  validated tree names (query tools + prop actions) for the machine-presence
- *  rule. Grammar and server checks happen at the call sites' shared tail. */
-const collectTreeFnReferences = (
-  tree: { nodes: TreeNode[]; queries?: Array<{ tool: string }> },
-  fnReferences: string[],
-): void => {
-  for (const query of tree.queries ?? []) {
-    if (query.tool.startsWith("fn:")) fnReferences.push(query.tool);
-  }
-  for (const node of tree.nodes) {
-    if (node.props !== undefined) collectActionReferences(node.props, fnReferences);
-  }
-};
-
-/** The tree/components pair, and the fn: references the tree names. Null when
- *  the pair checks out. */
-const treeAndComponentsError = (app: AppDocument, fnReferences: string[]): AppDocumentValidation | null => {
-  if (app.tree?.formatVersion === VENDO_TREE_FORMAT) {
-    // No grafting: trees never carry components (validateTree rejects a
-    // tree-level `components` member itself), so the tree validates AS-IS and
-    // the document-level map is validated beside it.
-    const treeResult = validateTree(app.tree);
-    if (!treeResult.ok) {
-      return fail("validation", treeResult.error.message);
-    }
-    const components = app.components ?? {};
-    const componentError = componentMapError(components);
-    if (componentError !== null) {
-      return fail("validation", componentError);
-    }
-    // Generated-presence — the check validateTree deliberately defers to the
-    // document, which is where the components map lives (mirrors v1's rule).
-    for (const node of treeResult.tree.nodes) {
-      if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {
-        return fail(
-          "validation",
-          `node "${node.id}" references generated component "${node.component}" with no definition in components`,
-        );
-      }
-    }
-    collectTreeFnReferences(treeResult.tree, fnReferences);
-  } else if (app.components !== undefined) {
-    // No v1 tree to graft onto — the pinned component limits (01-core §8) still
-    // bound what the jail will compile.
-    const componentError = componentMapError(app.components);
-    if (componentError !== null) {
-      return fail("validation", componentError);
-    }
-  }
-  return null;
+/** The pinned component limits (01-core §8) — what the jail will compile. */
+const componentsError = (app: AppDocument): AppDocumentValidation | null => {
+  if (app.components === undefined) return null;
+  const componentError = componentMapError(app.components);
+  return componentError === null ? null : fail("validation", componentError);
 };
 
 /** W4b — a stamped island tool manifest must name a real island and real
@@ -99,20 +49,6 @@ const componentToolsError = (app: AppDocument): AppDocumentValidation | null => 
         return fail("validation", `componentTools["${componentName}"] entry "${toolName}" is not a valid tool name`);
       }
     }
-  }
-  return null;
-};
-
-const fnReferencesError = (app: AppDocument, fnReferences: readonly string[]): AppDocumentValidation | null => {
-  for (const reference of fnReferences) {
-    if (!FN_REFERENCE_PATTERN.test(reference)) {
-      return fail("validation", `invalid fn: reference "${reference}"`);
-    }
-  }
-  // execution-v2 machine-presence rule: an fn: ref is only meaningful when the
-  // document carries a box to answer it — the v2 `machine` (Lane B).
-  if (fnReferences.length > 0 && app.machine === undefined) {
-    return fail("validation", "fn: references require a machine");
   }
   return null;
 };
@@ -188,12 +124,9 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   }
 
   // The cross-field rules, in the order their messages are pinned to: each
-  // returns the failure it found, or null. `fnReferences` accumulates across
-  // the tree rules and is checked once they have filled it.
-  const fnReferences: string[] = [];
-  const violation = treeAndComponentsError(app, fnReferences)
+  // returns the failure it found, or null.
+  const violation = componentsError(app)
     ?? componentToolsError(app)
-    ?? fnReferencesError(app, fnReferences)
     ?? sourceError(app)
     ?? storageError(app)
     ?? referenceFieldsError(app);

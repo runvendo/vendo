@@ -89,10 +89,8 @@ describe("apps lifecycle", () => {
 
     expect(first).toMatchObject({ format: VENDO_APP_FORMAT, name: "First app", ui: "tree" });
     expect(first.id).toMatch(/^app_/);
-    // The screen IS the app: the stored row carries the file, and no tree — a
-    // screen's tree is what RENDERING it produces, never a stored snapshot.
+    // The screen IS the app: the stored row carries the file.
     expect(first.source?.[SCREEN_FILE]?.text).toContain("export default function FirstApp()");
-    expect(first.tree).toBeUndefined();
     expect(await runtime.get(first.id, ada)).toEqual(first);
     expect((await runtime.list(ada)).map((app) => app.id)).toEqual([second.id, first.id]);
     expect(await runtime.get(first.id, grace)).toBeNull();

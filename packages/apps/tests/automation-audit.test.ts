@@ -62,11 +62,6 @@ const seedDoc: AppDocument = {
   id: APP_ID,
   name: "Invoice board",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "app",
-    nodes: [{ id: "app", component: "Stack", source: "prewired", children: [] }],
-  },
 };
 
 const ASK = "nudge everyone with an overdue invoice every day";

@@ -214,13 +214,6 @@ describe("app data persistence", () => {
       name: "Invoice Chaser",
       description: "Chases overdue invoices every Monday",
       ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Text", props: { text: "Invoice Chaser" } }],
-        data: {},
-        queries: [],
-      },
       components: {
         SpendChart: "export default function SpendChart() { return null; }",
       },

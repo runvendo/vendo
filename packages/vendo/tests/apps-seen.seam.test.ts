@@ -25,13 +25,13 @@ import { join } from "node:path";
 import {
   THREAD_WINDOW_INITIAL,
   toVendoWirePart,
-  VENDO_APP_FORMAT,
   vendoViewPart,
   type AppDocument,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
+import { screenDocument } from "./screen-fixture.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -43,17 +43,7 @@ afterEach(async () => {
 
 const ADA: Principal = { kind: "user", subject: "user_ada" };
 
-const doc = (id: string, name: string): AppDocument => ({
-  format: VENDO_APP_FORMAT,
-  id,
-  name,
-  ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-  },
-});
+const doc = (id: string, name: string): AppDocument => screenDocument(id, { name });
 
 /** The agent's context: the venue an MCP call really arrives on. */
 const agentCtx: RunContext = {

@@ -1,17 +1,17 @@
 /**
- * The built-in FACT checks: everything about a generated app that can be
- * decided by looking things up rather than by judgement — the document parses
- * and validates, its queries name tools the host really has, its nodes name
- * components the catalog really carries, and its bindings reach fields the
- * tool shapes really expose with types the props really accept.
+ * The built-in FACT checks: everything about a stored app that can be decided by
+ * looking things up rather than by judgement — the document parses, validates,
+ * and carries the `app.tsx` that IS the app.
  *
- * These helpers are the single home for that machinery.
+ * The walkers beside them read a RENDERED tree: node names against the catalog,
+ * nesting, routes, prop shapes. They are the component gauntlet's
+ * (`component-screen.ts`), which runs them over the tree a paint just produced —
+ * the only tree there is.
  *
  * Judgement checks (invented data, dishonest tool use, dead buttons, sections
  * that miss the ask) are NOT here — they belong to the AI reviewer.
  */
 import {
-  VENDO_TREE_FORMAT,
   shapeAtPointer,
   isPathBinding,
   isStateBinding,
@@ -23,13 +23,10 @@ import {
   KIT_CHILDLESS_NAMES,
   KIT_SLOT_CONTENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
-  checkBindingShapes,
-  checkExpr,
   kitSlotPath,
   kitSpec,
   isExprBinding,
   validateAppDocument,
-  validateTree,
   vendoRouteParams,
   type KitSlotSpec,
   type NormalizedCatalog,
@@ -42,7 +39,7 @@ import type {
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { wirePropNames } from "../escalation/prewired-schema.js";
-import type { FloorDependencies, HostToolInfo } from "./deps.js";
+import type { FloorDependencies } from "./deps.js";
 import { COMPONENT_SCREEN_LIB, componentScreenTypings, screenCatalog } from "./screen-typings.js";
 import { screenTscFindings } from "./screen-tsc.js";
 import type { Check, Finding } from "./types.js";
@@ -139,62 +136,6 @@ export const bindingKindIssues = (tree: Tree, deps: FloorDependencies): FactIssu
   return issues;
 };
 
-/** asPoints/asOptions produce generic {label,value}/{value,label} items; a
- *  HOST prop whose schema declares its OWN item field names cannot read them
- *  (live finding: the Maple donut drew $NaN). The raw rows are the legal
- *  binding — reject the reshape at compile. */
-const GENERIC_ITEM_RESHAPES = new Set(["asPoints", "asOptions"]);
-
-export const hostReshapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
-  const issues: FactIssue[] = [];
-  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
-  for (const node of tree.nodes) {
-    if (node.source !== "host" || node.props === undefined) continue;
-    const schema = hostSchemas.get(node.component);
-    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
-    if (properties === undefined) continue;
-    for (const [prop, value] of Object.entries(node.props)) {
-      if (!isPathBinding(value)) continue;
-      const reshape = (value as unknown as { $reshape?: Array<{ op?: string }> }).$reshape;
-      if (!Array.isArray(reshape) || !reshape.some((step) => GENERIC_ITEM_RESHAPES.has(step?.op ?? ""))) continue;
-      const propSchema = properties[prop];
-      const items = isRecord(propSchema) && isRecord(propSchema.items) ? propSchema.items : undefined;
-      const itemProperties = items !== undefined && isRecord(items.properties) ? Object.keys(items.properties) : [];
-      if (itemProperties.length === 0) continue;
-      if (itemProperties.includes("label") && itemProperties.includes("value")) continue;
-      issues.push(atProp(node.id, prop, `reshapes with asPoints/asOptions, but host component "${node.component}" declares its own item fields (${itemProperties.join(", ")}) — it cannot read generic {label, value} items. Bind the RAW rows (drop the reshape) so the component receives the fields its schema names.`));
-    }
-  }
-  return issues;
-};
-
-/** Law 2 — a query input executes as LITERAL JSON: the runtime never
- *  resolves bindings inside it, so a dependent call
- *  (`accountId: accounts.data.0.id`) reaches the tool as an unresolved
- *  binding object and the app ships broken. Reject at compile → repair. */
-export const queryInputIssues = (tree: Tree): FactIssue[] => {
-  const issues: FactIssue[] = [];
-  const findBinding = (value: unknown): boolean => {
-    if (isPathBinding(value) || isStateBinding(value) || isExprBinding(value)) return true;
-    if (Array.isArray(value)) return value.some(findBinding);
-    if (isRecord(value)) return Object.values(value).some(findBinding);
-    return false;
-  };
-  for (const query of tree.queries ?? []) {
-    if (query.input !== undefined && findBinding(query.input)) {
-      issues.push({
-        where: `query "${query.name}"`,
-        message: `(tool "${query.tool}") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), and derive what you needed where it is DISPLAYED instead: a component's prop is a JavaScript expression over the queries you already declared (rows={${query.name}.data.filter(r => r.status === "open")}).`,
-      });
-    }
-  }
-  return issues;
-};
-
-/** Law 1 raw typing — probe values per shape kind, parsed against the Kit
- *  prop's zod schema. Kind-level only: a string-shaped field bound into
- *  Money.cents fails (pre-formatted money strings never reach a numeric
- *  slot); unknown shapes stay silent. */
 const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
   string: "probe",
   number: 1,
@@ -238,75 +179,6 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
         issues.push(atProp(node.id, prop, `on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`));
       }
     }
-  }
-  return issues;
-};
-
-/** A computed value (`{ $expr }`) is evaluated live in the renderer, so a bad
- *  expression is a blank stat rather than a crash — exactly the silent-breakage
- *  class facts exist to catch. Two kinds are decidable by looking things up: the
- *  expression is a JavaScript expression within the size cap, and every name it
- *  reads is a query the screen declared.
- *
- *  Its FIELDS and TYPES are the `screen-types` check's, not this one's: the gap
- *  is real JavaScript now, so the printed screen type-checks against the
- *  queries' declared result types under the real compiler. A second bespoke
- *  shape walker here could only disagree with it. Whether the number MEANS
- *  anything stays the reviewer's judgement.
- *
- *  `_deps` is vestigial: the shape lookup it carried is what moved to the
- *  compiler. It stays in the signature only because the create/edit validator
- *  (generation/validation/validate.ts) passes it, and that file is off-limits
- *  to this change — drop the argument there and the parameter here together. */
-export const exprIssues = (tree: Tree, _deps?: FloorDependencies): FactIssue[] => {
-  const context = { queryNames: (tree.queries ?? []).map((query) => query.name) };
-  const issues: FactIssue[] = [];
-  const walk = (nodeId: string, prop: string, value: unknown): void => {
-    if (isExprBinding(value)) {
-      for (const message of checkExpr(value.$expr, context)) {
-        issues.push(atProp(nodeId, prop, `computes {${value.$expr}}: ${message}`));
-      }
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) walk(nodeId, prop, item);
-      return;
-    }
-    if (isRecord(value)) {
-      for (const child of Object.values(value)) walk(nodeId, prop, child);
-    }
-  };
-  for (const node of tree.nodes) {
-    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
-  }
-  return issues;
-};
-
-/** Models write "Total: {metric.total}" inside STRING attributes; the wire
- *  has no string interpolation, so the braces render literally. Any string
- *  prop embedding a declared query reference is a repair-routed error. */
-export const interpolationIssues = (tree: Tree): FactIssue[] => {
-  const queryNames = (tree.queries ?? []).map((query) => query.name);
-  if (queryNames.length === 0) return [];
-  const pattern = new RegExp(`\\{(?:${queryNames.join("|")})(?:\\.[A-Za-z0-9_]+)*\\}`);
-  const issues: FactIssue[] = [];
-  const walk = (nodeId: string, prop: string, value: unknown): void => {
-    if (typeof value === "string") {
-      if (pattern.test(value)) {
-        issues.push(atProp(nodeId, prop, "embeds a binding inside a string — string interpolation is unsupported; bind the prop to a single {reference} or split the text into separate Text nodes"));
-      }
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) walk(nodeId, prop, item);
-      return;
-    }
-    if (isRecord(value)) {
-      for (const child of Object.values(value)) walk(nodeId, prop, child);
-    }
-  };
-  for (const node of tree.nodes) {
-    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
   }
   return issues;
 };
@@ -652,43 +524,6 @@ export const routeIssues = (tree: Tree, routes: VendoRouteMap | undefined): Fact
   return issues;
 };
 
-/** A query naming a tool the host does not have. The message lists the real
- *  ones — a model reading it can pick, and a human reading it learns the
- *  surface. `fn:` queries are the app's own server code, not host tools. */
-export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | undefined): FactIssue[] => {
-  if (tools === undefined) return [];
-  const known = new Set(tools.map((tool) => tool.name));
-  return (tree.queries ?? [])
-    .filter((query) => !query.tool.startsWith("fn:") && !known.has(query.tool))
-    .map((query) => ({
-      where: `query "${query.name}"`,
-      message: `names unknown tool "${query.tool}"; the host tools are: ${[...known].join(", ")}`,
-    }));
-};
-
-/** Every `$path` binding resolved query → tool → response shape by the wire
- *  compiler's own checker. A miss carries the fields that ARE there, so the
- *  message can teach instead of only refusing.
- *
- *  KEPT despite the tsc floor: a `$path` with a NUMERIC index segment
- *  (`/invoices/data/0/customer`) does not print as a bare reference — printWire
- *  falls to a quoted `{ "$path": … }` object literal (identifier segments only,
- *  print.ts), which tsc reads as a valid object and cannot walk. So field
- *  existence UNDER an index is the one field-existence class the static half
- *  cannot see; this check is its only reader. Identifier-path field existence
- *  overlaps `screen-types` — both block, and `screen-types` runs last so its
- *  message trails the targeted one. */
-const bindingShapeIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
-  if (deps.toolShapes === undefined) return [];
-  return checkBindingShapes(tree.nodes, tree.queries ?? [], deps.toolShapes).map((error) => atProp(
-    error.nodeId,
-    error.prop,
-    `binds ${error.path}: ${error.message}${error.available === undefined ? "" : ` — the real fields are: ${error.available.join(", ")}`}`,
-  ));
-};
-
-/** The document's own validity: it parses as an app, its tree is a tree of the
- *  format this engine speaks, and it carries a short human title. */
 const documentIssues = (app: AppDocument): FactIssue[] => {
   const issues: FactIssue[] = [];
   const name = app.name?.trim() ?? "";
@@ -699,50 +534,17 @@ const documentIssues = (app: AppDocument): FactIssue[] => {
   }
   const validation = validateAppDocument(app);
   if (!validation.ok) issues.push({ where: "document", message: validation.error.message });
-  if (app.tree === undefined) {
-    // …unless the app IS a component screen, whose tree is what rendering it
-    // produces rather than anything stored (`SCREEN_FILE` in `source`). Its
-    // mechanical half is its own gauntlet (`checkComponentScreen`), so a stored
-    // tree would be a snapshot nobody may trust and its absence is not a defect.
-    if (app.source?.[SCREEN_FILE] === undefined) {
-      issues.push({ where: "document", message: "carries no tree — the engine emits tree documents only" });
-    }
-    return issues;
+  // An app IS its `app.tsx`, and its tree is what RENDERING that produces — the
+  // screen's own gauntlet (`checkComponentScreen`) is the mechanical half. A
+  // document with no screen has no app in it.
+  if (app.source?.[SCREEN_FILE] === undefined) {
+    issues.push({ where: "document", message: "carries no screen — an app is its own app.tsx" });
   }
-  if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
-    issues.push({ where: "document", message: `carries tree format "${String(app.tree.formatVersion)}" — this engine speaks "${VENDO_TREE_FORMAT}"` });
-    return issues;
-  }
-  const treeValidation = validateTree(app.tree);
-  if (!treeValidation.ok) issues.push({ where: "document", message: treeValidation.error.message });
   return issues;
-};
-
-/** The document's tree, or undefined when it is not one — the `document`
- *  check reports that, and every other check stays quiet rather than
- *  repeating it. */
-export const treeOf = (app: Pick<AppDocument, "tree">): Tree | undefined => {
-  if (app.tree === undefined || app.tree.formatVersion !== VENDO_TREE_FORMAT) return undefined;
-  const validation = validateTree(app.tree);
-  return validation.ok ? validation.tree : undefined;
 };
 
 const blocking = (issues: readonly FactIssue[]): Finding[] =>
   issues.map(({ where, message }) => ({ severity: "block", where, message }));
-
-/** A check over the document's tree; skipped silently when there is no valid
- *  tree to look at. */
-const treeCheck = (
-  name: string,
-  issues: (tree: Tree, app: AppDocument) => FactIssue[] | Promise<FactIssue[]>,
-): Check => ({
-  name,
-  kind: "fact",
-  run: async ({ document }) => {
-    const tree = treeOf(document);
-    return tree === undefined ? [] : blocking(await issues(tree, document));
-  },
-});
 
 /**
  * The checks floor's static half: the screen's own text, type-checked by `tsc`
@@ -757,23 +559,11 @@ const treeCheck = (
  * own. A document with no screen has nothing to type-check.
  */
 /**
- * The built-in fact checks, bound to the host surface they measure against.
- * Every finding is `block`: a fact is not a matter of taste.
+ * The built-in fact checks. Every finding is `block`: a fact is not a matter of
+ * taste.
  */
-export const factChecks = (deps: FloorDependencies): Check[] => [
+export const factChecks = (): Check[] => [
   { name: "document", kind: "fact", run: async ({ document }) => blocking(documentIssues(document)) },
-  treeCheck("tools-exist", (tree) => unknownToolIssues(tree, deps.tools)),
-  treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),
-  treeCheck("bindings-fit", (tree) => [
-    ...bindingShapeIssues(tree, deps),
-    ...kitSlotIssues(tree, deps),
-    ...hostReshapeIssues(tree, deps),
-  ]),
-  treeCheck("kit-nesting", (tree) => kitNestingIssues(tree)),
-  treeCheck("routes-exist", (tree) => routeIssues(tree, deps.routes)),
-  treeCheck("expressions-compute", (tree) => exprIssues(tree)),
-  treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
-  treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];
 
 /**

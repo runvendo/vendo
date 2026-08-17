@@ -52,13 +52,6 @@ const docWith = (source?: Record<string, AppSourceFile>): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id: APP,
   name: "Retention",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Retention" } }],
-    data: {},
-    queries: [],
-  },
   ...(source === undefined ? {} : { source }),
 });
 

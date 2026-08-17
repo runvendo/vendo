@@ -1,6 +1,5 @@
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   type AppDocument,
   type AppId,
   type RunContext,
@@ -26,11 +25,6 @@ const doc = (id: string): AppDocument => ({
   id,
   name: "Team dashboard",
   ui: "tree",
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "ok" } }],
-  },
 });
 
 const ctxFor = (subject: string): RunContext => ({

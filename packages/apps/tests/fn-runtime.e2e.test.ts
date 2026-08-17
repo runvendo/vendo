@@ -1,8 +1,6 @@
 import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
-  type Json,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -19,10 +17,9 @@ import { createApps } from "../src/server/index.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/server/escalation/sandbox.js";
 
 /**
- * execution-v2 Lane D gate (fake adapter): a tree whose query names
- * `fn:<name>` binds its data through the box door at open(); an fn: action
- * round-trips on call() and a re-open re-binds the changed data; a failed fn
- * is a contained outcome, never a thrown white box.
+ * execution-v2 Lane D gate (fake adapter): `call()` on an `fn:<name>` reference
+ * round-trips through the box door and changes the box's own state, and a failed
+ * fn is a contained outcome, never a thrown white box.
  */
 
 const model = basicLanguageModel();
@@ -84,32 +81,13 @@ const statefulBox = () => {
   return { adapter, seen, state };
 };
 
-const fnTreeApp = (id: string): AppDocument => ({
+/** A GRADUATED app: the machine is what makes an `fn:` reference resolvable. */
+const fnApp = (id: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
-  name: "Fn tree app",
+  name: "Fn app",
   ui: "tree",
   machine: { snapshotRef: "fake:fn-runtime", provisionedAt: "2026-07-19T00:00:00.000Z" },
-  tree: {
-    formatVersion: VENDO_TREE_FORMAT,
-    root: "n1",
-    nodes: [
-      {
-        id: "n1",
-        component: "Stat",
-        source: "prewired",
-        props: {
-          label: "Total",
-          value: { $path: "/report/total" },
-          onClick: { action: "fn:add", payload: { amount: 2 } },
-        },
-      },
-    ],
-    queries: [
-      { name: "report", tool: "fn:report" },
-      { name: "host", tool: "host_reader" },
-    ],
-  } as unknown as NonNullable<AppDocument["tree"]>,
 });
 
 const setup = (id = "app_fn_runtime") => {
@@ -127,26 +105,9 @@ const setup = (id = "app_fn_runtime") => {
 };
 
 describe("fn: runtime resolution (execution-v2 Lane D gate)", () => {
-  it("open() resolves an fn: query through the box door and binds it beside host-tool queries", async () => {
+  it("an fn: action round-trips on call() and moves the box's own state", async () => {
     const { runtime, store, seen, id } = setup();
-    await seedAppRow(engineOverAdapter(store), fnTreeApp(id), "user_ada");
-
-    const surface = await runtime.open(id, ctx());
-    if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);
-    const data = (surface.payload as { data?: Record<string, Json> }).data;
-    // The fn: query bound through the box; the host query bound through the
-    // registry — shape-aware binding is one path for both.
-    expect(data).toMatchObject({ report: { total: 40 }, host: { via: "registry" } });
-    expect(seen).toEqual([{
-      method: "POST",
-      path: "/fn/report",
-      body: JSON.stringify({ args: {} }),
-    }]);
-  });
-
-  it("an fn: action round-trips on call() and a re-open re-binds the new data", async () => {
-    const { runtime, store, seen, id } = setup();
-    await seedAppRow(engineOverAdapter(store), fnTreeApp(id), "user_ada");
+    await seedAppRow(engineOverAdapter(store), fnApp(id), "user_ada");
 
     const outcome = await runtime.call(id, "fn:add", { amount: 2 }, ctx());
     expect(outcome).toEqual({ status: "ok", output: { total: 42 } });
@@ -156,45 +117,26 @@ describe("fn: runtime resolution (execution-v2 Lane D gate)", () => {
       body: JSON.stringify({ args: { amount: 2 } }),
     }]);
 
-    const surface = await runtime.open(id, ctx());
-    if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);
-    expect((surface.payload as { data?: Record<string, Json> }).data).toMatchObject({
-      report: { total: 42 },
-    });
+    // The box kept the change, so the next read sees it.
+    expect(await runtime.call(id, "fn:report", {}, ctx())).toEqual({ status: "ok", output: { total: 42 } });
   });
 
-  it("a failed fn is a contained outcome — open() still serves the tree", async () => {
+  it("a failed fn is a contained outcome, never a thrown white box", async () => {
     const { runtime, store, id } = setup();
-    const app = fnTreeApp(id);
-    (app.tree as unknown as { queries: Array<{ name: string; tool: string }> }).queries = [
-      { name: "report", tool: "fn:broken" },
-      { name: "host", tool: "host_reader" },
-    ];
-    await seedAppRow(engineOverAdapter(store), app, "user_ada");
+    await seedAppRow(engineOverAdapter(store), fnApp(id), "user_ada");
 
-    const surface = await runtime.open(id, ctx());
-    if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);
-    const data = (surface.payload as { data?: Record<string, Json> }).data;
-    // The broken fn's slot stays unbound; the rest of the app still rendered.
-    expect(data).toMatchObject({ host: { via: "registry" } });
-    expect(data).not.toHaveProperty("report");
-
-    const outcome = await runtime.call(id, "fn:broken", {}, ctx());
-    expect(outcome).toEqual({
+    expect(await runtime.call(id, "fn:broken", {}, ctx())).toEqual({
       status: "error",
       error: { code: "box-broke", message: "the box failed honestly" },
     });
   });
 
-  it("a machine-bearing app with no adapter contains sandbox-unavailable per query", async () => {
+  it("a machine-bearing app with no adapter contains sandbox-unavailable", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools: registryTools, catalog: [], model });
-    await seedAppRow(engineOverAdapter(store), fnTreeApp("app_no_adapter"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), fnApp("app_no_adapter"), "user_ada");
 
-    const surface = await runtime.open("app_no_adapter", ctx());
-    if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);
-    const data = (surface.payload as { data?: Record<string, Json> }).data;
-    expect(data).toMatchObject({ host: { via: "registry" } });
-    expect(data).not.toHaveProperty("report");
+    expect(await runtime.call("app_no_adapter", "fn:report", {}, ctx()))
+      .toMatchObject({ status: "error" });
   });
 });

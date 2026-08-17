@@ -325,7 +325,6 @@ const createDoors = (
       parkedActions.put({ approvalId, appId: app.id, owner: appCtx.principal.subject, call, ctx: appCtx }),
   }));
   const opener = createAppOpener(
-    caller,
     config.seedBaselines,
     // Review-aware venue: instant-kind answers exactly the plain hash-pin
     // venue; review-kind never answers a jail state (review.ts).

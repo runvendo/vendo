@@ -36,11 +36,10 @@ describe("§8 — tree/node/query schemas parse the structural shape", () => {
   });
 });
 
-describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is an app-document rule", () => {
-  // The tree shape carries no machine field, so validateTree structurally
-  // cannot enforce "trees without a machine must not contain fn: references." It
-  // validates fn: grammar; validateAppDocument (which knows `machine`) enforces
-  // the machine-presence rule. See ESCALATION in the lane report.
+describe("§8 — validateTree validates fn: GRAMMAR", () => {
+  // The gate over a RENDERED payload: it holds an `fn:` name to the grammar the
+  // box door resolves. Whether the app has a machine to answer it is `call`'s to
+  // say, at the moment of the call (persistence/call.ts).
   it("accepts a well-formed fn: reference with no machine in sight", () => {
     expect(validateTree({
       formatVersion: "vendo-genui/v2", root: "r",
@@ -76,21 +75,6 @@ describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is a
     expect(validateTree(treeWithAction("host_refresh")).ok).toBe(true);
   });
 
-  it("validateAppDocument is where a machine-less fn: reference becomes an error", () => {
-    const withFnNoMachine = {
-      format: "vendo/app@1", id: "app_x", name: "X", ui: "tree" as const,
-      tree: {
-        formatVersion: "vendo-genui/v2", root: "r",
-        nodes: [{ id: "r", component: "Text" }],
-        queries: [{ name: "refresh", tool: "fn:refresh" }],
-      },
-    };
-    expect(validateAppDocument(withFnNoMachine).ok).toBe(false);
-    expect(validateAppDocument({
-      ...withFnNoMachine,
-      machine: { snapshotRef: "e2b:v2:snap_1", provisionedAt: "2026-07-19T00:00:00.000Z" },
-    }).ok).toBe(true);
-  });
 });
 
 describe("§12/§13/§14 — store, host-seam, and theme schemas", () => {

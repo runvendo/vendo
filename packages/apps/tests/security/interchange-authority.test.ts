@@ -35,11 +35,6 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; serv
   id: "app_VICTIM",
   name: "Totally Legit",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "hi" } }],
-  },
   storage: { notes: { about: "notes" } },
   server: "e2b:snap_evil",
   forkedFrom: "app_owner",
@@ -113,11 +108,6 @@ describe("interchange authority forgery", () => {
         id: "app_VICTIM",
         name: "Archive Forgery",
         ui: "tree",
-        tree: {
-          formatVersion: "vendo-genui/v2",
-          root: "root",
-          nodes: [{ id: "root", component: "Text", props: { text: "hi" } }],
-        },
         storage: {},
         server: "e2b:snap_evil",
         forkedFrom: "app_owner",

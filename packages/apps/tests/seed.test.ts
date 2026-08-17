@@ -170,7 +170,6 @@ describe("seed drift — a warning, never an action", () => {
       id: "app_plain",
       name: "Authored",
       ui: "tree",
-      tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Stack", source: "prewired" }] },
     };
     expect(seedDrift(plain, [baseline("sha256:whatever")])).toBeNull();
   });
@@ -263,7 +262,6 @@ describe("seed.reseed — the recorded instruction, replayed on the new baseline
       id: "app_unseeded",
       name: "Authored",
       ui: "tree",
-      tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Stack", source: "prewired" }] },
     };
     await seedAppRow(engineOverAdapter(store), plain, owner.principal.subject);
     await expect(runtime.seed.reseed({ appId: plain.id }, owner))

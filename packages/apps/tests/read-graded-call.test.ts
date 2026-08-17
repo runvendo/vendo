@@ -44,11 +44,6 @@ const app = (id: string): AppDocument => ({
   id,
   name: "Reader",
   ui: "tree",
-  tree: {
-    formatVersion: "vendo-genui/v2",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", props: { text: "Reader" } }],
-  },
 });
 
 const descriptor = (name: string, risk: ToolDescriptor["risk"]): ToolDescriptor => ({

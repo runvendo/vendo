@@ -26,7 +26,6 @@ import {
 } from "@vendoai/core";
 import {
   type AppDocument,
-  stripServerAuthoritativeFields,
 } from "../../contract/index.js";
 import type { Finding } from "../checking/types.js";
 import type { GeneratedAppDocument, GenerationDependencies } from "../generation/engine.js";
@@ -333,7 +332,6 @@ export const createAutomationLane = (
         land: async (document) => {
           const previous = await requireOwned(appId, ctx);
           const next: AppDocument = { ...document, id: appId };
-          if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
           await persistEdit(
             previous,
             next,

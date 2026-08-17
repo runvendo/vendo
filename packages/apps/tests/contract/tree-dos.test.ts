@@ -2,18 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
-  VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
 } from "@vendoai/core";
-import {
-  validateAppDocument,
-  validateTree,
-} from "../../src/contract/index.js";
+import { validateTree } from "../../src/contract/index.js";
 
-// Denial-of-service / resource-exhaustion regression suite for the tree and
-// app-document validators (01-core §8/§9). Each cap here is exercised at the
-// over-limit side; these are the bounds that stop a hostile generator from
-// making the jail compile an unbounded payload. The generated-component caps
+// Denial-of-service / resource-exhaustion regression suite for the tree
+// validator (01-core §8). It guards the RENDER payload: `validateTree` is the
+// gate the component gauntlet runs over the tree a screen just painted
+// (checking/component-screen.ts) and the one the client runs over every open
+// payload before it walks it (ui/src/tree/convert-payload.ts). Each cap here is
+// exercised at the over-limit side; these are the bounds that stop a hostile
+// screen from making the renderer walk an unbounded payload. The generated-component caps
 // are NOT here: a tree carrying `components` is rejected outright before any
 // cap is read, so they are pinned where they actually bite, in
 // `component-map.test.ts`.
@@ -61,31 +60,3 @@ describe("validateTree resource caps", () => {
     });
   });
 });
-
-describe("validateAppDocument fn:-requires-a-machine", () => {
-  it("rejects an fn: query reference when the app document has no machine", () => {
-    const doc = {
-      format: VENDO_APP_FORMAT,
-      id: "app_fn_no_machine",
-      name: "Needs a machine",
-      ui: "tree" as const,
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [{ id: "root", component: "Text" }],
-        queries: [{ name: "data", tool: "fn:load_data" }],
-      },
-    };
-    const result = validateAppDocument(doc);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("validation");
-
-    // Same document, now with a machine reference, validates — proving the failure
-    // above is specifically the fn:-without-machine rule, not a shape defect.
-    expect(validateAppDocument({
-      ...doc,
-      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
-    }).ok).toBe(true);
-  });
-});
-
