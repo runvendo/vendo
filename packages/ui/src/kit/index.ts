@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * @vendoai/ui/kit — the Kit (W2 §The Kit).
  *
@@ -13,13 +15,64 @@
  */
 
 // Semantics
-export * from "./format.js";
-export * from "./row.js";
-export * from "./state.js";
-export * from "./tokens.js";
+export {
+  applyFormat,
+  currencyMinorUnits,
+  fmt,
+  formatDateTime,
+  formatDuration,
+  formatMoney,
+  formatNum,
+  formatPercent,
+  getKitIntl,
+  isRenderableNumber,
+  setKitIntl,
+  type DateInput,
+  type DateTimeOptions,
+  type KitIntl,
+  type MoneyOptions,
+  type NumOptions,
+  type PercentOptions,
+  type ValueFormat,
+} from "./format.js";
+export { RowContext, readField, useFieldValue, type KitRow } from "./row.js";
+export { useKeyedState, type KeyedState } from "./state.js";
+export {
+  chartSeries,
+  control,
+  densityVars,
+  font,
+  given,
+  hairline,
+  microLabel,
+  numeric,
+  popup,
+  popupMotion,
+  resolveTone,
+  seriesColor,
+  t,
+  toneColor,
+  toneStyle,
+  transitionFor,
+  type KitDensity,
+  type KitEngine,
+  type KitRendered,
+  type KitStyled,
+  type KitTone,
+} from "./tokens.js";
 
 // Schema + registry + generated prompt
-export * from "./schema.js";
+export {
+  config,
+  copy,
+  data,
+  propsSchema,
+  validateProps,
+  type KitComponentSpec,
+  type KitSlotSpec,
+  type PropClass,
+  type PropSpec,
+} from "./schema.js";
 export {
   KIT_COMPONENTS,
   KIT_SPECS,
@@ -29,8 +82,36 @@ export {
 export { kitPrompt, type KitPromptOptions } from "./kit-prompt.js";
 
 // Components
-export * from "./layout.js";
-export * from "./values.js";
+export {
+  Card,
+  Divider,
+  Grid,
+  Row,
+  Stack,
+  Surface,
+  type CardProps,
+  type DividerProps,
+  type GridProps,
+  type RowProps,
+  type StackProps,
+  type SurfaceProps,
+} from "./layout.js";
+export {
+  DateTime,
+  EnumBadge,
+  Money,
+  Num,
+  Percent,
+  Text,
+  humanizeEnum,
+  type DateTimeProps,
+  type EnumBadgeProps,
+  type EnumTone,
+  type MoneyProps,
+  type NumProps,
+  type PercentProps,
+  type TextProps,
+} from "./values.js";
 export { Icon, type IconProps } from "./icon.js";
 export { DataTable, type DataTableColumn, type DataTableProps } from "./data/data-table.js";
 export { TableRow, type TableRowProps } from "./data/table-row.js";

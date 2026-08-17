@@ -1,4 +1,11 @@
-/** @vendoai/ui — provider, hooks, client (headless, no styles). */
+"use client";
+
+/** @vendoai/ui — provider, hooks, client (headless, no styles).
+ *
+ * Every entry barrel is a "use client" boundary carrying named re-exports and
+ * no `export *`: Next's flight loader builds the client-reference manifest by
+ * statically enumerating a client module's named exports, and errors outright
+ * on a star. Pinned by test/client-boundaries.test.ts. */
 export {
   APPROVALS_DECIDED_EVENT,
   createVendoClient,
@@ -19,7 +26,35 @@ export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/emb
 // under pnpm strict linking (the same TS2307 story as VendoOverlay's).
 export { VendoSlot } from "./chrome/vendo-slot.js";
 export type { ParkedPress } from "./tree/renderer.js";
-export * from "./hooks/index.js";
+export {
+  useActivity,
+  useApp,
+  useApps,
+  useApprovals,
+  useAttention,
+  useAutomations,
+  useConnections,
+  useConnectorCatalog,
+  useGrants,
+  useApprovalSheetPresentation,
+  useMobileTakeover,
+  useSlotApp,
+  useSlots,
+  useThreads,
+  useVendoOverlay,
+  useVendoStatus,
+  useVendoContext,
+  useVendoThread,
+  ScriptedTransport,
+  type DirectorCue,
+  type DirectorScript,
+  type MobileTakeover,
+  type PollOptions,
+  type RunActivity,
+  type RunResult,
+  type VendoOverlayController,
+  type VendoThreadApproval,
+} from "./hooks/index.js";
 // Dev-only rails: the `data-vendo-debug` feed a host's workbench pane reads,
 // and the check that decides whether such a surface renders at all.
 export { developmentMode } from "./chrome/dev-mode.js";
@@ -32,4 +67,29 @@ export {
 } from "./chrome/workbench-store.js";
 export { announcePin, onPinAnnounced } from "./pin-events.js";
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
-export * from "./wire-types.js";
+export type {
+  AppListRow,
+  ApprovalResolution,
+  AutomationEntry,
+  ConnectableToolkit,
+  ConnectionAccount,
+  EditResult,
+  EnableResult,
+  GuardPosture,
+  InClientVenue,
+  InitiatedConnection,
+  OpenSurface,
+  PendingSurface,
+  PlacementEntry,
+  ReviewStanding,
+  RunPlan,
+  RunRecord,
+  RunStatus,
+  SeedDrift,
+  ShipDiff,
+  SlotEntry,
+  Thread,
+  ThreadSummary,
+  VendoStatus,
+  VersionEntry,
+} from "./wire-types.js";

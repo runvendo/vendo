@@ -1,3 +1,5 @@
+"use client";
+
 /** @vendoai/ui/chrome — the shipped, theme-adopting surfaces (08-ui §4). */
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js";

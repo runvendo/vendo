@@ -104,6 +104,10 @@ createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL}/api/v1` })
 Call `vendoModel()` on a Worker and it throws that same sentence back at you on
 first use, rather than pretending.
 
+The screen toolchain in `@vendoai/apps/edge` type-checks against vendored `lib`
+bytes, so install the exact `typescript` its `EDGE_TYPESCRIPT_VERSION` names —
+the peer range is wide and will not nudge you there.
+
 ---
 
 ## Mounting the handler yourself
