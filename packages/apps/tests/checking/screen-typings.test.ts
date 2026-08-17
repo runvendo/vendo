@@ -11,7 +11,7 @@ import {
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { screenTypings } from "../../src/server/checking/screen-typings.js";
+import { screenTypings, zodTypeText } from "../../src/server/checking/screen-typings.js";
 
 const netWorthSchema: JsonSchema = {
   type: "object",
@@ -243,5 +243,41 @@ describe("screenTypings", () => {
   it("is deterministic — same input, byte-identical output", () => {
     const input = { catalog, queries: [{ name: "invoices", tool: "maple_invoices_list" }], toolOutputSchemas: { maple_invoices_list: invoicesSchema } };
     expect(screenTypings(input)).toBe(screenTypings(input));
+  });
+});
+
+/**
+ * THE NET UNDER THE WALKER — the branch that exists so a prop we cannot type
+ * precisely degrades to `any` instead of becoming a false finding.
+ *
+ * It had never been reached by a test, and on 0.27.1 it could not be: the
+ * switch it sits under compared `undefined` to `undefined` against a zod 4 def
+ * and matched its FIRST case, so every unrecognizable schema came back
+ * `string` — a confident wrong answer where the whole design says to say
+ * nothing. These are the shapes that must land here.
+ */
+describe("a schema the printer cannot read is typed as any, and says so", () => {
+  const cases: ReadonlyArray<[string, unknown]> = [
+    ["a construct outside the vocabulary", { _def: { typeName: "ZodPromise" } }],
+    ["a zod 4 construct outside the vocabulary", { _def: { type: "promise" } }],
+    ["a def wearing no tag at all", { _def: {} }],
+    ["an object with no def", {}],
+    ["nothing at all", undefined],
+  ];
+
+  for (const [what, schema] of cases) {
+    it(`degrades ${what} to any`, () => {
+      const notes: string[] = [];
+      expect(zodTypeText(schema as never, 0, (reason) => notes.push(reason))).toBe("any");
+      // Silence is the failure mode this sink exists to end: the gate stops
+      // checking that prop, and nothing about the generated text shows it.
+      expect(notes.join(" ")).toContain("not in the printer's vocabulary");
+    });
+  }
+
+  it("names the tag it could not read, so an operator knows what to add", () => {
+    const notes: string[] = [];
+    zodTypeText({ _def: { type: "promise" } } as never, 0, (reason) => notes.push(reason));
+    expect(notes.join(" ")).toContain("promise");
   });
 });
