@@ -1,5 +1,6 @@
 /** Timeline — a record history down a spine, dot-marked (W2 §The Kit). */
 import type { ReactNode } from "react";
+import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
 import { font, hairline, microLabel, numeric, t, type KitStyled } from "../tokens.js";
@@ -46,7 +47,7 @@ export function Timeline({
   const entries = Array.isArray(rawEntries) ? rawEntries : [];
   if (entries.length === 0) {
     // The slot replaces the dashed box, not its TEXT — see CardList.
-    return empty !== undefined ? <div data-kit="Timeline" style={style}>{empty}</div> : (
+    return empty !== undefined ? <div data-kit="Timeline" style={style}><EmptyOrForming>{empty}</EmptyOrForming></div> : (
       <div
         data-kit="Timeline"
         style={{
@@ -59,7 +60,7 @@ export function Timeline({
           ...style,
         }}
       >
-        {emptyState}
+        <EmptyOrForming>{emptyState}</EmptyOrForming>
       </div>
     );
   }

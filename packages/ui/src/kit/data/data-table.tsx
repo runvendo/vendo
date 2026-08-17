@@ -15,6 +15,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
+import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat, formatDateTime, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
 import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
@@ -468,7 +469,7 @@ export function DataTable(props: DataTableProps) {
                   colSpan={Math.max(1, shown(columns).length) + (rowActions === undefined ? 0 : 1)}
                   style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
-                  {empty ?? emptyState}
+                  <EmptyOrForming>{empty ?? emptyState}</EmptyOrForming>
                 </td>
               </tr>
             ) : painted.length > 0 ? (

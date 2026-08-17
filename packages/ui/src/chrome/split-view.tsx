@@ -80,10 +80,11 @@ export function splitViewReducer(state: SplitViewState, action: SplitViewAction)
       return state.expanded ? { ...state, expanded: false, userExpanded: false } : state;
     case "toggle":
       return { ...state, expanded: !state.expanded, userExpanded: !state.expanded };
-    case "feature": {
-      if (!state.embeds.some(embed => embed.appId === action.appId)) return state;
+    // Recorded even for an app the thread has never embedded: a slot's ✦ "Edit
+    // in chat" names the app the user pressed, and dropping that pick on the
+    // floor is what let the stage keep showing a DIFFERENT one.
+    case "feature":
       return { ...state, selectedAppId: action.appId };
-    }
     case "embed": {
       const existing = state.embeds.findIndex(embed => embed.appId === action.appId);
       if (existing >= 0) {
@@ -119,14 +120,20 @@ export function splitViewReducer(state: SplitViewState, action: SplitViewAction)
   }
 }
 
-/** The stage's app: the explicit pick when it still exists, else the most
-    recent embed in the thread. */
+/**
+ * The stage's app: the explicit pick, else the most recent embed in the thread.
+ *
+ * A pick is AUTHORITATIVE — it does not fall back. A ✦ on a pinned app can name
+ * an app this conversation has never embedded, and "then show the latest" put
+ * some OTHER app on the stage while the composer named the right one, which
+ * reads as the app having been swapped under the user. Nothing until the pick
+ * has something to show is the honest answer. `remove-embed` already clears a
+ * pick it deletes, so no existing path reaches the fallback anyway.
+ */
 export function featuredEmbed(state: SplitViewState): SplitEmbed | undefined {
-  if (state.selectedAppId !== undefined) {
-    const selected = state.embeds.find(embed => embed.appId === state.selectedAppId);
-    if (selected) return selected;
-  }
-  return state.embeds.at(-1);
+  return state.selectedAppId === undefined
+    ? state.embeds.at(-1)
+    : state.embeds.find(embed => embed.appId === state.selectedAppId);
 }
 
 /** Escape order: collapse the workspace first, close the overlay second. */

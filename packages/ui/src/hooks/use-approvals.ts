@@ -8,6 +8,7 @@ import {
   unseenRunResult,
   type RunResult,
 } from "../chrome/run-activity.js";
+import { appsFeed } from "./apps-feed.js";
 import { APPROVALS_LOADING, approvalsFeed } from "./approvals-feed.js";
 import { type PollOptions } from "./use-resource.js";
 
@@ -43,6 +44,13 @@ export function useApprovals(options?: PollOptions): {
 }
 
 const NO_RESULT = (): RunResult | undefined => undefined;
+/** SSR / first-render snapshot for the unseen count. */
+const NO_UNSEEN = () => 0;
+
+/** The apps cadence, matching the ask cadence: the badge and the dot ride two
+ *  different collections, and a person reads them as one signal, so they must
+ *  not be able to sit a poll apart. */
+const APPS_POLL_MS = 5_000;
 
 /**
  * The ONE attention source. Everything that asks for the user's attention
@@ -59,20 +67,35 @@ export function useAttention(options?: PollOptions): ReturnType<typeof useApprov
   askCount: number;
   /** Alias for the rows behind that count, in the strip's own words. */
   asks: ApprovalRequest[];
-  /** A finished run whose result nobody has looked at yet (the quiet dot). */
+  /** Something arrived that nobody has looked at yet (the quiet dot): a
+   *  finished run's result, or an app that has never rendered for this person. */
   unseenResults: boolean;
+  /** How many of those are apps — the arrival half of the dot. */
+  unseenApps: number;
   /** The finished run itself — headline + the thread to deep-link into. */
   lastResult: RunResult | undefined;
   /** The user looked: clears the dot (and any completion toast). */
   markResultsSeen(): void;
 } {
+  const { client } = useVendoProvider();
   const approvals = useApprovals(options);
   const lastResult = useSyncExternalStore(subscribeRunActivity, unseenRunResult, NO_RESULT);
+  // Arrival — the SHARED apps feed, at this hook's own cadence. Whoever else is
+  // listing apps shares the request; nobody listing them at all (a host with no
+  // app panel) still gets a live count, which a store fed by someone else's
+  // mount could never do.
+  const feed = appsFeed(client);
+  const subscribeApps = useCallback(
+    (listener: () => void) => feed.subscribe(listener, options?.pollMs ?? APPS_POLL_MS),
+    [feed, options?.pollMs],
+  );
+  const apps = useSyncExternalStore(subscribeApps, feed.unseenCount, NO_UNSEEN);
   return {
     ...approvals,
     askCount: approvals.pending.length,
     asks: approvals.pending,
-    unseenResults: lastResult !== undefined,
+    unseenResults: lastResult !== undefined || apps > 0,
+    unseenApps: apps,
     lastResult,
     markResultsSeen: markRunResultsSeen,
   };
