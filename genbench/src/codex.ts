@@ -103,17 +103,24 @@ const invocation = (workspace: string, modelId: string, prompt: string): readonl
  * a `CODEX_*` left in the operator's shell reshapes this column and no
  * `result.json` would say so.
  *
- * `CODEX_HOME` is the fourth name because it IS the isolation: the operator's
- * own `~/.codex` carries private plugins and MCP servers that would silently
- * become this column's advantage, and its state files take locks that parallel
- * sessions would fight over. A throwaway home also holds no `auth.json`, so the
- * key below is what authenticates — the CLI reads `CODEX_API_KEY`, then
- * `auth.json`, then `OPENAI_API_KEY`, and this column deliberately offers only
- * the last.
+ * `CODEX_HOME` is the isolation itself: the operator's own `~/.codex` carries
+ * private plugins and MCP servers that would silently become this column's
+ * advantage, and its state files take locks that parallel sessions fight over.
+ *
+ * The key goes in under the name the CLI actually reads. It arrives as
+ * `OPENAI_API_KEY`, which is the run's one name for it, and leaves as
+ * `CODEX_API_KEY`, because 0.147.0 with a fresh home reads neither an
+ * `auth.json` (there is none) nor `OPENAI_API_KEY`: it sends no `Authorization`
+ * header at all and the first call dies on `401 … Missing bearer`, with a live
+ * key sitting right there in the environment.
  */
 function sessionEnv(codexHome: string): Record<string, string> {
-  const env: Record<string, string> = { CODEX_HOME: codexHome };
-  for (const name of ["PATH", "HOME", "OPENAI_API_KEY"]) {
+  const key = process.env["OPENAI_API_KEY"];
+  const env: Record<string, string> = {
+    CODEX_HOME: codexHome,
+    ...(key === undefined ? {} : { CODEX_API_KEY: key }),
+  };
+  for (const name of ["PATH", "HOME"]) {
     const value = process.env[name];
     if (value !== undefined) env[name] = value;
   }
