@@ -1,5 +1,7 @@
 import {
+  declaredAutomationId,
   reconcileAutomations,
+  toTriggerSource,
   VendoError,
   type AppId,
   type ApprovalRequest,
@@ -10,7 +12,6 @@ import {
 import {
   type AppDocument,
 } from "../../contract/index.js";
-import { Cron } from "croner";
 import { requestAppWithBootRetry } from "./box-agent.js";
 import type { MachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
@@ -35,10 +36,8 @@ import type { AutomationsSeam } from "../runtime/types.js";
 
 /** The stable identity a manifest schedule declares. It carries the app id
  *  because automations are deployment-wide records with no app reference of
- *  their own: two apps declaring `fn: digest` are two automations. `fn` admits
- *  `-` (it names a `POST /fn/<name>` route); an identity does not. */
-const declarationId = (appId: AppId, fn: string): string =>
-  `${appId}_${fn.replace(/-/g, "_")}`;
+ *  their own: two apps declaring `fn: digest` are two automations. */
+const declarationName = (appId: AppId, fn: string): string => `${appId}-${fn}`;
 
 /** One folded-in schedule, and what this sync did about arming it. */
 export interface ManifestAutomationResult {
@@ -89,22 +88,6 @@ export interface ManifestTriggerConfig {
 
 const decoder = new TextDecoder();
 
-/** Croner is the cron arbiter: a declaration the manifest's field-shape regex
- *  admits but no calendar time satisfies ("99 99 * * *") must fail LOUDLY at
- *  the read boundary, not silently at fire time. */
-const assertCronValid = (cron: string, appId: AppId): void => {
-  try {
-    // paused: constructed for validation only, never scheduled.
-    new Cron(cron, { timezone: "UTC", paused: true });
-  } catch (error) {
-    throw new VendoError(
-      "validation",
-      `invalid vendo.json: schedule cron "${cron}" is not a valid cron expression: ${error instanceof Error ? error.message : "invalid"}`,
-      { appId },
-    );
-  }
-};
-
 export const createManifestTriggers = (config: ManifestTriggerConfig) => {
   /** The box's declared schedules. A 404 is a valid box that declares none. */
   const declaredSchedules = async (app: AppDocument): Promise<Array<{ cron: string; fn: string }>> => {
@@ -127,10 +110,18 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
      */
     async sync(app: AppDocument, ctx: RunContext): Promise<ManifestTriggerSync> {
       const declared = await declaredSchedules(app);
-      for (const { cron } of declared) assertCronValid(cron, app.id);
-      const byId = new Map<string, { declaration: DeclaredAutomation; cron: string; fn: string }>();
+      const byId = new Map<AutomationId, { declaration: DeclaredAutomation; cron: string; fn: string }>();
       for (const { cron, fn } of declared) {
-        const id = declarationId(app.id, fn);
+        const declaration: DeclaredAutomation = {
+          id: declarationName(app.id, fn),
+          when: cron,
+          task: { kind: "steps", steps: [{ id: "fire", tool: `fn:${fn}` }] },
+        };
+        // The ONE converter, which is also the cron arbiter: a declaration the
+        // manifest's field-shape regex admits but no calendar time satisfies
+        // ("99 99 * * *") fails LOUDLY here, at the read boundary, rather than
+        // silently at fire time.
+        const id = declaredAutomationId(declaration, toTriggerSource(cron));
         if (byId.has(id)) {
           // Two declarations that cannot both be honored: one identity is one
           // automation, so this must be said out loud rather than last-wins.
@@ -141,15 +132,7 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
             { appId: app.id },
           );
         }
-        byId.set(id, {
-          declaration: {
-            id,
-            when: cron,
-            task: { kind: "steps", steps: [{ id: "fire", tool: `fn:${fn}` }] },
-          },
-          cron,
-          fn,
-        });
+        byId.set(id, { declaration, cron, fn });
       }
       const seam = config.automations;
       if (seam === undefined) {

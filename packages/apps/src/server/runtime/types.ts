@@ -15,6 +15,7 @@ import type {
   ApprovalRequest,
   AutomationId,
   AutomationRecord,
+  AutomationTask,
   CreateAutomation,
   FilesAdapter,
   Guard,
@@ -425,7 +426,7 @@ export type { PlacementEntry };
  * it did when this ran as a rung of the escalation ladder.
  */
 export type AutomationAuthorResult =
-  | { ok: true; document: AppDocument; automationId: AutomationId; armed: boolean }
+  | { ok: true; document: AppDocument; record: AutomationRecord; armed: boolean }
   | { ok: false; issues: readonly string[] };
 
 /** 06-apps §1 */
@@ -633,7 +634,7 @@ export interface AppsRuntime {
    */
   automation: {
     author(
-      input: { appId: AppId; instruction: string; mode: "steps" | "agentic" },
+      input: { appId: AppId; instruction: string; mode: AutomationTask["kind"] },
       ctx: RunContext,
     ): Promise<AutomationAuthorResult>;
   };

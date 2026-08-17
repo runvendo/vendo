@@ -28,33 +28,23 @@ import {
   type MakeReceipt,
 } from "../../contract/index.js";
 import type { AgentToolsDataDependencies } from "./agent-tools.js";
+import { automationCard } from "./automate-tool.js";
 import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
 import { input, optionalString, resolveAppRef } from "./tool-args.js";
 import type { AppsRuntime, CreateServerWork, EditResult } from "../runtime/types.js";
 
 /** An automation authored alongside an app raises its own card (#881).
  *  Published by the side that knows rather than duck-typed out of the tool's
- *  return value at the bridge: the receipt carries words only. */
+ *  return value at the bridge: the receipt carries words only. The card is about
+ *  the RECORD, not the app — an automation has no app reference to render. */
 const publishAutomationCard = (
   stream: (update: VendoViewStreamUpdate) => void,
-  app: { id: AppId; name: string; description?: string },
-  automation: Pick<NonNullable<EditResult["automation"]>, "enabled" | "pendingGrants">,
+  automation: NonNullable<EditResult["automation"]>,
 ): void => {
-  stream({
-    id: `vendo-automation-${app.id}`,
-    part: {
-      type: "data-vendo-automation",
-      appId: app.id,
-      name: app.name,
-      enabled: automation.enabled,
-      ...(app.description === undefined || app.description.length === 0
-        ? {}
-        : { description: app.description }),
-      ...((automation.pendingGrants ?? []).length === 0
-        ? {}
-        : { pendingGrants: automation.pendingGrants!.length }),
-    },
+  const part = automationCard(automation.record, automation.enabled, {
+    pendingGrants: automation.pendingGrants?.length ?? 0,
   });
+  stream({ id: `vendo-automation-${part.automationId}`, part });
 };
 
 /**
@@ -258,7 +248,7 @@ const makeNewApp = async (
   // an edit does. Before this, the envelope died inside `create` and the
   // person's first-ask automation surfaced nothing: no card, no grants.
   if (serverWork?.automation !== undefined && stream !== undefined) {
-    publishAutomationCard(stream, created, serverWork.automation);
+    publishAutomationCard(stream, serverWork.automation);
   }
   // View-only (the store refused the write): the screen IS on the user's
   // page, so this is a success with a caveat, not a failure. Reporting it
@@ -298,7 +288,7 @@ const changeExistingApp = async (
   // side that knows, rather than duck-typed out of this tool's return value at
   // the bridge: the receipt carries words only.
   if (result.automation !== undefined && stream !== undefined) {
-    publishAutomationCard(stream, result.app, result.automation);
+    publishAutomationCard(stream, result.automation);
   }
   return receipt({
     id: result.app.id,
@@ -340,7 +330,7 @@ const withCompoundSchedule = async (
   if (!built.success || built.data.status === "failed") return outcome;
   const made = built.data;
   const authored = await runtime.automation
-    .author({ appId: made.id as AppId, instruction: ask, mode: "agentic" }, ctx)
+    .author({ appId: made.id as AppId, instruction: ask, mode: "goal" }, ctx)
     .catch((error: unknown) => {
       log({
         code: "apps.compound-schedule-not-armed",
@@ -353,7 +343,7 @@ const withCompoundSchedule = async (
     return receipt({ ...made, say: `${made.say} I couldn't set up the schedule: ${authored.issues.join("; ")}` });
   }
   if (stream !== undefined) {
-    publishAutomationCard(stream, { id: made.id as AppId, name: made.title }, { enabled: authored.armed });
+    publishAutomationCard(stream, { record: authored.record, enabled: authored.armed });
   }
   return receipt({
     ...made,

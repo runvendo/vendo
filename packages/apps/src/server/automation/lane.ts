@@ -21,6 +21,7 @@ import {
   type ApprovalRequest,
   type AutomationId,
   type AutomationRecord,
+  type AutomationTask,
   type RunContext,
 } from "@vendoai/core";
 import {
@@ -35,8 +36,9 @@ import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, AutomationsSeam } from "../runtime/types.js";
 import { planAutomation, type AutomationPlan } from "./plan.js";
 
-/** The two ways an automation runs: fixed steps, or a judgment call per run. */
-export type AutomationMode = "steps" | "agentic";
+/** The two ways an automation runs: fixed steps, or a judgment call per run. It
+ *  IS `AutomationTask["kind"]` — one vocabulary from the door to the record. */
+export type AutomationMode = AutomationTask["kind"];
 
 const warn = (where: string, message: string): Finding => ({ severity: "warn", where, message });
 
@@ -111,7 +113,7 @@ export const automationResultsInstruction = (input: {
   /** The automation's own name, when it has one. */
   name?: string;
   resultsCollection: string;
-}): string => `The app now has a ${input.mode} automation${input.name === undefined ? "" : ` ("${input.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${input.resultsCollection}" — one record, id "latest", replaced on every run. Rewire the screen to show it:
+}): string => `The app now has a ${input.mode === "steps" ? "steps" : "goal-driven"} automation${input.name === undefined ? "" : ` ("${input.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${input.resultsCollection}" — one record, id "latest", replaced on every run. Rewire the screen to show it:
 - Read it with useQuery("vendo_apps_data_list", { appId: "${input.appId}", collection: "${input.resultsCollection}" }) — that input is LITERAL JSON, exactly as written. It answers { records: [{ id, data }] }, and a row's data is whatever the automation stored, so the latest result is records[0].data.
 - The collection is EMPTY until the automation first fires, and this screen is rendered against the rows the query really returns before it can be saved — so handle records[0] being undefined and show one short "nothing yet" line instead of reading through it.
 - Keep the layout; change only what is needed to surface the result (add one small section if none fits).`;
@@ -233,7 +235,7 @@ export const runAutomationLane = async (
     return {
       document,
       findings: [
-        warn(where, `this app needs ${mode === "steps" ? "a scheduled/triggered steps" : "an agentic"} automation, but no valid plan validated — the rest of the app stands without it.`),
+        warn(where, `this app needs ${mode === "steps" ? "a scheduled/triggered steps" : "a goal-driven"} automation, but no valid plan validated — the rest of the app stands without it.`),
         ...planned.issues.map((issue) => warn(where, issue)),
       ],
     };
@@ -401,7 +403,7 @@ export const createAutomationDoor = (
       return {
         ok: true,
         document: { ...lane.document, id: input.appId },
-        automationId: lane.automation.record.id,
+        record: lane.automation.record,
         armed: lane.automation.enabled,
       };
     },

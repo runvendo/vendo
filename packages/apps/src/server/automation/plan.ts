@@ -3,7 +3,8 @@ import {
   describeShapeWithSemantics,
   inputSchemaIsBlind,
   isVendoAppsTool,
-  triggerSourceSchema,
+  safeErrorMessage,
+  toTriggerSource,
   withheldFromUnattended,
   UNATTENDED_DESTRUCTIVE_REASON,
   UNKNOWN_INPUT_SCHEMA_NOTE,
@@ -13,11 +14,11 @@ import {
   type AutomationTask,
   type ShapeType,
   type Step,
-  type TriggerSource,
+  type When,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { Cron } from "croner";
 import { askModel, distinctIssues, type HostToolInfo } from "../generation/engine.js";
+import { whenSays } from "../doors/automate-tool.js";
 
 /**
  * The automation door's authoring: ONE structured model call turns a
@@ -31,10 +32,11 @@ export interface AutomationPlanInput {
   appId: string;
   appName: string;
   instruction: string;
-  /** How the automation runs: deterministic `steps`, or `agentic` when each
-   *  firing needs a model's judgment. The PLAN declares which. */
-  mode: "steps" | "agentic";
-  /** The tools steps may name / the agentic prompt may reference — the SAME
+  /** How the automation runs: deterministic `steps`, or a `goal` when each
+   *  firing needs a model's judgment. It IS the task kind the plan must answer
+   *  with — one vocabulary, no translation. */
+  mode: AutomationTask["kind"];
+  /** The tools steps may name / the goal's prompt may reference — the SAME
    *  guard-bound surface the automations engine executes through. */
   tools: readonly HostToolInfo[];
   /** The tools' DECLARED result shapes, keyed by tool name: without them the
@@ -54,8 +56,9 @@ export interface AutomationPlanInput {
 }
 
 export interface AutomationPlan {
-  /** WHEN it fires, normalized. */
-  when: TriggerSource;
+  /** WHEN it fires, in the SAME authoring vocabulary `.on()` and the chat tool
+   *  speak — core's `toTriggerSource` is the one thing that normalizes it. */
+  when: When;
   /** WHAT it does. */
   task: AutomationTask;
   /** The automation's own name, the way the person would say it out loud. */
@@ -75,9 +78,6 @@ export type AutomationPlanResult =
 
 const RESULTS_TOOL = "vendo_apps_data_put";
 const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
-// n > 0, matching the automations engine's durationMs rule exactly — "0s"
-// would validate here and then never fire.
-const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
 
 /**
  * §12's law at authoring time: is this a thing Vendo will not do while nobody is
@@ -159,21 +159,17 @@ const stepsContract = (input: AutomationPlanInput): string => `TASK MODEL (this 
 - "if" skips the step unless the jsonata expression is truthy. "forEach" is a jsonata expression producing an array; the step runs once per element with that element bound to item (max 1000).
 - RESULTS: the app's board reads STORE ROWS, not run logs. The LAST step MUST persist the displayable result through tool "${RESULTS_TOOL}" with args {"appId":"'${input.appId}'","collection":"'<collection>'","id":"'latest'","data":"<jsonata for the displayable result>"} — and set the top-level "resultsCollection" to that collection name.
 EXAMPLE (shape only — use the real tools and the real request):
-{"name":"Morning digest","when":{"kind":"schedule","cron":"0 8 * * *"},"task":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"summary","tool":"host_things_summarize","args":{"count":"$count(steps.rows.items)"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","collection":"'digest'","id":"'latest'","data":"steps.rows"}}]},"resultsCollection":"digest"}`;
+{"name":"Morning digest","when":"0 8 * * *","task":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"summary","tool":"host_things_summarize","args":{"count":"$count(steps.rows.items)"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","collection":"'digest'","id":"'latest'","data":"steps.rows"}}]},"resultsCollection":"digest"}`;
 
-const agenticContract = (input: AutomationPlanInput): string => `TASK MODEL (this instruction needs PER-RUN JUDGMENT):
+const goalContract = (input: AutomationPlanInput): string => `TASK MODEL (this instruction needs PER-RUN JUDGMENT):
 "task" is {"kind":"goal","prompt":"<the instructions an away agent follows on every firing>","budget":{"maxToolCalls":<n>}?}.
 - The prompt must be self-contained (the agent sees only it plus the tools), name the tools to use from the TOOLS list, and state the judgment to exercise each run.
 - NOTHING IRREVERSIBLE RUNS AWAY. The tools that send, message, pay or delete are not in the TOOLS list, so the prompt must not ask for them: Vendo does not do a thing it cannot take back while nobody is watching. Have the agent read, judge, and publish what it found; the person acts on it themselves, on demand.
 - RESULTS: when the app's board should show the outcome, the prompt must ALSO instruct the agent to persist the displayable result through tool "${RESULTS_TOOL}" with appId "${input.appId}", a stable collection, and id "latest" — and set the top-level "resultsCollection" to that collection name.`;
 
 /** One line per automation the app's list already names. */
-const existingLine = ({ id, when, task }: AutomationRecord): string => {
-  const fires = when.kind === "schedule"
-    ? `schedule ${when.cron ?? when.every ?? when.at ?? "(unset)"}`
-    : when.kind === "host-event" ? `host-event ${when.event}` : `external ${when.connector}`;
-  return `- ${id}: ${fires} — ${task.kind}`;
-};
+const existingLine = ({ id, when, task }: AutomationRecord): string =>
+  `- ${id}: ${whenSays(when)} — ${task.kind}`;
 
 /** What this app already runs, and how to say "this is a new version of THAT
  *  one". An app names a LIST of automations, so a plan that cannot point at an
@@ -190,16 +186,16 @@ When the INSTRUCTION changes one of THOSE rather than asking for another one, se
 };
 
 const planContract = (input: AutomationPlanInput): string => `You are the Vendo automation planner. Return ONLY one JSON object — no prose, no markdown fences.
-Shape: {"name":"<short automation name>","when":<trigger source>,"task":<task model>,"resultsCollection":"<records collection>"?,"replaces":"<existing automation id>"?}
+Shape: {"name":"<short automation name>","when":<when>,"task":<task model>,"resultsCollection":"<records collection>"?,"replaces":"<existing automation id>"?}
 ${existingSection(input)}
-TRIGGER SOURCE "when" (exactly one form):
-- {"kind":"schedule","cron":"<5-field cron, UTC>"} for clock times (e.g. daily 8am = "0 8 * * *"),
-- {"kind":"schedule","every":"<n><s|m|h|d>"} for plain intervals,
-- {"kind":"schedule","at":"<ISO date-time>"} for a one-shot,
-- {"kind":"host-event","event":"<event name>"} ONLY when the instruction reacts to a named host product event.
+"when" (exactly one form):
+- "<5-field cron, UTC>" — a bare STRING, for clock times (e.g. daily 8am = "0 8 * * *"). Plain English ("every monday") is refused.
+- {"every":"<n><s|m|h|d>"} for plain intervals,
+- {"at":"<ISO date-time>"} for a one-shot,
+- {"event":"<event name>"} ONLY when the instruction reacts to a named host product event.
 External webhook connectors are NOT available to this planner.
 
-${input.mode === "steps" ? stepsContract(input) : agenticContract(input)}
+${input.mode === "steps" ? stepsContract(input) : goalContract(input)}
 
 TOOLS (the ONLY tools available). Where a "result shape" is shown, a jsonata expression may reference ONLY those fields (steps.<id>.<field>); when a tool has no shape shown, pass its WHOLE output along (steps.<id>) instead of guessing field names:
 ${plannerTools(input.tools).map((tool) => toolLine(tool, input.toolShapes?.[tool.name])).join("\n") || "(none)"}`;
@@ -215,49 +211,29 @@ const extractJson = (text: string): string => {
   return start === -1 || end <= start ? text : text.slice(start, end + 1);
 };
 
-/** The same schedule constraints the automations engine enforces — checked HERE
- *  so an unfireable trigger is repaired at authoring time instead of silently
- *  never firing on the tick. */
-const scheduleIssues = (when: TriggerSource): string[] => {
-  if (when.kind !== "schedule") return [];
-  const issues: string[] = [];
-  if (when.every !== undefined && !EVERY_DURATION.test(when.every)) {
-    issues.push('schedule "every" must match <n><s|m|h|d> with n > 0');
-  }
-  if (when.cron !== undefined) {
-    if (when.cron.trim().split(/\s+/).length !== 5) {
-      issues.push('schedule "cron" must contain exactly 5 fields');
-    } else {
-      try {
-        new Cron(when.cron, { timezone: "UTC", paused: true });
-      } catch (error) {
-        issues.push(`invalid schedule cron: ${error instanceof Error ? error.message : "unparseable"}`);
-      }
-    }
-  }
-  if (when.at !== undefined && !Number.isFinite(Date.parse(when.at))) {
-    issues.push('schedule "at" must be an ISO date-time');
-  }
-  return issues;
-};
-
 /**
- * What an agentic plan says it will REACH — read back out of the prompt the
- * planner just wrote.
- *
- * Authoring is the only moment that knows: it wrote the prompt, and the agentic
- * contract tells it to name its tools from the TOOLS list. An exact name in free
- * text is already how this file reads a prompt (the refusal scan below), so the
- * names it mentions are the declaration, with no verb guessing anywhere.
- *
- * Narrow by construction — only tools the planner could SEE ({@link plannerTools}
- * withholds the irreversible ones) and only ones it named. Without it, arm-time
- * capture falls back to proposing EVERY bound descriptor, which is how "review
- * the transactions and write a note" asked its owner for 31 standing permissions
- * behind a single button.
+ * `when`, through the ONE converter every authoring door runs (core's
+ * `toTriggerSource`), so a schedule nobody can run is repaired HERE instead of
+ * silently never firing on the tick. Its refusal already carries what was wrong,
+ * why, the nearest valid cron and the docs URL — which is exactly what the
+ * repair round is fed.
  */
-const declaredTools = (prompt: string, tools: readonly HostToolInfo[]): string[] =>
-  plannerTools(tools).map(({ name }) => name).filter((name) => prompt.includes(name));
+const readWhen = (value: unknown): { when?: When; issues: string[] } => {
+  if (typeof value !== "string"
+    && (typeof value !== "object" || value === null || Array.isArray(value))) {
+    return { issues: ['"when" must be a cron string, or one of {"every"}, {"at"}, {"event"}'] };
+  }
+  const when = value as When;
+  try {
+    const source = toTriggerSource(when);
+    if (source.kind === "external") {
+      return { issues: ['"when" cannot be a webhook connector here — use a schedule or a host event'] };
+    }
+    return { when, issues: [] };
+  } catch (error) {
+    return { issues: [safeErrorMessage(error)] };
+  }
+};
 
 /** Everything a `steps` task has to satisfy beyond the schema: referable step
  *  ids, a tool universe the planner could actually see, §12's defence in depth
@@ -337,27 +313,18 @@ const validatePlan = (
   }
   const candidate = parsed as { name?: unknown; when?: unknown; task?: unknown; resultsCollection?: unknown; replaces?: unknown };
   const issues: string[] = [];
-  const whenResult = triggerSourceSchema.safeParse(candidate.when);
-  if (!whenResult.success) {
-    const first = whenResult.error.issues[0];
-    const at = first === undefined || first.path.length === 0 ? "" : ` at when.${first.path.join(".")}`;
-    return { issues: [`invalid "when"${at}: ${first?.message ?? "does not match the trigger schema"}`] };
-  }
+  const parsedWhen = readWhen(candidate.when);
+  if (parsedWhen.when === undefined) return { issues: parsedWhen.issues };
   const taskResult = automationTaskSchema.safeParse(candidate.task);
   if (!taskResult.success) {
     const first = taskResult.error.issues[0];
     const at = first === undefined || first.path.length === 0 ? "" : ` at task.${first.path.join(".")}`;
     return { issues: [`invalid "task"${at}: ${first?.message ?? "does not match the task schema"} — remember every steps args value is a JSON STRING containing a jsonata expression`] };
   }
-  const when = whenResult.data;
+  const when = parsedWhen.when;
   const task = taskResult.data;
-  if (when.kind === "external") {
-    issues.push('"when" cannot be an external connector here — use a schedule or a host-event');
-  }
-  issues.push(...scheduleIssues(when));
-  const wantedKind = input.mode === "steps" ? "steps" : "goal";
-  if (task.kind !== wantedKind) {
-    issues.push(`task.kind must be "${wantedKind}" for this instruction`);
+  if (task.kind !== input.mode) {
+    issues.push(`task.kind must be "${input.mode}" for this instruction`);
   }
   // The tools §12 will never run away are already absent from the planner's
   // TOOLS list, so this is the defence in depth: refuse the plan HERE instead of
@@ -365,15 +332,13 @@ const validatePlan = (
   // automation", which tells the person nothing about their own request.
   const refused = new Set(input.tools.filter(irreversible).map(({ name }) => name));
   if (task.kind === "goal") {
-    // A goal has no tool field; the contract tells it to name its tools, so an
-    // exact name in the prompt is the declaration — no verb guessing at free
-    // text.
+    // A goal names no tools, so the refusal scan reads the prompt itself: an
+    // exact tool name in free text is the only signal there is, and no verb
+    // guessing happens anywhere.
     const { prompt } = task;
     for (const tool of refused) {
-      if (prompt.includes(tool)) issues.push(refusal("the agentic prompt", tool));
+      if (prompt.includes(tool)) issues.push(refusal("the goal's prompt", tool));
     }
-    const declared = declaredTools(prompt, input.tools);
-    if (declared.length > 0) task.tools = declared;
   }
   const resultsCollection = candidate.resultsCollection;
   if (resultsCollection !== undefined) {

@@ -304,7 +304,7 @@ export interface AgentToolsDataDependencies {
  * had happened. The three facts are: the change did not happen, why it cannot, and
  * that a copy of their own is the way through — including who can make one, so a
  * model reading this cannot promise a fork it has no tool for (this registry is
- * make · reseed · open · pin · data_*).
+ * make · automate · reseed · open · pin · data_*).
  */
 const FORBIDDEN_FACTS = "The change was not made: this is the team's copy of the app and this user has "
   + "read-only access to it. A copy of their own would be theirs to change — they fork it from the app's "
