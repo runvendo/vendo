@@ -451,7 +451,6 @@ async function surfaceGrantSet(
     type: "data-vendo-grant-set",
     toolCallId,
     grantSetId,
-    appId: demoAppId(key, ctx.principal.subject),
     name,
     permissions: asks.map((ask) => ({
       approvalId: ask.id,

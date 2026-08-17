@@ -724,6 +724,16 @@ describe("grant sets: one set per enable, dedupe against pending", () => {
     }
   });
 
+  /** The RECORD has to name its set, because that is where the consent surface
+   *  reads it from: chrome resolves the automation through `automations.list()`
+   *  and settles the whole set with the id it finds there
+   *  (`packages/ui/src/chrome/thread/automation-consent.tsx`). */
+  it("stamps the set on the record, so a surface holding only the id can settle it", async () => {
+    const result = await engine.enable(WEEKLY, ctx());
+
+    expect((await engine.get(WEEKLY, ctx()))?.grantSetId).toBe(result.grantSetId);
+  });
+
   it("re-running enable() reuses the pending ask — no duplicate ApprovalRequest per (automation, tool)", async () => {
     const first = await engine.enable(WEEKLY, ctx());
     guard.decide(first.missing[0]!.id, true);

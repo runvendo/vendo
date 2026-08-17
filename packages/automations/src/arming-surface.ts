@@ -46,7 +46,15 @@ const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enabl
     // the same authority that turned it off, and a record that stayed flagged
     // would be skipped by every reconcile forever.
     const { disarmedBy: _cleared, ...rest } = found.row;
-    await automations.write({ ...rest, armed: true, updatedAt: iso() });
+    // The set is stamped on the RECORD because that is where a consent surface
+    // holding only the automation id reads it from — chrome resolves the record
+    // through `list()` and settles the whole set with the id it finds there.
+    await automations.write({
+      ...rest,
+      armed: true,
+      ...(missing.length === 0 ? {} : { grantSetId }),
+      updatedAt: iso(),
+    });
     return { enabled: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };
   };
 
