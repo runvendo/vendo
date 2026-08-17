@@ -133,14 +133,20 @@ export const foldStyle: CSSProperties = {
   fontVariantNumeric: "normal",
 };
 
-/** A width to the FRACTION. `offsetWidth` and `clientWidth` are whole pixels,
- *  and the element's own rect carries the fraction they rounded away — summing
- *  rounded column widths against a rounded room overshoots by up to half a pixel
- *  per column, which folds a column that fits. A rect is all zeroes where nothing
- *  is laid out (SSR, jsdom), leaving the whole-pixel reading exactly as it was. */
-const unrounded = (whole: number, el: Element): number => {
-  const { width } = el.getBoundingClientRect();
-  return whole + width - Math.round(width);
+/** A whole-pixel reading (`offsetWidth`, `clientWidth`) put back to the fraction
+ *  its laid-out box really has: summing rounded column widths against a rounded
+ *  room overshoots by up to half a pixel per column, which folds a column that
+ *  fits. Nothing is laid out under SSR and jsdom, where `laidOut` is 0 (or NaN,
+ *  off a border those cannot resolve) and the whole-pixel reading stands. */
+const unrounded = (whole: number, laidOut: number): number =>
+  laidOut > 0 ? whole + laidOut - Math.round(laidOut) : whole;
+
+/** The scroller's CONTENT box, to the fraction. Its rect is the BORDER box, and
+ *  `borderWidth` is a host's own string: a fractional border handed back as room
+ *  keeps a column that overflows, which is the fold's failure mirrored. */
+const contentWidth = (el: HTMLElement): number => {
+  const { borderLeftWidth, borderRightWidth } = getComputedStyle(el);
+  return el.getBoundingClientRect().width - parseFloat(borderLeftWidth) - parseFloat(borderRightWidth);
 };
 
 export function DataTable(props: DataTableProps) {
@@ -321,13 +327,13 @@ export function DataTable(props: DataTableProps) {
       if (headers !== undefined && headers.length === expandedHeaderCount) {
         let edge = 0;
         naturalEdges.current = [...headers].slice(0, columns.length)
-          .map((th) => (edge += unrounded((th as HTMLElement).offsetWidth, th)));
+          .map((th) => (edge += unrounded((th as HTMLElement).offsetWidth, th.getBoundingClientRect().width)));
       }
       const edges = naturalEdges.current;
       if (edges.length === 0) return;
       // Keep every column that has room, fold only the ones that do not. The
       // first column always stays, however narrow the surface is.
-      const room = unrounded(node.clientWidth, node);
+      const room = unrounded(node.clientWidth, contentWidth(node));
       setVisibleCount(Math.max(1, edges.filter((right) => right <= room).length));
     };
     measure();

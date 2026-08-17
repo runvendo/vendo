@@ -289,7 +289,7 @@ describe("DataTable", () => {
    * scroller carries a 1px border on each side, so its rect is two pixels wider
    * than the room inside it.
    */
-  function stubSubpixelLayout(widths: Record<string, number>, room: number): () => void {
+  function stubSubpixelLayout(widths: Record<string, number>, room: number, border = 1): () => void {
     const observers = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
       observe() {}
@@ -297,6 +297,7 @@ describe("DataTable", () => {
       disconnect() {}
     } as never;
     const rects = HTMLElement.prototype.getBoundingClientRect;
+    const styles = globalThis.getComputedStyle;
     const widthOf = (el: HTMLElement) =>
       el.tagName === "TH" ? widths[el.textContent?.replace(/[▲▼]/gu, "").trim() ?? ""] ?? 0 : room;
     for (const prop of ["offsetWidth", "clientWidth"] as const) {
@@ -306,10 +307,15 @@ describe("DataTable", () => {
       });
     }
     HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-      return { width: widthOf(this) + (this.tagName === "TH" ? 0 : 2) } as DOMRect;
+      return { width: widthOf(this) + (this.tagName === "TH" ? 0 : border * 2) } as DOMRect;
     };
+    globalThis.getComputedStyle = ((el: Element) =>
+      el.tagName === "DIV"
+        ? { borderLeftWidth: `${border}px`, borderRightWidth: `${border}px` }
+        : styles(el)) as typeof globalThis.getComputedStyle;
     return () => {
       globalThis.ResizeObserver = observers;
+      globalThis.getComputedStyle = styles;
       HTMLElement.prototype.getBoundingClientRect = rects;
       Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
       Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
@@ -345,6 +351,24 @@ describe("DataTable", () => {
     try {
       render(<DataTable rows={rows} columns={columns} />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * …and the room is the CONTENT box, so a themed border width that is itself
+   * fractional (`borderWidth` is a host's own string) belongs to neither side of
+   * the comparison. Reading the fraction off the scroller's border box instead
+   * hands the table its border back as room, and a column overflowing by a hair
+   * stays put — the fold's own failure, mirrored.
+   */
+  it("does not spend a fractional border as room", () => {
+    const restore = stubSubpixelLayout({ Client: 100, Amount: 100, Due: 100.093_75 }, 300, 0.093_75);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(2);
+      expect(screen.getAllByRole("row")[1]!.textContent).toContain("Due:");
     } finally {
       restore();
     }
