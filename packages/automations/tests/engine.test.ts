@@ -1614,6 +1614,51 @@ describe("dry runs, run visibility, goal execution, and stopping", () => {
     expect((await store.records("automations:captures").list()).records).toHaveLength(0);
   });
 
+  /** `dryRun` is public surface, and a manifest automation's only step is an app
+   *  function — so a preview of one has to ANSWER. An `fn:` ref is the app's own
+   *  server code, so it is listed (a preview says what would run) but never
+   *  resolved against the host registry and never a missing grant. */
+  it("previews an app-function step instead of resolving it against the host registry", async () => {
+    const store = memoryStoreAdapter();
+    const engine = createAutomations({
+      tools: registry([readTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const record = await create(engine, {
+      id: "atm_dryrun_fn",
+      authoredBy: "manifest",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [
+        { id: "fire", tool: "fn:chaseInvoices" },
+        { id: "read", tool: readTool.name },
+      ] },
+    });
+
+    const plan = await engine.dryRun(record.id, ctx());
+
+    expect(plan.steps).toEqual([
+      { id: "fire", tool: "fn:chaseInvoices", wouldAsk: false },
+      { id: "read", tool: readTool.name, wouldAsk: true },
+    ]);
+    expect(plan.grantsMissing).toEqual([readTool.name]);
+  });
+
+  /** The loud path the case above must not soften: a step naming a HOST tool this
+   *  deployment does not offer is a broken automation, and the preview says so
+   *  rather than quietly dropping the step. */
+  it("still refuses a preview whose step names a host tool the registry has never heard of", async () => {
+    const store = memoryStoreAdapter();
+    const engine = createAutomations({
+      tools: registry([readTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const record = await create(engine, {
+      id: "atm_dryrun_typo",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [{ id: "read", tool: "host_invoices_lst" }] },
+    });
+
+    await expect(engine.dryRun(record.id, ctx())).rejects.toThrow(/unknown tool in automation: host_invoices_lst/);
+  });
+
   it("surfaces a scheduler-refused run (pricing v3 §5) as a failed run carrying the blocked reason", async () => {
     // Under a hosted store, Cloud's scheduler is the firing authority for
     // schedule/external automations and writes run rows with the same shape

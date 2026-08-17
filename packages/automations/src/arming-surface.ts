@@ -9,7 +9,7 @@ import type { ConsentAccess } from "./consent.js";
 import type { EngineBase } from "./engine-context.js";
 import type { GrantsAccess } from "./grants.js";
 import type { AutomationsEngine, RunPlan } from "./index.js";
-import { currentIntentHash, markSponsored, writeSponsorship } from "./sponsorship.js";
+import { currentIntentHash, declaredSurface, markSponsored, writeSponsorship } from "./sponsorship.js";
 import { evaluate, stepArgs, validateForEachItems } from "./steps.js";
 
 export type ArmingSurfaceDeps = {
@@ -78,7 +78,17 @@ const createDryRunDoor = (
     const found = await automations.owned(automationId, ctx);
     const byName = await grants.descriptors(ctx);
     const plan: RunPlan = { steps: [], grantsMissing: [] };
+    // The record's HOST tools, from the one place that rule lives: `declaredSurface`
+    // is every step tool EXCEPT the `fn:` refs, so a steps record naming a tool
+    // absent from it is naming the app's own server code. Listed — a preview says
+    // what would run — but never resolved against the host registry and never a
+    // missing grant. An unknown HOST tool IS in that set, so it still fails loudly.
+    const hostTools = new Set(declaredSurface(found.row));
     const add = async (stepId: string, tool: string): Promise<void> => {
+      if (found.row.task.kind === "steps" && !hostTools.has(tool)) {
+        plan.steps.push({ id: stepId, tool, wouldAsk: false });
+        return;
+      }
       const descriptor = byName.get(tool);
       if (descriptor === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
       const granted = await grants.liveGrant(found.row.owner.subject, automationId, descriptor);
