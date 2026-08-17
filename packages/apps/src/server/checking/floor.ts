@@ -24,7 +24,7 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE, type FlatTree } from "../../contract/genui/component/index.js";
-import { checkComponentScreen, screenName, TOOLCHAIN_UNAVAILABLE } from "./component-screen.js";
+import { checkComponentScreen, screenName } from "./component-screen.js";
 import { screenCatalog } from "./screen-typings.js";
 import type { FloorDependencies } from "./deps.js";
 import { screenTypesCheck } from "./facts.js";
@@ -204,12 +204,12 @@ export const createAppFloor = (
         toolchain,
       });
       if (!checked.ok || checked.compiled === undefined || checked.initialTree === undefined) {
-        // A toolchain that could not RUN is the deployment's fault, and the mark
-        // travels with the sentences: whoever reads them has to know that writing
-        // the screen again cannot help.
+        // A machine of the gauntlet that could not RUN is the deployment's fault,
+        // and the mark travels with the sentences: whoever reads them has to know
+        // that writing the screen again cannot help.
         return refuse(
           checked.issues.map(({ message }) => message),
-          checked.issues.some(({ code }) => code === TOOLCHAIN_UNAVAILABLE) ? true : undefined,
+          checked.issues.some(({ environment }) => environment === true) ? true : undefined,
         );
       }
       // The host's own plugged checks, AFTER the gauntlet's five stages and still

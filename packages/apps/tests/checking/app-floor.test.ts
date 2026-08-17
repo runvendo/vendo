@@ -23,7 +23,11 @@ import {
 } from "../../src/contract/index.js";
 import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
 import { blocks, createAppFloor } from "../../src/server/checking/floor.js";
-import { ScreenToolchainUnavailable } from "../../src/server/checking/toolchain.js";
+import {
+  nodeToolchain,
+  ScreenToolchainUnavailable,
+  type ScreenToolchain,
+} from "../../src/server/checking/toolchain.js";
 
 const tools: HostToolInfo[] = [{
   name: "host_listInvoices",
@@ -142,6 +146,43 @@ describe("component runs the ONE gauntlet, and it is the paint gate", () => {
     expect(painted.environment).toBe(true);
     expect(painted.blocking.join("\n")).toContain(why);
   });
+
+  /** The real toolchain with ONE machine broken: every stage before the break is
+   *  the real one, so the refusal under test is the real refusal. */
+  const brokenAt = (parts: Partial<ScreenToolchain>) =>
+    floor({ toolchain: { ...nodeToolchain(), ...parts } }).component({ appId: "app_floor", source: GOOD });
+
+  it("marks a type checker that could not RUN the same way", async () => {
+    const painted = await brokenAt({ typecheck: async () => ({ ok: false, why: "the compiler is not reachable here" }) });
+
+    expect(painted.ok).toBe(false);
+    if (painted.ok) throw new Error("unreachable");
+    expect(painted.environment).toBe(true);
+    expect(painted.blocking.join("\n")).toContain("could not be type-checked");
+  }, 60_000);
+
+  it("marks an engine that would not START — a throw from the paint is not a verdict", async () => {
+    const painted = await brokenAt({ paint: async () => { throw new Error("the VM never booted"); } });
+
+    expect(painted.ok).toBe(false);
+    if (painted.ok) throw new Error("unreachable");
+    expect(painted.environment).toBe(true);
+    expect(painted.blocking.join("\n")).toContain("the screen engine would not start");
+  }, 60_000);
+
+  it("leaves a screen that RAN and failed to its author — unmarked, and still a repair", async () => {
+    // The line that must not blur, and the reason the two live under different
+    // codes: an engine that ANSWERED has run this screen, so the failure is the
+    // screen's own and the repair round is exactly the right thing to spend.
+    const painted = await brokenAt({
+      paint: async () => ({ ok: false, kind: "render", message: "Cannot read properties of undefined" }),
+    });
+
+    expect(painted.ok).toBe(false);
+    if (painted.ok) throw new Error("unreachable");
+    expect(painted.environment).toBeUndefined();
+    expect(painted.blocking.join("\n")).toContain("the screen would not paint");
+  }, 60_000);
 });
 
 describe("the host's own plugged checks fire over a harness's write", () => {

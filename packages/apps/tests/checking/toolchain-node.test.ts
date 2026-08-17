@@ -50,6 +50,10 @@ describe("a toolchain that cannot type-check", () => {
         message: "the screen could not be type-checked: the compiler is not reachable here."
           + " This check refuses to pass a screen it never read — make the TypeScript compiler"
           + " reachable where the build runs.",
+        // The refusal is about this DEPLOYMENT, not the screen: nothing was read,
+        // so no rewrite helps, and the mark is what stops a writing loop spending
+        // its budget on one (`ComponentPaintResult.environment`).
+        environment: true,
       }]);
     } finally {
       restore();
