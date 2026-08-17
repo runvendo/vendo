@@ -289,10 +289,17 @@ function check(program: string, text: string, data: Readonly<Record<string, unkn
 
   const ran = execute(program, data);
   if (ran.error !== undefined) return offender(`rejected: ${ran.error}`);
-  if (typeof ran.value === "number" && Number.isFinite(ran.value)) {
+  // A derivation that formats its answer the way the screen does — `toFixed(2)`,
+  // `toLocaleString()` — returns a string, and "2850.00" is the number it
+  // computed, not a rival fact: the verbatim rule below was convicting it against
+  // a screen showing "$2,850.00" (three times on the 2026-08-16 runs). A string
+  // that holds nothing but a figure is read as that figure, exactly as the echo
+  // scan already reads one, and answers to the numbers' own comparison.
+  const derived = typeof ran.value === "string" && NUMERIC_TEXT.test(ran.value.trim()) ? numberIn(ran.value) : ran.value;
+  if (typeof derived === "number" && Number.isFinite(derived)) {
     // An amount computed in cents may honestly be shown in dollars, so the
     // comparison is scale-tolerant. The executed value is the authored side.
-    const cleared = numberKeys(ran.value).includes(numberKey(shown));
+    const cleared = numberKeys(derived).includes(numberKey(shown));
     return { program, result: String(ran.value), verdict: cleared ? "cleared-by-audit" : "offender" };
   }
   // An account mask is a digit group the extraction calls a number and the data

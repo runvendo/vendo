@@ -562,6 +562,62 @@ describe("a value written down inside a string", () => {
   });
 });
 
+/**
+ * The screen's own formatting, handed back by the derivation.
+ *
+ * A program that computes the figure and returns it FORMATTED — `toFixed(2)`,
+ * `toLocaleString()` — hands back a string, and the string rule wants the
+ * screen's characters verbatim. So "2850.00" was convicted against a screen
+ * showing "$2,850.00": the same money, refused on punctuation, three times on
+ * the 2026-08-16 runs. A string that is nothing but a number IS that number and
+ * is compared as one; only a genuinely textual answer reaches the verbatim rule.
+ */
+describe("a derivation that returns its number as text", () => {
+  /** Housing's amount, computed in cents and handed back the way a screen prints
+   *  it: the screen shows $2,850.00, the program returns "2850.00". */
+  const FORMATTED = "return (data.get_spending.data[0].amount / 100).toFixed(2);";
+
+  it("clears the value it computed, however that string is punctuated", async () => {
+    const result = await auditing("Housing $2,850.00", proposing({ "$2,850.00": FORMATTED }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "2850.00" });
+    expect(result.pass).toBe(true);
+  });
+
+  /** Refused on the arithmetic, not on the type: a formatted answer is held to
+   *  exactly the comparison a bare 2850 would have faced, and the record is what
+   *  the program actually returned. */
+  it("still convicts a formatted answer that is not the screen's figure", async () => {
+    const result = await auditing("Housing $1,234.00", proposing({ "$1,234.00": FORMATTED }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender", result: "2850.00" });
+    expect(result.pass).toBe(false);
+  });
+
+  it("still demands the screen's own characters when the answer is genuinely text", async () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "J-2444" }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+    const SCREEN = "Job J-9001";
+
+    const result = await audit(
+      { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
+      { model: proposing({ "J-9001": "return data.list_jobs.data[0].id;" }) },
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
+    expect(result.audited?.[0]?.result).toContain("which is not a number");
+  });
+});
+
 // ---------------------------------------------------------- sandbox discipline
 
 /**
