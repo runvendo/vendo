@@ -57,10 +57,10 @@ export const AUDITOR_CONTRACT = {
    *  `toLocaleString()` — hands back a string, and the string rule wanted the
    *  screen's characters verbatim, so "2850.00" was convicted against a screen
    *  showing "$2,850.00": the same money, refused on punctuation, three times on
-   *  the 2026-08-16 runs. A string holding nothing but a figure now clears the
-   *  figure it STATES, punctuation aside — but not the same digits at another
-   *  scale, because a formatted answer names its own scale and rescaling it would
-   *  let an account's "4471" clear a fabricated $44.71.
+   *  the 2026-08-16 runs. The string comparison now ignores the punctuation
+   *  printing adds — a currency mark, thousands commas, surrounding space — and
+   *  nothing else. It is still text, never a number: a mask is not rescaled, so
+   *  "4471" clears the mask and neither $44.71 nor $4,471.00.
    *  7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
    *  a literal that matches the value is settled by a counterfactual run
    *  instead — `data; return 3` was clearing a fabricated 3 on every screen,
@@ -214,6 +214,13 @@ const STRING_LITERAL = /'[^'\n]*'|"[^"\n]*"/g;
  *  matched here. */
 const NUMERIC_TEXT = /^-?\$?\d[\d,]*(?:\.\d+)?$/;
 
+/** The punctuation printing a figure adds to it — a currency mark, thousands
+ *  separators, surrounding space. "$2,850.00" and "2850.00" are the same
+ *  characters once it is gone, and that is the whole of what the text comparison
+ *  below forgives: the digits themselves still have to match, so a mask is never
+ *  read as a number and never rescaled into one. */
+const PRINTED = /[$\s,]/g;
+
 /**
  * The same rows with every number taken out — the counterfactual an echo is
  * measured against.
@@ -311,18 +318,17 @@ function check(program: string, text: string, data: Readonly<Record<string, unkn
   // technicality. A derivation that FORMATS its answer the way the screen does —
   // `toFixed(2)`, `toLocaleString()` — returns a string for the same reason, and
   // "2850.00" was being convicted against a screen showing "$2,850.00": the same
-  // money, refused on punctuation. So the screen's own characters clear a value,
-  // and so does the same figure differently punctuated — but NOT the same digits
-  // at another scale, which is where this parts company with the numbers above.
-  // Cents-in-dollars is an honest accident of arithmetic; a formatted string
-  // states its own scale, and rescaling it would let an account's "4471" clear a
-  // fabricated $44.71. The program still has to have READ the field, or
-  // `return "4471"` would clear a mask no tool ever answered with.
+  // money, refused on the currency mark and the comma. So the comparison ignores
+  // the punctuation printing adds and NOTHING else. It is still text: the digits
+  // must match as written, so this stays clear of the numbers' scale tolerance,
+  // which exists for an honest accident of arithmetic and would otherwise let an
+  // account's "4471" clear a fabricated $44.71 or $4,471.00. The program has to
+  // have READ the field, or `return "4471"` would clear a mask no tool answered
+  // with.
   if (
     typeof ran.value === "string" &&
     derivesFromData(program) &&
-    (ran.value.trim() === text.trim() ||
-      (NUMERIC_TEXT.test(ran.value.trim()) && numberKey(numberIn(ran.value)) === numberKey(shown)))
+    ran.value.replace(PRINTED, "") === text.replace(PRINTED, "")
   ) {
     return { program, result: ran.value, verdict: "cleared-by-audit" };
   }

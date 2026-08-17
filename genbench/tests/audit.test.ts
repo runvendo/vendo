@@ -604,14 +604,18 @@ describe("a derivation that returns its number as text", () => {
    * answer states its own scale — that is what formatting IS — so it clears the
    * figure it states and no other.
    */
-  it("does not let a mask the data holds clear a money claim one scale away", async () => {
-    const result = await auditing(
-      "Available $44.71",
-      proposing({ "$44.71": "return data.list_accounts.data[0].mask;" }),
-    );
+  it("does not let a mask the data holds clear a money claim it merely resembles", async () => {
+    // Maple Checking's mask is "4471". Neither of these screens is that mask: one
+    // is it a hundredfold off, the other is it with the decimals money carries.
+    for (const shown of ["$44.71", "$4,471.00"]) {
+      const result = await auditing(
+        `Available ${shown}`,
+        proposing({ [shown]: "return data.list_accounts.data[0].mask;" }),
+      );
 
-    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
-    expect(result.pass).toBe(false);
+      expect(result.audited?.[0], shown).toMatchObject({ verdict: "offender" });
+      expect(result.pass, shown).toBe(false);
+    }
   });
 
   it("still demands the screen's own characters when the answer is genuinely text", async () => {
