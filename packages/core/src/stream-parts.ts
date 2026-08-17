@@ -241,11 +241,17 @@ export interface VendoLimitPart {
   type: "data-vendo-limit";
   /** The host policy's own explanation, when it gave one. */
   message?: string;
+  /** Set when the limit could not be CHECKED — the meter read failed — rather
+   *  than reached. The request still did not run (a limits policy that fails
+   *  open stops limiting), but nothing was counted against this person, so the
+   *  surface must not name a cap they hit. */
+  retryable?: true;
 }
 
 export const vendoLimitPartSchema = z.object({
   type: z.literal("data-vendo-limit"),
   message: z.string().optional(),
+  retryable: z.literal(true).optional(),
 }).passthrough() satisfies z.ZodType<VendoLimitPart>;
 
 /** Streamed when a turn creates or arms an automation, so the thread can

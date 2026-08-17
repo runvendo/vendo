@@ -23,6 +23,7 @@ import {
   TRIGGER_KIND_REF_PRESENT,
   VENDO_APP_FORMAT,
   VENDO_MAKE_TOOL,
+  VendoError,
   triggerKindRefKey,
   vendoLimitPartSchema,
   type AppDocument,
@@ -119,6 +120,21 @@ describe("the message choke — a denied message costs nothing", () => {
 
     expect(limitCards(await chat("hello"))).toEqual([{ type: "data-vendo-limit" }]);
   });
+
+  it("says the meter was BUSY, not that a cap was reached, when the count could not be read", async () => {
+    // The count is a live store read: Vendo Cloud rate-limiting it lands in the
+    // policy's own failure path. Still closed — no model call — but the card
+    // must not tell this user they spent something nothing counted.
+    const { model, chat } = await compose({
+      limits: () => { throw new VendoError("unavailable", "Too many requests. Try again shortly."); },
+      turns: [],
+    });
+
+    expect(limitCards(await chat("hello"))).toEqual([
+      { type: "data-vendo-limit", message: expect.stringContaining("busy"), retryable: true },
+    ]);
+    expect(model.calls).toBe(0);
+  });
 });
 
 describe("the generation choke — the agent is told, and the turn goes on", () => {
@@ -151,6 +167,27 @@ describe("the generation choke — the agent is told, and the turn goes on", () 
     expect(turn.some((chunk) => chunk["type"] === "tool-output-denied")).toBe(false);
     expect(turn.find((chunk) => chunk["type"] === "tool-output-available"))
       .toMatchObject({ output: { status: "blocked", reason: expect.stringContaining(GENERATION_CAP) } });
+  });
+
+  it("cards an UNCHECKABLE limit as busy, through the bridge's own part schema", async () => {
+    // The generation card crosses the harness tool bridge, which re-parses every
+    // streamed part against `vendoLimitPartSchema` before it reaches the wire —
+    // so this is the leg that proves the retryable flag is contract, not a field
+    // the producer invented and the consumer never sees.
+    const { chat } = await compose({
+      limits: ({ action }) => {
+        if (action !== "generation") return true;
+        throw new VendoError("unavailable", "Too many requests. Try again shortly.");
+      },
+      turns: [
+        toolCallTurn(VENDO_MAKE_TOOL, { request: "a spending dashboard" }),
+        textTurn("Vendo Cloud is busy right now — try that again in a moment."),
+      ],
+    });
+
+    expect(limitCards(await chat("build me a dashboard"))).toEqual([
+      { type: "data-vendo-limit", message: expect.stringContaining("busy"), retryable: true },
+    ]);
   });
 
   it("leaves the thread ALIVE — the next turn in the same thread still answers", async () => {

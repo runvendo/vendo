@@ -411,13 +411,20 @@ describe("hostedStore error mapping", () => {
       .rejects.toThrow(/failed with 404/);
   });
 
-  it("carries unknown codes on a plain error and survives non-JSON bodies", async () => {
+  it("carries unknown codes on a plain error, and reads a transient failure as unavailable", async () => {
     await expect(
-      adapterFor(respond("weird-code", "strange", 500)).records("invoices").get("r"),
+      adapterFor(respond("weird-code", "strange", 400)).records("invoices").get("r"),
     ).rejects.toMatchObject({ code: "weird-code", message: "strange" });
+    // A rate limit or an upstream 5xx is the server's own transient failure, and
+    // it has to arrive as a REAL VendoError: a plain Error reads as an unhandled
+    // wire error (HTTP 501) and shows the person a generic "couldn't finish".
     const nonJson = vi.fn(async () => new Response("bad gateway", { status: 502 }));
-    await expect(adapterFor(nonJson).records("invoices").get("r"))
-      .rejects.toThrow(/502/);
+    const failure = await adapterFor(nonJson).records("invoices").get("r").then(
+      () => { throw new Error("expected a rejection"); },
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(VendoError);
+    expect(failure).toMatchObject({ code: "unavailable", message: expect.stringContaining("502") });
   });
 
   it("treats malformed 200 responses as service misbehavior — never the caller's fault", async () => {
@@ -1351,6 +1358,31 @@ describe("hostedStoreOps — the 48-op wire client", () => {
     await ops.workspace.commit([{ path: "/a.md", data: "hi" }], { idempotencyKey: "idm_caller" });
     expect(bodies).toEqual([bodies[0], bodies[0]]);
     expect(bodies[0]).toBe(JSON.stringify({ entries: [{ path: "/a.md", data: "hi" }] }));
+  });
+
+  it("retries a rate limit once, waits the console's Retry-After, and replays the SAME key", async () => {
+    const seen: (string | null)[] = [];
+    let attempts = 0;
+    const fetchImpl = (async (_url: string, init: RequestInit = {}) => {
+      seen.push(new Headers(init.headers).get("idempotency-key"));
+      attempts += 1;
+      // The edge proxy's bare 429 — no envelope, and a wait the console asked for.
+      if (attempts === 1) {
+        return new Response("Too many requests. Try again shortly.", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      return Response.json({ record: wireRecord });
+    }) as unknown as typeof fetch;
+    const ops = hostedStoreOps({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl });
+
+    const started = Date.now();
+    expect(await ops.engine.put(ENGINE_COLLECTION, { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
+    // Honored, not hammered: the second attempt waited the second it was told to.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
   });
 
   it("does not retry a non-timeout failure — a refusal is an answer", async () => {

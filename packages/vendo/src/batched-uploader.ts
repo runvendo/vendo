@@ -102,8 +102,11 @@ export function createBatchedUploader<T>(options: BatchedUploaderOptions<T>): Ba
       } catch (error) {
         // The console understood and refused: the same batch gets the same
         // answer, so a retry only re-sends it. 5xx and transport errors stay
-        // retryable.
-        if (((error as { status?: number }).status ?? 500) < 500) return;
+        // retryable — and so does 429, which is the console asking to WAIT, not
+        // refusing: dropping there loses exactly the reports Vendo needs while
+        // an account is rate-limited.
+        const status = (error as { status?: number }).status ?? 500;
+        if (status < 500 && status !== 429) return;
         const retryDelay = retryDelaysMs[attempt];
         if (retryDelay === undefined) return;
         await delay(retryDelay);

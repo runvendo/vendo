@@ -25,7 +25,7 @@ describe("the limit card in the thread", () => {
     await wire.close();
   });
 
-  async function mountDenial(data: Record<string, unknown>) {
+  async function mountDenial(data: Record<string, unknown>, headline = "You’ve reached your limit") {
     const existing = wire.state.threads.get("thr_1")!;
     wire.state.threads.set("thr_1", {
       ...existing,
@@ -40,7 +40,7 @@ describe("the limit card in the thread", () => {
       }],
     });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
-    await screen.findByText("You’ve reached your limit");
+    await screen.findByText(headline);
     return document.querySelector("[data-vendo-limit]")!;
   }
 
@@ -56,6 +56,21 @@ describe("the limit card in the thread", () => {
   it("says the chrome's own line when the host wrote none", async () => {
     const card = await mountDenial({});
     expect(card.textContent).toContain("This request wasn’t run — nothing was changed.");
+  });
+
+  it("never calls a limit it could not CHECK a limit the person reached", async () => {
+    // The meter read failed (Vendo Cloud busy), so nothing was counted. The card
+    // still says the request did not run — it just does not blame the person for
+    // a cap that was never measured.
+    const card = await mountDenial(
+      {
+        message: "Vendo Cloud is busy right now, so this limit could not be checked — this is temporary, not a cap.",
+        retryable: true,
+      },
+      "Couldn’t check your limit",
+    );
+    expect(card.textContent).toContain("this is temporary, not a cap");
+    expect(card.textContent).not.toContain("You’ve reached your limit");
   });
 
   it("stays quiet: a cap reached is not a failure", async () => {

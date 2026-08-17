@@ -539,7 +539,7 @@ describe("cloudSandbox", () => {
       )) as unknown as typeof fetch,
     });
     // The best-effort source reap swallows its failure; the artifact GC does not.
-    await expect(failing.destroy(ref)).rejects.toMatchObject({ code: "sandbox-unavailable" });
+    await expect(failing.destroy(ref)).rejects.toMatchObject({ code: "unavailable" });
   });
 
   it("defaults the base URL to the Vendo console", async () => {
@@ -673,7 +673,12 @@ describe("cloudSandbox", () => {
     expect(mixed.headers).toEqual({ "x-ok": "yes" });
   });
 
-  it("preserves the console's error codes and falls back to sandbox-unavailable", async () => {
+  // A TRANSIENT console failure — its own `unavailable` envelope, or a bare
+  // 429/5xx — keeps that code the whole way out (wire 503, "try again"), because
+  // the console is telling this adapter to wait, not that the sandbox seam is
+  // broken. `sandbox-unavailable` (wire 501) stays for the adapter's OWN
+  // failures: the malformed-200 cases above, where nothing is worth retrying.
+  it("preserves the console's error codes, transient ones included", async () => {
     const respond = (code: string, message: string, status: number) =>
       vi.fn(async () => Response.json({ error: { code, message } }, { status }));
     const stubbed = (fetchImpl: unknown) =>
@@ -686,10 +691,10 @@ describe("cloudSandbox", () => {
     await expect(stubbed(respond("conflict", "Sandbox is live.", 409)).resume(ref))
       .rejects.toMatchObject({ code: "conflict", message: "Sandbox is live." });
     await expect(stubbed(respond("unavailable", "Sandbox provider is unavailable.", 503)).create({ env: {} }))
-      .rejects.toMatchObject({ code: "sandbox-unavailable", message: "Sandbox provider is unavailable." });
+      .rejects.toMatchObject({ code: "unavailable", message: "Sandbox provider is unavailable." });
     const nonJson = vi.fn(async () => new Response("bad gateway", { status: 502 }));
     await expect(stubbed(nonJson).create({ env: {} }))
-      .rejects.toMatchObject({ code: "sandbox-unavailable", message: expect.stringContaining("502") });
+      .rejects.toMatchObject({ code: "unavailable", message: expect.stringContaining("502") });
   });
 
   it("puts the seam's files and the adapter-private exec on the console wire", async () => {
