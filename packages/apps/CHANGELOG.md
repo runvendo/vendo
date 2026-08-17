@@ -1,5 +1,71 @@
 # @vendoai/apps
 
+## 0.27.1
+
+### Patch Changes
+
+- ebe9ffc: A store that will not hold one collection no longer takes the whole deployment down with it.
+
+  0.27.0 on a Vendo Cloud key served 501 to every route. The hosted store's engine allowlist did not carry two of the collections this version reads — `vendo_automations` and `vendo_app_seen` — and the automations one is read at BOOT, by the code-automations reconcile that rides the `ready()` latch. The latch memoizes, so the first refusal became every route's answer for the life of the process: 2.3 seconds for the first request, 3 milliseconds for every one after, all of them 501, including the routes that never touch an automation.
+
+  Three separate faults, and the deployment needed all three fixed:
+
+  The boot reconcile is no longer the deployment. A store that refuses the automations read leaves code-authored automations off and says so once, in a line the operator can act on; everything else serves. Scoped to that one read — every per-request store failure still fails in the open, where the caller can see it.
+
+  The unseen dot costs the dot, never the answer. `vendo_app_seen` was read on the path that LISTS a person's apps and written on every render, so a store refusing that collection took the whole page of apps with it. A refusal is absorbed there now, once per process, and the apps arrive without their arrival dots.
+
+  And `instanceof VendoError` does not survive a realm boundary. A host bundle can carry two copies of `@vendoai/core` — the ESM `dist/` beside the CJS `dist/cjs/` — and the second copy's VendoErrors are a different class with the same shape, so every `instanceof` gate said no. That is why a blocked collection reached the wire's catch-all as an unknown fault and answered "Internal Vendo error" instead of its own 403.
+
+  `isVendoError` is the check that survives it: `name` plus `code`, the two things any of these gates actually read. Every type-gate in the repo takes it now — 48 of them across the eight packages that had one — because the failure was never specific to the wire. The same class of error decided whether a lost compare-and-swap re-aimed or crashed the workspace façade, whether a swept approval rendered "expired" or an error card, whether a host's knowledge adapter got its code named in the operator's log, whether a permission route answered 403 or threw, and whether a build's "busy, try again shortly" read as "generation failed" — a verdict on an ask that was never the problem. `@vendoai/harnesses` proved the duck check first and kept a private copy of it; that copy is now this one function.
+
+- ebe9ffc: A polled resource that keeps failing now backs off instead of holding its
+  cadence. `useResource` re-armed the next poll at the same interval whatever came
+  back, so a wire saying "no" was asked again at exactly the rate it was refusing:
+  an idle host produced 75 rate-limited calls in eight minutes, because the connect
+  dock's badge polls every 3s and the overlay keeps it mounted whether or not
+  anyone opens the panel. Consecutive failures now double the interval — jittered
+  so the several pollers one page mounts stop re-colliding, capped at a minute, and
+  reset by the first success. Every hook that takes `pollMs` inherits it; the fix
+  is in the one place they all share.
+
+  `@vendoai/ui`'s entry points carry `"use client"`. Only the umbrella's
+  `@vendoai/vendo/react` had it, so a host importing `@vendoai/ui`,
+  `@vendoai/ui/chrome`, `/kit` or `/tree` straight into a Next App Router tree got
+  the hooks as server code. All four are client boundaries now, which meant
+  retiring `export *` from three of them: Next's flight loader builds its
+  client-reference manifest by statically enumerating a client module's named
+  exports and errors outright on a star. The exported surface is unchanged, name
+  for name.
+
+  `@vendoai/apps`'s optional `typescript` peer widens from the exact `6.0.3` to
+  `>=5.6.0 <7`. That pin is the provenance of the `/edge` toolchain's vendored
+  compiler bytes, not a claim on the host's own compiler, and it printed a peer
+  warning on every stock install. The exact version the edge toolchain wants is
+  `EDGE_TYPESCRIPT_VERSION`, now stated on the edge-runtimes page.
+
+- ebe9ffc: Three lines that promised more than the code does.
+
+  The `DataTable` spec now names the two priors a model keeps bringing to it: a column's header text is `label` — there is no `header` prop — and `paginate` is a page SIZE, so no pagination means omitting it rather than passing `false`. Both mistakes are silent from the model's side: an unknown prop is dropped at validation and `paginate={false}` never parses, so the screen simply comes back missing the thing that was asked for.
+
+  Init's closing line no longer says `vendo doctor` "can start the server and run a live turn". Doctor makes no requests at all — it validates files and wiring — so the sentence sold a check it was never going to run, and a reader who trusted it counted a green doctor as proof the app answers.
+
+  The brief stage's failure note names the artifact it already preserved. `brief stage failed (Unterminated string at position 1873) — keeping the current brief` gave nobody anything to open; it now points at `.vendo/data/extract/brief.json`, where the stage's raw output is written on the way out.
+
+- ebe9ffc: The Kit's props keep their real types under zod 4, instead of every one of them becoming `string`.
+
+  `@vendoai/apps` takes zod as a peer, so the Kit's schemas are built by whatever zod the HOST installed — and two walkers read those schemas: the checks floor's TypeScript printer, which decides whether a screen sets props that exist with types that fit, and the catalog prompt, which tells the model what each prop takes. Both switched on `_def.typeName` against `z.ZodFirstPartyTypeKind`. zod 4 tags a def with `_def.type` and ships no such enum, so every `case` compared `undefined` against `undefined`, the first one matched, and every prop in the Kit typed as `string`.
+
+  What that looks like on a real deployment: `gap?: string` where the Kit says number, `density?: string` where it says a two-word enum, `rows: string` where it says an array of records. 37 "takes string" refusals against real screens, nothing painting, and the agent reporting success over it. The `default:` branch that exists so a prop we cannot type precisely degrades to `any` — never to a false finding — was unreachable, so the failure was silent as well as total.
+
+  Both walkers now read one normalized answer from a single place that knows both layouts. The two are not merged field by field, because they collide: zod 3 keeps an array's element in `_def.type`, which is the field zod 4 uses for the tag, and zod 3 gives every object a `catchall` while zod 4 gives one only to an object that really keeps undeclared keys. So the tag decides how the rest of the def is read. Anything wearing neither tag — a construct outside the vocabulary, a stub, nothing at all — reaches the `any` net, which now has tests standing on it.
+
+  The zod-3 output is unchanged, byte for byte. The peer range did not move; this is what makes its claim true.
+
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [1fb1810]
+- Updated dependencies [ebe9ffc]
+  - @vendoai/core@0.27.1
+
 ## 0.27.0
 
 ### Minor Changes

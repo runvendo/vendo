@@ -1,5 +1,79 @@
 # @vendoai/ui
 
+## 0.27.1
+
+### Patch Changes
+
+- ebe9ffc: A store that will not hold one collection no longer takes the whole deployment down with it.
+
+  0.27.0 on a Vendo Cloud key served 501 to every route. The hosted store's engine allowlist did not carry two of the collections this version reads — `vendo_automations` and `vendo_app_seen` — and the automations one is read at BOOT, by the code-automations reconcile that rides the `ready()` latch. The latch memoizes, so the first refusal became every route's answer for the life of the process: 2.3 seconds for the first request, 3 milliseconds for every one after, all of them 501, including the routes that never touch an automation.
+
+  Three separate faults, and the deployment needed all three fixed:
+
+  The boot reconcile is no longer the deployment. A store that refuses the automations read leaves code-authored automations off and says so once, in a line the operator can act on; everything else serves. Scoped to that one read — every per-request store failure still fails in the open, where the caller can see it.
+
+  The unseen dot costs the dot, never the answer. `vendo_app_seen` was read on the path that LISTS a person's apps and written on every render, so a store refusing that collection took the whole page of apps with it. A refusal is absorbed there now, once per process, and the apps arrive without their arrival dots.
+
+  And `instanceof VendoError` does not survive a realm boundary. A host bundle can carry two copies of `@vendoai/core` — the ESM `dist/` beside the CJS `dist/cjs/` — and the second copy's VendoErrors are a different class with the same shape, so every `instanceof` gate said no. That is why a blocked collection reached the wire's catch-all as an unknown fault and answered "Internal Vendo error" instead of its own 403.
+
+  `isVendoError` is the check that survives it: `name` plus `code`, the two things any of these gates actually read. Every type-gate in the repo takes it now — 48 of them across the eight packages that had one — because the failure was never specific to the wire. The same class of error decided whether a lost compare-and-swap re-aimed or crashed the workspace façade, whether a swept approval rendered "expired" or an error card, whether a host's knowledge adapter got its code named in the operator's log, whether a permission route answered 403 or threw, and whether a build's "busy, try again shortly" read as "generation failed" — a verdict on an ask that was never the problem. `@vendoai/harnesses` proved the duck check first and kept a private copy of it; that copy is now this one function.
+
+- ebe9ffc: A polled resource that keeps failing now backs off instead of holding its
+  cadence. `useResource` re-armed the next poll at the same interval whatever came
+  back, so a wire saying "no" was asked again at exactly the rate it was refusing:
+  an idle host produced 75 rate-limited calls in eight minutes, because the connect
+  dock's badge polls every 3s and the overlay keeps it mounted whether or not
+  anyone opens the panel. Consecutive failures now double the interval — jittered
+  so the several pollers one page mounts stop re-colliding, capped at a minute, and
+  reset by the first success. Every hook that takes `pollMs` inherits it; the fix
+  is in the one place they all share.
+
+  `@vendoai/ui`'s entry points carry `"use client"`. Only the umbrella's
+  `@vendoai/vendo/react` had it, so a host importing `@vendoai/ui`,
+  `@vendoai/ui/chrome`, `/kit` or `/tree` straight into a Next App Router tree got
+  the hooks as server code. All four are client boundaries now, which meant
+  retiring `export *` from three of them: Next's flight loader builds its
+  client-reference manifest by statically enumerating a client module's named
+  exports and errors outright on a star. The exported surface is unchanged, name
+  for name.
+
+  `@vendoai/apps`'s optional `typescript` peer widens from the exact `6.0.3` to
+  `>=5.6.0 <7`. That pin is the provenance of the `/edge` toolchain's vendored
+  compiler bytes, not a claim on the host's own compiler, and it printed a peer
+  warning on every stock install. The exact version the edge toolchain wants is
+  `EDGE_TYPESCRIPT_VERSION`, now stated on the edge-runtimes page.
+
+- 0a06bad: A signed-out visitor's chrome stops asking. On a preset-authed deployment
+  every wire call for a visitor with no session correctly answers forbidden —
+  and every poller retried it forever, filling the console with 403s. A
+  forbidden refusal is now a full stop for every poller (the shared resource
+  loop, the approvals feed, the slot/placements poller and its report writes,
+  the parked-press backstop), a tab switch does not resurrect them, and the
+  app-open retry ladder no longer burns its attempts on a refusal that cannot
+  change. Everything wakes together when the host dispatches
+  `vendo:identity-changed` after an SPA sign-in (a full-page redirect remounts
+  everything anyway), or the moment any wire read succeeds again.
+- 1fb1810: A timed-out approval ask settles as expired, not as the person's no. The
+  APPROVAL_WAIT_MS settle used to ride the ai-SDK's `output-denied` state — whose
+  meaning is "the person answered no" — so the thread narrated "you declined it"
+  for a question nobody answered, and the persisted part carried nothing that
+  could ever tell the difference. The settle now carries a typed outcome
+  (`status: "blocked"` with `cause: "expired"` — a field on the existing member,
+  not a new status, so already-published validators pass it through and older
+  chrome degrades to "wasn't allowed", which at least blames no one), the beat
+  reads "the approval expired unanswered", and the distinction survives reload
+  because the part settles as `tool-output-available` with the outcome on it.
+  The model-facing result is unchanged: the same denial naming the approval it
+  still needs.
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [1fb1810]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+  - @vendoai/core@0.27.1
+  - @vendoai/apps@0.27.1
+
 ## 0.27.0
 
 ### Minor Changes

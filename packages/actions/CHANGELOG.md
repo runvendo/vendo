@@ -1,5 +1,28 @@
 # @vendoai/actions
 
+## 0.27.1
+
+### Patch Changes
+
+- ebe9ffc: Every block binds the host's zod. These four declared zod as a dependency only, while the other seven declared it as both a dependency and a peer of `>=3.25.0 <5` — and the peer is what makes pnpm bind the host's copy. So on a host that resolves zod 4, which `ai`'s own peer range admits, the seven bound the host's zod and the four kept their own: one package set, two zod instances. A schema built in one is not a schema in the other, so `@vendoai/core`'s `riskLabelSchema` inside `@vendoai/guard`'s `z.object` threw `Invalid element at key "risk": expected a Zod schema` and every tool call died before it started (#1314).
+
+  The four now declare the same peer, so there is one zod for all eleven. `scripts/dependency-guard.mjs` gains rule 5 to hold the posture uniform: a published block that bundles zod must declare that exact peer range.
+
+- ebe9ffc: Two ways a host with a full `.vendo/tools.json` still got an agent that could do nothing.
+
+  `api()` promised defaults its own JSDoc and the umbrella already documented — the working directory for `dir`, `VENDO_BASE_URL` for `baseUrl` — and forwarded neither. A backend writing `agent({ tools: [api()] })`, exactly the shape the docs show, handed `createActions` no directory at all, so no `.vendo` file was ever read and the agent booted with zero host tools. Both defaults now apply where the promise was made, in `api()`; `createActions` still defaults nothing, because the doctor probes pass `dir: undefined` on purpose to strip the file reads. The errors a baseUrl-less route or tRPC call throws named `createActions({ baseUrl })`, an internal a backend holding `api()` never calls; they name `VENDO_BASE_URL`, or passing `baseUrl`, now.
+
+  `vendo sync` run through `npx` extracted nothing and blamed the routes for it. Two of the three TypeScript loaders resolved the compiler only from vendo's own install, and under `npx` that directory cannot see the project's `typescript` — so module parsing returned null, every route came back "no supported exported HTTP verb", and the warning pointed at the route files instead of the missing compiler. All three loaders share one ladder now: the project being synced first, this install second. The report's compiler warning covers "no compiler resolved at all" alongside the too-old case it already named.
+
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [1fb1810]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+  - @vendoai/core@0.27.1
+  - @vendoai/apps@0.27.1
+
 ## 0.27.0
 
 ### Minor Changes

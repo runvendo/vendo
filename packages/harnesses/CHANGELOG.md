@@ -1,5 +1,53 @@
 # @vendoai/harnesses
 
+## 0.27.1
+
+### Patch Changes
+
+- ebe9ffc: A store that will not hold one collection no longer takes the whole deployment down with it.
+
+  0.27.0 on a Vendo Cloud key served 501 to every route. The hosted store's engine allowlist did not carry two of the collections this version reads — `vendo_automations` and `vendo_app_seen` — and the automations one is read at BOOT, by the code-automations reconcile that rides the `ready()` latch. The latch memoizes, so the first refusal became every route's answer for the life of the process: 2.3 seconds for the first request, 3 milliseconds for every one after, all of them 501, including the routes that never touch an automation.
+
+  Three separate faults, and the deployment needed all three fixed:
+
+  The boot reconcile is no longer the deployment. A store that refuses the automations read leaves code-authored automations off and says so once, in a line the operator can act on; everything else serves. Scoped to that one read — every per-request store failure still fails in the open, where the caller can see it.
+
+  The unseen dot costs the dot, never the answer. `vendo_app_seen` was read on the path that LISTS a person's apps and written on every render, so a store refusing that collection took the whole page of apps with it. A refusal is absorbed there now, once per process, and the apps arrive without their arrival dots.
+
+  And `instanceof VendoError` does not survive a realm boundary. A host bundle can carry two copies of `@vendoai/core` — the ESM `dist/` beside the CJS `dist/cjs/` — and the second copy's VendoErrors are a different class with the same shape, so every `instanceof` gate said no. That is why a blocked collection reached the wire's catch-all as an unknown fault and answered "Internal Vendo error" instead of its own 403.
+
+  `isVendoError` is the check that survives it: `name` plus `code`, the two things any of these gates actually read. Every type-gate in the repo takes it now — 48 of them across the eight packages that had one — because the failure was never specific to the wire. The same class of error decided whether a lost compare-and-swap re-aimed or crashed the workspace façade, whether a swept approval rendered "expired" or an error card, whether a host's knowledge adapter got its code named in the operator's log, whether a permission route answered 403 or threw, and whether a build's "busy, try again shortly" read as "generation failed" — a verdict on an ask that was never the problem. `@vendoai/harnesses` proved the duck check first and kept a private copy of it; that copy is now this one function.
+
+- ebe9ffc: A run whose LAST save never reached the screen stops answering "your card is live".
+
+  A screen build saves as it goes, and the run kept two different facts about those saves: `assembled`, which means bytes reached the store at least ONCE and is never unset, and `painted`, which means the LAST save reached the person's screen. The outcome was gated on the first of them. So a build whose early save cleared the checks floor and whose last one did not still answered "assembled" — and because the earlier paint had left a row, the front door found it, stamped the receipt `ready`, and spoke the model's own closing words over a card that was stale or half-written. The field case read "Your card is live!" over an empty one.
+
+  `painted` is a three-state fact now — painted, refused, or nobody judged (an unwrapped workspace claims nothing) — and the outcome is gated on it: a run whose last save the floor refused is `unavailable`, carrying the floor's own sentences, on the same carrier a deployment-level refusal already travels. The person is told what is wrong with the screen they asked for, and MCP callers stop hearing the generic "produced nothing renderable" on an ordinary refusal. A run whose last save painted is unchanged, the reviewer's repair round included: the screen it repairs has already painted, and whatever survives it still stands.
+
+  Also: four `catch {}` blocks that swallowed the cause whole — the BYO tool pack's execute and delegate, and the harness tool bridge's and turn tools' — now say what threw, to the host's log. The wire keeps its generic sentence, because raw internals are not the model's business; a `VendoError` from a host tool was written FOR the model, so the pack and the bridge forward its own code and message rather than masking "list them first" behind "Tool execution failed."
+
+- 1fb1810: A timed-out approval ask settles as expired, not as the person's no. The
+  APPROVAL_WAIT_MS settle used to ride the ai-SDK's `output-denied` state — whose
+  meaning is "the person answered no" — so the thread narrated "you declined it"
+  for a question nobody answered, and the persisted part carried nothing that
+  could ever tell the difference. The settle now carries a typed outcome
+  (`status: "blocked"` with `cause: "expired"` — a field on the existing member,
+  not a new status, so already-published validators pass it through and older
+  chrome degrades to "wasn't allowed", which at least blames no one), the beat
+  reads "the approval expired unanswered", and the distinction survives reload
+  because the part settles as `tool-output-available` with the outcome on it.
+  The model-facing result is unchanged: the same denial naming the approval it
+  still needs.
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [1fb1810]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+  - @vendoai/core@0.27.1
+  - @vendoai/apps@0.27.1
+  - @vendoai/guard@0.27.1
+
 ## 0.27.0
 
 ### Patch Changes

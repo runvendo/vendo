@@ -1,5 +1,60 @@
 # @vendoai/vendo
 
+## 0.27.1
+
+### Patch Changes
+
+- ebe9ffc: A store that will not hold one collection no longer takes the whole deployment down with it.
+
+  0.27.0 on a Vendo Cloud key served 501 to every route. The hosted store's engine allowlist did not carry two of the collections this version reads — `vendo_automations` and `vendo_app_seen` — and the automations one is read at BOOT, by the code-automations reconcile that rides the `ready()` latch. The latch memoizes, so the first refusal became every route's answer for the life of the process: 2.3 seconds for the first request, 3 milliseconds for every one after, all of them 501, including the routes that never touch an automation.
+
+  Three separate faults, and the deployment needed all three fixed:
+
+  The boot reconcile is no longer the deployment. A store that refuses the automations read leaves code-authored automations off and says so once, in a line the operator can act on; everything else serves. Scoped to that one read — every per-request store failure still fails in the open, where the caller can see it.
+
+  The unseen dot costs the dot, never the answer. `vendo_app_seen` was read on the path that LISTS a person's apps and written on every render, so a store refusing that collection took the whole page of apps with it. A refusal is absorbed there now, once per process, and the apps arrive without their arrival dots.
+
+  And `instanceof VendoError` does not survive a realm boundary. A host bundle can carry two copies of `@vendoai/core` — the ESM `dist/` beside the CJS `dist/cjs/` — and the second copy's VendoErrors are a different class with the same shape, so every `instanceof` gate said no. That is why a blocked collection reached the wire's catch-all as an unknown fault and answered "Internal Vendo error" instead of its own 403.
+
+  `isVendoError` is the check that survives it: `name` plus `code`, the two things any of these gates actually read. Every type-gate in the repo takes it now — 48 of them across the eight packages that had one — because the failure was never specific to the wire. The same class of error decided whether a lost compare-and-swap re-aimed or crashed the workspace façade, whether a swept approval rendered "expired" or an error card, whether a host's knowledge adapter got its code named in the operator's log, whether a permission route answered 403 or threw, and whether a build's "busy, try again shortly" read as "generation failed" — a verdict on an ask that was never the problem. `@vendoai/harnesses` proved the duck check first and kept a private copy of it; that copy is now this one function.
+
+- ebe9ffc: A run whose LAST save never reached the screen stops answering "your card is live".
+
+  A screen build saves as it goes, and the run kept two different facts about those saves: `assembled`, which means bytes reached the store at least ONCE and is never unset, and `painted`, which means the LAST save reached the person's screen. The outcome was gated on the first of them. So a build whose early save cleared the checks floor and whose last one did not still answered "assembled" — and because the earlier paint had left a row, the front door found it, stamped the receipt `ready`, and spoke the model's own closing words over a card that was stale or half-written. The field case read "Your card is live!" over an empty one.
+
+  `painted` is a three-state fact now — painted, refused, or nobody judged (an unwrapped workspace claims nothing) — and the outcome is gated on it: a run whose last save the floor refused is `unavailable`, carrying the floor's own sentences, on the same carrier a deployment-level refusal already travels. The person is told what is wrong with the screen they asked for, and MCP callers stop hearing the generic "produced nothing renderable" on an ordinary refusal. A run whose last save painted is unchanged, the reviewer's repair round included: the screen it repairs has already painted, and whatever survives it still stands.
+
+  Also: four `catch {}` blocks that swallowed the cause whole — the BYO tool pack's execute and delegate, and the harness tool bridge's and turn tools' — now say what threw, to the host's log. The wire keeps its generic sentence, because raw internals are not the model's business; a `VendoError` from a host tool was written FOR the model, so the pack and the bridge forward its own code and message rather than masking "list them first" behind "Tool execution failed."
+
+- ebe9ffc: Three lines that promised more than the code does.
+
+  The `DataTable` spec now names the two priors a model keeps bringing to it: a column's header text is `label` — there is no `header` prop — and `paginate` is a page SIZE, so no pagination means omitting it rather than passing `false`. Both mistakes are silent from the model's side: an unknown prop is dropped at validation and `paginate={false}` never parses, so the screen simply comes back missing the thing that was asked for.
+
+  Init's closing line no longer says `vendo doctor` "can start the server and run a live turn". Doctor makes no requests at all — it validates files and wiring — so the sentence sold a check it was never going to run, and a reader who trusted it counted a green doctor as proof the app answers.
+
+  The brief stage's failure note names the artifact it already preserved. `brief stage failed (Unterminated string at position 1873) — keeping the current brief` gave nobody anything to open; it now points at `.vendo/data/extract/brief.json`, where the stage's raw output is written on the way out.
+
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [0a06bad]
+- Updated dependencies [1fb1810]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+- Updated dependencies [ebe9ffc]
+  - @vendoai/core@0.27.1
+  - @vendoai/apps@0.27.1
+  - @vendoai/guard@0.27.1
+  - @vendoai/harnesses@0.27.1
+  - @vendoai/knowledge@0.27.1
+  - @vendoai/mcp@0.27.1
+  - @vendoai/store@0.27.1
+  - @vendoai/ui@0.27.1
+  - @vendoai/actions@0.27.1
+  - @vendoai/automations@0.27.1
+  - @vendoai/agents@0.27.1
+
 ## 0.27.0
 
 ### Minor Changes
