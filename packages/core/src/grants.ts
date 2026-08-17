@@ -109,8 +109,14 @@ export interface PermissionGrant {
    * (10-mcp §3) — the per-call, honestly-labeled authority handed to `actAs`
    * for venue="mcp" host execution. It is never persisted and never consulted
    * by guard; the other sources are minted from in-product decisions.
+   *
+   * `"approval"` is the other projection of that kind, and the same three things
+   * are true of it: one mint point (the guard's `#grantForExecution`, when an
+   * away call runs on a CONSUMED approval), never persisted, never matched. It
+   * says what it is — the person's tap on this one call — so a host reading it
+   * in `actAs` is told the authority is one allowed call, not a standing yes.
    */
-  source: "chat" | "batch" | "automation" | "mcp";
+  source: "chat" | "batch" | "automation" | "mcp" | "approval";
   grantedAt: IsoDateTime;
   expiresAt?: IsoDateTime;
   revokedAt?: IsoDateTime;
@@ -127,7 +133,7 @@ export const permissionGrantSchema = z.object({
   contextKey: z.string().optional(),
   appId: appIdSchema.optional(),
   automationId: z.string().optional(),
-  source: z.enum(["chat", "batch", "automation", "mcp"]),
+  source: z.enum(["chat", "batch", "automation", "mcp", "approval"]),
   grantedAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema.optional(),
   revokedAt: isoDateTimeSchema.optional(),
