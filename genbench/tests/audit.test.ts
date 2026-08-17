@@ -584,13 +584,33 @@ describe("a derivation that returns its number as text", () => {
     expect(result.pass).toBe(true);
   });
 
-  /** Refused on the arithmetic, not on the type: a formatted answer is held to
-   *  exactly the comparison a bare 2850 would have faced, and the record is what
-   *  the program actually returned. */
+  /** Punctuation is the only thing forgiven: a formatted answer that states a
+   *  different figure is refused, and the record quotes what it returned. */
   it("still convicts a formatted answer that is not the screen's figure", async () => {
     const result = await auditing("Housing $1,234.00", proposing({ "$1,234.00": FORMATTED }));
 
-    expect(result.audited?.[0]).toMatchObject({ verdict: "offender", result: "2850.00" });
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
+    expect(result.audited?.[0]?.result).toContain('returned "2850.00"');
+    expect(result.pass).toBe(false);
+  });
+
+  /**
+   * Where the two rules meet, and the reason a formatted answer is NOT rescaled.
+   *
+   * The numbers' comparison is scale-tolerant, because an amount held in cents is
+   * honestly shown in dollars. Text is not: the data holds masks and ids as
+   * strings, so reading "4471" off an account and calling it a dollars-and-cents
+   * $44.71 would clear a fabricated balance with an account number. A formatted
+   * answer states its own scale — that is what formatting IS — so it clears the
+   * figure it states and no other.
+   */
+  it("does not let a mask the data holds clear a money claim one scale away", async () => {
+    const result = await auditing(
+      "Available $44.71",
+      proposing({ "$44.71": "return data.list_accounts.data[0].mask;" }),
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
     expect(result.pass).toBe(false);
   });
 

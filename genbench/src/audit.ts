@@ -57,10 +57,10 @@ export const AUDITOR_CONTRACT = {
    *  `toLocaleString()` — hands back a string, and the string rule wanted the
    *  screen's characters verbatim, so "2850.00" was convicted against a screen
    *  showing "$2,850.00": the same money, refused on punctuation, three times on
-   *  the 2026-08-16 runs. A string holding nothing but a figure is now read as
-   *  that figure, exactly as the anti-cheat already reads one, and answers to the
-   *  numbers' own scale-tolerant comparison. Only a genuinely textual answer
-   *  reaches the verbatim rule.
+   *  the 2026-08-16 runs. A string holding nothing but a figure now clears the
+   *  figure it STATES, punctuation aside — but not the same digits at another
+   *  scale, because a formatted answer names its own scale and rescaling it would
+   *  let an account's "4471" clear a fabricated $44.71.
    *  7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
    *  a literal that matches the value is settled by a counterfactual run
    *  instead — `data; return 3` was clearing a fabricated 3 on every screen,
@@ -298,27 +298,32 @@ function check(program: string, text: string, data: Readonly<Record<string, unkn
 
   const ran = execute(program, data);
   if (ran.error !== undefined) return offender(`rejected: ${ran.error}`);
-  // A derivation that formats its answer the way the screen does — `toFixed(2)`,
-  // `toLocaleString()` — returns a string, and "2850.00" is the number it
-  // computed, not a rival fact: the verbatim rule below was convicting it against
-  // a screen showing "$2,850.00" (three times on the 2026-08-16 runs). A string
-  // that holds nothing but a figure is read as that figure, exactly as the echo
-  // scan already reads one, and answers to the numbers' own comparison.
-  const derived = typeof ran.value === "string" && NUMERIC_TEXT.test(ran.value.trim()) ? numberIn(ran.value) : ran.value;
-  if (typeof derived === "number" && Number.isFinite(derived)) {
+  if (typeof ran.value === "number" && Number.isFinite(ran.value)) {
     // An amount computed in cents may honestly be shown in dollars, so the
     // comparison is scale-tolerant. The executed value is the authored side.
-    const cleared = numberKeys(derived).includes(numberKey(shown));
+    const cleared = numberKeys(ran.value).includes(numberKey(shown));
     return { program, result: String(ran.value), verdict: cleared ? "cleared-by-audit" : "offender" };
   }
   // An account mask is a digit group the extraction calls a number and the data
   // holds as TEXT ("•••• 4471"), so the honest derivation — read the field —
   // returns a string. Returning the screen's own characters is a derivation by
   // exactly the standard the numbers are held to; convicting it was a type
-  // technicality. Equality is verbatim: nothing is parsed, rescaled or rounded
-  // into a match here — and the program has to have READ the field, or
+  // technicality. A derivation that FORMATS its answer the way the screen does —
+  // `toFixed(2)`, `toLocaleString()` — returns a string for the same reason, and
+  // "2850.00" was being convicted against a screen showing "$2,850.00": the same
+  // money, refused on punctuation. So the screen's own characters clear a value,
+  // and so does the same figure differently punctuated — but NOT the same digits
+  // at another scale, which is where this parts company with the numbers above.
+  // Cents-in-dollars is an honest accident of arithmetic; a formatted string
+  // states its own scale, and rescaling it would let an account's "4471" clear a
+  // fabricated $44.71. The program still has to have READ the field, or
   // `return "4471"` would clear a mask no tool ever answered with.
-  if (typeof ran.value === "string" && derivesFromData(program) && ran.value.trim() === text.trim()) {
+  if (
+    typeof ran.value === "string" &&
+    derivesFromData(program) &&
+    (ran.value.trim() === text.trim() ||
+      (NUMERIC_TEXT.test(ran.value.trim()) && numberKey(numberIn(ran.value)) === numberKey(shown)))
+  ) {
     return { program, result: ran.value, verdict: "cleared-by-audit" };
   }
   return offender(`rejected: returned ${JSON.stringify(ran.value) ?? String(ran.value)}, which is not a number`);
