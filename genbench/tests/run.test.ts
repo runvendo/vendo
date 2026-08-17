@@ -317,6 +317,14 @@ describe("--contenders", () => {
     expect(contenders(["glm-fast"]).map((contender) => contender.slug)).toEqual(["vendo-glm-fast", "diy-glm-fast"]);
     expect(contenders(["sonnet", "glm-fast"]).map((contender) => contender.slug)).toContain("claude-code-sonnet");
   });
+
+  /** That filter is also the one way to ask for a row with no columns in it. The
+   *  run used to build the row inside each case, so an empty one opened a
+   *  browser and then died as `no case matches --prompt` — the wrong thing,
+   *  named late. */
+  it("refuses a row nothing can run, naming the pairing that emptied it", () => {
+    expect(() => contenders(["glm-fast"], ["claude-code"])).toThrow(/claude-code has no column for glm-fast/);
+  });
 });
 
 /** Within a case the contenders already race each other. `--jobs` is the bound

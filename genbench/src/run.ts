@@ -215,11 +215,17 @@ export function contenders(
   models: readonly ModelAlias[],
   harnesses: readonly HarnessId[] = HARNESS_IDS,
 ): readonly ContenderId[] {
-  return harnesses.flatMap((harness) =>
+  const row = harnesses.flatMap((harness) =>
     models
       .filter((model) => harness !== "claude-code" || !Object.hasOwn(WAFER_MODEL_IDS, model))
       .map((model) => ({ harness, model, slug: `${harness}-${model}` })),
   );
+  if (row.length === 0) {
+    throw new Error(
+      `genbench: ${harnesses.join(", ")} has no column for ${models.join(", ")} — name an Anthropic model, or another contender`,
+    );
+  }
+  return row;
 }
 
 /**
@@ -413,6 +419,11 @@ async function main(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
+  // The row is built once, here, for the same reason the keys are demanded
+  // here: a selection that leaves no column at all is a run with nothing to
+  // measure, and it should say so before a browser opens.
+  const row = contenders(args.models, args.contenders);
+
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const worldsDir = join(root, "worlds");
   const names = await worldsFor(worldsDir, args.world);
@@ -601,11 +612,7 @@ async function main(argv: readonly string[]): Promise<number> {
         // order of `results` is the order of `contenders` whoever finishes first.
         cases.push(
           async () =>
-            await Promise.all(
-              contenders(args.models, args.contenders).map(
-                async (contender) => await runOne(contender, testCase, scoped, key),
-              ),
-            ),
+            await Promise.all(row.map(async (contender) => await runOne(contender, testCase, scoped, key))),
         );
       }
     }
