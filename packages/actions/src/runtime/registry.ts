@@ -225,6 +225,20 @@ function appendQuery(url: URL, key: string, value: unknown): void {
   }
 }
 
+/** Encode one substituted path segment. `encodeURIComponent` neutralizes a
+ *  slash (→ `%2F`) but leaves `.` and `..` intact, so a call arg of "." or ".."
+ *  would substitute as a literal dot-segment that `new URL` later normalizes to
+ *  climb above the tool's declared route (path traversal / SSRF, #988). Args are
+ *  never validated against `inputSchema` and are steerable by end-user chat, so
+ *  reject the traversal segment at the source. */
+function encodePathSegment(raw: string): string {
+  const encoded = encodeURIComponent(raw);
+  if (encoded === "." || encoded === "..") {
+    throw new VendoError("validation", `Path parameter cannot be a "${encoded}" traversal segment`);
+  }
+  return encoded;
+}
+
 function withPathArgs(path: string, args: Record<string, unknown>): { path: string; remaining: Record<string, unknown> } {
   const consumed = new Set<string>();
   const resolved = path.replace(/\{([^{}]+)\}/g, (_match, param: string) => {
@@ -234,8 +248,8 @@ function withPathArgs(path: string, args: Record<string, unknown>): { path: stri
     consumed.add(param);
     const value = args[param];
     return Array.isArray(value)
-      ? value.map((segment) => encodeURIComponent(String(segment))).join("/")
-      : encodeURIComponent(String(value));
+      ? value.map((segment) => encodePathSegment(String(segment))).join("/")
+      : encodePathSegment(String(value));
   });
   return {
     path: resolved,
