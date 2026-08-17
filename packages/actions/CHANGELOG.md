@@ -1,5 +1,38 @@
 # @vendoai/actions
 
+## 0.27.0
+
+### Minor Changes
+
+- af2d337: A host tool that is off says so, and a screen with nothing to read says that instead of inventing a tool.
+
+  An extracted tool can be turned off by three different layers, and until now only the all-or-nothing case was ever announced: `warnZeroLiveTools` fired when EVERY tool was dead, doctor passed on any `live > 0`, and the init receipt never mentioned it. So a catalog that shipped 5 tools and served 2 read healthy from every angle, and the missing three were discovered by watching the assistant fail to answer.
+
+  Now the count and the reason travel together. Boot warns once naming each tool that is off and the layer that took it (an override, a judgment, or a non-end-user audience grade). `vendo doctor` warns `E-TOOLS-005` with the same list when live is short of the extracted count — a warning, not a failure, because which exclusions are right is the host's call. The `vendo init` agent tail carries a `tools off:` line with the same names and the one edit that turns a tool back on.
+
+  The generator stops filling that silence with fiction. When no tool on the list can be READ, the briefing says so outright, and a screen that queries an unknown tool with nothing readable behind it is told there is no data for the ask, to use `<Disclaimer>`, and specifically not to claim data is missing or empty when it cannot know. The failure this closes: a model invented a tool name, failed five times, then rendered "No revenue data connected" above a table of that exact data.
+
+### Patch Changes
+
+- bfaa06b: A texted turn authenticates its host calls. `presence: "present"` meant two things at once — "a person is here, so ask them to approve" and "forward the caller's browser credentials" — and a text message satisfies the first without the second: there is no request behind it. So a linked customer's tool call reached the host API carrying nothing, the host answered 401, and the agent apologised for a sign-in problem the person could do nothing about. `RunContext` now carries `channelLink`, the text channel's evidence that this subject authorized this phone, and the actions registry authenticates such calls through the ActAs seam — exactly as it already does for MCP-OAuth users, who have no browser session either. Presence stays `present`, because that is what lets the guard ask for approval on a money-moving call instead of refusing it outright.
+- Updated dependencies [c50597f]
+- Updated dependencies [e09d69a]
+- Updated dependencies [a781798]
+- Updated dependencies [e09d69a]
+- Updated dependencies [e09d69a]
+- Updated dependencies [20aed63]
+- Updated dependencies [49e1e39]
+- Updated dependencies [af2d337]
+- Updated dependencies [c50597f]
+- Updated dependencies [a6ec9ba]
+- Updated dependencies [c50597f]
+- Updated dependencies [bfaa06b]
+- Updated dependencies [c50597f]
+- Updated dependencies [77a6765]
+- Updated dependencies [b10d129]
+  - @vendoai/core@0.27.0
+  - @vendoai/apps@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes

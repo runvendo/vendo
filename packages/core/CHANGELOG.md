@@ -1,5 +1,166 @@
 # @vendoai/core
 
+## 0.27.0
+
+### Minor Changes
+
+- c50597f: A boxed app's host-tool call asks once, and the tap runs it. `POST
+/box/tools/<name>` dispatched straight at the guard-bound registry, so the
+  permission card it parked was one nothing could ever resume: the customer tapped
+  Allow and nothing happened, clicked again and got another card, forever — a
+  layer-2 ("machine") app could not call a single host tool. The call now rides the
+  same park-and-resume flow an in-app action does, and away execution accepts the
+  tap itself as its authority: the consumed approval is projected into the grant
+  shape the `actAs` seam takes (scoped `exact` to the arguments the person was
+  shown, `source: "approval"`, never stored, never matched), exactly as the MCP
+  door's OAuth consent already is. Approving runs THAT call and nothing else — no
+  standing permission is minted, so each distinct call asks on its own account.
+- a6ec9ba: An app now arrives somewhere a person can see it, and takes shape while they
+  watch. Generated apps used to appear by surprise and load behind a generic
+  shimmer: nothing said an app was new, a build in flight was a spinner with no
+  information in it, and a pinned app had no handle at all.
+
+  Arrival is a per-person flag, server-side. `AppsRuntime.seen(appId, ctx)` is the
+  idempotent mark, `AppsRuntime.list` now answers `AppListRow[]` — the document
+  plus an `unseen?: boolean` this caller's read alone can say — and the rows
+  carry it through `VendoClient.apps.list()` to `useAttention().unseenApps`, which
+  lights the launcher's quiet dot. Precedence is unchanged: a waiting decision
+  still shows the numbered badge instead, and `unseenResults` now means a finished
+  run OR an app nobody has looked at (the pill's spoken line names neither half).
+  Rendering marks it, and only rendering to a PERSON does: `GET /apps/:id/open`
+  records it, while the same runtime door an MCP client or an automation reaches
+  through does not, so an agent reading a tree never clears somebody's dot. Rows
+  live in `vendo_app_seen`, which puts the engine allowlist at
+  `ENGINE_ALLOWLIST_VERSION` 3, and they are swept when the app is deleted.
+
+  A build in flight is now visible instead of merely slow. `AppsRuntime.open`
+  takes `{ pending?: true }` and answers `PendingSurface` with an optional `tree`
+  — the forming payload's GEOMETRY, node ids and nesting and no data values — so
+  the embed's existing 1.2s poll paints stepped assembly off the same request
+  rather than a bar, and never shows a number it will take back. Unfinished
+  sections render wet (dim, desaturated) and dry to full ink as they land, once,
+  with the hairline ring following the last one. Slots remember the shape of the
+  app they held and wait in its silhouette rather than a shimmer, and a placed app
+  carries the ✦ handle: Edit in chat (`OpenConversationOptions.appId` features the
+  app on the stage and prefills the composer), Refresh, Unpin. The pin flight
+  lands flush and its confirmation ring now waits for the placement write
+  (`PinCeremonyOptions.confirmed`) instead of an animation timer.
+
+- c50597f: **Breaking.** An automation is a first-class principal-owned RECORD, not an app with a list of triggers. `AppDocument.triggers` is deleted, every automation verb keys off one automation id, and stored automations are NOT migrated — they stop firing at the upgrade and have to be authored again.
+
+  **Tell your users before you deploy this.** Their existing automations lived inside `AppDocument.triggers`; nothing reads that field any more, and nothing converts one into a record. They re-create them (`agent.on(...)` in your code, or by asking in chat). Their run history goes too: `vendo_runs` is emptied once, because an app-keyed run row has no read path and no erase selector left to reach it.
+
+  ## What breaks in your code
+
+  **`@vendoai/core`.** `AppDocument.triggers` is gone, and these exports with it: `Trigger`, `triggerSchema`, `RunModel`, `runModelSchema`, `DEFAULT_TRIGGER_ID`, `TRIGGER_ID_PATTERN`, `triggerKindRefKey`, `TRIGGER_KIND_REF_KEYS`, `TRIGGER_KIND_REF_PRESENT` and `triggerKindRefs`. An app now holds at most `automations?: AutomationId[]` — a list of NAMES the apps layer maintains and resolves on read, not a foreign key, so dead ids simply drop out and there is no cascade to run. Writing `triggers` into an app document arms nothing. New in `automation.ts`: `AutomationRecord`, `When` and the one `toTriggerSource` converter, `AutomationTask`, `Budget`, `automationHash` and `reconcileAutomations`. `TriggerRef.id` is `TriggerRef.automationId`, and `PermissionGrant.triggerId` / `MintGrantInput.triggerId` are `automationId` — a record has no app id for the old pair's other half to name.
+
+  **`vendo.automations`.** `enable` / `disable` / `dryRun` take ONE id instead of `(appId, triggerId)`. `list({ owner?, agent? }, ctx)` returns plain redacted `AutomationRecord[]`, deployment-wide. There is **no `app` filter** and there will not be one: a record carries no app reference at all, so an app page filters by resolving its own `automations` list and dropping the dead ids. `runs.list` filters on `{ automationId, owner, agent, status, cursor }`, and `RunRecord.appId`/`.triggerId` become `.automationId` plus `.owner` and an optional `.agent` — one ledger, with the owner, agent and console views as filters over it rather than tables of their own.
+
+  **`createAutomations` config.** `apps`, `runner`, `appAccess` (and the `AppAccessSeam` type), `localTriggerKinds` and `AutomationsEngine.onDocumentEdit` are gone; so is the `triggerKey` export. `@vendoai/automations` depends on `@vendoai/core` alone now — a goal run reaches a brain through the named runner map the umbrella registers, and a task reaches an app only by naming one of that app's functions as an ordinary granted tool, which resolves through the bound registry like anything else. Delete an app and its automation still fires, then fails loudly at tool resolution with a `not-found` in the run ledger. The engine no longer watches app-document edits either: sponsorship is bound to the record's own content hash (`automationHash`), so a record whose content changed under a live sponsorship stops on its own. `@vendoai/automations` newly exports `verifySignature`, `signedWebhookBytes` and `base64url` — the one implementation of the standard-webhooks scheme, so the tick door and the per-record webhook path cannot drift.
+
+  **`@vendoai/ui`.** `AutomationEntry` IS `AutomationRecord` (`AutomationTriggerEntry` is gone). `client.automations.{enable,disable,dryRun}` take one id; `client.runs.list` takes the new filter. `<AutomationCard>` takes `when` (a `TriggerSource`) plus an already-humanized `action` string instead of `trigger`, and `automationRule(when, action)` takes both halves — a record's task is the producer's to read, and a card that guessed at the words would put them in an automation's mouth.
+
+  ## What breaks in your store
+
+  Schema **v11**. `vendo_automations` is the new table: `subject` is the erase-cascade selector, because a row carries a live webhook signing key and a record that outlived its owner's erasure would be a hole rather than an untidiness; `revision` is the compare-and-swap counter every write bumps. `vendo_runs` re-keys `app_id` to `automation_id` and is **emptied once**, guarded on the old column. `vendo_grants` re-keys `trigger_id` to `automation_id`. The `trigger_kind_*` generated columns on `vendo_apps` are dropped by pattern, so the names leave the codebase entirely. The erase cascade deletes runs BEFORE automations, while the join that identifies them still exists.
+
+  `ENGINE_ALLOWLIST_VERSION` goes 2 → 4. `vendo_automations` joins the engine allowlist; `automations:armed` and `automations:webhook` leave it — armed is a FIELD on the record, so a disarm is one write with no second row to keep in step, and the webhook secret lives on the record. If your BYO store pins the allowlist version, bump it.
+
+- c50597f: One automations engine per deployment, the brains a firing can reach named at composition, and `POST /api/vendo/tick` the only door that wakes it.
+
+  The whole public surface:
+
+  ```ts
+  vendo.agent; // the agent this deployment adopted, read back
+  createVendo({ agents: [support, billing] }); // MORE brains, resolvable by name
+  vendo.automations.list / get / enable / disable;
+  vendo.automations.runs.list / get / stop / rerun;
+  vendo.automations.dryRun;
+  ```
+
+  `createVendo({ agents })` is registration only — nothing in that list serves chat turns. It makes a name resolvable, so a firing declared by `support.on(...)` lands on `support`. (`agent:` is the different, existing key: that one this deployment ADOPTS, taking its harness, store and instructions.) A firing's brain is looked up BY NAME at fire time and registered at BOOT, so two agents wearing one name throw during `createVendo` rather than at 2am, when the lookup would already have reached the wrong brain. A name nobody registered is a loud FAILED row in the run ledger and never a fallback brain: the wrong agent acting with the owner's grants is worse than nothing running, because nobody would ever find out.
+
+  **There is deliberately no public `create`.** The one create operation is internal, so a host that can observe automations and switch them off still cannot mint one; `vendo_automate`, `vendo_make`'s sugar, the `vendo.json` fold-in and `agent.on` are the four doors in.
+
+  ## The firing door
+
+  `POST /api/vendo/tick` takes two credentials side by side, both verified against `VENDO_TICK_SECRET`:
+
+  - `Authorization: Bearer $VENDO_TICK_SECRET` — your own cron (a Vercel cron, a GitHub Action, crontab).
+  - A standard-webhooks signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`) over the EMPTY body — Vendo Cloud's heartbeat. This leg is new.
+
+  You configure one thing and either waker works. **With `VENDO_TICK_SECRET` unset, both are refused**, Cloud's heartbeat included, so a deployment with no secret fires nothing — if you read that env var as the BYO-cron credential only, set it now. The door answers `202 {"fired":n}`, and its idempotency is the engine's own atomic cursor claim rather than anything the door asserts, so a duplicate knock claims nothing and honestly says `{"fired":0}`.
+
+  The signed leg keys the HMAC on the DECODED secret. A standard-webhooks secret is random bytes carried as base64url text, and a door that hashed the text's own characters would have answered 401 to every signed knock forever. This one calls the engine's `verifySignature` — the same function the per-record webhook path uses — so there is one implementation of the scheme and a test cannot agree with a wrong door. A host who chose a passphrase rather than base64url still gets a working bearer and simply never matches on this leg.
+
+  `localFiringKinds` is gone from the repo entirely: the engine decides what is due, and the tick is the only thing that asks. The boot reconcile reads the store on the `ready()` latch even with zero `.on()` declarations, because a deployment that just deleted its last one still has stragglers to disarm.
+
+  ## core
+
+  `toTriggerSource` tested `webhook === ""` when the hazard is the key being ABSENT. The webhook arm is the fall-through, so an object naming none of the five `When` shapes — which is what an untyped wire body is, and the admin routes are exactly that caller — walked in and left with `{ kind: "external", connector: undefined }`: an automation nothing can ever trigger, reported to its owner as armed. It is refused now, naming the shapes.
+
+### Patch Changes
+
+- e09d69a: A Vendo Cloud rate limit now reads as a WAIT everywhere, instead of vanishing.
+  The console answers 429 "Too many requests. Try again shortly." — and the OSS
+  side had nowhere to put that answer. The shared console client's wire-legal
+  code table omitted `unavailable`, so the console's own error code was not
+  forwardable and fell to each adapter's unknown-code tail, where four of the
+  five mint a PLAIN `Error`. A plain error fails `instanceof VendoError` at the
+  wire, so the request logged "[vendo] unhandled wire error", answered HTTP 501
+  ("this operation does not exist") and showed the person the generic "couldn't
+  finish" overlay. An envelope-less 429 — the one an edge proxy sends as
+  plain text — had no reading at all.
+
+  `raiseCloudError` now forwards `unavailable` and `forbidden` as the
+  VendoErrors they are, and reads a bare 429/500/502/503/504 as `unavailable`
+  from the status alone, keeping the server's own sentence. 501 stays with each
+  adapter's tail: "this mount does not serve the op" is not a transient failure.
+  Nothing downstream changed — the wire's 503 mapping, the harness overlay and
+  the store's retry were all already written against that code.
+
+  Three places then act on it:
+
+  - The hosted store retries a rate-limited or transiently failed call once,
+    waiting the console's `Retry-After` (capped at 10s, 250ms when it asked for
+    nothing) and replaying the SAME `Idempotency-Key`, so the server dedupes a
+    mutation it already applied instead of applying it twice. Before, only a
+    timeout was retried.
+  - The batched Cloud uploader keeps a 429'd batch and sends it again, instead
+    of reading every sub-500 answer as a permanent refusal and dropping it —
+    which lost capability-miss and SDK-event reports exactly while an account
+    was being rate-limited.
+  - The per-user limiter still fails CLOSED when the meter read fails, but no
+    longer tells the user they reached the host's cap when nothing was counted:
+    a busy meter denies with "Vendo Cloud is busy right now, so this limit could
+    not be checked — this is temporary, not a cap", on the agent's refusal and
+    on the person's card alike.
+
+  `VendoLimitPart` gains one optional field, `retryable?: true` (and its zod
+  schema the matching `z.literal(true).optional()`) — additive, so an older
+  consumer ignores it exactly as §15 forward-compat expects. It carries the one
+  distinction the card cannot make for itself: a limit REACHED keeps the
+  "You've reached your limit" headline, a limit that could not be CHECKED reads
+  "Couldn't check your limit" over the same detail line. Both chokes set it —
+  the message at the door and the generation mid-turn — so neither path can tell
+  the person a different story than the other.
+
+- 20aed63: `StoreOps.appData` is OPTIONAL, on the same rule the other four optional members
+  already follow: a store with nowhere to keep app rows says so by OMITTING the
+  family, rather than shipping a stub that accepts the call and does something
+  else. A store that omits it is refused at the door onto app rows — `/box/rows`
+  answers the `not-implemented` refusal it already gave a store with no
+  named-operation surface at all — and the app-storage backing falls through to
+  the same façade path that store already took.
+
+  Nothing changes for the stores this repo ships: `createStoreOps` (the local
+  backend) and `hostedStoreOps` (the Cloud client) both serve the family, and both
+  now say so in their return type, `StoreOpsWithAppData`. The StoreOps conformance
+  kit reports its appData cases as OMITTED for a mount without the family instead
+  of crashing on the first verb.
+
+- bfaa06b: A texted turn authenticates its host calls. `presence: "present"` meant two things at once — "a person is here, so ask them to approve" and "forward the caller's browser credentials" — and a text message satisfies the first without the second: there is no request behind it. So a linked customer's tool call reached the host API carrying nothing, the host answered 401, and the agent apologised for a sign-in problem the person could do nothing about. `RunContext` now carries `channelLink`, the text channel's evidence that this subject authorized this phone, and the actions registry authenticates such calls through the ActAs seam — exactly as it already does for MCP-OAuth users, who have no browser session either. Presence stays `present`, because that is what lets the guard ask for approval on a money-moving call instead of refusing it outright.
+
 ## 0.26.0
 
 ### Minor Changes

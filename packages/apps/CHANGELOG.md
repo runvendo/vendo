@@ -1,5 +1,156 @@
 # @vendoai/apps
 
+## 0.27.0
+
+### Minor Changes
+
+- 49e1e39: The theme is the default, no longer the law: every Kit component takes `style`, and the ones wrapping an engine pass that engine's own props through.
+
+  The Kit used to expose no color input anywhere — a design law ("never invents a color") that read as brand safety and played out as a dead end: a person asked for rainbow chart lines, the model wrote the hexes into the app, and the surface painted theme grey while the assistant claimed otherwise. Now `style` lands on every component's root (user values winning over Kit defaults), chart components pass recharts props through — including per-series, where `color` on a series entry paints the line's stroke or the bar's fill — and Base UI-backed components pass theirs. Wiring props the component must own (data keys, ids) stay Kit-owned; a passthrough prop that was never set keeps the theme's default rather than blanking it.
+
+  The agent-facing docs say all of this plainly (theme by default, engine props when the person asks), and the checks admit engine props instead of flagging them. No compatibility promise rides along: an engine upgrade may retire a prop an old stored app used, and that app renders with theme defaults until regenerated.
+
+- af2d337: A host tool that is off says so, and a screen with nothing to read says that instead of inventing a tool.
+
+  An extracted tool can be turned off by three different layers, and until now only the all-or-nothing case was ever announced: `warnZeroLiveTools` fired when EVERY tool was dead, doctor passed on any `live > 0`, and the init receipt never mentioned it. So a catalog that shipped 5 tools and served 2 read healthy from every angle, and the missing three were discovered by watching the assistant fail to answer.
+
+  Now the count and the reason travel together. Boot warns once naming each tool that is off and the layer that took it (an override, a judgment, or a non-end-user audience grade). `vendo doctor` warns `E-TOOLS-005` with the same list when live is short of the extracted count — a warning, not a failure, because which exclusions are right is the host's call. The `vendo init` agent tail carries a `tools off:` line with the same names and the one edit that turns a tool back on.
+
+  The generator stops filling that silence with fiction. When no tool on the list can be READ, the briefing says so outright, and a screen that queries an unknown tool with nothing readable behind it is told there is no data for the ask, to use `<Disclaimer>`, and specifically not to claim data is missing or empty when it cannot know. The failure this closes: a model invented a tool name, failed five times, then rendered "No revenue data connected" above a table of that exact data.
+
+- c50597f: Two doors author an automation now: `agent.on(...)` in your own code, and `vendo_automate` when a person asks in chat.
+
+  `support.on(when, task, options?)` is a DECLARATION, never a store write — it validates where you wrote it and `createVendo` reconciles it at boot. All five `When` shapes:
+
+  ```ts
+  support.on("0 9 * * 1", "summarize the week and email ops");
+  support.on({ every: "1d" }, "refresh credit scores");
+  support.on({ at: "2026-09-01T09:00:00Z" }, "send the launch note");
+  support.on({ event: "payment.failed" }, "triage and notify the user");
+  support.on({ webhook: "stripe" }, "reconcile the payout");
+  support.on("0 2 * * *", "rebuild the digest", { id: "nightly-digest" });
+  ```
+
+  A bad cron throws at module load, not at 2am, with what, why, a did-you-mean you can paste and the docs link. The code is the consent, so a redeploy reconciles: new → created, edited → a new identity with the old one disarmed, deleted from your source → disarmed (never deleted, so its run history survives). Identity defaults to `hash(when + task + agent)`, so editing the cron or the words MINTS a new automation — pass `id` to keep one across an edit. A `disable()` a person did stamps `disarmedBy: "user"`, and that kill switch survives every redeploy.
+
+  `@vendoai/agents` newly exports `agentAutomations`, `agentAutomationPlan` and `OnOptions`. The plan is built here and applied only by the engine's own internal reconcile: this package may not import `@vendoai/automations`, so there is no second write path to disagree with the first. Agent names ride through verbatim — two agents claiming one name produce two declarations both claiming that runner name, because collapsing them here would hide a collision the runner map has to throw on at startup.
+
+  `vendo_automate` is the chat door — a schedule with nothing to build. It takes `{ task, when?, agent?, timezone? }` and carries **no app argument of any kind**, because a record has no app slot to fill. `vendo_make` still arms the schedule half of a compound ask ("build me the board and refresh it every Monday") and does it by calling the same one create operation, so the two cannot drift into arming differently. The `vendo.json` manifest fold-in is a reconcile through the same core helper: a changed cron replaces its own record under the same identity, a schedule dropped from the manifest disarms its own, an unchanged manifest touches nothing, and two schedules that collapse to one identity are refused out loud rather than last-wins.
+
+  **Breaking, and the reason your app writes may start failing:** every triggers-in-documents path is gone rather than shimmed — `app-validation`, the edit journal, interchange, persistence, the runtime types and the write surface all lost their trigger halves. An app document that still carries `triggers` no longer arms anything. What an app may hold instead is an optional `automations: string[]`, maintained by this layer alone (the compound flow and the manifest fold-in, nowhere else) and resolved on read. Deleting the app does NOT stop its automation: the automation fires, reaches for the tool its task named, and fails loudly with a `not-found` that becomes a terminal error run row.
+
+  One misuse hole closed on the way past. `vendo_automate`'s `when` now requires exactly one of `every` / `at` / `event` / `webhook` (or a bare cron string) and refuses the rest, naming what it got and where the shapes are written down. An object naming none of them used to become `{ kind: "external", connector: undefined }` — an automation nothing could ever trigger, reported to its owner as armed.
+
+- a6ec9ba: An app now arrives somewhere a person can see it, and takes shape while they
+  watch. Generated apps used to appear by surprise and load behind a generic
+  shimmer: nothing said an app was new, a build in flight was a spinner with no
+  information in it, and a pinned app had no handle at all.
+
+  Arrival is a per-person flag, server-side. `AppsRuntime.seen(appId, ctx)` is the
+  idempotent mark, `AppsRuntime.list` now answers `AppListRow[]` — the document
+  plus an `unseen?: boolean` this caller's read alone can say — and the rows
+  carry it through `VendoClient.apps.list()` to `useAttention().unseenApps`, which
+  lights the launcher's quiet dot. Precedence is unchanged: a waiting decision
+  still shows the numbered badge instead, and `unseenResults` now means a finished
+  run OR an app nobody has looked at (the pill's spoken line names neither half).
+  Rendering marks it, and only rendering to a PERSON does: `GET /apps/:id/open`
+  records it, while the same runtime door an MCP client or an automation reaches
+  through does not, so an agent reading a tree never clears somebody's dot. Rows
+  live in `vendo_app_seen`, which puts the engine allowlist at
+  `ENGINE_ALLOWLIST_VERSION` 3, and they are swept when the app is deleted.
+
+  A build in flight is now visible instead of merely slow. `AppsRuntime.open`
+  takes `{ pending?: true }` and answers `PendingSurface` with an optional `tree`
+  — the forming payload's GEOMETRY, node ids and nesting and no data values — so
+  the embed's existing 1.2s poll paints stepped assembly off the same request
+  rather than a bar, and never shows a number it will take back. Unfinished
+  sections render wet (dim, desaturated) and dry to full ink as they land, once,
+  with the hairline ring following the last one. Slots remember the shape of the
+  app they held and wait in its silhouette rather than a shimmer, and a placed app
+  carries the ✦ handle: Edit in chat (`OpenConversationOptions.appId` features the
+  app on the stage and prefills the composer), Refresh, Unpin. The pin flight
+  lands flush and its confirmation ring now waits for the placement write
+  (`PinCeremonyOptions.confirmed`) instead of an animation timer.
+
+- c50597f: **Breaking.** An automation is a first-class principal-owned RECORD, not an app with a list of triggers. `AppDocument.triggers` is deleted, every automation verb keys off one automation id, and stored automations are NOT migrated — they stop firing at the upgrade and have to be authored again.
+
+  **Tell your users before you deploy this.** Their existing automations lived inside `AppDocument.triggers`; nothing reads that field any more, and nothing converts one into a record. They re-create them (`agent.on(...)` in your code, or by asking in chat). Their run history goes too: `vendo_runs` is emptied once, because an app-keyed run row has no read path and no erase selector left to reach it.
+
+  ## What breaks in your code
+
+  **`@vendoai/core`.** `AppDocument.triggers` is gone, and these exports with it: `Trigger`, `triggerSchema`, `RunModel`, `runModelSchema`, `DEFAULT_TRIGGER_ID`, `TRIGGER_ID_PATTERN`, `triggerKindRefKey`, `TRIGGER_KIND_REF_KEYS`, `TRIGGER_KIND_REF_PRESENT` and `triggerKindRefs`. An app now holds at most `automations?: AutomationId[]` — a list of NAMES the apps layer maintains and resolves on read, not a foreign key, so dead ids simply drop out and there is no cascade to run. Writing `triggers` into an app document arms nothing. New in `automation.ts`: `AutomationRecord`, `When` and the one `toTriggerSource` converter, `AutomationTask`, `Budget`, `automationHash` and `reconcileAutomations`. `TriggerRef.id` is `TriggerRef.automationId`, and `PermissionGrant.triggerId` / `MintGrantInput.triggerId` are `automationId` — a record has no app id for the old pair's other half to name.
+
+  **`vendo.automations`.** `enable` / `disable` / `dryRun` take ONE id instead of `(appId, triggerId)`. `list({ owner?, agent? }, ctx)` returns plain redacted `AutomationRecord[]`, deployment-wide. There is **no `app` filter** and there will not be one: a record carries no app reference at all, so an app page filters by resolving its own `automations` list and dropping the dead ids. `runs.list` filters on `{ automationId, owner, agent, status, cursor }`, and `RunRecord.appId`/`.triggerId` become `.automationId` plus `.owner` and an optional `.agent` — one ledger, with the owner, agent and console views as filters over it rather than tables of their own.
+
+  **`createAutomations` config.** `apps`, `runner`, `appAccess` (and the `AppAccessSeam` type), `localTriggerKinds` and `AutomationsEngine.onDocumentEdit` are gone; so is the `triggerKey` export. `@vendoai/automations` depends on `@vendoai/core` alone now — a goal run reaches a brain through the named runner map the umbrella registers, and a task reaches an app only by naming one of that app's functions as an ordinary granted tool, which resolves through the bound registry like anything else. Delete an app and its automation still fires, then fails loudly at tool resolution with a `not-found` in the run ledger. The engine no longer watches app-document edits either: sponsorship is bound to the record's own content hash (`automationHash`), so a record whose content changed under a live sponsorship stops on its own. `@vendoai/automations` newly exports `verifySignature`, `signedWebhookBytes` and `base64url` — the one implementation of the standard-webhooks scheme, so the tick door and the per-record webhook path cannot drift.
+
+  **`@vendoai/ui`.** `AutomationEntry` IS `AutomationRecord` (`AutomationTriggerEntry` is gone). `client.automations.{enable,disable,dryRun}` take one id; `client.runs.list` takes the new filter. `<AutomationCard>` takes `when` (a `TriggerSource`) plus an already-humanized `action` string instead of `trigger`, and `automationRule(when, action)` takes both halves — a record's task is the producer's to read, and a card that guessed at the words would put them in an automation's mouth.
+
+  ## What breaks in your store
+
+  Schema **v11**. `vendo_automations` is the new table: `subject` is the erase-cascade selector, because a row carries a live webhook signing key and a record that outlived its owner's erasure would be a hole rather than an untidiness; `revision` is the compare-and-swap counter every write bumps. `vendo_runs` re-keys `app_id` to `automation_id` and is **emptied once**, guarded on the old column. `vendo_grants` re-keys `trigger_id` to `automation_id`. The `trigger_kind_*` generated columns on `vendo_apps` are dropped by pattern, so the names leave the codebase entirely. The erase cascade deletes runs BEFORE automations, while the join that identifies them still exists.
+
+  `ENGINE_ALLOWLIST_VERSION` goes 2 → 4. `vendo_automations` joins the engine allowlist; `automations:armed` and `automations:webhook` leave it — armed is a FIELD on the record, so a disarm is one write with no second row to keep in step, and the webhook secret lives on the record. If your BYO store pins the allowlist version, bump it.
+
+- b10d129: The screen manual names every CSS variable it tells a screen to style with, generated from the emitter that sets them.
+
+  The manual has always said to style the display tags off the host's own CSS variables, and it named exactly two as examples — `--vendo-color-accent` and `--vendo-density-content-gap`. `themeCssVariables` sets 52. A model reaching for the surface color, a radius, a chart series or any of the thirteen density steps had to guess the name, and a wrong guess is silent: CSS resolves an unknown variable to nothing and the declaration falls back, with no error on any surface.
+
+  `references/format.md` now ends with the whole list — each name and a few words of what it is for — walked off `VENDO_THEME_VARIABLE_NAMES`, which is itself read off `themeCssVariables`. The names cannot fall behind a rename or an addition, exactly as the component catalog cannot; only the meanings are written by hand, and a meaning left behind fails a drift test instead of teaching a dead name. Values stay out — they are the host's and per-theme, and the briefing pack already carries them.
+
+### Patch Changes
+
+- e09d69a: A store that could not answer no longer reads as a build that produced nothing.
+
+  `create` and `edit` both prove an assembly by reading the app's row back: a paint is what creates the row, so no row means nothing rendered. Both reads swallowed every failure into that same conclusion — a rate-limited or dropped read became "the build produced nothing renderable", which tells the person their screen failed and sends them to rebuild work that assembled and painted fine.
+
+  Only an ABSENT row takes that path now. `engine.get` says absence with `null`, so a throw is the store failing and it is classified as what it is; the edit door's read-back distinguishes a genuine `not-found` from everything else and reports the store's own words otherwise. `buildFailureReason` gains the matching class: a `VendoError("unavailable")` — the server's own dependency saying "not now", including a cloud 429 — is "busy, try again shortly" and retryable, rather than "generation failed", which reads as a verdict on the ask.
+
+- a781798: Every prop in the generated component catalog now says what it TAKES, and every brick carries one worked example. A line used to give prop NAMES only — `<DateTime> … · data: value · config: mode compact` — which tells a model nothing about whether `mode` wants a word from a closed list, a number or a function, and a prop written in the wrong shape is silently dropped at validation. Each prop is now `name: type`, with the type walked off its own zod schema: enums enumerated (`mode: "date"|"time"|"datetime"|"relative"`), primitives plain (`gap: number`), object shapes as their field names (`columns: {key?, label?, format?, align?, cell?}[]`), a handler as `fn`, a slot as `element`. The prop classes (`data` / `config` / `copy`) stay in front, because law 1 rides on them. Nothing is hand-written, so a schema that changes changes the prompt in the same commit.
+
+  Under each line sits that component's first worked example, taken from the same place `kitPrompt` takes it, so the two prompts can never show a model different idioms. Seven examples still wrote the retired attribute dialect — `onClose="ui.cancel"`, `$state.confirming`, an inline tool call for data, and a `<KeyValue pairs=…>` naming a prop that does not exist — and are corrected to the shape a screen actually compiles: state and setters for the overlays, `useQuery` results for the data.
+
+  The catalog costs 29,081 characters, up from 20,396; it still costs less than the 36,158 that a section per brick costs for the same bricks with no icon names at all.
+
+- e09d69a: A deployment that cannot check screens now says so once, with the fix, instead of paying a model to rewrite a screen nobody read.
+
+  When `@vendoai/apps` cannot reach esbuild — the field case is a bundled host that never named it an external — the component gauntlet refuses every screen it is handed. That refusal used to travel as an ordinary finding: the screen agent relayed it to the writing model under "Fix each of these, then write the file again", the model rewrote a perfectly good screen, the next save was refused for the same reason, and the run ended in a generic "that build didn't come together" after burning its whole step budget. Nothing anywhere named the one thing that would have fixed it.
+
+  Three changes, one line of cause: the unavailability names its own remedy — keep `@vendoai/apps` out of the server bundle, which on Next is the `serverExternalPackages` list `vendo init` writes; naming `esbuild` alone does nothing, because this package hides that import behind a variable specifier and a bundler never sees an "esbuild" import to match — the gauntlet marks the refusal as the DEPLOYMENT's rather than the screen's, the checks floor carries the mark out (`ComponentPaintResult.environment`), and the screen agent ends the run on it — the floor's sentence becomes the answer the person and the host log both get, at a cost of one model call rather than a rewrite round per save.
+
+  All three of the gauntlet's machines are marked, because all three fail the same way: no compiler (`toolchain-unavailable`), no type checker (`typecheck-unavailable`), and an engine that would not START, which now has its own code (`engine-unavailable`) instead of sharing `run` with screens that ran.
+
+  A screen the floor refuses on its own merits is untouched — including one that RAN and threw, which is what `run` still means. Those sentences are still repair instructions, verbatim, because they are still repairable.
+
+  Also: a run whose every save was refused has no app row — a paint is what creates one — so its `decisions` have nowhere to land. That expected state is an info line now, in the same voice `commitSource` already uses for it, rather than a warning that sends an operator hunting for a broken memory door.
+
+- 20aed63: `StoreOps.appData` is OPTIONAL, on the same rule the other four optional members
+  already follow: a store with nowhere to keep app rows says so by OMITTING the
+  family, rather than shipping a stub that accepts the call and does something
+  else. A store that omits it is refused at the door onto app rows — `/box/rows`
+  answers the `not-implemented` refusal it already gave a store with no
+  named-operation surface at all — and the app-storage backing falls through to
+  the same façade path that store already took.
+
+  Nothing changes for the stores this repo ships: `createStoreOps` (the local
+  backend) and `hostedStoreOps` (the Cloud client) both serve the family, and both
+  now say so in their return type, `StoreOpsWithAppData`. The StoreOps conformance
+  kit reports its appData cases as OMITTED for a mount without the family instead
+  of crashing on the first verb.
+
+- 77a6765: A closure written into a Kit slot fails the screen check instead of painting a blank cell. `cell: (row) => <Money/>` is the React-shaped wrong answer, and the screen VM serializes any function prop as a `$handler` door — so the table was handed a callback where an element belonged and rendered empty cells while compile, types, paint and tree all passed. A slot's zod schema now carries a marker the component screen's typings read, so a slot prints as an element type rather than `any`, and the refusal names the slot, the column it sits in, and the element to write instead. `Tabs.tabs[].content`, `Accordion.items[].content` and `Tooltip.content` spelled their own `z.unknown()` rather than the shared slot, so each was the same hole; they share it now.
+
+  `Tooltip.content` also takes the element its own prop documents. The slots table had no entry for Tooltip, so the tree check refused `content={<Text …/>}` — the documented form — while the Kit component painted it perfectly well. The entry is there now, on the read-only value tier: a hover popup is read, never operated.
+
+- Updated dependencies [c50597f]
+- Updated dependencies [e09d69a]
+- Updated dependencies [20aed63]
+- Updated dependencies [a6ec9ba]
+- Updated dependencies [c50597f]
+- Updated dependencies [bfaa06b]
+- Updated dependencies [c50597f]
+  - @vendoai/core@0.27.0
+
 ## 0.26.0
 
 ### Minor Changes

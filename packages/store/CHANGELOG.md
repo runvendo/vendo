@@ -1,5 +1,108 @@
 # @vendoai/store
 
+## 0.27.0
+
+### Minor Changes
+
+- c50597f: **Breaking.** An automation is a first-class principal-owned RECORD, not an app with a list of triggers. `AppDocument.triggers` is deleted, every automation verb keys off one automation id, and stored automations are NOT migrated — they stop firing at the upgrade and have to be authored again.
+
+  **Tell your users before you deploy this.** Their existing automations lived inside `AppDocument.triggers`; nothing reads that field any more, and nothing converts one into a record. They re-create them (`agent.on(...)` in your code, or by asking in chat). Their run history goes too: `vendo_runs` is emptied once, because an app-keyed run row has no read path and no erase selector left to reach it.
+
+  ## What breaks in your code
+
+  **`@vendoai/core`.** `AppDocument.triggers` is gone, and these exports with it: `Trigger`, `triggerSchema`, `RunModel`, `runModelSchema`, `DEFAULT_TRIGGER_ID`, `TRIGGER_ID_PATTERN`, `triggerKindRefKey`, `TRIGGER_KIND_REF_KEYS`, `TRIGGER_KIND_REF_PRESENT` and `triggerKindRefs`. An app now holds at most `automations?: AutomationId[]` — a list of NAMES the apps layer maintains and resolves on read, not a foreign key, so dead ids simply drop out and there is no cascade to run. Writing `triggers` into an app document arms nothing. New in `automation.ts`: `AutomationRecord`, `When` and the one `toTriggerSource` converter, `AutomationTask`, `Budget`, `automationHash` and `reconcileAutomations`. `TriggerRef.id` is `TriggerRef.automationId`, and `PermissionGrant.triggerId` / `MintGrantInput.triggerId` are `automationId` — a record has no app id for the old pair's other half to name.
+
+  **`vendo.automations`.** `enable` / `disable` / `dryRun` take ONE id instead of `(appId, triggerId)`. `list({ owner?, agent? }, ctx)` returns plain redacted `AutomationRecord[]`, deployment-wide. There is **no `app` filter** and there will not be one: a record carries no app reference at all, so an app page filters by resolving its own `automations` list and dropping the dead ids. `runs.list` filters on `{ automationId, owner, agent, status, cursor }`, and `RunRecord.appId`/`.triggerId` become `.automationId` plus `.owner` and an optional `.agent` — one ledger, with the owner, agent and console views as filters over it rather than tables of their own.
+
+  **`createAutomations` config.** `apps`, `runner`, `appAccess` (and the `AppAccessSeam` type), `localTriggerKinds` and `AutomationsEngine.onDocumentEdit` are gone; so is the `triggerKey` export. `@vendoai/automations` depends on `@vendoai/core` alone now — a goal run reaches a brain through the named runner map the umbrella registers, and a task reaches an app only by naming one of that app's functions as an ordinary granted tool, which resolves through the bound registry like anything else. Delete an app and its automation still fires, then fails loudly at tool resolution with a `not-found` in the run ledger. The engine no longer watches app-document edits either: sponsorship is bound to the record's own content hash (`automationHash`), so a record whose content changed under a live sponsorship stops on its own. `@vendoai/automations` newly exports `verifySignature`, `signedWebhookBytes` and `base64url` — the one implementation of the standard-webhooks scheme, so the tick door and the per-record webhook path cannot drift.
+
+  **`@vendoai/ui`.** `AutomationEntry` IS `AutomationRecord` (`AutomationTriggerEntry` is gone). `client.automations.{enable,disable,dryRun}` take one id; `client.runs.list` takes the new filter. `<AutomationCard>` takes `when` (a `TriggerSource`) plus an already-humanized `action` string instead of `trigger`, and `automationRule(when, action)` takes both halves — a record's task is the producer's to read, and a card that guessed at the words would put them in an automation's mouth.
+
+  ## What breaks in your store
+
+  Schema **v11**. `vendo_automations` is the new table: `subject` is the erase-cascade selector, because a row carries a live webhook signing key and a record that outlived its owner's erasure would be a hole rather than an untidiness; `revision` is the compare-and-swap counter every write bumps. `vendo_runs` re-keys `app_id` to `automation_id` and is **emptied once**, guarded on the old column. `vendo_grants` re-keys `trigger_id` to `automation_id`. The `trigger_kind_*` generated columns on `vendo_apps` are dropped by pattern, so the names leave the codebase entirely. The erase cascade deletes runs BEFORE automations, while the join that identifies them still exists.
+
+  `ENGINE_ALLOWLIST_VERSION` goes 2 → 4. `vendo_automations` joins the engine allowlist; `automations:armed` and `automations:webhook` leave it — armed is a FIELD on the record, so a disarm is one write with no second row to keep in step, and the webhook secret lives on the record. If your BYO store pins the allowlist version, bump it.
+
+### Patch Changes
+
+- e09d69a: A Vendo Cloud rate limit now reads as a WAIT everywhere, instead of vanishing.
+  The console answers 429 "Too many requests. Try again shortly." — and the OSS
+  side had nowhere to put that answer. The shared console client's wire-legal
+  code table omitted `unavailable`, so the console's own error code was not
+  forwardable and fell to each adapter's unknown-code tail, where four of the
+  five mint a PLAIN `Error`. A plain error fails `instanceof VendoError` at the
+  wire, so the request logged "[vendo] unhandled wire error", answered HTTP 501
+  ("this operation does not exist") and showed the person the generic "couldn't
+  finish" overlay. An envelope-less 429 — the one an edge proxy sends as
+  plain text — had no reading at all.
+
+  `raiseCloudError` now forwards `unavailable` and `forbidden` as the
+  VendoErrors they are, and reads a bare 429/500/502/503/504 as `unavailable`
+  from the status alone, keeping the server's own sentence. 501 stays with each
+  adapter's tail: "this mount does not serve the op" is not a transient failure.
+  Nothing downstream changed — the wire's 503 mapping, the harness overlay and
+  the store's retry were all already written against that code.
+
+  Three places then act on it:
+
+  - The hosted store retries a rate-limited or transiently failed call once,
+    waiting the console's `Retry-After` (capped at 10s, 250ms when it asked for
+    nothing) and replaying the SAME `Idempotency-Key`, so the server dedupes a
+    mutation it already applied instead of applying it twice. Before, only a
+    timeout was retried.
+  - The batched Cloud uploader keeps a 429'd batch and sends it again, instead
+    of reading every sub-500 answer as a permanent refusal and dropping it —
+    which lost capability-miss and SDK-event reports exactly while an account
+    was being rate-limited.
+  - The per-user limiter still fails CLOSED when the meter read fails, but no
+    longer tells the user they reached the host's cap when nothing was counted:
+    a busy meter denies with "Vendo Cloud is busy right now, so this limit could
+    not be checked — this is temporary, not a cap", on the agent's refusal and
+    on the person's card alike.
+
+  `VendoLimitPart` gains one optional field, `retryable?: true` (and its zod
+  schema the matching `z.literal(true).optional()`) — additive, so an older
+  consumer ignores it exactly as §15 forward-compat expects. It carries the one
+  distinction the card cannot make for itself: a limit REACHED keeps the
+  "You've reached your limit" headline, a limit that could not be CHECKED reads
+  "Couldn't check your limit" over the same detail line. Both chokes set it —
+  the message at the door and the generation mid-turn — so neither path can tell
+  the person a different story than the other.
+
+- 20aed63: `StoreOps.appData` is OPTIONAL, on the same rule the other four optional members
+  already follow: a store with nowhere to keep app rows says so by OMITTING the
+  family, rather than shipping a stub that accepts the call and does something
+  else. A store that omits it is refused at the door onto app rows — `/box/rows`
+  answers the `not-implemented` refusal it already gave a store with no
+  named-operation surface at all — and the app-storage backing falls through to
+  the same façade path that store already took.
+
+  Nothing changes for the stores this repo ships: `createStoreOps` (the local
+  backend) and `hostedStoreOps` (the Cloud client) both serve the family, and both
+  now say so in their return type, `StoreOpsWithAppData`. The StoreOps conformance
+  kit reports its appData cases as OMITTED for a mount without the family instead
+  of crashing on the first verb.
+
+- a507b92: store: heal a transiently truncated PGlite FS bundle read with one retry
+- Updated dependencies [c50597f]
+- Updated dependencies [e09d69a]
+- Updated dependencies [a781798]
+- Updated dependencies [e09d69a]
+- Updated dependencies [e09d69a]
+- Updated dependencies [20aed63]
+- Updated dependencies [49e1e39]
+- Updated dependencies [af2d337]
+- Updated dependencies [c50597f]
+- Updated dependencies [a6ec9ba]
+- Updated dependencies [c50597f]
+- Updated dependencies [bfaa06b]
+- Updated dependencies [c50597f]
+- Updated dependencies [77a6765]
+- Updated dependencies [b10d129]
+  - @vendoai/core@0.27.0
+  - @vendoai/apps@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes

@@ -1,5 +1,304 @@
 # @vendoai/vendo
 
+## 0.27.0
+
+### Minor Changes
+
+- c50597f: A boxed app's host-tool call asks once, and the tap runs it. `POST
+/box/tools/<name>` dispatched straight at the guard-bound registry, so the
+  permission card it parked was one nothing could ever resume: the customer tapped
+  Allow and nothing happened, clicked again and got another card, forever — a
+  layer-2 ("machine") app could not call a single host tool. The call now rides the
+  same park-and-resume flow an in-app action does, and away execution accepts the
+  tap itself as its authority: the consumed approval is projected into the grant
+  shape the `actAs` seam takes (scoped `exact` to the arguments the person was
+  shown, `source: "approval"`, never stored, never matched), exactly as the MCP
+  door's OAuth consent already is. Approving runs THAT call and nothing else — no
+  standing permission is minted, so each distinct call asks on its own account.
+- c50597f: A deployment enrols itself with Vendo Cloud at boot, and derives the secret Cloud signs its wake-up call with.
+
+  Nothing in this repo ever told Cloud that a deployment existed, so the heartbeat had no door to knock on: a hosted deployment served every request, armed its automations, and fired none of them — with no error anywhere to say so.
+
+  **If you set `VENDO_API_KEY` and `VENDO_BASE_URL`, there is nothing else to do.** On the first request after boot (the same `ready()` latch the schema and the boot reconcile ride — construction stays free of I/O for Workers' sake), the deployment posts its own URL and a tick secret to Cloud, and that is the entire enrolment: no dashboard step, no second env var, nothing for a person to configure. Registering is idempotent on (project, host), so every replica and every redeploy calling it is the expected usage, and a re-register also clears Cloud's failure breaker. `VENDO_CLOUD_URL` repoints the console as everywhere else.
+
+  The secret is DERIVED, not configured:
+
+  ```
+  HMAC-SHA256(key = VENDO_API_KEY, message = "vendo:automations:tick:v1")  →  base64url
+  ```
+
+  Every replica derives the same value, which is the point: they all enrol, and a secret that differed per instance would break the others' knock. The label is frozen for the same reason. It is never logged, never in an error message, and never in a URL.
+
+  ## Whether you still need `VENDO_TICK_SECRET`
+
+  This supersedes the "with `VENDO_TICK_SECRET` unset, both are refused" line in the tick-door note. `POST /api/vendo/tick` now verifies against the derived secret too, so:
+
+  - **On Vendo Cloud** — you do not need `VENDO_TICK_SECRET`. Remove it if you set it only to make the heartbeat work.
+  - **Running your own cron, no Cloud key** — you still need it, exactly as before. Nothing changes for you.
+  - **Both set** — `VENDO_TICK_SECRET` wins. It is the bring-your-own override, and it is _that_ secret that gets registered with Cloud, so your cron and Cloud's heartbeat present the same one and both legs work.
+
+  With neither set the door still refuses every knock, and its 401 now names both roads out.
+
+  ## When it cannot enrol, you hear about it
+
+  Enrolment never throws and never delays a request — a console blip must not take a deployment down or hold up its first response. It logs at `error` under the code `vendo.tick-enrolment-failed`, once per composition, because an unenrolled deployment is otherwise indistinguishable from a healthy one: it serves everything correctly and fires nothing. Two reasons produce that line — Cloud refused the registration, or `VENDO_BASE_URL` is unset so there is no public URL to publish. If you see it, your scheduled automations are not running.
+
+  It stays silent where there is nothing to publish and nothing wrong: no Cloud key, `automations: false`, and a development process — which fires its own ticks already and sits behind a URL no heartbeat could reach.
+
+  `vendo doctor` reads the same ladder the door does, so a Cloud deployment that configured nothing no longer reports itself as having no schedule caller.
+
+- af2d337: A host tool that is off says so, and a screen with nothing to read says that instead of inventing a tool.
+
+  An extracted tool can be turned off by three different layers, and until now only the all-or-nothing case was ever announced: `warnZeroLiveTools` fired when EVERY tool was dead, doctor passed on any `live > 0`, and the init receipt never mentioned it. So a catalog that shipped 5 tools and served 2 read healthy from every angle, and the missing three were discovered by watching the assistant fail to answer.
+
+  Now the count and the reason travel together. Boot warns once naming each tool that is off and the layer that took it (an override, a judgment, or a non-end-user audience grade). `vendo doctor` warns `E-TOOLS-005` with the same list when live is short of the extracted count — a warning, not a failure, because which exclusions are right is the host's call. The `vendo init` agent tail carries a `tools off:` line with the same names and the one edit that turns a tool back on.
+
+  The generator stops filling that silence with fiction. When no tool on the list can be READ, the briefing says so outright, and a screen that queries an unknown tool with nothing readable behind it is told there is no data for the ask, to use `<Disclaimer>`, and specifically not to claim data is missing or empty when it cannot know. The failure this closes: a model invented a tool name, failed five times, then rendered "No revenue data connected" above a table of that exact data.
+
+- a6ec9ba: An app now arrives somewhere a person can see it, and takes shape while they
+  watch. Generated apps used to appear by surprise and load behind a generic
+  shimmer: nothing said an app was new, a build in flight was a spinner with no
+  information in it, and a pinned app had no handle at all.
+
+  Arrival is a per-person flag, server-side. `AppsRuntime.seen(appId, ctx)` is the
+  idempotent mark, `AppsRuntime.list` now answers `AppListRow[]` — the document
+  plus an `unseen?: boolean` this caller's read alone can say — and the rows
+  carry it through `VendoClient.apps.list()` to `useAttention().unseenApps`, which
+  lights the launcher's quiet dot. Precedence is unchanged: a waiting decision
+  still shows the numbered badge instead, and `unseenResults` now means a finished
+  run OR an app nobody has looked at (the pill's spoken line names neither half).
+  Rendering marks it, and only rendering to a PERSON does: `GET /apps/:id/open`
+  records it, while the same runtime door an MCP client or an automation reaches
+  through does not, so an agent reading a tree never clears somebody's dot. Rows
+  live in `vendo_app_seen`, which puts the engine allowlist at
+  `ENGINE_ALLOWLIST_VERSION` 3, and they are swept when the app is deleted.
+
+  A build in flight is now visible instead of merely slow. `AppsRuntime.open`
+  takes `{ pending?: true }` and answers `PendingSurface` with an optional `tree`
+  — the forming payload's GEOMETRY, node ids and nesting and no data values — so
+  the embed's existing 1.2s poll paints stepped assembly off the same request
+  rather than a bar, and never shows a number it will take back. Unfinished
+  sections render wet (dim, desaturated) and dry to full ink as they land, once,
+  with the hairline ring following the last one. Slots remember the shape of the
+  app they held and wait in its silhouette rather than a shimmer, and a placed app
+  carries the ✦ handle: Edit in chat (`OpenConversationOptions.appId` features the
+  app on the stage and prefills the composer), Refresh, Unpin. The pin flight
+  lands flush and its confirmation ring now waits for the placement write
+  (`PinCeremonyOptions.confirmed`) instead of an animation timer.
+
+- 68bb5da: `vendo doctor` checks what is on disk and nothing else. It starts no server, makes no HTTP request, and needs no running app: it grades your wiring markers, your `.vendo/` files, your installed `ai` and `zod`, your ejected surfaces, your `server.json`, and the environment variables the install depends on. Run it any time, in any repo, and it answers in under a second.
+
+  The promise on every install prompt is "you're done when `vendo doctor --json` reports all green", and on the exact stack Vendo recommends that was unreachable. Doctor probed the running app over plain HTTP with no browser session, so an app with a signed-in-user auth preset correctly answered 403, and doctor exited 1 with `E-LIVE-001`, `E-AUTH-003`, `E-AUTH-006` and `E-TURN-002`. A green run now means what it says.
+
+  What went with the probes: `vendo doctor --url` and `vendo doctor --yes`, the `liveTurn` field in the `--json` object, the dev-server-start offer, the live model turn, the `/status`, present-credential, actAs, machines and MCP discovery requests, the npm-latest version hint, and the split-brain version-skew read. The `/doctor/*` routes on the server side are unchanged. These error codes are retired and doctor can no longer emit them: `E-DEP-002`, `E-DEV-001`, `E-LIVE-001` through `E-LIVE-006`, `E-AUTH-001` through `E-AUTH-008`, `E-MCP-001`, `E-MCP-002`, `E-MCP-003`, `E-MCP-005`, `E-MCP-008`, `E-SCHED-001`, `E-TURN-001` and `E-TURN-002`. Each keeps its troubleshooting page, marked retired, so an old report still resolves.
+
+  The seams doctor cannot see, it no longer pretends to: your auth forwarding, your actAs resolver and your model credential are proven by one real call in your own app, not by a synthetic probe against a route your users never hit.
+
+- 6f3cbc0: `vendo init --agent` asks first and then writes, instead of printing a plan nobody could act on.
+
+  Init has one personality in every mode now: it detects, asks, logs in, and writes. Agent mode only changes how the questions TRAVEL. Init emits them as JSON, the coding agent relays them in chat, the answers come back as flags on a re-run, and that run writes.
+
+  The first `--agent` call runs detection and, if anything a person must decide is still open, prints ONE object and touches nothing: `{"status": "questions", "detected": {…}, "questions": [{id, prompt, options}]}`. Each prompt is chat copy an agent relays verbatim, and each option carries the literal thing the agent does to pick it, a `flag` for the re-run or a `command` to run before it. There is no select-vs-confirm machinery: yes/no is two options. The set is use-case, auth and models, plus the sign-in posture and the service key once the use case is MCP. A call that already carries every answer skips the question pass and writes in one go.
+
+  Both passes exit 0. `status` is what a caller branches on, the same idea as `doctor --json`. The write pass ends in a receipt: `{"status": "written", root, useCase, wrote, pasteEdits, tools, riskRecommendations, judgment}`. `judgment` is always `{"status": "delegated"}` with the checklist of what the catalog still needs, because the caller IS a coding agent and agent mode may not spawn another one underneath it.
+
+  **The read-only plan dump is retired.** There is no mode that prints code diffs and stops, and there is no `--plan` flag. No new flags were added for any of this either: `--use-case`, `--auth`, `--cloud-key`, `--byo`, `--posture` and `--service-key` all already existed and already validated.
+
+  Nothing mechanical is ever relayed. The deploy URL, the zod floor, the theme slots and the live check take the same defaults `--yes` gives them and show up in the diff. The interactive terminal flow is unchanged.
+
+  Two wording fixes ride along: `--byo` now states what your own key needs instead of pointing back at `vendo login`, which made the opt-out read as a detour rather than a first-class path; and the packaged `vendo-setup` skill teaches the new flow.
+
+- d45e0c1: `vendo login` names the dead code before it prints the new one, so a human holding a relayed code learns it stopped working instead of typing it into an error.
+- c50597f: One automations engine per deployment, the brains a firing can reach named at composition, and `POST /api/vendo/tick` the only door that wakes it.
+
+  The whole public surface:
+
+  ```ts
+  vendo.agent; // the agent this deployment adopted, read back
+  createVendo({ agents: [support, billing] }); // MORE brains, resolvable by name
+  vendo.automations.list / get / enable / disable;
+  vendo.automations.runs.list / get / stop / rerun;
+  vendo.automations.dryRun;
+  ```
+
+  `createVendo({ agents })` is registration only — nothing in that list serves chat turns. It makes a name resolvable, so a firing declared by `support.on(...)` lands on `support`. (`agent:` is the different, existing key: that one this deployment ADOPTS, taking its harness, store and instructions.) A firing's brain is looked up BY NAME at fire time and registered at BOOT, so two agents wearing one name throw during `createVendo` rather than at 2am, when the lookup would already have reached the wrong brain. A name nobody registered is a loud FAILED row in the run ledger and never a fallback brain: the wrong agent acting with the owner's grants is worse than nothing running, because nobody would ever find out.
+
+  **There is deliberately no public `create`.** The one create operation is internal, so a host that can observe automations and switch them off still cannot mint one; `vendo_automate`, `vendo_make`'s sugar, the `vendo.json` fold-in and `agent.on` are the four doors in.
+
+  ## The firing door
+
+  `POST /api/vendo/tick` takes two credentials side by side, both verified against `VENDO_TICK_SECRET`:
+
+  - `Authorization: Bearer $VENDO_TICK_SECRET` — your own cron (a Vercel cron, a GitHub Action, crontab).
+  - A standard-webhooks signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`) over the EMPTY body — Vendo Cloud's heartbeat. This leg is new.
+
+  You configure one thing and either waker works. **With `VENDO_TICK_SECRET` unset, both are refused**, Cloud's heartbeat included, so a deployment with no secret fires nothing — if you read that env var as the BYO-cron credential only, set it now. The door answers `202 {"fired":n}`, and its idempotency is the engine's own atomic cursor claim rather than anything the door asserts, so a duplicate knock claims nothing and honestly says `{"fired":0}`.
+
+  The signed leg keys the HMAC on the DECODED secret. A standard-webhooks secret is random bytes carried as base64url text, and a door that hashed the text's own characters would have answered 401 to every signed knock forever. This one calls the engine's `verifySignature` — the same function the per-record webhook path uses — so there is one implementation of the scheme and a test cannot agree with a wrong door. A host who chose a passphrase rather than base64url still gets a working bearer and simply never matches on this leg.
+
+  `localFiringKinds` is gone from the repo entirely: the engine decides what is due, and the tick is the only thing that asks. The boot reconcile reads the store on the `ready()` latch even with zero `.on()` declarations, because a deployment that just deleted its last one still has stragglers to disarm.
+
+  ## core
+
+  `toTriggerSource` tested `webhook === ""` when the hazard is the key being ABSENT. The webhook arm is the fall-through, so an object naming none of the five `When` shapes — which is what an untyped wire body is, and the admin routes are exactly that caller — walked in and left with `{ kind: "external", connector: undefined }`: an automation nothing can ever trigger, reported to its owner as armed. It is refused now, naming the shapes.
+
+- 8daeabe: The screen agent keeps no door out: `escalate` leaves the loadout.
+
+  A tool the model is never handed is a tool it cannot reach for. The `escalate`
+  hand is gone from the assembly loadout and the bullet that taught it is gone from
+  the environment note — the loop is equipped with `save_app`, `edit_app` and the
+  host's read tools, and its own instructions name nothing else. The step-budget
+  line is now just the budget; it no longer offers leaving as the alternative to
+  spending it. The shipped building-apps manual keeps its own hedged sentence
+  ("hand it to the builder through `escalate`, **where you have that tool**"),
+  which is exactly the hedge this change relies on.
+
+  What an ask bigger than a screen costs now: an honest failure. `vendo_make`
+  answers with a failed receipt naming the ask, nothing is painted, and no build
+  machine is provisioned — even on a deployment that has one sitting there.
+
+  The escalation plumbing downstream is untouched: `ScreenOutcome`'s
+  `kind: "escalate"`, the `create({ prompt, why })` door that hands the in-box
+  builder a brief, and every `@vendoai/apps` consumer of both still work exactly as
+  they did. Nothing in this repo reaches them through the screen agent any more —
+  a host that calls `apps.create` with its own `why` still does.
+
+### Patch Changes
+
+- e09d69a: A Vendo Cloud rate limit now reads as a WAIT everywhere, instead of vanishing.
+  The console answers 429 "Too many requests. Try again shortly." — and the OSS
+  side had nowhere to put that answer. The shared console client's wire-legal
+  code table omitted `unavailable`, so the console's own error code was not
+  forwardable and fell to each adapter's unknown-code tail, where four of the
+  five mint a PLAIN `Error`. A plain error fails `instanceof VendoError` at the
+  wire, so the request logged "[vendo] unhandled wire error", answered HTTP 501
+  ("this operation does not exist") and showed the person the generic "couldn't
+  finish" overlay. An envelope-less 429 — the one an edge proxy sends as
+  plain text — had no reading at all.
+
+  `raiseCloudError` now forwards `unavailable` and `forbidden` as the
+  VendoErrors they are, and reads a bare 429/500/502/503/504 as `unavailable`
+  from the status alone, keeping the server's own sentence. 501 stays with each
+  adapter's tail: "this mount does not serve the op" is not a transient failure.
+  Nothing downstream changed — the wire's 503 mapping, the harness overlay and
+  the store's retry were all already written against that code.
+
+  Three places then act on it:
+
+  - The hosted store retries a rate-limited or transiently failed call once,
+    waiting the console's `Retry-After` (capped at 10s, 250ms when it asked for
+    nothing) and replaying the SAME `Idempotency-Key`, so the server dedupes a
+    mutation it already applied instead of applying it twice. Before, only a
+    timeout was retried.
+  - The batched Cloud uploader keeps a 429'd batch and sends it again, instead
+    of reading every sub-500 answer as a permanent refusal and dropping it —
+    which lost capability-miss and SDK-event reports exactly while an account
+    was being rate-limited.
+  - The per-user limiter still fails CLOSED when the meter read fails, but no
+    longer tells the user they reached the host's cap when nothing was counted:
+    a busy meter denies with "Vendo Cloud is busy right now, so this limit could
+    not be checked — this is temporary, not a cap", on the agent's refusal and
+    on the person's card alike.
+
+  `VendoLimitPart` gains one optional field, `retryable?: true` (and its zod
+  schema the matching `z.literal(true).optional()`) — additive, so an older
+  consumer ignores it exactly as §15 forward-compat expects. It carries the one
+  distinction the card cannot make for itself: a limit REACHED keeps the
+  "You've reached your limit" headline, a limit that could not be CHECKED reads
+  "Couldn't check your limit" over the same detail line. Both chokes set it —
+  the message at the door and the generation mid-turn — so neither path can tell
+  the person a different story than the other.
+
+- e09d69a: A deployment that cannot check screens now says so once, with the fix, instead of paying a model to rewrite a screen nobody read.
+
+  When `@vendoai/apps` cannot reach esbuild — the field case is a bundled host that never named it an external — the component gauntlet refuses every screen it is handed. That refusal used to travel as an ordinary finding: the screen agent relayed it to the writing model under "Fix each of these, then write the file again", the model rewrote a perfectly good screen, the next save was refused for the same reason, and the run ended in a generic "that build didn't come together" after burning its whole step budget. Nothing anywhere named the one thing that would have fixed it.
+
+  Three changes, one line of cause: the unavailability names its own remedy — keep `@vendoai/apps` out of the server bundle, which on Next is the `serverExternalPackages` list `vendo init` writes; naming `esbuild` alone does nothing, because this package hides that import behind a variable specifier and a bundler never sees an "esbuild" import to match — the gauntlet marks the refusal as the DEPLOYMENT's rather than the screen's, the checks floor carries the mark out (`ComponentPaintResult.environment`), and the screen agent ends the run on it — the floor's sentence becomes the answer the person and the host log both get, at a cost of one model call rather than a rewrite round per save.
+
+  All three of the gauntlet's machines are marked, because all three fail the same way: no compiler (`toolchain-unavailable`), no type checker (`typecheck-unavailable`), and an engine that would not START, which now has its own code (`engine-unavailable`) instead of sharing `run` with screens that ran.
+
+  A screen the floor refuses on its own merits is untouched — including one that RAN and threw, which is what `run` still means. Those sentences are still repair instructions, verbatim, because they are still repairable.
+
+  Also: a run whose every save was refused has no app row — a paint is what creates one — so its `decisions` have nowhere to land. That expected state is an info line now, in the same voice `commitSource` already uses for it, rather than a warning that sends an operator hunting for a broken memory door.
+
+- 20aed63: `StoreOps.appData` is OPTIONAL, on the same rule the other four optional members
+  already follow: a store with nowhere to keep app rows says so by OMITTING the
+  family, rather than shipping a stub that accepts the call and does something
+  else. A store that omits it is refused at the door onto app rows — `/box/rows`
+  answers the `not-implemented` refusal it already gave a store with no
+  named-operation surface at all — and the app-storage backing falls through to
+  the same façade path that store already took.
+
+  Nothing changes for the stores this repo ships: `createStoreOps` (the local
+  backend) and `hostedStoreOps` (the Cloud client) both serve the family, and both
+  now say so in their return type, `StoreOpsWithAppData`. The StoreOps conformance
+  kit reports its appData cases as OMITTED for a mount without the family instead
+  of crashing on the first verb.
+
+- 2f79d98: An alias-wired host reads as wired. The wiring scan's server marker knew only
+  the scoped `@vendoai/vendo/server` spelling, so a host importing `createVendo`
+  through the unscoped `vendoai` alias was diagnosed "not wired" (E-WIRE-001 /
+  E-WIRE-007) by doctor and init alike — and a `VendoRoot` import from the alias
+  dodged the E-WIRE-010 legacy warning the same way. Both markers now read both
+  supported spellings, like the supabase preset marker before them.
+- bfaa06b: A texted turn authenticates its host calls. `presence: "present"` meant two things at once — "a person is here, so ask them to approve" and "forward the caller's browser credentials" — and a text message satisfies the first without the second: there is no request behind it. So a linked customer's tool call reached the host API carrying nothing, the host answered 401, and the agent apologised for a sign-in problem the person could do nothing about. `RunContext` now carries `channelLink`, the text channel's evidence that this subject authorized this phone, and the actions registry authenticates such calls through the ActAs seam — exactly as it already does for MCP-OAuth users, who have no browser session either. Presence stays `present`, because that is what lets the guard ask for approval on a money-moving call instead of refusing it outright.
+- 3fe1146: Init's ONE-STEP paste now yields a visible agent: the frame prints
+  `<VendoOverlay />` inside the provider wrap (annotated for hosts that render
+  their own surface). The paste used to stop at `<VendoProvider>`, which renders
+  nothing — a verbatim install completed invisible while doctor E-WIRE-006
+  hard-failed exactly that state. One paste, one visible result, and the frame
+  finally agrees with the gate.
+- e09d69a: `vendo init` now writes the one Next.js setting a Vendo install cannot work without, and `vendo doctor` fails without it.
+
+  On a fresh pnpm + Next.js host every generated screen failed its checks, and nothing else looked wrong: Next bundles `@vendoai/apps` into the server chunk, so the app checker's `import("esbuild")` became a bare runtime resolve from the app root — where pnpm never hoists esbuild, since it lives only under `node_modules/.pnpm/@vendoai+apps…`. Init had never touched `next.config` at all.
+
+  Listing `"esbuild"` does NOT fix it, which is the trap: the checker reaches esbuild through a VARIABLE specifier behind bundler-ignore comments, so there is no static `"esbuild"` request for Next to match against `serverExternalPackages`. The package itself has to be external. Our own examples looked fine only because the monorepo root hoists esbuild; their lists were equally inert, and they now carry `@vendoai/apps` too.
+
+  Init ensures a Next host's `next.config.(ts|js|mjs)` carries `serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"]`: the missing names are spliced into a list the config already keeps, the whole property is added to the object the config exports, or a minimal `next.config.mjs` is created when the repo has none. The edit is deliberately conservative — a config init cannot read as an object literal (a function of `phase`, a computed export) is never rewritten; the line is printed as a paste instead, and reported in both the human output and the `--agent` receipt like every other repair.
+
+  `vendo doctor` grades the same fact statically as **E-CFG-004**, failing on a list that carries `esbuild` but not `@vendoai/apps`, with the exact line to paste in the message. It reads both spellings of the list, so a Next 14 host on `experimental.serverComponentsExternalPackages` passes.
+
+- 3fe1146: A supabase() host learns about its server-side env before the first signed-in
+  turn fails. Init's detection now attaches an advisory when it wires the
+  Supabase family and neither `SUPABASE_JWT_SECRET` nor `SUPABASE_URL` is in the
+  process env or any host env file — the preset verifies sessions with those
+  server-side names, not the `NEXT_PUBLIC_*` pair detection saw. Doctor gains
+  the matching static check, E-AUTH-009 (a warning: production-only env is
+  legitimate), built on the same shared helper so init and doctor can never
+  disagree.
+- 3fe1146: Next 14 hosts can compile the wire again: the keep-alive pool's dynamic
+  `import("undici")` now carries `webpackIgnore`, so bundlers leave it to the
+  runtime instead of parsing undici — whose syntax Next 14's webpack cannot
+  read — into every wire-route build. Runtime behavior is unchanged: Node loads
+  the pool as before, and targets without undici keep the plain-fetch fallback.
+- Updated dependencies [c50597f]
+- Updated dependencies [e09d69a]
+- Updated dependencies [a781798]
+- Updated dependencies [e09d69a]
+- Updated dependencies [e09d69a]
+- Updated dependencies [20aed63]
+- Updated dependencies [49e1e39]
+- Updated dependencies [af2d337]
+- Updated dependencies [a507b92]
+- Updated dependencies [c50597f]
+- Updated dependencies [a6ec9ba]
+- Updated dependencies [c50597f]
+- Updated dependencies [bfaa06b]
+- Updated dependencies [c50597f]
+- Updated dependencies [77a6765]
+- Updated dependencies [b10d129]
+  - @vendoai/core@0.27.0
+  - @vendoai/guard@0.27.0
+  - @vendoai/apps@0.27.0
+  - @vendoai/store@0.27.0
+  - @vendoai/ui@0.27.0
+  - @vendoai/actions@0.27.0
+  - @vendoai/agents@0.27.0
+  - @vendoai/automations@0.27.0
+  - @vendoai/harnesses@0.27.0
+  - @vendoai/knowledge@0.27.0
+  - @vendoai/mcp@0.27.0
+
 ## 0.26.0
 
 ### Minor Changes
