@@ -2233,4 +2233,22 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
   [data-vendo-node-id] { transition: opacity .2s ease, filter .2s ease; }
 }
 
+/* The finish: the last section dries and the boot hairline runs its sweep out to
+   the full width once, then dissolves. ONE gesture, one iteration — the build's
+   single moving element taking a bow rather than blinking out.
+
+   Keyed on data-vendo-dried, which ThreadAppCard sets only when a card it
+   WATCHED streaming settles. [data-state="ready"] would not do: a served app's
+   bar is ready from its first frame, and an animation fires at mount, so every
+   iframe app would pulse on arrival — served apps keep their beat bar untouched.
+   26% × 3.85 ≈ the full bar. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-appcard-bar[data-vendo-dried] .fl-boot-hairline {
+    transform-origin: left center; animation: fl-wet-dried .45s cubic-bezier(.22, 1, .36, 1) 1 both; }
+}
+@keyframes fl-wet-dried {
+  from { opacity: 1; transform: scaleX(1); }
+  60%  { opacity: 1; transform: scaleX(3.85); }
+  to   { opacity: 0; transform: scaleX(3.85); } }
+
 `;
