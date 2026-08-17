@@ -432,6 +432,10 @@ const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
 /** The one brick that takes a route (`kit/specs.ts`). Pinned to its spec by the
  *  route check's own test, so renaming the brick cannot leave this behind. */
 const KIT_LINK = "Link";
+/** The one brick whose CHILDREN are records, and the row that is one of them
+ *  (`kit/specs.ts`). Pinned to their specs by the row check's own test. */
+const KIT_TABLE = "DataTable";
+const KIT_TABLE_ROW = "TableRow";
 
 /** A Kit element sitting in a PROP — what a slot holds. The screen VM
  *  stamps the SLOT's own element `$element` and leaves the ones nested under it
@@ -462,6 +466,16 @@ const asElement = (value: unknown, sigil: boolean): { component: string; props?:
 export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   const issues: FactIssue[] = [];
 
+  /** A child in the two forms this walk meets: a tree node names its children by
+   *  id, an element in a prop carries them whole. */
+  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
+  const childOf = (child: unknown): { component: string; children?: unknown } | undefined =>
+    typeof child === "string" ? byId.get(child) : asElement(child, false);
+  /** Who a node hangs under — the one thing a node cannot say about itself, and
+   *  the whole of what makes a <TableRow> a row. */
+  const parents = new Map(tree.nodes.flatMap((node) =>
+    (node.children ?? []).map((id) => [id, node.component] as const)));
+
   /** One slot: the element it holds, and every element nested in that one. A
    *  slot with no declared vocabulary takes the read-only value tier, and a
    *  per-row one says WHY that tier is the one it takes.
@@ -472,7 +486,7 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
    *  arrangement and typography, `style` and children and nothing else
    *  (`contract/kit/display.ts`), so it can no more break the per-row rule than a
    *  word can. */
-  const checkSlot = (nodeId: string, path: string, name: string, slot: KitSlotSpec, value: unknown, sigil = true): void => {
+  const checkSlot = (nodeId: string, path: string, name: string, slot: KitSlotSpec, value: unknown, sigil = true, parent?: string): void => {
     const element = asElement(value, sigil);
     if (element === undefined) return;
     const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
@@ -487,9 +501,9 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
     // slot's vocabulary passes `<Stack header={<Text/>}/>` and a `<DataTable>`
     // handed children — both dropped by the renderer, which is the whole class
     // this check exists to refuse.
-    checkKitElement(nodeId, path, element.component, element.props, element.children);
+    checkKitElement(nodeId, path, element.component, element.props, element.children, parent);
     if (Array.isArray(element.children)) {
-      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, name, slot, child, false));
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, name, slot, child, false, element.component));
     }
   };
 
@@ -541,11 +555,37 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
     component: string,
     props: unknown,
     children: unknown,
+    parent?: string,
   ): void => {
-    const nested = Array.isArray(children) ? children.length : 0;
-    if (nested > 0 && CHILDLESS.has(component)) {
-      const message = `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`;
-      issues.push(at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message));
+    const anchor = (message: string): FactIssue => at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message);
+    const kids: unknown[] = Array.isArray(children) ? children : [];
+    if (kids.length > 0 && CHILDLESS.has(component)) {
+      issues.push(anchor(`nests ${kids.length === 1 ? "1 node" : `${kids.length} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`));
+    }
+    // WHERE a row sits is the whole of what makes it a row: a <TableRow>'s
+    // children are its CELLS, placed in the TABLE's column order (`packages/ui`
+    // table-row.tsx). So a row outside a table paints nothing, and a row whose
+    // count misses slides every value under the wrong header — both silent.
+    if (component === KIT_TABLE_ROW && parent !== KIT_TABLE) {
+      issues.push(anchor(`writes <${KIT_TABLE_ROW}> outside a <${KIT_TABLE}> — a table row paints the cells of a table, so on its own it paints nothing at all. Put it inside a <${KIT_TABLE} rows={…} columns={[…]}>, or use <Row> for a horizontal line of components.`));
+    }
+    if (component === KIT_TABLE && kids.length > 0) {
+      // Absent, not merely unreadable: a bound `columns` is somebody else's
+      // array, and this rule is about the model that wrote none at all.
+      const columns = isRecord(props) ? props.columns : undefined;
+      if (columns === undefined) {
+        issues.push(anchor(`passes rows as children to <${KIT_TABLE}> with no columns — the columns are what names each header and sets its alignment, and a row's cells are placed in column order. Add columns={[{key:"name",label:"Account"},{key:"balance",label:"Balance",align:"end"}]}.`));
+      }
+      for (const kid of kids.flatMap((child) => childOf(child) ?? [])) {
+        if (kid.component !== KIT_TABLE_ROW) {
+          issues.push(anchor(`nests <${kid.component}> in <${KIT_TABLE}> — a table's children are its ROWS, one <${KIT_TABLE_ROW}> per record. Write {rows.map(r => <${KIT_TABLE_ROW} key={r.id}>…</${KIT_TABLE_ROW}>)}, or put this in the table's toolbar={…} slot.`));
+          continue;
+        }
+        const cells = Array.isArray(kid.children) ? kid.children.length : 0;
+        if (Array.isArray(columns) && cells !== columns.length) {
+          issues.push(anchor(`writes ${cells} cells in a <${KIT_TABLE_ROW}> where <${KIT_TABLE}> has ${columns.length} columns — cells are placed in column order, so the values land under the wrong headers. Write exactly one child per column; wrap several components in a <Stack> to keep them in ONE cell.`));
+        }
+      }
     }
     const spec = kitSpec(component);
     if (spec === undefined || !isRecord(props)) return;
@@ -560,7 +600,7 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
 
   for (const node of tree.nodes) {
     if (node.source === "host" || node.source === "generated") continue;
-    checkKitElement(node.id, "", node.component, node.props ?? {}, node.children);
+    checkKitElement(node.id, "", node.component, node.props ?? {}, node.children, parents.get(node.id));
   }
   return issues;
 };
