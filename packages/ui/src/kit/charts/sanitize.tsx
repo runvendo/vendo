@@ -5,6 +5,7 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import type { TooltipContentProps } from "recharts";
+import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { isRenderableNumber } from "../format.js";
 import { RowContext } from "../row.js";
 import { font, hairline, t, type KitStyled } from "../tokens.js";
@@ -79,7 +80,7 @@ export function ChartEmpty({ height = 220, children, style }: { height?: number;
     padding: 12,
     ...style,
   };
-  return <div data-kit="ChartEmpty" style={box}>{children}</div>;
+  return <div data-kit="ChartEmpty" style={box}><EmptyOrForming>{children}</EmptyOrForming></div>;
 }
 
 /** The hover surface all three charts share — recharts paints its own content

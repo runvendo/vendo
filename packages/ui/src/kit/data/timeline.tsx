@@ -1,5 +1,6 @@
 /** Timeline — a record history down a spine, dot-marked (W2 §The Kit). */
 import type { ReactNode } from "react";
+import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
 import { font, hairline, microLabel, numeric, t, type KitStyled } from "../tokens.js";
@@ -59,7 +60,7 @@ export function Timeline({
           ...style,
         }}
       >
-        {emptyState}
+        <EmptyOrForming>{emptyState}</EmptyOrForming>
       </div>
     );
   }
