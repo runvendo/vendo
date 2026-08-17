@@ -343,6 +343,14 @@ describe("buildFailureReason", () => {
     expect(buildFailureReason(new Error(cloudLine))).toEqual({ reason: cloudLine, retryable: false });
   });
 
+  it("names a busy dependency as busy, rather than blaming the generation for it", () => {
+    // `unavailable` is the SERVER's own dependency saying "not now" — a 429 from
+    // the cloud, a dropped connection. "generation failed" reads as a verdict on
+    // the ask, so the person rewrites a request that was never the problem.
+    expect(buildFailureReason(new VendoError("unavailable", "Too many requests. Try again shortly.")))
+      .toEqual({ reason: "busy, try again shortly", retryable: true });
+  });
+
   it("never mistakes a provider key error for the dev-model class (no raw-message leak)", () => {
     // A provider message that mentions a key must stay canned — raw provider
     // text (which can echo key prefixes) never reaches the surface.

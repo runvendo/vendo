@@ -153,5 +153,11 @@ export const buildFailureReason = (
   const text = providerErrors.join(" ");
   if (QUOTA_SIGNAL.test(text)) return { reason: "quota exhausted", retryable: false };
   if (TIMEOUT_SIGNAL.test(text)) return { reason: "timed out", retryable: true };
+  // Something the SERVER depends on said "not now" — a 429 from the cloud, a
+  // dropped connection. "generation failed" reads as a verdict on the ask, so the
+  // person rewrites a request that was never the problem; this one says wait.
+  if (error instanceof VendoError && error.code === "unavailable") {
+    return { reason: "busy, try again shortly", retryable: true };
+  }
   return { reason: "generation failed", retryable: true };
 };

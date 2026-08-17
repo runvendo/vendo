@@ -37,6 +37,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  VendoError,
   log,
   mintTurnId,
   type AppId,
@@ -181,7 +182,16 @@ export interface ScreenSurface {
    * the workspace, and the seam's only channel for it is a log. Absent, or empty,
    * claims NOTHING — an unwrapped workspace has no floor to have refused anything.
    */
-  readonly screenIssues?: () => readonly string[];
+  readonly screenIssues?: () => ScreenRefusal;
+}
+
+/** Why the floor refused a save, as the loop reads it. */
+export interface ScreenRefusal {
+  /** The checks floor's own repair instructions for the screen it refused. */
+  readonly blocking: readonly string[];
+  /** The refusal was about the DEPLOYMENT — the checks could not RUN here — so
+   *  nothing this loop writes changes it (`ComponentPaintResult.environment`). */
+  readonly environment?: true;
 }
 
 /** One declared query's outcome at paint time. `rows` is absent when the answer
@@ -491,6 +501,10 @@ interface RunRecord {
   painted: boolean;
   title?: string;
   escalated?: string;
+  /** The run is over and the screen is not why: the DEPLOYMENT could not check
+   *  it, in the floor's own words. Nothing this loop writes changes that, so the
+   *  words become the run's answer instead of a repair round. */
+  blocked?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
@@ -544,6 +558,10 @@ export async function assembleScreen(
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
   const record: RunRecord = { assembled: false, painted: false };
+  /** This run's own stop switch, beside the caller's: a hand that learns the
+   *  deployment cannot check screens ends the drive the same way a caller hanging
+   *  up does, rather than letting the loop pay for another step. */
+  const stop = new AbortController();
 
   /**
    * Write one hot-path file and land it.
@@ -608,7 +626,16 @@ export async function assembleScreen(
     const painted = paintedIn(committed);
     record.painted = painted?.includes(input.appId) ?? false;
     if (painted !== undefined && !record.painted) {
-      const blocking = surface.screenIssues?.() ?? [];
+      const { blocking, environment } = surface.screenIssues?.() ?? { blocking: [] };
+      // A refusal about the DEPLOYMENT is not a screen this loop can fix: no
+      // compiler where the checks run refuses every screen, so handing these
+      // sentences over as repair instructions spends the whole budget rewriting a
+      // screen nothing ever read. The run gives up here, in the floor's words.
+      if (environment === true) {
+        record.blocked = blocking.join(" ");
+        stop.abort();
+        return { saved: true, painted: false, note: record.blocked };
+      }
       const instruction = repairInstruction(blocking.length === 0 ? [] : [{
         path: `${directory}/${APP_FILE}`,
         appId: input.appId,
@@ -795,7 +822,7 @@ export async function assembleScreen(
     models: { ...surface.models, default: surface.models.apps },
     state: runState(),
     options: {},
-    signal: surface.signal,
+    signal: AbortSignal.any([surface.signal, stop.signal]),
     // Nobody is listening live: an approval this loop cannot show is a denial with
     // a reason (see `registryTools`). What it SAYS at the end still travels — the
     // front door speaks those words as the receipt.
@@ -842,6 +869,11 @@ export async function assembleScreen(
   await drive(turn.messages);
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
+  // A deployment that cannot check screens wins over everything below it: the
+  // bytes landed, so `assembled` is true, but nothing was ever read and nothing
+  // painted. The floor's own sentence is the answer, and it names a fix — for the
+  // host, which is the only hand that can apply it.
+  if (record.blocked !== undefined) return { kind: "unavailable", why: record.blocked };
   // Escalation wins over a partial paint: the builder is finishing this app, and
   // saying "ready" over a half-assembled document would be the lie §4.5 exists
   // to avoid. `status: "building"` is the honest receipt, and the front door
@@ -938,10 +970,13 @@ export interface ScreenAssemblerDeps {
    * (`AppsRuntime.remember`), which this file deliberately does not reach for
    * itself — composition fills the slot exactly as it does `render` above.
    *
-   * Called only for an `assembled` run, because that is the only answer whose
-   * row exists by the time this returns. Unfilled, or throwing, and the run's
-   * decisions are simply not recorded: a lost memory write is never worth
-   * failing a screen the person can already see.
+   * Called only for an `assembled` run — the only answer that carries decisions
+   * at all. `assembled` means the BYTES landed, which is not the same thing as a
+   * row: a paint is what creates one, so a run whose saves the floor refused has
+   * nowhere to put its memory, and that `not-found` is an expected state rather
+   * than a fault (`commitSource` reports its half the same way). Unfilled, or
+   * throwing, and the run's decisions are simply not recorded: a lost memory
+   * write is never worth failing a screen the person can already see.
    */
   remember?: (appId: AppId, decisions: string, ctx: RunContext) => Promise<void>;
 }
@@ -977,7 +1012,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       /** Why the floor last refused this app's screen. The seam's own channel for a
        *  refusal is a log line to the operator, so the verdict is kept HERE, on the
        *  way past — the same reading as `painted` above, for the same reason. */
-      let refused: readonly string[] = [];
+      let refused: ScreenRefusal = { blocking: [] };
       // ONE wrap for the whole screen path, here: composition hands the seam's
       // options and never has to know that a workspace must be wrapped before an
       // assembly writes to it.
@@ -990,7 +1025,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
             ...floor,
             component: async (input) => {
               const result = await gauntlet(input);
-              refused = result.ok ? [] : result.blocking;
+              refused = result.ok ? { blocking: [] } : result;
               return result;
             },
           },
@@ -1024,6 +1059,19 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       if (result.kind !== "assembled") return result;
       if (result.decisions !== undefined) {
         await deps.remember?.(request.appId, result.decisions, ctx).catch((error: unknown) => {
+          // NO ROW YET IS NOT A FAILURE, exactly as `commitSource` reads it: a
+          // paint is what creates the row, so a run whose every save was refused
+          // has none and its decisions have nowhere to land. Warning about it
+          // sends an operator hunting for a broken memory door behind an expected
+          // state; everything else IS a write that should have happened.
+          if (error instanceof VendoError && error.code === "not-found") {
+            log({
+              code: "vendo.screen-agent-decisions-no-row",
+              level: "info",
+              message: `[vendo] ${request.appId} has no row yet, so this run's decisions wait for the save that paints`,
+            });
+            return;
+          }
           log({
             code: "vendo.screen-agent-decisions-not-recorded",
             level: "warn",

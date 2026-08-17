@@ -23,6 +23,7 @@
  *    left no row are four different bugs and four failed receipts — never a
  *    "ready" served by an engine nobody chose.
  */
+import { VendoError } from "@vendoai/core";
 import type {
   AppId,
   RunContext,
@@ -133,6 +134,26 @@ const storeRefusingAppWritesWhile = (refusing: () => boolean): ReturnType<typeof
         async put(...args: Parameters<typeof inner.put>) {
           if (refusing()) throw Object.assign(new Error("Store request failed."), { code: "unavailable" });
           return await inner.put(...args);
+        },
+      });
+    },
+  }) as ReturnType<typeof memoryStore>;
+};
+
+/** A store whose `vendo_apps` READS fail while `failing()` says so — the
+ *  rate-limited read. An absent row and a store that could not answer are
+ *  different facts, and only the first one means nothing rendered. */
+const storeRefusingAppReadsWhile = (failing: () => boolean): ReturnType<typeof memoryStore> => {
+  const store = memoryStore();
+  const records = store.records.bind(store);
+  return Object.assign(store, {
+    records(collection: string) {
+      const inner = records(collection);
+      if (collection !== "vendo_apps") return inner;
+      return Object.assign(Object.create(Object.getPrototypeOf(inner) ?? {}), inner, {
+        async get(...args: Parameters<typeof inner.get>) {
+          if (failing()) throw new VendoError("unavailable", "Too many requests. Try again shortly.");
+          return await inner.get(...args);
         },
       });
     },
@@ -270,6 +291,28 @@ describe("assembly that produces no screen fails honestly", () => {
     expect(briefs).toHaveLength(0);
   });
 
+  it("a store that could not ANSWER is not a build that produced nothing", async () => {
+    // The row is the proof that something painted, but only a MISSING row is that
+    // proof: a read the store refused says nothing about the screen. Reporting it
+    // as "nothing renderable" tells the person their build failed and sends them
+    // to rebuild a screen that assembled and painted fine.
+    let failing = false;
+    const runtime = createApps({
+      store: storeRefusingAppReadsWhile(() => failing),
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: basicLanguageModel(),
+      screen: { assemble: async () => { failing = true; return { kind: "assembled" }; } },
+    });
+
+    const rejection = await runtime.create({ prompt: "Show my spending" }, ctx)
+      .then(() => undefined, (error: unknown) => error as VendoError);
+
+    expect(rejection?.message).not.toContain("nothing renderable");
+    expect(rejection?.detail).toMatchObject({ reason: "busy, try again shortly", retryable: true });
+  });
+
   it("an `assembled` that left no ROW behind is not an app — a picture of one is not one", async () => {
     // The screen agent said it assembled, but nothing renderable ever reached the
     // store, so `authored` upserted no row. The front door checks the row rather
@@ -391,6 +434,39 @@ describe("the public create/edit API runs the one engine", () => {
     // And the app the caller is handed is the one that is really stored.
     expect(JSON.stringify(edited.app)).toContain("This month");
     expect(JSON.stringify(await runtime.get(app.id, ctx))).toContain("This month");
+  });
+
+  it("`edit` whose store went busy after the save says the store did, not that nothing rendered", async () => {
+    // The read that fetches the saved app back is the last thing an edit does. A
+    // store that refuses it has said nothing about the screen — the save landed —
+    // so "the build produced nothing renderable" is a lie about the person's work.
+    let runtime: AppsRuntime;
+    /** Armed between the create and the edit; the store goes busy the moment the
+     *  edit's own save has landed. */
+    let armed = false;
+    let failing = false;
+    const inner = scriptedAssembler(() => runtime, (_request, current) => current === null ? SCREEN : EDITED);
+    runtime = createApps({
+      store: storeRefusingAppReadsWhile(() => failing),
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: basicLanguageModel(),
+      screen: {
+        assemble: async (request, runCtx) => {
+          const outcome = await inner.assemble(request, runCtx);
+          failing = armed;
+          return outcome;
+        },
+      },
+    });
+    const app = await runtime.create({ prompt: "Show my spending" }, ctx);
+
+    armed = true;
+    const edited = await runtime.edit(app.id, "say last month instead", ctx);
+
+    expect(edited.issues?.join(" ")).not.toContain("nothing renderable");
+    expect(edited.issues?.join(" ")).toContain("Too many requests");
   });
 
   it("`edit` with no assembler composed refuses, and the stored app is untouched", async () => {

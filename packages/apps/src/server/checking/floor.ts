@@ -24,7 +24,7 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE, type FlatTree } from "../../contract/genui/component/index.js";
-import { checkComponentScreen, screenName } from "./component-screen.js";
+import { checkComponentScreen, screenName, TOOLCHAIN_UNAVAILABLE } from "./component-screen.js";
 import { screenCatalog } from "./screen-typings.js";
 import type { FloorDependencies } from "./deps.js";
 import { screenTypesCheck } from "./facts.js";
@@ -176,7 +176,10 @@ export const createAppFloor = (
        *  a refusal at all. A `refused` that fails is not a verdict — swallowing the
        *  refusal because the recorder broke would paint the screen the floor just
        *  turned down. */
-      const refuse = async (blocking: readonly string[]): Promise<ComponentPaintResult> => {
+      const refuse = async (
+        blocking: readonly string[],
+        environment?: true,
+      ): Promise<ComponentPaintResult> => {
         try {
           await refused?.({ appId, blocking });
         } catch (error) {
@@ -185,7 +188,7 @@ export const createAppFloor = (
             + ` ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        return { ok: false, blocking };
+        return { ok: false, blocking, ...(environment === undefined ? {} : { environment }) };
       };
       if (runQuery === undefined) {
         return refuse(["this deployment composed no query runner for the checks floor, so the screen's"
@@ -201,7 +204,13 @@ export const createAppFloor = (
         toolchain,
       });
       if (!checked.ok || checked.compiled === undefined || checked.initialTree === undefined) {
-        return refuse(checked.issues.map(({ message }) => message));
+        // A toolchain that could not RUN is the deployment's fault, and the mark
+        // travels with the sentences: whoever reads them has to know that writing
+        // the screen again cannot help.
+        return refuse(
+          checked.issues.map(({ message }) => message),
+          checked.issues.some(({ code }) => code === TOOLCHAIN_UNAVAILABLE) ? true : undefined,
+        );
       }
       // The host's own plugged checks, AFTER the gauntlet's five stages and still
       // before the paint.

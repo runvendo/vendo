@@ -172,12 +172,19 @@ const routeThroughAssembler = async (
     return failBuild(NO_ASSEMBLER, false, [NO_ASSEMBLER], "not-implemented");
   }
   let routed: Awaited<ReturnType<ScreenAssembler["assemble"]>>;
+  /** The row is the check that "assembled" is true rather than merely intended:
+   *  `authored` upserts it iff the seam really compiled and painted the document,
+   *  so a save nobody can render leaves no row. Read inside the catch's reach,
+   *  because `engine.get` says an ABSENT row with `null` — a throw is the store
+   *  failing to answer, which says nothing at all about the screen. */
+  let stored: Awaited<ReturnType<EngineOps["get"]>> = null;
   try {
     routed = await config.screen.assemble({
       appId,
       request: input.prompt,
       ...(input.onView === undefined ? {} : { onView: (part) => input.onView?.(part) }),
     }, ctx);
+    if (routed.kind === "assembled") stored = await engine.get(APPS_COLLECTION, appId);
   } catch (error) {
     const { reason, retryable } = buildFailureReason(error);
     const detail = error instanceof VendoError && Array.isArray(error.detail)
@@ -191,10 +198,6 @@ const routeThroughAssembler = async (
     );
   }
   if (routed.kind === "assembled") {
-    // The row is the check that "assembled" is true rather than merely
-    // intended: `authored` upserts it iff the seam really compiled and
-    // painted the document, so a save nobody can render leaves no row.
-    const stored = await engine.get(APPS_COLLECTION, appId).catch(() => null);
     if (stored === null) return failBuild(NOTHING_RENDERABLE, true, [NOTHING_RENDERABLE]);
     clearTimeout(watchdog);
     log({

@@ -336,7 +336,7 @@ const createEditAssembler = (
     // which of its shapes were asked for and which are incidental, so an editor
     // that never read it "fixes" the filter the person asked for. Composed here
     // rather than duplicated — `appMemoryBrief` is the one writer of this block.
-    const before = await engine.get(APPS_COLLECTION, appId).catch(() => null);
+    const before = await engine.get(APPS_COLLECTION, appId);
     const memory = appMemoryBrief(before === null ? undefined : rowFromRecord(before).doc.memory);
     editIntents.set(appId, instruction);
     // Kept even though `takeEditVersion` matches on the words: an entry no edit
@@ -368,9 +368,15 @@ const createEditAssembler = (
     // Through `requireOwned`, so what comes back is the same access-checked
     // document every other door hands out — the row is the answer and it must
     // read identically wherever it is read.
-    const stored = await requireOwned(appId, ctx).catch(() => undefined);
-    if (stored === undefined) return { kind: "failed", issues: [NOTHING_RENDERABLE] };
-    return { kind: "assembled", app: stored };
+    try {
+      return { kind: "assembled", app: await requireOwned(appId, ctx) };
+    } catch (error) {
+      // Only a MISSING row means nothing rendered. A store that could not answer
+      // has said nothing about the screen — the save landed — so reporting it as
+      // an unrenderable build blames the person's work for the store's outage.
+      const absent = error instanceof VendoError && error.code === "not-found";
+      return { kind: "failed", issues: [absent ? NOTHING_RENDERABLE : safeErrorMessage(error)] };
+    }
   };
 
   return { assembleEdit };

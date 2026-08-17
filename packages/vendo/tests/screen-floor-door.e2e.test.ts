@@ -36,6 +36,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_MAKE_TOOL,
+  type AppId,
   type Principal,
   type ToolResult,
 } from "@vendoai/core";
@@ -47,6 +48,17 @@ import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  boundRegistry,
+  ctx,
+  scriptedModel,
+  seats,
+  testGuard,
+  testWorkspace,
+  textTurn,
+  toolCallTurn,
+} from "../src/agent-doubles.test-util.js";
+import { screenAssembler } from "../src/screen-agent.js";
 import { createVendo } from "../src/server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -198,7 +210,8 @@ const appIdIn = (prompt: string): string => {
   return match[0];
 };
 
-const saveApp = (content: string, id: string) => () => call("save_app", { content }, id);
+const saveApp = (content: string, id: string, decisions?: string) => () =>
+  call("save_app", decisions === undefined ? { content } : { content, decisions }, id);
 
 /** Everything the operator was told, arguments flattened: an Error prints as its
  *  message and a detail object as its JSON, which is where each half of the live
@@ -255,6 +268,24 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     expect(operatorLog(notes.mock.calls)).toContain("has no row yet");
   }, 120_000);
 
+  it("a refused save's DECISIONS have nowhere to land, and that is not a fault", async () => {
+    // A run whose only save was refused is `assembled` — the bytes landed — but no
+    // paint means no row, so the memory door answers `not-found` on a write that
+    // was never possible. It used to warn about it, which sends an operator
+    // looking for a broken store behind an expected state.
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const notes = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await walk([
+      saveApp(BROKEN, "c1", "Totals are the host's; this screen only lists."),
+      () => speak("done"),
+    ]);
+
+    expect(operatorLog(warnings.mock.calls)).not.toContain("decisions were not recorded");
+    expect(operatorLog(notes.mock.calls)).toContain("has no row yet");
+  }, 120_000);
+
   it("a save that DOES reach the screen still lands the row, the paint and a ready receipt", async () => {
     const walked = await walk([saveApp(SPENDING, "c1"), () => speak("done")]);
 
@@ -267,5 +298,40 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view").length).toBeGreaterThan(0);
     const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_floor_door" });
     expect(stored?.name).toBe("Spending");
+  }, 120_000);
+});
+
+/** What the floor says when the refusal is about the DEPLOYMENT: no compiler
+ *  where the checks run, so every screen is refused and no rewrite can help. The
+ *  real floor mints this from `ScreenToolchainUnavailable`
+ *  (`packages/apps/tests/checking/app-floor.test.ts` proves that half); here the
+ *  loop's answer to it is what is measured, so the floor is a double. */
+const ENVIRONMENT = "the screen could not be compiled: no esbuild is reachable from @vendoai/apps"
+  + " — install esbuild where the server runs, so nothing about this screen was checked.";
+
+describe("a refusal the loop cannot repair ends the run instead of a rewrite round", () => {
+  it("spends ONE model call on an environment fault, and never says 'write the file again'", async () => {
+    const model = scriptedModel([
+      toolCallTurn("save_app", { content: SPENDING }, "c1"),
+      toolCallTurn("save_app", { content: SPENDING }, "c2"),
+      textTurn("done"),
+    ]);
+    const assembler = screenAssembler({
+      models: seats(model),
+      tools: boundRegistry({}, testGuard()),
+      workspace: async () => testWorkspace(),
+      render: () => ({ floor: { component: async () => ({ ok: false, blocking: [ENVIRONMENT], environment: true }) } }),
+    });
+
+    const outcome = await assembler.assemble({ appId: "app_env" as AppId, request: "show me my spending" }, ctx());
+
+    // The person hears the environment's own sentence, not "that build didn't
+    // come together" over a screen nothing ever read.
+    expect(outcome).toEqual({ kind: "unavailable", why: ENVIRONMENT });
+    // THE DEFECT: the floor's sentences used to come back as repair instructions,
+    // so the loop rewrote a perfectly good screen until its budget ran out — a
+    // paid rewrite round per save, ending in the same refusal.
+    expect(JSON.stringify(model.prompts)).not.toContain("write the file again");
+    expect(model.calls).toBe(1);
   }, 120_000);
 });
