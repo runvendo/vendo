@@ -161,6 +161,36 @@ describe("the settle ring answers to the pin, never to the timer", () => {
     await waitFor(() => expect(ring()).toBeTruthy());
   });
 
+  it("rings anyway when the host's mirror REJECTS but the write already landed", async () => {
+    // The write is the proof with a slot: the app really is in it. Suppressing the
+    // ring because an optional mirror failed is the same lie as a timer-fired
+    // ring, pointing the other way.
+    const onPin = vi.fn(() => Promise.reject(new Error("host mirror exploded")));
+    await pinAndLand(
+      <VendoProvider client={client} onPin={onPin} pinSlot="hero"><PinButton /></VendoProvider>,
+    );
+    await waitFor(() => expect(ring()).toBeTruthy());
+  });
+
+  it("rings anyway when the host's mirror NEVER settles but the write already landed", async () => {
+    const onPin = vi.fn(() => new Promise<void>(() => {}));
+    await pinAndLand(
+      <VendoProvider client={client} onPin={onPin} pinSlot="hero"><PinButton /></VendoProvider>,
+    );
+    await waitFor(() => expect(ring()).toBeTruthy());
+  });
+
+  it("draws no ring when a rejecting mirror is the only confirmation there is", async () => {
+    // The other half of the distinction: with no slot Vendo wrote nothing, so a
+    // failed mirror means the pin did not happen and nothing may claim it did.
+    const onPin = vi.fn(() => Promise.reject(new Error("host mirror exploded")));
+    await pinAndLand(<VendoProvider client={client} onPin={onPin}><PinButton /></VendoProvider>);
+
+    await waitFor(() => expect(onPin).toHaveBeenCalled());
+    await settled();
+    expect(ring()).toBeNull();
+  });
+
   it("draws no ring for a caller that confirms nothing at all", async () => {
     // `playPinCeremony` is a public export, so "confirmed nothing" is a shipped
     // path and not an internal detail. It gets the flight; it does not get to

@@ -396,10 +396,27 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
           }
         }
         announcePin(app.appId);
-        // Awaited, so a host that mirrors the pin asynchronously holds the ring
-        // until its own write answers — the only confirmation this config has.
-        await onPin?.(app);
-        confirm();
+        // A slot means Vendo's write already proved the app is there, so the ring
+        // is owed NOW: `onPin` is a mirror the host keeps for its own product
+        // state, and a mirror that fails or never answers must not tell the user
+        // a pin did not land when it demonstrably did. With no slot the mirror IS
+        // the confirmation, so it is awaited and its failure withholds the ring.
+        if (written !== undefined) confirm();
+        try {
+          await onPin?.(app);
+          confirm();
+        } catch (reason) {
+          // Caught so a throwing mirror cannot escape this detached flow as an
+          // unhandled rejection. It stays the host's to fix, and says so where a
+          // host can see it rather than in front of the person who pinned.
+          if (developmentMode()) {
+            log({
+              code: "ui.pin-mirror-failed",
+              level: "warn",
+              message: `[vendo] pin: the host's onPin for ${app.appId} failed — ${String(reason)}`,
+            });
+          }
+        }
       })();
     },
     [client, onPin, pinSlot],
