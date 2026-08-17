@@ -56,9 +56,13 @@ export interface PendingSurface {
    * to change. Nothing that could render one travels: no props, no resolved
    * `data`, no `interactive` VM, no component sources.
    *
-   * Optional and additive. A document the server cannot paint yet — no screen
-   * saved, a draft that does not compile — simply omits it, and the embed keeps
-   * its beat bar.
+   * Read off the STORED document, never rendered for the answer: a poll must cost
+   * a row read, not an app execution (see `formingTreeOf`). So it rides when the
+   * build has already written a tree to the row, and is absent otherwise — a
+   * component screen stores none by design, and omits it.
+   *
+   * Optional and additive throughout: whenever it is absent the embed keeps its
+   * beat bar, which is exactly the behaviour that shipped before it existed.
    */
   tree?: UIPayload;
 }

@@ -1,27 +1,33 @@
 /**
- * S4 — THE FORMING TREE ON THE WIRE, AND THE FIGURES THAT MUST NOT RIDE IT.
+ * S4 — THE FORMING TREE ON THE WIRE: THE SHAPE, THE FIGURES, AND THE COST.
  *
- * The seam, with nothing stubbed on either side: a real screen goes in through
- * the real write door (`apps.authoredScreen`) onto a real store, the row is
- * marked mid-build exactly the way a build marks it (`AppDocument.building`, the
- * timestamp the shipped `buildInFlight` reads), and it comes back out through
- * the real wire route the embed actually polls. The tree in the answer is
- * painted from the stored screen by the shipped open path — not assembled here.
+ * The seam, with nothing stubbed on either side: a real document goes in through
+ * a real write door (`apps.importApp`) onto a real store, the row is marked
+ * mid-build exactly the way a build marks it (`AppDocument.building`, the
+ * timestamp the shipped `buildInFlight` reads), and it comes back out through the
+ * real wire route the embed actually polls, as real JSON.
  *
- * What must hold is BOTH halves:
- * - the answer carries the app's geometry, so the embed has assembly to paint;
- * - it carries no figure at all. A build's draft is precisely the version whose
- *   numbers the repair round changes (`build-terminal-mount.e2e.test.ts`), so
- *   the one thing a half-built app may never show is a number.
+ * Three things must hold, and each has a control that would catch its opposite:
  *
- * The second read is the control that keeps the first honest: clear `building`
- * and the SAME app, through the SAME route, pays out the figure. Without it a
- * screen that painted nothing at all would pass the strip assertions silently.
+ * 1. GEOMETRY rides — the app's own nodes, so the embed paints THIS app forming.
+ * 2. NO FIGURE rides. The stored tree's authored label and its resolved balance
+ *    are both absent from the body; once the build lands, the same route over the
+ *    same row pays the balance out. A build's draft is precisely the version whose
+ *    numbers its repair round changes, so this is the whole law.
+ * 3. NO QUERY RUNS. The answer is READ off the row, never rendered for. This one
+ *    is a regression guard with teeth: the first cut of this feature served the
+ *    app and threw the result away, which ran the app, its query fan-out and a
+ *    guard decision on every 1.2s poll — ~250 times per viewer per build, against
+ *    the host's own backend, as the user. `executions` counts host-tool calls, so
+ *    a return to that shape costs this assertion.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  VENDO_APP_FORMAT,
+  VENDO_TREE_FORMAT,
+  type AppDocument,
   type AppId,
   type Json,
   type Principal,
@@ -51,7 +57,13 @@ const APP_ID = "app_partial_tree" as AppId;
 /** Deliberately unmistakable: no app id, timestamp or format tag can contain
  *  these digits, so finding them in the body means the FIGURE leaked. */
 const CENTS = 133_742;
-const DOLLARS = "1337.42";
+/** An authored prop that is not a number and still must not ride — props are
+ *  dropped whole, so this is what proves the strip took the container. */
+const LABEL = "Balance to date";
+
+/** Every host-tool execution this deployment performs. A pending poll must add
+ *  none: its answer is a row read. */
+const executions: string[] = [];
 
 const hostTools: ToolDefinition[] = [
   {
@@ -60,21 +72,30 @@ const hostTools: ToolDefinition[] = [
     description: "The account balance, in cents.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     risk: "read",
-    execute: async () => ({ data: { cents: CENTS } }) as unknown as Json,
+    execute: async () => {
+      executions.push("host_balance");
+      return ({ cents: CENTS }) as unknown as Json;
+    },
   },
 ];
 
-const SCREEN = `import { Stack, Stat, useQuery } from "@vendo/screen";
-
-export default function Balance() {
-  const balance = useQuery("host_balance");
-  return (
-    <Stack gap={12}>
-      <Stat label="Balance" value={balance.data.cents / 100} format="money" />
-    </Stack>
-  );
-}
-`;
+/** A v2 tree app mid-build: real geometry, an authored label, and a binding that
+ *  only becomes a number once the query behind it runs. */
+const document: AppDocument = {
+  format: VENDO_APP_FORMAT,
+  id: APP_ID,
+  name: "Balance",
+  ui: "tree",
+  tree: {
+    formatVersion: VENDO_TREE_FORMAT,
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["s1"] },
+      { id: "s1", component: "Stat", props: { label: LABEL, value: { $path: "/balance/cents" } } },
+    ],
+    queries: [{ name: "balance", tool: "host_balance" }],
+  },
+};
 
 async function tempStore(): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-partial-tree-"));
@@ -87,11 +108,11 @@ async function tempStore(): Promise<VendoStore> {
 }
 
 /** Stamp (or clear) the in-flight marker on the stored row, through the store's
- *  own record surface — the same field `screenDocument` writes when a build is
+ *  own record surface — the same field `screenDocument` writes while a build is
  *  running and the same one `buildInFlight` reads. */
-async function setBuilding(store: VendoStore, building: string | undefined): Promise<void> {
+async function setBuilding(store: VendoStore, appId: string, building: string | undefined): Promise<void> {
   const records = store.records("vendo_apps");
-  const record = await records.get(APP_ID);
+  const record = await records.get(appId);
   if (record === null) throw new Error("the write door left no row to mark");
   const data = record.data as { doc: Record<string, unknown> };
   const doc = { ...data.doc };
@@ -100,7 +121,7 @@ async function setBuilding(store: VendoStore, building: string | undefined): Pro
 }
 
 describe("the build window's forming tree", () => {
-  it("answers pending with the app's geometry and not one figure, and pays the figure out once the build lands", async () => {
+  it("answers pending with the app's geometry, no figure and no query, then pays the figure out once the build lands", async () => {
     const store = await tempStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
@@ -113,18 +134,20 @@ describe("the build window's forming tree", () => {
     // handler would have tripped on its first touch is opened by hand.
     await store.ensureSchema();
 
-    // The real write door the render seam calls when a build's save paints.
-    await vendo.apps.authoredScreen({ appId: APP_ID, name: "Balance", source: SCREEN }, ctx);
-    await setBuilding(store, new Date().toISOString());
+    // Import mints the row's own id, so everything below follows the document
+    // the store actually holds.
+    const appId = (await vendo.apps.importApp(document, ctx)).id;
+    await setBuilding(store, appId, new Date().toISOString());
 
     // The route the embed polls every 1.2s, verbatim.
     const open = async (): Promise<{ status: number; body: string }> => {
       const response = await vendo.handler(
-        new Request(`https://host.test/api/vendo/apps/${APP_ID}/open?pending=1`),
+        new Request(`https://host.test/api/vendo/apps/${appId}/open?pending=1`),
       );
       return { status: response.status, body: await response.text() };
     };
 
+    executions.length = 0;
     const midBuild = await open();
     expect(midBuild.status).toBe(200);
     const pending = JSON.parse(midBuild.body) as {
@@ -133,34 +156,33 @@ describe("the build window's forming tree", () => {
     };
     expect(pending.kind).toBe("pending");
 
-    // GEOMETRY: the real screen's own nodes, so the embed paints this app
-    // forming rather than a generic bar.
+    // 1. GEOMETRY: this app's own nodes and nesting.
     const nodes = pending.tree?.nodes ?? [];
     expect(pending.tree?.streaming).toBe(true);
-    // Sorted: node ORDER is the flattener's business (children first), and this
-    // is an assertion about which of the screen's components survived the strip.
-    expect(nodes.map((node) => node["component"]).sort()).toEqual(["Stack", "Stat"]);
+    expect(nodes.map((node) => node["component"])).toEqual(["Stack", "Stat"]);
+    expect(nodes.find((node) => node["id"] === "root")?.["children"]).toEqual(["s1"]);
 
-    // NO FIGURES, by construction: a node carries an id, a component name and
-    // its children, and there is nowhere else for a value to hide.
-    expect(nodes.flatMap((node) => Object.keys(node))).toEqual(
-      expect.arrayContaining(["id", "component"]),
-    );
+    // 2. NO FIGURE, and no container one could hide in.
     expect(nodes.some((node) => "props" in node)).toBe(false);
-    for (const key of ["data", "interactive", "components", "componentTools"]) {
+    for (const key of ["data", "interactive", "components", "componentTools", "queries"]) {
       expect(pending.tree).not.toHaveProperty(key);
     }
-    // The whole-body check, which no future field can slip past.
+    // The whole-body checks, which no future field can slip past.
     expect(midBuild.body).not.toContain(String(CENTS));
-    expect(midBuild.body).not.toContain(DOLLARS);
+    expect(midBuild.body).not.toContain(LABEL);
 
-    // THE CONTROL. Same app, same route: once the build is no longer in flight
-    // the figure is exactly what it serves — so the assertions above are the
-    // strip working, never an app that painted nothing.
-    await setBuilding(store, undefined);
+    // 3. NO QUERY RAN. The pending answer cost a row read.
+    expect(executions).toEqual([]);
+
+    // THE CONTROL. Same app, same route: once the build is no longer in flight the
+    // query runs and the figure is exactly what it serves — so every assertion
+    // above is the strip working, never an app with nothing to show.
+    await setBuilding(store, appId, undefined);
     const landed = await open();
     expect(landed.status).toBe(200);
     expect(JSON.parse(landed.body)).toMatchObject({ kind: "tree" });
-    expect(landed.body).toContain(DOLLARS);
+    expect(landed.body).toContain(String(CENTS));
+    expect(landed.body).toContain(LABEL);
+    expect(executions).toEqual(["host_balance"]);
   });
 });
