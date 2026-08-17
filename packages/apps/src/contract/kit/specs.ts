@@ -27,6 +27,13 @@ const seriesInput = z.array(z.union([
   z.object({ key: z.string(), label: z.string().optional(), color: z.string().optional() }).passthrough(),
 ]));
 
+/** The two DESCRIPTIONS that mark a schema as something other than what it
+ *  parses as. Exported because every reader of a Kit schema — the screen
+ *  typings, the catalog's type printer — has to recognise the same two strings,
+ *  and a second copy of one is a marker that stops matching. */
+export const SLOT_PROP_DESCRIPTION = "holds Kit elements";
+export const ACTION_PROP_DESCRIPTION = "names a host tool";
+
 /**
  * A CELL SLOT — Kit value components composed for one record.
  *
@@ -45,9 +52,9 @@ const seriesInput = z.array(z.union([
  * The DESCRIPTION is the marker a slot is known by: `z.unknown()` prints as
  * `any` and `any` admitted exactly that function, so the component screen's
  * typings print a described slot as an element type instead and the compiler
- * refuses the closure (`checking/screen-typings.ts` `SLOT_PROP_DESCRIPTION`).
+ * refuses the closure ({@link SLOT_PROP_DESCRIPTION}).
  */
-const slot = z.unknown().describe("holds Kit elements");
+const slot = z.unknown().describe(SLOT_PROP_DESCRIPTION);
 const tableColumn = z.object({
   /** Optional, because an ACTION column has no field: giving it a fake key
    *  makes its header click-to-sort and its values globally searchable, on data
@@ -64,7 +71,7 @@ const cardField = z.object({
   format: valueFormat.optional(),
   cell: slot.optional(),
 });
-const action = z.string().describe("names a host tool");
+const action = z.string().describe(ACTION_PROP_DESCRIPTION);
 /** The one tone vocabulary. The two older spellings still parse, because stored
  *  apps carry them; only the five are taught. */
 const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.enum(["default", "info"]));

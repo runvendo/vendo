@@ -105,6 +105,9 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"},{key:"plan",cell:<EnumBadge field="plan"/>}]}/>'],
   LineChart: ['<LineChart data={revenue.data} xKey="month" series={["amount"]} format="money"/>'],
   DonutChart: ['<DonutChart data={spend.data} categoryKey="category" valueKey="amount" format="money"/>'],
+  KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"},{key:"status",cell:<EnumBadge field="status"/>}]} dividers/>'],
+  Timeline: ['<Timeline entries={payments.data} titleField="description" timeField="paidAt" timeAlign="end"/>'],
+  CodeBlock: ['<CodeBlock language="json" code={webhook.data.payload}/>'],
   // Handlers are functions; every field is controlled.
   Button: ["<Button label=\"Cancel transfer\" variant=\"danger\" onClick={() => tools.cancel_transfer({ id: transfer.id })}/>"],
   Input: ['<Input label="Recipient" value={name} onChange={(e) => setName(e.target.value)}/>'],
@@ -115,11 +118,24 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   // fails the checks — so this one shows the handler only.
   Select: ['<Select label="Client" options={clients.data} labelField="name" valueField="id" onChange={(e) => setClientId(e.target.value)}/>'],
   Form: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client"><Input .../></Form>'],
+  EmptyState: ['<EmptyState icon="inbox" title="No invoices yet" description="They show up here the moment one is issued."><Button label="New invoice" onClick={() => tools.create_invoice({})}/></EmptyState>'],
+  // The overlays: `open` is state the screen holds, and `onClose` is the setter
+  // that takes it down — the pair a quoted tool name could never express. The
+  // Modal puts its action LAST in `footer`, which is where the chapter sends it.
+  Modal: ['<Modal open={confirming} onClose={() => setConfirming(false)} title="Send reminders?" description="Three clients will be emailed." footer={<Button label="Send" onClick={() => tools.send_reminders({})}/>}/>'],
+  Sheet: ['<Sheet open={viewing} onClose={() => setViewing(false)} title="Invoice INV-204" side="right"><KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"}]}/></Sheet>'],
+  Toast: ['<Toast open={sent} onClose={() => setSent(false)} message="Reminders sent." tone="success"/>'],
   // Containers: the child shape is the teaching, not the child's own props.
   Card: ['<Card title="Overdue" description="Worst first"><DataTable .../></Card>'],
   Grid: ["<Grid minChildWidth={160}><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
   Tabs: ['<Tabs tabs={["Overview","Detail"]}><Stat .../><DataTable .../></Tabs>'],
 };
+
+/** What the model is SHOWN for a component: the corrected example where one
+ *  exists, the spec's own otherwise. Both prompts read this, so neither can show
+ *  an idiom the other has retired. */
+export const promptExamples = (spec: KitComponentSpec): readonly string[] =>
+  PROMPT_EXAMPLES[spec.name] ?? spec.examples;
 
 function classTag(cls: PropClass): string {
   return cls;
@@ -158,7 +174,7 @@ function renderSpec(spec: KitComponentSpec): string {
     }
     lines.push("");
   }
-  const examples = PROMPT_EXAMPLES[spec.name] ?? spec.examples;
+  const examples = promptExamples(spec);
   lines.push(examples.length > 1 ? "Examples:" : "Example:");
   for (const ex of examples) lines.push("  " + ex);
   return lines.join("\n");

@@ -27,9 +27,11 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
+  ACTION_PROP_DESCRIPTION,
   DISPLAY_TAG_NAMES,
   KIT_COMPONENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
+  SLOT_PROP_DESCRIPTION,
   kitSpec,
   type KitComponentSpec,
   type NormalizedCatalog,
@@ -77,11 +79,6 @@ export interface ScreenTypingsInput {
 export const SCREEN_TYPINGS_FILE = "/vendo-screen-typings.d.ts";
 
 // ---- zod → TS type text ---------------------------------------------------
-
-/** A Kit prop whose zod schema is a SLOT — `z.unknown().describe(…)` in
- *  kit/specs.ts. The description is the marker, because `z.unknown()` anywhere
- *  else (a row's field values) must keep printing as `any`. */
-const SLOT_PROP_DESCRIPTION = "holds Kit elements";
 
 /**
  * What a slot may hold — an element tree, and NOT a function.
@@ -443,19 +440,14 @@ export interface ComponentScreenTypingsInput {
   readonly note?: TypeNote;
 }
 
-/** A Kit prop whose zod schema is the shared `action` — `z.string().describe(…)`
- *  in kit/specs.ts (`kit/specs.ts:27`). The WIRE dialect passes a tool NAME
- *  through it, which is why the zod says `string` and must keep saying so: it
- *  still validates stored documents in the old format. A component screen passes
- *  a real handler that calls `tools.tool_name(args)` itself, so THIS generator
- *  types it as a function — derived from the schema's own description, so the two
- *  readings stay one definition rather than a hand-kept prop-name list.
+/** A handler slot, printed for every prop whose schema carries
+ *  {@link ACTION_PROP_DESCRIPTION}. The WIRE dialect passed a tool NAME through
+ *  that prop, which is why its zod says `string` and must keep saying so — it
+ *  still validates stored documents in the old format — while a component screen
+ *  passes a real handler that calls `tools.tool_name(args)` itself. Without this,
+ *  every `onClick={() => tools.x(…)}` would fail the type check against a string.
  *
- *  Without this, every `onClick={() => tools.x(…)}` — which is every screen in
- *  the new format — would fail the type check against a `string` slot. */
-const ACTION_PROP_DESCRIPTION = "names a host tool";
-
-/** A handler slot. The event is the small React-shaped object a screen actually
+ *  The event is the small React-shaped object a screen actually
  *  reads off one (`event.target.value` from an Input, `event.target.checked` from
  *  a Checkbox) — this program has no DOM lib to describe the real thing, and
  *  anything wider would reject working code. It is OPTIONAL because most handlers

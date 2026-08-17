@@ -22,10 +22,11 @@ import {
 } from "../../../contract/index.js";
 
 /** The COMPONENTS section is GENERATED from the Kit specs (catalogPrompt); no
- *  hand-written component list survives here. One line per component rather than
- *  a section apiece — the whole catalog plus the icon vocabulary for less than
- *  the sections cost without icons. Deps-independent, so it is rendered once per
- *  process (perf budget: gen-scripted:create). */
+ *  hand-written component list survives here. One typed line per component and
+ *  one worked example under it, rather than a section apiece — the whole
+ *  catalog, the icon vocabulary and an example each for less than the sections
+ *  cost without icons. Deps-independent, so it is rendered once per process
+ *  (perf budget: gen-scripted:create). */
 let componentsPromptCache: string | undefined;
 export const componentsPromptSection = (): string => componentsPromptCache ??= `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
 
