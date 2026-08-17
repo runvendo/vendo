@@ -10,6 +10,7 @@ import {
   descriptor,
   FixtureTools,
   seedGrant,
+  AUTOMATION_ID,
 } from "./fixtures/tools.js";
 
 const stores: PGliteStore[] = [];
@@ -89,6 +90,7 @@ describe("audit persistence, query, and export", () => {
     await seedGrant(sqlStore, {
       descriptor: probe,
       appId: "app_1",
+      automationId: AUTOMATION_ID,
       source: "automation",
       id: "grt_actas",
     });
@@ -103,7 +105,7 @@ describe("audit persistence, query, and export", () => {
     });
     const guard = createGuard({ store: sqlStore });
     const bound = guard.bind(tools);
-    const ctx = context({ venue: "automation", presence: "away", appId: "app_1" });
+    const ctx = context({ venue: "automation", presence: "away", appId: "app_1", trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID } });
 
     await expect(bound.execute(call("host_probe", {}, "audit_actas"), ctx)).resolves.toMatchObject({
       status: "error",

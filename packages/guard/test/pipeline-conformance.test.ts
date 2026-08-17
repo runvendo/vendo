@@ -3,7 +3,7 @@ import type { GuardDecision, RiskLabel, RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore, type MemoryStore } from "./fixtures/memory-store.js";
-import { FixtureTools, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
+import { AUTOMATION_ID, FixtureTools, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -29,13 +29,21 @@ describe("decision pipeline conformance", () => {
           const toolCall = call(d.name, { amount: 10 }, `call_${stage}_${presence}_${risk}`);
           const ctx = context({
             presence,
-            ...(presence === "away" ? { venue: "automation", appId: "app_1" } : {}),
+            ...(presence === "away"
+              ? {
+                  venue: "automation" as const,
+                  appId: "app_1",
+                  trigger: { runId: "run_1", kind: "schedule" as const, automationId: AUTOMATION_ID },
+                }
+              : {}),
           });
 
           if (stage === "grant") {
             await seedGrant(store, {
               descriptor: d,
-              ...(presence === "away" ? { appId: "app_1", source: "automation" as const } : {}),
+              ...(presence === "away"
+                ? { appId: "app_1", automationId: AUTOMATION_ID, source: "automation" as const }
+                : {}),
             });
           }
 
@@ -139,7 +147,12 @@ describe("decision pipeline conformance", () => {
     await expect(guard.check(
       call(d.name, {}, "call_chat_bound"),
       d,
-      context({ venue: "automation", presence: "away", appId: "app_1" }),
+      context({
+        venue: "automation",
+        presence: "away",
+        appId: "app_1",
+        trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID },
+      }),
     )).resolves.toMatchObject({ action: "ask", decidedBy: "default" });
   });
 
@@ -206,16 +219,26 @@ describe("decision pipeline conformance", () => {
       matches: true,
     },
     {
-      name: "away requires an app-bound matching grant",
-      grant: { appId: "app_1", source: "automation" as const },
-      ctx: { presence: "away" as const, venue: "automation" as const, appId: "app_1" },
+      name: "away requires a grant naming the firing automation",
+      grant: { appId: "app_1", automationId: AUTOMATION_ID, source: "automation" as const },
+      ctx: {
+        presence: "away" as const,
+        venue: "automation" as const,
+        appId: "app_1",
+        trigger: { runId: "run_1", kind: "schedule" as const, automationId: AUTOMATION_ID },
+      },
       args: {},
       matches: true,
     },
     {
       name: "away rejects an unbound chat grant",
       grant: {},
-      ctx: { presence: "away" as const, venue: "automation" as const, appId: "app_1" },
+      ctx: {
+        presence: "away" as const,
+        venue: "automation" as const,
+        appId: "app_1",
+        trigger: { runId: "run_1", kind: "schedule" as const, automationId: AUTOMATION_ID },
+      },
       args: {},
       matches: false,
     },
@@ -390,7 +413,12 @@ describe("decision pipeline conformance", () => {
 });
 
 describe("away authority (05 §6)", () => {
-  const awayCtx = () => context({ presence: "away", venue: "automation", appId: "app_1" });
+  const awayCtx = () => context({
+    presence: "away",
+    venue: "automation",
+    appId: "app_1",
+    trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID },
+  });
 
   it("parks an unconfigured away call instead of default-running it", async () => {
     const store = createMemoryStore();
@@ -420,7 +448,7 @@ describe("away authority (05 §6)", () => {
   it("attaches the authorizing grant as ctx.grant for executors (04 §4 ActAs seam)", async () => {
     const store = createMemoryStore();
     const d = descriptor("write");
-    const seeded = await seedGrant(store, { descriptor: d, appId: "app_1", source: "automation" });
+    const seeded = await seedGrant(store, { descriptor: d, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const guard = createGuard({ store });
     const tools = new FixtureTools([d]);
     const bound = guard.bind(tools);

@@ -95,13 +95,13 @@ export interface PermissionGrant {
   contextKey?: string;
   appId?: AppId;
   /**
-   * WHICH trigger of that app this grant is for. An automation is an app with a
-   * list of triggers, and each one is consented to on its own: a grant minted
-   * while arming one trigger never authorizes another, so the fire-time lookup
-   * matches on it alongside `appId`. Absent on grants minted before an app had
-   * more than one trigger, and on every grant that is not an automation's.
+   * WHICH automation this grant is for. Each record is consented to on its own,
+   * so a grant minted while arming one never authorizes another and the
+   * fire-time lookup matches on this alone — an automation record holds no app
+   * reference for `appId` to pair with. Absent on every grant that is not an
+   * automation's.
    */
-  triggerId?: string;
+  automationId?: string;
   /**
    * How this grant was minted. `"mcp"` is additive (same mechanism the door
    * wave used for `AuditEvent.kind: "door-auth"`, 01-core §15) and has exactly
@@ -126,7 +126,7 @@ export const permissionGrantSchema = z.object({
   duration: grantDurationSchema,
   contextKey: z.string().optional(),
   appId: appIdSchema.optional(),
-  triggerId: z.string().optional(),
+  automationId: z.string().optional(),
   source: z.enum(["chat", "batch", "automation", "mcp"]),
   grantedAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema.optional(),
@@ -212,8 +212,8 @@ export interface MintGrantInput {
    *  whole catalog — and every other tool tool-wide. */
   remember: { duration: GrantDuration; scope?: GrantScope };
   source: PermissionGrant["source"];
-  /** WHICH trigger of the app this is for; omitted ⇒ app-wide. */
-  triggerId?: string;
+  /** WHICH automation this is for; omitted ⇒ not an automation's grant. */
+  automationId?: string;
   /** `session`/`task` durations only; omitted ⇒ the request's runId ?? sessionId. */
   contextKey?: string;
 }
@@ -224,7 +224,7 @@ export interface MintGrantInput {
  * depending on which of them wrote it.
  */
 export function buildGrant(
-  { request, remember, source, triggerId, contextKey }: MintGrantInput,
+  { request, remember, source, automationId, contextKey }: MintGrantInput,
   id: GrantId,
   grantedAt: IsoDateTime,
 ): PermissionGrant {
@@ -243,7 +243,7 @@ export function buildGrant(
         ? { contextKey: request.ctx.trigger?.runId ?? sessionKey }
         : {}),
     ...(request.ctx.appId === undefined ? {} : { appId: request.ctx.appId }),
-    ...(triggerId === undefined ? {} : { triggerId }),
+    ...(automationId === undefined ? {} : { automationId }),
     source,
     grantedAt,
   };
@@ -261,7 +261,7 @@ export function grantRefs(grant: PermissionGrant): Record<string, string> {
     subject: grant.subject,
     tool: grant.tool,
     ...(grant.appId === undefined ? {} : { app_id: grant.appId }),
-    ...(grant.triggerId === undefined ? {} : { trigger_id: grant.triggerId }),
+    ...(grant.automationId === undefined ? {} : { automation_id: grant.automationId }),
   };
 }
 

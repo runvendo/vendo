@@ -208,68 +208,62 @@ describe("vendoLimitPartSchema", () => {
 
 /** 2026-07 demo feedback (additive): the in-thread automation card part. */
 describe("vendoAutomationPartSchema", () => {
-  it("accepts an automation card with a trigger and enabled state", () => {
+  it("accepts an automation card naming the RECORD, its when, and its action", () => {
     expect(vendoAutomationPartSchema.safeParse({
       type: "data-vendo-automation",
-      appId: "app_auto",
+      automationId: "atm_low_balance",
       name: "Low balance alert",
       enabled: true,
       description: "Emails you when checking dips below $2,000.",
-      trigger: {
-        id: "main",
-        on: { kind: "schedule", cron: "0 8 * * *" },
-        run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
-      },
+      when: { kind: "schedule", cron: "0 8 * * *" },
+      action: "Emails you a heads-up",
     }).success).toBe(true);
   });
 
-  it("trigger stays optional; a wrong type literal or empty name rejects", () => {
+  it("when and action stay optional; a wrong type literal, empty name or missing record rejects", () => {
     expect(vendoAutomationPartSchema.safeParse({
       type: "data-vendo-automation",
-      appId: "app_auto",
+      automationId: "atm_weekly",
       name: "Weekly digest",
       enabled: false,
     }).success).toBe(true);
     expect(vendoAutomationPartSchema.safeParse({
       type: "data-vendo-view",
-      appId: "app_auto",
+      automationId: "atm_weekly",
       name: "Weekly digest",
       enabled: true,
     }).success).toBe(false);
     expect(vendoAutomationPartSchema.safeParse({
       type: "data-vendo-automation",
-      appId: "app_auto",
+      automationId: "atm_weekly",
       name: "",
+      enabled: true,
+    }).success).toBe(false);
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      name: "Weekly digest",
       enabled: true,
     }).success).toBe(false);
   });
 
-  /** The automation's terms ride the TRIGGER (`Trigger.rules`) — the document's
-   *  own field, forwarded whole by every producer that already forwards a
-   *  trigger — so this part has no second copy of them to disagree with.
-   *
-   *  A blank sentence must cost that sentence and nothing else. This part is
+  /** A blank sentence must cost that sentence and nothing else. This part is
    *  `safeParse`d at the bridge before the thread ever sees it, so a `min(1)`
    *  on the array would have made one empty string from a sloppy author delete
    *  the entire automation card; the renderer is the one place that decides
    *  what is renderable (`@vendoai/ui`'s automation card trims, drops, clamps
    *  and caps). */
-  it("carries the trigger's rule sentences, and one blank never fails the part", () => {
+  it("carries the automation's rule sentences, and one blank never fails the part", () => {
     const withRules = (rules: unknown) => vendoAutomationPartSchema.safeParse({
       type: "data-vendo-automation",
-      appId: "app_auto",
+      automationId: "atm_pge_autopay",
       name: "PG&E autopay",
       enabled: true,
-      trigger: {
-        id: "main",
-        on: { kind: "external", connector: "gmail", event: "new_bill_email" },
-        run: { kind: "steps", steps: [{ id: "pay", tool: "host_transferMoney" }] },
-        rules,
-      },
+      when: { kind: "external", connector: "gmail", event: "new_bill_email" },
+      rules,
     });
     const kept = withRules(["Caps at $200 a bill — anything higher asks you first", "  "]);
     expect(kept.success).toBe(true);
-    expect(kept.data!.trigger!.rules).toEqual([
+    expect(kept.data!.rules).toEqual([
       "Caps at $200 a bill — anything higher asks you first",
       "  ",
     ]);

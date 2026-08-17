@@ -40,6 +40,7 @@ export const ERASE_TABLES = [
   "vendo_grants",
   "vendo_approvals",
   "vendo_audit",
+  "vendo_automations",
   "vendo_runs",
   "vendo_secrets",
   "vendo_mcp_clients",
@@ -86,13 +87,14 @@ function emptyReport(): EraseReport {
  * own jobs, and host SQL remains available for everything else.
  */
 export function eraseStore(store: VendoStore, options: { files: FilesAdapter }): {
-  /** Full erasure of one subject: their apps (and each app's records, blobs,
-      state, and runs), plus every subject-keyed or subject-ref'd row. */
+  /** Full erasure of one subject: their apps (and each app's records, blobs and
+      state), their automations and the runs those fired, plus every
+      subject-keyed or subject-ref'd row. */
   bySubject(subject: string): Promise<EraseReport>;
-  /** Erase one app: its row, record collections, blob namespaces, state, runs,
+  /** Erase one app: its row, record collections, blob namespaces, state,
       app-scoped grants and audit rows, and app-ref'd generic/door rows.
-      (Threads and approvals have no app axis in §2 — the subject selector
-      covers them.) */
+      (Threads, approvals and — since v11 — runs have no app axis: the subject
+      selector covers them, through their automation in the runs' case.) */
   byApp(appId: string): Promise<EraseReport>;
 } {
   const db = dbFor(store);
@@ -142,7 +144,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
 
   /** App-scoped data shared by the subject and app cascades: the app's record
       collections and blob namespaces (`app:<appId>:...` — §3's naming
-      convention), its per-user state, and its run records. */
+      convention) and its per-user state. */
   const eraseAppData = async (report: EraseReport, appId: string): Promise<void> => {
     const prefix = `app:${escapeLike(appId)}:%`;
     await del(report, "vendo_records", "collection LIKE $1 ESCAPE '\\'", [prefix]);
@@ -157,7 +159,6 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
     await del(report, "vendo_records", "collection = $1", [engineAppHistory(appId)]);
     await del(report, "vendo_blobs", "namespace LIKE $1 ESCAPE '\\'", [prefix]);
     await del(report, "vendo_state", "app_id = $1", [appId]);
-    await del(report, "vendo_runs", "app_id = $1", [appId]);
     // Build contract §9.2: an app that is gone grants nothing to anyone.
     await del(report, "vendo_app_grants", "app_id = $1", [appId]);
     // Whatever a retention sweep already lifted out of those drawers. Two
@@ -179,7 +180,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       const report = emptyReport();
       const subjectRef = JSON.stringify({ subject });
 
-      // The subject's apps drive the app-scoped cascade (records/blobs/state/runs
+      // The subject's apps drive the app-scoped cascade (records/blobs/state
       // carry the app id, not the subject). The app ROWS are deleted FIRST:
       // once they are gone, no new gated write (records/blobs WHERE EXISTS)
       // can land, so the data deletes below collect any stragglers — the
@@ -194,7 +195,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       for (const appId of owned) await eraseAppData(report, appId);
 
       // Ordering matters for accurate counts: the app cascade above already
-      // removed the subject's own state/run rows, so the subject-level deletes
+      // removed the subject's own state rows, so the subject-level deletes
       // below only count rows the cascade did not reach (e.g. this subject's
       // state under ANOTHER owner's app).
       await del(report, "vendo_state", "subject = $1", [subject]);
@@ -208,6 +209,18 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
         [subject],
       );
       await del(report, "vendo_threads", "subject = $1", [subject]);
+      // v11: the automation record belongs to the person who armed it, and it
+      // carries their webhook signing key — a live secret, so a record that
+      // survived an erasure would be a hole and not an untidiness. Its runs are
+      // deleted FIRST, while the join that identifies them still exists (the
+      // vendo_thread_messages lesson); a run names no subject of its own.
+      await del(
+        report,
+        "vendo_runs",
+        "automation_id IN (SELECT id FROM vendo_automations WHERE subject = $1)",
+        [subject],
+      );
+      await del(report, "vendo_automations", "subject = $1", [subject]);
       await del(report, "vendo_grants", "subject = $1", [subject]);
       // The effect ledger's receipts carry tool output (contract amendment
       // 2026-07-30), so they go with the subject's data.

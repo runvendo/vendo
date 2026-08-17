@@ -89,9 +89,11 @@ for (const backend of backends()) {
     it("refuses the collections whose rows are not the whole of what they own", async () => {
       // Lifting the row alone would strand the rest in the live database with
       // nothing left pointing at it: a thread's transcript and harness state,
-      // an app's entire drawer. Refused on BOTH verbs, so a caller cannot learn
-      // one answer from `quarantine` and another from `purge`.
-      for (const collection of ["vendo_threads", "vendo_apps"]) {
+      // an app's entire drawer, an automation's runs (which name it and
+      // nothing else, so the erase cascade reaches them only through it).
+      // Refused on BOTH verbs, so a caller cannot learn one answer from
+      // `quarantine` and another from `purge`.
+      for (const collection of ["vendo_threads", "vendo_apps", "vendo_automations"]) {
         await expect(ops.retention!.quarantine(collection, soon())).rejects.toMatchObject({ code: "blocked" });
         await expect(ops.retention!.purge(collection, soon())).rejects.toMatchObject({ code: "blocked" });
       }

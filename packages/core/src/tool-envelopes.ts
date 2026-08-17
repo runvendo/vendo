@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { appIdSchema, approvalIdSchema, type AppId, type ApprovalId } from "./ids.js";
+import type { AutomationId } from "./automation.js";
+import { appIdSchema, approvalIdSchema, isoDateTimeSchema, type AppId, type ApprovalId, type IsoDateTime } from "./ids.js";
 
 /**
  * Existing-agents contract — the versioned tool-output envelopes a BYO agent
@@ -12,6 +13,7 @@ import { appIdSchema, approvalIdSchema, type AppId, type ApprovalId } from "./id
  */
 export const VENDO_APP_REF_KIND = "vendo/app-ref@1" as const;
 export const VENDO_APPROVAL_REF_KIND = "vendo/approval-ref@1" as const;
+export const VENDO_AUTOMATION_REF_KIND = "vendo/automation-ref@1" as const;
 
 /** `vendo_make` returned fast: the build was ACCEPTED and is still
  *  streaming over the wire — the app is NOT built yet. `<VendoAppEmbed>` mounts
@@ -41,7 +43,19 @@ export interface VendoApprovalRef {
   summary: string;
 }
 
-export type VendoToolEnvelope = VendoAppRef | VendoApprovalRef;
+/** What `vendo_automate` returns: the record it just armed, in one line the
+ *  model and the embed both read. */
+export interface VendoAutomationRef {
+  kind: typeof VENDO_AUTOMATION_REF_KIND;
+  automationId: AutomationId;
+  summary: string;
+  armed: boolean;
+  /** Computed on read from `when` — never a stored column, and absent for
+   *  event/webhook records, which have no next run. */
+  nextRunAt?: IsoDateTime;
+}
+
+export type VendoToolEnvelope = VendoAppRef | VendoApprovalRef | VendoAutomationRef;
 
 /** Readers tolerate unknown extra fields — additive evolution stays within @1;
  *  anything breaking bumps the kind. */
@@ -58,9 +72,18 @@ export const vendoApprovalRefSchema = z.object({
   summary: z.string().min(1),
 }).passthrough() satisfies z.ZodType<VendoApprovalRef>;
 
+export const vendoAutomationRefSchema = z.object({
+  kind: z.literal(VENDO_AUTOMATION_REF_KIND),
+  automationId: z.string().min(1),
+  summary: z.string().min(1),
+  armed: z.boolean(),
+  nextRunAt: isoDateTimeSchema.optional(),
+}).passthrough() satisfies z.ZodType<VendoAutomationRef>;
+
 export const vendoToolEnvelopeSchema = z.discriminatedUnion("kind", [
   vendoAppRefSchema,
   vendoApprovalRefSchema,
+  vendoAutomationRefSchema,
 ]) satisfies z.ZodType<VendoToolEnvelope>;
 
 /** The `<VendoToolResult>` dispatch: give it any `vendo_*` tool output and get

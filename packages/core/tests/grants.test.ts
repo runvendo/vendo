@@ -53,7 +53,7 @@ describe("buildGrant", () => {
       source: "automation",
       grantedAt: "2026-08-14T00:00:01.000Z",
     });
-    expect(grant.triggerId).toBeUndefined();
+    expect(grant.automationId).toBeUndefined();
     expect(grant.contextKey).toBeUndefined();
   });
 
@@ -87,7 +87,7 @@ describe("buildGrant", () => {
   });
 
   it("binds a session grant to the conversation and a task grant to the RUN", () => {
-    const trigger = { id: "main", kind: "schedule" as const, runId: "run_9" };
+    const trigger = { automationId: "atm_main", kind: "schedule" as const, runId: "run_9" };
     const session = buildGrant(
       { request: request({ trigger }), remember: { duration: "session" }, source: "chat" },
       "grt_5",
@@ -118,29 +118,29 @@ describe("buildGrant", () => {
     expect(grant.contextKey).toBe("session_parked");
   });
 
-  it("carries the trigger it was armed for, so a sibling trigger never rides its yes", () => {
+  it("carries the automation it was armed for, so a sibling automation never rides its yes", () => {
     const grant = buildGrant(
       {
         request: request({ appId: "app_1" }),
         remember: { duration: "standing" },
         source: "automation",
-        triggerId: "nightly",
+        automationId: "atm_nightly",
       },
       "grt_9",
       "2026-08-14T00:00:00.000Z",
     );
-    expect(grant.triggerId).toBe("nightly");
+    expect(grant.automationId).toBe("atm_nightly");
   });
 });
 
 describe("grantRefs", () => {
-  it("is the one spelling: subject, tool, and the app/trigger a ref-trusting adapter filters on", () => {
+  it("is the one spelling: subject, tool, and the app/automation a ref-trusting adapter filters on", () => {
     const grant = buildGrant(
       {
         request: request({ appId: "app_1" }),
         remember: { duration: "standing" },
         source: "automation",
-        triggerId: "nightly",
+        automationId: "atm_nightly",
       },
       "grt_10",
       "2026-08-14T00:00:00.000Z",
@@ -149,11 +149,11 @@ describe("grantRefs", () => {
       subject: "user_alice",
       tool: "host_send_email",
       app_id: "app_1",
-      trigger_id: "nightly",
+      automation_id: "atm_nightly",
     });
   });
 
-  it("omits the app and trigger a chat grant does not have", () => {
+  it("omits the app and automation a chat grant does not have", () => {
     const grant = buildGrant(
       { request: request(), remember: { duration: "standing" }, source: "chat" },
       "grt_11",

@@ -9,7 +9,6 @@ import {
   type AuditEvent,
   buildGrant,
   canonicalJson,
-  DEFAULT_TRIGGER_ID,
   descriptorHash,
   emitUsage,
   type GrantId,
@@ -390,15 +389,11 @@ function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
 
 function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
   if (ctx.presence === "away") {
-    // Per (app, TRIGGER): an away run is one trigger of that app, and each is
-    // consented to on its own — the person arming it was shown that trigger's
-    // steps. Matching on the app alone made every sibling trigger ride the first
-    // trigger's yes. A grant minted before an app had a trigger list carries no
-    // id and stays valid for the trigger it was minted for, which read
-    // normalization names `main` — the same defaulting automations' arm-time
-    // check applies, so the two halves of the rule cannot disagree.
-    return grant.appId !== undefined && grant.appId === ctx.appId
-      && (grant.triggerId ?? DEFAULT_TRIGGER_ID) === (ctx.trigger?.id ?? DEFAULT_TRIGGER_ID)
+    // Per AUTOMATION: an away run is one record, consented to on its own — the
+    // person arming it was shown that record's task. An automation carries no
+    // app reference at all, so the id is the whole match; a grant with none can
+    // never authorize an away call.
+    return grant.automationId !== undefined && grant.automationId === ctx.trigger?.automationId
       && grant.source === "automation";
   }
   return grant.appId === undefined || grant.appId === ctx.appId;

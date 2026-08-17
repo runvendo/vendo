@@ -2,12 +2,9 @@
  * The standing automation grants a consent moment mints and a firing runs under:
  * the one live-grant read all three fire-time questions are asked from, and the
  * mint that scopes a connector dispatch to its SLUG.
- *
- * Lifted out of `createAutomationsEngine` unchanged.
  */
 import {
   buildGrant,
-  DEFAULT_TRIGGER_ID,
   descriptorHash,
   grantRefs,
   permissionGrantSchema,
@@ -28,27 +25,21 @@ export type GrantsDeps = { base: EngineBase };
 export interface GrantsAccess {
   /** The bound tool surface, by name, for a present-time ceremony. */
   descriptors(ctx: RunContext): Promise<Map<string, ToolDescriptor>>;
-  /** Every LIVE standing grant this (app, trigger) holds for the subject. */
-  liveAutomationGrants(
-    subject: string,
-    appId: string,
-    triggerId: string,
-    tool?: string,
-  ): Promise<PermissionGrant[]>;
+  /** Every LIVE standing grant this automation holds for the subject. */
+  liveAutomationGrants(subject: string, automationId: string, tool?: string): Promise<PermissionGrant[]>;
   /** Whether this exact descriptor (and service action) is already granted. */
   liveGrant(
     subject: string,
-    appId: string,
-    triggerId: string,
+    automationId: string,
     descriptor: ToolDescriptor,
     slug?: string,
   ): Promise<boolean>;
   /** The service-action slugs THIS firing holds a live grant for. */
-  grantedServiceSlugs(subject: string, appId: string, triggerId: string): Promise<string[]>;
-  /** Whether the TRIGGER holds ANY live automation-source standing grant. */
-  anyLiveAutomationGrant(subject: string, appId: string, triggerId: string): Promise<boolean>;
+  grantedServiceSlugs(subject: string, automationId: string): Promise<string[]>;
+  /** Whether the automation holds ANY live automation-source standing grant. */
+  anyLiveAutomationGrant(subject: string, automationId: string): Promise<boolean>;
   /** The standing grant a decided approval mints, scoped to its slug. */
-  mintGrant(request: ApprovalRequest, triggerId: string | undefined): Promise<string>;
+  mintGrant(request: ApprovalRequest, automationId: string | undefined): Promise<string>;
 }
 
 type GrantReads = Pick<
@@ -67,23 +58,20 @@ const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantR
     new Map((await config.tools.descriptors(ctx)).map((descriptor) => [descriptor.name, descriptor]));
 
   /**
-   * Every LIVE standing grant this (app, trigger) holds for the subject — the one
+   * Every LIVE standing grant this automation holds for the subject — the one
    * place the three fire-time questions below are asked from, so they cannot
    * answer differently about the same row.
    *
-   * A grant minted while arming ONE trigger never authorizes another: the person
-   * was shown that trigger's steps and consented to those. Rows minted before an
-   * app had a trigger list carry no triggerId and stay valid for the trigger they
-   * were minted for, which read-time normalization names `main`.
+   * A grant minted while arming ONE automation never authorizes another: the
+   * person was shown that record's task and consented to that.
    */
   const liveAutomationGrants = async (
     subject: string,
-    appId: string,
-    triggerId: string,
+    automationId: string,
     tool?: string,
   ): Promise<PermissionGrant[]> => {
     const records = await allRecords(engine, GRANTS, {
-      refs: { subject, app_id: appId, ...(tool === undefined ? {} : { tool }) },
+      refs: { subject, automation_id: automationId, ...(tool === undefined ? {} : { tool }) },
     });
     const at = now().getTime();
     const grants: PermissionGrant[] = [];
@@ -91,8 +79,7 @@ const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantR
       const parsed = permissionGrantSchema.safeParse(record.data);
       if (!parsed.success) continue;
       const grant = parsed.data;
-      if (grant.subject !== subject || grant.appId !== appId) continue;
-      if ((grant.triggerId ?? DEFAULT_TRIGGER_ID) !== triggerId) continue;
+      if (grant.subject !== subject || grant.automationId !== automationId) continue;
       if (grant.source !== "automation" || grant.duration !== "standing") continue;
       if (grant.revokedAt !== undefined) continue;
       if (grant.expiresAt !== undefined && Date.parse(grant.expiresAt) <= at) continue;
@@ -103,12 +90,11 @@ const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantR
 
   const liveGrant = async (
     subject: string,
-    appId: string,
-    triggerId: string,
+    automationId: string,
     descriptor: ToolDescriptor,
     slug?: string,
   ): Promise<boolean> =>
-    (await liveAutomationGrants(subject, appId, triggerId, descriptor.name)).some((grant) =>
+    (await liveAutomationGrants(subject, automationId, descriptor.name)).some((grant) =>
       grant.tool === descriptor.name
       && grant.descriptorHash === descriptorHash(descriptor)
       && scopeCovers(grant.scope, slug));
@@ -118,32 +104,22 @@ const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantR
    *
    * §12's projection withholds every `ungraded` tool from an unattended listing,
    * and the connector dispatcher is `ungraded` by construction — so without this
-   * an agentic automation could never reach a connector at all, however
-   * explicitly a person had allowed one action. The projection puts the
-   * dispatcher back exactly when this is non-empty; the guard still decides each
-   * call. Read at FIRE time rather than carried from arming, so a revoked grant
-   * takes the door away on the next firing.
+   * a goal automation could never reach a connector at all, however explicitly a
+   * person had allowed one action. The projection puts the dispatcher back
+   * exactly when this is non-empty; the guard still decides each call. Read at
+   * FIRE time rather than carried from arming, so a revoked grant takes the door
+   * away on the next firing.
    */
-  const grantedServiceSlugs = async (
-    subject: string,
-    appId: string,
-    triggerId: string,
-  ): Promise<string[]> => {
-    const grants = await liveAutomationGrants(subject, appId, triggerId, USE_SERVICE_TOOL);
+  const grantedServiceSlugs = async (subject: string, automationId: string): Promise<string[]> => {
+    const grants = await liveAutomationGrants(subject, automationId, USE_SERVICE_TOOL);
     const slugs = grants.flatMap((grant) => grant.scope.kind === "service-tool" ? [grant.scope.slug] : []);
     return [...new Set(slugs)].sort();
   };
 
-  /** Whether the TRIGGER holds ANY live automation-source standing grant — the
-   *  evidence a consent moment granted it something. Per trigger, because the
-   *  deny path below disarms exactly the trigger the person said no to, and a
-   *  sibling trigger's grants are not evidence about this one. */
-  const anyLiveAutomationGrant = async (
-    subject: string,
-    appId: string,
-    triggerId: string,
-  ): Promise<boolean> =>
-    (await liveAutomationGrants(subject, appId, triggerId)).some((grant) => grant.scope.kind !== "exact");
+  /** Whether the automation holds ANY live automation-source standing grant —
+   *  the evidence a consent moment granted it something. */
+  const anyLiveAutomationGrant = async (subject: string, automationId: string): Promise<boolean> =>
+    (await liveAutomationGrants(subject, automationId)).some((grant) => grant.scope.kind !== "exact");
 
   return { descriptors, liveAutomationGrants, liveGrant, grantedServiceSlugs, anyLiveAutomationGrant };
 };
@@ -155,15 +131,17 @@ const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantR
 const createGrantMint = (
   { base: { config, engine, iso } }: GrantsDeps,
 ): Pick<GrantsAccess, "mintGrant"> => {
-  const mintGrant = async (request: ApprovalRequest, triggerId: string | undefined): Promise<string> => {
+  const mintGrant = async (
+    request: ApprovalRequest,
+    automationId: string | undefined,
+  ): Promise<string> => {
     const input: MintGrantInput = {
       request,
       remember: { duration: "standing" },
       source: "automation",
-      // The trigger the person was actually looking at. Without it the grant
-      // would be app-wide, and arming one trigger would silently authorize every
-      // other trigger of the same app.
-      ...(triggerId === undefined ? {} : { triggerId }),
+      // The record the person was actually looking at. Without it the grant
+      // authorizes no away call at all, since the guard's away match is this id.
+      ...(automationId === undefined ? {} : { automationId }),
     };
     const minted = await config.guard.mintGrant?.(input);
     if (minted !== undefined) return minted;

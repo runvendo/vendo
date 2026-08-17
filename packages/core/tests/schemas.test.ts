@@ -4,11 +4,11 @@ import {
   approvalDecisionSchema,
   approvalRequestSchema,
   auditEventSchema,
+  automationTaskSchema,
   grantScopeSchema,
   guardDecisionSchema,
   permissionGrantSchema,
   runContextSchema,
-  runModelSchema,
   triggerRefSchema,
   vendoErrorCodeSchema,
   toolDescriptorSchema,
@@ -148,7 +148,7 @@ describe("context, triggers, host reports, theme, and stream schemas", () => {
     expect(triggerSourceSchema.safeParse({ kind: "schedule", cron: "* * * * *", every: "1h" }).success).toBe(false);
   });
 
-  it("error codes, trigger kinds, and run models are closed enums: unknown variants fail validation", () => {
+  it("error codes, trigger kinds, and automation tasks are closed enums: unknown variants fail validation", () => {
     // Error codes: an unrecognized code is a parse failure, not a generic error.
     expect(vendoErrorCodeSchema.safeParse("rate-limited").success).toBe(false);
     expect(vendoErrorCodeSchema.safeParse("").success).toBe(false);
@@ -156,9 +156,9 @@ describe("context, triggers, host reports, theme, and stream schemas", () => {
     // Trigger kinds: an unknown kind fails; known kinds still validate their shape.
     expect(triggerSourceSchema.safeParse({ kind: "geo-fence", region: "EU" }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({ kind: "host-event" }).success).toBe(false);
-    // Run models: an unknown kind fails; a malformed KNOWN model still fails.
-    expect(runModelSchema.safeParse({ kind: "workflow", graph: [] }).success).toBe(false);
-    expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
+    // Automation tasks: an unknown kind fails; a malformed KNOWN task still fails.
+    expect(automationTaskSchema.safeParse({ kind: "workflow", graph: [] }).success).toBe(false);
+    expect(automationTaskSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
     // TriggerRef rejects an unknown kind while still requiring a run id.
     expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "geo-fence" }).success).toBe(false);
     expect(triggerRefSchema.safeParse({ runId: "job_1", kind: "geo-fence" }).success).toBe(false);

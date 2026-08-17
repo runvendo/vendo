@@ -17,17 +17,17 @@
  * `apps/src/contract/wire-types.ts`.
  */
 import {
-  type AppDocument,
-  type AppId,
   type ApprovalRequest,
+  type AutomationId,
+  type AutomationRecord,
   type IsoDateTime,
   type Membership,
   type PlacementEntry,
+  type Principal,
   type ReviewStanding,
   type RunId,
   type ThreadId,
   type ToolOutcome,
-  type Trigger,
   type TriggerSource,
 } from "@vendoai/core";
 
@@ -97,10 +97,11 @@ export type RunStatus = "running" | "ok" | "error" | "stopped";
 /** 07-automations §5 — what `/runs` routes return. */
 export interface RunRecord {
   id: RunId;
-  appId: AppId;
-  /** WHICH trigger of the app fired this run. An app has a list of them, so the
-   *  app id alone no longer says what ran. */
-  triggerId: string;
+  automationId: AutomationId;
+  /** Who it ran as — the filter every owner-scoped view reads. */
+  owner: Principal;
+  /** Which runner ran it; absent for a steps task. */
+  agent?: string;
   trigger: { kind: TriggerSource["kind"]; event?: string };
   status: RunStatus;
   startedAt: IsoDateTime;
@@ -118,36 +119,10 @@ export interface RunPlan {
   grantsMissing: string[];
 }
 
-/** 07-automations §1 — one entry of `GET /automations`. `pendingGrants` /
- *  `grantSetId` (additive) project the app's still-undecided standing-grant
- *  asks so panels can render "waiting on N permissions" reload-safely. */
-export interface AutomationEntry {
-  app: AppDocument;
-  /** An automation is an app with a LIST of triggers, and everything a person
-   *  decides is per trigger: armed, who it runs as, whether it stopped, what it
-   *  is still waiting to be allowed. Only `editors` is per app. */
-  triggers: AutomationTriggerEntry[];
-  /** How many principals hold a grant on the app, when the deployment has an
-   *  access seam at all — the wider editor set the label names. */
-  editors?: number;
-}
-
-/** One trigger of an automation, as the panel renders it. */
-export interface AutomationTriggerEntry {
-  trigger: Trigger;
-  enabled: boolean;
-  pendingGrants?: number;
-  grantSetId?: string;
-  /** §13 — whose access it runs with. `display` only when the caller IS the
-   *  sponsor: Vendo holds no directory, so a name for anyone else would be
-   *  invented; the subject is the honest fallback. */
-  sponsor?: { subject: string; display?: string };
-  /** Set exactly while this trigger is STOPPED. `summary` is the same consumer
-   *  sentence the stopped run row carries, so the list is a route back to a
-   *  paused automation instead of the one place it vanished from. It never names
-   *  the sponsor: anyone who can edit the app reads it. */
-  stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
-}
+/** 07-automations §1 — one entry of `GET /automations`: the record itself, an
+ *  owned first-class thing with no app reference of any kind. `webhookSecret`
+ *  is redacted by the server on every read. */
+export type AutomationEntry = AutomationRecord;
 
 /** 07-automations §1 — what `POST /automations/:id/enable` returns.
  *  `grantSetId` (additive) names the ONE set the `missing` asks belong to;

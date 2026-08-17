@@ -5,6 +5,7 @@ export * from "./app-access.js";
 // contract door — it reaches validateTree — but the shape stays here because
 // core's own store conformance kit parses a stored app row with it.
 export * from "./app-document.js";
+export * from "./automation.js";
 export * from "./app-surfaces.js";
 export * from "./audit.js";
 export * from "./capability-miss.js";

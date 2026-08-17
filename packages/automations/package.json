@@ -1,7 +1,7 @@
 {
   "name": "@vendoai/automations",
   "version": "0.26.0",
-  "description": "Apps that run on triggers while the user is away: trigger ingestion, scheduling, the two run models, and run observability.",
+  "description": "Automations as first-class principal-owned records: trigger ingestion, scheduling, the two task kinds, and one run ledger.",
   "keywords": [
     "ai",
     "agent",
@@ -43,7 +43,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "croner": "^9.0.0",
     "jsonata": "^2.0.5",

@@ -4,6 +4,7 @@ import {
   appIdSchema,
   approvalRequestSchema,
   auditEventSchema,
+  automationRecordSchema,
   isoDateTimeSchema,
   permissionGrantSchema,
   runIdSchema,
@@ -11,6 +12,7 @@ import {
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
+  type AutomationRecord,
   type Json,
   type PermissionGrant,
 } from "@vendoai/core";
@@ -201,10 +203,25 @@ export function parseAppGrantData(value: unknown, id: string): {
   return { appId, orgId, principal, level, createdBy };
 }
 
+/** v11 — the automation record itself, whole. Core owns the shape, and the row's
+ *  `subject`/`armed` columns are projections of it, so there is nothing else to
+ *  check here. */
+export function parseAutomationData(value: unknown, id: string): AutomationRecord {
+  const record = parseSchema(automationRecordSchema, value, "automation record");
+  requireMatchingId(id, record.id, "automation id");
+  return record;
+}
+
 export function parseRunData(value: unknown, id: string): RunData {
   parseSchema(runIdSchema, id, "run id");
   const input = object(value, "run data");
-  const appId = parseSchema(appIdSchema, input["appId"], "run appId");
+  // The automation that fired this run. No id schema to hold it to — an
+  // automation id is minted, declared, or hashed (core's `automation.ts`), so
+  // "non-empty" is the whole shape there is.
+  const automationId = input["automationId"];
+  if (typeof automationId !== "string" || automationId === "") {
+    invalid("run automationId must be a non-empty string");
+  }
   const triggerInput = object(input["trigger"], "run trigger");
   const kind = triggerInput["kind"];
   if (kind !== "schedule" && kind !== "host-event" && kind !== "external") {
@@ -220,7 +237,7 @@ export function parseRunData(value: unknown, id: string): RunData {
   const record = requireJson(input["record"], "run record");
   const startedAt = parseSchema(isoDateTimeSchema, input["startedAt"], "run startedAt");
   const finishedAt = optionalDate(input["finishedAt"], "run finishedAt");
-  return { appId, trigger, status, record, startedAt, ...(finishedAt === undefined ? {} : { finishedAt }) };
+  return { automationId, trigger, status, record, startedAt, ...(finishedAt === undefined ? {} : { finishedAt }) };
 }
 
 export function parseAppData(value: unknown, id: string): AppData {
