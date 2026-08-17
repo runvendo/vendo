@@ -1,6 +1,8 @@
+import { VendoError } from "@vendoai/core"
 import { encode } from "next-auth/jwt"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { GET } from "../../../../../src/app/api/vendo/text-link/route"
+import { vendo } from "../../../../../src/vendo/server"
 
 /**
  * The route behind the "Text with Maple" modal.
@@ -10,6 +12,11 @@ import { GET } from "../../../../../src/app/api/vendo/text-link/route"
  * unconfigured channel (selectChannels), so minting an invite refuses. The modal
  * reads that as `url: null` and says so; a 500 here would put a broken dialog on
  * the settings page of every keyless checkout of this demo.
+ *
+ * The other half matters just as much: `url: null` means "not available on this
+ * deployment", and the modal does not revalidate — so answering it for a passing
+ * OUTAGE would tell a customer their text channel is switched off and keep saying
+ * it after the outage cleared.
  */
 
 const COOKIE = "authjs.session-token"
@@ -33,5 +40,40 @@ describe("GET /api/vendo/text-link", () => {
     const response = await GET(new Request("http://localhost:3000/api/vendo/text-link"))
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ data: { url: null } })
+  })
+})
+
+describe("a broken channel is not a channel that is switched off", () => {
+  it("answers 503 when minting fails for an operational reason", async () => {
+    // A console outage, a store blip, a vendor timeout. Distinct from the
+    // configuration cases above, which really do mean "no texting here".
+    const minting = vi.spyOn(vendo.channels.text, "link").mockRejectedValue(
+      new VendoError("unavailable", "Vendo Cloud channels is unavailable"),
+    )
+    try {
+      const response = await linkFor("vendo-demo")
+
+      expect(response.status).toBe(503)
+      const body = await response.json() as { error?: { code?: string } }
+      expect(body.error?.code).toBe("server_error")
+    } finally {
+      minting.mockRestore()
+    }
+  })
+
+  it("still answers url: null when the deployment simply has no Cloud key", async () => {
+    // The `not-implemented` half of the configuration case, pinned explicitly so
+    // the two never collapse back into one catch.
+    const minting = vi.spyOn(vendo.channels.text, "link").mockRejectedValue(
+      new VendoError("not-implemented", "the text channel needs VENDO_API_KEY"),
+    )
+    try {
+      const response = await linkFor("vendo-demo")
+
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ data: { url: null } })
+    } finally {
+      minting.mockRestore()
+    }
   })
 })
