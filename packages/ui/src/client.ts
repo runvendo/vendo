@@ -22,6 +22,7 @@ import {
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
+  AppListRow,
   ApprovalResolution,
   AutomationEntry,
   ConnectableToolkit,
@@ -96,7 +97,7 @@ export interface VendoClient {
   };
 
   apps: {
-    list(): Promise<AppDocument[]>;
+    list(): Promise<AppListRow[]>;
     create(input: { prompt: string }): Promise<AppDocument>;
     get(id: AppId): Promise<AppDocument>;
     delete(id: AppId): Promise<void>;

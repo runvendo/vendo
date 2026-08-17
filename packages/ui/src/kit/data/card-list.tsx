@@ -1,5 +1,6 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
 import type { ReactNode } from "react";
+import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { readField, RowContext } from "../row.js";
 import { densityVars, font, hairline, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
@@ -42,7 +43,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
     // The slot replaces the dashed box, not its TEXT: what goes in one is an
     // EmptyState, which draws that same frame itself — nested, it read as a
     // box inside a box.
-    return empty !== undefined ? <div data-kit="CardList" style={style}>{empty}</div> : (
+    return empty !== undefined ? <div data-kit="CardList" style={style}><EmptyOrForming>{empty}</EmptyOrForming></div> : (
       <div
         data-kit="CardList"
         style={{
@@ -55,7 +56,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
           ...style,
         }}
       >
-        {emptyState}
+        <EmptyOrForming>{emptyState}</EmptyOrForming>
       </div>
     );
   }

@@ -5,6 +5,7 @@ import {
   parseVendoToolEnvelope,
   type ApprovalDecision,
   type ToolOutcome,
+  type UIPayload,
 } from "@vendoai/core";
 import {
   effectiveAppBuildUiDeadlineMs,
@@ -277,6 +278,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const [activeAppId, setActiveAppId] = useState(appId);
   const [surface, setSurface] = useState<OpenSurface>();
   const [failed, setFailed] = useState<{ reason: string; retryable?: boolean; prompt?: string }>();
+  // S4 — the app's geometry as the build writes it, off the SAME poll. Held
+  // across polls that carry none, so a draft that stops painting for a beat
+  // leaves the silhouette up instead of snapping back to the bare skeleton.
+  const [forming, setForming] = useState<UIPayload>();
 
   useEffect(() => {
     setActiveAppId(appId);
@@ -285,6 +290,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   useEffect(() => {
     setSurface(undefined);
     setFailed(undefined);
+    setForming(undefined);
     const startedAt = Date.now();
     let cancelled = false;
     let done = false;
@@ -334,6 +340,9 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           resolveSurface(next);
           return;
         }
+        // Geometry only — the server ships no figure a repair round could
+        // change (apps wire-types.ts), so this paints assembly, never a draft.
+        if (next.tree !== undefined) setForming(next.tree);
         if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {
           resolveFailed({ reason: "the build never finished" });
           return;
@@ -363,6 +372,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     const prompt = failed?.prompt ?? title;
     setSurface(undefined);
     setFailed(undefined);
+    setForming(undefined);
     try {
       const created = await client.apps.create({ prompt });
       setActiveAppId(created.id);
@@ -374,6 +384,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   }, [client, failed, title]);
 
   const building = surface === undefined && failed === undefined;
+  // The forming tree rides the SAME frame as the finished app, so the build
+  // arriving is a repaint of the silhouette already on screen, not a remount.
+  const shown: OpenSurface | undefined = surface
+    ?? (forming === undefined ? undefined : { kind: "tree", payload: forming });
   return (
     <ChromeRoot>
       {/* The thread lane's app boundary: the bar narrates forming → live via
@@ -393,17 +407,8 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           <span className="fl-boot-hairline" aria-hidden="true" />
         </div>
         <div className="fl-appcard-body">
-          {surface !== undefined ? (
-            <AppFrame
-              surface={surface}
-              components={components}
-              onParked={approval.onParked}
-              // Actions bind to the app actually being SHOWN: after a retry
-              // that is the replacement build's id, never the original failed
-              // record (checker F5).
-              onAction={({ action, payload }) => client.apps.call(activeAppId, action, payload ?? {})}
-            />
-          ) : failed !== undefined ? (
+          {/* A build that ran out of road says so, even if a silhouette is up. */}
+          {failed !== undefined ? (
             <>
               <BeatLine state="error">{title} — couldn't finish</BeatLine>
               {/* The reason the build actually gave, in the chrome's own voice —
@@ -423,6 +428,17 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
                 </CardActions>
               )}
             </>
+          ) : shown !== undefined ? (
+            <AppFrame
+              surface={shown}
+              components={components}
+              onParked={approval.onParked}
+              // Actions bind to the app actually being SHOWN: after a retry
+              // that is the replacement build's id, never the original failed
+              // record (checker F5). A forming silhouette carries no action
+              // bindings at all, so nothing can fire before the build lands.
+              onAction={({ action, payload }) => client.apps.call(activeAppId, action, payload ?? {})}
+            />
           ) : (
             <span className="fl-slot-skel" role="status" aria-label={`Building ${title}`}>
               <span className="fl-skel-line" style={{ width: "54%" }} />

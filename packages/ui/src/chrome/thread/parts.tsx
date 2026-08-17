@@ -673,6 +673,16 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
       card.scrollIntoView({ block: "start", behavior: "smooth" });
     }
   }, [streaming, restored, split]);
+  // The finish gesture belongs to a build the reader WATCHED dry. A served app
+  // and a restored card both mount ready, having finished nothing on screen, so
+  // neither ever registers this effect — only a card that was actually streaming
+  // has a cleanup to run when streaming flips off. A re-stream re-arms it.
+  const [dried, setDried] = useState(false);
+  useEffect(() => {
+    if (!streaming) return;
+    setDried(false);
+    return () => setDried(true);
+  }, [streaming]);
   // Compact preview measurement: scale = card width / canvas width; the
   // wrapper takes the scaled content height up to the clamp. Live-tracked —
   // the rail resizes across expand/collapse and content grows while apps
@@ -784,7 +794,7 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
         {/* The bar narrates forming → live. The data-state contract
             ("building" | "ready") is shared with the renderer; the label pair
             stays mounted so the swap crossfades. */}
-        <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
+        <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"} {...(dried ? { "data-vendo-dried": "" } : {})}>
           <span className="fl-appcard-dot" aria-hidden="true" />
           <span className="fl-boot-labels fl-appcard-name">
             {/* Both labels stay mounted for the renderer lane's crossfade;

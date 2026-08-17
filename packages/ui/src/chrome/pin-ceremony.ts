@@ -35,7 +35,6 @@ const FLIGHT_MS = 300;
 const PULSE_MS = 180;
 /** A ~4% overshoot that settles — a spring, not a bounce. */
 const SETTLE = "cubic-bezier(0.32, 1.04, 0.36, 1)";
-const FADE_MS = 110;
 /** `.fl-overlay-panel` sits at 2147483001 and the card flies OUT of it, so the
  *  ghost and the ring have to clear it. */
 const ABOVE_OVERLAY = "2147483002";
@@ -53,6 +52,12 @@ export interface PinCeremonyOptions {
    *  VendoSlot; with several mounted and no id there is no way to know, so the
    *  panel still dismisses and nothing flies. */
   slot?: string;
+  /** What confirms the pin actually happened — Vendo's placement write, or the
+   *  host's own. The ring is a claim that the pin LANDED, so it waits on this and
+   *  never fires unless it resolves; the flight itself is unconditional. Omitted,
+   *  nothing confirms the pin and there is no ring: a caller cannot get the claim
+   *  without supplying what backs it. */
+  confirmed?: Promise<unknown>;
   /** Dismiss the surface the card is in. Called ONCE, after the ghost is clear
    *  and before anything is measured — so a pin dismisses the panel even when
    *  there is no animation to play. */
@@ -217,7 +222,7 @@ function fly(
   lifted: { ghost: HTMLElement; stage: HTMLElement },
   from: DOMRect,
   to: DOMRect,
-  destination: Element,
+  settle: () => void,
 ): void {
   const { ghost, stage } = lifted;
   const scale = Math.max(MIN_GHOST_SCALE, Math.min(1, to.width / from.width, to.height / from.height));
@@ -230,24 +235,18 @@ function fly(
     ],
     { duration: FLIGHT_MS, easing: SETTLE, fill: "forwards" },
   );
-  // Its own animation so the flight keeps its easing: the ghost holds at full
-  // strength and only dissolves on arrival, as the ring takes over.
-  ghost.animate([{ opacity: 0.92 }, { opacity: 0 }], {
-    duration: FADE_MS,
-    delay: FLIGHT_MS - FADE_MS,
-    easing: "linear",
-    fill: "both",
-  });
+  // No dissolve on approach: the ghost holds full strength the whole way and is
+  // gone the frame it lands, so the slot's own state is what takes its place.
   flight.onfinish = () => {
     stage.remove();
-    pulse(destination);
+    settle();
   };
 }
 
 /** Play the pin ceremony. Reduced motion keeps the dismiss and the settle pulse
- *  and skips the flight — the fade is the whole movement. Safe to call anywhere:
+ *  and skips the flight — the pulse is the whole movement. Safe to call anywhere:
  *  without a DOM (SSR) or the Web Animations API it just dismisses. */
-export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremonyOptions): void {
+export function playPinCeremony({ appId, slot, confirmed, dismiss = () => {} }: PinCeremonyOptions): void {
   if (typeof document === "undefined" || typeof Element.prototype.animate !== "function") {
     dismiss();
     return;
@@ -265,6 +264,15 @@ export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremony
     return;
   }
   const lifted = source !== null && from !== null && !reduced ? liftGhost(source, from) : null;
+  // The destination is re-resolved when the confirmation lands, never the element
+  // the flight aimed at: a slow confirmation outlives that node — landing the pin
+  // re-renders the slot, which REPLACES the element — and a detached element
+  // measures 0, so holding the reference swallowed the ring entirely on a host
+  // whose `onPin` was slow. Re-resolving is what the rAF hops above already do.
+  const settle = () => void confirmed?.then(() => {
+    const landed = destinationOf(slot);
+    if (landed !== null) pulse(landed);
+  }, () => {});
 
   dismiss();
 
@@ -291,10 +299,10 @@ export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremony
         return;
       }
       if (lifted === null || from === null) {
-        pulse(destination);
+        settle();
         return;
       }
-      fly(lifted, from, to, destination);
+      fly(lifted, from, to, settle);
     });
   });
 }
@@ -348,15 +356,25 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
   const { client, onPin, pinSlot } = useVendoProvider();
   const pin = useCallback(
     (app: { appId: string; payload: unknown }) => {
+      // SOMETHING has to confirm the pin in every config, because the ring claims
+      // the app is really there: Vendo's write when there is a slot, the host's
+      // own `onPin` when there is not. Never confirmed means never resolved, and
+      // an unresolved promise draws no ring — a pin the host silently dropped
+      // gets the flight and no claim that it landed.
+      let confirm = () => {};
+      const written = pinSlot === undefined ? undefined : client.apps.place(app.appId, pinSlot);
       playPinCeremony({
         appId: app.appId,
         ...(pinSlot === undefined ? {} : { slot: pinSlot }),
+        confirmed: new Promise<void>(resolve => { confirm = () => resolve(); }),
         dismiss: () => void openVendoConversation({ close: true }),
       });
+      // No write to wait for means no await before the announcement, so a host
+      // that wired only `onPin` still announces inside the click that asked.
       void (async () => {
-        if (pinSlot !== undefined) {
+        if (written !== undefined) {
           try {
-            await client.apps.place(app.appId, pinSlot);
+            await written;
           } catch (reason) {
             // Nothing was written, so nothing downstream may say otherwise:
             // announcing settles every pin affordance into its pinned state and
@@ -378,7 +396,27 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
           }
         }
         announcePin(app.appId);
-        onPin?.(app);
+        // A slot means Vendo's write already proved the app is there, so the ring
+        // is owed NOW: `onPin` is a mirror the host keeps for its own product
+        // state, and a mirror that fails or never answers must not tell the user
+        // a pin did not land when it demonstrably did. With no slot the mirror IS
+        // the confirmation, so it is awaited and its failure withholds the ring.
+        if (written !== undefined) confirm();
+        try {
+          await onPin?.(app);
+          confirm();
+        } catch (reason) {
+          // Caught so a throwing mirror cannot escape this detached flow as an
+          // unhandled rejection. It stays the host's to fix, and says so where a
+          // host can see it rather than in front of the person who pinned.
+          if (developmentMode()) {
+            log({
+              code: "ui.pin-mirror-failed",
+              level: "warn",
+              message: `[vendo] pin: the host's onPin for ${app.appId} failed — ${String(reason)}`,
+            });
+          }
+        }
       })();
     },
     [client, onPin, pinSlot],

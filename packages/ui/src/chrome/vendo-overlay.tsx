@@ -861,6 +861,14 @@ export function VendoOverlay({
       return;
     }
     setOpen(true);
+    // An affordance that NAMES an app (the pinned view's ✦ "Edit in chat")
+    // wants that app on the stage, not just its prompt in the composer. Same
+    // branch the thread's own app card makes: feature it where the workspace is
+    // already open, otherwise expand onto it.
+    if (typeof options?.appId === "string" && !dockedRef.current) {
+      if (splitStateRef.current.expanded) dispatchSplit({ type: "feature", appId: options.appId });
+      else setWorkspaceRef.current(true, options.appId);
+    }
     const fresh = options?.newConversation === true;
     if (fresh) setConversationEpoch(epoch => epoch + 1);
     const prompt = typeof options?.prompt === "string" ? options.prompt : "";

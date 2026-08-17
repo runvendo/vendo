@@ -32,7 +32,7 @@ export interface VendoContextValue {
    * present, generated views show a "Pin to dashboard" action; nothing is
    * saved to the host surface until the user invokes it.
    */
-  onPin?(app: { appId: string; payload: unknown }): void;
+  onPin?(app: { appId: string; payload: unknown }): void | Promise<void>;
   /** Which VendoSlot a pin lands in. Set it and a pin becomes REAL: the pin
    *  action places the app in this slot through the wire (`apps.place`) and
    *  the slot picks it up on its own — a host needs no pin route of its own.
@@ -123,7 +123,7 @@ export function VendoProvider(props: {
   /** The host's `.vendo/fonts.css` text — see VendoContextValue.fonts. */
   fonts?: string;
   transport?: ChatTransport<UIMessage>;
-  onPin?(app: { appId: string; payload: unknown }): void;
+  onPin?(app: { appId: string; payload: unknown }): void | Promise<void>;
   /** The slot pins land in — see VendoContextValue.pinSlot. */
   pinSlot?: string;
   tools?: ToolMetaMap;

@@ -110,7 +110,7 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
 
   it("flies to the slot's centre and settles inside the half-second budget", async () => {
     stage();
-    playPinCeremony({ appId: "app_1", slot: "hero" });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve() });
     await flushFrames();
 
     const move = flight()!;
@@ -120,6 +120,7 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     expect(move.options.duration).toBe(300);
 
     move.animation.onfinish!();
+    await Promise.resolve();   // a gated ring lands one microtask after the landing
     expect(ghost()).toBeNull();
     const pulse = recorded.find(entry => entry.element.hasAttribute("data-vendo-pin-ring"))!;
     expect(pulse.options.duration).toBe(180);
@@ -130,7 +131,7 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
   it("reduced motion fades and pulses in place — nothing flies", async () => {
     stage();
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
-    playPinCeremony({ appId: "app_1", slot: "hero" });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve() });
 
     expect(ghost()).toBeNull();
     await flushFrames();
@@ -148,7 +149,7 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     // Exactly what ChromeRoot writes on every chrome boundary.
     panel.setAttribute("data-vendo-motion", "reduced");
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
-    playPinCeremony({ appId: "app_1", slot: "hero" });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve() });
 
     expect(ghost()).toBeNull();
     await flushFrames();
@@ -186,10 +187,11 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     const wrapper = document.createElement("div");
     wrapper.setAttribute("data-vendo-remixable", "TopMerchants");
     document.body.append(wrapper);
-    playPinCeremony({ appId: "app_1", slot: "TopMerchants", dismiss: () => panel.remove() });
+    playPinCeremony({ appId: "app_1", slot: "TopMerchants", confirmed: Promise.resolve(), dismiss: () => panel.remove() });
     await flushFrames();
     expect(flight()).toBeTruthy();
     flight()!.animation.onfinish!();
+    await Promise.resolve();   // a gated ring lands one microtask after the landing
     expect(ring()).toBeTruthy();
   });
 
@@ -213,11 +215,12 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
       { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
     ]);
     shelf();
-    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve(), dismiss: () => panel.remove() });
 
     await flushFrames();
     expect(flight()!.keyframes[1]!.transform).toBe("translate(-360px, 480px) scale(0.5)");
     flight()!.animation.onfinish!();
+    await Promise.resolve();   // a gated ring lands one microtask after the landing
     expect(ring()).toBeTruthy();
   });
 
@@ -263,10 +266,11 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     const section = shelf();
     section.style.color = "rgb(20, 21, 26)";
     section.style.setProperty("--vendo-accent", "rgb(10, 125, 85)");
-    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve(), dismiss: () => panel.remove() });
 
     await flushFrames();
     flight()!.animation.onfinish!();
+    await Promise.resolve();   // a gated ring lands one microtask after the landing
     // The shelf's `color` is body text, so borrowing it drew a near-black box
     // around the whole shelf — a debug outline where the payoff should be.
     expect(ring()!.getAttribute("style")).toContain("rgb(10, 125, 85)");
@@ -281,10 +285,11 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
       { selector: ".fl-shelf", rect: { left: 40, top: 600, width: 300, height: 200 } },
     ]);
     shelf().style.setProperty("--vendo-accent", "rgb(10, 125, 85)");
-    playPinCeremony({ appId: "app_1", slot: "hero", dismiss: () => panel.remove() });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve(), dismiss: () => panel.remove() });
 
     await flushFrames();
     flight()!.animation.onfinish!();
+    await Promise.resolve();   // a gated ring lands one microtask after the landing
     // The accent alone was not enough: this theme's accent IS near-black, so a
     // full-strength 1.5px line still drew a box around the whole shelf. The
     // shelf is a WIDE band of our own chrome — it takes a soft bloom, and the
@@ -297,10 +302,11 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
   it("a HOST slot still lends the ring its own ink, and keeps its crisp hairline", async () => {
     stage();
     (document.querySelector("[data-vendo-slot]") as HTMLElement).style.color = "rgb(180, 40, 40)";
-    playPinCeremony({ appId: "app_1", slot: "hero" });
+    playPinCeremony({ appId: "app_1", slot: "hero", confirmed: Promise.resolve() });
 
     await flushFrames();
     flight()!.animation.onfinish!();
+    await Promise.resolve();   // a gated ring lands one microtask after the landing
     const style = ring()!.getAttribute("style")!;
     expect(style).toContain("rgb(180, 40, 40)");
     expect(style).toContain("1.5px");

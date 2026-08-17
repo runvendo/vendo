@@ -55,10 +55,7 @@ export function DonutChart({
     .map((row) => ({ ...row, name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {
-    // The slot replaces the dashed box, not its TEXT: what goes in one is an
-    // EmptyState, which draws that same frame itself — nested, it read as a
-    // box inside a box.
-    return empty ?? <ChartEmpty height={height} style={style}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (

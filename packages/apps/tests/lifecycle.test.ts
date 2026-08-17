@@ -269,7 +269,10 @@ describe("apps lifecycle", () => {
       data: { entry: { at: "not-a-date", intent: "bad", rung: 1 }, doc: null },
     });
 
-    await expect(runtime.list(ctx)).resolves.toEqual([edited.app]);
+    // `unseen` because this app was created and edited but never RENDERED:
+    // nothing has called open() on it, so the arrival dot still points at it
+    // (packages/apps/src/server/persistence/app-seen.ts).
+    await expect(runtime.list(ctx)).resolves.toEqual([{ ...edited.app, unseen: true }]);
     await expect(runtime.history(valid.id, ctx).list()).resolves.toEqual([edited.version]);
   });
 

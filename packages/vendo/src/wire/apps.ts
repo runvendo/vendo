@@ -76,12 +76,29 @@ function decodeSlot(slot: string): string {
     answers the terminal failed vocabulary (with the principal-mismatch
     diagnosis) so the embed resolves promptly instead of skeleton-polling
     to its deadline (0.4.1 E2E cert B4). */
-async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunContext): Promise<Response> {
+/**
+ * Arrival bookkeeping, which is TELEMETRY: it records that a person's render
+ * happened, and nothing they see may depend on it. `seen` re-checks access
+ * (`apps-surface.ts`), so it can throw `not-found` — and in the response's
+ * success path that throw BECAME the answer: a served 200 turning into a 404,
+ * and, inside the pending window's `catch`, a successfully served tree silently
+ * reported as `{kind:"pending"}` while the embed polled forever.
+ *
+ * So a failed mark is dropped, here and at every call site. This is the only
+ * swallow in this file, and it is sound for one narrow reason: what is dropped is
+ * not part of the answer, and its absence costs a dot that clears one render
+ * later.
+ */
+const markArrival = async (deps: WireContext["deps"], appId: string, ctx: RunContext): Promise<void> => {
+  await deps.apps.seen(appId, ctx).catch(() => {});
+};
+
+/** The ?pending=1 not-found disambiguation. Lifted out of the `catch` it used to
+ *  be the whole body of, so that arm guards nothing but the open itself and no
+ *  later failure can be mistaken for the open's own not-found. */
+async function answerUnservableApp(wire: WireContext, appId: string, ctx: RunContext): Promise<Response> {
   const { deps } = wire;
-  try {
-    return json(await deps.apps.open(appId, ctx));
-  } catch (reason) {
-    if (!(reason instanceof VendoError && reason.code === "not-found")) throw reason;
+  {
     // Build contract §9.4 — the probe is a DIAGNOSTIC for a caller who
     // can already see the app, never a lookup for one who cannot. It
     // reads UNSCOPED rows, so running it for a non-viewer made
@@ -121,6 +138,27 @@ async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunC
     // served to the caller.
     return json({ kind: "pending" });
   }
+}
+
+async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunContext): Promise<Response> {
+  const { deps } = wire;
+  // The ONLY thing this arm guards is the open. The flag rides through to the
+  // runtime, which answers a build still in flight with `{kind:"pending"}` plus —
+  // when the draft paints — the forming tree's geometry, so the embed's poll has
+  // something to show.
+  let surface: Awaited<ReturnType<typeof deps.apps.open>>;
+  try {
+    surface = await deps.apps.open(appId, ctx, { pending: true });
+  } catch (reason) {
+    if (!(reason instanceof VendoError && reason.code === "not-found")) throw reason;
+    return await answerUnservableApp(wire, appId, ctx);
+  }
+  // Arrival, outside that catch on purpose — a mark's own not-found must never be
+  // read as the open's. A `pending` answer put nothing on screen (the whole point
+  // of the flag), so it is not a render; the opener's build-window decision is the
+  // gate, and nothing re-reads `building` to guess at it.
+  if (surface.kind !== "pending") await markArrival(deps, appId, ctx);
+  return json(surface);
 }
 
 async function handleHistory(wire: WireContext, appId: string, ctx: RunContext): Promise<Response | undefined> {
@@ -240,7 +278,15 @@ export const appRoutes: RouteEntry[] = [
     }
     if (op(wire, "GET", "open")) {
       if (wire.url.searchParams.get("pending") === "1") return openWithPendingWindow(wire, appId, ctx);
-      return json(await deps.apps.open(appId, ctx));
+      const surface = await deps.apps.open(appId, ctx);
+      // Arrival — THIS is what "rendering marks it seen" means: a person's
+      // browser asked for a surface to put on screen. The runtime door is not
+      // the place for it (an agent's `vendo_apps_open` and an automation both
+      // pass through there); a build still in flight never reaches this line,
+      // because open() answers not-found until it can serve. Non-fatal: the
+      // surface is already served, and bookkeeping does not get to unserve it.
+      await markArrival(deps, appId, ctx);
+      return json(surface);
     }
     if (op(wire, "POST", "call")) {
       const body = await requestJson(request);

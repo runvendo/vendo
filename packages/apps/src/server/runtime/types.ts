@@ -37,8 +37,10 @@ import type {
 } from "@vendoai/core";
 import type {
   AppDocument,
+  AppListRow,
   BriefingPack,
   NormalizedCatalog,
+  PendingSurface,
   ScreenAssembler,
   VendoRouteMap,
   VendoTheme,
@@ -591,9 +593,20 @@ export interface AppsRuntime {
    */
   toolShapeBrief(ctx: RunContext): Promise<string>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
-  list(ctx: RunContext): Promise<AppDocument[]>;
+  list(ctx: RunContext): Promise<AppListRow[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /**
+   * Arrival (2026-08-17) — mark this app seen BY THIS CALLER, so the launcher's
+   * quiet dot stops pointing at it. Idempotent, and viewer-scoped: being able to
+   * see the app is the whole act being recorded.
+   *
+   * Called by the one route a PERSON's render comes through (`GET /apps/:id/open`,
+   * wire/apps.ts). Deliberately not called by `open` itself: an agent reading a
+   * tree over MCP and an automation resolving a surface both go through that
+   * door, and neither is anybody looking at a screen.
+   */
+  seen(appId: AppId, ctx: RunContext): Promise<void>;
   /**
    * Placement (2026-08-05) — "show this app in that slot", as a ROW keyed by
    * (subject, slot) rather than a string on the document.
@@ -664,7 +677,13 @@ export interface AppsRuntime {
    * boundary would be the wire route — and one door is not a boundary.
    */
   history(appId: AppId, ctx: RunContext): { list(): Promise<VersionEntry[]> };
-  open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
+  /**
+   * `pending` opts into the build window's additive half: an app whose build is
+   * still in flight answers `{kind:"pending"}` — carrying the forming tree's
+   * GEOMETRY when it has one (see `createAppOpener`) — instead of the not-found
+   * every other caller gets. The pending kind is reachable only through it.
+   */
+  open(appId: AppId, ctx: RunContext, options?: { pending?: boolean }): Promise<OpenSurface | PendingSurface>;
   call(appId: AppId, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;
   importApp(source: Uint8Array | AppDocument, ctx: RunContext): Promise<AppDocument>;
