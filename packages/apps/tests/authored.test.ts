@@ -254,14 +254,9 @@ describe("an app.tsx the harness wrote", () => {
     const { runtime, store, save } = stand();
     await save(SPEND);
     // Something only the app knows about itself, written by another door.
-    const trigger = {
-      id: "main",
-      on: { kind: "schedule" as const, cron: "0 9 * * *" },
-      run: { kind: "agentic" as const, prompt: "send the weekly digest" },
-    };
     await store.records("vendo_apps").put({
       id: APP_ID,
-      data: { subject: "u1", enabled: true, doc: { ...(await rowOf(store))!.doc!, triggers: [trigger] } },
+      data: { subject: "u1", enabled: true, doc: { ...(await rowOf(store))!.doc!, automations: ["atm_digest"] } },
       refs: { subject: "u1" },
     });
 
@@ -269,9 +264,7 @@ describe("an app.tsx the harness wrote", () => {
 
     const row = await rowOf(store);
     expect(row?.doc?.name).toBe("Money");
-    expect(row?.doc?.triggers).toEqual([trigger]);
-    // The trigger did not change, so the automation stays armed.
-    expect(row?.enabled).toBe(true);
+    expect(row?.doc?.automations).toEqual(["atm_digest"]);
     expect(await runtime.list(ctx())).toHaveLength(1);
   }, 60_000);
 
@@ -307,22 +300,16 @@ describe("an app.tsx the harness wrote", () => {
 /**
  * Build contract §9.9 — a files-first rewrite is a change to what the app IS, so
  * it passes through the SAME announcement `persistEdit` makes. It has
- * to: a screen save keeps `trigger` verbatim, so the intent hash a
- * sponsorship was minted over does not move when a third party rewrites the file
- * — the fire-time hash check cannot see this change, and this hook is the only
- * thing that can.
+ * to: a screen save keeps the app's `automations` list verbatim, so the intent
+ * hash a sponsorship was minted over does not move when a third party rewrites
+ * the file — the fire-time hash check cannot see this change, and this hook is
+ * the only thing that can.
  */
 describe("§9.9 — the announcement a files-first save owes", () => {
-  const trigger = {
-    id: "main",
-    on: { kind: "schedule" as const, cron: "0 9 * * *" },
-    run: { kind: "agentic" as const, prompt: "send the weekly digest" },
-  };
-
   it("announces a third party's rewrite of a sponsored app, under THEIR subject", async () => {
     const { store, edits, save } = stand({ shared: true });
     await save(SPEND, ctx("u1"));
-    await seedAppRow(engineOverAdapter(store), { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
+    await seedAppRow(engineOverAdapter(store), { ...(await rowOf(store))!.doc!, automations: ["atm_digest"] }, "u1", true);
     // u2 holds editor on u1's app (a shared automation) and rewrites the file.
     await seedGrantRows(store, APP_ID, { "user:u2": "editor" });
 
@@ -332,9 +319,9 @@ describe("§9.9 — the announcement a files-first save owes", () => {
     // The invalidation keys on exactly this: the editor is not the sponsor.
     expect(edits[0]?.editor).toBe("u2");
     // And it could key on nothing else — every input to the intent hash (name,
-    // trigger, declared tools) came through the rewrite unchanged.
+    // automations, declared tools) came through the rewrite unchanged.
     expect(edits[0]?.next.name).toBe(edits[0]?.previous.name);
-    expect(edits[0]?.next.triggers).toEqual([trigger]);
+    expect(edits[0]?.next.automations).toEqual(["atm_digest"]);
     // §9.5 — the row keeps its owner.
     expect((await rowOf(store))?.subject).toBe("u1");
   }, 60_000);
@@ -342,7 +329,7 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   it("announces the sponsor's OWN rename, so their automation is re-bound not killed", async () => {
     const { store, edits, save } = stand();
     await save(SPEND);
-    await seedAppRow(engineOverAdapter(store), { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
+    await seedAppRow(engineOverAdapter(store), { ...(await rowOf(store))!.doc!, automations: ["atm_digest"] }, "u1", true);
 
     await save(MONEY);
 

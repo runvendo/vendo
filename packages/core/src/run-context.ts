@@ -22,6 +22,21 @@ export interface McpConsent {
 export const VENUES = ["chat", "app", "automation", "mcp"] as const;
 export type Venue = (typeof VENUES)[number];
 
+/** The text channel's proof that this subject authorized this phone: a code
+    minted inside the product while they were signed in as that subject, then
+    sent back FROM the phone. Carried on the ctx like `mcpConsent`, and for the
+    same reason — a texted turn has no browser session, so its host calls have
+    nothing to forward and must authenticate through the ActAs seam instead. */
+export interface ChannelLink {
+  channel: "text";
+  linkedAt: string;
+}
+
+const channelLinkSchema = z.object({
+  channel: z.literal("text"),
+  linkedAt: z.string(),
+}).passthrough() satisfies z.ZodType<ChannelLink>;
+
 /** CORE-2 */
 const mcpConsentSchema = z.object({
   clientId: z.string(),
@@ -74,6 +89,8 @@ export interface RunContext {
   actor?: Principal;
   grant?: PermissionGrant;
   mcpConsent?: McpConsent;
+  /** Present ⇒ this run reached us over the text channel, from a linked phone. */
+  channelLink?: ChannelLink;
   /** The per-slug service actions THIS firing already holds a live grant for.
    *
    *  Resolved per run by whoever fires it (the automations engine reads the
@@ -130,6 +147,7 @@ export const runContextSchema = z.object({
   actor: principalSchema.optional(),
   grant: permissionGrantSchema.optional(),
   mcpConsent: mcpConsentSchema.optional(),
+  channelLink: channelLinkSchema.optional(),
   grantedServiceSlugs: z.array(z.string()).optional(),
   memberships: z.array(membershipSchema).optional(),
   user: z.record(z.unknown()).optional(),

@@ -271,14 +271,14 @@ describe("commitApp — the changed paths diffed back into the row", () => {
     expect("source" in after).toBe(false);
   });
 
-  it("leaves every other field of the document untouched — `trigger` above all", async () => {
-    const doc = { ...docWith({ "a.ts": inline("a\n") }), triggers: [{ id: "t1", kind: "schedule" }] } as unknown as AppDocument;
+  it("leaves every other field of the document untouched — `automations` above all", async () => {
+    const doc = { ...docWith({ "a.ts": inline("a\n") }), automations: ["atm_one"] } as unknown as AppDocument;
 
     const after = await roundTrip(doc, (workspace, dir) => {
       workspace.files.set(`${dir}/a.ts`, "changed\n");
     });
 
-    expect((after as { triggers?: unknown }).triggers).toEqual([{ id: "t1", kind: "schedule" }]);
+    expect((after as { automations?: unknown }).automations).toEqual(["atm_one"]);
     expect(after.name).toBe("Retention");
   });
 });

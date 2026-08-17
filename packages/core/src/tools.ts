@@ -33,6 +33,17 @@ export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
 export const VENDO_MAKE_TOOL = "vendo_make";
 
 /**
+ * The ONE public tool for asking Vendo to make something HAPPEN on a schedule,
+ * an event or a webhook — app-linked or app-less alike.
+ *
+ * It is a direct door onto the single create-automation operation, which
+ * `vendo_make`'s auto-arm sugar, the `vendo.json` fold-in and `agent.on` also
+ * reach. Named here beside `vendo_make` for the same reason: the descriptor,
+ * the executor and the envelope reader each hold this string.
+ */
+export const VENDO_AUTOMATE_TOOL = "vendo_automate";
+
+/**
  * The two tools that put one of a person's own apps into a named place on the
  * HOST'S page, and take it back out.
  *
@@ -103,6 +114,7 @@ export const isVendoAppsTool = (name: string): boolean =>
  */
 export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_make: "Make you a screen",
+  vendo_automate: "Set this to run on its own",
   vendo_apps_open: "Open the app",
   vendo_apps_reseed: "Refresh a remixed piece",
   vendo_apps_pin: "Pin the app to your page",
@@ -129,6 +141,33 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   find_tools: "Look for the right tool",
   vendo_report_capability_miss: "Note what I can't do",
 };
+
+/** Prettify a raw tool id / slug into a human label:
+    `host_email_send` → "Email send", `fn:listInvoices` → "List invoices",
+    `gmail_GMAIL_CREATE_EMAIL_DRAFT` → "Gmail create email draft".
+
+    Beside {@link VENDO_TOOL_TITLES} rather than in the render layer for the same
+    reason that table is: §3's voice law binds every surface, and the engine writes
+    consent sentences with no UI on hand (`serviceToolPhrase` is its sibling for
+    service slugs). Chrome's `toolTitle` falls back to it; so does an automation's
+    display name, which is its first step. */
+export function humanizeToolName(raw: string): string {
+  const stripped = raw.replace(/^fn:/i, "").replace(/^host[_:.\- ]?/i, "");
+  const words = stripped
+    // camelCase / PascalCase boundaries
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    // any run of separators
+    .replace(/[._:\-\s]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map(word => word.toLowerCase());
+  // Collapse consecutive duplicate tokens ("gmail GMAIL …" → "gmail …").
+  const deduped = words.filter((word, index) => word !== words[index - 1]);
+  if (deduped.length === 0) return raw;
+  const sentence = deduped.join(" ");
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
 
 /**
  * The description a MODEL is given for one tool: its human title first, then the

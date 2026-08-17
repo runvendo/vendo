@@ -46,9 +46,9 @@ import { join } from "node:path";
 import { BASE_PATH } from "@/lib/base-path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  type AppDocument,
-  DEFAULT_TRIGGER_ID,
+  type AutomationRecord,
   type Principal,
+  type RunContext,
   type Step,
   type ToolDescriptor,
   type ToolRegistry,
@@ -56,7 +56,6 @@ import {
 } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
 import { authJsPreset } from "@vendoai/actions/presets/auth-js";
-import { createApps } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 import { createGuard, type VendoGuard } from "@vendoai/guard";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -209,8 +208,9 @@ async function createStack(): Promise<Stack> {
     },
   });
   const bound = guard.bind(actions);
-  const apps = createApps({ store, guard, tools: bound, catalog: [] });
-  const automations = createAutomations({ apps, tools: bound, guard, store });
+  // No apps runtime: an automation is a record, and the engine has no app
+  // concepts left to be handed one.
+  const automations = createAutomations({ tools: bound, guard, store });
   return {
     store,
     guard,
@@ -225,54 +225,53 @@ async function createStack(): Promise<Stack> {
   };
 }
 
-/** One-step automation on the shared `maple.payday` host event. */
-function oneStepAutomation(id: string, name: string, step: Step): AppDocument {
+/** One-step automation record on the shared `maple.payday` host event. */
+function oneStepAutomation(id: string, subject: string, step: Step): AutomationRecord {
+  const at = new Date().toISOString();
   return {
-    format: "vendo/app@1",
     id,
-    name,
-    triggers: [{
-      id: DEFAULT_TRIGGER_ID,
-      on: { kind: "host-event", event: "maple.payday" },
-      run: { kind: "steps", steps: [step] },
-    }],
+    owner: { kind: "user", subject },
+    when: { kind: "host-event", event: "maple.payday" },
+    task: { kind: "steps", steps: [step] },
+    armed: false,
+    authoredBy: "chat",
+    createdAt: at,
+    updatedAt: at,
   };
 }
 
 /** The drill's executing step: ask Maple who the away session belongs to. */
-function whoamiAutomation(id: string): AppDocument {
-  return oneStepAutomation(id, "Payday summary", { id: "whoami", tool: DRILL_TOOL, args: {} });
+function whoamiAutomation(id: string, subject: string): AutomationRecord {
+  return oneStepAutomation(id, subject, { id: "whoami", tool: DRILL_TOOL, args: {} });
 }
 
 /** The step THE LAW must refuse: an automation moving money. Steps args are
  *  JSONata expressions — strings need quoting. */
-function paydayAutomation(id: string): AppDocument {
-  return oneStepAutomation(id, "Payday sweep", {
+function paydayAutomation(id: string, subject: string): AutomationRecord {
+  return oneStepAutomation(id, subject, {
     id: "transfer",
     tool: MONEY_TOOL,
     args: { amount: "25", recipient_name: `'${MONEY_RECIPIENT}'`, memo: `'${MONEY_MEMO}'` },
   });
 }
 
-function ownerCtx(principal: Principal, appId: string) {
+function ownerCtx(subject: string): RunContext {
   return {
-    principal,
-    venue: "chat" as const,
-    presence: "present" as const,
-    sessionId: `sess_${principal.subject}`,
-    appId,
+    principal: { kind: "user", subject },
+    venue: "chat",
+    presence: "present",
+    sessionId: `sess_${subject}`,
   };
 }
 
-async function enableAndApprove(stack: Stack, subject: string, doc: AppDocument): Promise<void> {
-  const appId = doc.id;
+async function enableAndApprove(stack: Stack, subject: string, record: AutomationRecord): Promise<void> {
   const principal: Principal = { kind: "user", subject };
-  await stack.store.records("vendo_apps").put({
-    id: appId,
-    data: { subject, enabled: false, doc },
+  await stack.store.records("vendo_automations").put({
+    id: record.id,
+    data: record,
     refs: { subject },
   });
-  const enabled = await stack.automations.enable(appId, DEFAULT_TRIGGER_ID, ownerCtx(principal, appId));
+  const enabled = await stack.automations.enable(record.id, ownerCtx(subject));
   expect(enabled.enabled).toBe(true);
   if (enabled.missing.length > 0) {
     await stack.guard.approvals.decide(
@@ -342,7 +341,11 @@ beforeAll(async () => {
     // stored tool paths are prefix-free, so this is what puts /maple back on.
     VENDO_BASE_URL: baseUrl,
     NEXT_TELEMETRY_DISABLED: "1",
-    MAPLE_DIST_DIR: ".next/away-drill",
+    // A SIBLING of /.next/, never a child — `next build` wipes its whole
+    // distDir, so a dir nested under it is deleted out from under this dev
+    // server by any concurrent demo-bank build. Same rule fixtures/context-e2e
+    // already follows for this app.
+    MAPLE_DIST_DIR: ".next-away-drill",
   };
   delete (env as Record<string, string | undefined>).NODE_ENV; // vitest's "test" would leak into next dev
   const spawned = spawn(join(appDir, "node_modules", ".bin", "next"), ["dev", "-p", String(port)], {
@@ -358,7 +361,11 @@ beforeAll(async () => {
     serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000);
   });
   await waitForApp();
-}, BOOT_MS);
+  // The hook outlives its own poll on purpose. With both budgets at BOOT_MS
+  // they raced, vitest won, and `waitForApp`'s throw — the one carrying the dev
+  // server's compile output — never printed: every boot failure read as a bare
+  // "Hook timed out" with no cause. The poll must always report first.
+}, BOOT_MS + 30_000);
 
 afterAll(async () => {
   if (!child || child.exitCode !== null) return;
@@ -392,7 +399,7 @@ describe("Maple away drill (ENG-260)", () => {
     const stack = await createStack();
     try {
       const subject = GRANTING_USER.subject;
-      const appId = "app_away_whoami";
+      const automationId = "atm_away_whoami";
 
       // The drill's subject is the authority mechanic, so the tool it runs must
       // be one an automation may legally run unattended. Pin the declared label
@@ -402,7 +409,7 @@ describe("Maple away drill (ENG-260)", () => {
       const profile = await descriptorFor(stack, DRILL_TOOL);
       expect(profile.risk).toBe("read");
 
-      await enableAndApprove(stack, subject, whoamiAutomation(appId));
+      await enableAndApprove(stack, subject, whoamiAutomation(automationId, subject));
 
       // No request, no cookie, no live session anywhere: the host event fires.
       const runIds = await stack.automations.emit(
@@ -411,10 +418,7 @@ describe("Maple away drill (ENG-260)", () => {
         { kind: "user", subject },
       );
       expect(runIds).toHaveLength(1);
-      const run = await stack.automations.runs.get(
-        runIds[0]!,
-        ownerCtx({ kind: "user", subject }, appId),
-      );
+      const run = await stack.automations.runs.get(runIds[0]!, ownerCtx(subject));
       expect(run?.status).toBe("ok");
       expect(run?.steps.map(({ id, outcome }) => ({ id, outcome }))).toEqual([
         { id: "whoami", outcome: "ok" },
@@ -455,14 +459,14 @@ describe("Maple away drill (ENG-260)", () => {
     const stack = await createStack();
     try {
       const subject = GRANTING_USER.subject;
-      const appId = "app_away_payday";
+      const automationId = "atm_away_payday";
       const pay = await descriptorFor(stack, MONEY_TOOL);
       expect(pay.risk).toBe("destructive");
 
       // Enable + approve while present: the ceremony sees the tool and mints the
-      // strongest authority that exists (app-bound, automation-source). The law
-      // must beat it.
-      await enableAndApprove(stack, subject, paydayAutomation(appId));
+      // strongest authority that exists (automation-bound, automation-source).
+      // The law must beat it.
+      await enableAndApprove(stack, subject, paydayAutomation(automationId, subject));
       const balanceBefore = await checkingBalance(subject);
 
       // 1. Not projected: an unattended run is never even offered the tool.
@@ -480,10 +484,7 @@ describe("Maple away drill (ENG-260)", () => {
         { kind: "user", subject },
       );
       expect(runIds).toHaveLength(1);
-      const run = await stack.automations.runs.get(
-        runIds[0]!,
-        ownerCtx({ kind: "user", subject }, appId),
-      );
+      const run = await stack.automations.runs.get(runIds[0]!, ownerCtx(subject));
       expect(run?.status).toBe("error");
       expect(run?.steps.map(({ id, tool, outcome, detail }) => ({ id, tool, outcome, detail })))
         .toEqual([
@@ -514,17 +515,13 @@ describe("Maple away drill (ENG-260)", () => {
     const stack = await createStack();
     try {
       const subject = "user_ghost";
-      const appId = "app_away_ghost";
-      await enableAndApprove(stack, subject, whoamiAutomation(appId));
+      await enableAndApprove(stack, subject, whoamiAutomation("atm_away_ghost", subject));
       const runIds = await stack.automations.emit(
         "maple.payday",
         {},
         { kind: "user", subject },
       );
-      const run = await stack.automations.runs.get(
-        runIds[0]!,
-        ownerCtx({ kind: "user", subject }, appId),
-      );
+      const run = await stack.automations.runs.get(runIds[0]!, ownerCtx(subject));
       // actAs declines (claims → null) → the step surfaces the seam error and
       // nothing reaches Maple's API.
       expect(run?.status).not.toBe("ok");

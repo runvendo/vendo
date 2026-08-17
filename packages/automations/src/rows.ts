@@ -5,16 +5,16 @@
  *
  * Lifted out of engine.ts unchanged.
  */
-import { VendoError, type StoreOps, type VendoRecord } from "@vendoai/core";
+import { VendoError, type AutomationRecord, type StoreOps, type VendoRecord } from "@vendoai/core";
 import type { RunRecord, RunStatus } from "./index.js";
-import { appRowSchema, runRowDataSchema, type AppData, type InternalRunRecord } from "./types.js";
+import { automationRowSchema, runRowDataSchema, type InternalRunRecord } from "./types.js";
 
-/** Every engine-owned generic row belongs to ONE app, and the 02-store §5 erase
- *  cascade collects generic rows by `refs @> {app_id}` — so a row written
- *  without this ref outlives the app forever. That is not only clutter: a
- *  webhook secret is a live signing key, and the delivery ledger has no other
- *  lifecycle at all. */
-export const appRef = (appId: string): Record<string, string> => ({ app_id: appId });
+/** Every engine-owned generic row belongs to ONE automation, and the 02-store §5
+ *  erase cascade collects generic rows by their refs — so a row written without
+ *  this outlives the record forever. That is not only clutter: the delivery
+ *  ledger has no other lifecycle at all. */
+export const automationRef = (automationId: string): Record<string, string> =>
+  ({ automation_id: automationId });
 
 export const clone = <T>(value: T): T => globalThis.structuredClone(value);
 export const id = (prefix: string): string => `${prefix}${globalThis.crypto.randomUUID()}`;
@@ -40,15 +40,15 @@ export const allRecords = async (
   return found;
 };
 
-export const parseAppRow = (record: VendoRecord): AppData => {
-  const result = appRowSchema.safeParse(record.data);
-  if (!result.success) throw new VendoError("validation", `invalid app row ${record.id}: ${result.error.issues[0]?.message ?? "invalid"}`);
+export const parseAutomation = (record: VendoRecord): AutomationRecord => {
+  const result = automationRowSchema.safeParse(record.data);
+  if (!result.success) throw new VendoError("validation", `invalid automation row ${record.id}: ${result.error.issues[0]?.message ?? "invalid"}`);
   return result.data;
 };
 
-/** The run the row carries. The wrapper columns beside it (`appId`, `status`,
- *  `startedAt`) are validated by the same parse and then never read: they are
- *  the store's own projection of the record, and the record is the run. */
+/** The run the row carries. The wrapper columns beside it (`automationId`,
+ *  `status`, `startedAt`) are validated by the same parse and then never read:
+ *  they are the store's own projection of the record, and the record is the run. */
 export const parseRunRecord = (record: VendoRecord): InternalRunRecord => {
   const result = runRowDataSchema.safeParse(record.data);
   if (!result.success) throw new VendoError("validation", `invalid run row ${record.id}: ${result.error.issues[0]?.message ?? "invalid"}`);
@@ -57,7 +57,7 @@ export const parseRunRecord = (record: VendoRecord): InternalRunRecord => {
 
 // Callers already validated the row via parseRunRecord; only the internal fields
 // need stripping.
-export const publicRun = ({ __event: _, __lineage: __, __trigger: ___, ...record }: InternalRunRecord): RunRecord => record;
+export const publicRun = ({ __event: _, __lineage: __, __record: ___, ...record }: InternalRunRecord): RunRecord => record;
 
 export const terminalStatus = (status: RunStatus): status is Extract<RunStatus, "ok" | "error" | "stopped"> =>
   status === "ok" || status === "error" || status === "stopped";

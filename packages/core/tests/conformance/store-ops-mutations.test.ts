@@ -348,6 +348,15 @@ describe("the omission bucket is a bucket, not a pass", () => {
     });
     await expect(one.run()).resolves.toBeUndefined();
   });
+
+  /** The appData family reads the same way: a mount that omits it reports every
+      case over it as omitted, rather than crashing on the first verb. */
+  it("a case over an absent appData family answers omitted, not a TypeError", async () => {
+    const one = caseNamed("appData.put stamps the target owner as refs.subject", {
+      makeOps: async () => ({ ops: { ...memoryStoreOps(), appData: undefined } }),
+    });
+    await expect(one.run()).resolves.toEqual({ omitted: expect.stringContaining("omits the appData family") });
+  });
 });
 
 /** Not a mutation proof — a guard on the reference itself. `memoryStoreOps` is

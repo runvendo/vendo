@@ -21,7 +21,6 @@
  * Any prompt that doesn't match passes through to the real agent untouched.
  */
 import {
-  DEFAULT_TRIGGER_ID,
   toVendoWirePart,
   vendoViewStreamId,
   type ApprovalRequest,
@@ -44,7 +43,12 @@ import {
   type MapleScenarioCard,
 } from "@/vendo/scenarios";
 import { vendo } from "@/vendo/server";
-import { demoAppId } from "./seed";
+import {
+  demoAppId,
+  demoAutomationDisplay,
+  demoAutomationId,
+  type DemoAutomationKey as AutomationKey,
+} from "./seed";
 import {
   loadScriptedThread,
   persistScriptedThread,
@@ -90,9 +94,6 @@ if (shared.length > 0) {
       .join("; ")}; see src/vendo/scenarios.tsx`,
   );
 }
-
-/** The automations the scripted beats arm; keys match demoAppId's. */
-type AutomationKey = "weekly" | "lowbalance";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -386,7 +387,7 @@ async function enableAutomation(
   key: AutomationKey,
 ): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }> {
   try {
-    return await vendo.automations.enable(demoAppId(key, ctx.principal.subject), DEFAULT_TRIGGER_ID, ctx);
+    return await vendo.automations.enable(demoAutomationId(key, ctx.principal.subject), ctx);
   } catch {
     return { enabled: false, missing: [] };
   }
@@ -395,26 +396,26 @@ async function enableAutomation(
 /** The WHOLE automation card, in-thread: the `data-vendo-automation` part the
  *  chrome renders with the shared card vocabulary.
  *  Streamed under a stable reconciliation id, so the approval resume's
- *  re-emission flips the SAME card from "waiting on N permissions" to live. */
-async function automationCardPart(writer: Writer, ctx: RunContext, key: AutomationKey): Promise<void> {
-  const appId = demoAppId(key, ctx.principal.subject);
-  const app = await vendo.apps.get(appId, ctx);
-  if (app === null) return;
-  const entries = await vendo.automations.list(ctx);
-  const entry = entries.find((candidate) => candidate.app.id === appId);
-  // Arming is per trigger; the seeded demo automations declare exactly one,
-  // which reads back under DEFAULT_TRIGGER_ID.
-  const armed = entry?.triggers.find((candidate) => candidate.trigger.id === DEFAULT_TRIGGER_ID);
-  const trigger = app.triggers?.find((candidate) => candidate.id === DEFAULT_TRIGGER_ID);
+ *  re-emission flips the SAME card from "waiting on N permissions" to live.
+ *  `pendingGrants` is the arming turn's own count — the asks enable() just
+ *  minted; the resume re-emits with none, which is what flips the card. */
+async function automationCardPart(
+  writer: Writer,
+  ctx: RunContext,
+  key: AutomationKey,
+  pendingGrants = 0,
+): Promise<void> {
+  const automationId = demoAutomationId(key, ctx.principal.subject);
+  const record = await vendo.automations.get(automationId, ctx);
+  if (record === null) return;
   write(writer, toVendoWirePart({
     type: "data-vendo-automation",
-    appId,
-    name: app.name,
-    enabled: armed?.enabled === true,
-    ...(trigger === undefined ? {} : { trigger }),
-    ...(app.description === undefined ? {} : { description: app.description }),
-    ...(armed?.pendingGrants === undefined ? {} : { pendingGrants: armed.pendingGrants }),
-  }, `vendo-automation:${appId}`) as UIMessageChunk);
+    automationId,
+    ...demoAutomationDisplay[key],
+    enabled: record.armed,
+    when: record.when,
+    ...(pendingGrants === 0 ? {} : { pendingGrants }),
+  }, `vendo-automation:${automationId}`) as UIMessageChunk);
 }
 
 /** Surface the WHOLE grant set enable() minted as ONE in-thread consent card:
@@ -425,13 +426,10 @@ async function automationCardPart(writer: Writer, ctx: RunContext, key: Automati
  *  then the native response resumes this turn. */
 async function surfaceGrantSet(
   writer: Writer,
-  ctx: RunContext,
   key: AutomationKey,
   asks: ApprovalRequest[],
   grantSetId: string,
 ): Promise<void> {
-  const app = await vendo.apps.get(demoAppId(key, ctx.principal.subject), ctx);
-  const name = app?.name ?? (key === "weekly" ? "Weekly spending summary" : "Low balance alert");
   const toolCallId = grantCallId(key);
   const firstAsk = asks[0]!;
   write(writer, { type: "tool-input-start", toolCallId, toolName: firstAsk.call.tool, dynamic: true });
@@ -451,8 +449,7 @@ async function surfaceGrantSet(
     type: "data-vendo-grant-set",
     toolCallId,
     grantSetId,
-    appId: demoAppId(key, ctx.principal.subject),
-    name,
+    name: demoAutomationDisplay[key].name,
     permissions: asks.map((ask) => ({
       approvalId: ask.id,
       tool: ask.call.tool,
@@ -545,12 +542,12 @@ async function automationGrantResume(
   approved: boolean,
 ): Promise<void> {
   const { writer, ctx, signal } = context;
-  const appId = demoAppId(key, ctx.principal.subject);
+  const automationId = demoAutomationId(key, ctx.principal.subject);
   if (!approved) {
     write(writer, { type: "tool-output-denied", toolCallId });
-    // No disable call here: the automations engine already disarmed the app
+    // No disable call here: the automations engine already disarmed the record
     // inside the deny decision itself (its decide subscriber) — the card
-    // re-emission below reads the settled, disabled row.
+    // re-emission below reads the settled, disarmed row.
     await automationCardPart(writer, ctx, key);
     await streamText(
       writer,
@@ -562,7 +559,7 @@ async function automationGrantResume(
   write(writer, {
     type: "tool-output-available",
     toolCallId,
-    output: { status: "ok", output: { standingGrant: "recorded", appId } },
+    output: { status: "ok", output: { standingGrant: "recorded", automationId } },
     dynamic: true,
   });
   // Same reconciliation id as the arming turn's card: the row flips from
@@ -587,12 +584,12 @@ async function weeklyBeat(context: BeatContext): Promise<void> {
     await streamText(writer, "I couldn't arm the weekly schedule — try Reset demo to restore the automation, then run this again.", signal);
     return;
   }
-  await automationCardPart(writer, ctx, "weekly");
+  await automationCardPart(writer, ctx, "weekly", missing.length);
   await beat(700, 1000); // the card lands, then the consent moment
   if (missing.length > 0) {
     await streamText(writer, grantConsentLine(missing.length), signal);
     await beat(500, 800);
-    await surfaceGrantSet(writer, ctx, "weekly", missing, grantSetId ?? `gset_weekly_${ctx.principal.subject}`);
+    await surfaceGrantSet(writer, "weekly", missing, grantSetId ?? `gset_weekly_${ctx.principal.subject}`);
     return; // the turn parks on the set; the resume continues it
   }
   // A re-run with the grants already standing: straight to the confirmation.
@@ -622,12 +619,12 @@ async function lowBalanceBeat(context: BeatContext): Promise<void> {
     await streamText(writer, "I couldn't arm the alert — try Reset demo to restore the automation, then run this again.", signal);
     return;
   }
-  await automationCardPart(writer, ctx, "lowbalance");
+  await automationCardPart(writer, ctx, "lowbalance", missing.length);
   await beat(700, 1000);
   if (missing.length > 0) {
     await streamText(writer, grantConsentLine(missing.length), signal);
     await beat(500, 800);
-    await surfaceGrantSet(writer, ctx, "lowbalance", missing, grantSetId ?? `gset_lowbalance_${ctx.principal.subject}`);
+    await surfaceGrantSet(writer, "lowbalance", missing, grantSetId ?? `gset_lowbalance_${ctx.principal.subject}`);
     return; // parked on the set; the resume continues
   }
   await automationArmedConfirmation(context, "lowbalance");

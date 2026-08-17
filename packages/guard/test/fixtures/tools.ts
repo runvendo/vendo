@@ -14,6 +14,12 @@ import { descriptorHash } from "@vendoai/core";
 export const alice: Principal = { kind: "user", subject: "user_alice", display: "Alice" };
 export const bob: Principal = { kind: "user", subject: "user_bob", display: "Bob" };
 
+/** The automation an away fixture fires. An automation is a RECORD with no app
+ *  reference, so this id is the WHOLE pairing key between a standing grant and
+ *  the firing it authorizes — `presenceMatches` in src/guard.ts matches on it
+ *  alone, and a grant naming none authorizes no away call at all. */
+export const AUTOMATION_ID = "atm_1";
+
 export function context(overrides: Partial<RunContext> = {}): RunContext {
   return {
     principal: alice,
@@ -22,6 +28,17 @@ export function context(overrides: Partial<RunContext> = {}): RunContext {
     sessionId: "session_1",
     ...overrides,
   };
+}
+
+/** An AWAY run of {@link AUTOMATION_ID}: what a grant seeded with the same
+ *  `automationId` is the authority for. */
+export function awayContext(overrides: Partial<RunContext> = {}): RunContext {
+  return context({
+    venue: "automation",
+    presence: "away",
+    trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID },
+    ...overrides,
+  });
 }
 
 export function descriptor(
@@ -84,6 +101,7 @@ export async function seedGrant(
     duration?: PermissionGrant["duration"];
     contextKey?: string;
     appId?: string;
+    automationId?: string;
     source?: PermissionGrant["source"];
     grantedAt?: string;
     expiresAt?: string;
@@ -100,6 +118,7 @@ export async function seedGrant(
     duration: options.duration ?? "standing",
     ...(options.contextKey === undefined ? {} : { contextKey: options.contextKey }),
     ...(options.appId === undefined ? {} : { appId: options.appId }),
+    ...(options.automationId === undefined ? {} : { automationId: options.automationId }),
     source: options.source ?? "chat",
     grantedAt: options.grantedAt ?? new Date().toISOString(),
     ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt }),

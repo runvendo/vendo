@@ -1,9 +1,6 @@
 import { createActions, VENDO_OVERRIDES_FORMAT, type ExtractedTool, type OverridesFile } from "@vendoai/actions";
-import { createAutomations } from "@vendoai/automations";
+import { automationsInternals, createAutomations } from "@vendoai/automations";
 import {
-  DEFAULT_TRIGGER_ID,
-  VENDO_APP_FORMAT,
-  type AppDocument,
   type ApprovalId,
   type AuditEvent,
   type Guard,
@@ -15,7 +12,6 @@ import {
   type ToolOutcome,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
-import type { AppsRuntime } from "@vendoai/apps";
 import { describe, expect, it } from "vitest";
 
 // ENG-249 decision 6: compound step semantics MUST match the automations
@@ -230,31 +226,7 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
   const guard = new GuardDouble();
   let resumed = false;
 
-  const doc: AppDocument = {
-    format: VENDO_APP_FORMAT,
-    id: "app_parity",
-    name: "parity",
-    triggers: [{
-      id: DEFAULT_TRIGGER_ID,
-      on: { kind: "host-event", event: "go" },
-      run: { kind: "steps", steps: substituteRoot(fixture.steps, "event") },
-    }],
-  };
-  await store.records("vendo_apps").put({
-    id: doc.id,
-    data: { subject: principal.subject, enabled: true, doc },
-    refs: { subject: principal.subject, trigger_kind: "host-event" },
-  });
-  // An armed automation is TWO rows: the app row's `enabled` above and the
-  // per-(app, trigger) armed row `enable()` writes.
-  await store.records("automations:armed").put({
-    id: `${doc.id}:${DEFAULT_TRIGGER_ID}`,
-    data: { appId: doc.id, triggerId: DEFAULT_TRIGGER_ID },
-    refs: { app_id: doc.id },
-  });
-
   const engine = createAutomations({
-    apps: { call: async () => ({ status: "ok", output: {} }) } as unknown as AppsRuntime,
     guard,
     store,
     tools: {
@@ -287,9 +259,17 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
     },
   });
 
+  const runCtx: RunContext = { ...presentCtx, venue: "automation" };
+  // An armed automation is ONE record now — no app, no per-trigger arm row.
+  await automationsInternals(engine).create({
+    owner: principal,
+    when: { event: "go" },
+    task: { kind: "steps", steps: substituteRoot(fixture.steps, "event") },
+    authoredBy: "chat",
+  }, runCtx);
+
   const runIds = await engine.emit("go", fixture.root, principal);
   expect(runIds).toHaveLength(1);
-  const runCtx: RunContext = { ...presentCtx, venue: "automation" };
 
   if (fixture.expected === "asks") {
     // There is no waiting state away: the walk met a permission nobody had

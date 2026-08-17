@@ -8,6 +8,7 @@ import { mergedHostSemantics, VENDO_TOOLS_FORMAT } from "@vendoai/actions";
 import { agentToolDescriptors, buildingAppsSkill } from "@vendoai/apps";
 import {
   log,
+  VENDO_AUTOMATE_TOOL,
   VendoError,
   type RunContext,
   type ToolRegistry,
@@ -165,7 +166,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
  *  the component catalog beside it. */
 const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposition,
   "capability" | "catalog"> => {
-  const { config, appsMounted } = composition;
+  const { config, appsMounted, automationsMounted } = composition;
   // ONE composition call for everything that contributes tools or skills. It
   // runs here, before the apps runtime, because the skills it merges reach the
   // harness and the tools it merges reach the one registry. The apps runtime the
@@ -185,7 +186,15 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
     ...(appsMounted
       ? [{
         from: "app generation",
-        tools: toolsFromRegistry(appsAgentTools, agentToolDescriptors),
+        // `vendo_automate` rides this same registry (its execute arm is an apps
+        // door), but it arms an AUTOMATION — with the engine unmounted there is
+        // nothing to arm, so the model is not shown a tool that can only fail.
+        tools: toolsFromRegistry(
+          appsAgentTools,
+          automationsMounted
+            ? agentToolDescriptors
+            : agentToolDescriptors.filter((descriptor) => descriptor.name !== VENDO_AUTOMATE_TOOL),
+        ),
         skills: [buildingAppsSkill],
       } satisfies Contribution]
       : []),

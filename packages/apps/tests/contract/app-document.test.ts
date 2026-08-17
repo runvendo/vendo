@@ -52,17 +52,7 @@ const invoiceChaser = () => ({
     attachments: { about: "Supporting documents", kind: "files" as const },
   },
   machine: { snapshotRef: "e2b:v2:snap_x91", provisionedAt: "2026-07-19T12:00:00.000Z" },
-  triggers: [{
-    id: "chase",
-    on: { kind: "schedule" as const, cron: "0 9 * * 1" },
-    run: {
-      kind: "steps" as const,
-      steps: [
-        { id: "load", tool: "host_invoices_list", args: { overdue: "event.overdue" } },
-        { id: "send", tool: "fn:send_reminders", if: "$count(steps.load) > 0" },
-      ],
-    },
-  }],
+  automations: ["atm_chase"],
   egress: ["api.stripe.com", "api.resend.com"],
   secrets: ["RESEND_API_KEY"],
   seed: { component: "invoice-card", baseline: "sha256:abc123", instruction: "chase the late ones" },
@@ -92,31 +82,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
   });
 
-  it("normalizes a pre-list single `trigger` document into the triggers list", () => {
-    // Documents stored before an app had a LIST of triggers carry one `trigger`
-    // object and no trigger id. They must load and validate unchanged, as the
-    // one-element list they always meant, or every automation armed before this
-    // shape existed goes dark.
-    const legacy = {
-      ...minimal(),
-      trigger: {
-        on: { kind: "host-event", event: "invoice.paid" },
-        run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
-      },
-    };
-    const expected = {
-      ...minimal(),
-      triggers: [{
-        id: "main",
-        on: { kind: "host-event", event: "invoice.paid" },
-        run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
-      }],
-    };
-    // The legacy key does not survive: a normalized document never carries both.
-    expect(appDocumentSchema.parse(legacy)).toEqual(expected);
-    expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
-  });
-
   it("loads a pre-instruction seeded document, defaulting the instruction to empty", () => {
     // Apps seeded before the ✦ gesture collected an instruction verbatim stored
     // a seed without one. They must still load, or every app remixed before the
@@ -125,18 +90,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     const expected = { ...legacy, seed: { ...legacy.seed, instruction: "" } };
     expect(appDocumentSchema.parse(legacy)).toEqual(expected);
     expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
-  });
-
-  it("rejects two triggers sharing one id", () => {
-    // The id is the key for this trigger's grants, sponsorship, schedule cursor
-    // and runs, so a duplicate would silently share all of them.
-    expectValidation({
-      ...minimal(),
-      triggers: [
-        { id: "main", on: { kind: "host-event", event: "a" }, run: { kind: "agentic", prompt: "x" } },
-        { id: "main", on: { kind: "host-event", event: "b" }, run: { kind: "agentic", prompt: "y" } },
-      ],
-    });
   });
 
   it("accepts unknown UI formats as opaque payloads", () => {
@@ -162,7 +115,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expectValidation({ ...minimal(), storage: { state: { about: "Reserved" } } });
   });
 
-  it("requires a machine for fn: query, prop action, and step references", () => {
+  it("requires a machine for fn: query and prop action references", () => {
     const query = {
       ...minimal(),
       tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
@@ -174,14 +127,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
         nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
       },
     };
-    const step = {
-      ...minimal(),
-      trigger: {
-        on: { kind: "host-event", event: "invoice.created" },
-        run: { kind: "steps", steps: [{ id: "one", tool: "fn:process" }] },
-      },
-    };
-    for (const document of [query, action, step]) expectValidation(document);
+    for (const document of [query, action]) expectValidation(document);
   });
 
   it("rejects bad pin bases and host refs", () => {
@@ -227,21 +173,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     // Manifest entries are registry tool names — the flat grammar, never dotted.
     expectValidation({ ...base, componentTools: { Gauge: ["clients.search"] } });
     expectValidation({ ...minimal(), componentTools: { Gauge: ["clients_search"] } });
-  });
-
-  it("rejects step tools that are neither valid tool names nor fn: references", () => {
-    const withStep = (tool: string) => ({
-      ...minimal(),
-      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
-      trigger: {
-        on: { kind: "host-event", event: "e" },
-        run: { kind: "steps", steps: [{ id: "s", tool }] },
-      },
-    });
-    expectValidation(withStep("not a tool!!"));
-    expectValidation(withStep("dotted.name"));
-    expect(validateAppDocument(withStep("host_invoices_list")).ok).toBe(true);
-    expect(validateAppDocument(withStep("fn:process")).ok).toBe(true);
   });
 
   it("never throws on hostile inputs with throwing getters", () => {

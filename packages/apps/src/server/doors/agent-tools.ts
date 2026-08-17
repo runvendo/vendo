@@ -1,6 +1,7 @@
 import {
   VENDO_APPS_PIN_TOOL,
   VENDO_APPS_UNPIN_TOOL,
+  VENDO_AUTOMATE_TOOL,
   VENDO_MAKE_TOOL,
   VENDO_SLOTS_LIST_TOOL,
   VENDO_TOOL_TITLES,
@@ -17,10 +18,11 @@ import {
   type ScreenAssembler,
 } from "../../contract/index.js";
 import type { AppDataAccess } from "../persistence/app-data.js";
+import { runAutomateTool } from "./automate-tool.js";
 import { deleteAppData, listAppData, putAppData } from "./data-tools.js";
 import { runMakeTool } from "./make-tool.js";
 import { input, resolveAppRef } from "./tool-args.js";
-import type { AppsRuntime } from "../runtime/types.js";
+import type { AppsRuntime, AutomationsSeam } from "../runtime/types.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
@@ -41,7 +43,7 @@ const descriptors = [
     // live host data itself. The retry one: a rejected change is worth one
     // narrower attempt on the same app, and was worth saying because the
     // alternative the model reached for was rebuilding it from scratch.
-    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. A recurring or scheduled task belongs here too: describe the schedule and the action in the request and it is armed as part of the same call; there is no separate automations tool. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it, and if it says \"partial\" the screen is on their page but the server-side part of it is not — say the line and offer to try that part again, never rebuild it. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW: to move an app that already exists, use the pin tool instead.",
+    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. When the SAME request also asks for something to happen on a schedule (\"build me the board and refresh it every Monday\"), say both halves here and the schedule is armed alongside the app; a schedule with nothing to build belongs in vendo_automate instead. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it, and if it says \"partial\" the screen is on their page but the server-side part of it is not — say the line and offer to try that part again, never rebuild it. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW: to move an app that already exists, use the pin tool instead.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -62,6 +64,49 @@ const descriptors = [
     // on the person rearranging their own view. Actions INSIDE the screen are
     // guarded individually at call time. The recorded history is the audit trail.
     risk: "read",
+  },
+  {
+    name: VENDO_AUTOMATE_TOOL,
+    description: "Arm something to run on its own, on a schedule or on an event — \"pay my rent on the 1st\", \"every morning check the overnight orders and flag anything odd\". `task` is the whole job in plain language, written for someone who will read only that sentence and the tools they hold: the user is not there when it runs. `when` is either a 5-field cron string (UTC unless you pass `timezone`) or one of {\"every\":\"1d\"}, {\"at\":\"<ISO date-time>\"}, {\"event\":\"<host event name>\"}, {\"webhook\":\"<connector>\"} — plain English like \"every monday\" is refused, so write the cron. The automation runs as the user, with only what they have allowed; the reply says whether it is armed, when it next runs, and how many permissions are still outstanding. Use this when there is nothing to build. If the same request ALSO asks for a screen or an app, use vendo_make and describe both halves there — it arms the schedule as part of that call, and calling both would arm it twice.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        when: {
+          description: "A 5-field cron string, or one of {every}, {at}, {event}, {webhook}.",
+          oneOf: [
+            { type: "string", minLength: 1 },
+            {
+              type: "object",
+              properties: {
+                every: { type: "string", minLength: 1 },
+                at: { type: "string", minLength: 1 },
+                event: { type: "string", minLength: 1 },
+                webhook: { type: "string", minLength: 1 },
+              },
+              additionalProperties: false,
+            },
+          ],
+        },
+        task: {
+          type: "string",
+          minLength: 1,
+          description: "What to do on every firing, in plain language.",
+        },
+        agent: {
+          type: "string",
+          minLength: 1,
+          description: "The named agent to run it. Omit for the deployment's own agent.",
+        },
+        timezone: { type: "string", minLength: 1 },
+      },
+      required: ["when", "task"],
+      additionalProperties: false,
+    },
+    // Arming future unattended behaviour is a write (build contract §8's lane-D
+    // ratification), and only a write: the automation itself is guarded call by
+    // call at fire time, against what its owner has actually allowed.
+    risk: "write",
   },
   {
     name: "vendo_apps_reseed",
@@ -238,6 +283,10 @@ export interface AgentToolsDataDependencies {
    *  `vendo_make` handler below. Unfilled, `vendo_make` has nothing to assemble
    *  with and says so. */
   screen?: ScreenAssembler;
+  /** `AppsConfig.automations` — what `vendo_automate` arms through, and what
+   *  `vendo_make`'s compound ask reaches the same create operation by. Unfilled,
+   *  both say so rather than pretending something runs. */
+  automations?: AutomationsSeam;
 }
 
 /**
@@ -255,7 +304,7 @@ export interface AgentToolsDataDependencies {
  * had happened. The three facts are: the change did not happen, why it cannot, and
  * that a copy of their own is the way through — including who can make one, so a
  * model reading this cannot promise a fork it has no tool for (this registry is
- * make · reseed · open · pin · data_*).
+ * make · automate · reseed · open · pin · data_*).
  */
 const FORBIDDEN_FACTS = "The change was not made: this is the team's copy of the app and this user has "
   + "read-only access to it. A copy of their own would be theirs to change — they fork it from the app's "
@@ -289,6 +338,9 @@ export const createAgentTools = (
     try {
       if (call.tool === VENDO_MAKE_TOOL) {
         return await runMakeTool(runtime, dependencies, call, ctx);
+      }
+      if (call.tool === VENDO_AUTOMATE_TOOL) {
+        return await runAutomateTool(dependencies.automations, call, ctx);
       }
       if (call.tool === "vendo_apps_reseed") {
         const args = input(call.args, ["appId"]);

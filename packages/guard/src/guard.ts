@@ -9,7 +9,6 @@ import {
   type AuditEvent,
   buildGrant,
   canonicalJson,
-  DEFAULT_TRIGGER_ID,
   descriptorHash,
   emitUsage,
   type GrantId,
@@ -390,16 +389,27 @@ function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
 
 function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
   if (ctx.presence === "away") {
-    // Per (app, TRIGGER): an away run is one trigger of that app, and each is
-    // consented to on its own — the person arming it was shown that trigger's
-    // steps. Matching on the app alone made every sibling trigger ride the first
-    // trigger's yes. A grant minted before an app had a trigger list carries no
-    // id and stays valid for the trigger it was minted for, which read
-    // normalization names `main` — the same defaulting automations' arm-time
-    // check applies, so the two halves of the rule cannot disagree.
-    return grant.appId !== undefined && grant.appId === ctx.appId
-      && (grant.triggerId ?? DEFAULT_TRIGGER_ID) === (ctx.trigger?.id ?? DEFAULT_TRIGGER_ID)
-      && grant.source === "automation";
+    // The binding comes from WHICH IDENTITY THE CTX CARRIES, and the two arms are
+    // MUTUALLY EXCLUSIVE — the discriminator is the TRIGGER, because that is what
+    // makes a run an automation firing at all.
+    //
+    // A FIRING (it carries a trigger) is one record, consented to on its own — the
+    // person arming it was shown that record's task — and a record carries no app
+    // reference, so the automation id is the WHOLE match and a grant naming none
+    // rides nothing away. Keying this arm on `trigger.automationId` instead of on
+    // the trigger's mere presence would let a firing that carries an appId but no
+    // automation id fall through to the app arm and ride an app-bound yes
+    // (mint-grant.test.ts:118-130) — one app's yes riding every automation in it.
+    //
+    // NO trigger at all means it is nobody's firing: a boxed ("machine", layer-2)
+    // app callback, which `wire/box.ts:311-317` mints as
+    // `{ venue: "app", presence: "away", appId }`. It has only the app it runs as,
+    // so the app is the whole match — main's away rule for this venue.
+    if (grant.source !== "automation") return false;
+    if (ctx.trigger !== undefined) {
+      return grant.automationId !== undefined && grant.automationId === ctx.trigger.automationId;
+    }
+    return grant.appId !== undefined && grant.appId === ctx.appId;
   }
   return grant.appId === undefined || grant.appId === ctx.appId;
 }
@@ -1648,7 +1658,32 @@ class GuardImplementation implements VendoGuard {
       return record === null ? undefined : (record.data as PermissionGrant);
     }
     if (ctx.presence !== "away") return undefined;
-    return (await this.#matchingGrant(call, descriptor, ctx)).grant;
+    const captured = (await this.#matchingGrant(call, descriptor, ctx)).grant;
+    if (captured !== undefined || decision.decidedBy !== "grant") return captured;
+    // A run/"grant" with NO grantId is a CONSUMED APPROVAL (`replayApproved` in
+    // `bind`): a person tapped THIS call, with these arguments, moments ago. Away
+    // execution has one other authority besides a captured grant, and that is it
+    // — but the seam that authenticates the call (`actAs`) takes a grant, so the
+    // tap arrived with nothing to hand it and the registry refused the very call
+    // the human had just allowed ("away execution requires a captured grant").
+    // The tap is therefore projected INTO the shape the seam asks for, scoped
+    // `exact` to the arguments they were shown: never stored, never returned by
+    // `#matchingGrant`, spent with the approval that made it. It authorizes this
+    // one call and grants no standing authority, so the next call asks again —
+    // the same rule, and the same reason, as the MCP door's consent projection
+    // (`mcpConsentGrant`, actions registry).
+    return {
+      id: `grt_approved_${call.id}`,
+      subject: ctx.principal.subject,
+      tool: call.tool,
+      descriptorHash: descriptorHash(descriptor),
+      scope: { kind: "exact", inputHash: exactInputHash(call.args), inputPreview: inputPreview(call) },
+      duration: "task",
+      contextKey: call.id,
+      ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
+      source: "approval",
+      grantedAt: now(),
+    };
   }
 
   /** Wins (or loses) an approval's one-time transition by inserting its

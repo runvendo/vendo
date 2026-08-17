@@ -174,16 +174,17 @@ const createBoxEditor = (
         && contentType.includes("text/html")
         && root.body.length > 0;
     }
-    // Fold the manifest's schedules into doc triggers while the box is awake and
-    // its egress declaration is not yet on the doc (so this wake's allowlist
-    // still passes). Best-effort — a manifest the converter cannot honor must
-    // not roll back an edit that already succeeded inside the box — but never
-    // SILENT: the reason is the only thing that says why nothing is scheduled.
+    // Fold the manifest's schedules into automation records while the box is
+    // awake and its egress declaration is not yet on the doc (so this wake's
+    // allowlist still passes). Best-effort — a manifest the converter cannot
+    // honor must not roll back an edit that already succeeded inside the box —
+    // but never SILENT: the reason is the only thing that says why nothing is
+    // scheduled.
     await manifestTriggers.sync(app, ctx).catch((error: unknown) => {
       log({
         code: "apps.schedules-not-folded",
         level: "warn",
-        message: `[vendo] vendo.json schedules for ${app.id} were not folded into triggers: ${safeErrorMessage(error)}`,
+        message: `[vendo] vendo.json schedules for ${app.id} were not folded into automations: ${safeErrorMessage(error)}`,
       });
     });
     // Sync the egress DECLARATION (mirrors vendo.json) onto the doc; the

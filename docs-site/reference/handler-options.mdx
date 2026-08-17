@@ -42,6 +42,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `mcp` | Opens the MCP door. Off by default. See [below](#mcp) |
 | `oauth` | `HostOAuthAdapter` used by the door for session lookup and principal resolution. Required when `mcp` is on and `auth` supplies no oauth half |
 | `agent` | A whole agent built by `agent()`. This deployment adopts its harness, store, files adapter, sandbox, and instructions |
+| `agents` | More agents built by `agent()`, registered by name so an automation they declared with `.on()` fires through them. Registration only; two agents sharing a name refuse to compose |
 | `sweep` | TTL-sweep cadence for expired parked calls and stranded approvals. See [below](#sweep) |
 | `toolOutputCap` | How much of one tool result reaches the model, in characters. Default `32000`; `0` disables |
 | `maxInitialTools` | Cap on the uncurated initial tool loadout. Default `128`; the rest stay discoverable via `find_tools` |

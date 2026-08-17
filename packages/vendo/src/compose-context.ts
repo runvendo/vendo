@@ -29,6 +29,7 @@ import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,
   AgentRunner,
+  CreateAutomation,
   FilesAdapter,
   Harness,
   Principal,
@@ -157,6 +158,11 @@ export interface VendoComposition {
    *  no laptop has one. Same ready()-latch arming as the sweep. Filled by
    *  compose-automations.ts; a no-op outside development. */
   startDevAutomationsTicker: () => void;
+  /** The other half: a DEPLOYED process is woken by Cloud's heartbeat, which can
+   *  only knock on a door it has been told about. Same ready()-latch firing;
+   *  never rejects, and shouts if it could not enrol. Filled by
+   *  compose-automations.ts. */
+  enrolForCloudTicks: () => Promise<void>;
   /** The boot-once latch every handler/emit touch awaits. */
   ready: () => Promise<void>;
   /** Filled by compose-apps.ts, read by `resolveRisk` inside a later check. */
@@ -261,9 +267,14 @@ export interface VendoComposition {
   // ── compose-automations.ts ─────────────────────────────────────────────────
   hostedStoreComposed: boolean;
   automations: AutomationsEngine;
-  /** Wave 9 — the same engine, as the LATE arming seam the apps runtime holds:
-   *  automations is constructed after apps, and every call happens later. */
-  automationsForArming?: AutomationsEngine;
+  /** THE one create-automation operation, as the LATE authoring seam the apps
+   *  runtime holds: automations is constructed after apps, and every call
+   *  happens inside a request. Never public — `vendo.automations` has no
+   *  `create`; the four authoring doors reach it through here. */
+  createAutomation?: CreateAutomation;
+  /** `.on()` declarations → records, run once on the ready() latch (after
+   *  ensureSchema, before the first request). Filled by compose-automations.ts. */
+  bootReconcile: () => Promise<void>;
 
   // ── compose-mcp.ts ─────────────────────────────────────────────────────────
   turnCredentials: TurnCredentials;

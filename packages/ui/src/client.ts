@@ -12,6 +12,7 @@ import {
   type ApprovalId,
   type ApprovalRequest,
   type AuditEvent,
+  type AutomationId,
   type GrantId,
   type Json,
   type PermissionGrant,
@@ -146,17 +147,17 @@ export interface VendoClient {
 
   automations: {
     list(): Promise<AutomationEntry[]>;
-    /** Arm/disarm/preview ONE trigger of an app — an automation is an app with
-     *  a LIST of triggers, and each is decided on its own. */
-    enable(id: AppId, triggerId: string): Promise<EnableResult>;
-    disable(id: AppId, triggerId: string): Promise<void>;
-    dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
+    /** Arm/disarm/preview ONE record — an automation is decided on its own. */
+    enable(id: AutomationId): Promise<EnableResult>;
+    disable(id: AutomationId): Promise<void>;
+    dryRun(id: AutomationId): Promise<RunPlan>;
   };
 
   runs: {
     list(filter?: {
-      appId?: AppId;
-      triggerId?: string;
+      automationId?: AutomationId;
+      owner?: string;
+      agent?: string;
       status?: RunStatus;
       cursor?: string;
     }): Promise<{ runs: RunRecord[]; cursor?: string }>;

@@ -1,7 +1,5 @@
 import {
   VendoError,
-  canonicalJson,
-  triggerKindRefs,
   type AppId,
   type RecordQuery,
   type RecordStore,
@@ -89,16 +87,6 @@ const admitDocument = (
   return structuredClone(admitted.document);
 };
 
-/** Trigger edits invalidate enable-time capture, cursor, and webhook state.
- *  Canonical comparison over the whole list — key order (or trigger order)
- *  must not cause a spurious disarm. */
-export const enabledAfterDocumentEdit = (
-  previous: AppDocument,
-  next: AppDocument,
-  enabled: boolean,
-): boolean =>
-  canonicalJson(previous.triggers ?? []) === canonicalJson(next.triggers ?? []) && enabled;
-
 export const rowFromRecord = (record: VendoRecord): AppData => {
   const data = record.data as Partial<AppData> | null;
   if (
@@ -168,11 +156,7 @@ export const appRecordInput = (
   return {
     id: app.id,
     data: { subject, enabled, doc },
-    // trigger_kind_<kind> indexes apps by trigger kind for the automations tick/emit — one ref
-    // key per kind, because an app's triggers are a LIST and may span more than one kind. The
-    // reserved vendo_apps store derives the same value from a column; a generic StoreAdapter
-    // keeps this.
-    refs: { subject, ...triggerKindRefs(app.triggers) },
+    refs: { subject },
   };
 };
 

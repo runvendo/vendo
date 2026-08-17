@@ -25,9 +25,11 @@ running app's schedules.
 ## The fix
 
 The gap is still real, and you check it yourself now. If any app's
-`vendo.json` declares a schedule, `VENDO_TICK_SECRET` has to be set in the
-server environment, or nothing can call `POST /api/vendo/tick` and the
-schedules never fire.
+`vendo.json` declares a schedule, something has to be able to call
+`POST /api/vendo/tick` or the schedules never fire. With a Cloud key it already
+can: the deployment derives the tick secret from `VENDO_API_KEY` and registers
+itself at boot, and Cloud's heartbeat knocks once a minute. Without one, set the
+secret in the server environment yourself.
 
 ```bash .env.local
 VENDO_TICK_SECRET=<a random secret>

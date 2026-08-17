@@ -1,7 +1,5 @@
 import {
   assertIndexedField,
-  TRIGGER_KIND_REF_KEYS,
-  triggerKindRefs,
   VendoError,
   type AtomicRecordStore,
   type AuditEvent,
@@ -42,6 +40,7 @@ import {
   parseAppGrantData,
   parseApprovalData,
   parseAuditEvent,
+  parseAutomationData,
   parseEffectData,
   parsePermissionGrant,
   parseRunData,
@@ -59,6 +58,7 @@ export const RESERVED_COLLECTIONS = [
   "vendo_approvals",
   "vendo_audit",
   "vendo_threads",
+  "vendo_automations",
   "vendo_runs",
   "vendo_apps",
   "vendo_state",
@@ -80,6 +80,7 @@ export const DEDICATED_RECORD_COLLECTIONS = [
  *  tests/hosted-store.atomic-parity.test.ts holds both to the real doors. */
 export const ATOMIC_RESERVED_COLLECTIONS = [
   "vendo_threads",
+  "vendo_automations",
   "vendo_apps",
   "vendo_effects",
 ] as const;
@@ -117,7 +118,12 @@ function grantRecord(grant: PermissionGrant): VendoRecord {
   return {
     id: grant.id,
     data: grant,
-    refs: refs({ subject: grant.subject, tool: grant.tool, app_id: grant.appId }),
+    refs: refs({
+      subject: grant.subject,
+      tool: grant.tool,
+      app_id: grant.appId,
+      automation_id: grant.automationId,
+    }),
     createdAt: grant.grantedAt,
     updatedAt: grant.revokedAt ?? grant.grantedAt,
   };
@@ -180,7 +186,7 @@ function runRecord(row: RunRow): VendoRecord {
   return {
     id,
     data,
-    refs: { app_id: row.appId, status: row.status },
+    refs: { automation_id: row.automationId, status: row.status },
     createdAt: row.startedAt,
     updatedAt: row.finishedAt ?? row.startedAt,
   };
@@ -191,16 +197,30 @@ function appRecord(row: AppRow): VendoRecord {
   return {
     id: row.id,
     data,
-    // The per-kind trigger refs mirror the persisted generated columns
-    // (schema.ts) so the automations tick / emit query can filter on them. One
-    // key per kind because an app has a LIST of triggers and a ref matches by
-    // equality; `triggerKindRefs` is core's single definition of both.
-    refs: { ...refs({ subject: row.subject }), ...triggerKindRefs(row.doc.triggers) },
+    refs: refs({ subject: row.subject }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     // Present when the row carries the write counter (01 §12: opaque token
     // when atomic is present) — Wave 7's lifecycle/schedule-claim arbitration.
     ...(row.revision === undefined ? {} : { revision: row.revision }),
+  };
+}
+
+/** v11 — the row's `data` IS the record (core's `AutomationRecord`); `subject`,
+ *  `armed` and `when_kind` are columns projected off it, never a second copy
+ *  anyone reads back. The two refs are the two queries the engine runs: the
+ *  tick's schedule sweep and `emit`'s per-subject host-event lookup. `armed` is
+ *  deliberately NOT a ref — the engine filters it in memory after the kind
+ *  query. Every projection of this table selects `revision`, so the CAS token is
+ *  always present. */
+function automationRecord(row: Record<string, unknown>): VendoRecord {
+  return {
+    id: text(row["id"]),
+    data: row["data"] as Json,
+    refs: { subject: text(row["subject"]), when_kind: text(row["when_kind"]) },
+    createdAt: iso(row["created_at"]),
+    updatedAt: iso(row["updated_at"]),
+    revision: String(row["revision"]),
   };
 }
 
@@ -364,7 +384,7 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
         table: collection,
         select: "SELECT * FROM vendo_grants",
         cursorColumn: "granted_at",
-        refs: { subject: "subject", tool: "tool", app_id: "app_id" },
+        refs: { subject: "subject", tool: "tool", app_id: "app_id", automation_id: "automation_id" },
         fromDb: (row) => grantRecord(grantFromRow(row)),
         async put(record) {
           const grant = parsePermissionGrant(record.data);
@@ -494,12 +514,72 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
           },
         },
       };
+    case "vendo_automations":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_automations",
+        cursorColumn: "created_at",
+        refs: { subject: "subject", when_kind: "when_kind" },
+        fromDb: automationRecord,
+        async put(record) {
+          const data = parseAutomationData(record.data, record.id);
+          // Automations never cross subjects, same guard as putAppRow: on
+          // conflict the update applies ONLY while the stored row already
+          // belongs to EXCLUDED.subject, so a foreign write is refused without
+          // a TOCTOU window. `created_at` is left as the row first took it.
+          const result = await db.query(
+            `INSERT INTO vendo_automations (id, subject, armed, data, created_at, updated_at, revision)
+             VALUES ($1, $2, $3, $4::jsonb, $5, $6, 1)
+             ON CONFLICT (id) DO UPDATE SET armed = EXCLUDED.armed, data = EXCLUDED.data,
+               updated_at = EXCLUDED.updated_at, revision = vendo_automations.revision + 1
+               WHERE vendo_automations.subject = EXCLUDED.subject
+             RETURNING *`,
+            [record.id, data.owner.subject, data.armed, JSON.stringify(data), data.createdAt, data.updatedAt],
+          );
+          const row = result.rows[0];
+          if (row === undefined) {
+            throw new VendoError("conflict", `automation ${record.id} belongs to another subject`);
+          }
+          return automationRecord(row);
+        },
+        // Optimistic concurrency on the row itself (01 §12). Nothing claims a
+        // fire through it — the tick arbitrates on the schedule cursor — but
+        // cross-subject writes lose here too: insertIfAbsent finds the id
+        // taken, the CAS's guarded WHERE fails.
+        atomic: {
+          async insertIfAbsent(record) {
+            requireRecordId(record.id);
+            const data = parseAutomationData(record.data, record.id);
+            const result = await db.query(
+              `INSERT INTO vendo_automations (id, subject, armed, data, created_at, updated_at, revision)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, 1)
+               ON CONFLICT (id) DO NOTHING
+               RETURNING *`,
+              [record.id, data.owner.subject, data.armed, JSON.stringify(data), data.createdAt, data.updatedAt],
+            );
+            return result.rows[0] ? automationRecord(result.rows[0]) : null;
+          },
+          async compareAndSwap(record, expectedRevision) {
+            requireRecordId(record.id);
+            requireRevision(expectedRevision);
+            const data = parseAutomationData(record.data, record.id);
+            const result = await db.query(
+              `UPDATE vendo_automations
+               SET armed = $3, data = $4::jsonb, updated_at = $5, revision = revision + 1
+               WHERE id = $1 AND subject = $2 AND revision = $6::bigint
+               RETURNING *`,
+              [record.id, data.owner.subject, data.armed, JSON.stringify(data), data.updatedAt, expectedRevision],
+            );
+            return result.rows[0] ? automationRecord(result.rows[0]) : null;
+          },
+        },
+      };
     case "vendo_runs":
       return {
         table: collection,
         select: "SELECT * FROM vendo_runs",
         cursorColumn: "started_at",
-        refs: { app_id: "app_id", status: "status" },
+        refs: { automation_id: "automation_id", status: "status" },
         fromDb: (row) => runRecord(runFromRow(row)),
         async put(record) {
           const data = parseRunData(record.data, record.id);
@@ -513,10 +593,7 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
         table: collection,
         select: "SELECT * FROM vendo_apps",
         cursorColumn: "created_at",
-        refs: {
-          subject: "subject",
-          ...Object.fromEntries(TRIGGER_KIND_REF_KEYS.map((key) => [key, key])),
-        },
+        refs: { subject: "subject" },
         fromDb: (row) => appRecord(appFromRow(row)),
         async put(record) {
           const data = parseAppData(record.data, record.id);
@@ -530,8 +607,7 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
         // store instead of degrading to read-then-put. Both verbs keep the
         // same cross-subject refusal as put: a foreign-subject write NEVER
         // lands (insertIfAbsent finds the id taken, compareAndSwap's guarded
-        // WHERE fails — and returns null). The doc's trigger_kind projection
-        // is a generated column, so guarded writes keep it for free.
+        // WHERE fails — and returns null).
         atomic: {
           async insertIfAbsent(record) {
             requireRecordId(record.id);

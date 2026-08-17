@@ -345,11 +345,10 @@ export function grantFromRow(row: Record<string, unknown>): PermissionGrant {
     duration: text(row["duration"]) as PermissionGrant["duration"],
     ...(row["context_key"] == null ? {} : { contextKey: text(row["context_key"]) }),
     ...(row["app_id"] == null ? {} : { appId: text(row["app_id"]) }),
-    // Which TRIGGER of that app the grant was minted for. Load-bearing, not
-    // metadata: the automations engine refuses a grant whose trigger id does not
-    // match the one firing, so dropping it here would silently make every
-    // automation grant app-wide again.
-    ...(row["trigger_id"] == null ? {} : { triggerId: text(row["trigger_id"]) }),
+    // WHICH automation the grant was minted for. Load-bearing, not metadata: the
+    // guard refuses an away call whose grant names a different record, so
+    // dropping it here would let one automation's consent authorize another's.
+    ...(row["automation_id"] == null ? {} : { automationId: text(row["automation_id"]) }),
     source: text(row["source"]) as PermissionGrant["source"],
     grantedAt: iso(row["granted_at"]),
     ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -364,18 +363,18 @@ export async function putGrantRow(db: Db, grant: PermissionGrant): Promise<void>
   // means a foreign row holds the id — refuse the flip.
   const result = await db.query(
     `INSERT INTO vendo_grants
-     (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, trigger_id, source, granted_at, expires_at, revoked_at)
+     (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, automation_id, source, granted_at, expires_at, revoked_at)
      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (id) DO UPDATE SET tool = EXCLUDED.tool,
        descriptor_hash = EXCLUDED.descriptor_hash, scope = EXCLUDED.scope,
        duration = EXCLUDED.duration, context_key = EXCLUDED.context_key,
-       app_id = EXCLUDED.app_id, trigger_id = EXCLUDED.trigger_id,
+       app_id = EXCLUDED.app_id, automation_id = EXCLUDED.automation_id,
        source = EXCLUDED.source, granted_at = EXCLUDED.granted_at,
        expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at
        WHERE vendo_grants.subject = EXCLUDED.subject
      RETURNING id`,
     [grant.id, grant.subject, grant.tool, grant.descriptorHash, JSON.stringify(grant.scope), grant.duration,
-      grant.contextKey ?? null, grant.appId ?? null, grant.triggerId ?? null, grant.source, grant.grantedAt,
+      grant.contextKey ?? null, grant.appId ?? null, grant.automationId ?? null, grant.source, grant.grantedAt,
       grant.expiresAt ?? null, grant.revokedAt ?? null],
   );
   if (result.rows[0] === undefined) {
@@ -441,7 +440,7 @@ export function runFromRow(row: Record<string, unknown>): RunRow {
   const finishedAt = optionalIso(row["finished_at"]);
   return {
     id: text(row["id"]),
-    appId: text(row["app_id"]),
+    automationId: text(row["automation_id"]),
     trigger: row["trigger"] as RunRow["trigger"],
     status: text(row["status"]) as RunRow["status"],
     record: row["record"],
@@ -452,12 +451,12 @@ export function runFromRow(row: Record<string, unknown>): RunRow {
 
 export async function putRunRow(db: Db, run: RunRow): Promise<void> {
   await db.query(
-    `INSERT INTO vendo_runs (id, app_id, trigger, status, record, started_at, finished_at)
+    `INSERT INTO vendo_runs (id, automation_id, trigger, status, record, started_at, finished_at)
      VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6, $7)
-     ON CONFLICT (id) DO UPDATE SET app_id = EXCLUDED.app_id, trigger = EXCLUDED.trigger,
+     ON CONFLICT (id) DO UPDATE SET automation_id = EXCLUDED.automation_id, trigger = EXCLUDED.trigger,
        status = EXCLUDED.status, record = EXCLUDED.record, started_at = EXCLUDED.started_at,
        finished_at = EXCLUDED.finished_at`,
-    [run.id, run.appId, JSON.stringify(run.trigger), run.status, JSON.stringify(run.record),
+    [run.id, run.automationId, JSON.stringify(run.trigger), run.status, JSON.stringify(run.record),
       run.startedAt, run.finishedAt ?? null],
   );
 }

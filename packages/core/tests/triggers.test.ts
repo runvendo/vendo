@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  runModelSchema,
-  stepSchema,
-  triggerSchema,
-  triggerSourceSchema,
-} from "../src/triggers.js";
+import { stepSchema, triggerSourceSchema } from "../src/triggers.js";
 
 /** 01-core §11 trigger shapes. Focuses on the schedule refine (exactly one of
  * cron/every/at) and the discriminated-union boundaries. */
@@ -50,7 +45,7 @@ describe("triggerSourceSchema", () => {
   });
 });
 
-describe("stepSchema and runModelSchema", () => {
+describe("stepSchema", () => {
   it("accepts a minimal step and a fully-specified step", () => {
     expect(stepSchema.safeParse({ id: "s1", tool: "host_x" }).success).toBe(true);
     expect(
@@ -66,57 +61,5 @@ describe("stepSchema and runModelSchema", () => {
 
   it("rejects a step whose args are not string-valued", () => {
     expect(stepSchema.safeParse({ id: "s1", tool: "host_x", args: { limit: 10 } }).success).toBe(false);
-  });
-
-  it("discriminates agentic vs steps run models", () => {
-    expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do the thing" }).success).toBe(true);
-    expect(
-      runModelSchema.safeParse({ kind: "agentic", prompt: "p", budget: { maxToolCalls: 3 } }).success,
-    ).toBe(true);
-    expect(runModelSchema.safeParse({ kind: "steps", steps: [{ id: "s1", tool: "t" }] }).success).toBe(true);
-    expect(runModelSchema.safeParse({ kind: "agentic" }).success).toBe(false);
-    expect(runModelSchema.safeParse({ kind: "steps" }).success).toBe(false);
-  });
-});
-
-describe("triggerSchema", () => {
-  it("composes a source and a run model", () => {
-    expect(
-      triggerSchema.safeParse({
-        id: "main",
-        on: { kind: "host-event", event: "invoice.paid" },
-        run: { kind: "agentic", prompt: "chase it" },
-      }).success,
-    ).toBe(true);
-  });
-
-  it("rejects a trigger whose source is invalid", () => {
-    expect(
-      triggerSchema.safeParse({
-        id: "main",
-        on: { kind: "schedule" },
-        run: { kind: "agentic", prompt: "x" },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("requires an id, and only a bare identifier", () => {
-    const withId = (id?: unknown) => triggerSchema.safeParse({
-      ...(id === undefined ? {} : { id }),
-      on: { kind: "host-event", event: "invoice.paid" },
-      run: { kind: "agentic", prompt: "chase it" },
-    }).success;
-    // The id is what grants, sponsorship, schedule cursors and runs are keyed
-    // by, so a trigger without one has nothing to key them to.
-    expect(withId()).toBe(false);
-    expect(withId("")).toBe(false);
-    // Bare identifier only: it is hand-written in vendo.json and read back out
-    // of URLs, wire payloads and store refs, none of which escape it.
-    expect(withId("nightly_digest")).toBe(true);
-    expect(withId("_main")).toBe(true);
-    expect(withId("2nd")).toBe(false);
-    expect(withId("with-dash")).toBe(false);
-    expect(withId("with.dot")).toBe(false);
-    expect(withId("with space")).toBe(false);
   });
 });

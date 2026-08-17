@@ -34,6 +34,23 @@ export type AgentRunner = (
   ctx: RunContext,
 ) => Promise<AgentRunReport>;
 
+/**
+ * Agents stay CODE and are never stored — an automation record names one by
+ * NAME. Registration happens at boot; lookup happens at fire time.
+ *
+ * INVARIANTS: a duplicate name THROWS at registration, so a collision is a
+ * startup failure rather than a 2am surprise; a fire-time miss writes a FAILED
+ * run row naming the missing name and stops. There is never a fallback brain.
+ */
+export interface AgentRunners {
+  register(name: string, runner: AgentRunner): void;
+  get(name: string): AgentRunner | undefined;
+}
+
+/** The name the composed agent registers under, and what a record with no
+ *  `agent` resolves to. */
+export const DEFAULT_RUNNER_NAME = "agent";
+
 /** 01-core §13 */
 export interface AgentRunReport {
   status: "ok" | "error" | "stopped";

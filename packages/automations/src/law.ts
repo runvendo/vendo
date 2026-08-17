@@ -11,15 +11,16 @@
  * scheduled step moves money or messages a person, so it joins the reviewer's
  * rubric as its own line.
  */
-import type {
-  Check,
-} from "@vendoai/apps/contract";
-
 export const UNATTENDED_IRREVERSIBILITY_RULE =
   "Work that runs while nobody is watching may read and write, but it must never move money, message a person, or delete anything — not with a limit, not with an approval. An app that schedules one of those is wrong even if it looks careful: the honest shape is that the scheduled part PREPARES and a person sends, with the real amounts and recipients in front of them.";
 
-/** The floor's automations check, mounted with the automations subsystem. */
-export const unattendedIrreversibilityCheck: Check = {
+/** The floor's automations check, mounted with the automations subsystem.
+ *
+ *  Typed structurally rather than against the checking floor's own `Check`: this
+ *  package sits on core alone (dependency-guard), and the rule is a SENTENCE —
+ *  the floor is merely where it happens to be read. The literal `kind` is what
+ *  keeps it assignable at the umbrella's mount site. */
+export const unattendedIrreversibilityCheck: { name: string; kind: "judgment"; rule: string } = {
   name: "unattended-irreversibility",
   kind: "judgment",
   rule: UNATTENDED_IRREVERSIBILITY_RULE,

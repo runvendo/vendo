@@ -2,15 +2,13 @@ import type { ZodType, ZodTypeDef } from "zod";
 import {
   VendoError,
   appDocumentSchema,
-  appIdSchema,
   approvalRequestSchema,
   auditEventSchema,
+  automationRecordSchema,
   isoDateTimeSchema,
   permissionGrantSchema,
   runIdSchema,
   threadIdSchema,
-  TRIGGER_KIND_REF_KEYS,
-  triggerKindRefs,
   type IdempotencyRecord,
   type IdempotencyScope,
   type Json,
@@ -43,12 +41,13 @@ const copyRecord = (record: VendoRecord & { seq?: number }): VendoRecord => ({
 type MemoryRecordInput = Pick<VendoRecord, "id" | "data" | "refs">;
 
 const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
-  vendo_grants: ["subject", "tool", "app_id"],
+  vendo_grants: ["subject", "tool", "app_id", "automation_id"],
   vendo_approvals: ["subject", "status", "call"],
   vendo_audit: ["subject", "kind", "app_id", "tool"],
   vendo_threads: ["subject"],
-  vendo_runs: ["app_id", "status"],
-  vendo_apps: ["subject", ...TRIGGER_KIND_REF_KEYS],
+  vendo_runs: ["automation_id", "status"],
+  vendo_apps: ["subject"],
+  vendo_automations: ["subject", "when_kind"],
   vendo_state: ["app_id", "subject"],
 };
 
@@ -72,6 +71,9 @@ const parseReserved = <T>(schema: ZodType<T, ZodTypeDef, unknown>, value: unknow
   if (parsed.success) return parsed.data;
   return invalidReserved(`${label}: ${parsed.error.issues[0]?.message ?? "invalid value"}`);
 };
+
+const requiredReservedString = (value: unknown, label: string): string =>
+  typeof value === "string" && value !== "" ? value : invalidReserved(`${label} must be a non-empty string`);
 
 const optionalReservedString = (value: unknown, label: string): string | undefined => {
   if (value === undefined) return undefined;
@@ -137,6 +139,30 @@ interface MemoryProjection {
   updatedAt: string;
 }
 
+/** v11 — the automation record, projected exactly as the SQL store's typed door
+ *  projects it (routing.ts `automationRecord`): the record IS the data, and the
+ *  kind is derived here the way a generated column derives it there, because the
+ *  tick's query has to answer the same on both backends or an automation fires
+ *  on one and not the other. A function of its own only because
+ *  `projectMemoryRecord` sits at the lint's complexity ceiling. */
+const projectAutomation = (
+  input: MemoryRecordInput,
+  previous: VendoRecord | undefined,
+): MemoryProjection => {
+  const record = parseReserved(automationRecordSchema, input.data, "automation record");
+  requireMatchingRecordId(input.id, record.id, "automation id");
+  // Mirrors the store routing's cross-subject refusal (02-store §2).
+  if (previous?.refs?.["subject"] !== undefined && previous.refs["subject"] !== record.owner.subject) {
+    throw new VendoError("conflict", `automation ${input.id} belongs to another subject`);
+  }
+  return {
+    data: record as unknown as Json,
+    refs: { subject: record.owner.subject, when_kind: record.when.kind },
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+};
+
 const projectMemoryRecord = (
   collection: string,
   input: MemoryRecordInput,
@@ -153,7 +179,12 @@ const projectMemoryRecord = (
       }
       return {
         data: grant,
-        refs: derivedRefs({ subject: grant.subject, tool: grant.tool, app_id: grant.appId }),
+        refs: derivedRefs({
+          subject: grant.subject,
+          tool: grant.tool,
+          app_id: grant.appId,
+          automation_id: grant.automationId,
+        }),
         createdAt: grant.grantedAt,
         updatedAt: grant.revokedAt ?? grant.grantedAt,
       };
@@ -239,7 +270,7 @@ const projectMemoryRecord = (
     case "vendo_runs": {
       parseReserved(runIdSchema, input.id, "run id");
       const value = reservedObject(input.data, "run data");
-      const appId = parseReserved(appIdSchema, value["appId"], "run appId");
+      const automationId = requiredReservedString(value["automationId"], "run automationId");
       const triggerValue = reservedObject(value["trigger"], "run trigger");
       const kindValue = triggerValue["kind"];
       const kind = kindValue === "schedule" || kindValue === "host-event" || kindValue === "external"
@@ -256,14 +287,14 @@ const projectMemoryRecord = (
       const finishedAt = optionalReservedDate(value["finishedAt"], "run finishedAt");
       return {
         data: {
-          appId,
+          automationId,
           trigger: { kind, ...(event === undefined ? {} : { event }) },
           status,
           record,
           startedAt,
           ...(finishedAt === undefined ? {} : { finishedAt }),
         },
-        refs: { app_id: appId, status },
+        refs: { automation_id: automationId, status },
         createdAt: startedAt,
         updatedAt: finishedAt ?? startedAt,
       };
@@ -286,11 +317,13 @@ const projectMemoryRecord = (
       }
       return {
         data: { subject, enabled, doc },
-        refs: { ...derivedRefs({ subject }), ...triggerKindRefs(doc.triggers) },
+        refs: derivedRefs({ subject }),
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       };
     }
+    case "vendo_automations":
+      return projectAutomation(input, previous);
     case "vendo_state": {
       const { appId, subject } = splitMemoryStateId(input.id);
       return {

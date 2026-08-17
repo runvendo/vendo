@@ -103,30 +103,6 @@ const componentToolsError = (app: AppDocument): AppDocumentValidation | null => 
   return null;
 };
 
-/** A trigger id is what everything per-trigger is keyed by (grants, sponsorship,
- *  schedule cursors, runs), so two triggers sharing one would silently share all
- *  of it. The grammar is the schema's; uniqueness is cross-field and lives here.
- *  Also collects the fn: references the triggers' steps name. */
-const triggersError = (app: AppDocument, fnReferences: string[]): AppDocumentValidation | null => {
-  const triggerIds = new Set<string>();
-  for (const trigger of app.triggers ?? []) {
-    if (triggerIds.has(trigger.id)) {
-      return fail("validation", `duplicate trigger id "${trigger.id}"`);
-    }
-    triggerIds.add(trigger.id);
-    if (trigger.run.kind !== "steps") continue;
-    for (const step of trigger.run.steps) {
-      if (step.tool.startsWith("fn:")) {
-        fnReferences.push(step.tool);
-      } else if (!TOOL_NAME_PATTERN.test(step.tool)) {
-        // 01-core §4/§11: a step tool is a provider-safe tool name or an fn: ref.
-        return fail("validation", `step "${step.id}" tool "${step.tool}" is not a valid tool name or fn: reference`);
-      }
-    }
-  }
-  return null;
-};
-
 const fnReferencesError = (app: AppDocument, fnReferences: readonly string[]): AppDocumentValidation | null => {
   for (const reference of fnReferences) {
     if (!FN_REFERENCE_PATTERN.test(reference)) {
@@ -213,11 +189,10 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
 
   // The cross-field rules, in the order their messages are pinned to: each
   // returns the failure it found, or null. `fnReferences` accumulates across
-  // the tree and trigger rules and is checked once both have filled it.
+  // the tree rules and is checked once they have filled it.
   const fnReferences: string[] = [];
   const violation = treeAndComponentsError(app, fnReferences)
     ?? componentToolsError(app)
-    ?? triggersError(app, fnReferences)
     ?? fnReferencesError(app, fnReferences)
     ?? sourceError(app)
     ?? storageError(app)

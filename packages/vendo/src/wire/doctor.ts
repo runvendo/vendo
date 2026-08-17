@@ -1,5 +1,6 @@
 import type { ExtractedTool } from "@vendoai/actions";
 import { principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
+import { tickSecret } from "../tick-enrolment.js";
 import { BASE_PATH, environment, json, route, type RouteEntry } from "./shared.js";
 
 /** The composition probe surface, for anything that wants to check a running
@@ -68,13 +69,15 @@ export const doctorBaseUrlRoutes: RouteEntry[] = [
     global. */
 export const doctorRoutes: RouteEntry[] = [
   // Machine/schedule reporting. Reporting only: which apps carry a machine, what
-  // their manifests declare, and whether a schedule caller (VENDO_TICK_SECRET)
-  // is configured for the /tick surface. WHEN a schedule last fired is not here:
+  // their manifests declare, and whether ANY waker can reach the /tick surface —
+  // the same ladder the door itself verifies against (tick-enrolment.ts), so a
+  // Cloud deployment that configured nothing still reads as configured, because
+  // its heartbeat knocks. WHEN a schedule last fired is not here:
   // a vendo.json schedule is a doc trigger, so its history is the automation's
   // run records.
   route("GET", "/doctor/machines", async ({ deps }) => {
     return json({
-      scheduleCallerConfigured: environment("VENDO_TICK_SECRET") !== undefined,
+      scheduleCallerConfigured: (await tickSecret()) !== undefined,
       machines: await deps.apps.machine.report(),
     });
   }),

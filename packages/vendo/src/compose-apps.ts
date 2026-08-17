@@ -193,27 +193,6 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
 const appsHostSeams = (composition: VendoComposition): Partial<AppsConfig> => {
   const { urls } = composition;
   return {
-    // Build contract §9.9 — sponsorship's two halves, composed HERE because
-    // they cross the apps↔automations line and neither block may reach into
-    // the other. Both ride the same late binding as `armAutomation` above
-    // (automations is constructed after apps; every call happens later).
-    //
-    // The edit hook is what makes "anyone else editing invalidates the
-    // sponsorship" true: the apps runtime knows who edited, the automations
-    // engine knows who sponsors.
-    //
-    // Why these two seams NO-OP on an unset engine while `armAutomation` below
-    // THROWS (F26 — deliberate, not an oversight): all three are unreachable
-    // today, because nothing in this composition can skip constructing the
-    // engine. If the invariant ever broke, the difference is what the caller
-    // asked for. Arming is a request to CHANGE something; silently not arming an
-    // automation the person just authored is the exact "quietly dropped work"
-    // failure, so it refuses out loud. These two are enrichments of somebody
-    // else's write and read: an app open and a landed edit must not fail because
-    // the automations half is missing — there is simply no card and no
-    // invalidation to report.
-    onDocumentEdit: async (previous, next, editor) =>
-      composition.automationsForArming?.onDocumentEdit(previous, next, editor),
     // Build contract §9.8 — where the authenticated served-app proxy lives. The
     // wire owns its base path, so it is filled here and nowhere else; the apps
     // block never invents a URL for a door it does not mount.
@@ -288,16 +267,33 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
     // Round-2 hardening — the host's reviewer assertion for the review-kind
     // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
     ...(config.apps?.review === undefined ? {} : { review: config.apps.review }),
-    // Wave 9 — a ladder-authored automation is armed through the automations
-    // engine's own enable(), so the 07 §3 grant-capture flow runs at creation
-    // and the missing standing-grant approvals surface on the edit result.
-    armAutomation: async (appId, triggerId, armCtx) => {
-      const automationsForArming = composition.automationsForArming;
-      if (automationsForArming === undefined) {
-        throw new VendoError("not-implemented", "the automations engine is not composed yet");
-      }
-      return automationsForArming.enable(appId, triggerId, armCtx);
-    },
+    // The four verbs this block may ask of the automations engine: THE one create
+    // operation (`vendo_automate`, `vendo_make`'s auto-arm sugar, the vendo.json
+    // fold-in), the arm/disarm pair, and the resolve an app page reads its own
+    // `automations: string[]` with. Every one is late-bound, as `armAutomation`
+    // was: automations is constructed AFTER apps, and every call happens inside a
+    // request. Absent when the engine is unmounted, so a deployment that turned
+    // automations off is not offered an authoring door that could never fire —
+    // the same reason `vendo.emit` refuses there.
+    ...(automationsMounted ? {
+      automations: {
+        create: async (input, createCtx) => {
+          const create = composition.createAutomation;
+          if (create === undefined) {
+            throw new VendoError("not-implemented", "the automations engine is not composed yet");
+          }
+          return create(input, createCtx);
+        },
+        enable: async (id, ctx) => composition.automations.enable(id, ctx),
+        disable: async (id, ctx) => composition.automations.disable(id, ctx),
+        // A list of NAMES, not foreign keys: an id nothing answers for is dropped
+        // rather than raised, so deleting an automation is one fewer entry the
+        // next time the app is read.
+        resolve: async (ids, ctx) => (await Promise.all(
+          ids.map(async (id) => composition.automations.get(id, ctx)),
+        )).filter((record) => record !== null),
+      },
+    } : {}),
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
     // The SAME registry `<VendoProvider routes>` renders against, for the floor:
     // a screen that names a page this host never registered is refused where it
@@ -362,10 +358,10 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
   // composition seam; unfilled, share/publish refuse with cloud-required.
   const appsCloud = cloudKeyOptions();
-  // Wave 9 — `composition.automationsForArming` is the arming seam for
-  // ladder-authored automations: filled with the automations engine composed
-  // BELOW (arming only happens inside requests, which run after createVendo
-  // returns, so the closure reference is safe — same pattern as the connections
+  // `composition.createAutomation` is the authoring seam the apps doors write
+  // through: filled with the automations engine composed BELOW (authoring only
+  // happens inside requests, which run after createVendo returns, so the closure
+  // reference is safe — same pattern as the connections
   // loadout seed). `composition.harnessTurnsForScreens` is the screen agent's
   // workspace door, on the same late binding and safe for the same reason. It is
   // the PUBLIC door (`harnessTurns.workspace`) rather than a second

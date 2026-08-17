@@ -38,18 +38,20 @@ export const resolveAppStorage = (
  *  guards below already wrap. The owner rides in the target, so the store
  *  stamps it onto every write and scopes every read to it — nothing here may
  *  set `refs.subject`, which the family refuses. */
-const appDataRecords = (ops: StoreOps, target: AppDataTarget): RecordStore => ({
-  get: (id) => ops.appData.get(target, id),
-  put: (record) => ops.appData.put(target, record),
-  delete: (id) => ops.appData.delete(target, id),
-  list: (query) => ops.appData.list(target, query),
+type AppDataOps = NonNullable<StoreOps["appData"]>;
+
+const appDataRecords = (rows: AppDataOps, target: AppDataTarget): RecordStore => ({
+  get: (id) => rows.get(target, id),
+  put: (record) => rows.put(target, record),
+  delete: (id) => rows.delete(target, id),
+  list: (query) => rows.list(target, query),
 });
 
-const appDataBlobs = (ops: StoreOps, target: AppDataTarget): BlobStore => ({
-  put: (key, bytes, meta) => ops.appData.putFile(target, key, bytes, meta),
-  get: (key) => ops.appData.getFile(target, key),
-  delete: (key) => ops.appData.deleteFile(target, key),
-  list: (prefix) => ops.appData.listFiles(target, prefix),
+const appDataBlobs = (rows: AppDataOps, target: AppDataTarget): BlobStore => ({
+  put: (key, bytes, meta) => rows.putFile(target, key, bytes, meta),
+  get: (key) => rows.getFile(target, key),
+  delete: (key) => rows.deleteFile(target, key),
+  list: (prefix) => rows.listFiles(target, prefix),
 });
 
 /** The ONE spelling of "which store backs this collection". `selectStoreOps`
@@ -58,17 +60,19 @@ const appDataBlobs = (ops: StoreOps, target: AppDataTarget): BlobStore => ({
  *  crash composition at boot for that third store, where today it refuses at
  *  the op that needed one; so a store without an ops surface keeps exactly
  *  today's façade behavior, unowned, and a store with one gets owner stamping.
- *  No other branch. */
+ *  An ops surface that OMITS the optional appData family reads as the same
+ *  answer — it has no app-row door either. No other branch. */
 const backingFor = (
   ops: StoreOps | undefined,
   store: StoreAdapter,
   target: AppDataTarget,
   declaration: StorageDecl,
 ): AppStorage => {
-  if (ops === undefined) return resolveAppStorage(store, target.appId, target.collection, declaration);
+  const rows = ops?.appData;
+  if (rows === undefined) return resolveAppStorage(store, target.appId, target.collection, declaration);
   return declaration.kind === "files"
-    ? { kind: "files", blobs: appDataBlobs(ops, target) }
-    : { kind: "records", records: appDataRecords(ops, target) };
+    ? { kind: "files", blobs: appDataBlobs(rows, target) }
+    : { kind: "records", records: appDataRecords(rows, target) };
 };
 
 const allRecordIds = async (records: RecordStore): Promise<string[]> =>

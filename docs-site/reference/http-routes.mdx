@@ -10,8 +10,8 @@ Most routes resolve a principal through `principal(req)`. Four surfaces never ca
 
 | Surface | Authenticated by |
 | --- | --- |
-| `/tick` | a bearer secret, `VENDO_TICK_SECRET` |
-| `/webhooks/*` | an HMAC-SHA256 signature per app and trigger |
+| `/tick` | a bearer secret, `VENDO_TICK_SECRET`, or a standard-webhooks signature |
+| `/webhooks/*` | an HMAC-SHA256 signature, per automation record |
 | `/box/*` | the per-app bearer, `VENDO_APP_TOKEN` |
 | `/channels/text/inbound` | a bearer derived from `VENDO_API_KEY` |
 
@@ -79,18 +79,20 @@ Mounted unless `automations: false`.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/automations` | GET | list. Each entry optionally carries `pendingGrants` and `grantSetId`, projected from the store so a reload still shows what it is waiting on |
-| `/automations/:appId/enable[/:triggerId]` | POST | `{ enabled, missing, grantSetId? }`. `grantSetId` names the one grant set the `missing` asks belong to |
-| `/automations/:appId/disable[/:triggerId]` | POST | `{}` |
-| `/automations/:appId/dry-run[/:triggerId]` | POST | `RunPlan` |
-| `/runs` | GET | run records. Filters: `?appId`, `?triggerId`, `?status`, `?cursor` |
-| `/runs/:id` | GET | one `RunRecord` |
+| `/automations` | GET | `AutomationRecord[]`, deployment-wide. Filters: `?owner`, `?agent`. `webhookSecret` is redacted on every read |
+| `/automations/:id` | GET | one `AutomationRecord`, or `404` |
+| `/automations/:id/enable` | POST | `{ enabled, missing, grantSetId? }`. `grantSetId` names the one grant set the `missing` asks belong to, so one decision settles them all |
+| `/automations/:id/disable` | POST | `{}`. A person's kill switch: it stamps `disarmedBy: "user"`, which no redeploy's reconcile will undo |
+| `/automations/:id/dry-run` | POST | `RunPlan` |
+| `/runs` | GET | `{ runs, cursor? }`. Filters: `?automationId`, `?owner`, `?agent`, `?status`, `?cursor` |
+| `/runs/:id` | GET | one `RunRecord`, or `404` |
 | `/runs/:id/stop` | POST | `{}` |
-| `/runs/:id/rerun` | POST | `{ runId }`, a fresh run of the same trigger on the same event |
-| `/tick` | POST | scheduler tick. Requires `Authorization: Bearer <VENDO_TICK_SECRET>`; an unset secret refuses every call. `200` when clean, `500` when a leg failed |
-| `/webhooks/:source` | POST | trigger ingress. `source` is the last path segment and must equal the trigger's `connector` exactly |
+| `/runs/:id/rerun` | POST | `{ runId }`, a fresh run of the same automation on the same event |
+| `/tick` | POST | the wake signal. Empty body. Auth is `Authorization: Bearer <VENDO_TICK_SECRET>` **or** a standard-webhooks signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`), which is what Vendo Cloud's heartbeat sends; neither valid → `401`. Answers `202 { fired: n }`. Idempotent — a duplicate call claims no cursor and answers `{ fired: 0 }` |
+| `/webhooks/:source` | POST | external delivery. Verified per RECORD against that record's own HMAC key, and deduped by (automation, delivery id). `source` must equal the record's `connector` exactly |
 
-`triggerId` defaults to the automation's default trigger when the segment is omitted.
+`:id` is the automation's id (`atm_…`). There is no trigger segment: an
+automation is one record, not an app with a list.
 
 ## Connections and channels
 
@@ -127,7 +129,7 @@ An app machine calls back into the host through `/box/*`, authenticated with `Au
 | `/box/rows/<collection>` | GET | list durable rows. Query: `refs.<key>=<value>`, `limit`, `cursor`. Any other parameter is a `400` |
 | `/box/rows/<collection>/<id>` | GET · DELETE | read one row · delete it |
 | `/box/rows/<collection>/<id>` | PUT | body is exactly `{ data, refs? }`, JSON, 256 KiB cap. An unexpected key is a `400` |
-| `/box/tools/<name>` | POST | `{ args }` → `ToolOutcome`, executed through the same guard-bound registry chat uses. A pending-approval outcome is relayed, never bypassed |
+| `/box/tools/<name>` | POST | `{ args }` → `ToolOutcome`, executed through the same guard-bound registry chat uses. A pending-approval outcome is relayed, never bypassed, and approving it runs that exact call |
 
 Collection names match `^[A-Za-z0-9_-]{1,64}$` and row ids run 1 to 256 characters. Anything else under `/box/` answers `404`.
 
@@ -200,7 +202,7 @@ Cookie-authenticated state-changing requests require `Content-Type: application/
 | --- | --- |
 | `/apps/import` | demanding `application/octet-stream` or `application/vnd.vendo.app`, a non-safelisted media type that forces a preflight |
 | `/webhooks/:source` | its signature |
-| `/tick` | its bearer secret alone. It checks no content type |
+| `/tick` | its bearer secret or its signature alone. It checks no content type, and its body is empty |
 | `/box/*` | its per-app bearer, and by validating `application/json` on its own JSON routes |
 
 MCP door paths sit outside both rules. They speak MCP and OAuth response shapes, not the wire envelope.

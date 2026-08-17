@@ -5,6 +5,7 @@ import {
   VENDO_APP_FORMAT,
   type AppDocument,
   type Principal,
+  type StoreOps,
 } from "@vendoai/core";
 import { createAppTokens, type SandboxAdapter, type SandboxMachine } from "@vendoai/apps";
 import { inMemoryBoxFiles } from "@vendoai/apps/testing";
@@ -96,7 +97,13 @@ interface Skin {
   token: string;
 }
 
-async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Skin> {
+async function setup(
+  handler: BoxHandler = () => ({ status: 200 }),
+  /** The named-operation surface the composition should see over this store —
+   *  `selectStoreOps` takes `store.ops` when the store carries one. Omitted, it
+   *  resolves the local backend as it always does. */
+  opsOf?: (store: VendoStore) => StoreOps,
+): Promise<Skin> {
   // The machine-env assembler composes the box's callback doors from the
   // operator-set public origin, so the composition requires it.
   vi.stubEnv("VENDO_BASE_URL", "http://wire.test");
@@ -107,6 +114,7 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     data: { subject: ADA.subject, enabled: false, doc: doc() },
     refs: { subject: ADA.subject },
   });
+  if (opsOf !== undefined) Object.assign(store, { ops: opsOf(store) });
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async (req) => {
@@ -225,6 +233,27 @@ describe("the /box callback surface (app-token bearer)", () => {
     }));
     expect(remove.status).toBe(200);
     expect(await store.records("app:app_skin:box:notes").get("note_1")).toBeNull();
+  });
+
+  /** `appData` is OPTIONAL on StoreOps: a store that cannot serve app rows says
+   *  so by omitting the family, and this door is nothing BUT app rows. It has to
+   *  answer the same refusal a store with no ops at all gets. The message is
+   *  asserted because an unhandled crash answers 501 too (`internalError`), so
+   *  the status alone cannot tell "refused" from "blew up". */
+  it("rows: a store whose ops omit the appData family is refused, not crashed", async () => {
+    const { vendo, token } = await setup(undefined, (store) => ({
+      ...createStoreOps(store, { files: storeFiles(store) }),
+      appData: undefined,
+    }));
+    const response = await vendo.handler(wireRequest("/box/rows/notes/note_1", {
+      method: "PUT",
+      headers: { ...bearer(token), "content-type": "application/json" },
+      body: JSON.stringify({ data: { text: "chase inv_1" } }),
+    }));
+    expect(response.status).toBe(501);
+    expect(await response.json()).toMatchObject({
+      error: { code: "not-implemented", message: expect.stringContaining("appData") },
+    });
   });
 
   it("refuses a missing, malformed, or unknown bearer with 401", async () => {

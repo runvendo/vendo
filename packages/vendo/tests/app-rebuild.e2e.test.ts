@@ -33,7 +33,6 @@ import {
 } from "@vendoai/apps";
 import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import {
-  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   WORKSPACE_INLINE_MAX_BYTES,
   appDocumentSchema,
@@ -76,17 +75,6 @@ const SOURCE: Record<string, string> = {
   "src/server.ts": "export default { fetch: () => new Response('ok') };\n",
   "src/big.ts": `// ${"x".repeat(WORKSPACE_INLINE_MAX_BYTES)}\n`,
 };
-
-const TRIGGER = {
-  on: { kind: "schedule", cron: "0 9 * * *" },
-  run: { kind: "agentic", prompt: "send the digest" },
-} as const;
-
-/** What `seedApp`'s PRE-LIST row reads back as: an app carries `triggers[]`, and
- *  the document door normalizes a stored singular `trigger` into the one-element
- *  list it always meant. Seeding the old shape and asserting the new one is the
- *  point — it holds the migration door across the same repeated commits. */
-const TRIGGERS = [{ id: DEFAULT_TRIGGER_ID, ...TRIGGER }];
 
 /** An in-memory `FilesAdapter` — the SAME seam the workspace rows spill to, which
  *  is the point: one adapter, two callers, no second spill mechanism.
@@ -240,7 +228,7 @@ async function harness() {
 }
 
 /** A stored app carrying everything §2.4 promises survives an escalation: a
- *  trigger, a placement, and — once the box exists — a machine ref.
+ *  placement, and — once the box exists — a machine ref.
  *
  *  `owner` is the row's subject, which IS the app's address (§9.7 — owner and path
  *  prefix always travel together): a person's subject, or an org id verbatim. */
@@ -249,7 +237,6 @@ async function seedApp(store: VendoStore, owner: string = principal.subject): Pr
     format: VENDO_APP_FORMAT,
     id: APP,
     name: "Spending",
-    trigger: TRIGGER,
     placements: ["dashboard.main"],
   } as unknown as AppDocument;
   await store.records("vendo_apps").put({
@@ -340,19 +327,15 @@ describe.sequential("an app rebuilds from its row alone, with its snapshot delet
     // migration, so nothing but `source` may have moved.
     const after = await apps.get(APP, orgCtx);
     expect(after!.id).toBe(APP);
-    expect(after!.triggers).toEqual(TRIGGERS);
     expect((await access.list(orgCtx, APP)).map((grant) => grant.principal))
       .toEqual([`user:${READER.subject}`]);
   }, 120_000);
 
   /**
-   * `triggers` is the one obligation this contract carries toward automations:
-   * don't gratuitously break it. A source commit is not a generation, so every
-   * field but `source` rides through untouched — asserted over SEVERAL commits,
-   * because a mutate that rebuilds the document instead of spreading it would only
-   * lose the triggers on the second one.
+   * A source commit is not a generation, so every field but `source` rides
+   * through untouched — asserted over SEVERAL commits.
    */
-  it("carries triggers, placements and every other field through commit after commit", async () => {
+  it("carries placements and every other field through commit after commit", async () => {
     const { store, apps, open } = await harness();
     await seedApp(store);
 
@@ -361,7 +344,6 @@ describe.sequential("an app rebuilds from its row alone, with its snapshot delet
       await workspace.writeFile(`/user/apps/${APP}/src/App.tsx`, `// ${round}\n`);
       expect((await workspace.commit()).status).toBe("ok");
       const doc = await apps.get(APP, ctx);
-      expect(doc!.triggers).toEqual(TRIGGERS);
       expect(doc!.name).toBe("Spending");
       expect(doc!.source!["src/App.tsx"]!.text).toBe(`// ${round}\n`);
     }

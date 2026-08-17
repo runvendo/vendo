@@ -6,7 +6,7 @@
     site: a host-supplied `ToolMeta` (VendoProvider `tools` prop) wins, and when
     it is absent these pure fallbacks prettify the raw id and args so end users
     never read a raw slug, a lifecycle string, or raw JSON. */
-import { declaredMoneyUnit, VENDO_TOOL_TITLES, type Json, type JsonSchema } from "@vendoai/core";
+import { declaredMoneyUnit, humanizeToolName, VENDO_TOOL_TITLES, type Json, type JsonSchema } from "@vendoai/core";
 import { currencyMinorUnits, formatMoney, getKitIntl } from "../kit/format.js";
 
 /** Optional host-supplied friendly metadata for one tool (08-ui provider seam).
@@ -28,26 +28,10 @@ export interface ToolMeta {
 
 export type ToolMetaMap = Record<string, ToolMeta>;
 
-/** Prettify a raw tool id / slug into a human label:
-    `host_email_send` → "Email send", `fn:listInvoices` → "List invoices",
-    `gmail_GMAIL_CREATE_EMAIL_DRAFT` → "Gmail create email draft". */
-export function humanizeToolName(raw: string): string {
-  const stripped = raw.replace(/^fn:/i, "").replace(/^host[_:.\- ]?/i, "");
-  const words = stripped
-    // camelCase / PascalCase boundaries
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    // any run of separators
-    .replace(/[._:\-\s]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .map(word => word.toLowerCase());
-  // Collapse consecutive duplicate tokens ("gmail GMAIL …" → "gmail …").
-  const deduped = words.filter((word, index) => word !== words[index - 1]);
-  if (deduped.length === 0) return raw;
-  const sentence = deduped.join(" ");
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
-}
+/** Beside {@link VENDO_TOOL_TITLES} in core since the engine writes consent
+    sentences with the same prettifier; re-exported so every chrome caller keeps
+    its one import site. */
+export { humanizeToolName };
 
 /**
  * The display title for a tool, most local authority first: the host's

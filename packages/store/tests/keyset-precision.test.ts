@@ -85,7 +85,7 @@ for (const backend of backends()) {
       for (let i = 1; i <= 5; i += 1) {
         await runs.put({
           id: `run_micro_${i}`,
-          appId: "app_micro_runs",
+          automationId: "atm_micro_runs",
           trigger: { kind: "schedule" },
           status: "running",
           record: { transient: true },
@@ -94,7 +94,7 @@ for (const backend of backends()) {
       }
       const seen = await collect(async (cursor) => {
         const page = await runs.list({
-          appId: "app_micro_runs",
+          automationId: "atm_micro_runs",
           limit: 2,
           ...(cursor === undefined ? {} : { cursor }),
         });

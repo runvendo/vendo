@@ -3,7 +3,11 @@
  * row, the terminal landing every door ends on, and the stopped check an
  * in-flight run interleaves with.
  *
- * Lifted out of `createAutomationsEngine` unchanged.
+ * ONE ledger. The owner / agent / automation / console views are FILTERS over
+ * it — but only the two keys `vendo_runs` DECLARES are refs (routing.ts), and a
+ * run names no subject of its own. Owner and agent are read off the row by
+ * `runs.list`; writing them here as refs no store would answer is what made
+ * `runs.list({ owner })` throw.
  */
 import {
   auditContext,
@@ -69,14 +73,17 @@ export const createRunRows = ({ base: { config, engine, iso, stopped } }: RunRow
     await engine.put(RUNS, {
       id: record.id,
       data: {
-        appId: record.appId,
+        automationId: record.automationId,
         trigger: record.trigger,
         status: record.status,
         record,
         startedAt: record.startedAt,
         ...(record.finishedAt === undefined ? {} : { finishedAt: record.finishedAt }),
       },
-      refs: { app_id: record.appId, status: record.status },
+      refs: {
+        automation_id: record.automationId,
+        status: record.status,
+      },
     });
     return true;
   };

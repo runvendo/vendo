@@ -46,9 +46,8 @@ import {
   storageDeclSchema,
   appSeedSchema,
   triggerSourceSchema,
-  runModelSchema,
+  automationTaskSchema,
   stepSchema,
-  triggerSchema,
   vendoRecordSchema,
   recordQuerySchema,
   authMaterialSchema,
@@ -328,7 +327,7 @@ describe("§9 — app document plane values and sub-schemas", () => {
   });
 });
 
-describe("§11 — trigger sources and run models", () => {
+describe("§11 — trigger sources and automation tasks", () => {
   it("schedule requires exactly one of cron/every/at across the full matrix", () => {
     const at = "2026-07-11T16:00:00.000Z";
     const ok = [{ cron: "0 9 * * 1" }, { every: "1h" }, { at }];
@@ -357,17 +356,14 @@ describe("§11 — trigger sources and run models", () => {
     }).success).toBe(true);
   });
 
-  it("run models: agentic prompt/budget and ordered steps", () => {
-    expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it" }).success).toBe(true);
-    expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it", budget: { maxToolCalls: 3 } }).success).toBe(true);
-    expect(runModelSchema.safeParse({ kind: "steps", steps: [{ id: "s1", tool: "host_x" }] }).success).toBe(true);
-    // Run models are a closed union: an unknown kind fails, and a malformed known kind still fails.
-    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(false);
-    expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
+  it("automation tasks: goal prompt/budget and ordered steps", () => {
+    expect(automationTaskSchema.safeParse({ kind: "goal", prompt: "do it" }).success).toBe(true);
+    expect(automationTaskSchema.safeParse({ kind: "goal", prompt: "do it", budget: { maxToolCalls: 3 } }).success).toBe(true);
+    expect(automationTaskSchema.safeParse({ kind: "steps", steps: [{ id: "s1", tool: "host_x" }] }).success).toBe(true);
+    // Automation tasks are a closed union: an unknown kind fails, and a malformed known kind still fails.
+    expect(automationTaskSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(false);
+    expect(automationTaskSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
     expect(stepSchema.safeParse({ id: "s1", tool: "fn:x", if: "$exists(event)", forEach: "steps.load" }).success).toBe(true);
-    expect(triggerSchema.safeParse({
-      id: "main", on: { kind: "host-event", event: "e" }, run: { kind: "agentic", prompt: "p" },
-    }).success).toBe(true);
   });
 });
 
@@ -438,7 +434,8 @@ describe("public export surface — every contracted camelCaseName schema is pre
       "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
       "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
       "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
-      "appSeedSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
+      "appSeedSchema", "triggerSourceSchema", "stepSchema",
+      "budgetSchema", "automationTaskSchema", "automationRecordSchema",
       "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
       "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoCitationsPartSchema", "vendoErrorCodeSchema",
       "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",

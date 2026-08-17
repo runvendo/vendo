@@ -1,8 +1,9 @@
-import { VendoError } from "@vendoai/core";
+import { signedWebhookBytes, verifySignature } from "@vendoai/automations";
+import { log, VendoError } from "@vendoai/core";
 import { computeImpact } from "../sync-impact.js";
+import { tickSecret } from "../tick-enrolment.js";
 import {
   VERSION,
-  environment,
   hex,
   json,
   orgsCloudRequired,
@@ -51,10 +52,50 @@ export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   return constantTimeEqual(hex(da), hex(db));
 }
 
+/** How far a signed heartbeat's clock may be from this one (standard-webhooks'
+    own recommendation). Wide enough for a queue retry, narrow enough that a
+    captured signature is not a permanent key. */
+const TICK_SIGNATURE_WINDOW_MS = 300_000;
+
+/** A standard-webhooks signature over the EMPTY body — what Vendo Cloud's
+    heartbeat sends. The signed bytes are `${webhook-id}.${webhook-timestamp}.`
+    and nothing else, so this door never reads a body it would then ignore.
+
+    Verification is the ENGINE's own `verifySignature`, not a second copy of the
+    scheme: the secret is base64url and has to be DECODED before the HMAC, and a
+    door that keyed on the text's characters instead would answer 401 to every
+    signed knock forever while agreeing perfectly with its own restatement. The
+    bearer above compares the same env var as a STRING — one secret, read as the
+    credential each waker presents, which is also why a host who chose a
+    passphrase rather than base64url still gets a working bearer and simply never
+    matches on this leg. */
+async function tickSignatureValid(request: Request, secret: string): Promise<boolean> {
+  const id = request.headers.get("webhook-id");
+  const timestamp = request.headers.get("webhook-timestamp");
+  const header = request.headers.get("webhook-signature");
+  if (id === null || timestamp === null || header === null || !/^\d+$/.test(timestamp)) return false;
+  if (Math.abs(Date.now() - Number(timestamp) * 1_000) > TICK_SIGNATURE_WINDOW_MS) return false;
+  const signed = signedWebhookBytes(id, timestamp, new Uint8Array());
+  // Senders may present several space-separated candidates during a key
+  // rotation: the delivery is good if ANY v1 candidate verifies.
+  for (const candidate of header.split(/\s+/)) {
+    if (!candidate.startsWith("v1,")) continue;
+    if (await verifySignature(secret, candidate.slice(3), signed)) return true;
+  }
+  return false;
+}
+
+/** The two credentials the ONE wake endpoint takes, side by side and against
+    the SAME secret: the host's own `Bearer $VENDO_TICK_SECRET` (a Vercel cron,
+    a GitHub Action, crontab) and a standard-webhooks signature (Vendo Cloud's
+    heartbeat). A deployment configures one thing — or, with a Cloud key, nothing
+    at all: `tickSecret` derives the secret enrolment published (tick-enrolment.ts)
+    and VENDO_TICK_SECRET stays the BYO override that wins. Either waker works. */
 async function tickAuthorized(request: Request): Promise<boolean> {
-  const secret = environment("VENDO_TICK_SECRET");
+  const secret = await tickSecret();
   if (secret === undefined) return false;
-  return timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
+  return await timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`)
+    || await tickSignatureValid(request, secret);
 }
 
 /** The development-only injection seams. Each handler guards on its composed
@@ -99,37 +140,56 @@ export const webhookRoutes: RouteEntry[] = [
   }),
 ];
 
-/** The machine-facing surface: the authenticated scheduler tick. Matches on the
-    RAW path ahead of any segment decoding, exactly like the old chain. The tick
-    is here rather than with the webhook door because it also drives the hosted
+/** THE firing door, and the only wake endpoint there is. Matches on the RAW
+    path ahead of any segment decoding, exactly like the old chain. It lives
+    here rather than with the webhook door because it also drives the hosted
     session sweep, which every deployment needs. (The v1 run-token apps proxy
     mount died with execution-v2 Wave 1.5; the box callback surface at /box/ is
-    its replacement.) */
+    its replacement.)
+
+    Three wakers knock on it and none of them holds a schedule: the host's own
+    cron, the dev ticker, and Vendo Cloud's heartbeat. The ENGINE decides what
+    is due, and its claim is atomic — so the door is idempotent, and a duplicate
+    knock honestly answers `{ fired: 0 }`. */
 export const systemRoutes: RouteEntry[] = [
   route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
-      return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
+      return json({
+        error: {
+          code: "blocked",
+          message: "POST /api/vendo/tick needs a credential and this request carried none that verified. "
+            + "Send either `Authorization: Bearer $VENDO_TICK_SECRET`, or a standard-webhooks signature "
+            + "(webhook-id, webhook-timestamp, webhook-signature) over the empty body, signed with that same secret. "
+            + "If this deployment has no secret at all: set VENDO_API_KEY and Vendo Cloud's heartbeat wakes it with "
+            + "nothing further to configure, or set VENDO_TICK_SECRET and point your own cron here.",
+        },
+      }, 401);
     }
-    // One authenticated tick drives the ONE scheduler — the automations engine,
-    // which fires every trigger including the schedules a machine app declares
-    // in its vendo.json (folded into doc triggers at manifest sync) — plus the
-    // hosted TTL sweep (sweepOnTick). Point any external cron here (Vercel cron,
-    // GitHub Actions, crontab); the Cloud broker calls this same surface. The
-    // legs settle independently so one failing can never suppress the other; any
-    // failure still answers 500 so a retrying cron comes back (both are
-    // idempotent within their windows).
+    // Two legs, settled independently. The sweep is HOUSEKEEPING that rides the
+    // same cadence; it must not be able to change the automations answer, so a
+    // failing sweep is logged for the operator and the tick still reports what
+    // it fired. (It used to 500 the whole call, which told a heartbeat the
+    // deployment was down when its automations had just run fine.)
     const [runs, sessions] = await Promise.allSettled([
       deps.automations.tick(),
       deps.sweepOnTick ? sweep() : Promise.resolve(),
     ]);
-    const errors = [
-      ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
-      ...(sessions.status === "rejected" ? [`sessions: ${sessions.reason instanceof Error ? sessions.reason.message : "sweep failed"}`] : []),
-    ];
-    return json({
-      ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
-      ...(errors.length === 0 ? {} : { errors }),
-    }, errors.length === 0 ? 200 : 500);
+    if (sessions.status === "rejected") {
+      log({
+        code: "vendo.tick-sweep-failed",
+        level: "warn",
+        message: "[vendo] the hosted session sweep failed on this tick; automations were unaffected: "
+          + `${sessions.reason instanceof Error ? sessions.reason.message : String(sessions.reason)}`,
+      });
+    }
+    if (runs.status === "rejected") {
+      throw new VendoError(
+        "unavailable",
+        `the automations tick failed: ${runs.reason instanceof Error ? runs.reason.message : String(runs.reason)}. `
+        + "Call it again — the tick is idempotent, so nothing it already claimed re-fires.",
+      );
+    }
+    return json({ fired: runs.value.length }, 202);
   }),
 ];
 

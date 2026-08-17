@@ -62,6 +62,12 @@ export interface Vendo {
   guardedTools: ToolRegistry;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  /** The agent this deployment adopted (`createVendo({ agent })`), read back —
+      the one `.on()` declarations were collected on, reconciled into records at
+      boot. Absent when the host composed no agent of its own; the deployment
+      still has a brain (the composed harness), and a firing that names no agent
+      reaches it. */
+  agent?: ComposedAgent;
   actions: ActionsRegistry;
   connections: ConnectionsService;
   /** Where this deployment's users reach the agent besides the web
@@ -353,6 +359,16 @@ export interface CreateVendoConfig {
       and the host tool surface (`.vendo/tools.json`). The agent's own guard and
       tools keep serving its own `session()` calls. */
   agent?: ComposedAgent;
+  /** MORE agents this deployment can fire automations through, by name. Each
+      one keeps its own brain, voice and skills; `support.on("0 9 * * 1", …)`
+      declares the work and this list is what makes the name resolvable, so a
+      firing lands on the agent that declared it rather than on a fallback.
+
+      Registration only — nothing here serves chat turns, and two agents sharing
+      a name refuse to compose. `agent:` above is a different key: that one this
+      deployment ADOPTS (its harness, store and instructions become the
+      deployment's), these are named beside it. */
+  agents?: readonly ComposedAgent[];
   /** The TTL sweep's cadence. One pass expires orphaned parked BYO calls and
       stranded approvals (both on `guard.approvals.parkedCallTtlMs`), so the
       cadence belongs to the deployment rather than to either feature.

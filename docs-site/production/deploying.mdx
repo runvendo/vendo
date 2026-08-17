@@ -53,12 +53,15 @@ Work top to bottom. Each row links to the page that covers it in depth.
   </Step>
 </Steps>
 
-Checks 1, 3, and 8 come with your Cloud key. The other five are yours to wire.
+Checks 1, 3, 6, and 8 come with your Cloud key. The other four are yours to wire.
 
 <Note>
-  The automations your users build fire on Vendo Cloud, not in your process.
-  Check 6 is about app machine schedules, which still need a caller on
-  `POST /api/vendo/tick`.
+  Every automation runs in **your** process. Check 6 comes with the key because a
+  deployment derives the tick secret from `VENDO_API_KEY` and registers itself at
+  boot, so Cloud's heartbeat knocks for you once a minute — set `VENDO_BASE_URL`
+  and nothing else. Without a key, set `VENDO_TICK_SECRET` and run your own cron;
+  both credentials `POST /api/vendo/tick` accepts are checked against that one
+  secret.
 </Note>
 
 ---

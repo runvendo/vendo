@@ -1,10 +1,11 @@
-/** There is exactly ONE scheduling system: doc triggers fired by the automations
- * engine. A machine app's `vendo.json` schedules are no longer a second
- * scheduler with its own tick and its own last-fired cache — they are CONVERTED
- * into ordinary doc triggers, armed through the arming seam, and fired by the
- * same tick every other automation rides. Which means a manifest fire now gets
- * what only doc triggers used to get: a run record, a trigger id, the kill
- * switch, and a row in the panel.
+/** There is exactly ONE scheduling system: automation RECORDS fired by the
+ * automations engine. A machine app's `vendo.json` schedules are no longer a
+ * second scheduler with its own tick and its own last-fired cache — they are
+ * folded in as ordinary records authored `manifest`, through the SAME shared
+ * `reconcileAutomations` helper `agent.on`'s boot reconcile uses and the same one
+ * create operation every other authoring door calls. Which means a manifest fire
+ * now gets what only declared automations used to get: a run record, an identity,
+ * the kill switch, and a row in the panel.
  *
  * WHEN that conversion happens is nobody's decision: a box edit folds the
  * manifest in on its way out — `editServerViaBox`
@@ -27,11 +28,11 @@ import {
   type SandboxAdapter,
   type SandboxMachine,
 } from "@vendoai/apps";
-import type { AppDocument, AppId, RunContext } from "@vendoai/core";
+import type { AppDocument, AppId, AutomationRecord, RunContext } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
-import { ADA } from "../src/support.js";
+import { appsAutomationsSeam, createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
+import { ADA, runCount } from "../src/support.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -128,7 +129,7 @@ const machineDoc = (id: string): AppDocument => ({
 
 /**
  * The runtime that owns the box EDIT, over the stack's own store, guard, tools
- * and arming seam — the umbrella's wiring, not a stand-in for it.
+ * and create seam — the umbrella's wiring, not a stand-in for it.
  *
  * It exists beside `stack.apps` for one reason: the harness composes its runtime
  * without a model (its suites never generate), and the edit door refuses without
@@ -149,7 +150,7 @@ const boxEditor = (stack: Stack, sandbox: SandboxAdapter): AppsRuntime => create
     // This in-box agent answers immediately — no live box's long-poll to wait out.
     boxEditPollMs: 1,
   },
-  armAutomation: (appId, triggerId, ctx) => stack.automations.enable(appId, triggerId, ctx),
+  automations: appsAutomationsSeam(stack.automations, stack.create),
 });
 
 /** ONE box edit through the production write path — and with it, one manifest
@@ -166,20 +167,21 @@ const editServer = async (
   expect(result.box?.ok).toBe(true);
 };
 
-const triggerRows = async (stack: Stack, appId: string) =>
-  (await stack.automations.list(ownerCtx(ADA.subject)))
-    .find((entry) => entry.app.id === appId)
-    ?.triggers.map(({ trigger, enabled }) => ({ id: trigger.id, on: trigger.on, run: trigger.run, enabled }));
+/** What the fold-in wrote, read back through the engine's own list. `manifest`
+ *  is the author a manifest reconcile diffs — and the only one it may touch. */
+const manifestRecords = async (stack: Stack, ctx: RunContext): Promise<AutomationRecord[]> =>
+  (await stack.automations.list({ owner: ADA.subject }, ctx))
+    .filter((record) => record.authoredBy === "manifest");
 
-const runCount = async (stack: Stack, appId: string): Promise<number> => Number((await stack.sql<{ count: unknown }>(
-  "SELECT COUNT(*)::int AS count FROM vendo_runs WHERE app_id = $1",
-  [appId],
-))[0]?.count);
+/** The record that fires one declared fn. A schedule's identity is its fn, so
+ *  there is exactly one of these however many times the manifest is folded in. */
+const forFn = (records: readonly AutomationRecord[], fn: string): AutomationRecord | undefined =>
+  records.find(({ task }) => task.kind === "steps" && task.steps[0]?.tool === `fn:${fn}`);
 
-describe("vendo.json schedules fold into doc triggers", () => {
+describe("vendo.json schedules fold into automation records", () => {
   beforeEach(resetFixture);
 
-  it("converts a manifest cron into an armed doc trigger the engine's own tick fires", async () => {
+  it("converts a manifest cron into an armed record the engine's own tick fires", async () => {
     let clock = new Date("2026-07-12T09:00:00.000Z");
     const { adapter, fires } = manifestBox([{ cron: "* * * * *", fn: "chase" }]);
     const stack = await createStack({ now: () => clock, sandbox: adapter });
@@ -189,69 +191,72 @@ describe("vendo.json schedules fold into doc triggers", () => {
       const apps = boxEditor(stack, adapter);
       await stack.putApp(ADA.subject, machineDoc(appId));
 
-      // Nothing is declared on the document yet — the cron lives only in the
-      // box, so the app is not an automation at all and the panel has no row.
-      expect(await triggerRows(stack, appId)).toBeUndefined();
+      // The cron lives only in the box, so no automation exists yet and the
+      // panel has no row.
+      expect(await stack.automations.list({}, ctx)).toEqual([]);
 
       await editServer(apps, appId, "chase overdue invoices every minute", ctx);
 
-      // The manifest schedule is now an ordinary trigger of the app, ARMED —
-      // which is the whole of what the converter reported as `arming: "armed"`,
-      // read where it is true: the automations engine's own row.
-      expect(await triggerRows(stack, appId)).toEqual([{
-        id: "manifest_chase",
-        on: { kind: "schedule", cron: "* * * * *" },
-        run: { kind: "steps", steps: [{ id: "fire", tool: "fn:chase" }] },
-        enabled: true,
-      }]);
-      // Arming captured an empty consent surface (fn: steps run in the app's own
-      // box), so nothing was left waiting on a permission decision.
-      expect(await triggerRows(stack, appId)).not.toContainEqual(
-        expect.objectContaining({ pendingGrants: expect.anything() }),
-      );
+      // The manifest schedule is now an ordinary record of the app's owner,
+      // ARMED, authored `manifest` — read where it is true: the automations
+      // engine's own row, not the converter's report.
+      const records = await manifestRecords(stack, ctx);
+      expect(records).toHaveLength(1);
+      const chase = records[0]!;
+      expect(chase).toMatchObject({
+        owner: { kind: "user", subject: ADA.subject },
+        when: { kind: "schedule", cron: "* * * * *" },
+        task: { kind: "steps", steps: [{ id: "fire", tool: "fn:chase" }] },
+        armed: true,
+      });
 
-      // FIRES, through the automations tick — not a second scheduler.
+      // FIRES, through the automations tick — not a second scheduler. Nothing
+      // registers an `fn:` descriptor for the step loop (the in-runtime fn path
+      // is a later project), so the approved shape is: the record ARMS, then
+      // fires into a loud, NAMED error row — strictly better than the old
+      // silent never-armed. When the fn path lands, this is what notices.
       clock = new Date("2026-07-12T09:01:30.000Z");
       const ids = await stack.automations.tick(clock);
       expect(ids).toHaveLength(1);
       const run = await stack.automations.runs.get(ids[0]!, ctx);
-      expect(run?.triggerId).toBe("manifest_chase");
-      expect(run?.status).toBe("ok");
+      expect(run?.automationId).toBe(chase.id);
+      expect(run?.status).toBe("error");
       expect(run?.trigger.kind).toBe("schedule");
+      // The row names the tool it could not resolve, so the ledger reads.
+      expect(run?.error).toMatchObject({ code: "not-found", message: "Tool fn:chase was not found" });
       expect(run?.steps.map(({ tool, outcome }) => ({ tool, outcome })))
-        .toEqual([{ tool: "fn:chase", outcome: "ok" }]);
-      // The box really ran the declared fn.
-      expect(fires).toEqual(["chase"]);
+        .toEqual([{ tool: "fn:chase", outcome: "error" }]);
+      // The box's own fn door is never reached, because the step never resolved.
+      expect(fires).toEqual([]);
 
       // EXACTLY ONCE: a double tick inside the same cron window is a no-op.
+      // Witnessed on the run rows themselves — `fires` can no longer grow, so
+      // it would prove nothing here.
       clock = new Date("2026-07-12T09:01:45.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
-      expect(fires).toEqual(["chase"]);
-      expect(await runCount(stack, appId)).toBe(1);
+      expect(await runCount(stack, chase.id)).toBe(1);
 
-      // The kill switch reaches it, because it is a run like any other.
-      await stack.automations.disable(appId, "manifest_chase", ctx);
+      // The kill switch reaches it, because it is a record like any other.
+      await stack.automations.disable(chase.id, ctx);
       clock = new Date("2026-07-12T09:03:00.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
-      expect(fires).toEqual(["chase"]);
+      expect(await runCount(stack, chase.id)).toBe(1);
 
-      // And the NEXT edit does not undo that decision: its fold-in re-reads a
-      // manifest that did not change, so the converter leaves the trigger's arm
-      // state exactly as the person last set it (rather than re-arming it, or
-      // claiming an arm state it cannot see — the armed row is the automations
-      // engine's, not this converter's).
+      // And the NEXT edit does not undo that decision: the reconcile leaves a
+      // record a PERSON disarmed exactly as they left it, redeploy after
+      // redeploy. That guarantee is the point of this suite.
       await editServer(apps, appId, "tidy the chase copy, leave the schedule alone", ctx);
-      expect((await triggerRows(stack, appId))?.map(({ id, on, enabled }) => ({ id, on, enabled })))
-        .toEqual([{ id: "manifest_chase", on: { kind: "schedule", cron: "* * * * *" }, enabled: false }]);
+      expect(await manifestRecords(stack, ctx))
+        .toMatchObject([{ id: chase.id, armed: false, disarmedBy: "user" }]);
       clock = new Date("2026-07-12T09:04:00.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
-      expect(fires).toEqual(["chase"]);
+      expect(await runCount(stack, chase.id)).toBe(1);
     } finally {
       await stack.close();
     }
   });
 
-  it("updates a changed cron, removes a dropped schedule, and never touches a user-authored trigger", async () => {
+  it("updates a changed cron, disarms a dropped schedule, and never touches a chat-authored record", async () => {
     let clock = new Date("2026-07-12T09:00:00.000Z");
     const box = manifestBox([{ cron: "0 * * * *", fn: "chase" }, { cron: "0 8 * * *", fn: "digest" }]);
     const stack = await createStack({ now: () => clock, sandbox: box.adapter });
@@ -259,41 +264,54 @@ describe("vendo.json schedules fold into doc triggers", () => {
       const appId = "app_manifest_churn";
       const ctx = ownerCtx(ADA.subject, appId);
       const apps = boxEditor(stack, box.adapter);
-      await stack.putApp(ADA.subject, {
-        ...machineDoc(appId),
-        // A hand-authored trigger sitting beside the converted ones. Nothing the
-        // converter does may change, disarm or delete it.
-        triggers: [{
-          id: "mine",
-          on: { kind: "host-event", event: "invoice.created" },
-          run: { kind: "steps", steps: [{ id: "list", tool: "host_invoices_list" }] },
-        }],
-      });
+      await stack.putApp(ADA.subject, machineDoc(appId));
+      // A record the owner authored in chat, sitting beside the manifest's own.
+      // Nothing a fold-in does may change, disarm or delete it.
+      const mine = await stack.create({
+        owner: ADA,
+        when: { event: "invoice.created" },
+        task: { kind: "steps", steps: [{ id: "list", tool: "host_invoices_list" }] },
+        authoredBy: "chat",
+      }, ctx);
 
+      // Both schedules land, armed. Addressed by fn rather than by position:
+      // two records written in the same millisecond tie-break on a random uuid
+      // in the keyset order (`packages/store/src/schema.ts:337`), so their
+      // relative order is a coin flip and asserting it is asserting the coin.
       await editServer(apps, appId, "chase hourly and send a morning digest", ctx);
-      expect((await triggerRows(stack, appId))?.map(({ id }) => id))
-        .toEqual(["mine", "manifest_chase", "manifest_digest"]);
+      const folded = await manifestRecords(stack, ctx);
+      expect(folded).toHaveLength(2);
+      expect(forFn(folded, "chase"))
+        .toMatchObject({ when: { kind: "schedule", cron: "0 * * * *" }, armed: true });
+      expect(forFn(folded, "digest"))
+        .toMatchObject({ when: { kind: "schedule", cron: "0 8 * * *" }, armed: true });
 
       // The manifest changes inside the box: chase's cron moves, digest is gone.
       box.state.schedules = [{ cron: "30 * * * *", fn: "chase" }];
       await editServer(apps, appId, "move chase to half past and drop the digest", ctx);
 
-      const after = await triggerRows(stack, appId);
-      expect(after?.map(({ id, on }) => ({ id, on }))).toEqual([
-        { id: "mine", on: { kind: "host-event", event: "invoice.created" } },
-        { id: "manifest_chase", on: { kind: "schedule", cron: "30 * * * *" } },
-      ]);
-      // The user-authored trigger kept its own arm state (never armed here).
-      expect(after?.find(({ id }) => id === "mine")?.enabled).toBe(false);
-      expect(after?.find(({ id }) => id === "manifest_chase")?.enabled).toBe(true);
+      const after = await manifestRecords(stack, ctx);
+      // Chase was updated in place — one record per declared fn, never a second
+      // beside it — and the dropped digest is disarmed rather than deleted, so
+      // its run history survives.
+      expect(after).toHaveLength(2);
+      expect(forFn(after, "chase"))
+        .toMatchObject({ when: { kind: "schedule", cron: "30 * * * *" }, armed: true });
+      expect(forFn(after, "digest")).toMatchObject({ armed: false });
+
+      // The chat-authored record is untouched: a manifest reconcile only ever
+      // diffs its own author.
+      expect(await stack.automations.get(mine.id, ctx))
+        .toMatchObject({ authoredBy: "chat", armed: true });
 
       clock = new Date("2026-07-12T10:31:00.000Z");
-      const ids = await stack.automations.tick(clock);
-      expect(ids).toHaveLength(1);
-      expect(box.fires).toEqual(["chase"]);
+      expect(await stack.automations.tick(clock)).toHaveLength(1);
+      // The UPDATED cron is what fired, witnessed on chase's own run rows — an
+      // `fn:` step never reaches the box's fn door, as the first case pins.
+      expect(await runCount(stack, forFn(after, "chase")!.id)).toBe(1);
+      expect(box.fires).toEqual([]);
     } finally {
       await stack.close();
     }
   });
-
 });

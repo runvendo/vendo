@@ -59,7 +59,6 @@ const APP_DOCUMENT_FIELDS = [
   // {@link assertPortableSource}.
   "source",
   "machine",
-  "triggers",
   "egress",
   "secrets",
   "seed",
@@ -129,21 +128,14 @@ const allowedDocumentFields = (
 // execution-v2 — interchange is document-only, a copy boundary: a machine ref
 // never crosses it. Export never writes one, import strips one a document tries
 // to smuggle in, and the box's disk is scratch by the data rule — an imported
-// app re-graduates on its own.
+// app re-graduates on its own. `automations` is absent from the field list above
+// for the same reason and a stronger one: an automation is a PRINCIPAL's own
+// record, so a copy that carried the ids would point at somebody else's.
 const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> =>
   allowedDocumentFields(app, new Set(["id", "machine", "forkedFrom"])) as Omit<AppDocument, "id">;
 
 const withFreshIdentity = (input: unknown, id: AppId): Record<string, unknown> => {
   const copy = allowedDocumentFields(input, new Set(["id", "machine", "forkedFrom"]));
-  // An archive written before triggers were a LIST carries the singular
-  // `trigger`, which core's read normalization migrates — but only if it
-  // survives this copy. The field list above is the new spelling only, so
-  // without this an old export imported "fine" and silently never fired.
-  // Same precedence normalizeTriggers uses: a document that already has the
-  // list keeps it, and the legacy key is never re-emitted on export.
-  if (isRecord(input) && copy.triggers === undefined && input.trigger !== undefined) {
-    copy.trigger = structuredClone(input.trigger);
-  }
   copy.id = id;
   return copy;
 };

@@ -3,9 +3,10 @@ import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument } from "@vendoai/
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
+  createAutomation,
   createStack,
   decideApprovals,
-  importAutomation,
+  importApp,
   resetFixture,
   type Stack,
   type WireApproval,
@@ -33,18 +34,7 @@ function plainApp(): AppDocument {
   };
 }
 
-function automation(): AppDocument {
-  return {
-    format: VENDO_APP_FORMAT,
-    id: "app_import_placeholder",
-    name: "Invoice refresh",
-    triggers: [{
-      id: "main",
-      on: { kind: "host-event", event: "sync-impact.refresh" },
-      run: { kind: "steps", steps: [{ id: "list", tool: TOOL }] },
-    }],
-  };
-}
+const EVENT = "sync-impact.refresh";
 
 describe("ENG-261: sync impact through the composed wire", () => {
   it("maps a tool to its saved app, automation, and active standing grant", async () => {
@@ -54,11 +44,15 @@ describe("ENG-261: sync impact through the composed wire", () => {
     // does; the sibling test below is the same wire without the opt-in.
     stack = await createStack({ development: true });
 
-    const app = await importAutomation(stack, plainApp(), ADA);
+    const app = await importApp(stack, plainApp(), ADA);
     // Imported documents are intentionally disabled at rest and the public wire
     // has no enable route for plain apps; flip only that persisted operator bit.
     await stack.sql("UPDATE vendo_apps SET enabled = true WHERE id = $1", [app.id]);
-    const automated = await importAutomation(stack, automation(), ADA);
+    const automated = await createAutomation(stack, {
+      owner: ADA,
+      when: { event: EVENT },
+      task: { kind: "steps", steps: [{ id: "list", tool: TOOL }] },
+    });
     const enabled = (await (await stack.wireFetch(
       `/automations/${automated.id}/enable`,
       { method: "POST" },
@@ -84,7 +78,9 @@ describe("ENG-261: sync impact through the composed wire", () => {
         {
           tool: TOOL,
           apps: [{ id: app.id, title: "Invoice viewer" }],
-          automations: [{ id: automated.id, title: "Invoice refresh" }],
+          // A record has no name — it has a WHEN, which is what a person would
+          // recognize it by in the report.
+          automations: [{ id: automated.id, title: `on ${EVENT}` }],
           grants: 1,
         },
         { tool: "host_absent", apps: [], automations: [], grants: 0 },
@@ -96,7 +92,7 @@ describe("ENG-261: sync impact through the composed wire", () => {
     await resetFixture();
     stack = await createStack();
 
-    const app = await importAutomation(stack, plainApp(), ADA);
+    const app = await importApp(stack, plainApp(), ADA);
     await stack.sql("UPDATE vendo_apps SET enabled = true WHERE id = $1", [app.id]);
 
     // No principal header — the unidentified caller the old NODE_ENV-only gate

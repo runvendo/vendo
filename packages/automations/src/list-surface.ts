@@ -1,136 +1,54 @@
 /**
- * 07 §1 — the user's apps that have triggers, each with its trigger LIST: what
- * is armed, who it runs as, whether it stopped, and what it is still waiting to
- * be allowed.
+ * 07 §1 — the records this caller holds, and one of them by id.
  *
- * Lifted out of `createAutomationsEngine` unchanged.
+ * Deployment-wide with an `owner`/`agent` filter, and NO app filter: this
+ * package has no app concepts. An app page that wants "my automations" resolves
+ * its OWN `automations: string[]` and drops the dead ids, which is the apps
+ * layer's job and not this one's.
  */
-import type { AppRowsAccess } from "./app-rows.js";
-import type { ArmedAccess } from "./armed.js";
-import type { ConsentAccess } from "./consent.js";
+import type { AutomationRecord, RunContext } from "@vendoai/core";
+import type { AutomationRowsAccess } from "./automation-rows.js";
 import type { EngineBase } from "./engine-context.js";
 import type { AutomationsEngine } from "./index.js";
-import { stopFor } from "./messages.js";
-import { allRecords, parseAppRow } from "./rows.js";
-import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
-import { SPONSORSHIPS, sponsorshipSchema, triggerKey, triggersOf } from "./sponsorship.js";
-import { APPS } from "./types.js";
+import { allRecords, parseAutomation } from "./rows.js";
+import { AUTOMATIONS } from "./types.js";
 
-export type ListSurfaceDeps = {
-  base: EngineBase;
-  appRows: AppRowsAccess;
-  armed: ArmedAccess;
-  sponsorship: SponsorshipGateAccess;
-  consent: ConsentAccess;
-};
+export type ListSurfaceDeps = { base: EngineBase; automations: AutomationRowsAccess };
 
-export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine, "list"> => {
-  const { base: { config, engine }, appRows, armed } = deps;
-  const { sponsorship, consent } = deps;
+/** The signing key never leaves the engine: `list`/`get` are read by chat
+ *  surfaces and the console, and a live HMAC secret in a listing is a secret
+ *  that has been published. Only the webhook door reads it, off the stored row. */
+const redacted = ({ webhookSecret: _, ...record }: AutomationRecord): AutomationRecord => record;
 
-  const list: AutomationsEngine["list"] = async (ctx) => {
-    const subject = ctx.principal.subject;
-    const records = await allRecords(engine, APPS, { refs: { subject } });
-    const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
-    const seen = new Set(rows.map((row) => row.doc.id));
-    // An ORG-held app's row subject is the org id (§9.5), so matching only the
-    // caller's own subject listed a promoted automation for NOBODY — not the
-    // members, not the org admin, not the person who promoted it — while promote
-    // tells that person it "stays off until someone turns it back on". The orgs
-    // come from the ctx (§9.1: asserted, never stored) and `can(editor)` still
-    // decides each row.
-    for (const org of new Set((ctx.memberships ?? []).map(({ org: id }) => id))) {
-      for (const record of await allRecords(engine, APPS, { refs: { subject: org } })) {
-        const row = parseAppRow(record);
-        if (row.subject !== org || seen.has(row.doc.id)) continue;
-        if (await appRows.canEdit(ctx, row, row.doc.id)) {
-          seen.add(row.doc.id);
-          rows.push(row);
-        }
+export const createListSurface = (
+  { base: { engine }, automations }: ListSurfaceDeps,
+): Pick<AutomationsEngine, "list" | "get"> => {
+  const list: AutomationsEngine["list"] = async (filter, ctx) => {
+    // Indexed per owner (never a scan): the caller, plus every org the
+    // memberships seam asserted for them. An ORG-held record's subject is the
+    // org id (§9.5), so the caller's own subject alone would list a promoted
+    // automation for nobody at all.
+    const subjects = filter.owner === undefined
+      ? [ctx.principal.subject, ...(ctx.memberships ?? []).map(({ org }) => org)]
+      : [filter.owner];
+    const found = new Map<string, AutomationRecord>();
+    for (const subject of new Set(subjects)) {
+      for (const stored of await allRecords(engine, AUTOMATIONS, { refs: { subject } })) {
+        const row = parseAutomation(stored);
+        // The ownership check still decides: a filter naming a subject the caller
+        // does not speak for answers empty, never someone else's automations.
+        if (!automations.speaksFor(ctx, row.owner.subject)) continue;
+        if (filter.agent !== undefined && row.agent !== filter.agent) continue;
+        found.set(row.id, redacted(row));
       }
     }
-    // An automation runs as its SPONSOR, who may not own the app — and the
-    // person it runs as has to be able to see it (§8: editor = edit). The
-    // sponsorship rows are ref'd by subject, so this is one indexed query, never
-    // a scan of everybody's apps.
-    //
-    // INVALIDATED rows are included on purpose: a stopped automation
-    // must not vanish from here, or there is no way back to it at all.
-    // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
-    // one app must still fetch that app once.
-    const sponsoredElsewhere = [...new Set(
-      (await allRecords(engine, SPONSORSHIPS, { refs: { subject } }))
-        .map((record) => sponsorshipSchema.safeParse(record.data))
-        .flatMap((parsed) => parsed.success ? [parsed.data.appId] : [])
-        .filter((appId) => !seen.has(appId)),
-    )];
-    for (const record of sponsoredElsewhere.length === 0
-      ? []
-      : await allRecords(engine, APPS, { ids: sponsoredElsewhere })) {
-      const row = parseAppRow(record);
-      // Sponsoring is not access: an editor whose grant was revoked keeps the
-      // row but loses the door, so `can(editor)` still decides.
-      if (await appRows.canEdit(ctx, row, row.doc.id)) rows.push(row);
-    }
-    // Pending-captures projection: an armed trigger with outstanding standing-grant
-    // asks is NOT plain enabled — surfaces render "waiting on N permissions"
-    // from here (reload-safe; never from an enable() result held in memory).
-    // Keyed per (app, trigger), because that is the unit a person allowed.
-    const outstanding = new Map<string, { pendingGrants: number; grantSetId?: string }>();
-    for (const capture of await consent.pendingCaptures(subject)) {
-      const key = triggerKey(capture.data.appId, capture.data.triggerId);
-      const entry = outstanding.get(key) ?? { pendingGrants: 0 };
-      entry.pendingGrants += 1;
-      entry.grantSetId ??= capture.data.grantSetId;
-      outstanding.set(key, entry);
-    }
-    const automations = rows.filter((row) => triggersOf(row.doc).length > 0);
-    const sponsorRows = await sponsorship.sponsorshipsFor(automations);
-    const armedKeys = await armed.armedFor(automations);
-    const entries: Awaited<ReturnType<AutomationsEngine["list"]>> = [];
-    for (const row of automations) {
-      // "…and names a wider editor set when one exists": the count comes from
-      // the grants themselves, so a deployment with no access seam says nothing
-      // rather than implying the automation is private. Per APP: app access is
-      // not a per-trigger fact.
-      const editors = config.appAccess?.list === undefined
-        ? undefined
-        : (await config.appAccess.list(ctx, row.doc.id)).length;
-      const armedHere = new Set(armed.armedTriggers(row, armedKeys).map((trigger) => trigger.id));
-      entries.push({
-        app: row.doc,
-        triggers: triggersOf(row.doc).map((trigger) => {
-          const key = triggerKey(row.doc.id, trigger.id);
-          const pending = outstanding.get(key);
-          // §13's window label — "runs with Dana's access". The name rides the
-          // sponsorship row (captured from their own Principal when they took the
-          // automation on), so it reads the same for everyone; Vendo still holds no
-          // directory and invents no name for anybody.
-          const sponsorRow = sponsorRows.get(key);
-          const sponsor = sponsorRow?.sponsor ?? row.subject;
-          const display = sponsorRow?.display ?? (sponsor === subject ? ctx.principal.display : undefined);
-          // A stopped automation says so HERE, in the same sentence the
-          // stopped run row uses, so the list is a way back to it rather than a
-          // place it silently disappeared from.
-          const stopped = sponsorRow?.status === "invalidated"
-            ? stopFor(sponsorRow.reason ?? "edit", row.doc.name)
-            : undefined;
-          return {
-            trigger,
-            enabled: armedHere.has(trigger.id),
-            sponsor: { subject: sponsor, ...(display === undefined ? {} : { display }) },
-            ...(stopped === undefined ? {} : { stopped }),
-            ...(pending === undefined ? {} : {
-              pendingGrants: pending.pendingGrants,
-              ...(pending.grantSetId === undefined ? {} : { grantSetId: pending.grantSetId }),
-            }),
-          };
-        }),
-        ...(editors === undefined ? {} : { editors }),
-      });
-    }
-    return entries;
+    return [...found.values()];
   };
 
-  return { list };
+  const get: AutomationsEngine["get"] = async (automationId: string, ctx: RunContext) => {
+    const found = await automations.ownedOrNull(automationId, ctx);
+    return found === null ? null : redacted(found.row);
+  };
+
+  return { list, get };
 };

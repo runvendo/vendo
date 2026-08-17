@@ -18,7 +18,7 @@ import {
   type AdmissionOrigin,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "./app-memory.js";
-import { APPS_COLLECTION, appRecordInput, enabledAfterDocumentEdit, rowFromRecord, type AppRecordWrite, withoutSession } from "./persistence.js";
+import { APPS_COLLECTION, appRecordInput, rowFromRecord, type AppRecordWrite, withoutSession } from "./persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { NO_ASSEMBLER, NOTHING_RENDERABLE } from "../doors/build-messages.js";
 import type { EditResult, VersionEntry } from "../runtime/types.js";
@@ -143,10 +143,6 @@ const createEditPersist = (
     version: VersionEntry,
     subject: string,
     options: {
-      /** An edit that AUTHORED the trigger arms it in the same write (the
-       *  server lane's automation path); every other edit keeps the
-       *  disarm-on-trigger-change rule below. */
-      armTrigger?: boolean;
       /** Who is writing, for the admission audit. Required, because this is the
        *  ONE document write and every rung reaches it: a default would let a
        *  path write anonymously. It never changes what the door CHECKS — the
@@ -194,12 +190,7 @@ const createEditPersist = (
     const versionId = await history.append(app.id, previous, version);
     let appRow: AppRecordWrite;
     try {
-      const wasEnabled = await assertCurrent();
-      // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
-      const enabled = options.armTrigger === true && (app.triggers ?? []).length > 0
-        ? true
-        : enabledAfterDocumentEdit(previous, app, wasEnabled);
-      appRow = appRecordInput(app, rowSubject, enabled, options.origin);
+      appRow = appRecordInput(app, rowSubject, await assertCurrent(), options.origin);
       await engine.put(APPS_COLLECTION, appRow);
     } catch (error) {
       // The version above records a state that never became the past — see

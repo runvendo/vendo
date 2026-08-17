@@ -38,7 +38,9 @@
     ".next/away-drill/types/**/*.ts",
     ".next/away-drill/dev/types/**/*.ts",
     ".next-context-e2e/types/**/*.ts",
-    ".next-context-e2e/dev/types/**/*.ts"
+    ".next-context-e2e/dev/types/**/*.ts",
+    ".next-away-drill/types/**/*.ts",
+    ".next-away-drill/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

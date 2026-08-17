@@ -310,7 +310,7 @@ Client for the public Vendo Cloud API. Read results print as JSON.
 | `--api-url <url>` | overrides `VENDO_CLOUD_URL` |
 | `--json` | advertised but inert; read subcommands already print JSON |
 
-There is no validate subcommand and no deploy subcommand. Key problems surface on the first real call, and automations sync and run on Vendo's schedulers on their own.
+There is no validate subcommand and no deploy subcommand. Key problems surface on the first real call, and automations need no deploy step of their own — they run in your process, woken by Cloud's heartbeat on `POST /api/vendo/tick`.
 
 `vendo cloud usage` answers with per-day counts and the period total:
 

@@ -87,7 +87,7 @@ export interface AppsRuntimeContext {
   review: ReviewLifecycle;
   /** execution-v2 — provision/wake/sleep/destroy (machine-lifecycle.ts). */
   lifecycle: MachineLifecycle;
-  /** The box manifest's schedules, folded into document triggers. */
+  /** The box manifest's schedules, folded into automation records. */
   manifestTriggers: ReturnType<typeof createManifestTriggers>;
   /** Export/import of an app and its documents (interchange.ts). */
   interchange: AppInterchange;
@@ -167,7 +167,7 @@ export interface AppsRuntimeContext {
     app: AppDocument,
     version: VersionEntry,
     subject: string,
-    options: { armTrigger?: boolean; origin: AdmissionOrigin },
+    options: { origin: AdmissionOrigin },
   ): Promise<AppDocument>;
   /** Build contract §9.9 — the ONE announcement every change to what an app IS. */
   reportDocumentEdit(previous: AppDocument, next: AppDocument, subject: string): Promise<void>;
@@ -316,7 +316,7 @@ const createDoors = (
     engine: deps.engine,
     lifecycle,
     updateDocument: updateAppDocument,
-    ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
+    ...(config.automations === undefined ? {} : { automations: config.automations }),
   });
   const caller = fnCaller.wrap(createAppCaller(config.tools, {
     // W0 — remember every mutating in-app action the guard parks, so the

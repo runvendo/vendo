@@ -47,10 +47,21 @@ vi.mock("@/vendo/server", () => ({
       })),
     },
     automations: {
-      enable: vi.fn(async (appId: string) => appId.includes("weekly")
+      enable: vi.fn(async (automationId: string) => automationId.includes("weekly")
         ? { enabled: true, missing: weeklyAsks, grantSetId: "gset_weekly_test" }
         : { enabled: true, missing: [grantAsk], grantSetId: "gset_lowbalance_test" }),
-      list: vi.fn(async () => []),
+      // The card reads the RECORD now — an automation is not an app with a
+      // trigger list, so there is no `apps.get` + `list` pair behind it.
+      get: vi.fn(async (automationId: string) => ({
+        id: automationId,
+        owner: { kind: "user", subject: "vendo-demo" },
+        when: { kind: "schedule", cron: automationId.includes("weekly") ? "0 17 * * 5" : "0 8 * * *" },
+        task: { kind: "steps", steps: [] },
+        armed: true,
+        authoredBy: "chat",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
     },
     apps: {
       get: vi.fn(async () => ({

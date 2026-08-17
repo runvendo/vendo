@@ -278,10 +278,12 @@ describe("the shipped client against the shipped door", () => {
       ["apps.unplace", () => client.apps.unplace(app, "hero")],
       ["apps.placements", () => client.apps.placements(["hero", "sales,eu"])],
       ["automations.list", () => client.automations.list()],
-      ["automations.enable", () => client.automations.enable(app, "main")],
-      ["automations.disable", () => client.automations.disable(app, "main")],
-      ["automations.dryRun", () => client.automations.dryRun(app, "main")],
-      ["runs.list", () => client.runs.list({ appId: app, status: "running", cursor: "cursor_1" })],
+      // One record is decided on its own now — no (app, trigger) pair, and the
+      // run ledger filters by the automation rather than by an app.
+      ["automations.enable", () => client.automations.enable("atm_absent")],
+      ["automations.disable", () => client.automations.disable("atm_absent")],
+      ["automations.dryRun", () => client.automations.dryRun("atm_absent")],
+      ["runs.list", () => client.runs.list({ automationId: "atm_absent", status: "running", cursor: "cursor_1" })],
       ["runs.get", () => client.runs.get("run_absent")],
       ["runs.stop", () => client.runs.stop("run_absent")],
       ["runs.rerun", () => client.runs.rerun("run_absent")],

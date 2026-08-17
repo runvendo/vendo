@@ -8,10 +8,18 @@ import { createVendo } from "@vendoai/vendo/server";
 
 /** Callable-anything proxy: every property is a callable that resolves to
  *  undefined, so composition-time store binding (records(), blobs(), ...)
- *  succeeds without a database. The /status probe never reads data. */
+ *  succeeds without a database.
+ *
+ *  `list` is the one verb that must answer a real SHAPE rather than undefined.
+ *  The boot reconcile lists this deployment's code-authored automations on the
+ *  ready() latch — which /status arms — and it does so even with zero `.on()`
+ *  declarations, because a deployment that just deleted its last one still has
+ *  stragglers to disarm. An empty page is the honest answer for a store with no
+ *  database behind it. */
 const anything = new Proxy(function anything() {}, {
   get(_target, property) {
     if (property === Symbol.toPrimitive || property === "then") return undefined;
+    if (property === "list") return () => Promise.resolve({ records: [] });
     return anything;
   },
   apply() {
