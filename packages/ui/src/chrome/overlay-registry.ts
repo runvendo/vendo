@@ -32,6 +32,11 @@ export interface OpenConversationOptions {
    * removing it took the agent's grounding with it. This is the other half.
    */
   context?: string;
+  /** Open the overlay SCOPED to one app: it is featured on the workspace stage,
+   *  so the view being talked about is the view on screen. The pinned app's ✦
+   *  "Edit in chat" is the caller; a docked overlay has no stage and ignores
+   *  it. */
+  appId?: string;
   /** Send the prompt immediately (default: leave it in the composer). */
   send?: boolean;
   /** Start a fresh conversation instead of resuming the current one. */

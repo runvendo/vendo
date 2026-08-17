@@ -2203,4 +2203,15 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
   background: color-mix(in srgb, var(--vendo-fg) 12%, transparent); }
 /* ===== END S2 shape-true skeleton (lane L2) =============================== */
 
+/* ===== BEGIN S3 ✦ chrome on pinned apps (lane L2) ==========================
+   The pinned app's handle borrows <Remixable>'s marks wholesale — same seed,
+   same pill, same popover — so there is one ✦ vocabulary on the page instead
+   of two that almost match. All that is missing is the reveal, which the remix
+   rules scope to .fl-remixable; the slot's filled wrapper is the anchor here
+   (it is already position:relative) and carries the same flag. */
+.fl-slot-filled[data-vendo-revealed] .fl-remix-seed { opacity: 0; transform: scale(1.4); }
+.fl-slot-filled[data-vendo-revealed] .fl-remix-pill { opacity: 1; transform: scale(1); pointer-events: auto; }
+.fl-slot-filled[data-vendo-revealed] .fl-remix-pill:active { transform: scale(.97); }
+/* ===== END S3 ✦ chrome on pinned apps (lane L2) ============================ */
+
 `;

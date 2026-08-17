@@ -15,6 +15,7 @@ import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
+import { PinChrome } from "./pin-chrome.js";
 import { openVendoPalette } from "./palette-hotkey.js";
 import { buildFailureNotice } from "./thread/message-data.js";
 
@@ -325,6 +326,8 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   // gets the overlay, and one that never does gets a sentence instead of a
   // button that quietly does nothing (the old behavior).
   const [hint, setHint] = useState(false);
+  // The ✦ popover's Refresh, as a remount key.
+  const [reload, setReload] = useState(0);
   const author = () => {
     if (onAuthor) {
       onAuthor(id);
@@ -440,16 +443,34 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
 
   const Fallback = () => <>{children}</>;
   const mounted = appId
-    ? <MountedApp appId={appId} onParked={parked} />
+    // `reload` remounts the app, so Refresh is a real round trip through
+    // get+open — and the wait is the shape-true skeleton, not a frozen view.
+    ? <MountedApp key={reload} appId={appId} onParked={parked} />
     : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
+  const body = (
+    <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
+      <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>
+    </FluidReveal>
+  );
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
-        <div className="fl-slot-filled">
-          <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
-            <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>
-          </FluidReveal>
-        </div>
+        {/* Only a PLACEMENT gets the ✦: a host-asserted `appId` prop is the
+            host's own markup decision, and offering to unpin it would clear a
+            row the prop goes on winning over. */}
+        {appId !== undefined && resolvesItself ? (
+          <PinChrome
+            appId={appId}
+            slotId={id}
+            title={discovery.title !== undefined && discovery.title !== "" ? discovery.title : name}
+            onRefresh={() => setReload(n => n + 1)}
+            onUnpinned={() => void discovery.refresh()}
+          >
+            {body}
+          </PinChrome>
+        ) : (
+          <div className="fl-slot-filled">{body}</div>
+        )}
       </div>
       {/* Portals to <body> with its own theme boundary, so it is never trapped
           by the host's stacking context around this slot. */}
