@@ -142,6 +142,39 @@ An agent relays it close to verbatim and reports nothing else.
 | `partial` | the screen is up, and the server-side work its plan called for is not |
 | `failed` | nothing painted. One narrower retry on the same `app`, then stop |
 
+## Rendering the app in your own chat
+
+React only — there is no web component and no MCP Apps UI resource. If the chat
+calling `vendo_make` is your own frontend, `<VendoAppEmbed>` is the documented
+way to put the app inline in it, off the receipt's own `id`.
+
+```tsx focus={3-9}
+import { VendoProvider, VendoAppEmbed } from "@vendoai/vendo/react";
+
+const result = await client.callTool({ name: "vendo_make", arguments: { request } });
+const receipt = result.structuredContent as { id: string; title: string; status: string };
+
+return (
+  <VendoProvider>
+    <VendoAppEmbed
+      refValue={{ kind: "vendo/app-ref@1", appId: receipt.id, title: receipt.title, status: "building" }}
+    />
+  </VendoProvider>
+);
+```
+
+`status` on the ref is always the literal `"building"`, whatever the receipt
+actually said — the embed polls your own wire for the real state, so a receipt
+that already came back `"ready"` just resolves on its first poll. Skip the
+mount on `"failed"`: nothing painted, and `say` already says why.
+
+While the build streams, the embed paints the app assembling step by step,
+then swaps to the live app in place.
+
+`<VendoProvider>` rides your product's own session, not the MCP token — the
+same wrapper [Embeds in your chat](/existing-agent/embeds) uses, because this
+polling never goes through the door.
+
 ## Where a screen lands
 
 A new screen goes to the person's own list of views. Pass `slot` on

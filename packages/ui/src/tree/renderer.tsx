@@ -40,7 +40,7 @@ import { resolvePointer } from "./bindings.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
-import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
+import { deriveFormShape, FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
 import { InClientMount, type InClientFurnishing } from "./host-mount.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
@@ -1046,32 +1046,36 @@ function StatefulTreeView({
     : null;
 
   return (
-    <div data-vendo-surface="" style={{ ...themeCssVariables(theme), ...SURFACE_CONTAINMENT } as CSSProperties}>
-      <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
-        {dataNotice}
-        {dropBackNotice}
-        {driftNotice}
-        <NodeRenderer
-          nodeId={validation.tree.root}
-          ancestry={new Set()}
-          nodes={repaint.nodes}
-          marks={repaint.marks}
-          generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
-          inClientGranted={inClientGranted}
-          furnishings={furnishings}
-          components={components}
-          data={data ?? validation.tree.data ?? {}}
-          state={viewState}
-          streaming={streaming}
-          outcomes={outcomes}
-          orphans={orphans}
-          runAction={runAction}
-          {...(onReview === undefined ? {} : { onReview })}
-          setViewState={updateState}
-          {...(interactive === undefined ? {} : { screen })}
-        />
-      </NodeErrorBoundary>
-    </div>
+    // A Kit empty state deep in the walk reads `streaming` off this provider:
+    // mid-build it holds a skeleton instead of claiming "No data".
+    <FormingContext.Provider value={streaming}>
+      <div data-vendo-surface="" style={{ ...themeCssVariables(theme), ...SURFACE_CONTAINMENT } as CSSProperties}>
+        <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
+          {dataNotice}
+          {dropBackNotice}
+          {driftNotice}
+          <NodeRenderer
+            nodeId={validation.tree.root}
+            ancestry={new Set()}
+            nodes={repaint.nodes}
+            marks={repaint.marks}
+            generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+            inClientGranted={inClientGranted}
+            furnishings={furnishings}
+            components={components}
+            data={data ?? validation.tree.data ?? {}}
+            state={viewState}
+            streaming={streaming}
+            outcomes={outcomes}
+            orphans={orphans}
+            runAction={runAction}
+            {...(onReview === undefined ? {} : { onReview })}
+            setViewState={updateState}
+            {...(interactive === undefined ? {} : { screen })}
+          />
+        </NodeErrorBoundary>
+      </div>
+    </FormingContext.Provider>
   );
 }
 
