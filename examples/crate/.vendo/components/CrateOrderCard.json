@@ -1,0 +1,31 @@
+{
+  "name": "CrateOrderCard",
+  "hash": "sha256:8be999ee1b122ac17574fbb8118b72976bcfcac63852c6ba5a9e4a292501e7e7",
+  "capturedAt": "2026-08-17T04:34:24.386Z",
+  "module": "src/vendo/registry.tsx",
+  "export": "CrateOrderCard",
+  "entry": "83ab861d2facd7d49add97885f94ed506cf026d23aa5403021ec47868cb7e311",
+  "modules": {
+    "src/components/ui.tsx": "f9877148c3fa15fd5fb6d9cd843266930b2e946e8e262d842b29c4ce719f3e38",
+    "src/lib/format.ts": "0fbb97afbec05238b9759edbe5a93d13a0c84290ec3234033005b1a1c6968b8f"
+  },
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "b93c91e7456eece6ad27d5230e2d5187851d9cba9265d7ce79f78f8e3cb45372"
+    }
+  ],
+  "bytes": 10719,
+  "requires": [
+    "clsx",
+    "zod"
+  ],
+  "sampleProps": {
+    "number": "CR-1084",
+    "status": "delivered",
+    "placedAt": "2026-07-28T15:42:00.000Z",
+    "totalCents": 129900,
+    "customerName": "Dana Whitfield"
+  },
+  "sampleOrigin": "declared"
+}

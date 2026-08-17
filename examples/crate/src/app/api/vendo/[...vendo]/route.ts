@@ -4,6 +4,7 @@ import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
 import { clerkEnabled } from "@/server/clerk-config";
 import { primaryStaff, staffFacts, staffForSubject } from "@/server/staff";
 import { crateKnowledgeDocs } from "@/vendo/knowledge";
+import { crateRegistry } from "@/vendo/registry";
 
 // One preset fills all three identity seams: the request→principal resolver,
 // the away/MCP actAs seam, and the door's OAuth adapter. Clerk answers "who
@@ -65,6 +66,12 @@ const vendo = createVendo({
           display: primaryStaff().display,
         }),
       }),
+  // Crate's own components, so a generated answer renders as an order card or a
+  // line-item table rather than generic chrome. This half of the registry is
+  // the BRIEFING — the model reads each description, prop schema and example to
+  // decide what to render and what to bind. `<VendoProvider components>` in
+  // layout.tsx reads the same object for the component references.
+  catalog: crateRegistry,
   // .vendo/policy.json: destructive asks, reads run. The grades themselves are
   // authored in .vendo/overrides.json — refunds and cancellations are
   // destructive, and the demo reset never reaches the agent at all.

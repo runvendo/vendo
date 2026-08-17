@@ -1,4 +1,132 @@
 {
   "format": "vendo/catalog@1",
-  "entries": []
+  "entries": [
+    {
+      "name": "CrateCustomerSummary",
+      "exportPath": "./src/vendo/registry.tsx#crateRegistry.CrateCustomerSummary",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "lifetimeValueCents": {
+            "type": "number",
+            "description": "Lifetime value in integer cents"
+          },
+          "orderCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The Crate customer card: who they are plus lifetime value and order count. Use it when the request is about a PERSON rather than an order — looking a customer up, or giving context before acting on their behalf. Bind it to one customer object from host_getCustomer. `lifetimeValueCents` is integer cents, and a full refund removes that order from it.",
+      "examples": [
+        "{\"name\":\"Dana Whitfield\",\"email\":\"dana.whitfield@example.com\",\"lifetimeValueCents\":284700,\"orderCount\":6}"
+      ],
+      "source": "registered"
+    },
+    {
+      "name": "CrateLineItems",
+      "exportPath": "./src/vendo/registry.tsx#crateRegistry.CrateLineItems",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "lineTotalCents": {
+                  "type": "number",
+                  "description": "Line total in integer cents"
+                }
+              },
+              "required": [
+                "sku",
+                "title",
+                "quantity",
+                "lineTotalCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "totalCents": {
+            "type": "number",
+            "description": "Order total in integer cents"
+          }
+        },
+        "required": [
+          "lines"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The Crate line-item table: what was actually in an order, per SKU, with quantities and line totals. Use it when the request is about an order's CONTENTS rather than its status — what was ordered, how many, what each line cost. `lines` takes the ARRAY of line rows: bind it to an order's `lines` array (host_getOrder({...}).lines), never to the order object itself, which renders an empty table. All money is integer cents.",
+      "examples": [
+        "{\"lines\":[{\"sku\":\"CRT-ESP-01\",\"title\":\"Lumen Espresso Machine\",\"quantity\":1,\"lineTotalCents\":129900}],\"totalCents\":129900}"
+      ],
+      "source": "registered"
+    },
+    {
+      "name": "CrateOrderCard",
+      "exportPath": "./src/vendo/registry.tsx#crateRegistry.CrateOrderCard",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The human-facing order number, e.g. \"CR-1084\""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "fulfilled",
+              "shipped",
+              "delivered",
+              "cancelled",
+              "refunded"
+            ]
+          },
+          "placedAt": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "totalCents": {
+            "type": "number",
+            "description": "Order total in integer cents"
+          },
+          "customerName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The default Crate card for a SINGLE order: its number, status, date, customer and total. Use it whenever the answer is about one specific order — looking one up, confirming a fulfil/cancel/refund landed, or naming the order a question is about. Bind it to one order object from host_getOrder or one element of host_listOrders' `orders` array, never to the response body itself. `totalCents` is integer cents.",
+      "examples": [
+        "{\"number\":\"CR-1084\",\"status\":\"delivered\",\"placedAt\":\"2026-07-28T15:42:00.000Z\",\"totalCents\":129900,\"customerName\":\"Dana Whitfield\"}"
+      ],
+      "source": "registered"
+    }
+  ]
 }

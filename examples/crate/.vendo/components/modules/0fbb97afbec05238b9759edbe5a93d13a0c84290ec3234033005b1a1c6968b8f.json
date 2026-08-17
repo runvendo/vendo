@@ -1,0 +1,3 @@
+{
+  "source": "/** Cents in, dollars out. The domain never stores anything but integer cents. */\r\nexport function money(cents: number): string {\r\n  return (cents / 100).toLocaleString(\"en-US\", { style: \"currency\", currency: \"USD\" })\r\n}\r\n\r\nexport function shortDate(iso: string): string {\r\n  return new Date(iso).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" })\r\n}\r\n\r\nexport function fullDate(iso: string): string {\r\n  return new Date(iso).toLocaleString(\"en-US\", {\r\n    month: \"short\", day: \"numeric\", year: \"numeric\", hour: \"numeric\", minute: \"2-digit\",\r\n  })\r\n}\r\n\r\nexport function titleCase(value: string): string {\r\n  return value.replace(/_/g, \" \").replace(/\\b\\w/g, (c) => c.toUpperCase())\r\n}\r\n"
+}
