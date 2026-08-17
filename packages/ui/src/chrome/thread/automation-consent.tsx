@@ -1,4 +1,4 @@
-import { type AppId, type ApprovalRequest, type Trigger } from "@vendoai/core";
+import { type ApprovalRequest, type AutomationId, type TriggerSource } from "@vendoai/core";
 import { useMemo, useState } from "react";
 import { useVendoProvider } from "../../context.js";
 import { useApprovals } from "../../hooks/use-approvals.js";
@@ -10,10 +10,12 @@ import { GrantSetCard, grantSetPermissions } from "../grant-set-card.js";
 const CONSENT_POLL_MS = 5_000;
 
 export interface ThreadAutomationConsentProps {
-  appId: AppId;
+  automationId: AutomationId;
   name: string;
   enabled: boolean;
-  trigger?: Trigger;
+  when?: TriggerSource;
+  action?: string;
+  rules?: string[];
   description?: string;
   /** The wire part's creation-time count. The live feed supersedes it once it
    *  has answered — the part is a snapshot, and "waiting on N" must fall to
@@ -39,8 +41,11 @@ export function ThreadAutomationConsent(props: ThreadAutomationConsentProps) {
   // says what just happened instead of silently dropping the consent block.
   const [settled, setSettled] = useState<{ state: "approved" | "denied"; asks: ApprovalRequest[] }>();
   const asks = useMemo(
-    () => approvals.pending.filter(ask => ask.ctx.venue === "automation" && ask.ctx.appId === props.appId),
-    [approvals.pending, props.appId],
+    // An arming ask carries the RECORD it is for on `ctx.trigger` — an
+    // automation has no app to match on.
+    () => approvals.pending.filter(ask =>
+      ask.ctx.venue === "automation" && ask.ctx.trigger?.automationId === props.automationId),
+    [approvals.pending, props.automationId],
   );
   // Until the feed has answered cleanly, the part's snapshot count is the only
   // honest number — a feed error must not read as "nothing pending".
@@ -51,13 +56,11 @@ export function ThreadAutomationConsent(props: ThreadAutomationConsentProps) {
     const deciding = asks;
     // The set id makes the decision atomic across the batch and lets a denial
     // disarm inside the same decision. Read at decide time from the
-    // automations projection — the wire PART predates the set id (the entry
+    // automations projection — the wire PART predates the set id (the record
     // carries it, the part does not), and a projection that cannot answer
     // must not block the decision: plain ids still settle every ask.
     const grantSetId = await client.automations.list()
-      .then(entries => entries
-        .find(entry => entry.app.id === props.appId)
-        ?.triggers.find(row => (row.pendingGrants ?? 0) > 0)?.grantSetId)
+      .then(entries => entries.find(entry => entry.id === props.automationId)?.grantSetId)
       .catch(() => undefined);
     await approvals.decide(
       deciding.map(ask => ask.id),
@@ -77,7 +80,9 @@ export function ThreadAutomationConsent(props: ThreadAutomationConsentProps) {
         // decision (the engine's decide subscriber) — the card says so
         // immediately rather than waiting a poll tick.
         enabled={settled?.state === "denied" ? false : props.enabled}
-        {...(props.trigger === undefined ? {} : { trigger: props.trigger })}
+        {...(props.when === undefined ? {} : { when: props.when })}
+        {...(props.action === undefined ? {} : { action: props.action })}
+        {...(props.rules === undefined ? {} : { rules: props.rules })}
         {...(props.description === undefined ? {} : { description: props.description })}
         pendingGrants={settled !== undefined ? 0 : waitingOn}
       />

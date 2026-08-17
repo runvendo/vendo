@@ -83,11 +83,11 @@ describe("createVendoClient", () => {
     await client.apps.delete(created.id);
 
     expect(await client.automations.list()).toHaveLength(1);
-    expect(await client.automations.enable("app_auto", "main")).toMatchObject({ enabled: true });
-    await client.automations.disable("app_auto", "main");
-    expect((await client.automations.dryRun("app_auto", "main")).steps).toHaveLength(1);
+    expect(await client.automations.enable("atm_auto")).toMatchObject({ enabled: true });
+    await client.automations.disable("atm_auto");
+    expect((await client.automations.dryRun("atm_auto")).steps).toHaveLength(1);
 
-    expect(await client.runs.list({ appId: "app_auto", status: "running", cursor: "cursor_1" })).toEqual({
+    expect(await client.runs.list({ automationId: "atm_auto", status: "running", cursor: "cursor_1" })).toEqual({
       runs: [expect.objectContaining({ id: "run_1" })],
     });
     expect((await client.runs.get("run_1")).status).toBe("running");
@@ -131,10 +131,10 @@ describe("createVendoClient", () => {
     exact("POST", `/apps/${seeded.id}/reseed`, {});
     exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);
-    exact("POST", "/automations/app_auto/enable/main", {});
-    exact("POST", "/automations/app_auto/disable/main", {});
-    exact("POST", "/automations/app_auto/dry-run/main", {});
-    exact("GET", "/runs?appId=app_auto&status=running&cursor=cursor_1", undefined);
+    exact("POST", "/automations/atm_auto/enable", {});
+    exact("POST", "/automations/atm_auto/disable", {});
+    exact("POST", "/automations/atm_auto/dry-run", {});
+    exact("GET", "/runs?automationId=atm_auto&status=running&cursor=cursor_1", undefined);
     exact("GET", "/runs/run_1", undefined);
     exact("POST", "/runs/run_1/stop", {});
     exact("GET", "/activity?cursor=aud_2&limit=10", undefined);

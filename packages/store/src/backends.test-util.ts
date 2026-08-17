@@ -29,6 +29,7 @@ const TABLES = [
   "vendo_mcp_clients",
   "vendo_secrets",
   "vendo_runs",
+  "vendo_automations",
   "vendo_audit",
   "vendo_approvals",
   "vendo_grants",

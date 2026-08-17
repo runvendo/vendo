@@ -5,7 +5,6 @@ import {
   type UIMessageChunk,
 } from "ai";
 import {
-  DEFAULT_TRIGGER_ID,
   seedComponentName,
   type AppDocument,
   type ApprovalRequest,
@@ -57,7 +56,7 @@ const SMOKE_VIEW = {
   ],
 };
 
-function app(id: string, name: string, automation = false): AppDocument {
+function app(id: string, name: string): AppDocument {
   return {
     format: "vendo/app@1",
     id,
@@ -68,15 +67,6 @@ function app(id: string, name: string, automation = false): AppDocument {
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
     },
-    ...(automation
-      ? {
-        triggers: [{
-          id: DEFAULT_TRIGGER_ID,
-          on: { kind: "host-event" as const, event: "invoice.created" },
-          run: { kind: "steps" as const, steps: [] },
-        }],
-      }
-      : {}),
   };
 }
 
@@ -158,6 +148,9 @@ function approval(): ApprovalRequest {
  *  engine's enable() capture. Idempotent: pending asks are reused (T2 dedupe). */
 const GRANT_SET_ID = "gset_1";
 
+/** The fixture's one automation record — what the asks above are arming. */
+const AUTOMATION_ID = "atm_auto";
+
 /** ⚠️ FIXTURE EDIT — the grade is now a PARAMETER, and it is truthful.
  *
  *  Both asks were hardcoded `risk: "read"`, including `host_email_send`. That
@@ -173,19 +166,21 @@ function grantAsk(id: string, tool: string, description: string, risk: RiskLabel
     id,
     call: { id: `call_${id}`, tool, args: {} },
     descriptor: { name: tool, description, inputSchema: { type: "object" }, risk },
-    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this app only)`,
+    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this automation only)`,
     ctx: {
       principal: { kind: "user", subject: "user_1" },
       venue: "automation",
       presence: "present",
-      appId: "app_auto",
+      // The RECORD the ask is for: an automation has no app to match on
+      // (mirrors the engine's arming capture in automations/src/consent.ts).
+      trigger: { runId: `run_arm_${AUTOMATION_ID}`, kind: "host-event", automationId: AUTOMATION_ID },
     },
     createdAt: NOW,
   };
 }
 
 function mintGrantSet(approvals: ApprovalRequest[]): ApprovalRequest[] {
-  const pending = approvals.filter(item => item.ctx.appId === "app_auto");
+  const pending = approvals.filter(item => item.ctx.trigger?.automationId === AUTOMATION_ID);
   if (pending.length > 0) return pending;
   const minted = [
     grantAsk("apr_set_1", "host_email_send", "Send email digests as you.", "write"),
@@ -242,8 +237,8 @@ export function appEditAudit(): AuditEvent {
 function run(): RunRecord {
   return {
     id: "run_1",
-    appId: "app_auto",
-    triggerId: DEFAULT_TRIGGER_ID,
+    automationId: AUTOMATION_ID,
+    owner: { kind: "user", subject: "user_1" },
     trigger: { kind: "host-event", event: "invoice.created" },
     status: "running",
     startedAt: NOW,
@@ -296,16 +291,25 @@ export interface WireServerOptions {
 
 export async function createWireServer(options: WireServerOptions = {}) {
   const baseApp = app("app_1", "Invoices");
-  const automationApp = app("app_auto", "Invoice watcher", true);
+  const automationApp = app("app_auto", "Invoice watcher");
   const existingMessage: UIMessage = {
     id: "msg_existing",
     role: "assistant",
     parts: [{ type: "text", text: "Existing thread" }],
   };
-  // Annotated, not `satisfies`: the routes below arm a trigger and push a rung-2
-  // version, and a `satisfies` literal keeps `false`/`1` as its own type.
+  // Annotated, not `satisfies`: the routes below arm the record and push a
+  // rung-2 version, and a `satisfies` literal keeps `false`/`1` as its own type.
   const automations: AutomationEntry[] = [
-    { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
+    {
+      id: AUTOMATION_ID,
+      owner: { kind: "user", subject: "user_1" },
+      when: { kind: "host-event", event: "invoice.created" },
+      task: { kind: "steps", steps: [] },
+      armed: false,
+      authoredBy: "chat",
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
   ];
   const history: VersionEntry[] = [{ at: NOW, intent: "create", rung: 1 }];
   const state = {
@@ -363,10 +367,6 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // Existing-agents polish — how many open polls `app_building_lands`
     // misses before its build "lands" (the browser harness's build window).
     buildingOpensRemaining: 2,
-    /** Backward-compat harness: serve /automations and enable WITHOUT the
-     *  grant-set fields (pendingGrants/grantSetId), the payload an older
-     *  server emits — new clients must parse and render it unchanged. */
-    legacyAutomationsPayload: false,
     /** H2 harness: the engine's in-decision disarm silently fails (its store
      *  write threw and the guard swallowed the subscriber error) — the deny
      *  decisions land but the automation row stays enabled. */
@@ -1005,15 +1005,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
         // a partial deny leaves it armed (05 §6 — ungranted steps park at
         // fire time). Mirror both so panels render the real post-deny state.
         if (body.decision?.approve !== true && !state.denyDisarmFails) {
-          const deniedApps = new Set(state.approvals
-            .filter(item => ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId !== undefined)
-            .map(item => item.ctx.appId));
-          for (const appId of deniedApps) {
+          const denied = new Set(state.approvals
+            .filter(item => ids.includes(item.id) && item.ctx.trigger?.automationId !== undefined)
+            .map(item => item.ctx.trigger!.automationId));
+          for (const automationId of denied) {
             const remaining = state.approvals.some(item =>
-              !ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId === appId);
+              !ids.includes(item.id) && item.ctx.trigger?.automationId === automationId);
             if (remaining) continue;
-            const entry = state.automations.find(item => item.app.id === appId);
-            if (entry) for (const row of entry.triggers) row.enabled = false;
+            const record = state.automations.find(item => item.id === automationId);
+            if (record) record.armed = false;
           }
         }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
@@ -1295,49 +1295,38 @@ export async function createWireServer(options: WireServerOptions = {}) {
       }
 
       if (method === "GET" && url.pathname === "/automations") {
-        if (state.legacyAutomationsPayload) return json(response, state.automations);
-        // The engine's pending-captures projection: an entry with undecided
-        // standing asks carries pendingGrants + the set id (reload survival),
-        // landed on the ONE trigger actually waiting (the fixture's automation
-        // apps carry exactly one trigger, so that is always the first).
-        return json(response, state.automations.map(entry => {
-          const pending = state.approvals.filter(item =>
-            item.ctx.venue === "automation" && item.ctx.appId === entry.app.id).length;
-          if (pending === 0) return entry;
-          return {
-            ...entry,
-            triggers: entry.triggers.map((row, index) =>
-              index === 0 ? { ...row, pendingGrants: pending, grantSetId: GRANT_SET_ID } : row),
-          };
-        }));
+        // The record itself, `webhookSecret` never in it — the listing IS the
+        // projection now; the set id the arming asks belong to is a field on
+        // the record (reload survival), stamped by enable below.
+        return json(response, state.automations);
       }
-      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)\/([^/]+)$/);
+      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)$/);
       if (method === "POST" && automationMatch) {
         const id = decodeURIComponent(automationMatch[1] ?? "");
-        const triggerId = decodeURIComponent(automationMatch[3] ?? "");
-        const entry = state.automations.find(item => item.app.id === id);
-        if (!entry) return wireError(response, "not-found", "Automation not found", 404);
-        const row = entry.triggers.find(item => item.trigger.id === triggerId);
-        if (!row) return wireError(response, "not-found", "Trigger not found", 404);
+        const record = state.automations.find(item => item.id === id);
+        if (!record) return wireError(response, "not-found", "Automation not found", 404);
         const action = automationMatch[2];
         if (action === "enable") {
-          row.enabled = true;
+          record.armed = true;
           const missing = mintGrantSet(state.approvals);
-          if (state.legacyAutomationsPayload) return json(response, { enabled: true, missing });
+          record.grantSetId = GRANT_SET_ID;
           return json(response, { enabled: true, missing, grantSetId: GRANT_SET_ID });
         }
         if (action === "disable") {
-          row.enabled = false;
+          record.armed = false;
+          // What makes the kill switch survive a redeploy (07 §1 `disable`).
+          record.disarmedBy = "user";
           return empty(response);
         }
         return json(response, { steps: [{ id: "step_1", tool: "host_invoices_list", wouldAsk: false }], grantsMissing: [] });
       }
 
       if (method === "GET" && url.pathname === "/runs") {
-        const appId = url.searchParams.get("appId");
+        const automationId = url.searchParams.get("automationId");
         const status = url.searchParams.get("status");
         return json(response, {
-          runs: state.runs.filter(item => (!appId || item.appId === appId) && (!status || item.status === status)),
+          runs: state.runs.filter(item =>
+            (!automationId || item.automationId === automationId) && (!status || item.status === status)),
           ...(url.searchParams.get("cursor") ? {} : { cursor: "run_cursor" }),
         });
       }

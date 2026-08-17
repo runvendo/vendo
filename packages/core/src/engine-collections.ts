@@ -46,6 +46,7 @@ export const ENGINE_COLLECTION_REGISTRY = {
   // "any timestamp column".
   vendo_runs: { kind: "storage", indexed: ["started_at"] },
   vendo_apps: { kind: "storage" },
+  vendo_automations: { kind: "storage" }, // TEMP-S1-VERIFY-ONLY — revert
   vendo_state: { kind: "storage" },
   vendo_effects: { kind: "storage" },
   vendo_app_grants: { kind: "storage" },

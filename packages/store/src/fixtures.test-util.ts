@@ -2,10 +2,12 @@ import {
   appDocumentSchema,
   approvalRequestSchema,
   auditEventSchema,
+  automationRecordSchema,
   permissionGrantSchema,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
+  type AutomationRecord,
   type PermissionGrant,
   type Principal,
 } from "@vendoai/core";
@@ -16,6 +18,24 @@ export const at = (second: number): string => `2026-01-02T03:04:${String(second)
 
 export function appFixture(id = "app_test", name = "Test app"): AppDocument {
   return appDocumentSchema.parse({ format: "vendo/app@1", id, name });
+}
+
+export function automationFixture(
+  id = "atm_test",
+  owner: Principal = persistentPrincipal,
+  overrides: Partial<AutomationRecord> = {},
+): AutomationRecord {
+  return automationRecordSchema.parse({
+    id,
+    owner,
+    when: { kind: "schedule", cron: "0 9 * * *" },
+    task: { kind: "goal", prompt: "chase invoices" },
+    armed: true,
+    authoredBy: "chat",
+    createdAt: at(10),
+    updatedAt: at(10),
+    ...overrides,
+  });
 }
 
 export function grantFixture(

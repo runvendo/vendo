@@ -1,5 +1,6 @@
 import {
   VENDO_APP_REF_KIND,
+  VENDO_AUTOMATION_REF_KIND,
   VendoError,
   parseVendoToolEnvelope,
   type ApprovalDecision,
@@ -21,6 +22,7 @@ import type { ApprovalResolution, OpenSurface } from "../wire-types.js";
 import { AddToPicker } from "./add-to-picker.js";
 import { ApprovalCard } from "./approval-card.js";
 import { useApprovalModal } from "./approval-modal.js";
+import { AutomationCard } from "./automation-card.js";
 import {
   CardActions,
   CardFields,
@@ -443,7 +445,11 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
 export function VendoToolResult({ output }: VendoToolResultProps) {
   const envelope = parseVendoToolEnvelope(output);
   if (envelope === null) return null;
-  return envelope.kind === VENDO_APP_REF_KIND
-    ? <VendoAppEmbed refValue={envelope} />
-    : <VendoApprovalEmbed refValue={envelope} />;
+  if (envelope.kind === VENDO_APP_REF_KIND) return <VendoAppEmbed refValue={envelope} />;
+  // The record it just armed, in the card the thread already renders
+  // automations with — the envelope's one line IS the rule sentence.
+  if (envelope.kind === VENDO_AUTOMATION_REF_KIND) {
+    return <AutomationCard name={envelope.summary} enabled={envelope.armed} />;
+  }
+  return <VendoApprovalEmbed refValue={envelope} />;
 }

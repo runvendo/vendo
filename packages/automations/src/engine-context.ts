@@ -1,5 +1,5 @@
 /**
- * The primitives `createAutomationsEngine`' closure holds, and the wiring that
+ * The primitives `createAutomationsEngine`'s closure holds, and the wiring that
  * builds its modules over them.
  *
  * `createAutomationsEngine` is an ASSEMBLER: every door it returns, and every
@@ -10,12 +10,13 @@
  *
  * Internal — not exported from the package root.
  */
-import { engineOverAdapter } from "@vendoai/core";
-import { createAppRows, type AppRowsAccess } from "./app-rows.js";
-import { createArmed, type ArmedAccess } from "./armed.js";
+import { engineOverAdapter, type AgentRunners } from "@vendoai/core";
+import { createAutomationRows, type AutomationRowsAccess } from "./automation-rows.js";
 import { createConsent, type ConsentAccess } from "./consent.js";
+import { createCreateSurface, type CreateSurfaceAccess } from "./create-surface.js";
 import { createGrants, type GrantsAccess } from "./grants.js";
 import { createRunExecution, type RunExecutionAccess } from "./run-execution.js";
+import { createRunnerMap } from "./runner-map.js";
 import type { EngineOps } from "./rows.js";
 import { createRunRows, type RunRowsAccess } from "./run-rows.js";
 import { createSponsorshipGate, type SponsorshipGateAccess } from "./sponsorship-gate.js";
@@ -24,9 +25,9 @@ import type { AutomationsConfig } from "./index.js";
 /** The closure primitives every module reads. */
 export interface EngineBase {
   config: AutomationsConfig;
-  /** Vendo's OWN drawers, through the named `engine` family — the allowlist
-   *  gate sits on every verb, so nothing outside it can be reached from here.
-   *  Host and generated-app data is not this door's business. */
+  /** Vendo's OWN drawers, through the named `engine` family — the allowlist gate
+   *  sits on every verb, so nothing outside it can be reached from here. Host and
+   *  generated-app data is not this door's business. */
   engine: EngineOps;
   /** The clock, through the testability seam. */
   now(): Date;
@@ -36,47 +37,49 @@ export interface EngineBase {
   stopped: Set<string>;
   /** Run ids currently executing in THIS process. */
   active: Set<string>;
-  /** The agentic runs `runs.stop` can still cancel in this process. */
+  /** The goal runs `runs.stop` can still cancel in this process. */
   abortControllers: Map<string, AbortController>;
-  /** Whether THIS engine instance fires this trigger kind itself (07 §1). */
-  firesLocally(kind: "schedule" | "external"): boolean;
 }
 
 /** The engine's modules, by name — what every surface is handed a slice of. */
 export interface EngineModules {
   base: EngineBase;
-  appRows: AppRowsAccess;
-  armed: ArmedAccess;
+  automations: AutomationRowsAccess;
   grants: GrantsAccess;
   runRows: RunRowsAccess;
   sponsorship: SponsorshipGateAccess;
   consent: ConsentAccess;
   execution: RunExecutionAccess;
+  writes: CreateSurfaceAccess;
+  runners: AgentRunners;
 }
 
-/** 07 §1 — `createAutomationsEngine`' closure, wired in dependency order. */
+/** 07 §1 — `createAutomationsEngine`'s closure, wired in dependency order. */
 export const createEngineModules = (config: AutomationsConfig): EngineModules => {
   const now = (): Date => config.now?.() ?? new Date();
   const iso = (): string => now().toISOString();
-  const stopped = new Set<string>();
-  const active = new Set<string>();
-  const abortControllers = new Map<string, AbortController>();
-  // Absent localTriggerKinds → every kind fires locally (today's behavior, unchanged).
-  const firesLocally = (kind: "schedule" | "external"): boolean =>
-    config.localTriggerKinds === undefined || config.localTriggerKinds.has(kind);
 
-  // The composition's own 42-op surface when it resolved one; otherwise the
-  // same seven verbs over the adapter the host handed us. An unset slot is a
-  // route, not a downgrade.
+  // The composition's own 42-op surface when it resolved one; otherwise the same
+  // seven verbs over the adapter the host handed us. An unset slot is a route,
+  // not a downgrade.
   const engine = config.ops?.engine ?? engineOverAdapter(config.store);
 
-  const base: EngineBase = { config, engine, now, iso, stopped, active, abortControllers, firesLocally };
-  const appRows = createAppRows({ base });
-  const armed = createArmed({ base, appRows });
+  const base: EngineBase = {
+    config,
+    engine,
+    now,
+    iso,
+    stopped: new Set(),
+    active: new Set(),
+    abortControllers: new Map(),
+  };
+  const runners = createRunnerMap();
+  const automations = createAutomationRows({ base });
   const grants = createGrants({ base });
   const runRows = createRunRows({ base });
-  const sponsorship = createSponsorshipGate({ base, appRows });
-  const consent = createConsent({ base, appRows, armed, grants, runRows });
-  const execution = createRunExecution({ base, grants, runRows, sponsorship, consent });
-  return { base, appRows, armed, grants, runRows, sponsorship, consent, execution };
+  const sponsorship = createSponsorshipGate({ base });
+  const consent = createConsent({ base, automations, grants, runRows });
+  const execution = createRunExecution({ base, grants, runRows, sponsorship, consent, runners });
+  const writes = createCreateSurface({ base, automations });
+  return { base, automations, grants, runRows, sponsorship, consent, execution, writes, runners };
 };

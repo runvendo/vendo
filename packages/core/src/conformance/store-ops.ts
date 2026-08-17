@@ -287,7 +287,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           and the two shipped engines spell it differently (a Postgres-native
           text form, an ISO instant). */
       opsCase(opts, "engine.list walks forward from a watermark, oldest first, visiting every row exactly once", async (ops) => {
-        // vendo_runs is a typed door — appId, trigger, status, record and
+        // vendo_runs is a typed door — automationId, trigger, status, record and
         // startedAt, or the real backend refuses the row. `startedAt` ascends
         // with write order, so "oldest first" is one answer for an engine that
         // orders on the indexed column and one that orders on arrival.
@@ -296,7 +296,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           await ops.engine.put("vendo_runs", {
             id,
             data: {
-              appId: "app_meter",
+              automationId: "atm_meter",
               trigger: { kind: "schedule" },
               status: "ok",
               record: { index },
@@ -343,7 +343,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         for (const id of ids) {
           await ops.engine.put("vendo_runs", {
             id,
-            data: { appId: "app_meter", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt: tied },
+            data: { automationId: "atm_meter", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt: tied },
           });
         }
         // A meter's FIRST bound is a plain field value it authored; every later

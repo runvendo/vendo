@@ -1,7 +1,7 @@
 import { auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
-import { approvalFixture, at, auditFixture, grantFixture } from "../src/fixtures.test-util.js";
+import { approvalFixture, at, auditFixture, automationFixture, grantFixture } from "../src/fixtures.test-util.js";
 import { auditStore, grantStore } from "../src/index.js";
 
 for (const backend of backends()) {
@@ -106,6 +106,50 @@ for (const backend of backends()) {
 
       await states.delete(id);
       expect(await states.get(id)).toBeNull();
+    });
+
+    it("routes automations into vendo_automations and derives the refs the engine queries by", async () => {
+      const automations = made.store.records("vendo_automations");
+      const record = automationFixture("atm_routed", { kind: "user", subject: "user_atm" });
+      const written = await automations.put({ id: record.id, data: record, refs: { subject: "ignored" } });
+
+      expect(written).toMatchObject({
+        id: record.id,
+        data: record,
+        refs: { subject: "user_atm", when_kind: "schedule" },
+        createdAt: record.createdAt,
+        revision: "1",
+      });
+      expect(await automations.get(record.id)).toEqual(written);
+      expect(await made.sql("SELECT subject, armed, when_kind FROM vendo_automations WHERE id = $1", [record.id]))
+        .toEqual([{ subject: "user_atm", armed: true, when_kind: "schedule" }]);
+      // The two queries the engine actually runs: the tick's deployment-wide
+      // sweep for one kind, and emit's per-subject one.
+      expect((await automations.list({ refs: { when_kind: "schedule" } })).records.map((row) => row.id))
+        .toContain(record.id);
+      expect((await automations.list({ refs: { subject: "user_atm", when_kind: "schedule" } })).records.map((row) => row.id))
+        .toEqual([record.id]);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_records WHERE id = $1", [record.id]))[0]?.count)).toBe(0);
+    });
+
+    it("refuses a cross-subject automation write and settles fire claims on the revision", async () => {
+      const automations = made.store.records("vendo_automations");
+      const record = automationFixture("atm_claim", { kind: "user", subject: "user_claim" });
+      const first = await automations.put({ id: record.id, data: record });
+
+      await expect(automations.put({
+        id: record.id,
+        data: automationFixture(record.id, { kind: "user", subject: "user_intruder" }),
+      })).rejects.toMatchObject({ code: "conflict" });
+
+      // Two ticks read the same armed record; the revision decides which one
+      // claims it, and the loser gets null instead of a second run.
+      const disarmed = { ...record, armed: false };
+      expect(await automations.atomic!.compareAndSwap({ id: record.id, data: disarmed }, first.revision!))
+        .toMatchObject({ data: { armed: false }, revision: "2" });
+      expect(await automations.atomic!.compareAndSwap({ id: record.id, data: disarmed }, first.revision!))
+        .toBeNull();
+      expect(await automations.atomic!.insertIfAbsent({ id: record.id, data: record })).toBeNull();
     });
 
     it("walks newest-first routed pages without duplicates or misses", async () => {
