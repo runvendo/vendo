@@ -156,19 +156,29 @@ describe("driving Codex", () => {
     expect(seen.args!.at(-1)).toContain("Show my pending transfers");
   });
 
-  it("spells the subprocess environment out rather than handing over the operator's shell", async () => {
+  /** The allowlist, and the one rename in it. A live `OPENAI_API_KEY` is a key
+   *  0.147.0 never reads: with a fresh home it sends no `Authorization` header
+   *  at all, and the column's first call died on `401 … Missing bearer` for a
+   *  session that was holding a working key the whole time. */
+  it("spells the subprocess environment out, with the key under the name the CLI reads", async () => {
     const seen: Seen = {};
+    const held = process.env["OPENAI_API_KEY"];
+    process.env["OPENAI_API_KEY"] = "sk-not-a-key";
     process.env["OPENAI_BASE_URL"] = "https://a-gateway-nobody-declared.example";
     try {
       await runCase(writingCodex(["<html></html>"], seen));
     } finally {
+      if (held === undefined) delete process.env["OPENAI_API_KEY"];
+      else process.env["OPENAI_API_KEY"] = held;
       delete process.env["OPENAI_BASE_URL"];
     }
 
     const env = seen.options!.env;
-    expect(Object.keys(env).sort()).toEqual(
-      ["CODEX_HOME", "HOME", "OPENAI_API_KEY", "PATH"].filter((name) => name in env),
-    );
+    expect(Object.keys(env).sort()).toEqual(["CODEX_API_KEY", "CODEX_HOME", "HOME", "PATH"].filter((name) => name in env));
+    expect(env["CODEX_API_KEY"]).toBe("sk-not-a-key");
+    // The name that reaches the CLI is the only one that authenticates, and the
+    // operator's shell reaches it through neither.
+    expect(env["OPENAI_API_KEY"]).toBeUndefined();
     expect(env["OPENAI_BASE_URL"]).toBeUndefined();
   });
 
@@ -302,8 +312,13 @@ describe.skipIf(!LIVE)("one live session", () => {
           `${tokens.toLocaleString("en-US")} tokens · $${(outcome.usd ?? 0).toFixed(4)} · ${outcome.artifact?.length ?? 0} bytes`,
       );
       expect(outcome.failure).toBeUndefined();
-      // The two seams the page is measured through, in the bytes it left behind.
-      expect(outcome.artifact).toContain("__settled");
+      // A turn that completed is a session that authenticated: a key the CLI
+      // does not read ends the run with `turn.failed`, no turns and no tokens.
+      expect(outcome.session?.turns).toBeGreaterThan(0);
+      // The seam the page is measured through, in the bytes it left behind.
+      // Only this one: the shared contract asks the page to CALL the recorder,
+      // and says the harness decides when the screen has settled — so a page
+      // that never mentions `__settled` is obeying it, not failing it.
       expect(outcome.artifact).toContain("callTool");
     },
     12 * 60_000,
