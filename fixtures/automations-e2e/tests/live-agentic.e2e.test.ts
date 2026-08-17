@@ -1,7 +1,7 @@
 /** Live leg (ANTHROPIC_API_KEY-gated): a real model behind the `@vendoai/agents`
- * away runner drives an away agentic automation through the same guard-bound
- * registry the engine hands every run — 07 §4 agentic with real reasoning, real
- * fixture tools, and app-bound authority only.
+ * away runner drives an away goal automation through the same guard-bound
+ * registry the engine hands every run — 07 §4 with real reasoning, real fixture
+ * tools, and record-bound authority only.
  *
  * The thinker is the SHIPPED default harness (`vendo()`) on the shipped runtime,
  * so this leg proves the whole away entry and not a test-only loop.
@@ -10,14 +10,19 @@ import { describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
 import { awayRunner } from "@vendoai/agents";
 import { vendo } from "@vendoai/harnesses";
-import { automationDoc, createStack, ownerCtx, resetFixture } from "../src/harness.js";
+import { createStack, ownerCtx, resetFixture } from "../src/harness.js";
 import { ADA, approve } from "../src/support.js";
 
 const liveKey = process.env.ANTHROPIC_API_KEY;
 const plausible = typeof liveKey === "string" && liveKey.startsWith("sk-");
 
-describe.skipIf(!plausible)("live agentic automation", () => {
-  it("runs a real-model agentic automation within captured grants", { timeout: 180_000 }, async () => {
+interface RunRow {
+  status: string;
+  record: { steps: Array<{ tool: string; outcome: string }>; summary?: string };
+}
+
+describe.skipIf(!plausible)("live goal automation", () => {
+  it("runs a real-model goal automation within captured grants", { timeout: 180_000 }, async () => {
     await resetFixture();
     const { createAnthropic } = await import("@ai-sdk/anthropic");
     const anthropic = createAnthropic({ apiKey: liveKey });
@@ -31,36 +36,37 @@ describe.skipIf(!plausible)("live agentic automation", () => {
         }),
     });
     try {
-      const appId = "app_live_agentic";
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "live.agentic" },
-          run: {
-            kind: "agentic",
-            prompt: "Call the host_invoices_list tool exactly once and report how many invoices exist. Do not call any other tool.",
-            budget: { maxToolCalls: 3 },
-          },
+      const ctx = ownerCtx(ADA.subject);
+      const created = await stack.create({
+        owner: ADA,
+        when: { event: "live.agentic" },
+        task: {
+          kind: "goal",
+          prompt: "Call the host_invoices_list tool exactly once and report how many invoices exist. Do not call any other tool.",
+          budget: { maxToolCalls: 3 },
         },
-      }));
+        authoredBy: "chat",
+      }, ctx);
 
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
-      // Agentic capture proposes the full bound surface; grant only the read.
+      const enabled = await stack.automations.enable(created.id, ctx);
+      // A goal task declares no tools, so capture proposes the whole away-safe
+      // surface; the person grants only the read.
       const listCapture = enabled.missing.filter((request) => request.call.tool === "host_invoices_list");
       expect(listCapture).toHaveLength(1);
       await approve(stack, listCapture);
 
       const runIds = await stack.automations.emit("live.agentic", {}, ADA);
       expect(runIds).toHaveLength(1);
-      const runId = runIds[0] as string;
 
-      let row: { status: string; record: { steps: Array<{ tool: string; outcome: string }>; summary?: string } } | undefined;
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        const rows = await stack.sql<{ status: string; record: typeof row extends undefined ? never : NonNullable<typeof row>["record"] }>(
-          "SELECT status, record FROM vendo_runs WHERE id = $1",
-          [runId],
+      // The test timeout is the only clock here: a poll that gave up earlier
+      // would report a product bug when the model is merely slow.
+      let row: RunRow | undefined;
+      const deadline = Date.now() + 180_000;
+      while (Date.now() <= deadline) {
+        [row] = await stack.sql<RunRow>(
+          "SELECT status, record FROM vendo_runs WHERE automation_id = $1",
+          [created.id],
         );
-        row = rows[0] as typeof row;
         if (row !== undefined && row.status !== "running") break;
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }

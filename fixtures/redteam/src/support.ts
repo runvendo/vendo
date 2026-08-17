@@ -1,6 +1,6 @@
 import type {
-  AppId,
   ApprovalRequest,
+  AutomationId,
   Json,
   Principal,
   ToolOutcome,
@@ -37,9 +37,18 @@ export function rowsCount(rows: Array<{ count: unknown }>): number {
 
 export async function tableCount(
   stack: Stack,
-  table: "vendo_runs" | "vendo_approvals" | "vendo_audit",
+  table: "vendo_runs" | "vendo_approvals" | "vendo_audit" | "vendo_automations",
 ): Promise<number> {
   return rowsCount(await stack.sql<{ count: unknown }>(`SELECT COUNT(*)::int AS count FROM ${table}`));
+}
+
+/** Runs of ONE automation, off the row rather than the door — the "it really
+ *  fired" probe a run-list filter could not fake. */
+export async function runCount(stack: Stack, automationId: AutomationId): Promise<number> {
+  return rowsCount(await stack.sql<{ count: unknown }>(
+    "SELECT COUNT(*)::int AS count FROM vendo_runs WHERE automation_id = $1",
+    [automationId],
+  ));
 }
 
 export async function approve(
@@ -57,11 +66,10 @@ export async function approve(
 
 export async function enableAndApprove(
   stack: Stack,
-  appId: AppId,
-  ctx: Parameters<Stack["automations"]["enable"]>[2],
-  triggerId = "main",
+  automationId: AutomationId,
+  ctx: Parameters<Stack["automations"]["enable"]>[1],
 ): Promise<ApprovalRequest[]> {
-  const enabled = await stack.automations.enable(appId, triggerId, ctx);
+  const enabled = await stack.automations.enable(automationId, ctx);
   await approve(stack, enabled.missing, ctx.principal);
   return enabled.missing;
 }
@@ -92,7 +100,9 @@ export async function waitForRun(
   ctx: Parameters<Stack["automations"]["runs"]["get"]>[1],
   status: RunStatus,
 ): Promise<RunRecord> {
-  const deadline = Date.now() + 10_000;
+  // The test timeout is the hang-detector; this budget stays well inside it so
+  // a busy machine reports a slow run, never a product bug.
+  const deadline = Date.now() + 60_000;
   while (Date.now() <= deadline) {
     const run = await stack.automations.runs.get(runId, ctx);
     if (run?.status === status) return run;

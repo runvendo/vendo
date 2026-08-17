@@ -1,24 +1,27 @@
 /**
- * The consent card an authored agentic automation actually shows its owner.
+ * The consent card an authored goal automation actually shows its owner.
  *
  * The seam, end to end and unmocked on both sides: the REAL planner
  * (`planAutomation`, the one the generation server lane calls) authors the
- * trigger, and the REAL arm-time capture (`automations.enable`) reads it back.
- * Each side stubbed the other before, which is how "review the invoices and
- * write a note" shipped an enable card asking for 31 standing permissions —
- * including Send money — behind one "Allow all 31 & enable" button.
+ * automation, the REAL create operation stores it, and the REAL arm-time capture
+ * (`automations.enable`) reads it back. Each side stubbed the other before, which
+ * is how "review the invoices and write a note" shipped an enable card asking for
+ * 31 standing permissions — including Send money — behind one "Allow all 31 &
+ * enable" button.
  *
- * Two independent guarantees, because the bug had two causes:
- *  1. the plan DECLARES what it will reach, so the card is the plan's own width;
- *  2. with no declaration, the fallback still never asks for a standing away
- *     grant on a tool THE LAW would refuse away — asking to allow a thing that
- *     can never happen is a false choice, not consent.
+ * ONE of that finding's two guarantees survives the centralization. `AutomationTask`
+ * has no place for the tool set an authored plan declares, so the card can no
+ * longer be the plan's own width: EVERY goal record gets the fallback surface and
+ * the narrowing is the person's, card by card. What still holds — and what this
+ * pins — is that the fallback never asks for a standing away grant on a tool THE
+ * LAW would refuse away. Asking to allow a thing that can never happen is a false
+ * choice, not consent.
  */
 import { planAutomation, type HostToolInfo } from "@vendoai/apps";
 import { scriptedLanguageModel } from "@vendoai/apps/testing";
-import { withheldFromUnattended, type ToolDescriptor } from "@vendoai/core";
+import { withheldFromUnattended } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { automationDoc, createStack, hostTools, ownerCtx, resetFixture } from "../src/harness.js";
+import { createStack, hostTools, ownerCtx, resetFixture } from "../src/harness.js";
 import { ADA } from "../src/support.js";
 
 /** The fixture's own host surface, in the shape the planner reads it in. */
@@ -29,110 +32,68 @@ const plannerTools: HostToolInfo[] = hostTools.map(({ name, description, risk, i
   inputSchema: inputSchema as Record<string, unknown>,
 }));
 
-const descriptorFor = (name: string): ToolDescriptor => {
-  const tool = hostTools.find((entry) => entry.name === name);
-  if (tool === undefined) throw new Error(`no fixture tool named ${name}`);
-  return {
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema as ToolDescriptor["inputSchema"],
-    risk: tool.risk as ToolDescriptor["risk"],
-  };
-};
-
 /** What the planner is asked for, in the words the finding used: a judgment run
- *  that READS and WRITES A NOTE. It reaches two tools; the app is bound to six. */
+ *  that READS and WRITES A NOTE. It reaches two tools; the deployment binds six. */
 const REVIEW_INSTRUCTION =
   "Every morning, review the invoices and write a note about which ones look risky.";
 
-/** The planner's answer, as a model really returns it: the agentic contract tells
- *  it to name its tools in the prompt, and it does. */
+/** The planner's answer, as a model really returns it — a create input, not an
+ *  app document with a trigger on it. */
 const REVIEW_PLAN = JSON.stringify({
   name: "Invoice review",
-  trigger: {
-    on: { kind: "schedule", cron: "0 8 * * *" },
-    run: {
-      kind: "agentic",
-      prompt: "Every morning, list the invoices with host_invoices_list, look up anything "
-        + "unclear with host_invoices_get, judge which ones look risky, and note the reasons.",
-      budget: { maxToolCalls: 20 },
-    },
+  when: "0 8 * * *",
+  task: {
+    kind: "goal",
+    prompt: "Every morning, list the invoices with host_invoices_list, look up anything "
+      + "unclear with host_invoices_get, judge which ones look risky, and note the reasons.",
+    budget: { maxToolCalls: 20 },
   },
 });
 
-describe("agentic consent surface", () => {
+describe("goal consent surface", () => {
   beforeEach(resetFixture);
 
-  it("asks only for the tools the authored plan names — not the whole bound surface", async () => {
-    const appId = "app_agentic_authored";
+  it("stores what the planner authored and asks its owner only about away-safe tools", async () => {
     const planned = await planAutomation({
-      appId,
+      appId: "app_agentic_authored",
       appName: "Invoice review",
       instruction: REVIEW_INSTRUCTION,
-      mode: "agentic",
+      mode: "goal",
       tools: plannerTools,
     }, scriptedLanguageModel(REVIEW_PLAN));
 
     if (planned.kind !== "plan") throw new Error(`planning failed: ${planned.issues.join(" | ")}`);
-    const { run } = planned.plan.trigger;
-    if (run.kind !== "agentic") throw new Error("the planner authored a non-agentic run");
-    // The plan says what it will reach. Authoring is the only moment that KNOWS
-    // (it wrote the prompt), so a declaration written anywhere later would be a
-    // guess.
-    expect(run.tools).toEqual(["host_invoices_list", "host_invoices_get"]);
+    const { plan } = planned;
+    expect(plan.task.kind).toBe("goal");
 
     const stack = await createStack();
     try {
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        name: "Invoice review",
-        trigger: planned.plan.trigger,
-      }));
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
+      const ctx = ownerCtx(ADA.subject);
+      // What the planner authored goes through the ONE create door every other
+      // authoring door uses — nothing here reshapes it on the way.
+      const created = await stack.create({
+        owner: ADA,
+        when: plan.when,
+        task: plan.task,
+        authoredBy: "chat",
+      }, ctx);
+      // The authored `when` is normalized once, at create, and stored that way.
+      expect((await stack.automations.get(created.id, ctx))?.when)
+        .toEqual({ kind: "schedule", cron: "0 8 * * *" });
 
+      const enabled = await stack.automations.enable(created.id, ctx);
       expect(enabled.enabled).toBe(true);
-      expect(enabled.missing.map((request) => request.call.tool))
-        .toEqual(["host_invoices_list", "host_invoices_get"]);
       // The headline of the finding: no card for a thing this run can never do.
       expect(enabled.missing.every((request) => !withheldFromUnattended(request.descriptor))).toBe(true);
-      // Narrower than the surface it is bound to — the whole point.
-      expect(enabled.missing.length).toBeLessThan((await stack.bound.descriptors(
-        ownerCtx(ADA.subject, appId),
-      )).length);
-    } finally {
-      await stack.close();
-    }
-  });
-
-  it("never asks to allow an irreversible tool away, even with no declaration to narrow it", async () => {
-    const stack = await createStack();
-    try {
-      const appId = "app_agentic_undeclared";
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        name: "Invoice review",
-        trigger: {
-          on: { kind: "host-event", event: "review.ready" },
-          // No `tools`: an automation authored before declarations existed, or one
-          // whose plan could not name them. The card is still the person's, so it
-          // still may not ask about what would be refused anyway.
-          run: { kind: "agentic", prompt: "Review the invoices and note what looks risky." },
-        },
-      }));
-
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
-      const asked = enabled.missing.map((request) => request.call.tool);
-
-      expect(asked).not.toContain("host_invoices_send");
-      expect(asked.every((tool) => !withheldFromUnattended(descriptorFor(tool)))).toBe(true);
-      // Still the fallback — everything the run COULD reach away is offered.
-      expect(asked.sort()).toEqual([
+      expect(enabled.missing.map((request) => request.call.tool).sort()).toEqual([
         "host_invoices_create",
         "host_invoices_get",
         "host_invoices_list",
         "host_invoices_send_critical",
         "host_invoices_update",
       ]);
+      // ONE grant set, so a single decision settles the whole card.
+      expect(enabled.grantSetId).toBeTruthy();
     } finally {
       await stack.close();
     }

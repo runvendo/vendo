@@ -1,5 +1,9 @@
+/** The ledger you can actually read: one flat run list, filtered and paginated
+ * newest-first, owner-scoped on every door, plus dryRun — a preview that
+ * executes nothing, on the store or on the live host.
+ */
 import { beforeEach, describe, expect, it } from "vitest";
-import { automationDoc, createStack, ownerCtx, resetFixture } from "../src/harness.js";
+import { createStack, ownerCtx, resetFixture } from "../src/harness.js";
 import { ADA, BOB, approve, enableAndApprove, fixtureInvoices, tableCount } from "../src/support.js";
 
 describe("run observability and dry-run", () => {
@@ -9,17 +13,14 @@ describe("run observability and dry-run", () => {
     let clock = new Date("2026-07-12T00:00:00.000Z");
     const stack = await createStack({ now: () => clock });
     try {
-      const appId = "app_observe_pages";
-      const ctx = ownerCtx(ADA.subject, appId);
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "observe.fire" },
-          run: { kind: "steps", steps: [{ id: "list", tool: "host_invoices_list" }] },
-        },
-      }));
-      const enabled = await stack.automations.enable(appId, "main", ctx);
-      await approve(stack, enabled.missing);
+      const ctx = ownerCtx(ADA.subject);
+      const created = await stack.create({
+        owner: ADA,
+        when: { event: "observe.fire" },
+        task: { kind: "steps", steps: [{ id: "list", tool: "host_invoices_list" }] },
+        authoredBy: "chat",
+      }, ctx);
+      await enableAndApprove(stack, created.id, ctx);
 
       const emitted: string[] = [];
       for (let index = 0; index < 55; index += 1) {
@@ -34,19 +35,20 @@ describe("run observability and dry-run", () => {
       let cursor: string | undefined;
       let pageCount = 0;
       do {
-        const page = await stack.automations.runs.list({ appId, status: "ok", cursor }, ctx);
+        const page = await stack.automations.runs.list({ automationId: created.id, status: "ok", cursor }, ctx);
         pageCount += 1;
         seen.push(...page.runs.map(({ id }) => id));
         cursor = page.cursor;
       } while (cursor !== undefined);
       expect(pageCount).toBeGreaterThan(1);
       expect(seen).toEqual([...emitted].reverse());
-      expect(await stack.automations.runs.list({ appId, status: "error" }, ctx)).toEqual({ runs: [] });
-
+      expect(await stack.automations.runs.list({ automationId: created.id, status: "error" }, ctx))
+        .toEqual({ runs: [] });
       const target = emitted[0];
       if (!target) throw new Error("No run was emitted");
-      expect(await stack.automations.runs.get(target, ownerCtx(BOB.subject, appId))).toBeNull();
-      expect(await stack.automations.runs.list({ appId }, ownerCtx(BOB.subject, appId))).toEqual({ runs: [] });
+      expect(await stack.automations.runs.get(target, ownerCtx(BOB.subject))).toBeNull();
+      expect(await stack.automations.runs.list({ automationId: created.id }, ownerCtx(BOB.subject)))
+        .toEqual({ runs: [] });
       await expect(stack.automations.runs.stop(target, ctx)).rejects.toMatchObject({ code: "conflict" });
     } finally {
       await stack.close();
@@ -56,31 +58,24 @@ describe("run observability and dry-run", () => {
   it("expands forEach plans and dry-runs without writing runs or approvals", async () => {
     const stack = await createStack();
     try {
-      const appId = "app_observe_dry";
-      const ctx = ownerCtx(ADA.subject, appId);
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "observe.plan" },
-          run: {
-            kind: "steps",
-            steps: [
-              { id: "list", tool: "host_invoices_list" },
-              {
-                id: "send",
-                tool: "host_invoices_send",
-                forEach: "event.items",
-                args: { id: "item.id" },
-              },
-            ],
-          },
+      const ctx = ownerCtx(ADA.subject);
+      const created = await stack.create({
+        owner: ADA,
+        when: { event: "observe.plan" },
+        task: {
+          kind: "steps",
+          steps: [
+            { id: "list", tool: "host_invoices_list" },
+            { id: "send", tool: "host_invoices_send", forEach: "event.items", args: { id: "item.id" } },
+          ],
         },
-      }));
-      const enabled = await stack.automations.enable(appId, "main", ctx);
+        authoredBy: "chat",
+      }, ctx);
+      const enabled = await stack.automations.enable(created.id, ctx);
       const runsBefore = await tableCount(stack, "vendo_runs");
       const approvalsBefore = await tableCount(stack, "vendo_approvals");
 
-      const preGrant = await stack.automations.dryRun(appId, "main", ctx, {
+      const preGrant = await stack.automations.dryRun(created.id, ctx, {
         items: [{ id: "inv_0002" }, { id: "inv_0005" }],
       });
       expect(preGrant.steps.map(({ id, tool, wouldAsk }) => ({ id, tool, wouldAsk }))).toEqual([
@@ -96,7 +91,7 @@ describe("run observability and dry-run", () => {
       expect(await tableCount(stack, "vendo_approvals")).toBe(approvalsBefore);
 
       await approve(stack, enabled.missing);
-      const postGrant = await stack.automations.dryRun(appId, "main", ctx, {
+      const postGrant = await stack.automations.dryRun(created.id, ctx, {
         items: [{ id: "inv_0002" }, { id: "inv_0005" }],
       });
       expect(postGrant.steps).toHaveLength(3);
@@ -109,21 +104,22 @@ describe("run observability and dry-run", () => {
     }
   });
 
-  it("plans an agentic run across the whole bound surface and executes nothing", async () => {
+  it("plans a goal run across the whole bound surface and executes nothing", async () => {
     const stack = await createStack();
     try {
-      const appId = "app_observe_agentic_dry";
-      const ctx = ownerCtx(ADA.subject, appId);
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: { on: { kind: "host-event", event: "observe.agent" }, run: { kind: "agentic", prompt: "do the books" } },
-      }));
+      const ctx = ownerCtx(ADA.subject);
+      const created = await stack.create({
+        owner: ADA,
+        when: { event: "observe.agent" },
+        task: { kind: "goal", prompt: "do the books" },
+        authoredBy: "chat",
+      }, ctx);
       const runsBefore = await tableCount(stack, "vendo_runs");
       const approvalsBefore = await tableCount(stack, "vendo_approvals");
       const invoicesBefore = (await fixtureInvoices()).length;
 
-      const plan = await stack.automations.dryRun(appId, "main", ctx);
-      // Without a model seat, agentic capture previews every bound descriptor.
+      const plan = await stack.automations.dryRun(created.id, ctx);
+      // Without a model seat, a goal's capture previews every bound descriptor.
       expect(plan.steps.map(({ tool }) => tool).sort()).toEqual([
         "host_invoices_create", "host_invoices_get", "host_invoices_list",
         "host_invoices_send", "host_invoices_send_critical", "host_invoices_update",
@@ -145,29 +141,27 @@ describe("run observability and dry-run", () => {
   it("previews a mutating steps pipeline without touching host state, even when granted", async () => {
     const stack = await createStack();
     try {
-      const appId = "app_observe_dry_sideeffect";
-      const ctx = ownerCtx(ADA.subject, appId);
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "observe.mutate" },
-          run: {
-            kind: "steps",
-            steps: [
-              {
-                id: "create",
-                tool: "host_invoices_create",
-                args: { customerId: "'cus_ada'", amountCents: "1", memo: "'dry-run-should-not-write'" },
-              },
-              { id: "send", tool: "host_invoices_send", args: { id: "'inv_0003'" } },
-            ],
-          },
+      const ctx = ownerCtx(ADA.subject);
+      const created = await stack.create({
+        owner: ADA,
+        when: { event: "observe.mutate" },
+        task: {
+          kind: "steps",
+          steps: [
+            {
+              id: "create",
+              tool: "host_invoices_create",
+              args: { customerId: "'cus_ada'", amountCents: "1", memo: "'dry-run-should-not-write'" },
+            },
+            { id: "send", tool: "host_invoices_send", args: { id: "'inv_0003'" } },
+          ],
         },
-      }));
-      await enableAndApprove(stack, appId, ctx);
+        authoredBy: "chat",
+      }, ctx);
+      await enableAndApprove(stack, created.id, ctx);
       const runsBefore = await tableCount(stack, "vendo_runs");
 
-      const plan = await stack.automations.dryRun(appId, "main", ctx, {});
+      const plan = await stack.automations.dryRun(created.id, ctx, {});
       expect(plan.steps.map(({ id, wouldAsk }) => ({ id, wouldAsk }))).toEqual([
         { id: "create", wouldAsk: false },
         { id: "send", wouldAsk: false },

@@ -16,14 +16,14 @@
  * and sets POSTGRES_URL, so the journey code is real and runs there.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { AppDocument } from "@vendoai/core";
+import type { AutomationTask } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import {
   ADA,
   createStack,
   decideApprovals,
   screenAgentCreateTurns,
-  importAutomation,
+  createAutomation,
   readSse,
   resetFixture,
   textTurn,
@@ -53,26 +53,16 @@ export default function AdaDurableCard() {
 }
 `;
 
-function invoiceAutomation(): AppDocument {
-  return {
-    format: "vendo/app@1",
-    id: "app_placeholder",
-    name: "J9 invoice automation",
-    trigger: {
-      on: { kind: "host-event", event: EVENT },
-      run: {
-        kind: "steps",
-        steps: [{
-          id: "create",
-          tool: CREATE,
-          args: { customerId: "'cus_j9'", amountCents: "909", currency: "'USD'", memo: "'J9 durable invoice'" },
-        }],
-      },
-    },
-  } as AppDocument;
-}
+const invoiceTask: AutomationTask = {
+  kind: "steps",
+  steps: [{
+    id: "create",
+    tool: CREATE,
+    args: { customerId: "'cus_j9'", amountCents: "909", currency: "'USD'", memo: "'J9 durable invoice'" },
+  }],
+};
 
-const TRUNCATE = "TRUNCATE vendo_apps, vendo_threads, vendo_runs, vendo_grants, vendo_approvals, vendo_audit RESTART IDENTITY CASCADE";
+const TRUNCATE = "TRUNCATE vendo_apps, vendo_automations, vendo_threads, vendo_runs, vendo_grants, vendo_approvals, vendo_audit RESTART IDENTITY CASCADE";
 
 async function rawQuery<Row>(store: ReturnType<typeof createStore>, query: string, params: unknown[] = []): Promise<Row[]> {
   const raw = store.raw() as { query(q: string, p?: unknown[]): Promise<{ rows: Row[] }> };
@@ -116,14 +106,18 @@ describe.skipIf(!POSTGRES_URL)("J9: core journeys on Postgres survive a serving-
       }),
     }, ADA));
     expect(turn.raw.includes("Created your durable app.")).toBe(true);
-    // Capture the generated app before importing the automation (only row so far).
+    // Capture the generated app before authoring the automation (only row so far).
     const apps = await stack.sql<{ id: string; subject: string }>("SELECT id, subject FROM vendo_apps");
     expect(apps).toHaveLength(1);
     const appId = apps[0]!.id;
     expect(apps[0]!.subject).toBe(ADA.subject);
 
     // --- Core journey 2: an away automation run (persisted to Postgres) --------
-    const automation = await importAutomation(stack, invoiceAutomation(), ADA);
+    const automation = await createAutomation(stack, {
+      owner: ADA,
+      when: { event: EVENT },
+      task: invoiceTask,
+    });
     const enabled = (await (await stack.wireFetch(`/automations/${automation.id}/enable`, { method: "POST" }, ADA)).json()) as {
       enabled: boolean;
       missing: WireApproval[];
@@ -148,14 +142,16 @@ describe.skipIf(!POSTGRES_URL)("J9: core journeys on Postgres survive a serving-
       );
       expect(appRows).toEqual([{ id: appId, subject: ADA.subject }]);
 
-      const runRows = await rawQuery<{ id: string; status: string; app_id: string }>(
-        reopened, "SELECT id, status, app_id FROM vendo_runs WHERE id = $1", [runId],
+      // A run belongs to the RECORD that fired it — `vendo_runs` re-keyed
+      // `app_id` to `automation_id`, because an automation holds no app at all.
+      const runRows = await rawQuery<{ id: string; status: string; automation_id: string }>(
+        reopened, "SELECT id, status, automation_id FROM vendo_runs WHERE id = $1", [runId],
       );
-      expect(runRows).toEqual([{ id: runId, status: "ok", app_id: automation.id }]);
+      expect(runRows).toEqual([{ id: runId, status: "ok", automation_id: automation.id }]);
 
       // The captured standing grant survived too (automation authority is durable).
       const grants = await rawQuery<{ tool: string; source: string }>(
-        reopened, "SELECT tool, source FROM vendo_grants WHERE app_id = $1", [automation.id],
+        reopened, "SELECT tool, source FROM vendo_grants WHERE automation_id = $1", [automation.id],
       );
       expect(grants).toContainEqual({ tool: CREATE, source: "automation" });
     } finally {

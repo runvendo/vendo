@@ -8,8 +8,8 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ToolRegistry } from "@vendoai/core";
-import { automationDoc, createStack, ownerCtx, resetFixture } from "../src/harness.js";
-import { ADA, BOB, fixtureInvoices, enableAndApprove } from "../src/support.js";
+import { createStack, ownerCtx, resetFixture } from "../src/harness.js";
+import { ADA, BOB, enableAndApprove, fixtureInvoices } from "../src/support.js";
 
 /** Wrap the bound registry with an in-process `hold` tool that blocks until released. */
 const withHoldTool = (hold: () => Promise<void>) => (bound: ToolRegistry): ToolRegistry => ({
@@ -42,28 +42,24 @@ describe("kill switch (runs.stop)", () => {
       }),
     });
     try {
-      const appId = "app_kill_hold";
-      const ctx = ownerCtx(ADA.subject, appId);
-      await stack.putApp(ADA.subject, {
-        ...automationDoc({
-          id: appId,
-          trigger: {
-            on: { kind: "host-event", event: "kill.hold" },
-            run: {
-              kind: "steps",
-              steps: [
-                { id: "hold", tool: "hold", args: {} },
-                {
-                  id: "record",
-                  tool: "host_invoices_create",
-                  args: { customerId: "'cus_ada'", amountCents: "1", memo: "'stopped-should-not-write'" },
-                },
-              ],
+      const ctx = ownerCtx(ADA.subject);
+      const created = await stack.create({
+        owner: ADA,
+        when: { event: "kill.hold" },
+        task: {
+          kind: "steps",
+          steps: [
+            { id: "hold", tool: "hold", args: {} },
+            {
+              id: "record",
+              tool: "host_invoices_create",
+              args: { customerId: "'cus_ada'", amountCents: "1", memo: "'stopped-should-not-write'" },
             },
-          },
-        }),
-      });
-      await enableAndApprove(stack, appId, ctx);
+          ],
+        },
+        authoredBy: "chat",
+      }, ctx);
+      await enableAndApprove(stack, created.id, ctx);
 
       const emitted = stack.automations.emit("kill.hold", {}, ADA);
       await started;
@@ -71,9 +67,10 @@ describe("kill switch (runs.stop)", () => {
       expect(running).toHaveLength(1);
       const runId = running[0]?.id;
       if (!runId) throw new Error("no running run to stop");
+      expect(running[0]?.automationId).toBe(created.id);
 
       // Owner scoping: a non-owner cannot even see the run to stop it.
-      await expect(stack.automations.runs.stop(runId, ownerCtx(BOB.subject, appId)))
+      await expect(stack.automations.runs.stop(runId, ownerCtx(BOB.subject)))
         .rejects.toMatchObject({ code: "not-found" });
 
       await stack.automations.runs.stop(runId, ctx);

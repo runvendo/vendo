@@ -11,12 +11,12 @@
  */
 import type { RunContext } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { automationDoc, createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
+import { createAutomation, createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
 import { ADA, approve, fixtureInvoices, waitForRun } from "../src/support.js";
 
 interface MissSetup {
   stack: Stack;
-  appId: string;
+  automationId: string;
   ctx: RunContext;
   runId: string;
   approvalId: string;
@@ -35,29 +35,28 @@ interface MissSetup {
  */
 async function createMiss(suffix: string): Promise<MissSetup> {
   const stack = await createStack();
-  const appId = `app_loud_${suffix}`;
   const memo = `loud-${suffix}`;
-  const ctx = ownerCtx(ADA.subject, appId);
-  await stack.putApp(ADA.subject, automationDoc({
-    id: appId,
-    trigger: {
-      on: { kind: "host-event", event: "invoice.loud" },
-      run: {
-        kind: "steps",
-        steps: [
-          // The effect that DOES land before the miss — a real host mutation,
-          // which is what makes the re-run's ledger question meaningful.
-          {
-            id: "log",
-            tool: "host_invoices_create",
-            args: { customerId: "'cus_ada'", amountCents: "101", memo: `'${memo}'` },
-          },
-          { id: "sweep", tool: "host_invoices_update", args: { id: "event.id", memo: `'${memo}-swept'` } },
-        ],
-      },
+  const ctx = ownerCtx(ADA.subject);
+  const record = await createAutomation(stack, {
+    owner: ADA,
+    when: { event: "invoice.loud" },
+    task: {
+      kind: "steps",
+      steps: [
+        // The effect that DOES land before the miss — a real host mutation,
+        // which is what makes the re-run's ledger question meaningful.
+        {
+          id: "log",
+          tool: "host_invoices_create",
+          args: { customerId: "'cus_ada'", amountCents: "101", memo: `'${memo}'` },
+        },
+        { id: "sweep", tool: "host_invoices_update", args: { id: "event.id", memo: `'${memo}-swept'` } },
+      ],
     },
-  }));
-  const enabled = await stack.automations.enable(appId, "main", ctx);
+    authoredBy: "chat",
+    armed: false,
+  }, ctx);
+  const enabled = await stack.automations.enable(record.id, ctx);
   // Only the first step's permission is allowed: the second is the miss. Its
   // arming ask stays open — the person walked away mid-ceremony — which is
   // exactly the state that must not become two questions about one permission.
@@ -65,9 +64,8 @@ async function createMiss(suffix: string): Promise<MissSetup> {
   const runIds = await stack.automations.emit("invoice.loud", { id: "inv_0003" }, ADA);
   const runId = runIds[0];
   if (!runId) throw new Error("emit did not return a run id");
-  const asks = await stack.guard.approvals.pending(ADA);
-  const outstanding = asks.filter((request) =>
-    request.call.tool === "host_invoices_update" && request.ctx.appId === appId);
+  const outstanding = (await stack.guard.approvals.pending(ADA))
+    .filter((request) => request.call.tool === "host_invoices_update");
   if (outstanding.length === 0) throw new Error("the missing permission raised no ask at all");
   // The one a surface decides: the capture the engine says is outstanding.
   const captures = await stack.sql<{ id: string }>(
@@ -75,7 +73,7 @@ async function createMiss(suffix: string): Promise<MissSetup> {
   );
   const approvalId = captures[0]?.id;
   if (approvalId === undefined) throw new Error("the missing permission captured no ask");
-  return { stack, appId, ctx, runId, approvalId, memo };
+  return { stack, automationId: record.id, ctx, runId, approvalId, memo };
 }
 
 describe("fail-loud consent and Grant & re-run", () => {
@@ -86,6 +84,7 @@ describe("fail-loud consent and Grant & re-run", () => {
     try {
       const run = await setup.stack.automations.runs.get(setup.runId, setup.ctx);
       expect(run).toMatchObject({
+        automationId: setup.automationId,
         status: "error",
         error: { code: "needs-permission", tool: "host_invoices_update" },
         steps: [
@@ -106,20 +105,17 @@ describe("fail-loud consent and Grant & re-run", () => {
       ))[0]?.status).toBe("error");
 
       // The ask is a CAPTURE — the same row arming writes — so the one decision
-      // path both doors share mints the standing grant, and the panel counts it.
-      // ONE row, not two: the arming ask nobody answered is the same question.
+      // path both doors share mints the standing grant. ONE row, not two: the
+      // arming ask nobody answered is the same question, about the same record.
       const captures = await setup.stack.sql<{ id: string; data: unknown }>(
         "SELECT id, data FROM vendo_records WHERE collection = 'automations:captures'",
       );
       expect(captures.map(({ id }) => id)).toEqual([setup.approvalId]);
       expect(captures[0]?.data).toMatchObject({
-        appId: setup.appId,
-        triggerId: "main",
+        automationId: setup.automationId,
         subject: ADA.subject,
         tool: "host_invoices_update",
       });
-      const listed = await setup.stack.automations.list(setup.ctx);
-      expect(listed[0]?.triggers[0]).toMatchObject({ enabled: true, pendingGrants: 1 });
 
       // Nothing was parked, and nothing claimed a resume.
       expect(await setup.stack.sql(
@@ -140,32 +136,33 @@ describe("fail-loud consent and Grant & re-run", () => {
     try {
       await setup.stack.guard.approvals.decide(setup.approvalId, { approve: true }, ADA);
 
-      // One standing, app- and trigger-bound grant — the thing the automation
-      // will hold from now on.
+      // One standing grant, keyed to the RECORD — the thing this automation will
+      // hold from now on, and nothing wider.
       expect(await setup.stack.sql(
-        `SELECT subject, tool, app_id, source, duration
+        `SELECT subject, tool, automation_id, source, duration
            FROM vendo_grants
-          WHERE subject = $1 AND tool = 'host_invoices_update' AND app_id = $2`,
-        [ADA.subject, setup.appId],
+          WHERE subject = $1 AND tool = 'host_invoices_update'`,
+        [ADA.subject],
       )).toEqual([{
         subject: ADA.subject,
         tool: "host_invoices_update",
-        app_id: setup.appId,
+        automation_id: setup.automationId,
         source: "automation",
         duration: "standing",
       }]);
-      // The capture is settled, so the panel stops saying "waiting".
-      expect((await setup.stack.automations.list(setup.ctx))[0]?.triggers[0]?.pendingGrants).toBeUndefined();
+      // The capture is settled, so nothing keeps asking…
+      expect(await setup.stack.sql(
+        "SELECT id FROM vendo_records WHERE collection = 'automations:captures'",
+      )).toEqual([]);
       // …and the failed run is STILL failed: a decision runs nothing.
       expect((await setup.stack.automations.runs.get(setup.runId, setup.ctx))?.status).toBe("error");
 
-      // Grant & re-run: a FRESH run of the same trigger on the same event.
+      // Grant & re-run: a FRESH run of the same automation on the same event.
       const rerunId = await setup.stack.automations.runs.rerun(setup.runId, setup.ctx);
       expect(rerunId).not.toBe(setup.runId);
       const rerun = await waitForRun(setup.stack, rerunId, setup.ctx, "ok");
       expect(rerun).toMatchObject({
-        appId: setup.appId,
-        triggerId: "main",
+        automationId: setup.automationId,
         status: "ok",
         steps: [{ id: "log", outcome: "ok" }, { id: "sweep", outcome: "ok" }],
       });
@@ -189,8 +186,7 @@ describe("fail-loud consent and Grant & re-run", () => {
       const nextId = nextIds[0];
       if (!nextId) throw new Error("second emit did not return a run id");
       expect((await waitForRun(setup.stack, nextId, setup.ctx, "ok")).status).toBe("ok");
-      // Nobody was asked anything for that firing: no new capture, nothing
-      // waiting on the panel.
+      // Nobody was asked anything for that firing: no new capture at all.
       expect(await setup.stack.sql(
         "SELECT id FROM vendo_records WHERE collection = 'automations:captures'",
       )).toEqual([]);
@@ -209,14 +205,13 @@ describe("fail-loud consent and Grant & re-run", () => {
       const run = await setup.stack.automations.runs.get(setup.runId, setup.ctx);
       expect(run).toMatchObject({ status: "error", error: { code: "needs-permission" } });
       expect(await setup.stack.sql(
-        "SELECT id FROM vendo_grants WHERE subject = $1 AND tool = 'host_invoices_update' AND app_id = $2",
-        [ADA.subject, setup.appId],
+        "SELECT id FROM vendo_grants WHERE subject = $1 AND tool = 'host_invoices_update' AND automation_id = $2",
+        [ADA.subject, setup.automationId],
       )).toEqual([]);
       // The decided ask is gone from the capture table, so nothing keeps asking.
       expect(await setup.stack.sql(
         "SELECT id FROM vendo_records WHERE collection = 'automations:captures'",
       )).toEqual([]);
-      expect((await setup.stack.automations.list(setup.ctx))[0]?.triggers[0]?.pendingGrants).toBeUndefined();
       // …and the write it was refused never happened.
       expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.memo)
         .not.toBe(`${setup.memo}-swept`);
@@ -225,10 +220,10 @@ describe("fail-loud consent and Grant & re-run", () => {
     }
   });
 
-  it("refuses a re-run for anyone who cannot edit the app", async () => {
+  it("refuses a re-run for anyone who does not own the automation", async () => {
     const setup = await createMiss("gate");
     try {
-      await expect(setup.stack.automations.runs.rerun(setup.runId, ownerCtx("user_bob", setup.appId)))
+      await expect(setup.stack.automations.runs.rerun(setup.runId, ownerCtx("user_bob")))
         .rejects.toMatchObject({ code: "not-found" });
     } finally {
       await setup.stack.close();

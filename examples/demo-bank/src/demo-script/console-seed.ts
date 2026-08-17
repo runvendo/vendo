@@ -6,7 +6,7 @@
  * boot), and the scripted-demo rows are seedDemoScript's; this script adds,
  * per seeded Maple user:
  *
- * - six automations (`vendo_apps`) — four enabled (payday savings sweep,
+ * - six automations (`vendo_automations`) — four enabled (payday savings sweep,
  *   balance-below-$500 alert, monthly bill review, weekly spending digest)
  *   and two disabled (subscription price watch, quarterly tax set-aside);
  * - ~6 weeks of run history (`vendo_runs`) — mostly ok, a few failures — so
@@ -35,7 +35,8 @@
  *   to fill them is running real agent turns against the tenant;
  * - the org guard policy on the HOSTED store — console-managed (guard PR 789).
  */
-import { DEFAULT_TRIGGER_ID, type AppDocument, type AppId, type AuditEvent, type RunId } from "@vendoai/core";
+import type { RunRecord } from "@vendoai/automations";
+import type { AuditEvent, AutomationRecord, AutomationTask, RunId, TriggerSource } from "@vendoai/core";
 import { workspaceStore, type VendoStore } from "@vendoai/store";
 import { mapleDemoUsers } from "@/server/users";
 
@@ -48,125 +49,106 @@ function daysAgo(anchor: Date, n: number, h = 9, m = 0): Date {
 
 // ---------------------------------------------------------------- automations
 
-function seedId(key: string, subject: string): string {
-  return `app_seed_${key}_${subject}`;
-}
-
-/** The seeded automations — the doc plus whether the row is enabled, so the
- *  list shows a couple of paused ones the way a real tenant's would. */
-function automationSeeds(subject: string): { doc: AppDocument; enabled: boolean }[] {
-  return automationDocs(subject).map((doc) => ({
-    doc,
-    enabled: !DISABLED_KEYS.some((key) => doc.id === seedId(key, subject)),
-  }));
+export function seedId(key: string, subject: string): string {
+  return `atm_seed_${key}_${subject}`;
 }
 
 const DISABLED_KEYS = ["pricewatch", "taxsetaside"];
 
-function automationDocs(subject: string): AppDocument[] {
+/** An automation record is an owner, a trigger and a task — it has no name and
+ *  no description. The words the console lists are Maple's, so Maple keeps them
+ *  here and writes them beside each seeded row. */
+const DISPLAY: Record<string, { name: string; description: string }> = {
+  paydaysweep: {
+    name: "Payday savings sweep",
+    description: "On the 1st and 15th at 9:00 AM, move $200 from Maple Checking to Maple Savings.",
+  },
+  lowbalance500: {
+    name: "Balance below $500 alert",
+    description: "Every morning at 7:00 AM, check Maple Checking and draft an alert if the available balance is below $500.",
+  },
+  billreview: {
+    name: "Monthly bill review",
+    description: "On the 28th at 9:00 AM, review upcoming bills and recurring subscriptions and prepare a summary.",
+  },
+  weeklydigest: {
+    name: "Weekly spending digest",
+    description: "Every Monday at 8:00 AM, summarize last week's spending by category and how cashflow is trending.",
+  },
+  pricewatch: {
+    name: "Subscription price watch",
+    description: "On the 5th at 10:00 AM, flag any subscription that got more expensive month-over-month. (Paused.)",
+  },
+  taxsetaside: {
+    name: "Quarterly tax set-aside",
+    description: "Quarterly on the 1st at 9:00 AM, move 25% of the quarter's business income into Maple Money Market. (Paused.)",
+  },
+};
+
+/** A seeded row: the record, plus the display words above — the record schema
+ *  passes anything it does not name straight through. */
+type SeededAutomation = AutomationRecord & { name: string; description: string };
+
+/** The seeded automations — armed except for the paused pair, so the list shows
+ *  a couple of switched-off ones the way a real tenant's would. */
+function automationRecords(subject: string, createdAt: string): SeededAutomation[] {
+  const seed = (key: string, when: TriggerSource, task: AutomationTask): SeededAutomation => ({
+    ...DISPLAY[key]!,
+    id: seedId(key, subject),
+    owner: { kind: "user", subject },
+    when,
+    task,
+    armed: !DISABLED_KEYS.includes(key),
+    authoredBy: "chat",
+    createdAt,
+    updatedAt: createdAt,
+  });
   return [
-    {
-      format: "vendo/app@1",
-      id: seedId("paydaysweep", subject) as AppId,
-      name: "Payday savings sweep",
-      description: "On the 1st and 15th at 9:00 AM, move $200 from Maple Checking to Maple Savings.",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "schedule", cron: "0 9 1,15 * *" },
-        run: {
-          kind: "agentic",
-          prompt: "Move $200.00 from Maple Checking to Maple Savings and confirm the transfer posted.",
-          budget: { maxToolCalls: 5 },
-        },
-      }],
-    },
-    {
-      format: "vendo/app@1",
-      id: seedId("lowbalance500", subject) as AppId,
-      name: "Balance below $500 alert",
-      description: "Every morning at 7:00 AM, check Maple Checking and draft an alert if the available balance is below $500.",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "schedule", cron: "0 7 * * *" },
-        run: {
-          kind: "steps",
-          steps: [{ id: "balance", tool: "host_listAccounts" }],
-        },
-      }],
-    },
-    {
-      format: "vendo/app@1",
-      id: seedId("billreview", subject) as AppId,
-      name: "Monthly bill review",
-      description: "On the 28th at 9:00 AM, review upcoming bills and recurring subscriptions and prepare a summary.",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "schedule", cron: "0 9 28 * *" },
-        run: {
-          kind: "steps",
-          steps: [
-            { id: "scheduled", tool: "host_listScheduledPayments" },
-            { id: "recurring", tool: "host_getRecurringInsights" },
-          ],
-        },
-      }],
-    },
-    {
-      format: "vendo/app@1",
-      id: seedId("weeklydigest", subject) as AppId,
-      name: "Weekly spending digest",
-      description: "Every Monday at 8:00 AM, summarize last week's spending by category and how cashflow is trending.",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "schedule", cron: "0 8 * * 1" },
-        run: {
-          kind: "steps",
-          steps: [
-            { id: "spending", tool: "host_getSpendingInsights" },
-            { id: "cashflow", tool: "host_getCashflowInsights" },
-          ],
-        },
-      }],
-    },
-    {
-      format: "vendo/app@1",
-      id: seedId("pricewatch", subject) as AppId,
-      name: "Subscription price watch",
-      description: "On the 5th at 10:00 AM, flag any subscription that got more expensive month-over-month. (Paused.)",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "schedule", cron: "0 10 5 * *" },
-        run: {
-          kind: "steps",
-          steps: [{ id: "recurring", tool: "host_getRecurringInsights" }],
-        },
-      }],
-    },
-    {
-      format: "vendo/app@1",
-      id: seedId("taxsetaside", subject) as AppId,
-      name: "Quarterly tax set-aside",
-      description: "Quarterly on the 1st at 9:00 AM, move 25% of the quarter's business income into Maple Money Market. (Paused.)",
-      triggers: [{
-        id: DEFAULT_TRIGGER_ID,
-        on: { kind: "schedule", cron: "0 9 1 */3 *" },
-        run: {
-          kind: "agentic",
-          prompt: "Total this quarter's Maple Business Checking income, move 25% of it to Maple Money Market, and confirm the transfer posted.",
-          budget: { maxToolCalls: 8 },
-        },
-      }],
-    },
+    seed("paydaysweep", { kind: "schedule", cron: "0 9 1,15 * *" }, {
+      kind: "goal",
+      prompt: "Move $200.00 from Maple Checking to Maple Savings and confirm the transfer posted.",
+      budget: { maxToolCalls: 5 },
+    }),
+    seed("lowbalance500", { kind: "schedule", cron: "0 7 * * *" }, {
+      kind: "steps",
+      steps: [{ id: "balance", tool: "host_listAccounts" }],
+    }),
+    seed("billreview", { kind: "schedule", cron: "0 9 28 * *" }, {
+      kind: "steps",
+      steps: [
+        { id: "scheduled", tool: "host_listScheduledPayments" },
+        { id: "recurring", tool: "host_getRecurringInsights" },
+      ],
+    }),
+    seed("weeklydigest", { kind: "schedule", cron: "0 8 * * 1" }, {
+      kind: "steps",
+      steps: [
+        { id: "spending", tool: "host_getSpendingInsights" },
+        { id: "cashflow", tool: "host_getCashflowInsights" },
+      ],
+    }),
+    seed("pricewatch", { kind: "schedule", cron: "0 10 5 * *" }, {
+      kind: "steps",
+      steps: [{ id: "recurring", tool: "host_getRecurringInsights" }],
+    }),
+    seed("taxsetaside", { kind: "schedule", cron: "0 9 1 */3 *" }, {
+      kind: "goal",
+      prompt: "Total this quarter's Maple Business Checking income, move 25% of it to Maple Money Market, and confirm the transfer posted.",
+      budget: { maxToolCalls: 8 },
+    }),
   ];
 }
 
-async function seedAutomations(store: VendoStore, subjects: string[]): Promise<number> {
-  const apps = store.records("vendo_apps");
+async function seedAutomations(store: VendoStore, subjects: string[], anchor: Date): Promise<number> {
+  const table = store.records("vendo_automations");
+  // Older than the run history below, so the fire record reads as this
+  // automation's rather than as something seeded after it.
+  const createdAt = iso(daysAgo(anchor, 42));
   let written = 0;
   for (const subject of subjects) {
-    for (const { doc, enabled } of automationSeeds(subject)) {
-      if (await apps.get(doc.id) !== null) continue;
-      await apps.put({ id: doc.id, data: { subject, enabled, doc } });
+    for (const record of automationRecords(subject, createdAt)) {
+      if (await table.get(record.id) !== null) continue;
+      await table.put({ id: record.id, data: record, refs: { subject } });
       written++;
     }
   }
@@ -177,7 +159,7 @@ async function seedAutomations(store: VendoStore, subjects: string[]): Promise<n
 
 interface SeedRun {
   id: string;
-  appId: string;
+  automationId: string;
   startedAt: Date;
   durationS: number;
   steps: { id: string; tool: string }[];
@@ -193,7 +175,7 @@ function runHistory(subject: string, anchor: Date): SeedRun[] {
   const sweep = seedId("paydaysweep", subject);
   for (const [n, day] of [[1, 3], [2, 17], [3, 31]] as const) {
     runs.push({
-      id: `run_seed_sweep_${n}_${subject}`, appId: sweep,
+      id: `run_seed_sweep_${n}_${subject}`, automationId: sweep,
       startedAt: daysAgo(anchor, day, 9, 0), durationS: 8,
       steps: [{ id: "transfer", tool: "host_transferMoney" }],
       summary: "Moved $200.00 from Maple Checking to Maple Savings.",
@@ -203,7 +185,7 @@ function runHistory(subject: string, anchor: Date): SeedRun[] {
   const alertFailures = new Set([13, 27]);
   for (let day = 1; day <= 41; day += 2) {
     runs.push({
-      id: `run_seed_alert_${day}_${subject}`, appId: alert,
+      id: `run_seed_alert_${day}_${subject}`, automationId: alert,
       startedAt: daysAgo(anchor, day, 7, 0), durationS: 3,
       steps: [{ id: "balance", tool: "host_listAccounts" }],
       summary: "Maple Checking is at $9,412.20 — above the $500 threshold, no alert needed.",
@@ -212,7 +194,7 @@ function runHistory(subject: string, anchor: Date): SeedRun[] {
   }
   for (const [n, day] of [[1, 8], [2, 38]] as const) {
     runs.push({
-      id: `run_seed_bills_${n}_${subject}`, appId: seedId("billreview", subject),
+      id: `run_seed_bills_${n}_${subject}`, automationId: seedId("billreview", subject),
       startedAt: daysAgo(anchor, day, 9, 0), durationS: 6,
       steps: [
         { id: "scheduled", tool: "host_listScheduledPayments" },
@@ -224,7 +206,7 @@ function runHistory(subject: string, anchor: Date): SeedRun[] {
   const digest = seedId("weeklydigest", subject);
   for (const day of [2, 9, 16, 23, 30, 37]) {
     runs.push({
-      id: `run_seed_digest_${day}_${subject}`, appId: digest,
+      id: `run_seed_digest_${day}_${subject}`, automationId: digest,
       startedAt: daysAgo(anchor, day, 8, 0), durationS: 5,
       steps: [
         { id: "spending", tool: "host_getSpendingInsights" },
@@ -247,12 +229,16 @@ async function seedRuns(store: VendoStore, subjects: string[], anchor: Date): Pr
       const finishedAt = iso(new Date(run.startedAt.getTime() + run.durationS * 1000));
       const status = run.failure === undefined ? ("ok" as const) : ("error" as const);
       const outcome = run.failure === undefined ? ("ok" as const) : ("error" as const);
-      const record = {
-        id: run.id, appId: run.appId,
-        // WHICH trigger fired. Every seeded automation declares exactly one,
-        // under the default id (automationDocs above), so that is what a fire
-        // of it recorded.
-        triggerId: DEFAULT_TRIGGER_ID,
+      // Typed as the ledger's OWN shape, not a bare literal: the engine parses
+      // every row it reads back, so a field missed here is a run history no
+      // console tab can show. `owner` was exactly that.
+      const record: RunRecord = {
+        // WHICH automation fired: the record is the unit, so its id is the
+        // whole answer — there is no app and no trigger id beside it.
+        id: run.id, automationId: run.automationId,
+        // WHO it ran as. Not decoration: every owner-scoped read of the ledger
+        // filters on this, so a row without it is a row no console tab can show.
+        owner: { kind: "user" as const, subject },
         trigger: { kind: "schedule" as const },
         status, startedAt, finishedAt,
         steps: run.steps.map((step, index) => ({
@@ -265,7 +251,7 @@ async function seedRuns(store: VendoStore, subjects: string[], anchor: Date): Pr
       };
       await table.put({
         id: run.id,
-        data: { appId: run.appId, trigger: { kind: "schedule" }, status, record, startedAt, finishedAt },
+        data: { automationId: run.automationId, trigger: { kind: "schedule" }, status, record, startedAt, finishedAt },
       });
       written++;
     }
@@ -288,18 +274,18 @@ function auditEvents(subject: string, anchor: Date): AuditEvent[] {
     });
   };
 
-  // Every automation fire leaves a run event + its tool calls, away.
+  // Every automation fire leaves a run event + its tool calls, away. WHICH
+  // automation fired rides the trigger ref; these rows name no app because an
+  // automation has none.
   for (const run of runHistory(subject, anchor)) {
-    const trigger = { runId: run.id as RunId, kind: "schedule" as const };
+    const trigger = { runId: run.id as RunId, kind: "schedule" as const, automationId: run.automationId };
     const outcome = run.failure === undefined ? ("ok" as const) : ("error" as const);
     add(run.startedAt, {
-      kind: "run", venue: "automation", presence: "away",
-      appId: run.appId as AppId, trigger, outcome,
+      kind: "run", venue: "automation", presence: "away", trigger, outcome,
     });
     for (const step of run.steps) {
       add(new Date(run.startedAt.getTime() + 1000), {
-        kind: "tool-call", venue: "automation", presence: "away",
-        appId: run.appId as AppId, trigger,
+        kind: "tool-call", venue: "automation", presence: "away", trigger,
         tool: step.tool, outcome, decidedBy: "grant",
       });
     }
@@ -426,7 +412,7 @@ export async function seedConsoleData(store: VendoStore, anchor: Date = new Date
   const subjects = mapleDemoUsers().map((user) => user.subject);
   await store.ensureSchema();
   return {
-    automations: await seedAutomations(store, subjects),
+    automations: await seedAutomations(store, subjects, anchor),
     runs: await seedRuns(store, subjects, anchor),
     audit: await seedAudit(store, subjects, anchor),
     orgPolicy: await seedOrgPolicy(store, subjects[0] ?? "vendo-demo"),

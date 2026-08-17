@@ -27,9 +27,13 @@ import type { Connector } from "@vendoai/actions";
 import type { SandboxAdapter } from "@vendoai/apps";
 import {
   type AppDocument,
+  type AutomationRecord,
+  type CreateAutomationInput,
   type Principal,
+  type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
+import { automationsInternals } from "@vendoai/automations";
 import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
@@ -571,10 +575,11 @@ export interface WireApproval {
   call: { tool: string };
 }
 
-/** The RunRecord shape the /runs wire returns (07 §5), narrowed to the asserts. */
+/** The RunRecord shape the /runs wire returns, narrowed to the asserts. Keyed
+ *  on the automation, since a record has no app id to pair with. */
 export interface WireRun {
   id: string;
-  appId: string;
+  automationId: string;
   status: "running" | "ok" | "error" | "stopped" | "pending-approval";
   steps: Array<{ id: string; tool: string; outcome: string; detail?: string }>;
   summary?: string;
@@ -587,9 +592,9 @@ export function buildVendoApp(doc: AppDocument): Uint8Array {
   return zipSync({ "app.json": new TextEncoder().encode(JSON.stringify(doc)) }, { level: 6 });
 }
 
-/** Import an automation through the PUBLIC wire (POST /apps/import,
+/** Import an APP through the PUBLIC wire (POST /apps/import,
  * application/octet-stream). Returns the imported (fresh-id) document. */
-export async function importAutomation(stack: Stack, doc: AppDocument, user: Principal): Promise<AppDocument> {
+export async function importApp(stack: Stack, doc: AppDocument, user: Principal): Promise<AppDocument> {
   const response = await stack.wireFetch("/apps/import", {
     method: "POST",
     headers: { "content-type": "application/octet-stream" },
@@ -597,6 +602,34 @@ export async function importAutomation(stack: Stack, doc: AppDocument, user: Pri
   }, user);
   if (!response.ok) throw new Error(`import failed (${response.status}): ${await response.text()}`);
   return (await response.json()) as AppDocument;
+}
+
+/** A present user's authoring context. Only `principal.subject` decides what may
+ *  be authored (`speaksFor`); the rest is what every RunContext carries. */
+export const presentCtx = (user: Principal): RunContext => ({
+  principal: user,
+  venue: "chat",
+  presence: "present",
+  sessionId: `sess_${user.subject}`,
+});
+
+/**
+ * Author an automation RECORD, through the ONE create operation every authoring
+ * door shares — reached off the composed umbrella's own engine.
+ *
+ * There is deliberately no public create and no app to import: an automation
+ * holds no app reference at all, so a journey that needs one specific record
+ * uses the same internal door `vendo_automate`, `agent.on` and the vendo.json
+ * fold-in use. Everything a journey asserts AFTER this is the public wire.
+ */
+export async function createAutomation(
+  stack: Stack,
+  input: Omit<CreateAutomationInput, "authoredBy"> & { authoredBy?: CreateAutomationInput["authoredBy"] },
+): Promise<AutomationRecord> {
+  return await automationsInternals(stack.vendo.automations).create(
+    { ...input, authoredBy: input.authoredBy ?? "chat" },
+    presentCtx(input.owner),
+  );
 }
 
 /** Decide a batch of approvals over the wire (POST /approvals/decide). */
@@ -613,14 +646,17 @@ export async function decideApprovals(
 }
 
 /** Poll GET /runs/:id until it reaches `status` or the deadline passes. Away runs
- * resume asynchronously (guard.onApprovalDecision), so callers poll; the deadline
- * tolerates CI-grade slowness. */
+ * finish asynchronously, so callers poll.
+ *
+ * The default MATCHES vitest's own `testTimeout` deliberately: the test timeout is
+ * THE hang-detector, and an inner budget tighter than it is a second, invisible
+ * speed limit that reports a product bug when the machine is merely busy. */
 export async function waitForRunStatus(
   stack: Stack,
   runId: string,
   user: Principal,
   status: WireRun["status"],
-  timeoutMs = 30_000,
+  timeoutMs = 120_000,
 ): Promise<WireRun> {
   const deadline = Date.now() + timeoutMs;
   let last: string | undefined;
