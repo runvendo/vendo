@@ -7,13 +7,17 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditFloor, AUDITOR_CONTRACT } from "./audit.js";
-import { claudeCodeDriver, WALL_CLOCK_MS, type SessionRecord } from "./claude-code.js";
+import { claudeCodeDriver, WALL_CLOCK_MS as CLAUDE_CODE_WALL_CLOCK_MS, type SessionRecord } from "./claude-code.js";
+import { codexDriver, WALL_CLOCK_MS as CODEX_WALL_CLOCK_MS } from "./codex.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
 import { judge, JudgeContract, rubricLines, type JudgeResult } from "./judge.js";
 import {
+  CODEX_MODEL_IDS,
   meteredModel,
   MODEL_IDS,
+  OPENROUTER_MODEL_IDS,
+  THESYS_MODEL_IDS,
   WAFER_BASE_URL,
   WAFER_MODEL_IDS,
   type Meter,
@@ -23,11 +27,12 @@ import {
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
 import { tally, writePreview, writeSummary } from "./report.js";
+import { thesysDriver, thesysProvider } from "./thesys.js";
 import { TriageContract } from "./triage.js";
 import { vendoDriver } from "./vendo.js";
 import { caseHash, loadCases, loadWorld, worldForCase, type Case, type CaseShape, type Lane, type World } from "./world.js";
 
-export type HarnessId = "vendo" | "diy" | "claude-code";
+export type HarnessId = "vendo" | "diy" | "claude-code" | "thesys" | "codex";
 
 export interface ContenderId {
   readonly harness: HarnessId;
@@ -143,6 +148,8 @@ const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
   vendo: vendoDriver,
   diy: diyDriver,
   "claude-code": (model) => claudeCodeDriver({ model }),
+  thesys: thesysDriver,
+  codex: (model) => codexDriver({ model }),
 };
 
 const HARNESS_IDS = Object.keys(DRIVERS) as readonly HarnessId[];
@@ -156,14 +163,22 @@ const DEFAULT_WORLD = "maple";
  *  disconnected run folders. */
 const ALL_WORLDS = "all";
 
+/** What `--contenders` takes: a bare harness, crossed with every `--models`
+ *  alias, or one pinned `harness:model` pair, which is exactly that column and
+ *  nothing else. The matrix stopped being a rectangle once some columns had a
+ *  model line of their own — naming a model to get one column of it also crossed
+ *  that model onto every other harness in the list. */
+export type Column = HarnessId | { readonly harness: HarnessId; readonly model: ModelAlias };
+
 export interface Args {
   readonly only?: string;
   readonly models: readonly ModelAlias[];
   /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face —
-   *  or `all`, which is every folder there. */
+   *  or a comma list of them, or `all`, which is every folder there. */
   readonly world: string;
-  /** The harnesses that race each case. Every driver, unless narrowed. */
-  readonly contenders: readonly HarnessId[];
+  /** The columns that race each case. Every driver in every model, unless
+   *  narrowed. */
+  readonly contenders: readonly Column[];
   /** How many cases are in flight at once. */
   readonly jobs: number;
 }
@@ -173,7 +188,7 @@ export function parseArgs(argv: readonly string[]): Args {
   let only: string | undefined;
   let models: readonly ModelAlias[] = ["sonnet"];
   let world = DEFAULT_WORLD;
-  let harnesses = HARNESS_IDS;
+  let columns: readonly Column[] = HARNESS_IDS;
   let jobs = 1;
   let index = 0;
   while (index < rest.length) {
@@ -183,12 +198,12 @@ export function parseArgs(argv: readonly string[]): Args {
     if (flag === "--prompt") only = value;
     else if (flag === "--models") models = value.split(",").map(asAlias);
     else if (flag === "--world") world = value;
-    else if (flag === "--contenders") harnesses = value.split(",").map(asHarness);
+    else if (flag === "--contenders") columns = value.split(",").map(asColumn);
     else if (flag === "--jobs") jobs = asJobs(value);
     else throw new Error(`genbench: unexpected argument "${flag}"`);
     index += 2;
   }
-  return { ...(only === undefined ? {} : { only }), models, world, contenders: harnesses, jobs };
+  return { ...(only === undefined ? {} : { only }), models, world, contenders: columns, jobs };
 }
 
 function asAlias(value: string): ModelAlias {
@@ -201,31 +216,94 @@ function asHarness(value: string): HarnessId {
   return value as HarnessId;
 }
 
+function asColumn(value: string): Column {
+  const [harness, ...model] = value.split(":");
+  // Everything after the first colon is the model, so `a:b:c` is refused as the
+  // model `b:c` rather than silently run as `a:b`.
+  return model.length === 0 ? asHarness(value) : { harness: asHarness(harness!), model: asAlias(model.join(":")) };
+}
+
 function asJobs(value: string): number {
   const jobs = Number(value);
   if (!Number.isInteger(jobs) || jobs < 1) throw new Error(`genbench: --jobs takes whole cases, not "${value}"`);
   return jobs;
 }
 
-/** Every contender that has a driver today, in every model that driver can
- *  think with. Claude Code spawns its own Anthropic engine and never reads
- *  `meter.model`, so a Wafer alias would reach its Agent SDK as an Anthropic id
- *  and the column would report the harness's mistake as the model's score. */
+/** The harnesses that are a PRODUCT rather than a harness over a model — the
+ *  vendor picks it, not us. Each runs its own aliases and nothing else, and no
+ *  other column may run one of those: they only resolve at that vendor's
+ *  endpoint or inside that vendor's CLI. */
+const EXCLUSIVE: ReadonlyArray<readonly [HarnessId, Readonly<Record<string, string>>]> = [
+  ["thesys", THESYS_MODEL_IDS],
+  ["codex", CODEX_MODEL_IDS],
+];
+
+/** Whether this harness may think with this model at all. Claude Code spawns its
+ *  own Anthropic engine and never reads `meter.model`, so a Wafer alias would
+ *  reach its Agent SDK as an Anthropic id and the column would report the
+ *  harness's mistake as the model's score. The router's aliases are the
+ *  cross-VENDOR row and stay on `diy`, the one column that is nothing but a
+ *  model call, which is what makes three vendors comparable at all; anywhere
+ *  else they would double a column that already exists first-party, since
+ *  `anthropic/claude-opus-5` is the `opus` column with a middleman in front. */
+const runs = (harness: HarnessId, model: ModelAlias): boolean =>
+  EXCLUSIVE.every(([owner, ids]) => Object.hasOwn(ids, model) === (harness === owner)) &&
+  (harness !== "claude-code" || !Object.hasOwn(WAFER_MODEL_IDS, model)) &&
+  (harness === "diy" || !Object.hasOwn(OPENROUTER_MODEL_IDS, model));
+
+/** Every contender that has a driver today, in every model that driver can think
+ *  with — except where a column was named as a `harness:model` pair, which is
+ *  that one column and skips the cross. Either way the rules above decide, so a
+ *  pair cannot ask for a column the matrix would never have produced. */
 export function contenders(
   models: readonly ModelAlias[],
-  harnesses: readonly HarnessId[] = HARNESS_IDS,
+  columns: readonly Column[] = HARNESS_IDS,
 ): readonly ContenderId[] {
-  const row = harnesses.flatMap((harness) =>
-    models
-      .filter((model) => harness !== "claude-code" || !Object.hasOwn(WAFER_MODEL_IDS, model))
-      .map((model) => ({ harness, model, slug: `${harness}-${model}` })),
-  );
+  const row = columns.flatMap((column) => {
+    const harness = typeof column === "string" ? column : column.harness;
+    return (typeof column === "string" ? models : [column.model])
+      .filter((model) => runs(harness, model))
+      .map((model) => ({ harness, model, slug: `${harness}-${model}` }));
+  });
   if (row.length === 0) {
+    // Named back the way it was asked for, pairs included, or the sentence
+    // cannot say which pairing emptied the row.
+    const asked = columns.map((column) => (typeof column === "string" ? column : `${column.harness}:${column.model}`));
     throw new Error(
-      `genbench: ${harnesses.join(", ")} has no column for ${models.join(", ")} — name an Anthropic model, or another contender`,
+      `genbench: ${asked.join(", ")} has no column for ${models.join(", ")} — name an Anthropic model, or another contender`,
     );
   }
-  return row;
+  // By slug, because the slug IS the column: it names the evidence directory and
+  // the report column, so `vendo,vendo:sonnet` has to be one column asked for
+  // twice rather than two contenders racing to overwrite one folder and be
+  // counted twice in the summary. The Map keeps the position of the first
+  // mention, which is the same doctrine as declaration order being column order.
+  return [...new Map(row.map((contender) => [contender.slug, contender])).values()];
+}
+
+/**
+ * The first key the resolved row needs and has not been given, in words.
+ *
+ * Demanded up front rather than at the first call, which is a case and a browser
+ * later. Keyed off the ROW and not off `--models`, because narrowing
+ * `--contenders` drops columns: `--models sonnet,c1 --contenders vendo` runs no
+ * thesys column, and demanding its key would fail a run that never needed it.
+ * The Anthropic key is not in this table — the judge and the honesty check run
+ * on it whoever built the screen, so it is required whatever was asked for.
+ */
+export function missingKey(row: readonly ContenderId[], env: NodeJS.ProcessEnv): string | undefined {
+  for (const [name, ids] of [
+    ["WAFER_API_KEY", WAFER_MODEL_IDS],
+    ["THESYS_API_KEY", THESYS_MODEL_IDS],
+    ["OPENROUTER_API_KEY", OPENROUTER_MODEL_IDS],
+    ["OPENAI_API_KEY", CODEX_MODEL_IDS],
+  ] as const) {
+    const wanted = [...new Set(row.filter(({ model }) => Object.hasOwn(ids, model)).map(({ model }) => model))];
+    if (wanted.length > 0 && (env[name] ?? "") === "") {
+      return `genbench: ${name} is not set, and it is what serves ${wanted.join(", ")}`;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -257,15 +335,17 @@ const CHARTS = new Set(["LineChart", "BarChart", "DonutChart", "Sparkline"]);
  * One contender's whole budget for one case — generation, paint and probe.
  *
  * Per harness rather than one number for the row: an agentic build runs its own
- * ten-minute wall clock (`WALL_CLOCK_MS`) before it has delivered anything, so a
- * five-minute case would end it early and record a timeout the contender never
- * had. The one-call columns keep the tighter bound they have never needed more
- * than.
+ * ten-minute wall clock (`WALL_CLOCK_MS`, one per agentic driver) before it has
+ * delivered anything, so a five-minute case would end it early and record a
+ * timeout the contender never had. The one-call columns keep the tighter bound
+ * they have never needed more than.
  */
 export const CASE_TIMEOUT_MS: Readonly<Record<HarnessId, number>> = {
   vendo: 5 * 60_000,
   diy: 5 * 60_000,
-  "claude-code": WALL_CLOCK_MS + 2 * 60_000,
+  "claude-code": CLAUDE_CODE_WALL_CLOCK_MS + 2 * 60_000,
+  thesys: 5 * 60_000,
+  codex: CODEX_WALL_CLOCK_MS + 2 * 60_000,
 };
 
 /**
@@ -371,12 +451,18 @@ export async function writeCase(
   await writeFile(join(caseDir, "result.json"), `${JSON.stringify(wrote.result, null, 2)}\n`);
 }
 
-/** The world folders one run covers: the one that was named, or every folder
+/** The world folders one run covers: the ones that were named, or every folder
  *  there. Fourteen worlds and 200 cases used to mean fourteen run folders and no
  *  total anywhere, so the question the benchmark exists to answer had nowhere to
  *  be answered. */
 export async function worldsFor(worldsDir: string, world: string): Promise<readonly string[]> {
-  if (world !== ALL_WORLDS) return [world];
+  // Unique and first-seen, because the folder name IS the evidence key:
+  // `maple,maple` wrote every contender's `maple/<case>` twice, the second pass
+  // replacing the first's artifacts while both counted in the summary. `all`
+  // anywhere in the list takes the whole corpus, which is why it needs no dedupe
+  // of its own: it already contains every name written beside it.
+  const named = [...new Set(world.split(","))];
+  if (!named.includes(ALL_WORLDS)) return named;
   const entries = await readdir(worldsDir, { withFileTypes: true });
   return entries
     .filter((entry) => entry.isDirectory())
@@ -409,20 +495,17 @@ async function main(argv: readonly string[]): Promise<number> {
     console.error("genbench: ANTHROPIC_API_KEY is not set");
     return 1;
   }
-  // Demanded up front rather than at the first call, which is a case and a
-  // browser later. The Anthropic key is still required whatever was asked for:
-  // the judge and the honesty check run on it, whoever built the screen.
-  const waferKey = process.env.WAFER_API_KEY;
-  const wanted = args.models.filter((alias) => Object.hasOwn(WAFER_MODEL_IDS, alias));
-  if (wanted.length > 0 && (waferKey === undefined || waferKey === "")) {
-    console.error(`genbench: WAFER_API_KEY is not set, and it is what serves ${wanted.join(", ")}`);
-    return 1;
-  }
-
   // The row is built once, here, for the same reason the keys are demanded
   // here: a selection that leaves no column at all is a run with nothing to
-  // measure, and it should say so before a browser opens.
+  // measure, and it should say so before a browser opens. The preflight and the
+  // run itself then read that SAME list, so a key can never be demanded for a
+  // column that will not run.
   const row = contenders(args.models, args.contenders);
+  const missing = missingKey(row, process.env);
+  if (missing !== undefined) {
+    console.error(missing);
+    return 1;
+  }
 
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const worldsDir = join(root, "worlds");
@@ -431,7 +514,16 @@ async function main(argv: readonly string[]): Promise<number> {
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const runDir = join(root, "runs", runId);
   const anthropic = createAnthropic({ apiKey });
-  const wafer = createOpenAICompatible({ name: "wafer", baseURL: WAFER_BASE_URL, apiKey: waferKey });
+  const wafer = createOpenAICompatible({ name: "wafer", baseURL: WAFER_BASE_URL, apiKey: process.env.WAFER_API_KEY });
+  // The official OpenRouter provider is AI SDK v7 only and this harness is on
+  // v6, so the router is reached through the same OpenAI-compatible adapter
+  // Wafer is — which is all their endpoint asks for.
+  const openrouter = createOpenAICompatible({
+    name: "openrouter",
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  });
+  const thesys = thesysProvider({ apiKey: process.env.THESYS_API_KEY });
   const bundle = await bundleMount();
   const shooter = await openBrowser();
   const results: CaseResult[] = [];
@@ -448,7 +540,13 @@ async function main(argv: readonly string[]): Promise<number> {
     const modelId = MODEL_IDS[contender.model];
     // Its own meter, so a sibling's tokens and a sibling's clock are never
     // charged to this column.
-    const provider = Object.hasOwn(WAFER_MODEL_IDS, contender.model) ? wafer : anthropic;
+    const provider = Object.hasOwn(WAFER_MODEL_IDS, contender.model)
+      ? wafer
+      : Object.hasOwn(THESYS_MODEL_IDS, contender.model)
+        ? thesys
+        : Object.hasOwn(OPENROUTER_MODEL_IDS, contender.model)
+          ? openrouter
+          : anthropic;
     const meter = meteredModel(provider(modelId), modelId);
 
     /** Evidence as it is produced, not as it is returned. Losing the outer race

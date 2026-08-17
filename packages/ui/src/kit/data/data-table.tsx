@@ -133,6 +133,22 @@ export const foldStyle: CSSProperties = {
   fontVariantNumeric: "normal",
 };
 
+/** A whole-pixel reading (`offsetWidth`, `clientWidth`) put back to the fraction
+ *  its laid-out box really has: summing rounded column widths against a rounded
+ *  room overshoots by up to half a pixel per column, which folds a column that
+ *  fits. Nothing is laid out under SSR and jsdom, where `laidOut` is 0 (or NaN,
+ *  off a border those cannot resolve) and the whole-pixel reading stands. */
+const unrounded = (whole: number, laidOut: number): number =>
+  laidOut > 0 ? whole + laidOut - Math.round(laidOut) : whole;
+
+/** The scroller's CONTENT box, to the fraction. Its rect is the BORDER box, and
+ *  `borderWidth` is a host's own string: a fractional border handed back as room
+ *  keeps a column that overflows, which is the fold's failure mirrored. */
+const contentWidth = (el: HTMLElement): number => {
+  const { borderLeftWidth, borderRightWidth } = getComputedStyle(el);
+  return el.getBoundingClientRect().width - parseFloat(borderLeftWidth) - parseFloat(borderRightWidth);
+};
+
 export function DataTable(props: DataTableProps) {
   const {
     rows: rawRows,
@@ -311,13 +327,14 @@ export function DataTable(props: DataTableProps) {
       if (headers !== undefined && headers.length === expandedHeaderCount) {
         let edge = 0;
         naturalEdges.current = [...headers].slice(0, columns.length)
-          .map((th) => (edge += (th as HTMLElement).offsetWidth));
+          .map((th) => (edge += unrounded((th as HTMLElement).offsetWidth, th.getBoundingClientRect().width)));
       }
       const edges = naturalEdges.current;
       if (edges.length === 0) return;
       // Keep every column that has room, fold only the ones that do not. The
       // first column always stays, however narrow the surface is.
-      setVisibleCount(Math.max(1, edges.filter((right) => right <= node.clientWidth).length));
+      const room = unrounded(node.clientWidth, contentWidth(node));
+      setVisibleCount(Math.max(1, edges.filter((right) => right <= room).length));
     };
     measure();
     const observer = new ResizeObserver(measure);

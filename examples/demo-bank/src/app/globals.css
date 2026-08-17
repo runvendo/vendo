@@ -52,6 +52,63 @@ body {
   }
 }
 
+/* The settings modal (components/settings/text-channel-card.tsx) is a native
+   <dialog>, so Esc, the top layer and focus containment come from the platform.
+   Motion is TRANSITIONS rather than keyframes, so a fast open→close is
+   retargeted instead of restarted. `@starting-style` carries the entrance;
+   `close()` drops the element out of the top layer at once, so the exit is
+   carried by `data-closing` and the component closes the dialog after it (the
+   `display: allow-discrete` spelling of this leaves the panel unpainted here).
+   Exit is quicker than the entrance — the system answering, not the user
+   deciding. */
+.maple-modal,
+.maple-modal::backdrop {
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.maple-modal::backdrop {
+  background: rgb(17 17 17 / 0.22);
+  backdrop-filter: blur(2px);
+}
+
+.maple-modal-panel {
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease;
+}
+
+@starting-style {
+  .maple-modal[open],
+  .maple-modal[open]::backdrop {
+    opacity: 0;
+  }
+
+  .maple-modal[open] .maple-modal-panel {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+
+.maple-modal[data-closing],
+.maple-modal[data-closing]::backdrop {
+  opacity: 0;
+}
+
+.maple-modal[data-closing] .maple-modal-panel {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: transform 160ms ease-out, opacity 140ms ease;
+}
+
+/* Reduced motion keeps the fade — it explains where the panel went — and drops
+   the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .maple-modal-panel,
+  .maple-modal[data-closing] .maple-modal-panel {
+    transform: none;
+    transition: opacity 140ms ease;
+  }
+}
+
 /* Vendo stage approval: the shell's approved ApprovalCard materializes
    in-flow beneath the generated view (brand-tier pick). */
 .maple-approval-inflow .fl-approval { animation: maple-approval-in 0.28s cubic-bezier(0.16, 1, 0.3, 1); }

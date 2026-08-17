@@ -11,7 +11,40 @@ export const WAFER_MODEL_IDS = {
 
 export const WAFER_BASE_URL = "https://pass.wafer.ai/v1";
 
-export type ModelAlias = "opus" | "sonnet" | "haiku" | keyof typeof WAFER_MODEL_IDS;
+/** The bought product's own model line. Thesys C1 does not let a host choose a
+ *  model the way the other columns do — the column IS the product — so it has
+ *  exactly one alias, and `contenders` in `run.ts` is what keeps it to it. This
+ *  is their newest FIRST-PARTY (non-OpenRouter) Anthropic model, read off
+ *  docs.thesys.dev/api-reference/models-and-compatibility on 2026-08-16 and
+ *  confirmed against the live endpoint. */
+export const THESYS_MODEL_IDS = { c1: "c1/anthropic/claude-sonnet-4.6/v-20260331" } as const;
+
+/** One frontier model per vendor, all three through OpenRouter's single
+ *  OpenAI-compatible endpoint. One alias per vendor rather than a menu: this is
+ *  the cross-vendor row, and a vendor's second-best model answers a question
+ *  nobody asked. Membership here is what says an alias is served by the router —
+ *  the provider a run builds for it, the key it demands and the one harness it
+ *  may run under all read this. */
+export const OPENROUTER_MODEL_IDS = {
+  claude: "anthropic/claude-opus-5",
+  gpt: "openai/gpt-5.6-sol",
+  gemini: "google/gemini-3.1-pro-preview",
+} as const;
+
+/** The Codex CLI's own model line. That column spawns OpenAI's engine and never
+ *  reads `meter.model`, exactly as `claude-code` spawns Anthropic's, so the id
+ *  here is what prices its session rather than what a provider is built from.
+ *  One alias, and `contenders` in `run.ts` is what keeps it to it. */
+export const CODEX_MODEL_IDS = { sol: "gpt-5.6-sol" } as const;
+
+export type ModelAlias =
+  | "opus"
+  | "sonnet"
+  | "haiku"
+  | keyof typeof WAFER_MODEL_IDS
+  | keyof typeof THESYS_MODEL_IDS
+  | keyof typeof OPENROUTER_MODEL_IDS
+  | keyof typeof CODEX_MODEL_IDS;
 
 /**
  * Pinned ids. Each one was checked against the live API through
@@ -29,6 +62,9 @@ export const MODEL_IDS: Readonly<Record<ModelAlias, string>> = {
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001",
   ...WAFER_MODEL_IDS,
+  ...THESYS_MODEL_IDS,
+  ...OPENROUTER_MODEL_IDS,
+  ...CODEX_MODEL_IDS,
 };
 
 interface ModelPrice {
@@ -51,6 +87,26 @@ const PRICING: Readonly<Record<string, ModelPrice>> = {
   // against the one multiplier below; its token counts are exact either way.
   "glm5.2-fast": { inputPerMTok: 2.1, outputPerMTok: 6.6 },
   "DeepSeek-V4-Flash-0731-Fast": { inputPerMTok: 0.28, outputPerMTok: 0.56 },
+  // Thesys passes the underlying provider's per-token rates through with no
+  // markup ("same rates as the models themselves … no markups",
+  // thesys.dev/pricing), so this row is Anthropic's Sonnet 4.6 list rate. Their
+  // flat per-call platform fee is not a token rate and is billed by the driver
+  // (`THESYS_CALL_USD` in `thesys.ts`) rather than smuggled in here.
+  "c1/anthropic/claude-sonnet-4.6/v-20260331": { inputPerMTok: 3, outputPerMTok: 15 },
+  // The three router rows, read off OpenRouter's models API on 2026-08-17.
+  // OpenRouter takes 0% on tokens, so each is the vendor's own list rate — what
+  // it really charges is 5.5% (min $0.80) on credit TOP-UPS, which is not a
+  // per-token price and so is in no number this meter can produce.
+  // Identical to Anthropic's first-party Opus 5 rate above.
+  "anthropic/claude-opus-5": { inputPerMTok: 5, outputPerMTok: 25 },
+  // The ≤272k-context tier. A genbench prompt is 10-20k tokens, so the $10/$45
+  // tier above it is unreachable here.
+  "openai/gpt-5.6-sol": { inputPerMTok: 5, outputPerMTok: 30 },
+  // The ≤200k tier; Google still labels the model preview.
+  "google/gemini-3.1-pro-preview": { inputPerMTok: 2, outputPerMTok: 12 },
+  // OpenAI's own list rate (platform.openai.com/pricing, read 2026-08-17), not
+  // the router's: the codex CLI bills the platform account directly.
+  "gpt-5.6-sol": { inputPerMTok: 5, outputPerMTok: 30 },
 };
 
 /** Cache reads bill at a tenth of the input rate; 5-minute cache writes at 1.25x. */

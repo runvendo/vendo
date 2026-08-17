@@ -124,7 +124,7 @@ const screenChunks = (turn: ScreenTurn, index: number): Array<Record<string, unk
  *
  * There is one engine behind `apps.create` and `apps.edit`: the screen
  * assembler's loop. So a fixture answers with its hands — `save_app`,
- * `validate`, `escalate` — in order, and `prompts` collects every brief it was
+ * `edit_app` — in order, and `prompts` collects every brief it was
  * handed (the loop's system message is the deployment's own prompt, then the
  * shipped building-apps skill, its format reference, and the environment note).
  */

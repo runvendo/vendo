@@ -284,6 +284,97 @@ describe("DataTable", () => {
   });
 
   /**
+   * What a browser really measures: a laid-out width is FRACTIONAL, and
+   * `offsetWidth`/`clientWidth` are that width rounded to a whole pixel. The
+   * scroller carries a 1px border on each side, so its rect is two pixels wider
+   * than the room inside it.
+   */
+  function stubSubpixelLayout(widths: Record<string, number>, room: number, border = 1): () => void {
+    const observers = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as never;
+    const rects = HTMLElement.prototype.getBoundingClientRect;
+    const styles = globalThis.getComputedStyle;
+    const widthOf = (el: HTMLElement) =>
+      el.tagName === "TH" ? widths[el.textContent?.replace(/[▲▼]/gu, "").trim() ?? ""] ?? 0 : room;
+    for (const prop of ["offsetWidth", "clientWidth"] as const) {
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) { return Math.round(widthOf(this)); },
+      });
+    }
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      return { width: widthOf(this) + (this.tagName === "TH" ? 0 : border * 2) } as DOMRect;
+    };
+    globalThis.getComputedStyle = ((el: Element) =>
+      el.tagName === "DIV"
+        ? { borderLeftWidth: `${border}px`, borderRightWidth: `${border}px` }
+        : styles(el)) as typeof globalThis.getComputedStyle;
+    return () => {
+      globalThis.ResizeObserver = observers;
+      globalThis.getComputedStyle = styles;
+      HTMLElement.prototype.getBoundingClientRect = rects;
+      Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+      Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+    };
+  }
+
+  /**
+   * THE REGRESSION: a column that FITS must not fold. Three columns filling a
+   * 1000px table measure 320.8125 + 387.546875 + 291.640625 — exactly 1000 — but
+   * every `offsetWidth` rounds up, and summing them says 321 + 388 + 292 = 1001.
+   * One pixel of rounding per column, and the last column silently stops being a
+   * column. Chrome's own numbers, off a 1000px-wide viewport.
+   */
+  it("keeps a column whose fractional widths fill the room exactly", () => {
+    const restore = stubSubpixelLayout({ Client: 320.8125, Amount: 387.546875, Due: 291.640625 }, 1_000);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      expect(screen.getAllByRole("row")[1]!.textContent).not.toContain("Due:");
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * The other rounded reading is the room itself: a scroller laid out on a
+   * fraction reports a `clientWidth` rounded DOWN from what it has, and the
+   * column filling that fraction folds. Chrome's numbers off a 1025px viewport,
+   * where the table sits in a container of fractional width.
+   */
+  it("keeps a column that fits the room's own fraction", () => {
+    const restore = stubSubpixelLayout({ Client: 328.625, Amount: 397, Due: 298.765625 }, 1_024.390_625);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * …and the room is the CONTENT box, so a themed border width that is itself
+   * fractional (`borderWidth` is a host's own string) belongs to neither side of
+   * the comparison. Reading the fraction off the scroller's border box instead
+   * hands the table its border back as room, and a column overflowing by a hair
+   * stays put — the fold's own failure, mirrored.
+   */
+  it("does not spend a fractional border as room", () => {
+    const restore = stubSubpixelLayout({ Client: 100, Amount: 100, Due: 100.093_75 }, 300, 0.093_75);
+    try {
+      render(<DataTable rows={rows} columns={columns} />);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(2);
+      expect(screen.getAllByRole("row")[1]!.textContent).toContain("Due:");
+    } finally {
+      restore();
+    }
+  });
+
+  /**
    * Every header keeps its OWN width wherever it sits, which is what the
    * uniform `stubLayout` cannot express: the bug below turns on the actions
    * header being narrower than the data column whose slot it takes over once

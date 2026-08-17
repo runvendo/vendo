@@ -15,7 +15,12 @@
  * reshape pipe left in the reference to check.
  */
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
-import { KIT_COMPONENT_NAMES } from "../../src/contract/index.js";
+import {
+  KIT_COMPONENT_NAMES,
+  VENDO_THEME_VARIABLE_NAMES,
+  defaultVendoTheme,
+  themeCssVariables,
+} from "../../src/contract/index.js";
 import { checkComponentScreen } from "../../src/server/checking/component-screen.js";
 import { SCREEN_MODULE, screenCatalog } from "../../src/server/checking/screen-typings.js";
 import { describe, expect, it } from "vitest";
@@ -121,10 +126,10 @@ describe("the reference only teaches what a screen really has", () => {
     // The display bricks are the ONLY HTML in the check's program, and they take
     // children and a style and nothing else — so `className` is still a type
     // error, and a color the model invents is still unbranded.
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/nothing else: no `className`, no `id`, no handlers/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/take children and an inline `style`, nothing else — no handlers/);
     expect(VENDO_FORMAT_REFERENCE).toMatch(/var\(--vendo-color-accent\)/);
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/no `fetch`, `localStorage` or `setTimeout`/);
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/there is no clock in here, so no\s+`new Date\(\)`/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/no `fetch`, no `localStorage`,\s+no `setTimeout`/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/no timers, no clock:[\s\S]*no `new Date\(\)`/);
   });
 
   /** V4 retired the legacy prewired family — the Kit is the ONE component source,
@@ -150,6 +155,40 @@ describe("the reference only teaches what a screen really has", () => {
   it("says the save's own errors teach the repair, without naming a verb to call", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("Save errors tell you exactly what to fix. Fix and save again.");
     expect(VENDO_FORMAT_REFERENCE).not.toContain("`validate`");
+  });
+
+  /** The manual tells a model to style off the host's variables, so it has to say
+   *  which ones exist: a guessed name resolves to nothing and the declaration
+   *  falls back with no error anywhere. The section is walked off the EMITTER, so
+   *  this compares the names it prints against what `themeCssVariables` really
+   *  sets — the drift a hand-copied list would hide. */
+  it("names every CSS variable the host really sets, in the order it sets them", () => {
+    const named = [...VENDO_FORMAT_REFERENCE.matchAll(/^`(--vendo-[a-z0-9-]+)` — (.*)$/gm)];
+
+    expect(named.map(([, name]) => name)).toEqual([...VENDO_THEME_VARIABLE_NAMES]);
+    // Names alone would be a list to copy; the point is knowing which to reach for.
+    expect(named.filter(([, , meaning]) => (meaning ?? "").trim() === "" || meaning === "undefined")).toEqual([]);
+  });
+
+  /** The list is one fixed set with ONE exception: `--vendo-heading-family` is
+   *  emitted only when a host names a heading face (`themeCssVariables`'s
+   *  `if (type.headingFamily)`). Documenting it flat, beside 51 names that are
+   *  always there, teaches a variable that may not exist — so its line carries
+   *  its own absence and the fallback to write instead, and the preamble's
+   *  promise is what defers to it. */
+  it("says so on the one line whose variable a host may not have set", () => {
+    const conditional = Object.keys(themeCssVariables(defaultVendoTheme));
+
+    expect(VENDO_THEME_VARIABLE_NAMES.filter((name) => !conditional.includes(name)))
+      .toEqual(["--vendo-heading-family"]);
+    expect(VENDO_FORMAT_REFERENCE)
+      .toMatch(/^`--vendo-heading-family` — .*set only when this host names one/m);
+    expect(VENDO_FORMAT_REFERENCE).toContain("unless its own line says otherwise");
+  });
+
+  it("lands the section in the reference, where the layout paragraph points", () => {
+    expect(VENDO_FORMAT_REFERENCE).toContain("# The host's CSS variables");
+    expect(VENDO_FORMAT_REFERENCE).toContain("is listed at the end of this file");
   });
 
   it("carries the whole catalog, one line per component, generated from the specs", () => {

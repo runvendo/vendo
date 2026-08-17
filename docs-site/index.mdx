@@ -4,63 +4,11 @@ sidebarTitle: "Quickstart"
 description: "One paste. Your coding agent installs Vendo, runs init, and wires it into whatever your repo already is."
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
 
-<AgentPrompt
-  title="Prompt"
-  prompt={`Set up Vendo in this repo.
-
-Install @vendoai/vendo, then run npx vendo init.
-Read what it detects: my framework, my API routes, my auth.
-Wire up exactly what it prints, and nothing more.
-Ask me before creating any account or key.
-Done when my app runs and the agent answers from my own API.`}
-/>
+<AgentPromptCard />
 
 Your agent picks the right setup for your repo. You confirm it.
-
-## What you can do
-
-<Columns cols={2}>
-  <Frame caption="Ask, and a working screen shows up in your product.">
-    <video
-      className="vendo-loop"
-      width="1200"
-      height="592"
-      poster="/images/ui/hero-generated-view.png"
-      autoPlay
-      loop
-      muted
-      playsInline
-      aria-label="Someone asks for a view of their upcoming renewals. A Renewals radar screen builds in place, with counts for renewals due, accounts at risk, and the next one up, over a list of accounts and their renewal dates."
-    >
-      <source
-        src="/images/ui/loop-view-arrival.mp4"
-        type="video/mp4"
-        media="(prefers-reduced-motion: no-preference)"
-      />
-    </video>
-  </Frame>
-  <Frame caption="It asks before it writes anything, then acts as you.">
-    <video
-      className="vendo-loop"
-      width="1200"
-      height="592"
-      poster="/images/ui/hero-approval.png"
-      autoPlay
-      loop
-      muted
-      playsInline
-      aria-label="An approval card reads Needs your approval, Post to #renewals in Slack, and quotes the exact message with Approve and Deny beneath it. After approval, a toast confirms the post went out as you."
-    >
-      <source
-        src="/images/ui/loop-approval-toast.mp4"
-        type="video/mp4"
-        media="(prefers-reduced-motion: no-preference)"
-      />
-    </video>
-  </Frame>
-</Columns>
 
 ## Quickstart
 
@@ -78,7 +26,7 @@ No agent handy? Do it by hand. Three steps, about five minutes.
   <Step title="Run npx vendo init">
     init reads your repo before it asks anything. Then it writes the wiring.
 
-    ```bash terminal focus={7-10}
+    ```bash terminal focus={1}
     $ npx vendo init
 
       Your stack
@@ -86,7 +34,7 @@ No agent handy? Do it by hand. Three steps, about five minutes.
       Clerk auth (@clerk/nextjs)
 
     ? How will people use your agent?
-        In your product           a panel inside your own UI
+        Vendo's Full-Stack Agent  a panel inside your own UI
         In your existing agent    you keep the loop, Vendo adds tools + UI
         From outside agents       your own agent over MCP
 
@@ -100,28 +48,48 @@ No agent handy? Do it by hand. Three steps, about five minutes.
   <Step title="Continue in your direction">
     The init was the same. From here, the code differs.
 
-    <CardGroup cols={3}>
-      <Card title="In your product" href="/product/quickstart">
-        Vendo runs the loop and renders screens in your brand.
+    ```bash terminal focus={7-10}
+    $ npx vendo init
 
-        `<VendoProvider>{children}`
+      Your stack
+      Next.js · App Router · TypeScript · pnpm
+      Clerk auth (@clerk/nextjs)
 
-        Quickstart →
-      </Card>
-      <Card title="In your existing agent" href="/existing-agent/quickstart">
-        Keep your loop. Vendo adds tools and renders the result.
+    ? How will people use your agent?
+        Vendo's Full-Stack Agent  a panel inside your own UI
+        In your existing agent    you keep the loop, Vendo adds tools + UI
+        From outside agents       your own agent over MCP
 
-        `...(await vendoTools(vendo, { principal }))`
+      … init takes it from there: logs you into Vendo Cloud, writes
+        the wiring, and prints one snippet for you to paste.
+    ```
 
-        Quickstart →
-      </Card>
-      <Card title="From outside agents" href="/outside-agents/quickstart">
-        Your own agent, acting as the signed-in user.
+    Each answer is a path. Continue with the one you picked:
 
-        `createVendo({ mcp: true, oauth })`
+    <div className="direction-cards">
+      <CardGroup cols={3}>
+        <Card title="Vendo's Full-Stack Agent" href="/product/quickstart" img="/images/cards/direction-product.svg">
+          Vendo runs the loop and renders screens in your brand.
 
-        Quickstart →
-      </Card>
-    </CardGroup>
+          `<VendoProvider>`
+
+          Quickstart →
+        </Card>
+        <Card title="In your existing agent" href="/existing-agent/quickstart" img="/images/cards/direction-existing-agent.svg">
+          Keep your loop. Vendo adds tools and renders the result.
+
+          `vendoTools(vendo)`
+
+          Quickstart →
+        </Card>
+        <Card title="From outside agents" href="/outside-agents/quickstart" img="/images/cards/direction-outside-agents.svg">
+          Your own agent, acting as the signed-in user.
+
+          `createVendo({ mcp: true })`
+
+          Quickstart →
+        </Card>
+      </CardGroup>
+    </div>
   </Step>
 </Steps>

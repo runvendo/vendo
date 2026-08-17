@@ -1,5 +1,5 @@
 ---
-title: "In your product"
+title: "Vendo's Full-Stack Agent"
 description: "Your agent as a panel inside your own product, in your own brand."
 sidebarTitle: "Quickstart"
 ---
@@ -39,10 +39,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 `baseUrl` is where the route is mounted, path prefix included. An app served
 under `/maple` passes `baseUrl="/maple/api/vendo"`.
 
-<Note>
-  The provider is context, so it draws nothing on its own. Step 2 puts
-  something on the screen.
-</Note>
 
 </Step>
 
@@ -59,25 +55,6 @@ import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
   <VendoOverlay />
 </VendoProvider>
 ```
-
-Start the app and click the launcher pill in the corner.
-
-```bash
-npm run dev
-```
-
-Ask for something you would otherwise click through to, like "Where did my
-money go?" The agent calls your own API as the person signed in, and answers
-with a screen instead of a paragraph when the answer is one to look at.
-
-<Frame caption="The panel is Vendo. The fonts, colors, and data are yours.">
-  <img
-    src="/images/maple/panel-generated-screen.png"
-    alt="The Vendo panel open over Maple, answering a spending question with a generated screen that lists each category and its total"
-    width="620"
-    height="680"
-  />
-</Frame>
 
 <Note>
   Prefer a command bar? Mount `<VendoPalette />` beside the overlay and `⌘K`
@@ -137,6 +114,25 @@ in your grid and stays there.
   />
 </Frame>
 
+Start the app and click the launcher pill in the corner.
+
+```bash
+npm run dev
+```
+
+Ask for something you would otherwise click through to, like "Where did my
+money go?" The agent calls your own API as the person signed in, and answers
+with a screen instead of a paragraph when the answer is one to look at.
+
+<Frame caption="The panel is Vendo. The fonts, colors, and data are yours.">
+  <img
+    src="/images/maple/panel-generated-screen.png"
+    alt="The Vendo panel open over Maple, answering a spending question with a generated screen that lists each category and its total"
+    width="620"
+    height="680"
+  />
+</Frame>
+
 </Step>
 
 </Steps>
@@ -145,20 +141,22 @@ in your grid and stays there.
 
 The surface is up. These three are what people change first.
 
+<div className="direction-cards">
 <CardGroup cols={3}>
-  <Card title="How it works" icon="route" href="/product/how-it-works">
+  <Card title="How it works" href="/product/how-it-works" img="/images/cards/product-how-it-works.svg">
     What the panel does, and what runs on your side.
 
     `app/api/vendo/[...vendo]/route.ts`
   </Card>
-  <Card title="Theming" icon="palette" href="/customize/theming">
+  <Card title="Theming" href="/customize/theming" img="/images/cards/product-theming.svg">
     Fonts, colors, and radii, taken from your own tokens.
 
     `.vendo/theme.json`
   </Card>
-  <Card title="Generated apps" icon="layout-dashboard" href="/generated/apps">
+  <Card title="Generated apps" href="/generated/apps" img="/images/cards/generated-apps.svg">
     Real screens built from your data, pinned where you want.
 
     `<VendoSlot id="home-hero" />`
   </Card>
 </CardGroup>
+</div>

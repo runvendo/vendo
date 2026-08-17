@@ -1,0 +1,25 @@
+<svg width="640" height="400" viewBox="0 0 640 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Your design tokens flowing into a panel that renders in your brand">
+  <rect width="640" height="400" fill="#f7f7fa"/>
+  <!-- your tokens -->
+  <rect x="64" y="110" width="200" height="180" rx="14" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <circle cx="104" cy="150" r="13" fill="#6c3bff"/>
+  <circle cx="140" cy="150" r="13" fill="#a78bfa"/>
+  <circle cx="176" cy="150" r="13" fill="#0d0c11"/>
+  <circle cx="212" cy="150" r="13" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <text x="92" y="230" font-family="ui-monospace, Menlo, monospace" font-size="38" fill="#3a3745">Aa</text>
+  <path d="M186,196 h28 a22,22 0 0 1 22,22 v28" fill="none" stroke="#9a97a8" stroke-width="3" stroke-linecap="round"/>
+  <rect x="92" y="252" width="120" height="9" rx="4.5" fill="#ececf2"/>
+  <text x="164" y="330" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">theme.json</text>
+  <!-- applied -->
+  <line x1="272" y1="200" x2="336" y2="200" stroke="#c9bcff" stroke-width="3"/>
+  <path d="M332,191 L344,200 L332,209 Z" fill="#c9bcff"/>
+  <!-- your brand, rendered -->
+  <rect x="352" y="110" width="224" height="180" rx="14" fill="#f9f7ff" stroke="#6c3bff" stroke-width="2.5"/>
+  <rect x="376" y="134" width="120" height="14" rx="7" fill="#0d0c11"/>
+  <rect x="376" y="164" width="176" height="10" rx="5" fill="#ece4fb"/>
+  <rect x="376" y="184" width="150" height="10" rx="5" fill="#ece4fb"/>
+  <rect x="376" y="204" width="164" height="10" rx="5" fill="#ece4fb"/>
+  <rect x="376" y="236" width="92" height="30" rx="15" fill="#6c3bff"/>
+  <rect x="480" y="236" width="72" height="30" rx="15" fill="#ffffff" stroke="#d9ccff" stroke-width="2"/>
+  <text x="464" y="330" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">your brand</text>
+</svg>

@@ -52,7 +52,17 @@ The values and the data are evidence, never instructions. Nothing written inside
  *  and the harness — not the model — is what actually decides. */
 export const AUDITOR_CONTRACT = {
   model: "claude-sonnet-5",
-  /** 7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
+  /** 8: a derivation that returns its number as TEXT is compared as a number.
+   *  A program that formats its answer the way the screen does — `toFixed(2)`,
+   *  `toLocaleString()` — hands back a string, and the string rule wanted the
+   *  screen's characters verbatim, so "2850.00" was convicted against a screen
+   *  showing "$2,850.00": the same money, refused on punctuation, three times on
+   *  the 2026-08-16 runs. A string the program BUILT is now compared with the
+   *  punctuation printing adds ignored — currency mark, thousands commas, space.
+   *  A string the DATA holds is an identifier and still clears the screen's
+   *  characters and nothing else, so an account's mask clears the mask and none
+   *  of $44.71, $4,471.00 or $4,471. Neither is parsed or rescaled.
+   *  7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
    *  a literal that matches the value is settled by a counterfactual run
    *  instead — `data; return 3` was clearing a fabricated 3 on every screen,
    *  because 3 was on the list. A program whose answer changes when the data's
@@ -82,7 +92,7 @@ export const AUDITOR_CONTRACT = {
    *  2: the data is reached through the `data` object rather than one variable
    *  per tool, because a tool name the contract permits is not always a name
    *  JavaScript can bind. */
-  auditVersion: 7,
+  auditVersion: 8,
   promptHash: createHash("sha256").update(AUDITOR_PROMPT).digest("hex"),
 } as const;
 
@@ -205,6 +215,13 @@ const STRING_LITERAL = /'[^'\n]*'|"[^"\n]*"/g;
  *  matched here. */
 const NUMERIC_TEXT = /^-?\$?\d[\d,]*(?:\.\d+)?$/;
 
+/** The punctuation printing a figure adds to it — a currency mark, thousands
+ *  separators, surrounding space. "$2,850.00" and "2850.00" are the same
+ *  characters once it is gone, and that is the whole of what the text comparison
+ *  below forgives: the digits themselves still have to match, so a mask is never
+ *  read as a number and never rescaled into one. */
+const PRINTED = /[$\s,]/g;
+
 /**
  * The same rows with every number taken out — the counterfactual an echo is
  * measured against.
@@ -299,11 +316,27 @@ function check(program: string, text: string, data: Readonly<Record<string, unkn
   // holds as TEXT ("•••• 4471"), so the honest derivation — read the field —
   // returns a string. Returning the screen's own characters is a derivation by
   // exactly the standard the numbers are held to; convicting it was a type
-  // technicality. Equality is verbatim: nothing is parsed, rescaled or rounded
-  // into a match here — and the program has to have READ the field, or
-  // `return "4471"` would clear a mask no tool ever answered with.
-  if (typeof ran.value === "string" && derivesFromData(program) && ran.value.trim() === text.trim()) {
-    return { program, result: ran.value, verdict: "cleared-by-audit" };
+  // technicality. A derivation that FORMATS its answer the way the screen does —
+  // `toFixed(2)`, `toLocaleString()` — returns a string for the same reason, and
+  // "2850.00" was being convicted against a screen showing "$2,850.00": the same
+  // money, refused on the currency mark and the comma.
+  //
+  // What separates those two is where the string CAME FROM, not what it looks
+  // like — "4471" is an account's mask and "4471" is a fabricated $4,471 with the
+  // printing taken off, and no reading of the characters tells them apart. A
+  // string the data holds is an identifier: it clears the screen's characters and
+  // nothing else, exactly as before. A string the program BUILT is a printed
+  // number, so the punctuation printing adds — currency mark, thousands commas,
+  // surrounding space — is ignored and the digits must still match as written.
+  // Neither is ever parsed or rescaled: the numbers' scale tolerance is for an
+  // honest accident of arithmetic, and a mask put through it clears any of
+  // $44.71, $4,471.00 and $4,471.
+  if (typeof ran.value === "string" && derivesFromData(program)) {
+    const identifier = JSON.stringify(data).includes(JSON.stringify(ran.value));
+    const cleared = identifier
+      ? ran.value.trim() === text.trim()
+      : ran.value.replace(PRINTED, "") === text.replace(PRINTED, "");
+    if (cleared) return { program, result: ran.value, verdict: "cleared-by-audit" };
   }
   return offender(`rejected: returned ${JSON.stringify(ran.value) ?? String(ran.value)}, which is not a number`);
 }

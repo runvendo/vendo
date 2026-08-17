@@ -562,6 +562,86 @@ describe("a value written down inside a string", () => {
   });
 });
 
+/**
+ * The screen's own formatting, handed back by the derivation.
+ *
+ * A program that computes the figure and returns it FORMATTED — `toFixed(2)`,
+ * `toLocaleString()` — hands back a string, and the string rule wants the
+ * screen's characters verbatim. So "2850.00" was convicted against a screen
+ * showing "$2,850.00": the same money, refused on punctuation, three times on
+ * the 2026-08-16 runs. A string that is nothing but a number IS that number and
+ * is compared as one; only a genuinely textual answer reaches the verbatim rule.
+ */
+describe("a derivation that returns its number as text", () => {
+  /** Housing's amount, computed in cents and handed back the way a screen prints
+   *  it: the screen shows $2,850.00, the program returns "2850.00". */
+  const FORMATTED = "return (data.get_spending.data[0].amount / 100).toFixed(2);";
+
+  it("clears the value it computed, however that string is punctuated", async () => {
+    const result = await auditing("Housing $2,850.00", proposing({ "$2,850.00": FORMATTED }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "2850.00" });
+    expect(result.pass).toBe(true);
+  });
+
+  /** Punctuation is the only thing forgiven: a formatted answer that states a
+   *  different figure is refused, and the record quotes what it returned. */
+  it("still convicts a formatted answer that is not the screen's figure", async () => {
+    const result = await auditing("Housing $1,234.00", proposing({ "$1,234.00": FORMATTED }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
+    expect(result.audited?.[0]?.result).toContain('returned "2850.00"');
+    expect(result.pass).toBe(false);
+  });
+
+  /**
+   * Where the two rules meet, and the reason a formatted answer is NOT rescaled.
+   *
+   * The numbers' comparison is scale-tolerant, because an amount held in cents is
+   * honestly shown in dollars. Text is not: the data holds masks and ids as
+   * strings, so reading "4471" off an account and calling it a dollars-and-cents
+   * $44.71 would clear a fabricated balance with an account number. A formatted
+   * answer states its own scale — that is what formatting IS — so it clears the
+   * figure it states and no other.
+   */
+  it("does not let a mask the data holds clear a money claim it merely resembles", async () => {
+    // Maple Checking's mask is "4471". None of these screens is that mask: one is
+    // it a hundredfold off, the others are it printed as money.
+    for (const shown of ["$44.71", "$4,471.00", "$4,471"]) {
+      const result = await auditing(
+        `Available ${shown}`,
+        proposing({ [shown]: "return data.list_accounts.data[0].mask;" }),
+      );
+
+      expect(result.audited?.[0], shown).toMatchObject({ verdict: "offender" });
+      expect(result.pass, shown).toBe(false);
+    }
+  });
+
+  it("still demands the screen's own characters when the answer is genuinely text", async () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "J-2444" }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+    const SCREEN = "Job J-9001";
+
+    const result = await audit(
+      { world: jobs, visibleText: SCREEN, extracted: honestData(SCREEN, jobs) },
+      { model: proposing({ "J-9001": "return data.list_jobs.data[0].id;" }) },
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender" });
+    expect(result.audited?.[0]?.result).toContain("which is not a number");
+  });
+});
+
 // ---------------------------------------------------------- sandbox discipline
 
 /**
@@ -999,7 +1079,7 @@ describe("the honesty check, end to end", () => {
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(7);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(8);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {

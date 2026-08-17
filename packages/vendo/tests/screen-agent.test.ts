@@ -1,5 +1,5 @@
 /**
- * The screen agent (blueprint §4.2) and the escalation seam (§4.5).
+ * The screen agent (blueprint §4.2).
  *
  * These are SEAM tests, not loop tests: every case writes through the real
  * `WorkspaceFs` staging + `commit()` path and reads back through the real render
@@ -29,7 +29,7 @@ import {
 } from "@vendoai/core";
 import { createAppFloor, SCREEN_FILE, type HostToolInfo } from "@vendoai/apps";
 import { describe, expect, it } from "vitest";
-import { ESCALATE_TOOL, REPAIR_STEPS, SAVE_APP_TOOL, SCREEN_STEPS, screenAssembler } from "../src/screen-agent.js";
+import { EDIT_APP_TOOL, REPAIR_STEPS, SAVE_APP_TOOL, SCREEN_STEPS, screenAssembler } from "../src/screen-agent.js";
 import {
   boundRegistry,
   ctx,
@@ -213,22 +213,32 @@ function harness(options: {
 }
 
 const saveApp = (content: string) => toolCallTurn(SAVE_APP_TOOL, { content });
-const escalate = (why: string) => toolCallTurn(ESCALATE_TOOL, { why }, "call_esc");
 
 describe("the loadout (§4.2 — assembly tools only)", () => {
   it("equips the assembly verbs and the host's READ tools, and nothing else", async () => {
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
     await screen.assemble("show me my spending");
 
-    const offered = screen.model.toolNamesPerCall[0] ?? [];
-    expect(offered).toContain("ask_user");
-    expect(offered).toContain("maple_spend_summary");
-    expect(offered).toContain(SAVE_APP_TOOL);
-    expect(offered).toContain(ESCALATE_TOOL);
-    // The two that must never be there: a mutating host tool, and the front door
-    // that called this loop.
-    expect(offered).not.toContain("maple_pay");
-    expect(offered).not.toContain("vendo_make");
+    // EXACTLY these four, hands included — the two that must never be there are a
+    // mutating host tool (`maple_pay`) and the front door that called this loop
+    // (`vendo_make`), and a closed list is a claim about what is absent.
+    expect(new Set(screen.model.toolNamesPerCall[0] ?? []))
+      .toEqual(new Set(["ask_user", "maple_spend_summary", SAVE_APP_TOOL, EDIT_APP_TOOL]));
+  });
+
+  it("carries no door out — no `escalate` hand, and the environment note names none", async () => {
+    // A tool the model is never handed is a tool it cannot reach for, so the hand
+    // is gone and so is the bullet that taught it. The shipped manual's own hedged
+    // sentence ("where you have that tool") is the only place the word survives,
+    // and it is hedged for exactly this — so the claim is about the environment
+    // note, which is this loop's own instructions, and not the whole brief.
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+
+    expect(screen.model.toolNamesPerCall[0] ?? []).not.toContain("escalate");
+    const note = (screen.model.systemPrompts[0] ?? "").split("\n\n---\n\n").at(-1) ?? "";
+    expect(note).toContain("# In this loop");
+    expect(note).not.toContain("escalate");
   });
 
   it("offers no `validate` — the verb is the gate's, not the model's", async () => {
@@ -420,44 +430,6 @@ describe("the repair round the mandatory check triggers", () => {
     const repair = JSON.stringify(screen.model.prompts[2] ?? "");
     expect(repair).toContain(FINDING);
     expect(repair).toContain("This is the document you saved");
-  });
-});
-
-describe("the escalation seam (§4.5)", () => {
-  it("hands over one sentence and writes NOTHING — no file, no paint", async () => {
-    const screen = harness({
-      turns: [escalate("this needs its own server"), textTurn("handed over")],
-    });
-    const result = await screen.assemble("build me a live trading terminal");
-
-    expect(result).toEqual({ kind: "escalate", why: "this needs its own server" });
-    // The person's own ask is the builder's brief, so the hand-off has no artifact
-    // of its own: nothing is staged, nothing is committed, and there is nothing to
-    // paint until the box builds something.
-    expect(screen.workspace.commits).toHaveLength(0);
-    expect(screen.emitted).toHaveLength(0);
-    expect(screen.deliveredCalls).toHaveLength(0);
-  });
-
-  it("escalation wins over a partial paint — 'ready' over a half-built app is the lie §4.5 avoids", async () => {
-    const screen = harness({
-      turns: [saveApp(GOOD_APP), escalate("it needs real code"), textTurn("handed over")],
-    });
-    const result = await screen.assemble("build me a trading terminal");
-    expect(result.kind).toBe("escalate");
-  });
-
-  it("has no consent step: one plain sentence and the work proceeds", async () => {
-    const screen = harness({
-      turns: [escalate("this needs its own server"), textTurn("handed over")],
-    });
-    await screen.assemble("build me a live trading terminal");
-    // The escalate tool takes ONE reason. Nothing else — no plan to write, no
-    // confirmation argument, no question back to the person, no second call to
-    // complete it. The hand's own answer says only that it happened.
-    const offered = screen.model.toolNamesPerCall[0] ?? [];
-    expect(offered).toContain(ESCALATE_TOOL);
-    expect(JSON.stringify(screen.model.prompts[1] ?? "")).toContain("handedOver");
   });
 });
 

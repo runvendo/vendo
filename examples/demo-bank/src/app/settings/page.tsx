@@ -1,6 +1,7 @@
 "use client"
 import * as React from "react"
 import { Bell, Lock, Mail, Globe, Moon } from "lucide-react"
+import { TextChannelCard } from "@/components/settings/text-channel-card"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -8,7 +9,6 @@ import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/toast"
 import { useProfile } from "@/lib/hooks"
-import { withBasePath } from "@/lib/base-path"
 import { BrandLogo } from "@/components/ui/brand-logo"
 import { domainForName } from "@/lib/logos"
 
@@ -258,23 +258,16 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-ink">Settings</h1>
         <p className="text-sm text-muted">Manage your profile, security, and preferences.</p>
-        {/* The whole text-channel opt-in: one anchor at the wire route, which
-            mints this user's code and sends a phone straight into the prefilled
-            first message. A raw href, so it carries the mount prefix itself
-            (base-path.ts), and a full navigation rather than a `next/link`
-            transition — the route answers a 302 into the messages app on a
-            phone and HTML on a desktop. */}
-        <a
-          className="mt-2 inline-block text-sm font-medium text-ink underline underline-offset-4"
-          href={withBasePath("/api/vendo/channels/text/link")}
-        >
-          Text Maple from your phone
-        </a>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="space-y-6 lg:col-span-2">
           <ProfileCard />
+          {/* The text-channel opt-in. The card opens a modal that mints this
+              user's code and shows the prefilled first text as a QR; the wire
+              route it is built on still serves a phone a 302 straight into
+              Messages. */}
+          <TextChannelCard />
         </div>
 
         <ToggleSection

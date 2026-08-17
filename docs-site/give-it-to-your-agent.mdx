@@ -1,0 +1,31 @@
+---
+title: "Install with your agent"
+description: "Paste one prompt into your coding agent. It installs Vendo, runs init, and checks its own work."
+---
+
+import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
+
+You don't install Vendo by hand. Paste this into Claude Code, Cursor, or
+whatever agent lives in your repo:
+
+<AgentPromptCard />
+
+## What your agent will do
+
+- Read `package.json` and detect your framework, package manager, and auth.
+- Run `npx vendo init`, which does everything deterministic itself.
+- Relay init's questions to you — how people will use your agent, where
+  screens live — instead of guessing.
+- If your repo already runs its own agent loop, stop and ask whether to keep
+  it and add Vendo's tools instead of installing the full agent.
+- Paste the one snippet init prints, then verify the wiring with
+  `vendo doctor`.
+
+You stay in the loop for every question and every account. The agent does the
+typing.
+
+## The playbook itself
+
+Agents that land here follow the [install playbook](/agents) — the raw,
+machine-readable version at `docs.vendo.run/agents.md`. It's written for
+them, not for you.

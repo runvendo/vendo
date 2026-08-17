@@ -10,11 +10,12 @@
  * exactly why it survived.
  *
  * So this measures the two prompts THEMSELVES, on one real composed deployment:
- * a real `createVendo`, the real screen agent, a real escalation, and a box that
- * behaves like a box (a control port answering the `/agent/task` long-poll). The
- * scripted model and the sandbox PROVIDER are the only two things faked, and
- * neither of them is a side of the seam under test — the producer
- * (`compose-surfaces.ts`) and both consumers are real.
+ * a real `createVendo`, the real screen agent behind `vendo_make`, the real
+ * `create` door for the box rung, and a box that behaves like a box (a control
+ * port answering the `/agent/task` long-poll). The scripted model and the sandbox
+ * PROVIDER are the only two things faked, and neither of them is a side of the
+ * seam under test — the producer (`compose-surfaces.ts`) and both consumers are
+ * real.
  *
  * Two assertions carry it, and they pull in opposite directions on purpose:
  *   - the briefing pack is byte-identical in both prompts (`toBe`), and
@@ -182,13 +183,6 @@ function scripted(): Scripted {
       }
     }
   };
-  const escalating = (): boolean => systemPrompts.at(-1)?.includes(SCREEN_MARKER) === true;
-  const escalateCall = {
-    type: "tool-call" as const,
-    toolCallId: "call_escalate",
-    toolName: "escalate",
-    input: JSON.stringify({ why: "this needs real matching code" }),
-  };
   const model = {
     specificationVersion: "v2" as const,
     provider: "vendo-briefing",
@@ -196,20 +190,16 @@ function scripted(): Scripted {
     supportedUrls: {},
     async doGenerate(request: { prompt?: unknown }) {
       record(request);
-      return escalating()
-        ? { content: [escalateCall], finishReason: "tool-calls" as const, usage }
-        : { content: [{ type: "text" as const, text: "nothing here answers that" }], finishReason: "stop" as const, usage };
+      return { content: [{ type: "text" as const, text: "nothing here answers that" }], finishReason: "stop" as const, usage };
     },
     async doStream(request: { prompt?: unknown }) {
       record(request);
-      const chunks: Array<Record<string, unknown>> = escalating()
-        ? [escalateCall, { type: "finish", finishReason: "tool-calls", usage }]
-        : [
-          { type: "text-start", id: "t1" },
-          { type: "text-delta", id: "t1", delta: "nothing here answers that" },
-          { type: "text-end", id: "t1" },
-          { type: "finish", finishReason: "stop", usage },
-        ];
+      const chunks: Array<Record<string, unknown>> = [
+        { type: "text-start", id: "t1" },
+        { type: "text-delta", id: "t1", delta: "nothing here answers that" },
+        { type: "text-end", id: "t1" },
+        { type: "finish", finishReason: "stop", usage },
+      ];
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -224,7 +214,7 @@ function scripted(): Scripted {
   return { model: model as unknown as LanguageModel, systemPrompts };
 }
 
-// ── one real walk: ask → screen agent → escalate → box ───────────────────────
+// ── one real walk: ask → screen agent, and `create` → box ────────────────────
 
 interface Walked {
   /** The screen agent's whole system prompt. */
@@ -287,6 +277,13 @@ async function walk(options: { brief?: string; routes?: VendoRouteMap } = {}): P
   }));
   expect(response.status).toBe(200);
   await response.text();
+  // The box rung, through the door that hands it a brief: `create` with a §4.5
+  // `why` already in hand skips the assembler by design (`build-surface.ts`), so
+  // this is the shipped path to the in-box builder with nothing doubled on it.
+  await vendo.apps.create(
+    { prompt: "match my invoices against payments", why: "this needs real matching code" },
+    { principal, venue: "chat", presence: "present", sessionId: "ses_briefing" },
+  );
 
   const screenPrompt = systemPrompts.find((prompt) => prompt.includes(SCREEN_MARKER));
   expect(screenPrompt, "the screen agent never ran").toBeDefined();

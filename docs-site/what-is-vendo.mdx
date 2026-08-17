@@ -1,0 +1,174 @@
+---
+title: "What is Vendo"
+sidebarTitle: "What is Vendo"
+description: "An agent inside your product that answers from your own API, builds screens on your real data, and asks before it writes."
+---
+
+Vendo is an agent you embed in your product. Your users ask for what they want
+in plain language, and it acts through your own API, as them.
+
+The answer is usually a screen, not a paragraph.
+
+## What it looks like
+
+<Columns cols={2}>
+  <Frame caption="Ask, and a working screen shows up in your product.">
+    <video
+      className="vendo-loop"
+      width="1200"
+      height="750"
+      poster="/images/ui/hero-generated-view.png"
+      autoPlay
+      loop
+      muted
+      playsInline
+      aria-label="In the Maple demo bank, someone types Show me where my money went this month. The agent reads their spending, and a Spending this month screen builds in place: a donut of $9,381.14 in total spend over a ranked list of categories, Housing at 51% and $4,786.40 first, with a Pin to dashboard button in its header."
+    >
+      <source
+        src="/images/ui/loop-view-arrival.mp4"
+        type="video/mp4"
+        media="(prefers-reduced-motion: no-preference)"
+      />
+    </video>
+  </Frame>
+  <Frame caption="It asks before it writes anything, then acts as you.">
+    <video
+      className="vendo-loop"
+      width="1200"
+      height="750"
+      poster="/images/ui/hero-approval.png"
+      autoPlay
+      loop
+      muted
+      playsInline
+      aria-label="Someone types Move $200 from my checking account to savings. The write stops for approval: a card asks Send $200.00 to Maple Savings ··8820, notes that it sends now as you and can't be undone, and offers Approve and Deny. Approve resumes the call, and the thread answers Done, $200.00 moved to savings, Maple Checking is now at $9,212.20."
+    >
+      <source
+        src="/images/ui/loop-approval-transfer.mp4"
+        type="video/mp4"
+        media="(prefers-reduced-motion: no-preference)"
+      />
+    </video>
+  </Frame>
+</Columns>
+
+The path a request takes to get there is in
+[how Vendo works](/how-vendo-works).
+
+## Screens in your brand
+
+When the answer is one to look at, the agent writes a screen instead of
+describing one. It is a real React component running on live data from your own
+API, in your fonts, colors, and radii. `vendo init` reads those out of your app
+and writes them to `.vendo/theme.json`.
+
+Register your own components and the screen renders your real UI rather than the
+built-in kit.
+
+A finished screen can stay. Pin it into a slot on one of your pages and it holds
+that spot, re-running on every open, so it opens on today's numbers.
+
+<Frame caption="Maple's own overview page. The spending card is the one a user asked for.">
+  <img
+    src="/images/maple/slot-in-page.png"
+    alt="Maple's overview page with its own quick actions, balance chart, and account tiles, and a generated spend by category card holding the slot beside them"
+    width="1280"
+    height="900"
+  />
+</Frame>
+
+## What it can reach
+
+The agent's hands are a fixed set, and nothing outside it exists. Wherever a
+tool came from, it crosses the same guard on the way out.
+
+<div className="direction-cards">
+  <CardGroup cols={3}>
+    <Card title="Your API" href="/capabilities/api-tools" img="/images/cards/capability-api.svg">
+      One command reads your OpenAPI, tRPC, server actions, or routes and writes
+      the tool set.
+
+      API tools →
+    </Card>
+    <Card title="Their accounts" href="/capabilities/connected-accounts" img="/images/cards/capability-accounts.svg">
+      Each user connects their own Gmail, Slack, or GitHub once, and later calls
+      run as them.
+
+      Connected accounts →
+    </Card>
+    <Card title="On a schedule" href="/capabilities/automations" img="/images/cards/capability-schedule.svg">
+      The same tools, fired by a cron or an event, with nobody there to watch.
+
+      Automations →
+    </Card>
+  </CardGroup>
+</div>
+
+## It acts as the signed-in user
+
+Every call runs inside your process, through your routes and your auth, carrying
+the asking user's own identity. Vendo's servers never call your API.
+
+Before a call lands, the guard reads its risk grade. Reads go through. Writes and
+deletes stop and ask, quoting the exact request rather than the tool's name. A
+decision can be remembered, and raising a tool's risk lapses the grants that came
+before it.
+
+Approved or blocked, every call writes an audit line.
+
+<Frame caption="The ask names the exact request. Every call keeps its own line, approved or not.">
+  <img
+    src="/images/ui/hero-activities.png"
+    alt="The Maple demo bank's assistant panel. An earlier request to move $500 to savings carries the line Send money — you declined it; the next one carries Send money — waiting for your approval, and under it a card asks Send $200.00 to Maple Savings ··8820, noting it sends now, as you, and can't be undone, with Approve and Deny beneath"
+    width="916"
+    height="996"
+  />
+</Frame>
+
+## Where it lives in your product
+
+One provider carries the wire and your brand. What renders inside it is your
+call.
+
+- **The overlay** — a launcher pill in the corner that opens a panel over your
+  page, or docks beside it and lets the page reflow.
+- **The palette** — `⌘K` opens the same conversation in its compact form, with
+  the user's own apps and their activity on the chip strip.
+- **Slots** — a place in one of your pages that a generated view can occupy.
+- **Triggers** — a button anywhere in your product that hands the agent one
+  task, composer prefilled, never sent.
+- **The bare thread**, or [the hooks](/reference/hooks), when the conversation
+  belongs inside your own layout.
+
+Each one re-themes from the same token file, so they cannot drift apart. What
+they render is in [mount the surface](/product/mount-the-surface).
+
+## Start where you are
+
+`vendo init` asks which of these you are doing and wires that one.
+
+<div className="direction-cards">
+  <CardGroup cols={3}>
+    <Card title="Vendo's Full-Stack Agent" href="/product/quickstart" img="/images/cards/direction-product.svg">
+      Vendo runs the loop and renders screens in your brand.
+
+      `<VendoProvider>`
+
+      Quickstart →
+    </Card>
+    <Card title="In your existing agent" href="/existing-agent/quickstart" img="/images/cards/direction-existing-agent.svg">
+      Keep your loop. Vendo adds tools and renders the result.
+
+      `vendoTools(vendo)`
+
+      Quickstart →
+    </Card>
+    <Card title="From outside agents" href="/outside-agents/quickstart" img="/images/cards/direction-outside-agents.svg">
+      Your own agent, acting as the signed-in user.
+
+      `createVendo({ mcp: true })`
+
+      Quickstart →
+    </Card>
+  </CardGroup>
+</div>
