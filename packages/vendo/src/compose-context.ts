@@ -29,6 +29,7 @@ import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,
   AgentRunner,
+  CreateAutomation,
   FilesAdapter,
   Harness,
   Principal,
@@ -261,9 +262,14 @@ export interface VendoComposition {
   // ── compose-automations.ts ─────────────────────────────────────────────────
   hostedStoreComposed: boolean;
   automations: AutomationsEngine;
-  /** Wave 9 — the same engine, as the LATE arming seam the apps runtime holds:
-   *  automations is constructed after apps, and every call happens later. */
-  automationsForArming?: AutomationsEngine;
+  /** THE one create-automation operation, as the LATE authoring seam the apps
+   *  runtime holds: automations is constructed after apps, and every call
+   *  happens inside a request. Never public — `vendo.automations` has no
+   *  `create`; the four authoring doors reach it through here. */
+  createAutomation?: CreateAutomation;
+  /** `.on()` declarations → records, run once on the ready() latch (after
+   *  ensureSchema, before the first request). Filled by compose-automations.ts. */
+  bootReconcile: () => Promise<void>;
 
   // ── compose-mcp.ts ─────────────────────────────────────────────────────────
   turnCredentials: TurnCredentials;

@@ -346,7 +346,10 @@ describe("no unguarded path", () => {
       presence: "away",
       sessionId: "session_compound",
       appId: "app_flow",
-      trigger: { runId: "run_away_1", kind: "schedule" },
+      // An automation is a record consented to on its own, so the away grant
+      // matches on THIS id and not on the app (guard `presenceMatches`); a firing
+      // that names none holds no away authority at all.
+      trigger: { runId: "run_away_1", kind: "schedule", automationId: "atm_flow" },
     };
     const actAsGrants: PermissionGrant[] = [];
     const actAs: ActAs = async (_principal, grant) => {
@@ -369,14 +372,14 @@ describe("no unguarded path", () => {
         descriptorHash: descriptorHash(descriptor),
         scope: { kind: "tool" },
         duration: "standing",
-        appId: "app_flow",
+        automationId: "atm_flow",
         source: "automation",
         grantedAt: new Date().toISOString(),
       };
       await store.records("vendo_grants").put({
         id: grant.id,
         data: grant,
-        refs: { subject: grant.subject, tool: grant.tool, app_id: "app_flow" },
+        refs: { subject: grant.subject, tool: grant.tool, automation_id: "atm_flow" },
       });
     };
 

@@ -31,6 +31,13 @@ import type {
 import { createAutomationsEngine } from "./engine.js";
 
 export { automationsInternals, type AutomationsInternals } from "./engine.js";
+/** Standard-Webhooks verification, as plain functions. Exported because the
+ *  umbrella's `POST /api/vendo/tick` door takes the SAME signature over the same
+ *  scheme, and a second implementation of it is how the encoding drifts: the
+ *  secret is base64url and must be decoded before the HMAC, which is exactly the
+ *  bug that made every signed knock in a fleet answer 401. One implementation,
+ *  reached across the package boundary the dependency guard allows. */
+export { base64url, signedWebhookBytes, verifySignature } from "./webhook-signature.js";
 export type { ReconcileAutomations } from "./create-surface.js";
 export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 

@@ -58,6 +58,21 @@ describe("toTriggerSource", () => {
     expect(() => toTriggerSource({ every: "0d" })).toThrow(VendoError);
     expect(() => toTriggerSource({ at: "next tuesday" })).toThrow(VendoError);
   });
+
+  it("refuses an object naming NO trigger, rather than inventing a connectorless webhook", () => {
+    // ABSENT is not EMPTY. The webhook arm is the fall-through, so an object with
+    // none of the five keys used to walk straight into it and answer
+    // `{ kind: "external", connector: undefined }` — an automation nothing can
+    // ever trigger, reported to its owner as armed. The callers that hit this are
+    // the admin routes, which take an untyped object off a wire.
+    for (const when of [{}, { webhook: "" }, { connector: "stripe" }, { cron: "0 9 * * 1" }]) {
+      const error = errorOf(() => toTriggerSource(when as Parameters<typeof toTriggerSource>[0]));
+      expect(error, JSON.stringify(when)).toBeInstanceOf(VendoError);
+      expect(error.code).toBe("validation");
+    }
+    // And the fall-through never yields a source without a connector.
+    expect(toTriggerSource({ webhook: "stripe" })).toEqual({ kind: "external", connector: "stripe" });
+  });
 });
 
 describe("automationHash", () => {

@@ -13,7 +13,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   WORKSPACE_INLINE_MAX_BYTES,
   appDocumentSchema,
@@ -105,14 +104,11 @@ function seamOver(store: VendoStore, blobs?: FilesAdapter, owner = principal.sub
   };
 }
 
-/** A stored app with a trigger on it — the field §3.2 must carry through
- *  untouched, since automations are out of scope and must not regress. */
 async function seedApp(store: VendoStore): Promise<void> {
   const doc: AppDocument = {
     format: VENDO_APP_FORMAT,
     id: APP,
     name: "Spending",
-    trigger: { on: { kind: "schedule", cron: "0 9 * * *" }, run: { kind: "agentic", prompt: "send the digest" } },
   } as AppDocument;
   await store.records("vendo_apps").put({
     id: APP,
@@ -146,15 +142,6 @@ describe("app source: commit (contract §3.2)", () => {
     expect(stored.source!["src/App.tsx"]!.text).toBe("export const App = () => null;\n");
     expect(stored.source!["src/App.tsx"]!.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(stored.source!["src/App.tsx"]!.bytes).toBe("export const App = () => null;\n".length);
-    // The one thing automations are owed: the trigger survives a source commit.
-    // The row was seeded in the PRE-LIST shape on purpose, so this also pins the
-    // read normalization — the legacy singular `trigger` comes back as the
-    // one-element list under DEFAULT_TRIGGER_ID, and the commit keeps it.
-    expect(stored.triggers).toEqual([{
-      id: DEFAULT_TRIGGER_ID,
-      on: { kind: "schedule", cron: "0 9 * * *" },
-      run: { kind: "agentic", prompt: "send the digest" },
-    }]);
   }, 60_000);
 
   it("spills a file past the inline cap through the workspace's own blob seam", async () => {

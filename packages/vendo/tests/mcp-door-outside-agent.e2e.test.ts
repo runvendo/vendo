@@ -83,6 +83,10 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       "vendo_apps_pin",
       "vendo_apps_reseed",
       "vendo_apps_unpin",
+      // The authoring door for "do this on its own" — one of the four ways the
+      // single internal create operation is reached, and the only one an outside
+      // agent has.
+      "vendo_automate",
       // The one-tool contract's whole point for MCP: an outside agent asks for a
       // screen through `vendo_make` and never has to decide "new or change?"
       // first. Losing it from this list is losing the front door.
