@@ -41,6 +41,7 @@ import {
 // In-package since the seam moved home to @vendoai/apps: the emitted-payload
 // assembly and the field stripping that goes with it.
 import { assembleTree } from "../runtime/runtime.js";
+import { recordForming } from "../persistence/forming.js";
 
 /** §1.6 — the file that syncs mid-turn. Everything else waits for turn end. */
 export const HOT_PATH_FILES = ["app.tsx"] as const;
@@ -217,6 +218,12 @@ export async function viewForWrite(
     );
     return undefined;
   }
+  // The same paint, offered to the embed's build-window poll as SHAPE
+  // (persistence/forming.ts strips it to geometry and holds it in memory only).
+  // The build is the one thing that renders a half-written app, so this is where
+  // a growing silhouette exists at all — and it costs nothing, because the render
+  // has already happened.
+  recordForming(appId, payload);
   // The gauntlet already ran its queries, so this paint is FINAL.
   return viewPart(appId, payload, options.turnId);
 }

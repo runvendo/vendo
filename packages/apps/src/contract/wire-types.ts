@@ -64,10 +64,11 @@ export interface PendingSurface {
    * to change. Nothing that could render one travels: no props, no resolved
    * `data`, no `interactive` VM, no component sources.
    *
-   * Read off the STORED document, never rendered for the answer: a poll must cost
-   * a row read, not an app execution (see `formingTreeOf`). So it rides when the
-   * build has already written a tree to the row, and is absent otherwise — a
-   * component screen stores none by design, and omits it.
+   * Read out of memory, never rendered for the answer: a poll must cost a row
+   * read, not an app execution. It is the shape of the last screen the BUILD
+   * itself painted (`persistence/forming.ts`), so it rides once this app has
+   * painted in this process and is absent otherwise — nothing about it is
+   * persisted, because no document keeps a tree.
    *
    * Optional and additive throughout: whenever it is absent the embed keeps its
    * beat bar, which is exactly the behaviour that shipped before it existed.

@@ -53,10 +53,13 @@ test("ENG-276: a real MCP client hosts the shim, executes an action, and parks a
   // The destructive ref traverses the same route but the guard parks it. Both
   // the control and the shim's tree outcome surface that state; the real host
   // record remains untouched.
+  // The screen's own handler never gets to report this one: a parked call's
+  // promise stays pending until an approval settles it, so the renderer's notice
+  // is what says the guard held it.
   await shim.getByRole("button", { name: "Delete invoice" }).click();
-  await expect(shim.getByText("Delete: pending-approval")).toBeVisible({ timeout: 20_000 });
   await expect(shim.getByRole("note", { name: "Action pending approval" }))
-    .toContainText("Action is waiting for approval");
+    .toContainText("Waiting for your approval", { timeout: 20_000 });
+  await expect(shim.getByText("Delete: ok")).toBeHidden();
   await expect.poll(async () => {
     const response = await request.get(`/__test/host/invoice/${MCP_APPS_INVOICE_ID}`);
     return (await response.json() as { exists: boolean }).exists;

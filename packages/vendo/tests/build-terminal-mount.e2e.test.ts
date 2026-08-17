@@ -319,12 +319,16 @@ describe("a screen mounts only once its build is terminal", () => {
       // …which the wire turns into the `{kind:"pending"}` every embed already
       // keeps polling on (`use-app.ts`, `chrome/embeds.tsx`).
       expect(midBuild.wireStatus, `build ${index}`).toBe(200);
-      // S4 made this answer ADDITIVE (a `tree` of pure geometry may ride it), but
-      // only ever off a tree the row already holds — and a component screen like
-      // this one stores none, so what a screen build answers is unchanged, to the
-      // field. Asserted whole, exactly as before: the draft's double count reaches
-      // nobody, and this stays the assertion that would notice if it did.
-      expect(JSON.parse(midBuild.wireBody), `build ${index}`).toEqual({ kind: "pending" });
+      // S4 made this answer ADDITIVE (a `tree` of pure geometry may ride it), and
+      // a screen build now fills it: the shape of the render the build ALREADY
+      // paid for (`persistence/forming.ts`), so the embed paints this app taking
+      // shape. What may never ride is a FIGURE — this build's draft carries a
+      // double count its repair round replaces — so the geometry is asserted to be
+      // geometry, and the body is asserted not to contain the number.
+      const pending = JSON.parse(midBuild.wireBody) as { kind: string; tree?: { nodes?: object[] } };
+      expect(pending.kind, `build ${index}`).toBe("pending");
+      expect(pending.tree?.nodes?.some((node) => "props" in node) ?? false, `build ${index}`).toBe(false);
+      expect(midBuild.wireBody, `build ${index}`).not.toContain(String(DRAFT_TOTAL));
     }
 
     // And once both builds are terminal, what mounts is the LAST repair — never

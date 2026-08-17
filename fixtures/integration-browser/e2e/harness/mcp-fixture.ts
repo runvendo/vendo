@@ -13,6 +13,13 @@ export const MCP_APPS_UPDATED_MEMO = "Updated over MCP Apps";
  * The app, which IS its `app.tsx`. Its two controls call host tools from their
  * own handlers, so a click travels the whole way: shim → MCP Apps host bridge →
  * door tools → app runtime → guard → the fixture host.
+ *
+ * A screen's `tools.*()` resolves with the tool's OUTPUT alone — the `ToolOutcome`
+ * envelope is the host's, never the screen's (`boot.ts`, `readOutcome`). So the
+ * update reports its own success from the fact that the await returned, and the
+ * DELETE line never runs at all: the guard parks it, and a parked call's promise
+ * stays pending until an approval settles it. What surfaces that park is the
+ * renderer's own notice, which is what the spec reads.
  */
 const screen = `import { useState } from "react";
 import { Button, Stack, Text, tools } from "@vendo/screen";
@@ -28,16 +35,16 @@ export default function InvoiceControl() {
       <Button
         label="Update invoice"
         onClick={async () => {
-          const outcome = await tools.host_invoices_update({ id: "${MCP_APPS_INVOICE_ID}", memo: "${MCP_APPS_UPDATED_MEMO}" });
-          setUpdateState("Updated: " + outcome.status);
+          await tools.host_invoices_update({ id: "${MCP_APPS_INVOICE_ID}", memo: "${MCP_APPS_UPDATED_MEMO}" });
+          setUpdateState("Updated: ok");
         }}
       />
       <Button
         label="Delete invoice"
         variant="danger"
         onClick={async () => {
-          const outcome = await tools.host_invoices_delete({ id: "${MCP_APPS_INVOICE_ID}" });
-          setDeleteState("Delete: " + outcome.status);
+          await tools.host_invoices_delete({ id: "${MCP_APPS_INVOICE_ID}" });
+          setDeleteState("Delete: ok");
         }}
       />
       <Text text={updateState} />

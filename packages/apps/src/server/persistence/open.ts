@@ -18,6 +18,7 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
+import { formingTreeOf } from "./forming.js";
 import type { InClientVenueState } from "../remix/inclient.js";
 import { bundleOf, seedDrift, type SeedBaseline } from "../../contract/index.js";
 import type { OpenSurface } from "../runtime/runtime.js";
@@ -261,10 +262,12 @@ const serveOpenApp = (
  * flag on this door rather than a kind `open()` can return on its own, and it
  * costs a document read: nothing here renders the app.
  *
- * It rides no geometry. An app IS its `app.tsx` and its tree is what RENDERING
- * that produces, so a half-built app's silhouette exists only inside a paint —
- * and paying for a paint per poll is the load this door exists to avoid. The
- * embed reads its beat bar.
+ * The geometry it rides comes from the build's OWN paint, never from a poll's:
+ * an app IS its `app.tsx` and its tree is what RENDERING that produces, so a
+ * half-built app's silhouette exists only inside a paint — and the build already
+ * makes one on every landed commit. `formingTreeOf` reads that render's shape out
+ * of memory (`forming.ts`), so the poll stays a document read and no document
+ * keeps a tree. When nothing has painted yet the embed reads its beat bar.
  */
 export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
   (app: AppDocument, ctx: RunContext, options?: { pending?: boolean }) => Promise<OpenSurface | PendingSurface>
@@ -275,6 +278,7 @@ export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
     if (options?.pending !== true) {
       throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
     }
-    return { kind: "pending" };
+    const tree = formingTreeOf(app.id);
+    return tree === undefined ? { kind: "pending" } : { kind: "pending", tree };
   };
 };
