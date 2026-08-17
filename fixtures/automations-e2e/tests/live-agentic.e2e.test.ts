@@ -22,10 +22,24 @@ interface RunRow {
 }
 
 describe.skipIf(!plausible)("live goal automation", () => {
-  it("runs a real-model goal automation within captured grants", { timeout: 180_000 }, async () => {
+  it("runs a real-model goal automation within captured grants", { timeout: 180_000 }, async ({ skip }) => {
     await resetFixture();
     const { createAnthropic } = await import("@ai-sdk/anthropic");
-    const anthropic = createAnthropic({ apiKey: liveKey });
+    // The transport is the only place upstream weather is legible. The run row
+    // cannot tell it from an engine defect: every model failure reaches it as
+    // the one generic sentence, whatever threw (wire-error.ts:27, away.ts:597).
+    // The LAST status Anthropic answered with can — a 429/5xx there is nothing
+    // this engine can cause (our own bad payload is a 400), and reading the last
+    // one means a failure the AI SDK retried into a success is not one.
+    let lastUpstream = 0;
+    const anthropic = createAnthropic({
+      apiKey: liveKey,
+      fetch: async (input, init) => {
+        const response = await fetch(input, init);
+        lastUpstream = response.status;
+        return response;
+      },
+    });
     const stack = await createStack({
       runnerFrom: ({ guard, store }) =>
         awayRunner({
@@ -71,6 +85,13 @@ describe.skipIf(!plausible)("live goal automation", () => {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
       if (row === undefined) throw new Error("run row never appeared");
+      // An unavailable model leaves this UNPROVEN, never passed. Narrow on both
+      // axes: a run that finished still asserts, and every other way to fail
+      // still fails.
+      skip(
+        row.status !== "ok" && (lastUpstream === 429 || lastUpstream >= 500),
+        `Anthropic answered ${lastUpstream}: the model was unavailable, so this run proves nothing`,
+      );
       expect(row.status).toBe("ok");
       const listCalls = row.record.steps.filter((step) => step.tool === "host_invoices_list");
       expect(listCalls.length).toBeGreaterThanOrEqual(1);
