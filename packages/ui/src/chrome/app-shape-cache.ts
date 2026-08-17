@@ -29,6 +29,11 @@ export interface AppShape {
 }
 
 const PREFIX = "vendo:app-shape:";
+/** Which app a slot last held. The digest is keyed by APP id, but a cold
+ *  revisit has to paint its skeleton BEFORE the placements read answers — at
+ *  which point the slot does not yet know whose shape to draw. This is the way
+ *  back. */
+const SLOT_PREFIX = "vendo:app-slot:";
 /** Enough bones to read as THIS app; past that a skeleton is just noise. */
 const MAX_BOXES = 12;
 /** Kit layout: no silhouette of its own — its children are the shape. */
@@ -82,6 +87,28 @@ function boxesOf(nodes: TreeNode[], root: string): ShapeBox[] {
 export function rememberedShape(appId: string): ShapeBox[] | undefined {
   const boxes = read(appId)?.boxes;
   return boxes !== undefined && boxes.length > 0 ? boxes : undefined;
+}
+
+/** The silhouette this SLOT last held — what it waits in while the placements
+ *  read is still in flight and the app coming back is not named yet. Without one
+ *  the slot falls back to the generic ghost; either way it must not paint the
+ *  empty-slot invite, which is a claim about a slot nothing is pinned in. */
+export function rememberedSlotShape(slotId: string): ShapeBox[] | undefined {
+  try {
+    const appId = storage()?.getItem(SLOT_PREFIX + slotId);
+    return typeof appId === "string" ? rememberedShape(appId) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Remember which app is in this slot. Best-effort, like every write here. */
+export function rememberSlotApp(slotId: string, appId: string): void {
+  try {
+    storage()?.setItem(SLOT_PREFIX + slotId, appId);
+  } catch {
+    /* quota/denied — nothing to do */
+  }
 }
 
 /** Remember what the served tree looks like. Only a tree surface has insides we

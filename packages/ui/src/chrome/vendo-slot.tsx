@@ -9,7 +9,7 @@ import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import type { ParkedPress } from "../tree/renderer.js";
 import { useMotionLayoutEffect } from "../tree/repaint-motion.js";
-import { rememberedShape, rememberShape, type ShapeBox } from "./app-shape-cache.js";
+import { rememberedShape, rememberedSlotShape, rememberShape, rememberSlotApp, type ShapeBox } from "./app-shape-cache.js";
 import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
@@ -30,9 +30,15 @@ function slotLabel(id: string): string {
  *  generic shimmer; a first-ever visit and an iframe-served app keep the
  *  shimmer. Read before paint, never during render: the store is client-only,
  *  and bones the server could not know about are a hydration mismatch. */
-function GhostSkeleton({ appId }: { appId?: string }) {
+function GhostSkeleton({ appId, slotId }: { appId?: string; slotId?: string }) {
   const [boxes, setBoxes] = useState<ShapeBox[]>();
-  useMotionLayoutEffect(() => setBoxes(appId === undefined ? undefined : rememberedShape(appId)), [appId]);
+  // By app when the slot knows which one is coming; by SLOT in the window before
+  // the placements read answers, when all it knows is what it held last time.
+  useMotionLayoutEffect(() => setBoxes(
+    appId !== undefined ? rememberedShape(appId)
+      : slotId !== undefined ? rememberedSlotShape(slotId)
+        : undefined,
+  ), [appId, slotId]);
   if (boxes) {
     return (
       <span className="fl-slot-skel fl-slot-bones" aria-hidden="true">
@@ -56,10 +62,10 @@ function GhostSkeleton({ appId }: { appId?: string }) {
   );
 }
 
-function SlotGhost({ label, detail, loading = false, appId }: { label: string; detail?: string; loading?: boolean; appId?: string }) {
+function SlotGhost({ label, detail, loading = false, appId, slotId }: { label: string; detail?: string; loading?: boolean; appId?: string; slotId?: string }) {
   return (
     <div className="fl-slot-ghost" role={loading ? "status" : undefined} aria-live={loading ? "polite" : undefined}>
-      <GhostSkeleton appId={appId} />
+      <GhostSkeleton appId={appId} slotId={slotId} />
       <span className="fl-slot-cta">
         <span className="fl-slot-cta-label">{label}</span>
         {detail ? <small>{detail}</small> : null}
@@ -307,6 +313,13 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   const name = label ?? slotLabel(id);
   useReportSlot(id, name, resolvesItself, description);
 
+  // The slot's own way back to its bones on the next cold load: the digest is
+  // keyed by app, and the skeleton has to paint before the placements read can
+  // name one.
+  useEffect(() => {
+    if (appId !== undefined) rememberSlotApp(id, appId);
+  }, [appId, id]);
+
   // The third arm of the press, reached only when there is nowhere for it to
   // go. Runtime-detected, never a prop: a host that mounts an overlay LATER
   // gets the overlay, and one that never does gets a sentence instead of a
@@ -352,6 +365,21 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
 
   if (!appId && !pin) {
     if (children !== undefined) return <>{children}</>;
+    // The placements read has not answered, so whether anything is pinned here
+    // is UNKNOWN — and an unknown must never paint as a confident "nothing is
+    // pinned here". The invite is a CLAIM about an empty slot; it waits for a
+    // confirmed one. Until then this is the same honest wait a mounting app
+    // gets: the silhouette the slot held last time, or the calm generic ghost
+    // on a first-ever visit.
+    if (discovery.isLoading) {
+      return (
+        <ChromeRoot>
+          <div className="fl-slot" data-vendo-slot={id}>
+            <SlotGhost label="Loading app…" slotId={id} />
+          </div>
+        </ChromeRoot>
+      );
+    }
     // A placement row is written the moment the app id is minted, so a slot
     // with no markup of its own says what is coming instead of inviting a
     // second ask — the skeleton the empty state already uses, minus the
