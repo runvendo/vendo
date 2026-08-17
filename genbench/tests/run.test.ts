@@ -18,6 +18,7 @@ import {
   contenders,
   exitCode,
   harnessStamp,
+  missingKey,
   parseArgs,
   pool,
   shouldOpen,
@@ -254,6 +255,13 @@ describe("worldsFor", () => {
     expect(await worldsFor(worldsDir, "maple")).toEqual(["maple"]);
   });
 
+  it("takes a comma list as those worlds, in the order they were written", async () => {
+    expect(await worldsFor(worldsDir, parseArgs(["run", "--world", "buildlog,maple"]).world)).toEqual([
+      "buildlog",
+      "maple",
+    ]);
+  });
+
   it("takes `all` as every world folder there is, in a fixed order", async () => {
     const all = await worldsFor(worldsDir, "all");
 
@@ -294,7 +302,7 @@ describe("--models", () => {
  *  harness should not spend the other two's tokens on the same case. */
 describe("--contenders", () => {
   it("races every driver when nobody narrows the row", () => {
-    expect(parseArgs(["run"]).contenders).toEqual(["vendo", "diy", "claude-code", "thesys"]);
+    expect(parseArgs(["run"]).contenders).toEqual(["vendo", "diy", "claude-code", "thesys", "codex"]);
   });
 
   it("narrows the row to the drivers named", () => {
@@ -308,6 +316,30 @@ describe("--contenders", () => {
 
   it("refuses a contender that has no driver", () => {
     expect(() => parseArgs(["run", "--contenders", "vendo,langchain"])).toThrow(/unknown contender "langchain"/);
+  });
+
+  /** The matrix stopped being a rectangle once some columns had a model line of
+   *  their own: naming a model to get one column of it also crossed that model
+   *  onto every other harness in the list. A `harness:model` pair is one column. */
+  it("takes a harness:model pair as exactly that column, and leaves --models out of it", () => {
+    const only = parseArgs(["run", "--contenders", "diy:gpt"]).contenders;
+
+    expect(contenders(["sonnet", "haiku"], only).map((contender) => contender.slug)).toEqual(["diy-gpt"]);
+  });
+
+  it("mixes bare harnesses and pairs, and keeps the order they were written in", () => {
+    const only = parseArgs(["run", "--contenders", "claude-code,diy:gemini,vendo"]).contenders;
+
+    expect(contenders(["sonnet"], only).map((contender) => contender.slug)).toEqual([
+      "claude-code-sonnet",
+      "diy-gemini",
+      "vendo-sonnet",
+    ]);
+  });
+
+  it("refuses a pair naming a model or a harness nothing here has", () => {
+    expect(() => parseArgs(["run", "--contenders", "diy:gpt-9"])).toThrow(/unknown model "gpt-9"/);
+    expect(() => parseArgs(["run", "--contenders", "langchain:sonnet"])).toThrow(/unknown contender "langchain"/);
   });
 
   /** Claude Code is Anthropic's own engine and never reads the meter's model, so
@@ -324,6 +356,47 @@ describe("--contenders", () => {
    *  named late. */
   it("refuses a row nothing can run, naming the pairing that emptied it", () => {
     expect(() => contenders(["glm-fast"], ["claude-code"])).toThrow(/claude-code has no column for glm-fast/);
+  });
+
+  /** The router's three aliases are the cross-VENDOR row, and `diy` — one model
+   *  call with no product around it — is what makes three vendors comparable.
+   *  Elsewhere they would double a column that already exists first-party, and a
+   *  pair that asks for one is a row nothing can run, named as it was written. */
+  it("keeps the OpenRouter aliases to the one column that is nothing but a model", () => {
+    expect(contenders(["gpt", "gemini"]).map((contender) => contender.slug)).toEqual(["diy-gpt", "diy-gemini"]);
+    expect(() => contenders(["sonnet"], parseArgs(["run", "--contenders", "vendo:claude"]).contenders)).toThrow(
+      /vendo:claude has no column/,
+    );
+  });
+
+  /** `codex` is a bought PRODUCT the way `thesys` is: it spawns OpenAI's own CLI
+   *  and never reads the meter's model, so it runs its one alias and nothing
+   *  else, and no other column may run that alias. */
+  it("runs the Codex CLI on its own alias, and runs that alias nowhere else", () => {
+    expect(contenders(["sol"]).map((contender) => contender.slug)).toEqual(["codex-sol"]);
+    expect(contenders(["sonnet", "sol"]).map((contender) => contender.slug)).not.toContain("codex-sonnet");
+  });
+});
+
+/**
+ * A key is demanded up front — before a case and a browser — and only for a
+ * column that will really run. It reads the resolved ROW rather than `--models`,
+ * so narrowing `--contenders` can never leave a key demanded for a column nobody
+ * asked for.
+ */
+describe("the credential preflight", () => {
+  it("demands the router's key for a row that runs an OpenRouter alias", () => {
+    expect(missingKey(contenders(["gpt"]), {})).toMatch(/OPENROUTER_API_KEY is not set.*serves gpt/);
+    expect(missingKey(contenders(["gpt"]), { OPENROUTER_API_KEY: "sk-or-x" })).toBeUndefined();
+  });
+
+  it("demands OpenAI's key for the codex column, which bills that account directly", () => {
+    expect(missingKey(contenders(["sol"]), {})).toMatch(/OPENAI_API_KEY is not set.*serves sol/);
+    expect(missingKey(contenders(["sol"]), { OPENAI_API_KEY: "sk-x" })).toBeUndefined();
+  });
+
+  it("demands nothing for an alias the narrowed row dropped", () => {
+    expect(missingKey(contenders(["sonnet", "gpt", "sol"], ["vendo"]), {})).toBeUndefined();
   });
 });
 

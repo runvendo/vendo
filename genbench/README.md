@@ -2,14 +2,16 @@
 
 Answers "why not build this in-house?" with numbers.
 
-It runs hand-written prompts through four contenders — the real Vendo pipeline,
-two raw-Claude baselines and one bought product — against fourteen fictional
-products defined entirely in JSON, scores what comes back, and measures time and
-money. The three in-house contenders get the same model, the same tools, the same
-schemas, the same design brief and the same harness contract, because that
-equivalence is the whole claim; the bought product gets the same world and is
-configured as its own vendor says to configure it, which is a different claim and
-is spelled out under [The bought product](#the-bought-product).
+It runs hand-written prompts through five contenders — the real Vendo pipeline,
+two raw-Claude baselines, a rival coding agent and one bought product — against
+fourteen fictional products defined entirely in JSON, scores what comes back, and
+measures time and money. The three Claude contenders get the same model, the same
+tools, the same schemas, the same design brief and the same harness contract,
+because that equivalence is the whole claim; `codex` asks that same in-house
+question of another vendor's agent, so it brings its own engine and its own
+model; the bought product gets the same world and is configured as its own vendor
+says to configure it, which is a different claim and is spelled out under
+[The bought product](#the-bought-product).
 
 ## The contenders
 
@@ -19,8 +21,9 @@ is spelled out under [The bought product](#the-bought-product).
 | `diy` | the cheap in-house build: ONE `streamText` call, one HTML document, no product. Its artifact IS the page — no compile, no Kit, no mount |
 | `claude-code` | the strong in-house build: the stock Claude Agent SDK with its stock loadout — Bash included — writing and rewriting one `index.html` in a scratch directory. What is taken away is isolation and not capability: the operator's own settings, MCP config and shell environment stay out, because a laptop's private tooling would silently become this column's advantage. Its artifact IS the page too, and it is billed by its own session rather than by the run's meter |
 | `thesys` | the BOUGHT build: Thesys C1 (docs.thesys.dev), a hosted generative-UI API — the closest competing product on the market. Not another way to prompt a model, but a purchase: their model, their system prompt, their UI DSL, their React renderer. Its artifact IS the page, with their renderer inlined into it. See [The bought product](#the-bought-product) |
+| `codex` | the same build from the other vendor: OpenAI's Codex CLI with its stock loadout, writing and rewriting one `index.html` in a scratch directory, and isolated from the operator's own `~/.codex` config for the reason `claude-code` is isolated from theirs. Its artifact IS the page too, and it is billed by its own session against the OpenAI platform account |
 
-The three in-house columns are handed the same thing, and that is asserted rather
+The three Claude columns are handed the same thing, and that is asserted rather
 than asserted-to-be. There are exactly **two shared texts** — `worldBlock` in
 `src/vendo.ts`, the world every contender is briefed on, and `HARNESS_CONTRACT`
 in `src/render.ts`, the mechanical seam every page-writing contender must satisfy
@@ -106,10 +109,11 @@ timeout is recorded as its own failure without touching its siblings. Column
 order is the declaration order in `DRIVERS`, never the order they finished.
 
 The case budget is **per contender** (`CASE_TIMEOUT_MS`), not one number for the
-row: `vendo`, `diy` and `thesys` answer in one call and keep a five-minute bound, while
-`claude-code` runs its own ten-minute wall clock inside the driver before it has
-delivered anything, so its case gets twelve. A shared five-minute bound would
-have ended that column early and reported a timeout the contender never had.
+row: `vendo`, `diy` and `thesys` answer in one call and keep a five-minute bound,
+while `claude-code` and `codex` each run their own ten-minute wall clock inside
+the driver before they have delivered anything, so those cases get twelve. A
+shared five-minute bound would have ended both columns early and reported a
+timeout neither contender ever had.
 
 ## Run it
 
@@ -120,7 +124,7 @@ ANTHROPIC_API_KEY=… pnpm genbench run --prompt spend-overview
 
 Each case writes `runs/<run>/<contender>/<case>/`, where `<contender>` is the
 column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-opus`,
-`claude-code-haiku`, `thesys-c1`:
+`claude-code-haiku`, `thesys-c1`, `codex-sol`:
 
 | file | what it is |
 | --- | --- |
@@ -166,15 +170,30 @@ It stays one static file — no server, offline, forever. A contender that
 outruns its budget is recorded `failure: "timeout"`; its siblings finish
 normally.
 
-Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
-`--world <name>` (default `maple`) or `--world all` for every world in one run
-folder — which is the only way to get one number for the whole corpus.
+Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`, `--world
+<name>` (default `maple`), a comma list like `--world maple,buildlog`, or
+`--world all` for every world in one run folder — which is the only way to get
+one number for the whole corpus.
 
-The bought column runs on its own alias and its own key, so racing it against the
-in-house three is `--models sonnet,c1` with `THESYS_API_KEY` set beside
-`ANTHROPIC_API_KEY`. Asking for `c1` without that key fails before the first
-case rather than a case and a browser later; asking for it without `thesys` in
-`--contenders` produces no column, because no other harness may run that alias.
+`--contenders` takes a bare harness, crossed with every `--models` alias, or a
+pinned `harness:model` pair, which is exactly that column and skips the cross —
+so `--contenders vendo,diy:gpt,codex:sol` is those three columns and nothing
+else. The matrix stopped being a rectangle once some columns had a model line of
+their own, and naming a model to get one column of it used to cross that model
+onto every other harness in the row.
+
+The frontier arrives through OpenRouter as one alias per vendor: `claude`
+(`anthropic/claude-opus-5`), `gpt` (`openai/gpt-5.6-sol`) and `gemini`
+(`google/gemini-3.1-pro-preview`). All three run on `diy` alone — the one column
+that is nothing but a model call, which is what makes three vendors comparable —
+and they need `OPENROUTER_API_KEY`.
+
+The two product columns each run their own alias and nothing else, and no other
+column may run theirs: `thesys` on `c1` with `THESYS_API_KEY`, `codex` on `sol`
+with `OPENAI_API_KEY`, both beside `ANTHROPIC_API_KEY`, which the judge and the
+honesty check need whoever built the screen. Every key is demanded before the
+first case rather than a case and a browser later, and only for the columns the
+row really runs: narrowing `--contenders` narrows what is demanded with it.
 
 A `--prompt` run opens the preview on macOS when it finishes — that is one
 person watching one case, and a window is the point of it. A full run prints the
@@ -217,6 +236,16 @@ than smuggled into the token table. A plan's included calls are a subscription n
 other column has, and this benchmark does not model one. In practice one case on
 this column is a few cents: its prompt carries their own ~18k-token system prompt,
 which is billed to us on every call and cannot be read.
+
+The router's rows and the codex row are **priced as of 2026-08-17**. OpenRouter's
+own listing gives `anthropic/claude-opus-5` at $5/$25 — identical to first-party —
+`openai/gpt-5.6-sol` at $5/$30 and `google/gemini-3.1-pro-preview` at $2/$12,
+those two being the ≤272k and ≤200k context tiers, which a 10-20k-token genbench
+prompt never leaves. OpenRouter takes **0% on tokens**: what it really charges is
+5.5% (min $0.80) on credit top-ups, which is not a per-token price and is
+therefore in no number this benchmark produces. `codex` is priced at OpenAI's own
+list rate for the same model ($5/$30), because its CLI bills the platform account
+directly rather than through the router.
 
 ## The world
 
@@ -285,7 +314,7 @@ harness itself runs. Neither model can clear a number on its own word:
 - **valid** — the product's *own* checks floor blocks nothing in the saved bytes.
   Not the same as "something painted": the agent can save again after its last
   good view, and the seam keeps the older screen. A contender with no compile
-  step has nothing to block, so for `diy` and `claude-code` this check collapses
+  step has nothing to block, so for `diy`, `claude-code` and `codex` this check collapses
   onto `delivered` — the checks that do the work on a hand-written page are `renders`,
   `honestData` and `wiredActions`, and all three are the same code
 - **honestData** — every number on screen traces back to the tools, in three

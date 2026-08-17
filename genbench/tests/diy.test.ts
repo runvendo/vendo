@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
+import { codexDriver, type CodexSpawn } from "../src/codex.js";
 import { diyDriver, diySystemPrompt } from "../src/diy.js";
 import type { Meter } from "../src/meter.js";
 import { authoredPage, HARNESS_CONTRACT, openBrowser } from "../src/render.js";
@@ -126,6 +127,25 @@ async function sessionBriefFor(scoped: World, testCase: Case): Promise<string> {
   return brief;
 }
 
+/** The brief the codex driver really spawned its CLI with — the last argument of
+ *  the invocation, which is where `codex exec` takes its prompt. The double
+ *  writes a page for the same reason the one above does. */
+async function execBriefFor(scoped: World, testCase: Case): Promise<string> {
+  let brief = "";
+  const spawn: CodexSpawn = (_command, args, options) => {
+    brief = args.at(-1)!;
+    return {
+      output: (async function* () {
+        await writeFile(join(options.cwd, "index.html"), PAGE);
+        yield `${JSON.stringify({ type: "turn.completed", usage: {} })}\n`;
+      })(),
+      kill: () => undefined,
+    };
+  };
+  await codexDriver({ model: "sol", spawn }).run({ world: scoped, testCase, meter: replying(PAGE).meter });
+  return brief;
+}
+
 /** Every contender that is NOT the product, and the real prompt each one sent.
  *  The vendo column is the other side of every comparison below — it is what
  *  they are checked against, so it needs no row of its own. */
@@ -140,6 +160,7 @@ const BASELINES: ReadonlyArray<{ name: string; briefFor(scoped: World, testCase:
     },
   },
   { name: "claude-code", briefFor: sessionBriefFor },
+  { name: "codex", briefFor: execBriefFor },
 ];
 
 describe.each(BASELINES)("$name is handed exactly what vendo is handed", ({ briefFor }) => {
