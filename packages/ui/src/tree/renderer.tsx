@@ -640,6 +640,15 @@ function rendersKitOverlay(node: TreeNode, components: NodeRendererProps["compon
   return resolveBuiltin(node, components) === KIT_COMPONENTS[node.component];
 }
 
+/** Whether this node's shell must generate NO box — decided, like the overlay
+ *  clause above, by the resolution that picks the implementation and never by
+ *  the component's name. A TableRow renders the `<td>`s of the `<tr>` DataTable
+ *  drew, and a div between the two takes an anonymous table-cell box that
+ *  pushes every cell out of its column. */
+function shellIsBoxless(node: TreeNode, components: NodeRendererProps["components"]): boolean {
+  return rendersKitOverlay(node, components) || resolveBuiltin(node, components) === KIT_COMPONENTS.TableRow;
+}
+
 /** V4 — one component family: the Kit is the only built-in set, plus the display
  *  bricks, which resolve exactly like one. A brick's tag is lowercase and a Kit
  *  or catalog name is an identifier, so the two can never collide. */
@@ -737,7 +746,7 @@ function NodeRenderer(props: NodeRendererProps) {
       nodeId={node.id}
       outcome={outcome}
       mark={props.marks.get(node.id)}
-      overlay={rendersKitOverlay(node, props.components)}
+      boxless={shellIsBoxless(node, props.components)}
     >
       {content}
       {notice(node.id, outcome)}
@@ -753,14 +762,15 @@ function NodeRenderer(props: NodeRendererProps) {
  * the render that carries the change and never on a first paint, so the effect
  * plays exactly one beat per node per repaint (repaint-motion.ts).
  */
-function NodeShell({ nodeId, outcome, mark, overlay, children }: {
+function NodeShell({ nodeId, outcome, mark, boxless, children }: {
   nodeId: string;
   outcome: ToolOutcome | undefined;
   mark: NodeMark | undefined;
-  /** An overlay brick paints on the body-level host (overlay-portal.tsx), so its
-   *  shell must generate NO box: an empty div left where the overlay was written
-   *  is still a flex item, and takes a whole gap out of the Stack around it. */
-  overlay: boolean;
+  /** Whether this shell must generate NO box (`shellIsBoxless`): an overlay
+   *  brick paints on the body-level host (overlay-portal.tsx), so an empty div
+   *  left where it was written is still a flex item and takes a whole gap out of
+   *  the Stack around it — and a table row's cells belong to their `<tr>`. */
+  boxless: boolean;
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -771,7 +781,7 @@ function NodeShell({ nodeId, outcome, mark, overlay, children }: {
     <div
       ref={box}
       data-vendo-node-id={nodeId}
-      {...(overlay ? { style: { display: "contents" } } : {})}
+      {...(boxless ? { style: { display: "contents" } } : {})}
       data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
       {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
     >
