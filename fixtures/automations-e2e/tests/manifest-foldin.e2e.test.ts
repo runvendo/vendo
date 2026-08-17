@@ -210,30 +210,37 @@ describe("vendo.json schedules fold into automation records", () => {
         armed: true,
       });
 
-      // FIRES, through the automations tick — not a second scheduler.
+      // FIRES, through the automations tick — not a second scheduler. Nothing
+      // registers an `fn:` descriptor for the step loop (the in-runtime fn path
+      // is a later project), so the approved shape is: the record ARMS, then
+      // fires into a loud, NAMED error row — strictly better than the old
+      // silent never-armed. When the fn path lands, this is what notices.
       clock = new Date("2026-07-12T09:01:30.000Z");
       const ids = await stack.automations.tick(clock);
       expect(ids).toHaveLength(1);
       const run = await stack.automations.runs.get(ids[0]!, ctx);
       expect(run?.automationId).toBe(chase.id);
-      expect(run?.status).toBe("ok");
+      expect(run?.status).toBe("error");
       expect(run?.trigger.kind).toBe("schedule");
+      // The row names the tool it could not resolve, so the ledger reads.
+      expect(run?.error).toMatchObject({ code: "not-found", message: "Tool fn:chase was not found" });
       expect(run?.steps.map(({ tool, outcome }) => ({ tool, outcome })))
-        .toEqual([{ tool: "fn:chase", outcome: "ok" }]);
-      // The box really ran the declared fn.
-      expect(fires).toEqual(["chase"]);
+        .toEqual([{ tool: "fn:chase", outcome: "error" }]);
+      // The box's own fn door is never reached, because the step never resolved.
+      expect(fires).toEqual([]);
 
       // EXACTLY ONCE: a double tick inside the same cron window is a no-op.
+      // Witnessed on the run rows themselves — `fires` can no longer grow, so
+      // it would prove nothing here.
       clock = new Date("2026-07-12T09:01:45.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
-      expect(fires).toEqual(["chase"]);
       expect(await runCount(stack, chase.id)).toBe(1);
 
       // The kill switch reaches it, because it is a record like any other.
       await stack.automations.disable(chase.id, ctx);
       clock = new Date("2026-07-12T09:03:00.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
-      expect(fires).toEqual(["chase"]);
+      expect(await runCount(stack, chase.id)).toBe(1);
 
       // And the NEXT edit does not undo that decision: the reconcile leaves a
       // record a PERSON disarmed exactly as they left it, redeploy after
@@ -243,7 +250,7 @@ describe("vendo.json schedules fold into automation records", () => {
         .toMatchObject([{ id: chase.id, armed: false, disarmedBy: "user" }]);
       clock = new Date("2026-07-12T09:04:00.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
-      expect(fires).toEqual(["chase"]);
+      expect(await runCount(stack, chase.id)).toBe(1);
     } finally {
       await stack.close();
     }
@@ -267,11 +274,17 @@ describe("vendo.json schedules fold into automation records", () => {
         authoredBy: "chat",
       }, ctx);
 
+      // Both schedules land, armed. Addressed by fn rather than by position:
+      // two records written in the same millisecond tie-break on a random uuid
+      // in the keyset order (`packages/store/src/schema.ts:337`), so their
+      // relative order is a coin flip and asserting it is asserting the coin.
       await editServer(apps, appId, "chase hourly and send a morning digest", ctx);
-      expect((await manifestRecords(stack, ctx)).map(({ when, armed }) => ({ when, armed }))).toEqual([
-        { when: { kind: "schedule", cron: "0 * * * *" }, armed: true },
-        { when: { kind: "schedule", cron: "0 8 * * *" }, armed: true },
-      ]);
+      const folded = await manifestRecords(stack, ctx);
+      expect(folded).toHaveLength(2);
+      expect(forFn(folded, "chase"))
+        .toMatchObject({ when: { kind: "schedule", cron: "0 * * * *" }, armed: true });
+      expect(forFn(folded, "digest"))
+        .toMatchObject({ when: { kind: "schedule", cron: "0 8 * * *" }, armed: true });
 
       // The manifest changes inside the box: chase's cron moves, digest is gone.
       box.state.schedules = [{ cron: "30 * * * *", fn: "chase" }];
@@ -293,7 +306,10 @@ describe("vendo.json schedules fold into automation records", () => {
 
       clock = new Date("2026-07-12T10:31:00.000Z");
       expect(await stack.automations.tick(clock)).toHaveLength(1);
-      expect(box.fires).toEqual(["chase"]);
+      // The UPDATED cron is what fired, witnessed on chase's own run rows — an
+      // `fn:` step never reaches the box's fn door, as the first case pins.
+      expect(await runCount(stack, forFn(after, "chase")!.id)).toBe(1);
+      expect(box.fires).toEqual([]);
     } finally {
       await stack.close();
     }
