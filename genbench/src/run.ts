@@ -414,14 +414,22 @@ async function main(argv: readonly string[]): Promise<number> {
     console.error("genbench: ANTHROPIC_API_KEY is not set");
     return 1;
   }
+  // The row every case will race, resolved once: the preflight below and the
+  // run itself read the SAME list, so a key can never be demanded for a column
+  // that will not run.
+  const row = contenders(args.models, args.contenders);
   // Demanded up front rather than at the first call, which is a case and a
   // browser later. The Anthropic key is still required whatever was asked for:
   // the judge and the honesty check run on it, whoever built the screen.
+  // Keyed off the resolved row and not off `--models`, because narrowing
+  // `--contenders` drops columns: `--models sonnet,c1 --contenders vendo` runs
+  // no thesys column, and demanding its key would fail a run that never needed
+  // it.
   for (const [name, ids] of [
     ["WAFER_API_KEY", WAFER_MODEL_IDS],
     ["THESYS_API_KEY", THESYS_MODEL_IDS],
   ] as const) {
-    const wanted = args.models.filter((alias) => Object.hasOwn(ids, alias));
+    const wanted = [...new Set(row.filter(({ model }) => Object.hasOwn(ids, model)).map(({ model }) => model))];
     if (wanted.length > 0 && (process.env[name] ?? "") === "") {
       console.error(`genbench: ${name} is not set, and it is what serves ${wanted.join(", ")}`);
       return 1;
@@ -622,9 +630,7 @@ async function main(argv: readonly string[]): Promise<number> {
         cases.push(
           async () =>
             await Promise.all(
-              contenders(args.models, args.contenders).map(
-                async (contender) => await runOne(contender, testCase, scoped, key),
-              ),
+              row.map(async (contender) => await runOne(contender, testCase, scoped, key)),
             ),
         );
       }
