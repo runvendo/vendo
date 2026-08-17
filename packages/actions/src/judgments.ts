@@ -156,7 +156,12 @@ export function disabledReason(
   const judged = applyJudgment(tool, judgment);
   if ((override?.disabled ?? judged.disabled ?? false) !== true) return undefined;
   if (override?.disabled === true) return "turned off in .vendo/overrides.json";
-  if (judgment?.fields.disabled === true) return "turned off in .vendo/judgments.json";
+  // Binding-checked exactly as `applyJudgment` checks it: a judgment of a
+  // handler that moved is inert, so naming it would send the developer to edit
+  // the one file that did not turn this tool off.
+  if (judgment?.fields.disabled === true && judgment.binding === bindingIdentity(tool.binding)) {
+    return "turned off in .vendo/judgments.json";
+  }
   if (judged.audience !== undefined && judged.audience !== "end-user") {
     return `graded audience "${judged.audience}", and only end-user tools are on by default`;
   }
