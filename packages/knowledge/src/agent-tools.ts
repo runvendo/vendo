@@ -2,6 +2,7 @@ import {
   log,
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_TOOL_TITLES,
+  isVendoError,
   VendoError,
   type Json,
   type KnowledgeAdapter,
@@ -204,7 +205,7 @@ export function toCitation(hit: KnowledgeHit): KnowledgeCitation {
 
 const errorOutcome = (error: unknown): ToolOutcome => ({
   status: "error",
-  error: error instanceof VendoError
+  error: isVendoError(error)
     ? { code: error.code, message: error.message }
     : { code: "internal", message: error instanceof Error ? error.message : "unknown knowledge error" },
 });
@@ -260,7 +261,7 @@ export function createKnowledgeTools(
   const warned = new Set<string>();
   const describeEngineFailure = (error: unknown): string => {
     const raw = error instanceof Error ? error.message : String(error);
-    const full = error instanceof VendoError ? `${error.code}: ${raw}` : raw;
+    const full = isVendoError(error) ? `${error.code}: ${raw}` : raw;
     if (!warned.has(full)) {
       // Deduped by cause: a permanently broken engine costs one log line per
       // distinct failure, not one per turn.

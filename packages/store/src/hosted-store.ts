@@ -23,6 +23,7 @@ import {
   type TurnCommit,
   type TurnLoad,
   type UsageTallyRow,
+  isVendoError,
   VendoError,
   type VendoRecord,
   vendoRecordSchema,
@@ -356,7 +357,7 @@ const isTimeout = (error: unknown): boolean =>
  * business refusal (conflict, blocked, not-found) is an answer, and gets one
  * attempt. */
 const isRetryable = (error: unknown): boolean =>
-  isTimeout(error) || (error instanceof VendoError && error.code === "unavailable");
+  isTimeout(error) || (isVendoError(error) && error.code === "unavailable");
 
 /** How long to hold before that one retry. The console asks in Retry-After
  * (seconds); capped, because a busy service must not outlast the caller's own
@@ -453,7 +454,7 @@ function storeWireClient(
       // A 501 (or an enveloped not-implemented) means this mount does not
       // serve this op: name it, and let it surface as a failure — never a
       // silent fallback, never a half-applied local mutation.
-      if (error instanceof VendoError && error.code === "not-implemented") {
+      if (isVendoError(error) && error.code === "not-implemented") {
         // "Unknown store operation" is the console's catch-all for an op it
         // has never heard of — which, for an op this client SHIPPED with,
         // means the console moved past the client (#1251; field 2026-08-13:
@@ -581,7 +582,7 @@ function storeWireClient(
     try {
       payload = await post(op, path, body);
     } catch (error) {
-      if (error instanceof VendoError && error.code === "not-found") return null;
+      if (isVendoError(error) && error.code === "not-found") return null;
       throw error;
     }
     const blob = field<Record<string, unknown> | null>(

@@ -1,5 +1,6 @@
 import {
   STORE_WIRE_PATHS,
+  isVendoError,
   VendoError,
   assertEngineCollection,
   assertIndexedField,
@@ -488,7 +489,7 @@ export function fakeConsole() {
       return await route(request, url, recorded, miss);
     } catch (error) {
       if (isUnserved(error)) throw error;
-      if (error instanceof VendoError) return envelope(error.code, error.message);
+      if (isVendoError(error)) return envelope(error.code, error.message);
       return envelope("unavailable", error instanceof Error ? error.message : String(error));
     }
   };

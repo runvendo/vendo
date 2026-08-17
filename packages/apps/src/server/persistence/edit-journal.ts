@@ -7,6 +7,7 @@
  */
 import {
   log,
+  isVendoError,
   VendoError,
   safeErrorMessage,
   type AppId,
@@ -365,7 +366,7 @@ const createEditAssembler = (
       // Only a MISSING row means nothing rendered. A store that could not answer
       // has said nothing about the screen — the save landed — so reporting it as
       // an unrenderable build blames the person's work for the store's outage.
-      const absent = error instanceof VendoError && error.code === "not-found";
+      const absent = isVendoError(error) && error.code === "not-found";
       return { kind: "failed", issues: [absent ? NOTHING_RENDERABLE : safeErrorMessage(error)] };
     }
   };

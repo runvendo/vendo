@@ -1,6 +1,6 @@
 import {
   KNOWLEDGE_WIRE_PATHS,
-  VendoError,
+  isVendoError,
   knowledgeFetchResultSchema,
   knowledgeSearchResultSchema,
   knowledgeWireStatusSchema,
@@ -105,7 +105,7 @@ export function knowledgeWireAdapter(options: WireClientOptions): KnowledgeAdapt
         // Only an ENVELOPED not-found means document absence; a bare 404
         // already degraded to "not-implemented" in the parser — the
         // hosted-store lesson: a missing mount must not read as absence.
-        if (error instanceof VendoError && error.code === "not-found") return null;
+        if (isVendoError(error) && error.code === "not-found") return null;
         throw error;
       }
     };

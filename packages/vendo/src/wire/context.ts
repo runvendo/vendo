@@ -1,4 +1,5 @@
 import {
+  isVendoError,
   VendoError,
   isReservedSubject,
   principalSchema,
@@ -26,7 +27,7 @@ export function createContextResolver(
     try {
       resolved = await deps.principal(req);
     } catch (error) {
-      if (error instanceof VendoError) throw error;
+      if (isVendoError(error)) throw error;
       // #872 — the resolver's own message is actionable host-facing copy (the
       // presets write it to be shown); the catch-all's generic "Internal Vendo
       // error" cost a debugging session per config mistake.

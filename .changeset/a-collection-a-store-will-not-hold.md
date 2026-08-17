@@ -1,8 +1,13 @@
 ---
 "@vendoai/core": patch
 "@vendoai/apps": patch
-"@vendoai/vendo": patch
+"@vendoai/guard": patch
 "@vendoai/harnesses": patch
+"@vendoai/knowledge": patch
+"@vendoai/mcp": patch
+"@vendoai/store": patch
+"@vendoai/ui": patch
+"@vendoai/vendo": patch
 ---
 
 A store that will not hold one collection no longer takes the whole deployment down with it.
@@ -15,4 +20,6 @@ The boot reconcile is no longer the deployment. A store that refuses the automat
 
 The unseen dot costs the dot, never the answer. `vendo_app_seen` was read on the path that LISTS a person's apps and written on every render, so a store refusing that collection took the whole page of apps with it. A refusal is absorbed there now, once per process, and the apps arrive without their arrival dots.
 
-And `instanceof VendoError` does not survive a realm boundary. A host bundle can carry two copies of `@vendoai/core` — the ESM `dist/` beside the CJS `dist/cjs/` — and the second copy's VendoErrors are a different class with the same shape, so every `instanceof` gate said no. That is why a blocked collection reached the wire's catch-all as an unknown fault and answered "Internal Vendo error" instead of its own 403. `isVendoError` is the check that survives it (name + code, the two things a caller reads), and the wire's two catch-alls, the screen agent's no-row demotion, the tool pack and the harness tool bridge all use it — `@vendoai/harnesses`'s own copy of the duck check, which is where the pattern was proven, is now that one function.
+And `instanceof VendoError` does not survive a realm boundary. A host bundle can carry two copies of `@vendoai/core` — the ESM `dist/` beside the CJS `dist/cjs/` — and the second copy's VendoErrors are a different class with the same shape, so every `instanceof` gate said no. That is why a blocked collection reached the wire's catch-all as an unknown fault and answered "Internal Vendo error" instead of its own 403.
+
+`isVendoError` is the check that survives it: `name` plus `code`, the two things any of these gates actually read. Every type-gate in the repo takes it now — 48 of them across the eight packages that had one — because the failure was never specific to the wire. The same class of error decided whether a lost compare-and-swap re-aimed or crashed the workspace façade, whether a swept approval rendered "expired" or an error card, whether a host's knowledge adapter got its code named in the operator's log, whether a permission route answered 403 or threw, and whether a build's "busy, try again shortly" read as "generation failed" — a verdict on an ask that was never the problem. `@vendoai/harnesses` proved the duck check first and kept a private copy of it; that copy is now this one function.

@@ -10,6 +10,7 @@
  */
 import {
   approvalDecisionSchema,
+  isVendoError,
   VendoError,
   type ApprovalDecision,
   type ApprovalId,
@@ -127,7 +128,7 @@ export function permissionsHandler(
       });
       return result === undefined ? undefined : Response.json(result.body);
     } catch (error) {
-      if (!(error instanceof VendoError)) throw error;
+      if (!isVendoError(error)) throw error;
       return Response.json(
         { error: { code: error.code, message: error.message } },
         { status: STATUS_BY_CODE[error.code] ?? 403 },

@@ -289,6 +289,19 @@ describe("buildFailureReason", () => {
     expect(buildFailureReason(aborted)).toEqual({ reason: "timed out", retryable: true });
   });
 
+  /** A host bundle can carry a second `@vendoai/core` copy, whose VendoErrors
+   *  are a different class — so `instanceof` said no and the store's own "not
+   *  now" came back as "generation failed", a verdict on an ask that was never
+   *  the problem. */
+  it("reads a cross-realm unavailable as busy, exactly like its own", () => {
+    const crossRealm = Object.assign(new Error("the store is busy"), {
+      name: "VendoError",
+      code: "unavailable",
+    });
+    expect(buildFailureReason(crossRealm)).toEqual({ reason: "busy, try again shortly", retryable: true });
+    expect(buildFailureReason(crossRealm)).toEqual(buildFailureReason(new VendoError("unavailable", "the store is busy")));
+  });
+
   it("maps a 402 (statusCode or cloud-required) to a non-retryable quota exhaustion", () => {
     expect(buildFailureReason(Object.assign(new Error("payment required"), { statusCode: 402 })))
       .toEqual({ reason: "quota exhausted", retryable: false });

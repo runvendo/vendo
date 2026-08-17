@@ -6,6 +6,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  isVendoError,
   VendoError,
   type AppId,
   type ApprovalId,
@@ -176,7 +177,7 @@ const subscribeApprovalDecisions = (
             // The app vanished between park and decision (delete raced the
             // card): there is nothing to grant — clear the orphaned records.
             for (const domain of entry.domains) await egressApprovals.remove(appId, domain);
-            if (!(error instanceof VendoError && error.code === "not-found")) throw error;
+            if (!(isVendoError(error) && error.code === "not-found")) throw error;
           }
         } else {
           // Denial leaves the declaration unapproved (fail closed) and clears the card.

@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import type { ExtractedTool } from "@vendoai/actions";
-import { VendoError } from "@vendoai/core";
+import { isVendoError, VendoError } from "@vendoai/core";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
@@ -1912,7 +1912,7 @@ async function warnOffContractAi(root: string, output: Output): Promise<void> {
 }
 
 const explainedPlanFailure = (error: unknown): boolean => {
-    if (error instanceof VendoError && error.code === "validation") {
+    if (isVendoError(error) && error.code === "validation") {
       output.error(`vendo init: ${error.message}`);
       return true;
     }

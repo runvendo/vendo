@@ -1,6 +1,7 @@
 import {
   PARKED_ACTION_COLLECTION,
   PARKED_CALL_OUTCOME_COLLECTION,
+  isVendoError,
   VendoError,
   type ApprovalId,
   type ApprovalRequest,
@@ -212,7 +213,7 @@ export function createByoApprovals({ guard, tools, ops }: ByoApprovalsConfig): B
       // with system provenance); this is the same outcome through two verbs.
       await guard.approvals.revoke(approvalId, ctx.principal);
     } catch (error) {
-      if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) return;
+      if (isVendoError(error) && (error.code === "conflict" || error.code === "not-found")) return;
       throw error;
     }
   };

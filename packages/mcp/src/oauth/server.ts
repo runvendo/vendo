@@ -7,7 +7,7 @@ import {
   type StoreOps,
   type VendoRecord,
 } from "@vendoai/core";
-import { engineOverAdapter, VendoError } from "@vendoai/core";
+import { engineOverAdapter, isVendoError } from "@vendoai/core";
 import type {
   VendoTheme,
 } from "@vendoai/apps/contract";
@@ -1155,7 +1155,7 @@ async function orClaimsUnsupported<T>(step: () => Promise<T>): Promise<T | "unsu
   try {
     return await step();
   } catch (error) {
-    if (error instanceof VendoError && error.code === "not-implemented") return "unsupported";
+    if (isVendoError(error) && error.code === "not-implemented") return "unsupported";
     throw error;
   }
 }

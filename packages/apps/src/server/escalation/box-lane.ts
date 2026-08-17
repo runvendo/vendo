@@ -7,7 +7,7 @@
  */
 import {
   log,
-  VendoError,
+  isVendoError,
   safeErrorMessage,
   type AppId,
   type Json,
@@ -451,7 +451,7 @@ const createBoxForwarder = (
         // Mutate in place so the error keeps its type, stack, and code.
         error.message = redactSecretText(error.message, secretValues);
       }
-      if (error instanceof VendoError && error.detail !== undefined) {
+      if (isVendoError(error) && error.detail !== undefined) {
         error.detail = redactSecretJson(error.detail, secretValues);
       }
       throw error;

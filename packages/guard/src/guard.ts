@@ -40,6 +40,7 @@ import {
   toolOutcomeSchema,
   type ToolRegistry,
   UNATTENDED_DESTRUCTIVE_REASON,
+  isVendoError,
   VendoError,
   type VendoRecord,
   withheldFromUnattended,
@@ -658,7 +659,7 @@ class GuardImplementation implements VendoGuard {
       try {
         await this.#decideApprovals(id, { approve: false }, ctx.principal, "system");
       } catch (error) {
-        if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) {
+        if (isVendoError(error) && (error.code === "conflict" || error.code === "not-found")) {
           continue;
         }
         throw error;
@@ -727,7 +728,7 @@ class GuardImplementation implements VendoGuard {
       } catch (error) {
         // Already decided (conflict) or gone (not-found): the queue already
         // holds the state the sweep wants — count nothing, never throw.
-        if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) {
+        if (isVendoError(error) && (error.code === "conflict" || error.code === "not-found")) {
           continue;
         }
         throw error;
@@ -1609,7 +1610,7 @@ class GuardImplementation implements VendoGuard {
         return {
           status: "error",
           error: {
-            code: error instanceof VendoError ? error.code : "error",
+            code: isVendoError(error) ? error.code : "error",
             message: errorMessage(error),
           },
         };

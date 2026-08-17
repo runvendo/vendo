@@ -5,7 +5,7 @@
  * refusal sentences and `buildFailureReason`, so nothing importing them moves.
  */
 import {
-  VendoError,
+  isVendoError,
 } from "@vendoai/core";
 import {
   effectiveBuildWatchdogMs,
@@ -128,7 +128,7 @@ export const buildFailureReason = (
     return { reason: "timed out", retryable: true };
   }
   const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
-  if (statusCode === 402 || (error instanceof VendoError && error.code === "cloud-required")) {
+  if (statusCode === 402 || (isVendoError(error) && error.code === "cloud-required")) {
     return { reason: "quota exhausted", retryable: false };
   }
   // What the PROVIDER (or the dev-model ladder) actually said, and nothing
@@ -139,7 +139,7 @@ export const buildFailureReason = (
   // became "quota exhausted". Such a throw's `message` is its own first issue
   // (runtime create, `conducted.issues[0]`), so it adds nothing but that same
   // leak and is read only when there are no issues to read.
-  const detail = error instanceof VendoError && Array.isArray(error.detail)
+  const detail = isVendoError(error) && Array.isArray(error.detail)
     ? error.detail.filter((item): item is string => typeof item === "string")
     : undefined;
   const providerErrors = (detail === undefined
@@ -156,7 +156,7 @@ export const buildFailureReason = (
   // Something the SERVER depends on said "not now" — a 429 from the cloud, a
   // dropped connection. "generation failed" reads as a verdict on the ask, so the
   // person rewrites a request that was never the problem; this one says wait.
-  if (error instanceof VendoError && error.code === "unavailable") {
+  if (isVendoError(error) && error.code === "unavailable") {
     return { reason: "busy, try again shortly", retryable: true };
   }
   return { reason: "generation failed", retryable: true };
