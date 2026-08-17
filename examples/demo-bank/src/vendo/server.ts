@@ -154,9 +154,10 @@ export const vendo = createVendo({
   }),
   mcp: mapleMcpConfig(),
   // Maple's customers can text the assistant: they link their phone from the
-  // anchor on /settings, and every text after that runs as them. Vendo Cloud
-  // carries the numbers, so this needs VENDO_API_KEY; the phone ↔ customer
-  // binding stays in Maple's own store.
+  // "Text with Maple" card on /settings (components/settings/text-channel-card.tsx
+  // — a QR and a prefilled first text), and every text after that runs as them.
+  // Vendo Cloud carries the numbers, so this needs VENDO_API_KEY; the phone ↔
+  // customer binding stays in Maple's own store.
   channels: { text: true },
   // BYO Composio when Maple brings its own key; otherwise the slot stays
   // UNSET so a VENDO_API_KEY deployment composes the Cloud tools connector

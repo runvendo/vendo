@@ -23,3 +23,17 @@ export const usePayees = () => useSWR<Payee[]>("/api/payees", f)
 export const useScheduled = () => useSWR<ScheduledPayment[]>("/api/payments/scheduled", f)
 export const useGoals = () => useSWR<Goal[]>("/api/goals", f)
 export const useNotifications = () => useSWR<Notification[]>("/api/notifications", f)
+
+/** The text-channel invite for the signed-in user — `url` is the prefilled
+ *  `sms:` link, or null when this deployment has no text channel.
+ *
+ *  Minted LAZILY and exactly once: the key is null until `enabled` (the modal
+ *  opening), and every revalidation trigger is off, because each mint replaces
+ *  the user's outstanding code — a refetch would strand the code they are
+ *  looking at (or already scanned). */
+export const useTextLink = (enabled: boolean) =>
+  useSWR<{ url: string | null }>(enabled ? "/api/vendo/text-link" : null, f, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
+  })

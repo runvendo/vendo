@@ -298,6 +298,9 @@ importers:
       next-auth:
         specifier: '>=5.0.0-beta.32'
         version: 5.0.0-beta.32(next@16.2.11(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@20.19.43)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
+      qrcode-generator:
+        specifier: ^2.0.4
+        version: 2.0.4
       react:
         specifier: 19.2.4
         version: 19.2.4
