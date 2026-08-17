@@ -67,8 +67,27 @@ import type { Db } from "./db-postgres.js";
     window ("20 messages an hour", "3 generations today") and a bucket can only
     answer the periods whoever chose it happened to pick. It is engine-owned
     like `vendo_quarantine`: no collection maps to it and no door lists it, so a
-    meter row is only ever counted. Same load-bearing bump. */
-export const SCHEMA_VERSION = 10;
+    meter row is only ever counted. Same load-bearing bump.
+
+    v11 makes the AUTOMATION the first-class record and takes the app's place in
+    the two tables that assumed one. `vendo_automations` is the new drawer: one
+    principal-owned record per row, `subject` (the owner) the erase-cascade
+    selector — a row carries a live webhook signing key, so a record that
+    outlived its owner's erasure would be a hole, not an untidiness — and
+    `revision` the optimistic-concurrency counter the row's atomic verbs turn.
+    No caller claims a fire through it: the tick arbitrates on the schedule
+    cursor instead (packages/automations/src/ingestion-surface.ts).
+    `vendo_runs` re-keys `app_id`
+    to `automation_id`, because a run belongs to the record that fired it and an
+    automation holds no app reference at all; `vendo_grants` re-keys `trigger_id`
+    to `automation_id` for the same reason — the trigger it named lived inside an
+    app document that no longer has triggers. Stored run rows are DROPPED rather
+    than migrated: an app-keyed run cannot be read by the new path and no
+    selector reaches it, so ADDITIVE_DDL empties the table ONCE, guarded on the
+    old column's existence. Same load-bearing bump as v5 — the DDL loop only runs
+    while version < SCHEMA_VERSION, so without it no existing database would ever
+    create the new table. */
+export const SCHEMA_VERSION = 11;
 
 /** 02-store §2 */
 export const DDL = [
@@ -139,11 +158,30 @@ export const DDL = [
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_audit_subject_at_idx ON vendo_audit (subject, at)",
   "CREATE INDEX IF NOT EXISTS vendo_audit_at_idx ON vendo_audit (at)",
+  // v11: the automation record, owned by a PRINCIPAL and naming no app. `data`
+  // is the whole record (core's `automationRecordSchema`); `subject` and `armed`
+  // are projections of it, the first because the erase cascade selects on it and
+  // a stored webhook secret must never outlive its owner. `revision` is the CAS
+  // counter the fire claim turns, so two ticks cannot both claim one record.
+  //
+  // `when_kind` is the indexable projection the two hot paths read: the tick asks
+  // for every schedule record deployment-wide, `emit` for one subject's
+  // host-event records, and without a column both are a scan of every automation
+  // on every tick. ONE column, where `vendo_apps` needed one per kind: a record
+  // has exactly one trigger, so the kind is a value rather than a set.
+  `CREATE TABLE IF NOT EXISTS vendo_automations (
+    id text PRIMARY KEY, subject text NOT NULL, armed boolean NOT NULL DEFAULT true,
+    data jsonb NOT NULL, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL,
+    revision bigint NOT NULL DEFAULT 1,
+    when_kind text GENERATED ALWAYS AS (data->'when'->>'kind') STORED
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_automations_subject_idx ON vendo_automations (subject)",
+  "CREATE INDEX IF NOT EXISTS vendo_automations_when_kind_idx ON vendo_automations (when_kind)",
+  "CREATE INDEX IF NOT EXISTS vendo_automations_subject_when_kind_idx ON vendo_automations (subject, when_kind)",
   `CREATE TABLE IF NOT EXISTS vendo_runs (
-    id text PRIMARY KEY, app_id text NOT NULL, trigger jsonb NOT NULL, status text NOT NULL,
+    id text PRIMARY KEY, automation_id text NOT NULL, trigger jsonb NOT NULL, status text NOT NULL,
     record jsonb NOT NULL, started_at timestamptz NOT NULL, finished_at timestamptz
   )`,
-  "CREATE INDEX IF NOT EXISTS vendo_runs_app_started_idx ON vendo_runs (app_id, started_at)",
   `CREATE TABLE IF NOT EXISTS vendo_secrets (
     name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL,
     updated_at timestamptz
@@ -310,37 +348,54 @@ const ADDITIVE_DDL = [
   // tables above.
   "CREATE INDEX IF NOT EXISTS vendo_knowledge_docs_created_idx ON vendo_knowledge_docs (created_at DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_knowledge_chunks_created_idx ON vendo_knowledge_chunks (created_at DESC, id DESC)",
-  // The automations tick and vendo.emit fetch apps by trigger kind (schedule / host-event).
-  // A STORED generated column projects the kind into an indexable value so those paths query
-  // only the matching apps instead of scanning every app for every subject.
-  // ADD COLUMN ... GENERATED ALWAYS AS ... STORED backfills existing rows on ALTER, so no
-  // separate data migration is needed (mirrors the vendo_state.id generated column above).
-  //
-  // ONE COLUMN PER KIND, because an app has a LIST of triggers: "which kind does this app
-  // fire on" is a set, and a ref is matched by equality. The single `trigger_kind` column
-  // this replaces could only hold one, so an app with a schedule AND a host-event trigger
-  // would have gone dark on one of them. Each column reads BOTH document shapes — the
-  // `triggers` list and the pre-list `trigger` object — because the generated column sees
-  // the doc exactly as stored, and read-time normalization happens above the store: a
-  // legacy row that nobody has re-armed yet must still be found by the tick.
-  ...(["schedule", "host-event", "external"] as const).flatMap((kind) => [
-    `ALTER TABLE vendo_apps ADD COLUMN IF NOT EXISTS trigger_kind_${kind.replace(/-/g, "_")} text `
-    + `GENERATED ALWAYS AS (CASE WHEN doc->'triggers' @> '[{"on":{"kind":"${kind}"}}]'::jsonb `
-    + `OR doc->'trigger'->'on'->>'kind' = '${kind}' THEN '1' END) STORED`,
-  ]),
-  // Indexed where a ref-filtered query actually exists: the tick asks for schedule apps
-  // deployment-wide, `emit` asks for one subject's host-event apps. External triggers arrive
-  // through `webhook`, which verifies a signature per row and still scans; it gets a column
-  // for symmetry (so the ref key exists the day it stops scanning) and no index it never uses.
-  // An automation grant is consented to per (app, TRIGGER): the engine refuses a grant whose
-  // trigger id is not the one firing, so this column is authority, not metadata. NULL on every
-  // grant that is not an automation's, and on automation grants minted before an app had a
-  // trigger list — the engine reads a missing value as the `main` those documents normalize to.
-  "ALTER TABLE vendo_grants ADD COLUMN IF NOT EXISTS trigger_id text",
+  // v11: an app document no longer HAS triggers, so every projection of one off
+  // `vendo_apps` goes — the single pre-list `trigger_kind` column and the later
+  // per-kind generated columns alike. Dropped by pattern rather than by name so
+  // the names leave the codebase entirely; dropping a column takes its indexes
+  // with it, so there is nothing else to clean up. Same law as the
+  // `vendo_sessions` drop below: the version gate would never re-run the DDL
+  // loop on a database that already carries them, so this runs every boot.
+  `DO $$
+   DECLARE projection text;
+   BEGIN
+     FOR projection IN
+       SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'vendo_apps' AND column_name LIKE 'trigger\\_kind%'
+     LOOP
+       EXECUTE format('ALTER TABLE vendo_apps DROP COLUMN %I', projection);
+     END LOOP;
+   END
+   $$`,
   "DROP INDEX IF EXISTS vendo_apps_subject_trigger_idx",
-  "ALTER TABLE vendo_apps DROP COLUMN IF EXISTS trigger_kind",
-  "CREATE INDEX IF NOT EXISTS vendo_apps_trigger_schedule_idx ON vendo_apps (trigger_kind_schedule)",
-  "CREATE INDEX IF NOT EXISTS vendo_apps_subject_trigger_host_event_idx ON vendo_apps (subject, trigger_kind_host_event)",
+  // A grant is consented to per AUTOMATION now, and the engine refuses a grant
+  // whose automation is not the one firing — so this column is authority, not
+  // metadata. It replaces `trigger_id`, which named a trigger inside an app
+  // document; there is no such thing to name any more, so the old column is
+  // dropped rather than read as a fallback. NULL on every grant that is not an
+  // automation's. Indexed with `subject`, which is how the engine asks: one
+  // owner's standing grants for one record, at fire time.
+  "ALTER TABLE vendo_grants ADD COLUMN IF NOT EXISTS automation_id text",
+  "ALTER TABLE vendo_grants DROP COLUMN IF EXISTS trigger_id",
+  "CREATE INDEX IF NOT EXISTS vendo_grants_subject_automation_idx ON vendo_grants (subject, automation_id)",
+  // v11: a run belongs to an AUTOMATION. Existing rows are keyed by an app, and
+  // nothing reads them that way any more — no read path, no erase selector — so
+  // they are destroyed rather than left as unreachable user data. Guarded on the
+  // old column, so it happens once and leaves a re-keyed table empty enough to
+  // take the NOT NULL below.
+  `DO $$
+   BEGIN
+     IF EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'vendo_runs' AND column_name = 'app_id'
+     ) THEN
+       DELETE FROM vendo_runs;
+       ALTER TABLE vendo_runs DROP COLUMN app_id;
+     END IF;
+   END
+   $$`,
+  "DROP INDEX IF EXISTS vendo_runs_app_started_idx",
+  "ALTER TABLE vendo_runs ADD COLUMN IF NOT EXISTS automation_id text NOT NULL",
+  "CREATE INDEX IF NOT EXISTS vendo_runs_automation_started_idx ON vendo_runs (automation_id, started_at)",
   // Thread listing derives a title without loading the full messages array (routing.ts uses a
   // messages-less listSelect once a row has a stored title). NULLable; populated on next write.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS title text",
@@ -378,6 +433,7 @@ const ADDITIVE_DDL = [
   // vendo_state's created_at and id are ALTERed in above, so these must stay after them.
   "CREATE INDEX IF NOT EXISTS vendo_threads_created_idx    ON vendo_threads    (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_apps_created_idx       ON vendo_apps       (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_automations_created_idx ON vendo_automations (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_runs_started_idx       ON vendo_runs       (date_trunc('milliseconds', started_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_approvals_created_idx  ON vendo_approvals  (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_grants_granted_idx     ON vendo_grants     (date_trunc('milliseconds', granted_at, 'UTC') DESC, id DESC)",

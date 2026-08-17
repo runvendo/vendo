@@ -243,6 +243,7 @@ export const createAppsSurface = (
         claimSlot,
         markUnbuilt,
         ...(config.screen === undefined ? {} : { screen: config.screen }),
+        ...(config.automations === undefined ? {} : { automations: config.automations }),
       });
     },
   };

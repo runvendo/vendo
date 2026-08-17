@@ -247,17 +247,16 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     },
     automations: {
       list: () => readJson("/automations"),
-      // The trigger id is a PATH segment after the verb: an automation is an
-      // app with a list of triggers, and each verb acts on exactly one of them.
-      enable: (id, triggerId) => json(`/automations/${idPath(id)}/enable/${idPath(triggerId)}`, "POST"),
-      disable: (id, triggerId) => json(`/automations/${idPath(id)}/disable/${idPath(triggerId)}`, "POST"),
-      dryRun: (id, triggerId) => json(`/automations/${idPath(id)}/dry-run/${idPath(triggerId)}`, "POST"),
+      enable: id => json(`/automations/${idPath(id)}/enable`, "POST"),
+      disable: id => json(`/automations/${idPath(id)}/disable`, "POST"),
+      dryRun: id => json(`/automations/${idPath(id)}/dry-run`, "POST"),
     },
     runs: {
       list: filter => {
         const params = new URLSearchParams();
-        if (filter?.appId !== undefined) params.set("appId", filter.appId);
-        if (filter?.triggerId !== undefined) params.set("triggerId", filter.triggerId);
+        if (filter?.automationId !== undefined) params.set("automationId", filter.automationId);
+        if (filter?.owner !== undefined) params.set("owner", filter.owner);
+        if (filter?.agent !== undefined) params.set("agent", filter.agent);
         if (filter?.status !== undefined) params.set("status", filter.status);
         if (filter?.cursor !== undefined) params.set("cursor", filter.cursor);
         const query = params.size > 0 ? `?${params.toString()}` : "";

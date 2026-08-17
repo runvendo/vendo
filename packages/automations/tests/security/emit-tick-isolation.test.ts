@@ -1,25 +1,23 @@
 import {
-  VENDO_APP_FORMAT,
-  triggerKindRefs,
-  type AppDocument,
   type ApprovalId,
   type AuditEvent,
+  type AutomationRecord,
+  type CreateAutomationInput,
   type Guard,
   type RunContext,
   type StoreAdapter,
   type ToolRegistry,
-  type Trigger,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
-import type { AppsRuntime } from "@vendoai/apps";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createAutomations } from "../../src/index.js";
+import { automationsInternals, createAutomations, type AutomationsEngine } from "../../src/index.js";
+import { SCHEDULE } from "../../src/types.js";
 
 // Red-team suite for cross-principal isolation of emit()/tick() (07-automations).
-// emit() and tick() start AWAY runs that act as the app owner. A run must fire ONLY
-// for the principal who owns the matching app: principal A emitting an event must
-// never trigger principal B's automation, and a schedule must fire each app under
-// its OWN owner. Otherwise one user could drive another user's authority.
+// emit() and tick() start AWAY runs that act as the record's owner. A run must fire
+// ONLY for the principal who owns the matching record: principal A emitting an
+// event must never trigger principal B's automation, and a schedule must fire each
+// record under its OWN owner. Otherwise one user could drive another's authority.
 
 const NOW = new Date("2026-07-12T12:00:00.000Z");
 
@@ -30,21 +28,7 @@ const ctx = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const app = (id: string, trigger: Omit<Trigger, "id">): AppDocument =>
-  ({ format: VENDO_APP_FORMAT, id, name: id, triggers: [{ id: "main", ...trigger }] });
-
-const seedApp = async (store: StoreAdapter, doc: AppDocument, subject: string, enabled = true): Promise<void> => {
-  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...triggerKindRefs(doc.triggers) } });
-  // An armed automation is TWO rows on disk: the app-level `enabled` above and
-  // one armed row per (app, trigger), which is what enable() writes.
-  for (const trigger of enabled ? doc.triggers ?? [] : []) {
-    await store.records("automations:armed").put({
-      id: `${doc.id}:${trigger.id}`,
-      data: { appId: doc.id, triggerId: trigger.id },
-      refs: { app_id: doc.id },
-    });
-  }
-};
+const oneStep: CreateAutomationInput["task"] = { kind: "steps", steps: [{ id: "s", tool: "host_do" }] };
 
 class GuardDouble implements Guard {
   readonly audit: AuditEvent[] = [];
@@ -60,86 +44,89 @@ const registry = (): ToolRegistry => ({
   async execute() { return { status: "ok", output: {} }; },
 });
 
-const appsDouble = (
-  call: AppsRuntime["call"] = async () => ({ status: "ok", output: {} }),
-): AppsRuntime => ({ call } as AppsRuntime);
+/** The ONE create op — there is no public create, so the tests use the same
+ *  internal door every authoring surface does. The owner is the ctx's principal,
+ *  which is what makes a per-owner record per-owner. */
+const create = async (
+  engine: AutomationsEngine,
+  subject: string,
+  input: Pick<CreateAutomationInput, "id" | "when"> & { armed?: boolean },
+): Promise<AutomationRecord> =>
+  await automationsInternals(engine).create(
+    { ...input, owner: ctx(subject).principal, authoredBy: "chat", task: oneStep },
+    ctx(subject),
+  );
 
-const hostEvent = (id: string, event: string) => app(id, {
-  on: { kind: "host-event", event },
-  run: { kind: "steps", steps: [{ id: "s", tool: "fn:main" }] },
-});
+/** Backdate the cursor `create` seeded, so the record is DUE on the next tick. */
+const backdateCursor = async (store: StoreAdapter, automationId: string): Promise<void> => {
+  await store.records(SCHEDULE).put({
+    id: automationId,
+    data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
+    refs: { automation_id: automationId },
+  });
+};
 
 describe("emit / tick cross-principal isolation", () => {
   let store: StoreAdapter;
   let guard: GuardDouble;
+  let engine: AutomationsEngine;
 
   beforeEach(() => {
     store = memoryStoreAdapter();
     guard = new GuardDouble();
+    engine = createAutomations({ tools: registry(), guard, store, now: () => NOW });
   });
 
-  it("emit fires only the emitting principal's matching automation, never another user's", async () => {
-    await seedApp(store, hostEvent("app_a", "go"), "user_a");
-    await seedApp(store, hostEvent("app_b", "go"), "user_b"); // same event, different owner
-    const engine = createAutomations({ apps: appsDouble(), tools: registry(), guard, store, now: () => NOW });
+  it("emit fires only the emitting principal's matching record, never another user's", async () => {
+    await create(engine, "user_a", { id: "atm_a", when: { event: "go" } });
+    // Same event, different owner.
+    await create(engine, "user_b", { id: "atm_b", when: { event: "go" } });
 
     const ids = await engine.emit("go", { n: 1 }, ctx("user_a").principal);
 
     expect(ids).toHaveLength(1);
-    // The single run belongs to user_a's app; user_b sees nothing.
-    const run = await engine.runs.get(ids[0]!, ctx("user_a"));
-    expect(run?.appId).toBe("app_a");
+    // The single run belongs to user_a's record; user_b sees nothing.
+    expect((await engine.runs.get(ids[0]!, ctx("user_a")))?.automationId).toBe("atm_a");
     expect(await engine.runs.get(ids[0]!, ctx("user_b"))).toBeNull();
     expect((await engine.runs.list({}, ctx("user_b"))).runs).toEqual([]);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
   });
 
-  it("emit ignores a disabled automation and a non-matching event for the same owner", async () => {
-    await seedApp(store, hostEvent("app_enabled", "go"), "user_a", true);
-    await seedApp(store, hostEvent("app_disabled", "go"), "user_a", false);
-    await seedApp(store, hostEvent("app_other_event", "different"), "user_a", true);
-    const engine = createAutomations({ apps: appsDouble(), tools: registry(), guard, store, now: () => NOW });
+  it("emit ignores a disarmed record and a non-matching event for the same owner", async () => {
+    await create(engine, "user_a", { id: "atm_armed", when: { event: "go" } });
+    await create(engine, "user_a", { id: "atm_disarmed", when: { event: "go" }, armed: false });
+    await create(engine, "user_a", { id: "atm_other_event", when: { event: "different" } });
 
     const ids = await engine.emit("go", {}, ctx("user_a").principal);
+
     expect(ids).toHaveLength(1);
-    expect((await engine.runs.get(ids[0]!, ctx("user_a")))?.appId).toBe("app_enabled");
+    expect((await engine.runs.get(ids[0]!, ctx("user_a")))?.automationId).toBe("atm_armed");
   });
 
   it("tick fires each due schedule under its own owner and scopes visibility per owner", async () => {
-    const scheduleTrigger = (): Omit<Trigger, "id"> => ({
-      on: { kind: "schedule", every: "15m" },
-      run: { kind: "steps", steps: [{ id: "s", tool: "fn:main", args: { event: "event" } }] },
-    });
-    await seedApp(store, app("app_sched_a", scheduleTrigger()), "user_a");
-    await seedApp(store, app("app_sched_b", scheduleTrigger()), "user_b");
-    for (const id of ["app_sched_a", "app_sched_b"]) {
-      await store.records("automations:schedule").put({ id: `${id}:main`, data: { lastFiredAt: "2026-07-12T08:00:00.000Z" } });
-    }
-    const engine = createAutomations({ apps: appsDouble(), tools: registry(), guard, store, now: () => NOW });
+    await create(engine, "user_a", { id: "atm_sched_a", when: { every: "15m" } });
+    await create(engine, "user_b", { id: "atm_sched_b", when: { every: "15m" } });
+    await backdateCursor(store, "atm_sched_a");
+    await backdateCursor(store, "atm_sched_b");
 
-    const fired = await engine.tick();
-    expect(fired).toHaveLength(2);
+    expect(await engine.tick()).toHaveLength(2);
 
-    // Each owner can only see the run for their own app.
-    const aRuns = (await engine.runs.list({}, ctx("user_a"))).runs;
-    const bRuns = (await engine.runs.list({}, ctx("user_b"))).runs;
-    expect(aRuns.map((r) => r.appId)).toEqual(["app_sched_a"]);
-    expect(bRuns.map((r) => r.appId)).toEqual(["app_sched_b"]);
+    // Each owner can only see the run for their own record.
+    expect((await engine.runs.list({}, ctx("user_a"))).runs.map((run) => run.automationId))
+      .toEqual(["atm_sched_a"]);
+    expect((await engine.runs.list({}, ctx("user_b"))).runs.map((run) => run.automationId))
+      .toEqual(["atm_sched_b"]);
   });
 
   it("tick collapses a missed window and never backfills a second run", async () => {
-    await seedApp(store, app("app_every", {
-      on: { kind: "schedule", every: "15m" },
-      run: { kind: "steps", steps: [{ id: "s", tool: "fn:main" }] },
-    }), "user_a");
+    await create(engine, "user_a", { id: "atm_every", when: { every: "15m" } });
     // Cursor is 4 hours behind — many windows were "missed".
-    await store.records("automations:schedule").put({ id: "app_every:main", data: { lastFiredAt: "2026-07-12T08:00:00.000Z" } });
-    const engine = createAutomations({ apps: appsDouble(), tools: registry(), guard, store, now: () => NOW });
+    await backdateCursor(store, "atm_every");
 
-    const first = await engine.tick();
-    expect(first).toHaveLength(1); // one run for all missed windows, not one-per-window
-    const second = await engine.tick();
-    expect(second).toEqual([]); // cursor advanced; no backfill on the next tick
+    // One run for all missed windows, not one per window.
+    expect(await engine.tick()).toHaveLength(1);
+    // Cursor advanced; no backfill on the next tick.
+    expect(await engine.tick()).toEqual([]);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
   });
 });

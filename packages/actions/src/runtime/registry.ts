@@ -410,6 +410,29 @@ function mcpConsentGrant(ctx: ActionsRunContext, call: ToolCall, tool: Extracted
   };
 }
 
+/** The text channel's grant projection, the twin of `mcpConsentGrant`.
+ *
+ *  The evidence is the LINK: a code minted inside the product while the person
+ *  was signed in as this subject, then sent back from their phone. That is the
+ *  same shape of proof an MCP consent record carries — an out-of-band act by the
+ *  subject, authorizing this surface to act as them — so it projects to the same
+ *  kind of grant. `source: "chat"` because a texted turn IS a chat; the venue
+ *  says so too. */
+function channelLinkGrant(ctx: ActionsRunContext, call: ToolCall, tool: ExtractedTool): PermissionGrant | undefined {
+  if (!ctx.channelLink) return undefined;
+  return {
+    id: `grt_channel_${ctx.sessionId}`,
+    subject: ctx.principal.subject,
+    tool: call.tool,
+    descriptorHash: descriptorHash(descriptorOf(tool)),
+    scope: { kind: "tool" },
+    duration: "session",
+    contextKey: ctx.sessionId,
+    source: "chat",
+    grantedAt: new Date().toISOString(),
+  };
+}
+
 /** The tRPC HTTP envelope (04 §1): queries GET `{mount}/{procedure}?input=...`,
  * mutations POST the input as the JSON body. Hosts whose tRPC root applies the
  * superjson transformer expect the `{ json: ... }` wrapping — which is exactly
@@ -652,6 +675,32 @@ async function hostHeaders(
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined MCP execution for this action",
       failed: "MCP authentication failed",
+    });
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  if ((ctx as ActionsRunContext).channelLink !== undefined) {
+    // A TEXTED turn. Its presence is "present" — there really is a person
+    // holding a phone, which is what lets the guard ask them to approve a
+    // money-moving call — but there is no browser request behind it, so the
+    // present path has nothing to forward and would call the host API
+    // unauthenticated. The host answers 401 and the agent apologises for a
+    // "sign-in problem" it cannot fix. Same situation as an MCP-OAuth user, so
+    // the same answer: authenticate through the ActAs seam.
+    if (!config.actAs) {
+      return {
+        error: error(
+          "not-implemented",
+          "text-channel host execution isn't set up for this product — the host must provide actAs (createVendo({ auth }) fills it)",
+        ),
+      };
+    }
+    const actionsCtx = ctx as ActionsRunContext;
+    const grant = actionsCtx.grant ?? channelLinkGrant(actionsCtx, call, tool);
+    if (!grant) return { error: error("validation", "text-channel host execution requires the link on the ctx") };
+    const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
+      declined: "the host declined text-channel execution for this action",
+      failed: "text-channel authentication failed",
     });
     if ("error" in authed) return { error: authed.error };
     return { headers: authed.headers, actAsMinted: true };

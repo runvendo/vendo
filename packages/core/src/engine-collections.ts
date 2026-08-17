@@ -3,7 +3,10 @@ import { VendoError } from "./errors.js";
 /** Named in every refusal so a caller can tell "this name was never an engine
     collection" from "this build's list is older than yours". Bump it whenever
     ENGINE_COLLECTIONS or ENGINE_COLLECTION_PATTERNS changes. */
-export const ENGINE_ALLOWLIST_VERSION = 3;
+// 5, not 3 (ours) or 4 (main's): both sides added a collection, so the merged
+// list is a list neither version ever named. A refusal quoting v3 or v4 would be
+// describing a build that never existed.
+export const ENGINE_ALLOWLIST_VERSION = 5;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -46,6 +49,7 @@ export const ENGINE_COLLECTION_REGISTRY = {
   // "any timestamp column".
   vendo_runs: { kind: "storage", indexed: ["started_at"] },
   vendo_apps: { kind: "storage" },
+  vendo_automations: { kind: "storage" }, // AUTOMATIONS, packages/automations/src/types.ts:20
   vendo_state: { kind: "storage" },
   vendo_effects: { kind: "storage" },
   vendo_app_grants: { kind: "storage" },
@@ -84,9 +88,7 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_app_seen: { kind: "storage" }, // APP_SEEN_COLLECTION, packages/apps/src/server/persistence/app-seen.ts:26
   vendo_workspace_commits: { kind: "storage" }, // WORKSPACE_COMMITS, packages/store/src/ops.ts:27
   "automations:captures": { kind: "storage" }, // CAPTURES, packages/automations/src/types.ts:29
-  "automations:armed": { kind: "storage" }, // ARMED, packages/automations/src/types.ts:43
   "automations:schedule": { kind: "storage" }, // SCHEDULE, packages/automations/src/types.ts:30
-  "automations:webhook": { kind: "storage" }, // WEBHOOK, packages/automations/src/types.ts:31
   "automations:deliveries": { kind: "storage" }, // DELIVERIES, packages/automations/src/types.ts:32
   "automations:sponsorships": { kind: "storage" }, // SPONSORSHIPS, packages/automations/src/sponsorship.ts:17
   "automations:sponsored": { kind: "storage" }, // SPONSORED, packages/automations/src/sponsorship.ts:29

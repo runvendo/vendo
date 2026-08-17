@@ -5,6 +5,10 @@
  * they need to attack the composed system — away contexts, forged artifacts,
  * tampered .vendoapp bytes, and the run-token proxy surface.
  *
+ * The unit is the RECORD: an automation is a row a principal owns, created
+ * through the ONE create operation every authoring door calls, never an app with
+ * a trigger list. Away authority binds to that record, not to an app.
+ *
  * Everything the automations harness exported is re-exported here unchanged so
  * suites can `import { ... } from "./harness.js"` exactly as they would there.
  */
@@ -16,14 +20,17 @@ import { unzipSync, zipSync, type Unzipped, type Zippable } from "fflate";
 import {
   type ActAs,
   type AgentRunner,
+  type AgentRunners,
   type AppDocument,
   type AppId,
+  type AutomationRecord,
+  type CreateAutomation,
+  DEFAULT_RUNNER_NAME,
   type Principal,
   type RiskResolver,
   type RunContext,
   serviceToolSlug,
   type ToolRegistry,
-  type Trigger,
   USE_SERVICE_TOOL,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -31,7 +38,7 @@ import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@ve
 import { createActions } from "@vendoai/actions";
 import { connectorDiscoveryRegistry } from "@vendoai/vendo";
 import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
-import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
+import { automationsInternals, createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
 
@@ -194,6 +201,13 @@ export interface Stack {
   bound: ToolRegistry;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  /** THE one create operation, reached the way every authoring door reaches it.
+   * It is not public API, so a suite that wants a record uses the same door
+   * `vendo_automate`, `agent.on` and the manifest fold-in use. */
+  create: CreateAutomation;
+  /** The boot-time runner map. `register` throws on a duplicate name; a
+   * fire-time miss is a FAILED run row, never a fallback brain. */
+  runners: AgentRunners;
   /** Writes an owned app row (subject + doc, enabled=false) the way the apps
    * lifecycle would, without needing a generation model. */
   putApp(subject: string, doc: AppDocument): Promise<void>;
@@ -203,6 +217,7 @@ export interface Stack {
 }
 
 export interface StackOptions {
+  /** Registered under DEFAULT_RUNNER_NAME — the composed agent's own slot. */
   runner?: AgentRunner;
   /** Build the runner from the stack's own parts — the live leg builds
    *  agent.asRunner() over the same guard + bound registry. Wins over runner. */
@@ -244,24 +259,39 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actions.add(connectorDiscoveryRegistry(serviceToolPorts()));
   }
   const bound = guard.bind(actions);
+  // `@vendoai/automations` has zero app concepts, so the engine is composed
+  // WITHOUT the apps runtime. The dependency runs the other way now: the apps
+  // layer holds the create seam, which closes over the engine composed here.
+  const automations = createAutomations({
+    tools: bound,
+    guard,
+    store,
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.serviceTools === true ? { resolveRisk: serviceToolRiskResolver } : {}),
+  });
+  const internals = automationsInternals(automations);
+  const runner = options.runnerFrom === undefined
+    ? options.runner
+    : options.runnerFrom({ guard, bound, store });
+  if (runner !== undefined) internals.runners.register(DEFAULT_RUNNER_NAME, runner);
   const apps = createApps({
     store,
     guard,
     tools: bound,
     catalog: [],
+    // The four-verb seam the apps block may ask of the engine, wired to the SAME
+    // engine composed above — the umbrella's own wiring. `resolve` drops an id
+    // nothing answers for: an app's `automations` list is names, not foreign keys.
+    automations: {
+      create: internals.create,
+      enable: automations.enable,
+      disable: automations.disable,
+      resolve: async (ids, ctx) => {
+        const found = await Promise.all(ids.map((id) => automations.get(id, ctx)));
+        return found.filter((record): record is AutomationRecord => record !== null);
+      },
+    },
     ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-  });
-  const runner = options.runnerFrom === undefined
-    ? options.runner
-    : options.runnerFrom({ guard, bound, store });
-  const automations = createAutomations({
-    apps,
-    tools: bound,
-    guard,
-    store,
-    ...(runner === undefined ? {} : { runner }),
-    ...(options.now === undefined ? {} : { now: options.now }),
-    ...(options.serviceTools === true ? { resolveRisk: serviceToolRiskResolver } : {}),
   });
 
   return {
@@ -270,6 +300,8 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     bound,
     apps,
     automations,
+    create: internals.create,
+    runners: internals.runners,
     async putApp(subject, doc) {
       await store.records("vendo_apps").put({
         id: doc.id,
@@ -286,22 +318,6 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       await store.close();
       await rm(dataDir, { recursive: true, force: true });
     },
-  };
-}
-
-export function automationDoc(input: {
-  id: AppId;
-  name?: string;
-  trigger?: Omit<Trigger, "id">;
-  triggers?: Trigger[];
-}): AppDocument {
-  const triggers = input.triggers
-    ?? (input.trigger === undefined ? [] : [{ id: "main", ...input.trigger }]);
-  return {
-    format: "vendo/app@1",
-    id: input.id,
-    name: input.name ?? input.id,
-    triggers,
   };
 }
 

@@ -205,7 +205,7 @@ describe("app data persistence", () => {
     expect(await store.records(`app:${created.id}:new_notes`).list()).toEqual({ records: [] });
   });
 
-  it("round-trips the illustrative spec document after correcting its tree and trigger shapes", async () => {
+  it("round-trips the illustrative spec document after correcting its tree shape", async () => {
     const store = memoryStore();
     const runtime = appsWith(store);
     const app: AppDocument = {
@@ -228,12 +228,9 @@ describe("app data persistence", () => {
         notes: { about: "comments pinned to invoices", refs: { invoice_id: "host.invoice" } },
       },
       machine: { snapshotRef: "e2b:v2:snap_x91", provisionedAt: "2026-07-19T00:00:00.000Z" },
-      // The format spec's {schedule: "mon 9:00"} is illustrative; core's {on, run} Trigger wins.
-      triggers: [{
-        id: "main",
-        on: { kind: "schedule", cron: "0 9 * * 1" },
-        run: { kind: "steps", steps: [{ id: "chase", tool: "fn:chase", args: { invoice: "event" } }] },
-      }],
+      // The format spec's {schedule: "mon 9:00"} is illustrative: what an app
+      // carries is a LIST OF IDS naming automations that are records of their own.
+      automations: ["atm_7f3kchase"],
       egress: ["api.stripe.com"],
       secrets: ["STRIPE_KEY"],
       seed: { component: "invoice-card", baseline: "sha256:ab12", instruction: "make it mine" },

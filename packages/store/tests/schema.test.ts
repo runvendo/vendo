@@ -14,10 +14,11 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_threads: ["id", "subject", "created_at", "updated_at"],
   vendo_thread_messages: ["thread_id", "id", "seq", "message", "revision", "created_at", "updated_at"],
   vendo_effects: ["key", "outcome", "at"],
-  vendo_grants: ["id", "subject", "tool", "descriptor_hash", "scope", "duration", "app_id", "source", "granted_at", "revoked_at", "expires_at"],
+  vendo_grants: ["id", "subject", "tool", "descriptor_hash", "scope", "duration", "app_id", "automation_id", "source", "granted_at", "revoked_at", "expires_at"],
   vendo_approvals: ["id", "subject", "request", "status", "decided_at", "created_at"],
   vendo_audit: ["id", "at", "kind", "subject", "venue", "presence", "app_id", "tool", "event"],
-  vendo_runs: ["id", "app_id", "trigger", "status", "record", "started_at", "finished_at"],
+  vendo_automations: ["id", "subject", "armed", "data", "when_kind", "created_at", "updated_at", "revision"],
+  vendo_runs: ["id", "automation_id", "trigger", "status", "record", "started_at", "finished_at"],
   vendo_secrets: ["name", "ciphertext", "created_at"],
   vendo_mcp_clients: ["id", "data", "refs", "created_at", "updated_at"],
   vendo_mcp_grants: ["id", "data", "refs", "created_at", "updated_at"],
@@ -49,17 +50,17 @@ for (const backend of backends()) {
     it("stores schema_version and a boot_id in vendo_meta", async () => {
       const rows = await made.sql("SELECT key, value FROM vendo_meta ORDER BY key");
       expect(rows).toEqual(expect.arrayContaining([
-        expect.objectContaining({ key: "schema_version", value: 10 }),
+        expect.objectContaining({ key: "schema_version", value: 11 }),
         expect.objectContaining({ key: "boot_id" }),
       ]));
       expect(rows.find((row) => row.key === "boot_id")?.value).toEqual(expect.any(String));
     });
 
-    it("lands a fresh database directly on schema version 10", async () => {
+    it("lands a fresh database directly on schema version 11", async () => {
       // A brand-new DB never runs the v2 backfill's DELETE against real data; it
       // just records the current version. (beforeAll already ran ensureSchema.)
       const version = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value;
-      expect(version).toBe(10);
+      expect(version).toBe(11);
     });
 
     it("keeps boot_id stable across a close and reopen", async () => {
@@ -79,7 +80,7 @@ for (const backend of backends()) {
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(10);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(11);
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = 'public' AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
@@ -103,7 +104,7 @@ for (const backend of backends()) {
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(10);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(11);
       const survivor = await made.sql(
         "SELECT id FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'",
       );
@@ -111,7 +112,7 @@ for (const backend of backends()) {
       await made.sql("DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'");
     });
 
-    it("creates all 23 contract tables with every contracted key column", async () => {
+    it("creates all 24 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
       );
@@ -133,8 +134,10 @@ for (const backend of backends()) {
       // v9 adds vendo_quarantine — where a retention sweep parks the rows it
       // lifts until a purge destroys them (01 §12 StoreOps.retention). v10 adds
       // vendo_usage — the meter a host's limits policy decides on, one row per
-      // metered action (01 §12 StoreOps.usage).
-      expect(actual.size).toBe(23);
+      // metered action (01 §12 StoreOps.usage). v11 adds vendo_automations —
+      // the automation record itself, first-class and principal-owned, which is
+      // also what re-keys vendo_runs off its app.
+      expect(actual.size).toBe(24);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);
@@ -154,6 +157,7 @@ for (const backend of backends()) {
         ["vendo_grants", "scope"],
         ["vendo_approvals", "request"],
         ["vendo_audit", "event"],
+        ["vendo_automations", "data"],
         ["vendo_runs", "trigger"],
         ["vendo_runs", "record"],
         ["vendo_mcp_clients", "data"],
@@ -218,6 +222,22 @@ for (const backend of backends()) {
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = 'public' AND table_name = 'vendo_sessions'`,
+      );
+      expect(rows).toEqual([]);
+    });
+
+    it("drops every leftover trigger-kind projection off vendo_apps", async () => {
+      // v11: an app document has no triggers, so the columns that projected
+      // their kinds are orphans on any database that booted before the v11 DDL.
+      // The drop matches them by pattern, which is what lets it clean off both
+      // the pre-list column recreated here and the per-kind generated ones.
+      await made.sql("ALTER TABLE vendo_apps ADD COLUMN trigger_kind text");
+
+      await made.store.ensureSchema();
+
+      const rows = await made.sql(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'vendo_apps' AND column_name LIKE 'trigger%'`,
       );
       expect(rows).toEqual([]);
     });

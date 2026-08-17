@@ -109,6 +109,12 @@ export class PGliteStore implements StoreAdapter {
         duration text,
         context_key text,
         app_id text,
+        -- WHICH automation the grant authorizes. A record holds no app
+        -- reference, so this is the whole away-authority pairing key
+        -- (presenceMatches, src/guard.ts) and a grant without it authorizes no
+        -- away call at all. This mirror dropped it silently while the old rule
+        -- defaulted both sides to "main"; now the default is gone.
+        automation_id text,
         source text,
         granted_at timestamptz,
         revoked_at timestamptz,
@@ -205,13 +211,14 @@ class ReservedSqlRecordStore implements RecordStore {
       const grant = record.data as PermissionGrant;
       await this.db.query(
         `INSERT INTO vendo_grants
-          (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, source,
-           granted_at, revoked_at, expires_at, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$13)
+          (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, automation_id,
+           source, granted_at, revoked_at, expires_at, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
          ON CONFLICT (id) DO UPDATE SET
           subject=EXCLUDED.subject, tool=EXCLUDED.tool, descriptor_hash=EXCLUDED.descriptor_hash,
           scope=EXCLUDED.scope, duration=EXCLUDED.duration, context_key=EXCLUDED.context_key,
-          app_id=EXCLUDED.app_id, source=EXCLUDED.source, granted_at=EXCLUDED.granted_at,
+          app_id=EXCLUDED.app_id, automation_id=EXCLUDED.automation_id,
+          source=EXCLUDED.source, granted_at=EXCLUDED.granted_at,
           revoked_at=EXCLUDED.revoked_at, expires_at=EXCLUDED.expires_at, updated_at=EXCLUDED.updated_at`,
         [
           grant.id,
@@ -222,6 +229,7 @@ class ReservedSqlRecordStore implements RecordStore {
           grant.duration,
           grant.contextKey ?? null,
           grant.appId ?? null,
+          grant.automationId ?? null,
           grant.source,
           grant.grantedAt,
           grant.revokedAt ?? null,
@@ -360,6 +368,7 @@ class ReservedSqlRecordStore implements RecordStore {
         duration: row.duration as PermissionGrant["duration"],
         ...(row.context_key == null ? {} : { contextKey: String(row.context_key) }),
         ...(row.app_id == null ? {} : { appId: String(row.app_id) }),
+        ...(row.automation_id == null ? {} : { automationId: String(row.automation_id) }),
         source: row.source as PermissionGrant["source"],
         grantedAt: iso(row.granted_at),
         ...(row.revoked_at == null ? {} : { revokedAt: iso(row.revoked_at) }),
@@ -372,6 +381,7 @@ class ReservedSqlRecordStore implements RecordStore {
           subject: data.subject,
           tool: data.tool,
           ...(data.appId === undefined ? {} : { app_id: data.appId }),
+          ...(data.automationId === undefined ? {} : { automation_id: data.automationId }),
         },
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),

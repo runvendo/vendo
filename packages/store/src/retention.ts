@@ -7,7 +7,7 @@ import {
   type ReservedCollection,
 } from "./routing.js";
 
-/** The two collections a sweep will not touch, because their rows are not the
+/** The collections a sweep will not touch, because their rows are not the
  *  whole of what they own and lifting the row alone would leave the rest
  *  stranded in the live database with nothing left pointing at it:
  *
@@ -15,16 +15,21 @@ import {
  *     conversation's harness state in `vendo_state` (`deleteThread` is a
  *     three-table cascade, ops.ts).
  *   · `vendo_apps` — an app row owns an entire drawer (its records, blobs,
- *     state, runs and grants), and `createRecordStore`'s app gate refuses
- *     writes the moment the row is gone, so a lifted app leaves rows nothing
- *     can read, write, or erase.
+ *     state and grants), and `createRecordStore`'s app gate refuses writes the
+ *     moment the row is gone, so a lifted app leaves rows nothing can read,
+ *     write, or erase.
+ *   · `vendo_automations` — a run row names only its automation, so the erase
+ *     cascade reaches runs by joining to this table (erase.ts). Lifting an
+ *     automation row breaks that join and its runs survive their owner's
+ *     erasure — the very thing a sweep must never become.
  *
  *  Refused rather than half-swept: a quarantine's whole promise is that what it
- *  lifted is still whole. Ageing either of these out is `lifecycle.erase`'s job
+ *  lifted is still whole. Ageing any of these out is `lifecycle.erase`'s job
  *  (or `transcripts.deleteThread`'s), and both say so. */
 const NOT_SWEEPABLE: Record<string, string> = {
   vendo_threads: "its transcript and harness state live in other tables — delete a thread through transcripts.deleteThread, or erase the subject",
-  vendo_apps: "an app row owns its whole drawer (records, blobs, state, runs, grants) — remove an app through lifecycle.erase({ appId })",
+  vendo_apps: "an app row owns its whole drawer (records, blobs, state, grants) — remove an app through lifecycle.erase({ appId })",
+  vendo_automations: "its runs are reachable only through it, so lifting it would leave them beyond the erase cascade — erase the subject instead",
 };
 
 /** A sweep must see EXACTLY what the collection's own door sees, and one table

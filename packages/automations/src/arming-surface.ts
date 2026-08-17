@@ -1,130 +1,106 @@
 /**
- * 07 §3 — the per-trigger ceremonies a person performs while they are PRESENT:
- * arming (which names the sponsor and captures the grants), disarming, and the
- * preview that says what the trigger would run without running it.
- *
- * Lifted out of `createAutomationsEngine` unchanged.
+ * 07 §3 — the ceremonies a person performs while they are PRESENT: arming (which
+ * names the sponsor and captures the grants), the kill switch, and the preview
+ * that says what a record would run without running it.
  */
 import { VendoError, type Json } from "@vendoai/core";
-import type { AppRowsAccess } from "./app-rows.js";
-import type { ArmedAccess } from "./armed.js";
+import type { AutomationRowsAccess } from "./automation-rows.js";
 import type { ConsentAccess } from "./consent.js";
 import type { EngineBase } from "./engine-context.js";
 import type { GrantsAccess } from "./grants.js";
 import type { AutomationsEngine, RunPlan } from "./index.js";
-import { appRef } from "./rows.js";
-import { currentIntentHash, markSponsored, triggerKey, writeSponsorship } from "./sponsorship.js";
+import { currentIntentHash, declaredSurface, markSponsored, writeSponsorship } from "./sponsorship.js";
 import { evaluate, stepArgs, validateForEachItems } from "./steps.js";
-import { SCHEDULE, WEBHOOK } from "./types.js";
-import { base64url } from "./webhook-signature.js";
 
 export type ArmingSurfaceDeps = {
   base: EngineBase;
-  appRows: AppRowsAccess;
-  armed: ArmedAccess;
+  automations: AutomationRowsAccess;
   grants: GrantsAccess;
   consent: ConsentAccess;
 };
 
 /** 07 §3's arm/disarm pair. */
 const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enable" | "disable"> => {
-  const { base: { engine, iso, firesLocally }, appRows, armed } = deps;
-  const { grants, consent } = deps;
-  const enable: AutomationsEngine["enable"] = async (appId, triggerId, ctx) => {
-    const found = await appRows.editableApp(appId, ctx);
-    const trigger = appRows.declaredTrigger(found.row.doc, triggerId);
-    // fn: steps run in the APP's own sandbox machine (packages/apps/src/fn.ts
-    // POSTs /fn/<name> to it), not in this process — so when some other
-    // authority fires this trigger, that authority is the one that has to wake
-    // and reach the machine, and in v1 it may not be able to. Arming is the
-    // only point that sees both the trigger kind and the steps.
-    if (trigger.on.kind !== "host-event" && !firesLocally(trigger.on.kind)
-      && trigger.run.kind === "steps"
-      && trigger.run.steps.some((step) => step.tool.startsWith("fn:"))) {
-      console.warn(
-        `[vendo] automation "${found.row.doc.name}" has fn: steps but its ${trigger.on.kind} trigger fires on Vendo Cloud, `
-        + "not in this process: fn: steps run in the app's own sandbox machine, which the Cloud runner may not be able to "
-        + "wake or reach in v1 (those steps then settle as an error outcome). Replace them with host tools, or pass an "
-        + "explicit local `store:` to createVendo to keep this composition firing its own schedule and external triggers.",
-      );
-    }
+  const { base: { engine, iso }, automations, grants, consent } = deps;
+  const enable: AutomationsEngine["enable"] = async (automationId, ctx) => {
+    const found = await automations.owned(automationId, ctx);
     const { missing, grantSetId } = await consent.captureGrants(
-      found.row.doc,
-      trigger,
+      found.row,
       await grants.descriptors(ctx),
       ctx,
     );
-    // §9.9 — enabling is what names the sponsor: the person arming an
-    // automation is the person it runs as, bound to the intent they just saw.
-    // A re-enable refreshes both, which is how an invalidated automation comes
-    // back. Per TRIGGER, because that is the thing they just looked at and
-    // allowed.
+    // §9.9 — enabling is what names the sponsor: the person arming an automation
+    // is the person it runs as, bound to the intent they just saw. A re-enable
+    // refreshes both, which is how an invalidated automation comes back.
     await writeSponsorship(engine, {
-      appId,
-      triggerId: trigger.id,
+      automationId,
       sponsor: ctx.principal.subject,
       ...(ctx.principal.display === undefined ? {} : { display: ctx.principal.display }),
-      intentHash: currentIntentHash(found.row.doc, trigger),
+      intentHash: currentIntentHash(found.row),
       status: "active",
     });
     // The era marker outlives an erase of the sponsor, so a vanished row can
     // never be misread as "never sponsored" (§9.9 fails closed).
-    await markSponsored(engine, appId, trigger.id, iso());
-    await armed.setArmed(appId, trigger.id, true);
-    found.row.enabled = true;
-    await appRows.writeApp(found.record, found.row);
-    const key = triggerKey(appId, trigger.id);
-    if (trigger.on.kind === "schedule") {
-      const cursor = await engine.get(SCHEDULE, key);
-      if (cursor === null) {
-        await engine.put(SCHEDULE, { id: key, data: { lastFiredAt: iso() }, refs: appRef(appId) });
-      }
-    }
-    if (trigger.on.kind === "external") {
-      const secret = await engine.get(WEBHOOK, key);
-      if (secret === null) {
-        const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
-        await engine.put(WEBHOOK, { id: key, data: { secret: base64url(bytes) }, refs: appRef(appId) });
-      }
-    }
+    await markSponsored(engine, automationId, iso());
+    // Re-arming clears the manual kill switch: the person turning it back on is
+    // the same authority that turned it off, and a record that stayed flagged
+    // would be skipped by every reconcile forever.
+    const { disarmedBy: _cleared, ...rest } = found.row;
+    // The set is stamped on the RECORD because that is where a consent surface
+    // holding only the automation id reads it from — chrome resolves the record
+    // through `list()` and settles the whole set with the id it finds there.
+    await automations.write({
+      ...rest,
+      armed: true,
+      ...(missing.length === 0 ? {} : { grantSetId }),
+      updatedAt: iso(),
+    });
     return { enabled: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };
   };
 
-  const disable: AutomationsEngine["disable"] = async (appId, triggerId, ctx) => {
-    const found = await appRows.editableApp(appId, ctx);
-    await armed.disarmTrigger(found.record, found.row, triggerId);
+  /** The kill switch. `disarmedBy: "user"` is what makes it SURVIVE a redeploy:
+   *  a code reconcile leaves a record carrying it entirely alone, so re-running
+   *  `agent.on` never quietly turns back on something a person switched off. */
+  const disable: AutomationsEngine["disable"] = async (automationId, ctx) => {
+    const found = await automations.owned(automationId, ctx);
+    await automations.write({ ...found.row, armed: false, disarmedBy: "user", updatedAt: iso() });
   };
 
   return { enable, disable };
 };
 
-/** Preview: what ONE trigger would run, nothing executes. */
+/** Preview: what a record would run, nothing executes. */
 const createDryRunDoor = (
-  deps: Pick<ArmingSurfaceDeps, "appRows" | "grants">,
+  deps: Pick<ArmingSurfaceDeps, "automations" | "grants">,
 ): Pick<AutomationsEngine, "dryRun"> => {
-  const { appRows, grants } = deps;
-  const dryRun: AutomationsEngine["dryRun"] = async (appId, triggerId, ctx, event) => {
-    const found = await appRows.editableApp(appId, ctx);
-    const trigger = appRows.declaredTrigger(found.row.doc, triggerId);
+  const { automations, grants } = deps;
+  const dryRun: AutomationsEngine["dryRun"] = async (automationId, ctx, event) => {
+    const found = await automations.owned(automationId, ctx);
     const byName = await grants.descriptors(ctx);
     const plan: RunPlan = { steps: [], grantsMissing: [] };
+    // The record's HOST tools, from the one place that rule lives: `declaredSurface`
+    // is every step tool EXCEPT the `fn:` refs, so a steps record naming a tool
+    // absent from it is naming the app's own server code. Listed — a preview says
+    // what would run — but never resolved against the host registry and never a
+    // missing grant. An unknown HOST tool IS in that set, so it still fails loudly.
+    const hostTools = new Set(declaredSurface(found.row));
     const add = async (stepId: string, tool: string): Promise<void> => {
-      if (tool.startsWith("fn:")) {
+      if (found.row.task.kind === "steps" && !hostTools.has(tool)) {
         plan.steps.push({ id: stepId, tool, wouldAsk: false });
         return;
       }
       const descriptor = byName.get(tool);
       if (descriptor === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
-      const granted = await grants.liveGrant(found.row.subject, appId, triggerId, descriptor);
+      const granted = await grants.liveGrant(found.row.owner.subject, automationId, descriptor);
       plan.steps.push({ id: stepId, tool, wouldAsk: descriptor.confirmEach === true || !granted });
       if (!descriptor.confirmEach && !granted && !plan.grantsMissing.includes(tool)) plan.grantsMissing.push(tool);
     };
-    if (trigger.run.kind === "agentic") {
+    if (found.row.task.kind === "goal") {
       for (const descriptor of byName.values()) await add(descriptor.name, descriptor.name);
       return plan;
     }
     const outputs: Record<string, Json> = {};
-    for (const step of trigger.run.steps) {
+    for (const step of found.row.task.steps) {
       if (event === undefined) {
         await add(step.id, step.tool);
         continue;

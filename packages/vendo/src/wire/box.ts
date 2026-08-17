@@ -1,5 +1,5 @@
 import type { BoxRequest, BoxResponse } from "@vendoai/apps";
-import { VendoError, type Json, type RecordQuery, type RunContext } from "@vendoai/core";
+import { VendoError, type AppId, type Json, type RecordQuery, type RunContext } from "@vendoai/core";
 import { json, prefixRoute, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
 /** execution-v2 skin contract (Lane C) — the two wire surfaces on the boundary
@@ -11,10 +11,11 @@ import { json, prefixRoute, route, string, type RouteEntry, type WireContext } f
     2. the CALLBACK surface (`/box/...`): plain HTTP, authenticated by the
        per-app bearer minted at provision (createAppTokens), curl-able from any
        language inside the box — durable rows over the app-scoped store, and
-       host tools through the SAME guard-bound registry chat uses (approvals
-       and audit intact; a pending approval relays as its pending outcome,
-       never bypasses). The box side of the contract. The box never holds host
-       credentials — this surface is its single authority path. */
+       host tools through the app's own action door (approvals and audit
+       intact; a pending approval relays as its pending outcome, never
+       bypasses, and the owner's tap resumes that exact call). The box side of
+       the contract. The box never holds host credentials — this surface is its
+       single authority path. */
 
 /** The fn-name half of core's 01 §8 grammar (mirrored in manifest.ts). */
 const FN_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
@@ -201,10 +202,14 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
   if (collection === undefined || !COLLECTION_PATTERN.test(collection)) {
     throw new VendoError("validation", "rows collection must match [A-Za-z0-9_-]{1,64}");
   }
-  if (deps.ops === undefined) {
+  // The appData family is optional on StoreOps, so "no ops surface" and "an ops
+  // surface that omits app rows" are the same answer here: this door is nothing
+  // but app rows.
+  const rows = deps.ops?.appData;
+  if (rows === undefined) {
     throw new VendoError(
       "not-implemented",
-      "A box row is owner-stamped app data, so this door needs the store's named-operation surface: "
+      "A box row is owner-stamped app data, so this door needs the store's appData family: "
       + "it needs a SQL-backed store (`store: postgres(url)`, or the local default) or a "
       + "StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
     );
@@ -214,7 +219,6 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
   // and the owner is the app token's subject — stamped here, on the box's
   // behalf, because the box is never told who the user is.
   const target = { appId, collection: `box:${collection}`, owner };
-  const rows = deps.ops.appData;
 
   // Lane E redaction guard — nothing a box writes or reads through this door
   // may carry a known secret value into a store row or a response body.
@@ -267,7 +271,7 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
   return undefined;
 }
 
-async function handleTools(wire: WireContext, ctx: RunContext): Promise<Response | undefined> {
+async function handleTools(wire: WireContext, appId: AppId, ctx: RunContext): Promise<Response | undefined> {
   const { request, segments, deps } = wire;
   if (request.method !== "POST" || segments.length !== 3) return undefined;
   const name = segments[2]!;
@@ -280,17 +284,18 @@ async function handleTools(wire: WireContext, ctx: RunContext): Promise<Response
   if (typeof args !== "object" || args === null || Array.isArray(args)) {
     throw new VendoError("validation", "tool body must be an object containing an args object");
   }
-  // The SAME guard-bound registry every venue executes through: policy,
-  // grants, approvals, breakers, and audit all see this call. An ask-policy
-  // tool comes back { status: "pending-approval" } — relayed, never bypassed.
-  const outcome = await deps.tools.execute({
-    id: `call_${globalThis.crypto.randomUUID()}`,
-    tool: name,
-    args: args as Json,
-  }, ctx);
+  // The app's ACTION door, not the registry underneath it. Same guard-bound
+  // registry every venue executes through — policy, grants, approvals, breakers
+  // and audit all see this call — plus the one thing a raw dispatch lacked: the
+  // door REMEMBERS a parked call, so the owner's tap re-dispatches this exact
+  // one (apps' approve→resume seam). Dispatching straight at the registry parked
+  // a card nothing could ever resume: tap, nothing happens, click, another card.
+  // An ask-policy tool still comes back { status: "pending-approval" } here —
+  // relayed, never bypassed.
+  const outcome = await deps.apps.call(appId, name, args as Json, ctx);
   // Lane E redaction guard — a tool outcome relayed into a response is a
   // host-side artifact; scrub known secret values before it crosses back.
-  return json(await deps.apps.box.redact(ctx.appId ?? "", outcome as Json));
+  return json(await deps.apps.box.redact(appId, outcome as Json));
 }
 
 export const boxRoutes: RouteEntry[] = [
@@ -323,7 +328,7 @@ export const boxRoutes: RouteEntry[] = [
       if (handled !== undefined) return handled;
     }
     if (area === "tools") {
-      const handled = await handleTools(wire, ctx);
+      const handled = await handleTools(wire, identity.appId, ctx);
       if (handled !== undefined) return handled;
     }
     throw new VendoError("not-found", "unknown box route");

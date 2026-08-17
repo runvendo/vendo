@@ -58,8 +58,8 @@ const TEXT_FILES = [
   'badge-npm.svg',
   'badge-license.svg',
   'badge-docs.svg',
-  'kicker-01-install.svg',
-  'kicker-02-see-it.svg',
+  'kicker-01-see-it.svg',
+  'kicker-02-install.svg',
   'kicker-03-how-it-works.svg',
   'kicker-04-packages.svg',
 ];

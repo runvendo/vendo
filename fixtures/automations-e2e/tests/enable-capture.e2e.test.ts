@@ -1,92 +1,105 @@
+/** Arming a RECORD is the consent moment, against the real store and the real
+ * guard. What a yes mints is authority over THAT automation and nothing else:
+ * the grant is keyed to the record's id, it names no app (a record has none),
+ * and a second record of the same owner declaring the same tools is asked in
+ * full.
+ */
+import type { CreateAutomationInput } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { automationDoc, createStack, ownerCtx, resetFixture } from "../src/harness.js";
+import { createAutomation, createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
 import { ADA, BOB, approve } from "../src/support.js";
 
 const surface = ["host_invoices_list", "host_invoices_send"];
 
-const trigger = {
-  on: { kind: "host-event" as const, event: "invoice.ready" },
-  run: {
-    kind: "steps" as const,
+/** A disarmed steps record, so `enable` is what arms it and captures for it. */
+const stepsRecord = (event: string): CreateAutomationInput => ({
+  owner: ADA,
+  when: { event },
+  task: {
+    kind: "steps",
     steps: [
-      { id: "list", tool: surface[0] ?? "host_invoices_list" },
-      { id: "send", tool: surface[1] ?? "host_invoices_send", args: { id: "event.id" } },
+      { id: "list", tool: "host_invoices_list" },
+      { id: "send", tool: "host_invoices_send", args: { id: "event.id" } },
     ],
   },
-};
+  authoredBy: "chat",
+  armed: false,
+});
+
+const create = (stack: Stack, input: CreateAutomationInput) =>
+  createAutomation(stack, input, ownerCtx(ADA.subject));
 
 describe("enable capture", () => {
   beforeEach(resetFixture);
 
-  it("arms immediately, captures pending approvals, mints app-bound grants, and never transfers them", async () => {
+  it("arms immediately, captures pending approvals, mints record-bound grants, and never transfers them", async () => {
     const stack = await createStack();
     try {
-      const firstId = "app_enable_first";
-      await stack.putApp(ADA.subject, automationDoc({ id: firstId, trigger }));
+      const ctx = ownerCtx(ADA.subject);
+      const first = await create(stack, stepsRecord("invoice.ready"));
 
-      const enabled = await stack.automations.enable(firstId, "main", ownerCtx(ADA.subject, firstId));
+      const enabled = await stack.automations.enable(first.id, ctx);
       expect(enabled.enabled).toBe(true);
       expect(enabled.missing.map((request) => request.call.tool).sort()).toEqual([...surface].sort());
+      // ONE set for the whole consent moment, so a single decision can settle
+      // every ask it raised — and it is STABLE while those asks are still open,
+      // which is what makes a re-arm join the same decision instead of opening a
+      // second one nobody was shown.
+      expect(enabled.grantSetId).toMatch(/^gset_/);
+      expect((await stack.automations.enable(first.id, ctx)).grantSetId).toBe(enabled.grantSetId);
 
-      const approvals = await stack.sql<{
-        id: string;
-        subject: string;
-        status: string;
-        app_id: string | null;
-        venue: string;
-        presence: string;
-      }>(
-        `SELECT id, subject, status,
-                request->'ctx'->>'appId' AS app_id,
-                request->'ctx'->>'venue' AS venue,
-                request->'ctx'->>'presence' AS presence
+      const approvals = await stack.sql<{ venue: string; presence: string; app_id: string | null }>(
+        `SELECT request->'ctx'->>'venue' AS venue,
+                request->'ctx'->>'presence' AS presence,
+                request->'ctx'->>'appId' AS app_id
            FROM vendo_approvals
           WHERE subject = $1 AND status = 'pending'
           ORDER BY id`,
         [ADA.subject],
       );
-      expect(approvals).toHaveLength(2);
-      expect(approvals.map((row) => row.app_id)).toEqual([firstId, firstId]);
       // Capture approvals are minted FOR the automation (venue "automation")
-      // while the user is present — the capture moment of 07 §3.
-      expect(approvals.map((row) => [row.venue, row.presence])).toEqual([
-        ["automation", "present"],
-        ["automation", "present"],
+      // while the user is present — the capture moment of 07 §3 — and they name
+      // no app at all, because a record has none to name.
+      expect(approvals).toEqual([
+        { venue: "automation", presence: "present", app_id: null },
+        { venue: "automation", presence: "present", app_id: null },
       ]);
-      expect((await stack.sql<{ enabled: boolean }>("SELECT enabled FROM vendo_apps WHERE id = $1", [firstId]))[0]?.enabled)
+      expect((await stack.sql<{ armed: boolean }>("SELECT armed FROM vendo_automations WHERE id = $1", [first.id]))[0]?.armed)
         .toBe(true);
 
       await approve(stack, enabled.missing);
       const grants = await stack.sql<{
         subject: string;
         tool: string;
+        automation_id: string | null;
         app_id: string | null;
         source: string;
         duration: string;
         scope: unknown;
       }>(
-        `SELECT subject, tool, app_id, source, duration, scope
+        `SELECT subject, tool, automation_id, app_id, source, duration, scope
            FROM vendo_grants
-          WHERE subject = $1 AND app_id = $2
+          WHERE subject = $1
           ORDER BY tool`,
-        [ADA.subject, firstId],
+        [ADA.subject],
       );
-      expect(grants.map(({ subject, tool, app_id, source, duration }) => ({ subject, tool, app_id, source, duration })))
-        .toEqual(surface.slice().sort().map((tool) => ({
-          subject: ADA.subject,
-          tool,
-          app_id: firstId,
-          source: "automation",
-          duration: "standing",
-        })));
-      expect(grants.map((row) => row.scope)).toEqual([{ kind: "tool" }, { kind: "tool" }]);
+      expect(grants).toEqual([...surface].sort().map((tool) => ({
+        subject: ADA.subject,
+        tool,
+        automation_id: first.id,
+        app_id: null,
+        source: "automation",
+        duration: "standing",
+        scope: { kind: "tool" },
+      })));
 
-      expect((await stack.automations.enable(firstId, "main", ownerCtx(ADA.subject, firstId))).missing).toEqual([]);
-
-      const secondId = "app_enable_second";
-      await stack.putApp(ADA.subject, automationDoc({ id: secondId, trigger }));
-      const second = await stack.automations.enable(secondId, "main", ownerCtx(ADA.subject, secondId));
-      expect(second.missing.map((request) => request.call.tool).sort()).toEqual([...surface].sort());
+      // Re-arming asks for nothing…
+      expect((await stack.automations.enable(first.id, ctx)).missing).toEqual([]);
+      // …and a SECOND record of the same owner, declaring the same tools, is
+      // asked in full: authority is the record's and is never handed over.
+      const second = await create(stack, stepsRecord("invoice.ready.again"));
+      expect((await stack.automations.enable(second.id, ctx)).missing.map((request) => request.call.tool).sort())
+        .toEqual([...surface].sort());
     } finally {
       await stack.close();
     }
@@ -95,49 +108,47 @@ describe("enable capture", () => {
   it("does not mint a grant for a denied enable request", async () => {
     const stack = await createStack();
     try {
-      const appId = "app_enable_denied";
+      const ctx = ownerCtx(ADA.subject);
       const deniedTool = "host_invoices_update";
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "invoice.change" },
-          run: { kind: "steps", steps: [{ id: "update", tool: deniedTool, args: { id: "event.id" } }] },
-        },
-      }));
-      const result = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
+      const record = await create(stack, {
+        owner: ADA,
+        when: { event: "invoice.change" },
+        task: { kind: "steps", steps: [{ id: "update", tool: deniedTool, args: { id: "event.id" } }] },
+        authoredBy: "chat",
+        armed: false,
+      });
+      const result = await stack.automations.enable(record.id, ctx);
       expect(result.missing).toHaveLength(1);
       const request = result.missing[0];
       if (!request) throw new Error("Enable omitted the denied tool approval");
       await stack.guard.approvals.decide(request.id, { approve: false }, ADA);
-      expect(await stack.sql("SELECT id FROM vendo_grants WHERE subject = $1 AND app_id = $2 AND tool = $3", [
-        ADA.subject,
-        appId,
-        deniedTool,
-      ])).toEqual([]);
+      expect(await stack.sql(
+        "SELECT id FROM vendo_grants WHERE subject = $1 AND automation_id = $2 AND tool = $3",
+        [ADA.subject, record.id, deniedTool],
+      )).toEqual([]);
     } finally {
       await stack.close();
     }
   });
 
-  it("lists trigger apps, reflects disable, and rejects non-owner enable without changing state", async () => {
+  it("lists the owner's records, reflects disable, and rejects a non-owner enable without changing state", async () => {
     const stack = await createStack();
     try {
-      const appId = "app_enable_owner";
-      await stack.putApp(ADA.subject, automationDoc({ id: appId, trigger }));
-      await expect(stack.automations.enable(appId, "main", ownerCtx(BOB.subject, appId))).rejects.toBeInstanceOf(Error);
-      expect((await stack.sql<{ enabled: boolean }>("SELECT enabled FROM vendo_apps WHERE id = $1", [appId]))[0]?.enabled)
-        .toBe(false);
+      const ctx = ownerCtx(ADA.subject);
+      const record = await create(stack, stepsRecord("invoice.owner"));
+      await expect(stack.automations.enable(record.id, ownerCtx(BOB.subject)))
+        .rejects.toMatchObject({ code: "not-found" });
+      expect((await stack.automations.get(record.id, ctx))?.armed).toBe(false);
 
-      await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
-      expect((await stack.automations.list(ownerCtx(ADA.subject)))
-        .map(({ app, triggers }) => ({ id: app.id, enabled: triggers[0]?.enabled })))
-        .toEqual([{ id: appId, enabled: true }]);
-      expect(await stack.automations.list(ownerCtx(BOB.subject))).toEqual([]);
+      await stack.automations.enable(record.id, ctx);
+      expect((await stack.automations.list({ owner: ADA.subject }, ctx)).map(({ id, armed }) => ({ id, armed })))
+        .toEqual([{ id: record.id, armed: true }]);
+      expect(await stack.automations.list({}, ownerCtx(BOB.subject))).toEqual([]);
 
-      await stack.automations.disable(appId, "main", ownerCtx(ADA.subject, appId));
-      expect((await stack.automations.list(ownerCtx(ADA.subject)))
-        .map(({ app, triggers }) => ({ id: app.id, enabled: triggers[0]?.enabled })))
-        .toEqual([{ id: appId, enabled: false }]);
+      // Disable is a PERSON's kill switch, and the row says so — a reconcile
+      // reads that stamp and never re-arms behind their back.
+      await stack.automations.disable(record.id, ctx);
+      expect(await stack.automations.get(record.id, ctx)).toMatchObject({ armed: false, disarmedBy: "user" });
     } finally {
       await stack.close();
     }
@@ -152,26 +163,27 @@ describe("enable capture", () => {
 describe("enable capture — connector service actions", () => {
   beforeEach(resetFixture);
 
-  const serviceTrigger = {
-    on: { kind: "host-event" as const, event: "digest.ready" },
-    run: {
-      kind: "steps" as const,
-      steps: [
-        { id: "list", tool: "host_invoices_list" },
-        // Step args are JSONata, so a declared slug is a string literal.
-        { id: "fetch", tool: "use_service_tool", args: { slug: "'GMAIL_FETCH_EMAILS'" } },
-        { id: "status", tool: "use_service_tool", args: { slug: "'SLACK_SET_STATUS'" } },
-      ],
-    },
-  };
-
   it("asks once per service action, in plain language, and grants each slug alone", async () => {
     const stack = await createStack({ serviceTools: true });
     try {
-      const appId = "app_service_capture";
-      await stack.putApp(ADA.subject, automationDoc({ id: appId, name: "Morning digest", trigger: serviceTrigger }));
+      const ctx = ownerCtx(ADA.subject);
+      const record = await create(stack, {
+        owner: ADA,
+        when: { event: "digest.ready" },
+        task: {
+          kind: "steps",
+          steps: [
+            { id: "list", tool: "host_invoices_list" },
+            // Step args are JSONata, so a declared slug is a string literal.
+            { id: "fetch", tool: "use_service_tool", args: { slug: "'GMAIL_FETCH_EMAILS'" } },
+            { id: "status", tool: "use_service_tool", args: { slug: "'SLACK_SET_STATUS'" } },
+          ],
+        },
+        authoredBy: "chat",
+        armed: false,
+      });
 
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(record.id, ctx);
       expect(enabled.enabled).toBe(true);
 
       // TWO connector asks, not one: the dispatcher's name is the same for both
@@ -181,18 +193,18 @@ describe("enable capture — connector service actions", () => {
         .toEqual(["GMAIL_FETCH_EMAILS", "SLACK_SET_STATUS"]);
       expect(enabled.missing).toHaveLength(3);
 
-      // The consent sentence is the existing one, with the service action in a
-      // person's words — never an identifier (design §3's voice law).
+      // The consent sentence names the service action in a person's words —
+      // never an identifier (design §3's voice law).
       const previews = serviceAsks.map((request) => request.inputPreview);
-      expect(previews).toContain(
-        'Allow "Morning digest" to fetch emails in Gmail while you\'re away (standing, this app only)',
-      );
-      expect(previews).toContain(
-        'Allow "Morning digest" to set status in Slack while you\'re away (standing, this app only)',
-      );
+      expect(previews.some((preview) => preview.includes("fetch emails in Gmail"))).toBe(true);
+      expect(previews.some((preview) => preview.includes("set status in Slack"))).toBe(true);
       for (const preview of previews) {
+        expect(preview).toContain("while you're away");
+        // The ACTION is said in words: neither the dispatcher's name nor the
+        // broker's slug may appear, because neither says what the call does.
         expect(preview).not.toContain("use_service_tool");
-        expect(preview).not.toContain("_");
+        expect(preview).not.toContain("GMAIL_");
+        expect(preview).not.toContain("SLACK_");
       }
 
       // The card states the grade the call will really run under — the broker's
@@ -207,8 +219,8 @@ describe("enable capture — connector service actions", () => {
 
       await approve(stack, enabled.missing);
       const grants = await stack.sql<{ tool: string; scope: { kind: string; slug?: string } }>(
-        "SELECT tool, scope FROM vendo_grants WHERE subject = $1 ORDER BY tool, scope->>'slug'",
-        [ADA.subject],
+        "SELECT tool, scope FROM vendo_grants WHERE automation_id = $1 ORDER BY tool, scope->>'slug'",
+        [record.id],
       );
       // The host tool keeps the tool-wide grant an automation has always minted;
       // each service action gets authority over ITSELF and nothing else.
@@ -220,103 +232,29 @@ describe("enable capture — connector service actions", () => {
 
       // Re-arming asks for nothing: a per-slug grant is recognised as covering
       // the action it names.
-      expect((await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId))).missing).toEqual([]);
+      expect((await stack.automations.enable(record.id, ctx)).missing).toEqual([]);
     } finally {
       await stack.close();
     }
   });
 
-  it("asks per SERVICE ACTION for an agentic run that declared its tools", async () => {
+  it("never asks for the dispatcher itself on a goal task, and never grants it tool-wide", async () => {
     const stack = await createStack({ serviceTools: true });
     try {
-      const appId = "app_service_agentic_declared";
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        name: "Morning digest",
-        trigger: {
-          on: { kind: "host-event", event: "agentic.declared" },
-          run: {
-            kind: "agentic",
-            prompt: "read the inbox, then set my status",
-            // A declaration mixes host tool names and service-action slugs: it is
-            // "what this run is expected to reach", not a step list.
-            tools: ["host_invoices_list", "GMAIL_FETCH_EMAILS", "SLACK_SET_STATUS"],
-          },
-        },
-      }));
+      const ctx = ownerCtx(ADA.subject);
+      const record = await create(stack, {
+        owner: ADA,
+        when: { event: "agentic.service" },
+        task: { kind: "goal", prompt: "read the inbox and summarise it" },
+        authoredBy: "chat",
+        armed: false,
+      });
 
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
-      expect(enabled.enabled).toBe(true);
-
-      // Exactly the declaration, and nothing else — the every-bound-descriptor
-      // fallback is gone the moment an automation says what it needs.
-      expect(enabled.missing.map((request) => request.call.tool).sort())
-        .toEqual(["host_invoices_list", "use_service_tool", "use_service_tool"]);
-      const serviceAsks = enabled.missing.filter((request) => request.call.tool === "use_service_tool");
-      expect(serviceAsks.map((request) => (request.call.args as { slug?: string }).slug).sort())
-        .toEqual(["GMAIL_FETCH_EMAILS", "SLACK_SET_STATUS"]);
-      // A slug in a declaration asks in exactly the words a step's slug asks in.
-      expect(serviceAsks.map((request) => request.inputPreview)).toContain(
-        'Allow "Morning digest" to fetch emails in Gmail while you\'re away (standing, this app only)',
-      );
-
-      await approve(stack, enabled.missing);
-      const grants = await stack.sql<{ tool: string; scope: { kind: string; slug?: string } }>(
-        "SELECT tool, scope FROM vendo_grants WHERE subject = $1 ORDER BY tool, scope->>'slug'",
-        [ADA.subject],
-      );
-      expect(grants).toEqual([
-        { tool: "host_invoices_list", scope: { kind: "tool" } },
-        { tool: "use_service_tool", scope: { kind: "service-tool", slug: "GMAIL_FETCH_EMAILS" } },
-        { tool: "use_service_tool", scope: { kind: "service-tool", slug: "SLACK_SET_STATUS" } },
-      ]);
-      expect((await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId))).missing).toEqual([]);
-    } finally {
-      await stack.close();
-    }
-  });
-
-  it("never grants the dispatcher tool-wide, even when a declaration names it", async () => {
-    const stack = await createStack({ serviceTools: true });
-    try {
-      const appId = "app_service_agentic_names_dispatcher";
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "agentic.dispatcher" },
-          // Naming the dispatcher buys nothing: a tool-wide grant on it would be
-          // consent to the broker's whole catalog behind one card.
-          run: { kind: "agentic", prompt: "do inbox things", tools: ["use_service_tool", "host_invoices_list"] },
-        },
-      }));
-
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
-
-      expect(enabled.missing.map((request) => request.call.tool)).toEqual(["host_invoices_list"]);
-      await approve(stack, enabled.missing);
-      expect(await stack.sql("SELECT id FROM vendo_grants WHERE tool = 'use_service_tool'")).toEqual([]);
-    } finally {
-      await stack.close();
-    }
-  });
-
-  it("never asks for the dispatcher itself on an agentic automation", async () => {
-    const stack = await createStack({ serviceTools: true });
-    try {
-      const appId = "app_service_agentic";
-      await stack.putApp(ADA.subject, automationDoc({
-        id: appId,
-        trigger: {
-          on: { kind: "host-event", event: "agentic.service" },
-          run: { kind: "agentic", prompt: "read the inbox and summarise it" },
-        },
-      }));
-
-      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(record.id, ctx);
       const tools = enabled.missing.map((request) => request.call.tool);
-      // An agentic run declares no slug, so there is nothing to consent to. A
-      // tool-wide grant on the dispatcher would be the whole catalog behind one
-      // card, so it is not offered at all — those calls park at fire time.
+      // A goal names no slug, so there is nothing to consent to. A tool-wide
+      // grant on the dispatcher would be the broker's whole catalog behind one
+      // card, so it is not offered at all — those calls fail loudly at fire time.
       expect(tools).not.toContain("use_service_tool");
       // The fallback is still WIDE — every bound tool the run could really
       // reach away is offered…
@@ -325,6 +263,8 @@ describe("enable capture — connector service actions", () => {
       // THE LAW refuses it away whatever this person answers: asking them to
       // allow it while they are away is a question with no true answer.
       expect(tools).not.toContain("host_invoices_send");
+
+      await approve(stack, enabled.missing);
       expect(await stack.sql("SELECT id FROM vendo_grants WHERE tool = 'use_service_tool'")).toEqual([]);
     } finally {
       await stack.close();

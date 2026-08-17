@@ -1,63 +1,26 @@
 /**
- * What a trigger DECLARES, read without touching the store: schedule validation,
- * the JSONata a step's args and conditions are written in, the consent identity
- * of a tool call, and how a tool outcome reads on a run row.
+ * What a record DECLARES, read without touching the store: the JSONata a step's
+ * args and conditions are written in, the consent identity of a tool call, and
+ * how a tool outcome reads on a run row.
  *
- * Lifted out of engine.ts unchanged.
+ * Schedule validation is NOT here — it happens at DECLARATION, in core's
+ * `toTriggerSource`, so all four authoring doors reject a cron nobody can run
+ * before the process serves anything rather than at 2am.
  */
 import {
   serviceToolSlug,
-  triggerSchema,
   USE_SERVICE_TOOL,
-  VendoError,
   type GrantScope,
   type Json,
   type Step,
   type ToolOutcome,
-  type Trigger,
   type TriggerSource,
 } from "@vendoai/core";
-import { Cron } from "croner";
 import jsonata from "jsonata";
-import { message } from "./rows.js";
 import { FOREACH_MAX_ITEMS, type ConsentItem } from "./types.js";
 
 export const triggerEvent = (source: TriggerSource): string | undefined =>
   source.kind === "host-event" || source.kind === "external" ? source.event : undefined;
-
-export const durationMs = (value: string): number | null => {
-  const match = /^(\d+)([smhd])$/.exec(value);
-  if (match === null) return null;
-  const count = Number(match[1]);
-  if (!Number.isSafeInteger(count) || count <= 0) return null;
-  const units = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
-  return count * units[match[2] as keyof typeof units];
-};
-
-export const validateTrigger = (value: unknown): Trigger => {
-  const parsed = triggerSchema.safeParse(value);
-  if (!parsed.success) throw new VendoError("validation", parsed.error.issues[0]?.message ?? "invalid trigger");
-  const trigger = parsed.data;
-  if (trigger.on.kind === "schedule") {
-    if (trigger.on.every !== undefined && durationMs(trigger.on.every) === null) {
-      throw new VendoError("validation", "schedule every must match <n><s|m|h|d> with n > 0");
-    }
-    if (trigger.on.cron !== undefined) {
-      if (trigger.on.cron.trim().split(/\s+/).length !== 5) {
-        throw new VendoError("validation", "schedule cron must contain exactly 5 fields");
-      }
-      try {
-        new Cron(trigger.on.cron, { timezone: "UTC", paused: true });
-      } catch (error) {
-        throw new VendoError("validation", `invalid schedule cron: ${message(error)}`);
-      }
-    }
-    if (trigger.on.at !== undefined && !Number.isFinite(Date.parse(trigger.on.at))) {
-      throw new VendoError("validation", "schedule at must be an ISO date-time");
-    }
-  }
-  return trigger;
-};
 
 export const evaluate = async (expression: string, input: Record<string, Json>): Promise<Json> =>
   await jsonata(expression).evaluate(input) as Json;

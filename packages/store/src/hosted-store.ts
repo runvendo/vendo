@@ -14,6 +14,7 @@ import {
   STORE_WIRE_PATHS,
   STORE_WIRE_TURN_OPS,
   type StoreOps,
+  type StoreOpsWithAppData,
   storeWireErrorSchema,
   type StoreWireStatus,
   storeWireStatusSchema,
@@ -386,7 +387,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
  * client that spelled its own route was free to drift from the contract third
  * parties build against (it did, for as long as erase was hardcoded here).
  */
-export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
+export function hostedStoreOps(options: HostedStoreOptions): StoreOpsWithAppData {
   return storeWireClient(options, raiseWireError);
 }
 
@@ -401,7 +402,7 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
 function storeWireClient(
   options: HostedStoreOptions,
   raise: (response: Response) => Promise<never>,
-): StoreOps {
+): StoreOpsWithAppData {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const send = consoleSender({
     base,
@@ -603,7 +604,7 @@ function storeWireClient(
   };
   const servesTurn = async (): Promise<boolean> => (await status()).ops >= STORE_WIRE_TURN_OPS;
 
-  const ops: StoreOps = {
+  const ops: StoreOpsWithAppData = {
     // Vendo's OWN engine drawers, over collection-addressed bodies, with the
     // allowlist gated service-side on every verb.
     engine: {

@@ -7,7 +7,7 @@
  *
  *   1. LAYERING — the only allowed @vendoai/* edges are:
  *        core → (nothing)
- *        apps → core            automations → apps, core
+ *        apps → core            automations → core
  *        store, agent, actions, guard, ui → core
  *        vendo (umbrella) → everything
  *      A packages/* block not in the map fails loudly: adding a block means
@@ -74,7 +74,12 @@ const LAYERS = {
   // the product knowledge base (knowledge design v2): engines + ingestion behind
   // core's KnowledgeAdapter contract; core-only, like the other engine blocks
   "@vendoai/knowledge": ["@vendoai/core"],
-  "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
+  // The layering flip (automations centralization): an automation is a
+  // first-class RECORD with no app reference of any kind, so this package has
+  // ZERO app concepts and this line is the machine-checkable proof of it. A
+  // task reaches an app only by naming one of its functions as an ordinary
+  // granted tool, which resolves through the tool registry like any other.
+  "@vendoai/automations": ["@vendoai/core"],
   // the harness runtime (build contract 2026-07-30 §2): the second multi-block
   // package after the umbrella. It runs any Harness — building the Turn, mapping
   // the guard's outcomes, mirroring onto today's wire — and since the engine

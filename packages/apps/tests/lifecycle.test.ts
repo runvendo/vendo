@@ -13,7 +13,6 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { createAppHistory } from "../src/server/persistence/history.js";
-import { enabledAfterDocumentEdit } from "../src/server/persistence/persistence.js";
 import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -80,31 +79,6 @@ const setup = (withModel = true) => {
 };
 
 describe("apps lifecycle", () => {
-  it("disarms changed triggers on edit while preserving unchanged trigger edits", async () => {
-    const original: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_trigger_arm",
-      name: "Trigger arm",
-      triggers: [{
-        id: "main",
-        on: { kind: "host-event", event: "invoice.created" },
-        run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
-      }],
-    };
-    const renamed = { ...original, name: "Renamed" };
-    const changed: AppDocument = {
-      ...renamed,
-      triggers: [{
-        id: "main",
-        on: { kind: "host-event", event: "invoice.updated" },
-        run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
-      }],
-    };
-
-    expect(enabledAfterDocumentEdit(original, renamed, true)).toBe(true);
-    expect(enabledAfterDocumentEdit(original, changed, true)).toBe(false);
-  });
-
   it("round-trips create, get, and newest-first list without leaking across owners", async () => {
     const { runtime } = setup();
     const ada = context("user_ada");

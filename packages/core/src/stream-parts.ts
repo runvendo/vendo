@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AutomationId } from "./automation.js";
 import {
   appIdSchema,
   approvalIdSchema,
@@ -15,7 +16,7 @@ import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, typ
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
 import type { ToolCall } from "./tools.js";
 import { uiPayloadSchema, type UIPayload } from "./genui/tree-node.js";
-import { triggerSchema, type Trigger } from "./triggers.js";
+import { triggerSourceSchema, type TriggerSource } from "./triggers.js";
 
 /** 01-core §16 */
 export interface VendoViewPart {
@@ -255,14 +256,22 @@ export const vendoLimitPartSchema = z.object({
  *  panel. Consumers that don't recognize it ignore it (§15 forward-compat). */
 export interface VendoAutomationPart {
   type: "data-vendo-automation";
-  appId: AppId;
-  /** The automation document's display name. */
+  /** The RECORD this card is about — an automation carries no app reference. */
+  automationId: AutomationId;
+  /** The record's display name: one line saying what was armed. */
   name: string;
-  /** Whether the automations engine reports it enabled. */
+  /** Whether the automations engine reports it armed. */
   enabled: boolean;
-  /** The document's trigger (schedule/event → run), for the flow nodes. */
-  trigger?: Trigger;
-  /** The document's one-line description, when it has one. */
+  /** The record's normalized trigger, for the rule sentence's WHEN half. */
+  when?: TriggerSource;
+  /** The rule sentence's ACTION half, already humanized by the producer — the
+   *  card has no task to read and must not invent one. */
+  action?: string;
+  /** The automation's terms in its author's own sentences. DISPLAY ONLY:
+   *  nothing here gates a run, so a reader can trust the words came from
+   *  whoever authored it rather than from a renderer. */
+  rules?: string[];
+  /** The record's one-line description, when it has one. */
   description?: string;
   /** Standing-grant asks still undecided: the card reads
    *  "Enabled · waiting on N permissions" until the set is granted. */
@@ -271,12 +280,15 @@ export interface VendoAutomationPart {
 
 export const vendoAutomationPartSchema = z.object({
   type: z.literal("data-vendo-automation"),
-  appId: appIdSchema,
+  automationId: z.string().min(1),
   name: z.string().min(1),
   enabled: z.boolean(),
-  // The trigger carries the automation's terms as words (`Trigger.rules`) — the
-  // card lists them, and no second field on this part can disagree with it.
-  trigger: triggerSchema.optional(),
+  when: triggerSourceSchema.optional(),
+  action: z.string().optional(),
+  // Deliberately NOT `.min(1)` per entry: one empty sentence from a sloppy
+  // author must cost that sentence, never the automation it describes. The
+  // renderer decides what is renderable (trim, drop, clamp, cap).
+  rules: z.array(z.string()).optional(),
   description: z.string().optional(),
   pendingGrants: z.number().int().nonnegative().optional(),
 }).passthrough() satisfies z.ZodType<VendoAutomationPart>;
@@ -294,8 +306,7 @@ export interface VendoGrantSetPart {
   /** The set every permission below belongs to — one decision settles all
    *  (mirrors the automations engine's enable() grantSetId). */
   grantSetId: string;
-  appId: AppId;
-  /** The automation document's display name. */
+  /** The automation's display name. */
   name: string;
   /** Every requested permission: its pending guard approval, the tool, the
    *  descriptor's one-line description, and its risk. */
@@ -311,7 +322,6 @@ export const vendoGrantSetPartSchema = z.object({
   type: z.literal("data-vendo-grant-set"),
   toolCallId: z.string(),
   grantSetId: z.string().min(1),
-  appId: appIdSchema,
   name: z.string().min(1),
   permissions: z.array(z.object({
     approvalId: approvalIdSchema,

@@ -11,28 +11,30 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AppDocument, AppId } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
 import { createApps } from "@vendoai/apps";
-import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
+import { automationsInternals, createAutomations } from "@vendoai/automations";
 import {
-  automationDoc,
+  appsAutomationsSeam,
   fixtureActAs,
   fixtureBaseUrl,
   fixtureFetch,
   hostTools,
   ownerCtx,
   resetFixture,
+  type Stack,
 } from "../src/harness.js";
 import { ADA, approve, fixtureInvoices, waitForRun } from "../src/support.js";
 
 const MEMO = "ledger-reload";
 
 /** A whole stack over a CALLER-OWNED data dir, so the same database can be
- *  closed and reopened under new instances. Only what this suite reads. */
-async function compose(dataDir: string) {
+ *  closed and reopened under new instances. The umbrella's own wiring: the
+ *  automations engine is composed with no app concepts at all, and the create
+ *  operation it owns is what the apps runtime is handed. */
+async function compose(dataDir: string): Promise<Stack> {
   const store = createStore({ dataDir });
   await store.ensureSchema();
   const guard = createGuard({ store });
@@ -43,57 +45,64 @@ async function compose(dataDir: string) {
     fetch: fixtureFetch,
   });
   const bound = guard.bind(actions);
-  const apps = createApps({ store, guard, tools: bound, catalog: [] });
-  const automations: AutomationsEngine = createAutomations({ apps, tools: bound, guard, store });
+  const automations = createAutomations({ tools: bound, guard, store });
+  const internals = automationsInternals(automations);
   return {
     store,
     guard,
     bound,
-    apps,
+    apps: createApps({
+      store,
+      guard,
+      tools: bound,
+      catalog: [],
+      automations: appsAutomationsSeam(automations, internals.create),
+    }),
     automations,
-    async putApp(subject: string, doc: AppDocument) {
+    create: internals.create,
+    runners: internals.runners,
+    reconcile: internals.reconcile,
+    async putApp(subject, doc) {
       await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled: false, doc }, refs: { subject } });
     },
     async sql<Row = Record<string, unknown>>(query: string, params?: unknown[]): Promise<Row[]> {
       const raw = store.raw() as { query(q: string, p?: unknown[]): Promise<{ rows: unknown[] }> };
       return (await raw.query(query, params)).rows as Row[];
     },
+    // The dataDir outlives this stack on purpose — the suite owns it.
     async close() {
       await store.close();
     },
   };
 }
 
-const twoStepApp = (appId: AppId): AppDocument => automationDoc({
-  id: appId,
-  name: "Reload sweep",
-  trigger: {
-    on: { kind: "host-event", event: "invoice.reload" },
-    run: {
-      kind: "steps",
-      steps: [
-        // Lands before the miss — the effect a re-run must NOT repeat.
-        { id: "log", tool: "host_invoices_create", args: { customerId: "'cus_ada'", amountCents: "101", memo: `'${MEMO}'` } },
-        // The miss: nobody has allowed this one yet.
-        { id: "sweep", tool: "host_invoices_update", args: { id: "event.id", memo: `'${MEMO}-swept'` } },
-      ],
-    },
-  },
-});
-
 describe("re-run effect ledger — across a store reload", () => {
   beforeEach(resetFixture);
 
   it("replays the failed run's receipt under a fresh guard that never saw the call", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-rerun-ledger-"));
-    const appId = "app_rerun_reload";
-    const ctx = ownerCtx(ADA.subject, appId);
+    const ctx = ownerCtx(ADA.subject);
     try {
       let failedRunId: string;
+      let automationId: string;
       const first = await compose(dataDir);
       try {
-        await first.putApp(ADA.subject, twoStepApp(appId));
-        const enabled = await first.automations.enable(appId, "main", ctx);
+        const created = await first.create({
+          owner: ADA,
+          when: { event: "invoice.reload" },
+          task: {
+            kind: "steps",
+            steps: [
+              // Lands before the miss — the effect a re-run must NOT repeat.
+              { id: "log", tool: "host_invoices_create", args: { customerId: "'cus_ada'", amountCents: "101", memo: `'${MEMO}'` } },
+              // The miss: nobody has allowed this one yet.
+              { id: "sweep", tool: "host_invoices_update", args: { id: "event.id", memo: `'${MEMO}-swept'` } },
+            ],
+          },
+          authoredBy: "chat",
+        }, ctx);
+        automationId = created.id;
+        const enabled = await first.automations.enable(created.id, ctx);
         // Only the first step is allowed, so the run fails loud at the second.
         await approve(first, enabled.missing.filter((request) => request.call.tool === "host_invoices_create"));
 
@@ -121,9 +130,13 @@ describe("re-run effect ledger — across a store reload", () => {
       // carried in memory: no ordinal map, no in-flight table, no run state.
       const second = await compose(dataDir);
       try {
+        // The record survived the reload too — a re-run is refused unless it is
+        // still armed, and nothing in this suite disarmed it.
+        expect((await second.automations.get(automationId, ctx))?.armed).toBe(true);
+
         const rerunId = await second.automations.runs.rerun(failedRunId, ctx);
         expect(rerunId).not.toBe(failedRunId);
-        expect((await waitForRun(second, rerunId, ctx, "ok")).status).toBe("ok");
+        expect((await waitForRun(second, rerunId, ctx, "ok")).automationId).toBe(automationId);
 
         // The step that was MISSED did its work…
         expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.memo).toBe(`${MEMO}-swept`);

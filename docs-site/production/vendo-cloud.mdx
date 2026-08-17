@@ -1,11 +1,12 @@
 ---
 title: "Vendo Cloud"
 sidebarTitle: "Vendo Cloud"
-description: "What VENDO_API_KEY fills, the two key scopes, what usage costs, the hosted sandbox, and how Cloud fires your users' automations."
+description: "What VENDO_API_KEY fills, the two key scopes, what usage costs, the hosted sandbox, and how Cloud wakes your deployment on time."
 ---
 
 One key runs the whole platform. `VENDO_API_KEY` is the model gateway, the
-store, the sandbox, the connector broker, and the automation scheduler.
+store, the sandbox, the connector broker, and the heartbeat that wakes your
+automations.
 
 ## Get a key
 
@@ -150,35 +151,45 @@ const vendo = createVendo({
 
 ---
 
-## Automations run in Cloud
+## Cloud is the alarm clock
 
-There is nothing to deploy. The automations your users build sync to Vendo
-Cloud as they save them and run on Vendo's schedulers.
+Automations run in **your** process, on your data, with the owner's grants.
+Nothing about them is deployed anywhere else. What a key buys you is the one
+thing that is genuinely painful to run yourself: something reliable to knock on
+the door.
 
-Your process says so at boot:
+Once a minute, Cloud calls every enrolled deployment:
 
-```text highlight={1}
-[vendo] Vendo Cloud is the hosted store for this deployment: schedule and
-external-trigger automations are Cloud's job. Host-event automations
-(vendo.emit) are unaffected.
+```http
+POST https://your-app.example.com/api/vendo/tick
 ```
 
-A development process is the exception. Cloud's scheduler cannot reach a
-localhost wire, so a dev process fires its own schedules and says that too.
+Enrolling is not a step you take: a deployment with a key derives the tick
+secret from that key and registers itself — its public URL and that secret —
+every time it boots, so a redeploy re-enrols itself. Set `VENDO_BASE_URL` to the
+deployment's full public URL and there is nothing else to configure.
+
+The body is empty and the call carries a standard-webhooks signature over that
+secret, so your deployment can tell it is Cloud. Cloud holds no schedule, decides
+nothing about what is due, and never writes a run: your engine answers
+`202 { fired: n }`, and the ledger the console shows you is the one your
+deployment wrote. A duplicate knock claims nothing.
+
+Without a key, that knock is yours to wire: set `VENDO_TICK_SECRET` and have any
+cron send it as a bearer token. That variable also overrides the derived secret
+when you do have a key. A development process is the exception either way —
+Cloud cannot reach a localhost wire, so a dev process runs its own ticker.
 
 External triggers ride the Composio connectors. Connect the account once in the
-console and the hosted trigger registers itself.
+console; `hooks.vendo.run` is the public URL the service posts to, and it
+forwards the delivery verbatim to your deployment's own webhook door and relays
+your answer back.
 
-<Warning>
-  A `fn:` step is an HTTP call into the generated app's own sandbox machine, not
-  a call back into your host process. When Cloud fires the automation, the Cloud
-  runner has to wake and reach that machine, and in v1 it may not be able to.
-
-  A step that cannot reach a machine settles as an error outcome for that step,
-  not a crashed run. Enabling one warns once, naming the app.
-
-  Replace the `fn:` steps with host tools the Cloud runner can execute.
-</Warning>
+<Note>
+  Because the run happens in your process, a `fn:` step into a generated app's
+  own sandbox machine works exactly as it does locally. There is no second
+  runner that has to reach it.
+</Note>
 
 ---
 

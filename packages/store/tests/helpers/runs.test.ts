@@ -1,12 +1,11 @@
 import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../../src/backends.test-util.js";
-import { appFixture, at } from "../../src/fixtures.test-util.js";
-import { appStore } from "../../src/index.js";
+import { automationFixture, at } from "../../src/fixtures.test-util.js";
 import { runStore } from "../../src/helpers/runs.js";
 import type { RunRow } from "../../src/helpers/types.js";
 
-function runFixture(overrides: Partial<RunRow> & Pick<RunRow, "id" | "appId" | "startedAt">): RunRow {
+function runFixture(overrides: Partial<RunRow> & Pick<RunRow, "id" | "automationId" | "startedAt">): RunRow {
   return {
     trigger: { kind: "schedule" },
     status: "running",
@@ -33,14 +32,14 @@ for (const backend of backends()) {
       const runs = runStore(made.store);
       await runs.put(runFixture({
         id: "run_basic",
-        appId: "app_runs_basic",
+        automationId: "atm_runs_basic",
         startedAt: at(1),
         record: { step: 1 },
         status: "running",
       }));
       expect(await runs.get("run_basic")).toEqual({
         id: "run_basic",
-        appId: "app_runs_basic",
+        automationId: "atm_runs_basic",
         trigger: { kind: "schedule" },
         status: "running",
         record: { step: 1 },
@@ -49,7 +48,7 @@ for (const backend of backends()) {
 
       await runs.put(runFixture({
         id: "run_basic",
-        appId: "app_runs_basic",
+        automationId: "atm_runs_basic",
         startedAt: at(1),
         status: "ok",
         record: { step: 2 },
@@ -58,7 +57,7 @@ for (const backend of backends()) {
       const updated = await runs.get("run_basic");
       expect(updated).toEqual({
         id: "run_basic",
-        appId: "app_runs_basic",
+        automationId: "atm_runs_basic",
         trigger: { kind: "schedule" },
         status: "ok",
         record: { step: 2 },
@@ -71,7 +70,7 @@ for (const backend of backends()) {
       const runs = runStore(made.store);
       await runs.put({
         id: "run_trigger_event",
-        appId: "app_runs_trigger",
+        automationId: "atm_runs_trigger",
         trigger: { kind: "host-event", event: "invoice.created" },
         status: "ok",
         record: {},
@@ -83,7 +82,7 @@ for (const backend of backends()) {
 
       await runs.put({
         id: "run_trigger_external",
-        appId: "app_runs_trigger",
+        automationId: "atm_runs_trigger",
         trigger: { kind: "external" },
         status: "ok",
         record: {},
@@ -92,42 +91,42 @@ for (const backend of backends()) {
       expect(await runs.get("run_trigger_external")).toMatchObject({ trigger: { kind: "external" } });
     });
 
-    it("filters list() by appId and by status independently and together", async () => {
+    it("filters list() by automationId and by status independently and together", async () => {
       const runs = runStore(made.store);
-      await runs.put(runFixture({ id: "run_filter_a", appId: "app_filter_1", startedAt: at(10), status: "ok" }));
-      await runs.put(runFixture({ id: "run_filter_b", appId: "app_filter_1", startedAt: at(11), status: "error" }));
-      await runs.put(runFixture({ id: "run_filter_c", appId: "app_filter_2", startedAt: at(12), status: "ok" }));
+      await runs.put(runFixture({ id: "run_filter_a", automationId: "atm_filter_1", startedAt: at(10), status: "ok" }));
+      await runs.put(runFixture({ id: "run_filter_b", automationId: "atm_filter_1", startedAt: at(11), status: "error" }));
+      await runs.put(runFixture({ id: "run_filter_c", automationId: "atm_filter_2", startedAt: at(12), status: "ok" }));
 
-      expect((await runs.list({ appId: "app_filter_1" })).runs.map((run) => run.id).sort())
+      expect((await runs.list({ automationId: "atm_filter_1" })).runs.map((run) => run.id).sort())
         .toEqual(["run_filter_a", "run_filter_b"]);
       expect((await runs.list({ status: "ok" })).runs.map((run) => run.id))
         .toEqual(expect.arrayContaining(["run_filter_a", "run_filter_c"]));
       expect((await runs.list({ status: "ok" })).runs.map((run) => run.id)).not.toContain("run_filter_b");
-      expect((await runs.list({ appId: "app_filter_1", status: "error" })).runs.map((run) => run.id))
+      expect((await runs.list({ automationId: "atm_filter_1", status: "error" })).runs.map((run) => run.id))
         .toEqual(["run_filter_b"]);
-      expect((await runs.list({ appId: "app_filter_2", status: "error" })).runs).toEqual([]);
+      expect((await runs.list({ automationId: "atm_filter_2", status: "error" })).runs).toEqual([]);
     });
 
     it("orders list() newest-first by startedAt, breaking ties by id descending", async () => {
       const runs = runStore(made.store);
       const shared = at(20);
-      await runs.put(runFixture({ id: "run_order_a", appId: "app_order", startedAt: shared }));
-      await runs.put(runFixture({ id: "run_order_b", appId: "app_order", startedAt: shared }));
-      await runs.put(runFixture({ id: "run_order_c", appId: "app_order", startedAt: at(21) }));
-      const listed = await runs.list({ appId: "app_order" });
+      await runs.put(runFixture({ id: "run_order_a", automationId: "atm_order", startedAt: shared }));
+      await runs.put(runFixture({ id: "run_order_b", automationId: "atm_order", startedAt: shared }));
+      await runs.put(runFixture({ id: "run_order_c", automationId: "atm_order", startedAt: at(21) }));
+      const listed = await runs.list({ automationId: "atm_order" });
       expect(listed.runs.map((run) => run.id)).toEqual(["run_order_c", "run_order_b", "run_order_a"]);
     });
 
     it("paginates list() with a cursor until exhausted, in strict newest-first order", async () => {
       const runs = runStore(made.store);
       for (let i = 0; i < 5; i += 1) {
-        await runs.put(runFixture({ id: `run_page_${i}`, appId: "app_paginate", startedAt: at(30 + i) }));
+        await runs.put(runFixture({ id: `run_page_${i}`, automationId: "atm_paginate", startedAt: at(30 + i) }));
       }
       const seen: string[] = [];
       let cursor: string | undefined;
       let pages = 0;
       do {
-        const page = await runs.list({ appId: "app_paginate", limit: 2, cursor });
+        const page = await runs.list({ automationId: "atm_paginate", limit: 2, cursor });
         expect(page.runs.length).toBeLessThanOrEqual(2);
         seen.push(...page.runs.map((run) => run.id));
         cursor = page.cursor;
@@ -137,16 +136,30 @@ for (const backend of backends()) {
       expect(seen).toEqual(["run_page_4", "run_page_3", "run_page_2", "run_page_1", "run_page_0"]);
     });
 
-    it("writes ephemeral-app runs to vendo_runs like any other (kill-list B3)", async () => {
+    it("writes an ephemeral principal's automation runs like any other (kill-list B3)", async () => {
       const ephemeral: Principal = { kind: "user", subject: "sess_runs", ephemeral: true };
-      const doc = appFixture("app_runs_ephemeral", "Ephemeral runs");
-      await appStore(made.store).put(ephemeral, doc);
+      await made.store.records("vendo_automations").put({
+        id: "atm_runs_ephemeral",
+        data: automationFixture("atm_runs_ephemeral", ephemeral),
+      });
       const runs = runStore(made.store);
-      await runs.put(runFixture({ id: "run_ephemeral", appId: doc.id, startedAt: at(40), record: { transient: true } }));
+      await runs.put(runFixture({
+        id: "run_ephemeral",
+        automationId: "atm_runs_ephemeral",
+        startedAt: at(40),
+        record: { transient: true },
+      }));
 
-      expect(await runs.get("run_ephemeral")).toMatchObject({ appId: doc.id, record: { transient: true } });
-      expect((await runs.list({ appId: doc.id })).runs.map((run) => run.id)).toEqual(["run_ephemeral"]);
-      const rows = await made.sql("SELECT COUNT(*)::int AS count FROM vendo_runs WHERE app_id = $1", [doc.id]);
+      expect(await runs.get("run_ephemeral")).toMatchObject({
+        automationId: "atm_runs_ephemeral",
+        record: { transient: true },
+      });
+      expect((await runs.list({ automationId: "atm_runs_ephemeral" })).runs.map((run) => run.id))
+        .toEqual(["run_ephemeral"]);
+      const rows = await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_runs WHERE automation_id = $1",
+        ["atm_runs_ephemeral"],
+      );
       expect(Number(rows[0]?.["count"])).toBe(1);
     });
 
@@ -155,7 +168,7 @@ for (const backend of backends()) {
 
       await expect(runs.put({
         id: "run_bad_trigger",
-        appId: "app_bad",
+        automationId: "atm_bad",
         trigger: { kind: "not-a-real-kind" } as never,
         status: "running",
         record: {},
@@ -165,7 +178,7 @@ for (const backend of backends()) {
 
       await expect(runs.put({
         id: "run_bad_status",
-        appId: "app_bad",
+        automationId: "atm_bad",
         trigger: { kind: "schedule" },
         status: "not-a-real-status" as never,
         record: {},
@@ -174,8 +187,8 @@ for (const backend of backends()) {
       expect(await runs.get("run_bad_status")).toBeNull();
 
       await expect(runs.put({
-        id: "run_bad_app_id",
-        appId: "not-app-prefixed" as never,
+        id: "run_bad_automation_id",
+        automationId: "" as never,
         trigger: { kind: "schedule" },
         status: "running",
         record: {},
@@ -184,7 +197,7 @@ for (const backend of backends()) {
 
       await expect(runs.put({
         id: "run_bad_started_at",
-        appId: "app_bad",
+        automationId: "atm_bad",
         trigger: { kind: "schedule" },
         status: "running",
         record: {},

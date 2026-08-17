@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
 import { parseOrgPolicyFile } from "../src/org-policy.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { alice, call, context, descriptor, FixtureTools, seedGrant } from "./fixtures/tools.js";
+import { alice, AUTOMATION_ID, call, context, descriptor, FixtureTools, seedGrant } from "./fixtures/tools.js";
 
 /** Contract §9.10 — the org-admin policy layer: a post-pipeline strictness
  *  clamp that TIGHTENS a draft decision and can never loosen one. Every gate
@@ -51,8 +51,8 @@ describe("org policy — the strictness clamp", () => {
   it("clamps a GRANT-authorized away run to ask", async () => {
     const store = createMemoryStore();
     const write = descriptor("write", { name: "host_org_write" });
-    await seedGrant(store, { descriptor: write, appId: "app_1", source: "automation" });
-    const ctx = context({ venue: "automation", presence: "away", appId: "app_1" });
+    await seedGrant(store, { descriptor: write, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
+    const ctx = context({ venue: "automation", presence: "away", appId: "app_1", trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID } });
 
     const unclamped = createGuard({ store });
     await expect(unclamped.check(call(write.name, {}, "call_red"), write, ctx))
@@ -201,9 +201,9 @@ describe("org policy — the strictness clamp", () => {
   it("clamps ahead of THE LAW, which still refuses the unattended destructive call", async () => {
     const store = createMemoryStore();
     const destructive = descriptor("destructive", { name: "host_org_delete" });
-    await seedGrant(store, { descriptor: destructive, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: destructive, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const guard = createGuard({ store, orgPolicy: async () => [{ match: {}, action: "ask" }] });
-    const ctx = context({ venue: "automation", presence: "away", appId: "app_1" });
+    const ctx = context({ venue: "automation", presence: "away", appId: "app_1", trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID } });
 
     // The clamp turns the grant-run into an ask — the law's own
     // prepare-then-human-sends path — rather than an unattended execution.

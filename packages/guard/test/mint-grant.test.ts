@@ -6,7 +6,6 @@
  * make impossible.
  */
 import {
-  DEFAULT_TRIGGER_ID,
   type ApprovalRequest,
   type GrantId,
   type MintGrantInput,
@@ -54,7 +53,7 @@ describe("guard.mintGrant — the one grant write", () => {
       request: approval({ appId: "app_1", presence: "away", venue: "automation" }),
       remember: { duration: "standing" },
       source: "automation",
-      triggerId: "nightly",
+      automationId: "atm_nightly",
     });
 
     const record = await grantRow(store, id);
@@ -66,64 +65,69 @@ describe("guard.mintGrant — the one grant write", () => {
       duration: "standing",
       source: "automation",
       appId: "app_1",
-      triggerId: "nightly",
+      automationId: "atm_nightly",
     });
   });
 
-  it("a minted automation grant is the authority an AWAY run of that trigger runs on", async () => {
+  it("a minted automation grant is the authority an AWAY run of that automation runs on", async () => {
     // The seam, not a shape assertion: the mint is only correct if the guard's
-    // own away check honors what it wrote — same app, same trigger, source
-    // "automation" (05 §6).
+    // own away check honors what it wrote — same automation, source "automation"
+    // (05 §6).
     const store = createMemoryStore();
     const guard = guardOf(store);
     const write = descriptor("write");
-    const away = context({ presence: "away", venue: "automation", appId: "app_1", trigger: { id: "nightly", kind: "schedule", runId: "run_1" } });
+    const away = context({
+      presence: "away",
+      venue: "automation",
+      trigger: { automationId: "atm_nightly", kind: "schedule", runId: "run_1" },
+    });
 
     await mint(guard, {
-      request: approval({ appId: "app_1", presence: "away", venue: "automation" }),
+      request: approval({ presence: "away", venue: "automation" }),
       remember: { duration: "standing" },
       source: "automation",
-      triggerId: "nightly",
+      automationId: "atm_nightly",
     });
 
     await expect(guard.check(call("host_write", { value: 2 }, "call_away"), write, away))
       .resolves.toMatchObject({ action: "run", decidedBy: "grant" });
   });
 
-  it("a SIBLING trigger of the same app never rides that yes", async () => {
+  it("ANOTHER automation never rides that yes, and an automation-less grant rides nothing away", async () => {
     const store = createMemoryStore();
     const guard = guardOf(store);
     const write = descriptor("write");
 
     await mint(guard, {
-      request: approval({ appId: "app_1", presence: "away", venue: "automation" }),
+      request: approval({ presence: "away", venue: "automation" }),
       remember: { duration: "standing" },
       source: "automation",
-      triggerId: "nightly",
+      automationId: "atm_nightly",
     });
 
-    const sibling = context({
+    const other = context({
       presence: "away",
       venue: "automation",
-      appId: "app_1",
-      trigger: { id: "hourly", kind: "schedule", runId: "run_2" },
+      trigger: { automationId: "atm_hourly", kind: "schedule", runId: "run_2" },
     });
-    await expect(guard.check(call("host_write", { value: 2 }, "call_sibling"), write, sibling))
+    await expect(guard.check(call("host_write", { value: 2 }, "call_other"), write, other))
       .resolves.toMatchObject({ action: "ask" });
-    // …and an app-wide grant (no trigger) still answers for the default one.
+
+    // A record carries no app for an away grant to pair with, so the automation id
+    // is the WHOLE match: a grant that names none can never authorize an away call.
     await mint(guard, {
       request: approval({ appId: "app_2", presence: "away", venue: "automation" }),
       remember: { duration: "standing" },
       source: "automation",
     });
-    const legacy = context({
+    const unkeyed = context({
       presence: "away",
       venue: "automation",
       appId: "app_2",
-      trigger: { id: DEFAULT_TRIGGER_ID, kind: "schedule", runId: "run_3" },
+      trigger: { kind: "schedule", runId: "run_3" },
     });
-    await expect(guard.check(call("host_write", { value: 2 }, "call_legacy"), write, legacy))
-      .resolves.toMatchObject({ action: "run", decidedBy: "grant" });
+    await expect(guard.check(call("host_write", { value: 2 }, "call_unkeyed"), write, unkeyed))
+      .resolves.toMatchObject({ action: "ask" });
   });
 });
 

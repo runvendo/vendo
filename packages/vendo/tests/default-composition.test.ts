@@ -34,6 +34,10 @@ const DEFAULT_TOOL_NAMES = [
   "vendo_apps_pin",
   "vendo_apps_reseed",
   "vendo_apps_unpin",
+  // The chat authoring door for an automation. A default composition mounts the
+  // automations engine, so the apps block is handed the create seam and offers
+  // this; `createVendo({ automations: false })` is what takes it away.
+  "vendo_automate",
   "vendo_make",
   "vendo_slots_list",
 ] as const;

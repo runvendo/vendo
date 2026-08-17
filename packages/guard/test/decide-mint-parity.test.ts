@@ -101,7 +101,7 @@ describe("CHECK: the decide path's grant is field-for-field what the inline mint
     const withRun = guardOf(createMemoryStore());
     const runCtx = context({
       sessionId: "session_2",
-      trigger: { id: "main", kind: "schedule", runId: "run_9" },
+      trigger: { automationId: "atm_main", kind: "schedule", runId: "run_9" },
     });
     const taskAsk = await park(withRun, new FixtureTools(), call("host_write", { value: 2 }, "call_task"), runCtx);
     await withRun.approvals.decide(
@@ -121,7 +121,7 @@ describe("CHECK: the decide path's grant is field-for-field what the inline mint
     expect((await noRun.grants.list(alice))[0]!.contextKey).toBe("session_1");
   });
 
-  it("stamps a single decide as chat, carries the appId and NO triggerId, and writes those refs", async () => {
+  it("stamps a single decide as chat, carries the appId and NO automationId, and writes those refs", async () => {
     const store = createMemoryStore();
     const guard = guardOf(store);
     const appCtx = context({ appId: "app_1" });
@@ -136,9 +136,9 @@ describe("CHECK: the decide path's grant is field-for-field what the inline mint
     const chat = (await guard.grants.list(alice))[0]!;
     expect(chat.source).toBe("chat");
     expect(chat.appId).toBe("app_1");
-    expect(chat.triggerId).toBeUndefined();
+    expect(chat.automationId).toBeUndefined();
     // The refs a ref-trusting adapter filters on: exactly subject/tool/app_id,
-    // which is what the inline code wrote — a chat grant carries no trigger.
+    // which is what the inline code wrote — a chat grant is nobody's automation.
     const record = await store.records("vendo_grants").get(chat.id);
     expect(record!.refs).toEqual({ subject: alice.subject, tool: "host_write", app_id: "app_1" });
   });

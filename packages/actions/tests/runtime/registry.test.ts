@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActAs } from "@vendoai/core";
 
 // Spies on the ONE seam the registry's disk reads flow through
 // (readOptionalVendoJson → node:fs/promises's readFile). Defaults to the
@@ -1400,3 +1401,134 @@ describe("format v3 host files (cse lane 1)", () => {
     });
   });
 });
+
+describe("host HTTP execution — the text channel (a person, no browser session)", () => {
+  async function hostServer(): Promise<{ url: string; seen: Array<Record<string, string | string[] | undefined>> }> {
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      // A real host API: no credentials, no data. This is what Maple answers,
+      // and what the agent was paraphrasing as a "sign-in snag".
+      if (!req.headers.authorization && !req.headers.cookie) {
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { code: "unauthenticated", message: "Sign in to use this API" } }));
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+    const { port } = server.address() as AddressInfo;
+    closers.push(async () => { server.close(); server.closeAllConnections(); });
+    return { url: `http://127.0.0.1:${port}`, seen };
+  }
+
+  const readTool = (baseUrl: string): ExtractedTool =>
+    routeTool("host_spending", {
+      risk: "read",
+      binding: { kind: "openapi", operationId: "spending", baseUrl, method: "GET", path: "/spending" },
+    });
+
+  /** What `runChannelTurn` builds: a real person, on a phone, with no request. */
+  const channelCtx = (extra: Partial<ActionsRunContext> = {}): ActionsRunContext => ({
+    principal: { kind: "user", subject: "user_linked" },
+    venue: "chat",
+    presence: "present",
+    sessionId: "evt_1",
+    channelLink: { channel: "text", linkedAt: "2026-08-17T10:22:10.710Z" },
+    ...extra,
+  });
+
+  it("authenticates a texted turn's host call through actAs", async () => {
+    // THE DEFECT THIS PINS: a linked customer texted "what did I spend on food
+    // last month?", the turn ran, and the tool call reached the host API with no
+    // credentials at all — because `presence: "present"` means "forward the
+    // caller's request headers" and a text message has no request behind it.
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act-as-user_linked" } }));
+    const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url, actAs });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_spending", args: {} }, channelCtx());
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    expect(host.seen[0]?.authorization).toBe("Bearer act-as-user_linked");
+    expect(actAs).toHaveBeenCalledOnce();
+  });
+
+  it("PROVE IT CAN FAIL: the same turn without the link reaches the host unauthenticated", async () => {
+    // Drop the one field and the call takes the present path again — which is
+    // exactly the shipped bug, reproduced.
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act-as-user_linked" } }));
+    const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url, actAs });
+    const { channelLink: _dropped, ...withoutLink } = channelCtx();
+
+    const outcome = await actions.execute(
+      { id: "1", tool: "host_spending", args: {} },
+      withoutLink as ActionsRunContext,
+    );
+
+    expect(outcome).toMatchObject({ status: "error" });
+    expect(host.seen[0]?.authorization, "nothing to forward, so nothing was sent").toBeUndefined();
+    expect(actAs, "and the seam that could have authenticated it was never asked").not.toHaveBeenCalled();
+  });
+
+  it("never forwards a ctx's request headers, even a forged one", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act-as-user_linked" } }));
+    const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url, actAs });
+
+    await actions.execute({ id: "1", tool: "host_spending", args: {} }, channelCtx({
+      requestHeaders: { cookie: "stolen_session=someone_else", authorization: "Bearer inbound" },
+    }))
+
+    expect(host.seen[0]?.cookie).toBeUndefined();
+    expect(host.seen[0]?.authorization).toBe("Bearer act-as-user_linked");
+  });
+
+  it("says what is missing when the host has no actAs seam, and calls nothing", async () => {
+    const host = await hostServer();
+    const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url });
+
+    const out = await actions.execute({ id: "1", tool: "host_spending", args: {} }, channelCtx());
+
+    expect(out).toMatchObject({ status: "error", error: { code: "not-implemented" } });
+    if (out.status === "error") expect(out.error.message).toContain("actAs");
+    expect(host.seen).toHaveLength(0);
+  });
+
+  it("refuses when the host declines to mint for this subject", async () => {
+    const host = await hostServer();
+    const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url, actAs: async () => null });
+
+    const out = await actions.execute({ id: "1", tool: "host_spending", args: {} }, channelCtx());
+
+    expect(out).toMatchObject({
+      status: "error",
+      error: { code: "not-implemented", message: "the host declined text-channel execution for this action" },
+    });
+    expect(host.seen).toHaveLength(0);
+  });
+
+  it("hands actAs a grant for the texting subject, projected from the link", async () => {
+    const host = await hostServer();
+    // Typed to the seam (principal, grant), so the assertion below reads the
+    // grant the registry actually passed rather than an index TypeScript cannot
+    // know exists.
+    const actAs = vi.fn<ActAs>(async () => ({ headers: { authorization: "Bearer act" } }));
+    const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url, actAs });
+
+    await actions.execute({ id: "1", tool: "host_spending", args: {} }, channelCtx({ sessionId: "evt_42" }));
+
+    expect(actAs.mock.calls[0]?.[1]).toMatchObject({
+      subject: "user_linked",
+      tool: "host_spending",
+      source: "chat",
+      contextKey: "evt_42",
+    });
+  });
+})

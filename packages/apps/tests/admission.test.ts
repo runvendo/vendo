@@ -5,14 +5,9 @@
  * `appRecordInput`, the row writer, and `appRecordInput` is the only caller of
  * `admitAppDocument` in the codebase.
  *
- * ONE named exception, and it is not a document write: `@vendoai/automations`'
- * `writeApp` (`automations/src/app-rows.ts`) puts the row directly. Its two
- * callers — `armed.ts`'s `disarmTrigger` and `arming-surface.ts` — flip
- * `row.enabled` on a `doc` they round-tripped unchanged out of the store, which
- * `parseAppRow` already parsed with `appRowSchema`. Routing it through
- * admission would mean a document stored BEFORE this door existed could refuse
- * a disarm — a safety control that fails by refusing to turn something off is
- * failing the wrong way.
+ * There is no longer any exception: an automation is a record of its own, so
+ * `@vendoai/automations` writes no app rows at all and nothing reaches this
+ * collection past admission.
  *
  * This suite drives EVERY origin in `AdmissionOrigin` through the real path — a
  * real `RecordStore`, no stub between the writer and the row — and asserts

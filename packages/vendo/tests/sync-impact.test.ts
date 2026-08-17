@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   type AppDocument,
@@ -33,19 +32,6 @@ function plainApp(id: string, name: string, tool: string): AppDocument {
       nodes: [{ id: "root", component: "Text", props: { text: name } }],
       queries: [{ name: "widgets", tool }],
     },
-  };
-}
-
-function automation(id: string, name: string, tool: string): AppDocument {
-  return {
-    format: VENDO_APP_FORMAT,
-    id,
-    name,
-    triggers: [{
-      id: DEFAULT_TRIGGER_ID,
-      on: { kind: "schedule", every: "1h" },
-      run: { kind: "steps", steps: [{ id: "load", tool }] },
-    }],
   };
 }
 
@@ -84,8 +70,24 @@ describe("computeImpact", () => {
     const grants = grantStore(store);
 
     await apps.put(principal, plainApp("app_widgets", "Widget viewer", "host_get_widgets"));
-    await apps.put(principal, automation("app_widget_refresh", "Widget refresh", "host_get_widgets"));
     await apps.put(principal, plainApp("app_unrelated", "Invoice viewer", "host_get_invoices"));
+    // An automation is its OWN record now — the impact report reads that
+    // drawer, not an app's document, so a steps task naming the tool is what
+    // puts a deployment in the "this will change something running" bucket.
+    await store.records("vendo_automations").put({
+      id: "atm_refresh",
+      data: {
+        id: "atm_refresh",
+        owner: principal,
+        when: { kind: "schedule", every: "1h" },
+        task: { kind: "steps", steps: [{ id: "load", tool: "host_get_widgets" }] },
+        armed: true,
+        authoredBy: "chat",
+        createdAt: "2026-07-14T12:00:00.000Z",
+        updatedAt: "2026-07-14T12:00:00.000Z",
+      },
+      refs: { subject: principal.subject },
+    });
     await grants.create(principal, grant("grt_active"));
     await grants.create(principal, grant("grt_revoked", { revokedAt: "2026-07-14T12:30:00.000Z" }));
     await grants.create(principal, grant("grt_expired", { expiresAt: "2020-01-01T00:00:00.000Z" }));
@@ -94,7 +96,7 @@ describe("computeImpact", () => {
       {
         tool: "host_get_widgets",
         apps: [{ id: "app_widgets", title: "Widget viewer" }],
-        automations: [{ id: "app_widget_refresh", title: "Widget refresh" }],
+        automations: [{ id: "atm_refresh", title: "1h" }],
         grants: 1,
       },
       { tool: "host_absent", apps: [], automations: [], grants: 0 },
@@ -126,41 +128,6 @@ describe("computeImpact", () => {
         tool: "host_get_orders",
         apps: [{ id: "app_island", title: "Island dashboard" }],
         automations: [],
-        grants: 0,
-      },
-    ]);
-  });
-
-  it("counts a pre-list automation, whose document still carries the single `trigger`", async () => {
-    const store = await setup();
-    // Raw SQL on purpose: the record door normalizes a document on the way IN, so
-    // going through it would prove nothing about the rows sitting in a deployment
-    // today. This is the pre-list shape byte for byte.
-    const raw = store.raw() as { query(q: string, p?: unknown[]): Promise<unknown> };
-    const now = new Date().toISOString();
-    await raw.query(
-      `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at)
-       VALUES ($1, $2, true, $3::jsonb, $4, $4)`,
-      ["app_legacy_refresh", principal.subject, JSON.stringify({
-        format: VENDO_APP_FORMAT,
-        id: "app_legacy_refresh",
-        name: "Legacy refresh",
-        trigger: {
-          on: { kind: "schedule", every: "1h" },
-          run: { kind: "steps", steps: [{ id: "load", tool: "host_get_widgets" }] },
-        },
-      }), now],
-    );
-
-    // `sync` tells a person what their change will hit. Reading `doc.triggers`
-    // off an unnormalized row reports "0 automations affected" for a deployment
-    // whose automations all predate the trigger list — the most dangerous
-    // possible answer, since it reads as "nothing to worry about".
-    await expect(computeImpact(createStoreOps(store), ["host_get_widgets"])).resolves.toEqual([
-      {
-        tool: "host_get_widgets",
-        apps: [],
-        automations: [{ id: "app_legacy_refresh", title: "Legacy refresh" }],
         grants: 0,
       },
     ]);

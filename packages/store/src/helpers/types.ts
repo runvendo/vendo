@@ -2,6 +2,7 @@ import {
   type AppId,
   type ApprovalId,
   type ApprovalRequest,
+  type AutomationId,
   type IsoDateTime,
   type Json,
   type RunId,
@@ -47,7 +48,9 @@ export interface ApprovalRow {
 /** 02-store §3 */
 export interface RunRow {
   id: RunId;
-  appId: AppId;
+  /** The automation that fired this run — a run has no app of its own, because
+   *  an automation record names none (core's `automation.ts`). */
+  automationId: AutomationId;
   trigger: { kind: TriggerSource["kind"]; event?: string };
   status: "running" | "ok" | "error" | "stopped" | "pending-approval";
   record: Json;

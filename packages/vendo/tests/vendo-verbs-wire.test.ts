@@ -15,7 +15,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AppDocument,
-  DEFAULT_TRIGGER_ID,
   type Principal,
   type RunContext,
   VENDO_APP_FORMAT,
@@ -178,32 +177,6 @@ describe("validate", () => {
 });
 
 describe("schedule", () => {
-  it("changes the cron on an app that declares a schedule trigger", async () => {
-    const { vendo } = await compose();
-    await vendo.apps.importApp(
-      app("app_sched", {
-        triggers: [{
-          id: DEFAULT_TRIGGER_ID,
-          on: { kind: "schedule", cron: "0 9 * * *" },
-          run: { kind: "agentic", prompt: "summarise yesterday" },
-        }],
-      }),
-      ctx,
-    );
-    const [stored] = await vendo.apps.list(ctx);
-
-    const outcome = await vendo.guardedTools.execute(
-      { id: "c7", tool: "schedule", args: { appId: stored?.id, cron: "30 7 * * 1" } },
-      ctx,
-    );
-    expect(outcome.status).toBe("ok");
-    expect((outcome as { output: { cron: string } }).output.cron).toBe("30 7 * * 1");
-
-    // The stored document really changed — the verb is a write, not a report.
-    const after = await vendo.apps.get(stored?.id as never, ctx);
-    expect(after?.triggers?.[0]?.on).toEqual({ kind: "schedule", cron: "30 7 * * 1" });
-  });
-
   it("refuses an app with no automation to schedule, and says what to do instead", async () => {
     const { vendo } = await compose();
     await vendo.apps.importApp(app("app_plain"), ctx);

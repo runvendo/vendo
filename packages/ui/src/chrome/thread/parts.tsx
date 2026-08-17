@@ -1,4 +1,4 @@
-import { riskLabelSchema, VENDO_MAKE_TOOL, type AppId, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { riskLabelSchema, VENDO_MAKE_TOOL, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -439,13 +439,15 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // the overlay's conversation does not survive a page navigation, so a
     // separate page cannot carry the arming decision.
     const data = partData(part) as Partial<VendoAutomationPart>;
-    if (typeof data.appId !== "string" || typeof data.name !== "string") return null;
+    if (typeof data.automationId !== "string" || typeof data.name !== "string") return null;
     return (
       <ThreadAutomationConsent
-        appId={data.appId as AppId}
+        automationId={data.automationId}
         name={data.name}
         enabled={data.enabled === true}
-        {...(data.trigger === undefined ? {} : { trigger: data.trigger })}
+        {...(data.when === undefined ? {} : { when: data.when })}
+        {...(typeof data.action === "string" ? { action: data.action } : {})}
+        {...(Array.isArray(data.rules) ? { rules: data.rules } : {})}
         {...(typeof data.description === "string" ? { description: data.description } : {})}
         {...(typeof data.pendingGrants === "number" ? { pendingGrants: data.pendingGrants } : {})}
       />

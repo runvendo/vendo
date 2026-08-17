@@ -11,7 +11,7 @@ import { STORE_WIRE_PATHS, type StoreOps } from "@vendoai/core";
 const putRun = async (ops: StoreOps, id: string, startedAt: string): Promise<void> => {
   await ops.engine.put("vendo_runs", {
     id,
-    data: { appId: "app_test", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt },
+    data: { automationId: "atm_test", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt },
   });
 };
 

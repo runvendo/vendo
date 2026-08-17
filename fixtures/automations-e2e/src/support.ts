@@ -1,6 +1,6 @@
 import type {
-  AppId,
   ApprovalRequest,
+  AutomationId,
   Json,
   Principal,
   ToolOutcome,
@@ -39,9 +39,32 @@ export function rowsCount(rows: Array<{ count: unknown }>): number {
 
 export async function tableCount(
   stack: Stack,
-  table: "vendo_runs" | "vendo_approvals" | "vendo_audit",
+  table: "vendo_runs" | "vendo_approvals" | "vendo_audit" | "vendo_automations",
 ): Promise<number> {
   return rowsCount(await stack.sql<{ count: unknown }>(`SELECT COUNT(*)::int AS count FROM ${table}`));
+}
+
+/** Runs of ONE automation, off the row rather than the door — the "it really
+ *  fired" probe a run-list filter could not fake. */
+export async function runCount(stack: Stack, automationId: AutomationId): Promise<number> {
+  return rowsCount(await stack.sql<{ count: unknown }>(
+    "SELECT COUNT(*)::int AS count FROM vendo_runs WHERE automation_id = $1",
+    [automationId],
+  ));
+}
+
+/** The webhook HMAC the create door minted, read where only the webhook door
+ *  reads it: the stored row. `list`/`get` redact it on purpose. */
+export async function webhookSecret(stack: Stack, automationId: AutomationId): Promise<string> {
+  const rows = await stack.sql<{ secret: string | null }>(
+    "SELECT data->>'webhookSecret' AS secret FROM vendo_automations WHERE id = $1",
+    [automationId],
+  );
+  const secret = rows[0]?.secret;
+  if (typeof secret !== "string" || secret.length === 0) {
+    throw new Error(`automation ${automationId} holds no webhook secret`);
+  }
+  return secret;
 }
 
 export async function approve(
@@ -59,11 +82,10 @@ export async function approve(
 
 export async function enableAndApprove(
   stack: Stack,
-  appId: AppId,
-  ctx: Parameters<Stack["automations"]["enable"]>[2],
-  triggerId = "main",
+  automationId: AutomationId,
+  ctx: Parameters<Stack["automations"]["enable"]>[1],
 ): Promise<ApprovalRequest[]> {
-  const enabled = await stack.automations.enable(appId, triggerId, ctx);
+  const enabled = await stack.automations.enable(automationId, ctx);
   await approve(stack, enabled.missing, ctx.principal);
   return enabled.missing;
 }
@@ -94,7 +116,10 @@ export async function waitForRun(
   ctx: Parameters<Stack["automations"]["runs"]["get"]>[1],
   status: RunStatus,
 ): Promise<RunRecord> {
-  const deadline = Date.now() + 10_000;
+  // Matches vitest's own `testTimeout`, deliberately — the test timeout is THE
+  // hang-detector, and an inner budget tighter than it is a second, invisible
+  // speed limit that reports a product bug when the machine is merely busy.
+  const deadline = Date.now() + 120_000;
   while (Date.now() <= deadline) {
     const run = await stack.automations.runs.get(runId, ctx);
     if (run?.status === status) return run;

@@ -23,10 +23,11 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | file storage, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | built-in per-user-per-app state singleton |
 | `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads |
-| `vendo_grants` | `id, subject, tool, descriptor_hash, scope, duration, app_id, source, granted_at, revoked_at, expires_at` | permission grants |
+| `vendo_grants` | `id, subject, tool, descriptor_hash, scope, duration, app_id, automation_id, source, granted_at, revoked_at, expires_at` | permission grants |
 | `vendo_approvals` | `id, subject, request, status, decided_at, session_id, consumed_at, created_at` | approval queue |
 | `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log |
-| `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation run records |
+| `vendo_automations` | `id, subject, armed, data, when_kind, created_at, updated_at, revision` | automation records; `when_kind` is a generated projection of `data.when.kind` |
+| `vendo_runs` | `id, automation_id, trigger, status, record, started_at, finished_at` | automation run records |
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values |
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | door-owned MCP client state |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | door-owned MCP grant state |
@@ -49,11 +50,12 @@ Blocks receive core's plain `StoreAdapter`, so these exact `records()` collectio
 
 | Collection | Primary key | Data | Synthesized refs | Record timestamps |
 | --- | --- | --- | --- | --- |
-| `vendo_grants` | grant id | `PermissionGrant` | `subject`, `tool`, optional `app_id` | `grantedAt` / `revokedAt ?? grantedAt` |
+| `vendo_grants` | grant id | `PermissionGrant` | `subject`, `tool`, optional `app_id`, optional `automation_id` | `grantedAt` / `revokedAt ?? grantedAt` |
 | `vendo_approvals` | approval id | `{ request, status, decidedAt?, sessionId?, consumedAt? }` | `subject`, `status` | `request.createdAt` / `consumedAt ?? decidedAt ?? request.createdAt` |
 | `vendo_audit` | audit event id | `AuditEvent` | `subject`, `kind`, optional `app_id`, optional `tool` | `at` / `at` |
 | `vendo_threads` | thread id | `{ subject, messages }` | `subject` | table `created_at` / `updated_at` |
-| `vendo_runs` | run id | `{ appId, trigger, status, record, startedAt, finishedAt? }` | `app_id`, `status` | `startedAt` / `finishedAt ?? startedAt` |
+| `vendo_automations` | automation id | `AutomationRecord` | `subject`, `when_kind` | record `createdAt` / `updatedAt` |
+| `vendo_runs` | run id | `{ automationId, trigger, status, record, startedAt, finishedAt? }` | `automation_id`, `status` | `startedAt` / `finishedAt ?? startedAt` |
 | `vendo_apps` | app id | `{ subject, enabled, doc }` | `subject` | table `created_at` / `updated_at` |
 | `vendo_mcp_clients` | client id | block-internal JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
 | `vendo_mcp_grants` | grant id | block-internal JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |

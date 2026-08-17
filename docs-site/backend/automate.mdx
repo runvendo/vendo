@@ -1,0 +1,140 @@
+---
+title: "Give it a standing order"
+sidebarTitle: "Automate — .on()"
+description: ".on() declares an automation in code. Consent is the code itself, and every deploy reconciles what your source says against what is stored."
+---
+
+`respond()` answers a person and `run()` answers your code. `.on()` answers
+neither: it declares work that should happen **without a caller at all**.
+
+```ts lib/agent.ts
+import { agent } from "@vendoai/agents";
+
+export const support = agent({ name: "support" });
+
+support.on("0 9 * * 1", "summarize the week and email ops");
+```
+
+Nothing has run yet, and nothing has been written. `.on()` is a declaration —
+collected when the module loads, reconciled once when your process boots.
+
+## Every shape
+
+```ts
+support.on("0 9 * * 1", "summarize the week and email ops");   // a bare string is cron
+support.on({ every: "1d" }, "refresh credit scores");
+support.on({ at: "2026-09-01T09:00Z" }, "send the launch recap");
+support.on({ event: "payment.failed" }, "triage and notify the user");
+support.on({ webhook: "stripe" }, "reconcile the invoice");
+```
+
+`{ event }` is your own product event — the one you `vendo.emit(...)`.
+`{ webhook }` is a signed delivery from a connected service, which lands on your
+deployment's own webhook door.
+
+The task is always a goal here: words, thought through by this agent. Step
+pipelines come from the chat and manifest doors, which know the tools.
+
+### Options
+
+```ts
+support.on("0 2 * * *", "rebuild the digest", {
+  id: "nightly-digest",
+  timezone: "Europe/London",
+  budget: { maxToolCalls: 20 },
+});
+```
+
+- `id` — stable identity. Leave it out and the identity is a hash of the
+  schedule and the task, which means **editing either one mints a new
+  automation** and the old one is disarmed at the next reconcile. Set an `id`
+  when you want to edit the words in place and keep the run history.
+- `timezone` — the zone `cron` and `every` are evaluated in. Unset is UTC.
+- `budget` — a ceiling on one firing, `{ maxToolCalls }`. Unset is 50.
+
+## It fails at the declaration, not at 2am
+
+Validation is synchronous, at the line you wrote it on, before your process
+serves a single request.
+
+```ts
+support.on("every monday", "summarize the week");
+// VendoError [validation]: "every monday" is not a cron expression — a cron
+// expression has exactly 5 fields. Did you mean "0 9 * * 1"?
+// See https://vendo.run/docs/capabilities/automations
+```
+
+A cron nobody can run, an `every` outside `<n><s|m|h|d>`, an `at` that is not an
+instant, an unnamed event or webhook — each one stops the boot, with the nearest
+valid form to paste. An automation you cannot see failing is worse than a deploy
+that will not start.
+
+## Register the agent
+
+An automation record stores the agent's **name**, never the agent. Your code is
+looked up under that name when the automation fires, so the agent has to be
+registered when your process boots:
+
+```ts app/api/vendo/[...vendo]/route.ts
+import { createVendo } from "@vendoai/vendo";
+import { support, billing } from "@/lib/agent";
+
+export const vendo = createVendo({ agents: [support, billing] });
+```
+
+`vendo.agent` — the embed's own composed agent — is registered for you, and
+`.on()` works on it too. Two agents claiming one name throw at startup. A record
+naming an agent nobody registered writes a **failed run** that names the missing
+name; there is no fallback brain, because running the wrong agent under this
+record's grants is worse than not running.
+
+## What a deploy does
+
+Every boot reconciles what your source declares against what is stored for
+**code-authored** automations only. Chat-authored ones are untouched — a user's
+automation is not yours to reconcile.
+
+<Steps>
+  <Step title="New declaration">
+    Created, and armed.
+  </Step>
+  <Step title="Edited declaration">
+    A new identity is created and armed; the one it replaced is disarmed. It is
+    disarmed rather than deleted, so its run history survives.
+  </Step>
+  <Step title="Declaration deleted from your source">
+    Disarmed. Consent was the code, and the code no longer says it.
+  </Step>
+  <Step title="Anything a person switched off">
+    Left alone, forever. `automations.disable(id, ctx)` outranks your source, and
+    no redeploy will re-arm it.
+  </Step>
+</Steps>
+
+## Authority
+
+A goal runs with the **owner's** grants, and nobody is present to be asked. So
+the permissions are settled once, when the automation is turned on:
+
+```ts
+const { missing } = await vendo.automations.enable(id, ctx);
+```
+
+Until they are, the firing stops loudly at the first call it does not hold — the
+run row names the permission it needed, and `runs.rerun(runId)` is the second
+half of that.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Automations" href="/capabilities/automations">
+    The whole model: records, the two authors, and what wakes them.
+
+    Automations →
+  </Card>
+  <Card title="Run — run()" href="/backend/run">
+    One unattended run, right now, with a typed answer.
+
+    run() →
+  </Card>
+</CardGroup>
