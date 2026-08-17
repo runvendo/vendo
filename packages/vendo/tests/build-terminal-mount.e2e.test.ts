@@ -319,6 +319,11 @@ describe("a screen mounts only once its build is terminal", () => {
       // …which the wire turns into the `{kind:"pending"}` every embed already
       // keeps polling on (`use-app.ts`, `chrome/embeds.tsx`).
       expect(midBuild.wireStatus, `build ${index}`).toBe(200);
+      // S4 made this answer ADDITIVE (a `tree` of pure geometry may ride it), but
+      // only ever off a tree the row already holds — and a component screen like
+      // this one stores none, so what a screen build answers is unchanged, to the
+      // field. Asserted whole, exactly as before: the draft's double count reaches
+      // nobody, and this stays the assertion that would notice if it did.
       expect(JSON.parse(midBuild.wireBody), `build ${index}`).toEqual({ kind: "pending" });
     }
 

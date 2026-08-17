@@ -1,3 +1,6 @@
+// The window size lives in core because the server marks arrival off the same
+// number: see `THREAD_WINDOW_INITIAL`'s own note for why the two cannot drift.
+import { THREAD_WINDOW_INITIAL as WINDOW_INITIAL } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isAgentContext } from "./message-data.js";
@@ -11,7 +14,6 @@ import { isAgentContext } from "./message-data.js";
     The trailing window is what stick-to-bottom and jump-to-latest already care
     about (both operate at the end), so those behaviors are untouched. Only the
     unseen head of a genuinely long thread is deferred. */
-const WINDOW_INITIAL = 60;
 const WINDOW_STEP = 40;
 const NEAR_TOP_PX = 200;
 

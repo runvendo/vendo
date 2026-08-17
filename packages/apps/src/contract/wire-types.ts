@@ -26,6 +26,14 @@ import {
   type UIPayload,
 } from "@vendoai/core";
 
+/** One row of `GET /apps` — the document, plus what only THIS caller's read can
+ *  say about it. `unseen` is derived per caller and never stored on the row
+ *  every reader shares: set while the app has never rendered for them, absent
+ *  once it has (`persistence/app-seen.ts`). */
+export interface AppListRow extends AppDocument {
+  unseen?: boolean;
+}
+
 /** 06-apps §1 — what `GET /apps/:id/open` returns. */
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
@@ -47,6 +55,24 @@ export type OpenSurface =
  *  keep the contracted not-found. */
 export interface PendingSurface {
   kind: "pending";
+  /**
+   * The app's tree AS IT FORMS, so the embed's existing poll paints stepped
+   * assembly instead of a blind bar. GEOMETRY ONLY — node ids, component names
+   * and nesting, tagged `streaming` — because a build's draft carries figures it
+   * is about to correct (`build-terminal-mount.e2e.test.ts`: a double count the
+   * repair round replaces), and nobody may be shown a number the build is about
+   * to change. Nothing that could render one travels: no props, no resolved
+   * `data`, no `interactive` VM, no component sources.
+   *
+   * Read off the STORED document, never rendered for the answer: a poll must cost
+   * a row read, not an app execution (see `formingTreeOf`). So it rides when the
+   * build has already written a tree to the row, and is absent otherwise — a
+   * component screen stores none by design, and omits it.
+   *
+   * Optional and additive throughout: whenever it is absent the embed keeps its
+   * beat bar, which is exactly the behaviour that shipped before it existed.
+   */
+  tree?: UIPayload;
 }
 
 /**

@@ -3,12 +3,17 @@ import {
   type AppDocument,
   type AppId,
 } from "@vendoai/core";
-import { useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { useVendoProvider } from "../context.js";
-import { type PollOptions, useResource } from "./use-resource.js";
+import type { AppListRow } from "../wire-types.js";
+import { APPS_LOADING, appsFeed } from "./apps-feed.js";
+import { type PollOptions } from "./use-resource.js";
+
+/** SSR / first-render snapshot, stable across calls. */
+const loadingSnapshot = () => APPS_LOADING;
 
 export function useApps(options?: PollOptions): {
-  apps: AppDocument[];
+  apps: AppListRow[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -19,8 +24,14 @@ export function useApps(options?: PollOptions): {
   importApp(bytes: Uint8Array): Promise<AppDocument>;
 } {
   const { client } = useVendoProvider();
-  const list = useCallback(() => client.apps.list(), [client]);
-  const { data, error, isLoading, refresh } = useResource(list, [] as AppDocument[], options);
+  // H15 — one apps poller per client (apps-feed), shared with the launcher's
+  // dot: this hook and the pill reading the unseen count off the same rows cost
+  // ONE request between them, and cannot disagree in front of anyone.
+  const feed = appsFeed(client);
+  const pollMs = options?.pollMs ?? 0;
+  const subscribe = useCallback((listener: () => void) => feed.subscribe(listener, pollMs), [feed, pollMs]);
+  const { data, error, isLoading } = useSyncExternalStore(subscribe, feed.read, loadingSnapshot);
+  const refresh = useCallback(() => feed.refresh(), [feed]);
 
   const create = useCallback(
     async (prompt: string) => {

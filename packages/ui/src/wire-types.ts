@@ -54,6 +54,7 @@ export type { PlacementEntry, ReviewStanding };
 /** 06-apps §1/§8/§9 — the app-generation half of the wire. One definition,
  *  on the producer's browser-safe contract door. */
 export type {
+  AppListRow,
   EditResult,
   InClientVenue,
   OpenSurface,

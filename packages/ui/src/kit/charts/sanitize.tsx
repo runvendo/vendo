@@ -5,6 +5,7 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import type { TooltipContentProps } from "recharts";
+import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { isRenderableNumber } from "../format.js";
 import { RowContext } from "../row.js";
 import { font, hairline, t, type KitStyled } from "../tokens.js";
@@ -60,8 +61,15 @@ export function ChartFrame({ height = 220, children }: ChartFrameProps) {
  *
  *  ONE element, because a chart's `style` has to land on the same root whether it
  *  has points or not: nested, the caller's margin sat on an inner box while the
- *  populated chart put it on the outer one, so an empty chart moved. */
-export function ChartEmpty({ height = 220, children, style }: { height?: number; children: ReactNode } & KitStyled) {
+ *  populated chart put it on the outer one, so an empty chart moved.
+ *
+ *  `slot` is the author's own empty content, and it replaces this box rather than
+ *  its TEXT: what goes in one is an EmptyState, which draws that same frame
+ *  itself — nested, it read as a box inside a box. All three charts return this
+ *  ONE branch, so the author's copy and the default copy are held back by the
+ *  same rule while the build is still forming. */
+export function ChartEmpty({ height = 220, children, slot, style }: { height?: number; children: ReactNode; slot?: ReactNode } & KitStyled) {
+  if (slot !== undefined) return <EmptyOrForming>{slot}</EmptyOrForming>;
   const box: CSSProperties = {
     ...font,
     display: "flex",
@@ -79,7 +87,7 @@ export function ChartEmpty({ height = 220, children, style }: { height?: number;
     padding: 12,
     ...style,
   };
-  return <div data-kit="ChartEmpty" style={box}>{children}</div>;
+  return <div data-kit="ChartEmpty" style={box}><EmptyOrForming>{children}</EmptyOrForming></div>;
 }
 
 /** The hover surface all three charts share — recharts paints its own content
