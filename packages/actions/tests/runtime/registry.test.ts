@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActAs } from "@vendoai/core";
 
 // Spies on the ONE seam the registry's disk reads flow through
 // (readOptionalVendoJson → node:fs/promises's readFile). Defaults to the
@@ -1515,13 +1516,15 @@ describe("host HTTP execution — the text channel (a person, no browser session
 
   it("hands actAs a grant for the texting subject, projected from the link", async () => {
     const host = await hostServer();
-    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act" } }));
+    // Typed to the seam (principal, grant), so the assertion below reads the
+    // grant the registry actually passed rather than an index TypeScript cannot
+    // know exists.
+    const actAs = vi.fn<ActAs>(async () => ({ headers: { authorization: "Bearer act" } }));
     const actions = createActions({ tools: [readTool(host.url)], baseUrl: host.url, actAs });
 
     await actions.execute({ id: "1", tool: "host_spending", args: {} }, channelCtx({ sessionId: "evt_42" }));
 
-    const grant = actAs.mock.calls[0]?.[1] as { subject: string; tool: string; source: string; contextKey?: string };
-    expect(grant).toMatchObject({
+    expect(actAs.mock.calls[0]?.[1]).toMatchObject({
       subject: "user_linked",
       tool: "host_spending",
       source: "chat",
