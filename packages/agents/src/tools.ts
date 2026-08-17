@@ -65,6 +65,7 @@ export interface ApiOptions {
   dir?: string;
   /** Away-run auth minting; a present user's headers forward on their own. */
   actAs?: ActAs;
+  /** The host origin route/tRPC tools dial; defaults to `VENDO_BASE_URL`. */
   baseUrl?: string;
   untrustedOriginPolicy?: "warn" | "fail";
   fetch?: typeof fetch;
@@ -73,10 +74,11 @@ export interface ApiOptions {
 /** The existing actions registry: `.vendo/tools.json`, layered overrides,
  *  present-header forwarding with the origin gate, `actAs` for away runs. */
 export function api(options: ApiOptions = {}): ToolRegistry {
+  const baseUrl = options.baseUrl ?? process.env["VENDO_BASE_URL"];
   return createActions({
-    ...(options.dir === undefined ? {} : { dir: options.dir }),
+    dir: options.dir ?? ".",
     ...(options.actAs === undefined ? {} : { actAs: options.actAs }),
-    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+    ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(options.untrustedOriginPolicy === undefined
       ? {}
       : { untrustedOriginPolicy: options.untrustedOriginPolicy }),

@@ -1,9 +1,8 @@
 import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import type TS from "typescript";
-import { noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
+import { resolveCompiler } from "./compiler-gate.js";
 import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
 
 // Tool identity lives in the pure ../binding-identity.js module (the judgment
@@ -168,24 +167,15 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
   return null;
 }
 
-/** The TypeScript compiler, resolved lazily through this package's own
- * dependency graph (the same posture as catalog-scan). Module analysis is
- * fail-closed: when the compiler cannot be loaded — or loads but predates the
- * API surface extraction calls (compiler-gate.ts) — imports and exports
- * resolve to nothing rather than being guessed at with string scans. */
+/** The TypeScript compiler, resolved lazily through the shared project-first
+ * ladder (compiler-gate.ts) and memoized — a host's toolchain does not change
+ * mid-run. Module analysis is fail-closed: when no base yields a compiler — or
+ * the one that loads predates the API surface extraction calls — imports and
+ * exports resolve to nothing rather than being guessed at with string scans. */
 let compilerModule: typeof TS | null | undefined;
 
 function loadCompiler(): typeof TS | null {
-  if (compilerModule === undefined) {
-    try {
-      const candidate = createRequire(import.meta.url)("typescript") as typeof TS;
-      const tooOld = unsupportedCompiler(candidate);
-      if (tooOld !== null) noteRejectedCompiler(tooOld);
-      compilerModule = tooOld === null ? candidate : null;
-    } catch {
-      compilerModule = null;
-    }
-  }
+  if (compilerModule === undefined) compilerModule = resolveCompiler();
   return compilerModule;
 }
 

@@ -1,13 +1,14 @@
 /**
- * The shared capability gate for every host-resolved TypeScript compiler
- * (`loadCompiler` in common.ts, `loadTypescript` in static-ts.ts, the catalog
- * scan's dynamic import). Extraction's law is "extraction never fails your
- * build": a compiler that loads but predates the API surface extraction calls
- * must degrade exactly like a compiler that failed to load — analysis
- * resolves to nothing — never crash mid-scan (FINDINGS F1: a host pinning
- * typescript 4.7 died on `ts.getModifiers is not a function` during
- * `vendo init`).
+ * The shared resolver and capability gate for every TypeScript compiler
+ * extraction loads. Extraction's law is "extraction never fails your build":
+ * a compiler that loads but predates the API surface extraction calls must
+ * degrade exactly like a compiler that failed to load — analysis resolves to
+ * nothing — never crash mid-scan (FINDINGS F1: a host pinning typescript 4.7
+ * died on `ts.getModifiers is not a function` during `vendo init`).
  */
+import { createRequire } from "node:module";
+import path from "node:path";
+import type TS from "typescript";
 
 /**
  * EVERY module-level compiler function the scanners call (regenerate with
@@ -73,6 +74,8 @@ export function unsupportedCompiler(candidate: unknown): RejectedCompiler | null
  * `loadCompiler` memoizes its (rejected) resolution anyway, so later syncs in
  * the same process could not re-detect the rejection themselves. */
 let rejectedCompiler: RejectedCompiler | null = null;
+let unresolvableCompiler = false;
+let compilerRoot: string | undefined;
 
 /** Called by a loader whose every resolution candidate loaded but failed the
  * capability probe; sync surfaces the result once per report. */
@@ -80,17 +83,60 @@ export function noteRejectedCompiler(rejected: RejectedCompiler): void {
   rejectedCompiler = rejected;
 }
 
-/** The single host-facing warning for a loaded-but-too-old compiler, naming
- * the host's version, the missing API, and the floor. Null when no loader
- * rejected one. */
-export function compilerFloorWarning(): string | null {
-  if (rejectedCompiler === null) return null;
-  return `host typescript ${rejectedCompiler.version} is older than the >=${COMPILER_FLOOR} floor extraction requires (missing ts.${rejectedCompiler.missingApi}); `
-    + "compiler-based extraction (routes, trpc, server actions, component catalog) is disabled and resolves to nothing — "
-    + `upgrade the host's typescript to >=${COMPILER_FLOOR} to restore it`;
+/** Called when no resolution base could load a compiler at all. */
+export function noteUnresolvableCompiler(): void {
+  unresolvableCompiler = true;
 }
 
-/** Test seam: the rejection note is process-sticky by design. */
+/** The project being synced. Its node_modules is the FIRST place every
+ * compiler load looks: under `npx` the running install cannot see the
+ * project's typescript, and a compiler resolved from nowhere leaves every
+ * extractor reporting empty results as if the project had nothing to find. */
+export function setCompilerRoot(root: string): void {
+  compilerRoot = root;
+}
+
+/** The host's compiler, project first and this install second, gated on the
+ * capability probe. Null — with the reason noted for the report — when no base
+ * yields a usable one. */
+export function resolveCompiler(root = compilerRoot): typeof TS | null {
+  const bases = root === undefined ? [import.meta.url] : [path.join(root, "package.json"), import.meta.url];
+  let rejected: RejectedCompiler | null = null;
+  for (const base of bases) {
+    let candidate: typeof TS;
+    try {
+      candidate = createRequire(base)("typescript") as typeof TS;
+    } catch {
+      continue; // Try the next resolution base.
+    }
+    const tooOld = unsupportedCompiler(candidate);
+    if (tooOld === null) return candidate;
+    rejected = tooOld;
+  }
+  if (rejected === null) noteUnresolvableCompiler();
+  else noteRejectedCompiler(rejected);
+  return null;
+}
+
+/** The single host-facing warning when compiler-based extraction is off,
+ * naming the cause. A rejected compiler is a NAMED cause and outranks the
+ * bare "nothing resolved". Null while extraction has a usable compiler. */
+export function compilerFloorWarning(): string | null {
+  const disabled = "compiler-based extraction (routes, trpc, server actions, component catalog) is disabled and resolves to nothing — ";
+  if (rejectedCompiler !== null) {
+    return `host typescript ${rejectedCompiler.version} is older than the >=${COMPILER_FLOOR} floor extraction requires (missing ts.${rejectedCompiler.missingApi}); `
+      + disabled
+      + `upgrade the host's typescript to >=${COMPILER_FLOOR} to restore it`;
+  }
+  if (!unresolvableCompiler) return null;
+  return "no typescript compiler resolved from this project or from vendo's own install; "
+    + disabled
+    + `install typescript >=${COMPILER_FLOOR} in this project to restore it`;
+}
+
+/** Test seam: the notes and the root are process-sticky by design. */
 export function resetCompilerGateForTests(): void {
   rejectedCompiler = null;
+  unresolvableCompiler = false;
+  compilerRoot = undefined;
 }

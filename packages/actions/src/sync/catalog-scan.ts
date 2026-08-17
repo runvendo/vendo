@@ -4,14 +4,10 @@ import type { JsonSchema } from "@vendoai/core";
 import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
-import { COMPILER_FLOOR, noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
+import { COMPILER_FLOOR, resolveCompiler } from "./compiler-gate.js";
 import { parseModule, resolveIdentifier, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
 
 let ts: typeof tsTypes;
-
-async function loadTypeScript(): Promise<typeof tsTypes> {
-  return (await import("typescript")).default;
-}
 
 /** Where one registered component's source actually lives — the input to
  *  source capture (components.ts). */
@@ -787,24 +783,16 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
   if (sourceFiles.length === 0) return { ...blank, warnings: [], degraded: true };
   // A walk that hit its cap never saw the whole project.
   const capped = sourceFiles.length >= MAX_SCAN_FILES;
-  try {
-    ts = await loadTypeScript();
-  } catch (error) {
+  const compiler = resolveCompiler();
+  if (compiler === null) {
     return {
       ...blank,
-      warnings: [`component catalog scan skipped: TypeScript compiler unavailable; install typescript for sync-time extraction (${error instanceof Error ? error.message : String(error)})`],
+      // The report-level compiler warning names the cause (absent vs too old).
+      warnings: [`component catalog scan skipped: no typescript >=${COMPILER_FLOOR} resolved for sync-time extraction`],
       degraded: true,
     };
   }
-  const tooOld = unsupportedCompiler(ts);
-  if (tooOld !== null) {
-    noteRejectedCompiler(tooOld);
-    return {
-      ...blank,
-      warnings: [`component catalog scan skipped: host typescript ${tooOld.version} is older than the >=${COMPILER_FLOOR} extraction floor`],
-      degraded: true,
-    };
-  }
+  ts = compiler;
   const evidenceFiles = await catalogEvidenceFiles(sourceFiles);
   if (evidenceFiles.componentFiles.length === 0 && evidenceFiles.registrationFiles.length === 0) {
     // A complete walk that found no registration is trustworthy: the host

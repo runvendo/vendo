@@ -273,7 +273,7 @@ function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: 
   if (!baseUrl) {
     throw new VendoError(
       "validation",
-      `Cannot execute ${binding.kind} binding ${binding.path}; set createActions({ baseUrl }) for server-side route execution`,
+      `Cannot execute ${binding.kind} binding ${binding.path}; set VENDO_BASE_URL, or pass baseUrl, for server-side route execution`,
     );
   }
   try {
@@ -449,7 +449,7 @@ function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, config
   if (!configuredBaseUrl) {
     throw new VendoError(
       "validation",
-      `Cannot execute trpc binding ${binding.procedure}; set createActions({ baseUrl }) for server-side trpc execution`,
+      `Cannot execute trpc binding ${binding.procedure}; set VENDO_BASE_URL, or pass baseUrl, for server-side trpc execution`,
     );
   }
   let url: URL;
