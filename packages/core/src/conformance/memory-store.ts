@@ -9,8 +9,6 @@ import {
   permissionGrantSchema,
   runIdSchema,
   threadIdSchema,
-  TRIGGER_KIND_REF_KEYS,
-  triggerKindRefs,
   type IdempotencyRecord,
   type IdempotencyScope,
   type Json,
@@ -48,7 +46,7 @@ const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
   vendo_audit: ["subject", "kind", "app_id", "tool"],
   vendo_threads: ["subject"],
   vendo_runs: ["app_id", "status"],
-  vendo_apps: ["subject", ...TRIGGER_KIND_REF_KEYS],
+  vendo_apps: ["subject"],
   vendo_state: ["app_id", "subject"],
 };
 
@@ -286,7 +284,7 @@ const projectMemoryRecord = (
       }
       return {
         data: { subject, enabled, doc },
-        refs: { ...derivedRefs({ subject }), ...triggerKindRefs(doc.triggers) },
+        refs: derivedRefs({ subject }),
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       };
