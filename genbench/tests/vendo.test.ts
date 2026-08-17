@@ -140,7 +140,14 @@ describe("the vendo driver reports one revision", () => {
     // one finding, naming the stage that ran the screen.
     expect(outcome.blocking).toHaveLength(1);
     expect(outcome.blocking[0]).toContain("this screen painted nothing");
-    expect(outcome.failure).toBe("the delivered document does not render, so no screen is reported for it");
+    // …and that verdict is what the RUN reports, because the product now says so
+    // itself. A run whose last save never painted used to answer `assembled` —
+    // the front door found the earlier save's row and stamped a ready receipt —
+    // so this driver had to infer the failure by re-running the gate and had
+    // nothing but a sentence of its own to report it with. The assembler answers
+    // `unavailable` with the floor's own words now, so the reason travels whole:
+    // it names WHY nothing painted, which a stand-in never could.
+    expect(outcome.failure).toContain("this screen painted nothing");
   });
 
   it("keeps the view when the final save is the one that painted", async () => {
