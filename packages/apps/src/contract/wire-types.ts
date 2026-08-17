@@ -47,6 +47,20 @@ export type OpenSurface =
  *  keep the contracted not-found. */
 export interface PendingSurface {
   kind: "pending";
+  /**
+   * The app's tree AS IT FORMS, so the embed's existing poll paints stepped
+   * assembly instead of a blind bar. GEOMETRY ONLY — node ids, component names
+   * and nesting, tagged `streaming` — because a build's draft carries figures it
+   * is about to correct (`build-terminal-mount.e2e.test.ts`: a double count the
+   * repair round replaces), and nobody may be shown a number the build is about
+   * to change. Nothing that could render one travels: no props, no resolved
+   * `data`, no `interactive` VM, no component sources.
+   *
+   * Optional and additive. A document the server cannot paint yet — no screen
+   * saved, a draft that does not compile — simply omits it, and the embed keeps
+   * its beat bar.
+   */
+  tree?: UIPayload;
 }
 
 /**

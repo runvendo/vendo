@@ -36,6 +36,7 @@ import type {
   AppDocument,
   BriefingPack,
   NormalizedCatalog,
+  PendingSurface,
   ScreenAssembler,
   VendoRouteMap,
   VendoTheme,
@@ -642,7 +643,13 @@ export interface AppsRuntime {
    * boundary would be the wire route — and one door is not a boundary.
    */
   history(appId: AppId, ctx: RunContext): { list(): Promise<VersionEntry[]> };
-  open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
+  /**
+   * `pending` opts into the build window's additive half: an app whose build is
+   * still in flight answers `{kind:"pending"}` — carrying the forming tree's
+   * GEOMETRY when it has one (see `createAppOpener`) — instead of the not-found
+   * every other caller gets. The pending kind is reachable only through it.
+   */
+  open(appId: AppId, ctx: RunContext, options?: { pending?: boolean }): Promise<OpenSurface | PendingSurface>;
   call(appId: AppId, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;
   importApp(source: Uint8Array | AppDocument, ctx: RunContext): Promise<AppDocument>;

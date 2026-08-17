@@ -71,13 +71,13 @@ const createAppReadDoors = (
       });
     },
 
-    async open(appId, ctx) {
+    async open(appId, ctx, options) {
       const app = await requireOwned(appId, ctx, "viewer");
       // Review-kind (2026-08-02): an unapproved current version is invisible —
       // open() serves the newest APPROVED version from the existing history
       // instead (or the pending state when none was ever approved). Instant
       // kind passes through untouched.
-      return opener(await review.serveDocFor(app), ctx);
+      return opener(await review.serveDocFor(app), ctx, options);
     },
 
     async call(appId, ref, args, ctx) {

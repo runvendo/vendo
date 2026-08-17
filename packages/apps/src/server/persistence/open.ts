@@ -6,6 +6,7 @@ import {
   type AppId,
   type Json,
   type RunContext,
+  type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
 import {
@@ -14,6 +15,7 @@ import {
   validateTree,
   type AppDocument,
   type ComponentPaintResult,
+  type PendingSurface,
   type TreeQuery,
   type Tree,
   stripServerAuthoritativeFields,
@@ -284,8 +286,9 @@ const additionalVenueState = async (
   }
 };
 
-/** 06-apps §§1–2 — construct the open surface. */
-export const createAppOpener = (
+/** 06-apps §§1–2 — the open surface of a document that is DONE building.
+ *  `createAppOpener` below is what callers get; this is its servable half. */
+const serveOpenApp = (
   caller: AppCaller,
   seedBaselines: readonly SeedBaseline[] = [],
   inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
@@ -309,16 +312,6 @@ export const createAppOpener = (
    */
   venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
-  // A build that is still WRITING this app has nothing terminal to serve. Its row
-  // lands at the first painting save, tens of seconds before the reviewer pass and
-  // its repair round finish, and mounting on the row alone put people in front of
-  // a draft — a wrong NUMBER included — that the build then corrected where nobody
-  // was looking. Not-found is the same answer the app gave a moment earlier with
-  // no row at all, so the wire's build window turns it into the `{kind:"pending"}`
-  // every embed already waits on.
-  if (buildInFlight(app.building)) {
-    throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
-  }
   // A terminally failed build never becomes servable: resolve the poll now
   // with the persisted reason (approvals resolve to denied/expired the same
   // way) instead of leaving the embed to spin to its client deadline.
@@ -460,4 +453,62 @@ export const createAppOpener = (
   return app.components === undefined
     ? { kind: "tree", payload }
     : { kind: "tree", payload, components: componentSources(app.components) };
+};
+
+/**
+ * A servable payload reduced to the GEOMETRY a half-built app may show: the node
+ * ids, their component names, their nesting, and the `streaming` tag that holds
+ * the renderer on the forming silhouette instead of a verdict (renderer.tsx).
+ *
+ * Everything a figure could ride is dropped, because a draft's figures are the
+ * ones the build is about to correct. `props` goes because a painted screen's
+ * numbers are LITERALS in it (the VM ran the arithmetic before serializing);
+ * `data` because a v2 tree's numbers are the resolved query results its bindings
+ * point at; `interactive` because it carries the raw query answers a second time
+ * and would re-render the draft live in the browser; `components` because a
+ * generated island renders its own. What is left cannot express a number — which
+ * is the point, and is why this is a whitelist and never a redaction.
+ */
+const formingTree = (payload: UIPayload): UIPayload => ({
+  formatVersion: payload.formatVersion,
+  root: payload.root,
+  nodes: ((payload.nodes ?? []) as TreeNode[])
+    .map(({ id, component, children }) => ({ id, component, ...(children === undefined ? {} : { children }) })),
+  streaming: true,
+});
+
+/**
+ * 06-apps §§1–2 — the one read path a client opens an app through.
+ *
+ * A build that is still WRITING this app has nothing terminal to serve. Its row
+ * lands at the first painting save, tens of seconds before the reviewer pass and
+ * its repair round finish, and mounting on the row alone put people in front of a
+ * draft — a wrong NUMBER included — that the build then corrected where nobody was
+ * looking. So the answer stays the not-found the app gave a moment earlier with no
+ * row at all, which the wire's build window turns into the `{kind:"pending"}`
+ * every embed already waits on.
+ *
+ * `pending` asks for that window's ADDITIVE half instead: the same refusal to
+ * serve, plus the forming tree's geometry, so the embed's 1.2s poll can paint
+ * stepped assembly. It is the caller opting into an answer it must not mount —
+ * never a second way to open an app — so it is a flag on this door rather than a
+ * kind `open()` can return on its own.
+ */
+export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
+  (app: AppDocument, ctx: RunContext, options?: { pending?: boolean }) => Promise<OpenSurface | PendingSurface>
+) => {
+  const serve = serveOpenApp(...args);
+  return async (app, ctx, options) => {
+    if (!buildInFlight(app.building)) return await serve(app, ctx);
+    if (options?.pending !== true) {
+      throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
+    }
+    // A mid-build document is EXPECTED not to paint: no screen saved yet, a draft
+    // that does not compile, a tree with no payload. Each of those is a beat bar,
+    // not a failure — the next poll is 1.2s away.
+    const forming = await serve(app, ctx).catch(() => undefined);
+    return forming?.kind === "tree"
+      ? { kind: "pending", tree: formingTree(forming.payload) }
+      : { kind: "pending" };
+  };
 };

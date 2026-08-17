@@ -79,7 +79,12 @@ function decodeSlot(slot: string): string {
 async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunContext): Promise<Response> {
   const { deps } = wire;
   try {
-    return json(await deps.apps.open(appId, ctx));
+    // The flag rides through to the runtime, which answers a build still in
+    // flight with `{kind:"pending"}` plus — when the draft paints — the forming
+    // tree's geometry, so the embed's poll has something to show. Everything
+    // below stays the not-found disambiguation it was: no row, another subject's
+    // row, a terminal failure.
+    return json(await deps.apps.open(appId, ctx, { pending: true }));
   } catch (reason) {
     if (!(reason instanceof VendoError && reason.code === "not-found")) throw reason;
     // Build contract §9.4 — the probe is a DIAGNOSTIC for a caller who
