@@ -1,6 +1,7 @@
 import {
   KNOWLEDGE_WIRE_PATHS,
   VENDO_KNOWLEDGE_WIRE_FORMAT,
+  isVendoError,
   VendoError,
   knowledgeWireErrorBody,
   knowledgeWireFetchRequestSchema,
@@ -131,7 +132,7 @@ export function fakeKnowledgeServer(options: FakeKnowledgeServerOptions = {}): F
       }
       return envelope(new VendoError("not-found", `unknown knowledge wire route: ${url.pathname}`));
     } catch (error) {
-      if (error instanceof VendoError) return envelope(error);
+      if (isVendoError(error)) return envelope(error);
       return json({ error: { message: error instanceof Error ? error.message : String(error) } }, 500);
     }
   };

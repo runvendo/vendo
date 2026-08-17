@@ -1,5 +1,5 @@
 import {
-  VendoError,
+  isVendoError,
   type Json,
   type RunContext,
   type ToolOutcome,
@@ -113,7 +113,7 @@ export const createFnCaller = (config: FnCallerConfig): FnCaller => {
     } catch (error) {
       // Containment: wake and transport failures surface as error outcomes
       // (VendoError codes kept — sandbox-unavailable stays diagnosable).
-      if (error instanceof VendoError) return errorOutcome(error.code, error.message);
+      if (isVendoError(error)) return errorOutcome(error.code, error.message);
       return errorOutcome("machine", error instanceof Error ? error.message : "machine function failed");
     }
   };

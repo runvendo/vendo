@@ -17,6 +17,7 @@
  * erase.ts`), and the only query this surface makes — plus `app_id`, the same
  * ref name the rest of this package sweeps an app by.
  */
+import { isVendoError, log } from "@vendoai/core";
 import type { AppId, IsoDateTime } from "@vendoai/core";
 import type { EngineOps } from "./engine.js";
 import { listAllEngineRecords } from "./persistence.js";
@@ -46,13 +47,48 @@ export interface AppSeenStore {
  *  only has to be unique, and it is. */
 const rowId = (appId: AppId, subject: string): string => `${appId}:${subject}`;
 
+/** Said ONCE per process: `mark` runs on every render of every app, so a store
+ *  that refuses this collection would otherwise write the same line forever. */
+let announced = false;
+
+/**
+ * A store that will not hold read state costs the DOT, never the answer.
+ *
+ * The rows are decoration — "has this ever been looked at" — but they were read
+ * on the path that LISTS a person's apps, so a store refusing this collection
+ * took the whole page down with it, and every render's mark with it. Vendo Cloud
+ * did exactly that in 0.27.0: `vendo_app_seen` was missing from the deployed
+ * engine allowlist, so every one of these calls came back a refusal.
+ *
+ * Only the store SAYING NO is absorbed (a `VendoError`, whichever realm minted
+ * it — see `isVendoError`); a bug in this file still throws.
+ */
+const withoutSeenRows = async <T>(fallback: T, read: () => Promise<T>): Promise<T> => {
+  try {
+    return await read();
+  } catch (error) {
+    if (!isVendoError(error)) throw error;
+    if (!announced) {
+      announced = true;
+      log({
+        code: "apps.app-seen-unavailable",
+        level: "warn",
+        message: `[vendo] this store will not hold ${APP_SEEN_COLLECTION}, so apps arrive without the unseen dot — ${error.message}`,
+      });
+    }
+    return fallback;
+  }
+};
+
 export const appSeenStore = (engine: EngineOps): AppSeenStore => ({
   async mark(appId, subject) {
     const row: AppSeenRow = { seenAt: new Date().toISOString() };
-    await engine.insertIfAbsent(APP_SEEN_COLLECTION, {
-      id: rowId(appId, subject),
-      data: row,
-      refs: { subject, app_id: appId },
+    await withoutSeenRows(undefined, async () => {
+      await engine.insertIfAbsent(APP_SEEN_COLLECTION, {
+        id: rowId(appId, subject),
+        data: row,
+        refs: { subject, app_id: appId },
+      });
     });
   },
 
@@ -60,17 +96,21 @@ export const appSeenStore = (engine: EngineOps): AppSeenStore => ({
     // Point reads for the page in hand, never a scan of this person's history:
     // the row set grows with every app they have ever opened, and the answer
     // only ever concerns the ids being listed.
-    const rows = await Promise.all(
-      appIds.map((appId) => engine.get(APP_SEEN_COLLECTION, rowId(appId, subject))),
-    );
-    return new Set(appIds.filter((_appId, index) => rows[index] === null));
+    return await withoutSeenRows(new Set<AppId>(), async () => {
+      const rows = await Promise.all(
+        appIds.map((appId) => engine.get(APP_SEEN_COLLECTION, rowId(appId, subject))),
+      );
+      return new Set(appIds.filter((_appId, index) => rows[index] === null));
+    });
   },
 
   async clearForApp(appId) {
     // Swept by APP, not by one subject: a shared app was seen by people the
     // deleter cannot enumerate (the same argument placements.ts makes).
-    for (const record of await listAllEngineRecords(engine, APP_SEEN_COLLECTION, { refs: { app_id: appId } })) {
-      await engine.delete(APP_SEEN_COLLECTION, record.id);
-    }
+    await withoutSeenRows(undefined, async () => {
+      for (const record of await listAllEngineRecords(engine, APP_SEEN_COLLECTION, { refs: { app_id: appId } })) {
+        await engine.delete(APP_SEEN_COLLECTION, record.id);
+      }
+    });
   },
 });

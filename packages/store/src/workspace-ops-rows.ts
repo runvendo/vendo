@@ -1,4 +1,4 @@
-import { VendoError, type StoreOps } from "@vendoai/core";
+import { isVendoError, VendoError, type StoreOps } from "@vendoai/core";
 import { iso } from "./helpers/utils.js";
 import type {
   CommitAllResult,
@@ -225,7 +225,7 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
       } catch (error) {
         // §9.7 — a strict mount's lost swap is the frozen conflict branch, not
         // a failure: the façade re-reads the new head and re-applies.
-        if (strict && error instanceof VendoError && error.code === "conflict") {
+        if (strict && isVendoError(error) && error.code === "conflict") {
           return {
             landed: false,
             revision: checkedOut,
@@ -277,7 +277,7 @@ export function workspaceOpsRows(ops: StoreOps): WorkspaceRows {
       try {
         await ops.workspace.commit(wire, { owner });
       } catch (error) {
-        if (!(error instanceof VendoError) || error.code !== "conflict") throw error;
+        if (!isVendoError(error) || error.code !== "conflict") throw error;
         // §9.7 — a lost swap is the frozen conflict branch, not a failure. The
         // refusal names no path on the wire (the error envelope carries a code
         // and a message, nothing else), so read the heads back and re-run the

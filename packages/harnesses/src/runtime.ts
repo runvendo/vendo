@@ -13,7 +13,7 @@ import {
   auditContext,
   log,
   mintTurnId,
-  VendoError,
+  isVendoError,
   withSseKeepalive,
   type ApprovalId,
   type AuditEvent,
@@ -281,7 +281,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           await harnessState.clear(input.threadId);
         }
       } catch (error) {
-        if (error instanceof VendoError) throw error;
+        if (isVendoError(error)) throw error;
         // An unreadable history is not a licence to hand over a stale session.
         carried = undefined;
       }

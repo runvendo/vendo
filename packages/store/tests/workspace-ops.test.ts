@@ -1,9 +1,11 @@
-import type { Membership, Principal } from "@vendoai/core";
+import type { Membership, Principal, StoreOps } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { createStoreOps } from "../src/ops.js";
 import type { VendoStore as StoreHandle } from "../src/store.js";
+import { workspaceOpsRows } from "../src/workspace-ops-rows.js";
+import type { PreparedWrite } from "../src/workspace-rows.js";
 import { workspaceStore } from "../src/workspace.js";
 
 /**
@@ -198,3 +200,34 @@ for (const backend of backends()) {
     });
   });
 }
+
+/**
+ * The ops surface belongs to whoever MOUNTED it — a hosted store, a host's own
+ * adapter — which is exactly where a second `@vendoai/core` copy lives. Its
+ * VendoErrors are a different class, so a lost compare-and-swap failed
+ * `instanceof`, escaped §9.7's conflict branch, and reached the façade as a
+ * crash instead of the re-aim.
+ */
+describe("a conflict another realm's VendoError carried is still a lost swap", () => {
+  it("answers the conflict branch instead of throwing", async () => {
+    const ops = {
+      workspace: {
+        async commit() {
+          throw Object.assign(new Error("someone else moved it"), { name: "VendoError", code: "conflict" });
+        },
+        async index() {
+          return { entries: [{ path: "notes.md", revision: 9, bytes: 5, updatedAt: new Date().toISOString() }] };
+        },
+      },
+    } as unknown as StoreOps;
+
+    const result = await workspaceOpsRows(ops).commitAll("dana", [{
+      path: "notes.md",
+      write: { path: "notes.md", content: new TextEncoder().encode("hello") } as PreparedWrite,
+      strict: true,
+      expectedRevision: 1,
+    }]);
+
+    expect(result).toEqual({ conflicts: ["notes.md"], landed: [], removed: [] });
+  });
+});

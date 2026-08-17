@@ -1,7 +1,7 @@
 import {
   VENDO_APP_REF_KIND,
   VENDO_AUTOMATION_REF_KIND,
-  VendoError,
+  isVendoError,
   parseVendoToolEnvelope,
   type ApprovalDecision,
   type ToolOutcome,
@@ -187,7 +187,7 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
     } catch (reason) {
       // An approval the wire no longer knows is no longer actionable: the
       // TTL sweep (or a store erase) got there first. Same terminal state.
-      if (reason instanceof VendoError && reason.code === "not-found") {
+      if (isVendoError(reason) && reason.code === "not-found") {
         return { state: "expired" };
       }
       throw reason;

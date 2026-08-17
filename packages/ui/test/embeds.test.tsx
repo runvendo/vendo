@@ -161,6 +161,27 @@ describe("existing-agents embeds", () => {
       await waitFor(() => expect(screen.getByText(/expired/i)).toBeDefined());
     });
 
+    /** A browser bundle is the likeliest place to hold TWO copies of
+     *  `@vendoai/core` (the ESM build beside the CJS one), and the second
+     *  copy's VendoErrors are a different class — so `instanceof` said no and a
+     *  swept approval threw past this branch into the error card. */
+    it("renders expired for a not-found another realm's VendoError carried", async () => {
+      client = {
+        ...client,
+        approvals: {
+          ...client.approvals,
+          get: async () => {
+            throw Object.assign(new Error("apr_1 is no longer known"), {
+              name: "VendoError",
+              code: "not-found",
+            });
+          },
+        },
+      };
+      mount(<VendoApprovalEmbed refValue={approvalRef} />);
+      await waitFor(() => expect(screen.getByText(/expired/i)).toBeDefined());
+    });
+
     it("surfaces a wire failure as one honest line plus Try again, never a silent blank", async () => {
       // ⚠️ TEST EDIT (M36 + ruling 18): this required the wire's "wire down" in
       // the alert. Ruling 18 says a non-conversational surface owes the reader an

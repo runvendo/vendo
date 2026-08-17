@@ -14,6 +14,7 @@
  */
 import {
   STORE_WIRE_TURN_OPS,
+  isVendoError,
   VendoError,
   createTurnSkills,
   emitUsage,
@@ -689,7 +690,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // The turn ended before it ran: mounting the toolset, minting a turn
         // credential or building the stream threw, so nothing was published and
         // the disposer above will never fire.
-        emitRun("error", error instanceof VendoError ? error.code : "unknown");
+        emitRun("error", isVendoError(error) ? error.code : "unknown");
         throw error;
       });
       // A caller may begin without an id; hand the effective one back on every

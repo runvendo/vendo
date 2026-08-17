@@ -20,6 +20,7 @@ import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineHarness } from "../src/define.js";
 import { createHarnessRuntime } from "../src/runtime.js";
+import { specificWireErrorMessage } from "../src/wire-error.js";
 import { vendo } from "../src/vendo/vendo.js";
 import {
   boundRegistry,
@@ -150,6 +151,20 @@ describe("the credential ladder's fix survives the fold", () => {
       expect(turn.streamed, where).toBe(`Vendo: ${KEYLESS.message} (validation)`);
       expect(turn.persisted, where).toBe(`Vendo: ${KEYLESS.message} (validation)`);
     }
+  });
+
+  /** …and it survives a REALM too. A host bundle can carry a second
+   *  `@vendoai/core` copy, whose VendoErrors are a different class: the gate's
+   *  `instanceof` said no, and the one sentence that names the fix was replaced
+   *  by the generic. The check is `name` + `code` now — the two things this gate
+   *  reads — so both copies' errors travel whole. */
+  it("holds for a VendoError another realm's copy minted", () => {
+    const crossRealm = Object.assign(new Error(KEYLESS.message), {
+      name: "VendoError",
+      code: "validation",
+    });
+    expect(specificWireErrorMessage(crossRealm)).toBe(`Vendo: ${KEYLESS.message} (validation)`);
+    expect(specificWireErrorMessage(crossRealm)).toBe(specificWireErrorMessage(KEYLESS));
   });
 });
 

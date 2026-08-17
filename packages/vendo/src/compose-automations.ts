@@ -12,6 +12,7 @@ import { agentAutomationPlan, agentComposition, awayRunner, type VendoAgent } fr
 import { automationsInternals, createAutomations } from "@vendoai/automations";
 import {
   DEFAULT_RUNNER_NAME,
+  isVendoError,
   log,
   VendoError,
   type AgentRunner,
@@ -142,19 +143,39 @@ export const composeAutomations = (composition: VendoComposition): Pick<VendoCom
       presence: "away",
       sessionId: BOOT_RECONCILE_SESSION,
     };
-    const stored = await automations.list({ owner: CODE_AUTOMATION_OWNER.subject }, ctx);
-    const plan = agentAutomationPlan(declaringAgents, stored, CODE_AUTOMATION_OWNER);
-    // The applier, NOT `disable`: `disable` is the PERSON's kill switch and
-    // stamps `disarmedBy: "user"`, which a redeploy has no business
-    // impersonating — and `reconcile` skips every record already carrying that
-    // stamp, which is what makes a switch a human set survive every deploy.
-    // Two disarm reasons, one `armed` flag; the stamp is the whole distinction.
-    await internals.reconcile(plan, ctx);
-    if (plan.create.length > 0 || plan.disarm.length > 0) {
+    try {
+      const stored = await automations.list({ owner: CODE_AUTOMATION_OWNER.subject }, ctx);
+      const plan = agentAutomationPlan(declaringAgents, stored, CODE_AUTOMATION_OWNER);
+      // The applier, NOT `disable`: `disable` is the PERSON's kill switch and
+      // stamps `disarmedBy: "user"`, which a redeploy has no business
+      // impersonating — and `reconcile` skips every record already carrying that
+      // stamp, which is what makes a switch a human set survive every deploy.
+      // Two disarm reasons, one `armed` flag; the stamp is the whole distinction.
+      await internals.reconcile(plan, ctx);
+      if (plan.create.length > 0 || plan.disarm.length > 0) {
+        log({
+          code: "vendo.automations-reconciled",
+          level: "info",
+          message: `[vendo] reconciled code-authored automations: ${plan.create.length} armed, ${plan.disarm.length} disarmed.`,
+        });
+      }
+    } catch (error) {
+      // THE RECONCILE IS NOT THE DEPLOYMENT. It rides the ready() latch, and the
+      // latch is MEMOIZED: a rejection here is every route's answer for the life
+      // of the process. 0.27.0 shipped that — a hosted store whose engine
+      // allowlist did not carry `vendo_automations` refused the boot read, and
+      // deployments that never touched an automation served 501 to everything.
+      // Code-authored automations are one feature; the rest of the product does
+      // not wait on them. Scoped to THIS read: every per-request store failure
+      // beyond it still fails in the open, where the caller can see it.
+      const refused = isVendoError(error);
       log({
-        code: "vendo.automations-reconciled",
-        level: "info",
-        message: `[vendo] reconciled code-authored automations: ${plan.create.length} armed, ${plan.disarm.length} disarmed.`,
+        code: "vendo.automations-reconcile-skipped",
+        level: refused ? "warn" : "error",
+        message: refused
+          ? "[vendo] Vendo Cloud hasn't enabled the automations store yet — code-authored automations stay off until it does; everything else serves."
+          : "[vendo] the code-authored automations could not be reconciled at boot; they stay off and everything else serves:",
+        data: { error },
       });
     }
   };

@@ -37,7 +37,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
-  VendoError,
+  isVendoError,
   log,
   mintTurnId,
   type AppId,
@@ -1083,7 +1083,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           // has none and its decisions have nowhere to land. Warning about it
           // sends an operator hunting for a broken memory door behind an expected
           // state; everything else IS a write that should have happened.
-          if (error instanceof VendoError && error.code === "not-found") {
+          if (isVendoError(error) && error.code === "not-found") {
             log({
               code: "vendo.screen-agent-decisions-no-row",
               level: "info",

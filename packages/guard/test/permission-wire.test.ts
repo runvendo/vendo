@@ -166,6 +166,27 @@ describe("permissionsHandler", () => {
     expect(await bad?.json()).toMatchObject({ error: { code: "validation" } });
   });
 
+  /** A refusal minted by a SECOND `@vendoai/core` copy (a host bundle carrying
+   *  both the ESM and CJS builds) is a different class, so the gate's
+   *  `instanceof` said no and rethrew — the host's route crashed on a refusal
+   *  that has a perfectly good status. */
+  it("maps a refusal from another realm's VendoError onto its status too", async () => {
+    const guard = guardOf();
+    const refused = Object.assign(new Error("approvals are not enabled for this deployment"), {
+      name: "VendoError",
+      code: "blocked",
+    });
+    const handler = permissionsHandler({
+      guard: { ...guard, approvals: { ...guard.approvals, pending: async () => { throw refused; } } },
+      principal: async () => alice,
+    });
+
+    const response = await handler(request("GET", "/api/vendo/approvals"));
+
+    expect(response?.status).toBe(403);
+    expect(await response?.json()).toMatchObject({ error: { code: "blocked" } });
+  });
+
   it("maps the guard's own refusals onto their statuses", async () => {
     const guard = guardOf();
     const handler = permissionsHandler({ guard, principal: async () => alice });

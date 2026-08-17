@@ -1,4 +1,4 @@
-import { VendoError, type Json, type RunContext, type StoreOps } from "@vendoai/core";
+import { isVendoError, VendoError, type Json, type RunContext, type StoreOps } from "@vendoai/core";
 import { json, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
 /** What the ?pending=1 disambiguation learned about a record open() refused
@@ -150,7 +150,9 @@ async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunC
   try {
     surface = await deps.apps.open(appId, ctx, { pending: true });
   } catch (reason) {
-    if (!(reason instanceof VendoError && reason.code === "not-found")) throw reason;
+    // Cross-realm safe (`isVendoError`): a second @vendoai/core copy's not-found
+    // read as an unknown fault here, which 501'd the poll instead of answering it.
+    if (!(isVendoError(reason) && reason.code === "not-found")) throw reason;
     return await answerUnservableApp(wire, appId, ctx);
   }
   // Arrival, outside that catch on purpose — a mark's own not-found must never be

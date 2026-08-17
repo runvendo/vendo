@@ -11,6 +11,7 @@ import {
   type ReadFileOptions,
   type RmOptions,
   safeErrorMessage,
+  isVendoError,
   VendoError,
   type WorkspaceFs,
   type WriteFileOptions,
@@ -578,7 +579,7 @@ export class WorkspaceStoreFs implements WorkspaceFs {
         // The adapter already said what kind of failure this is (refused, absent,
         // throttled); re-labelling it all `validation` told callers to go fix an
         // argument that was already correct.
-        const code = cause instanceof VendoError ? cause.code : "validation";
+        const code = isVendoError(cause) ? cause.code : "validation";
         throw new VendoError(
           code,
           `Cannot commit ${path}: ${safeErrorMessage(cause)}`,

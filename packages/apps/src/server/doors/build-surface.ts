@@ -9,6 +9,7 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
+  isVendoError,
   VendoError,
   describeShapeWithSemantics,
   log,
@@ -187,14 +188,14 @@ const routeThroughAssembler = async (
     if (routed.kind === "assembled") stored = await engine.get(APPS_COLLECTION, appId);
   } catch (error) {
     const { reason, retryable } = buildFailureReason(error);
-    const detail = error instanceof VendoError && Array.isArray(error.detail)
+    const detail = isVendoError(error) && Array.isArray(error.detail)
       ? error.detail.filter((item): item is string => typeof item === "string")
       : [];
     return failBuild(
       reason,
       retryable,
       detail.length > 0 ? detail : [safeErrorMessage(error)],
-      error instanceof VendoError ? error.code : "validation",
+      isVendoError(error) ? error.code : "validation",
     );
   }
   if (routed.kind === "assembled") {

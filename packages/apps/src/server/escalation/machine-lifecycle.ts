@@ -1,4 +1,5 @@
 import {
+  isVendoError,
   VendoError,
   type AppId,
 } from "@vendoai/core";
@@ -232,7 +233,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
    *  not-found means the PROVIDER lost the machine (TTL, sweep) — an app-level
    *  status never throws through the seam. */
   const isMachineGone = (error: unknown): boolean =>
-    error instanceof VendoError && error.code === "not-found";
+    isVendoError(error) && error.code === "not-found";
 
   /** One tracked request against a specific live raw machine (no recovery). */
   const requestOnce = async (

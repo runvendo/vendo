@@ -1,4 +1,5 @@
 import {
+  isVendoError,
   VendoError,
   WORKSPACE_INLINE_MAX_BYTES,
   type AppId,
@@ -175,7 +176,7 @@ const parseArchive = (source: Uint8Array): ParsedArchive => {
       hasAppDirectory: Object.keys(archive).some((entry) => entry.startsWith("app/")),
     };
   } catch (error) {
-    if (error instanceof VendoError) throw error;
+    if (isVendoError(error)) throw error;
     throw validationError("invalid .vendoapp archive", {
       reason: error instanceof Error ? error.message : "archive parse failed",
     });

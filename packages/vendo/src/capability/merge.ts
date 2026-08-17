@@ -19,6 +19,7 @@
  */
 import {
   TOOL_NAME_PATTERN,
+  isVendoError,
   VendoError,
   skillFilePath,
   type Skill,
@@ -105,7 +106,7 @@ const descriptorOf = ({ execute: _execute, ...descriptor }: ToolDefinition): Too
 
 const errorOutcome = (error: unknown): ToolOutcome => ({
   status: "error",
-  error: error instanceof VendoError
+  error: isVendoError(error)
     ? { code: error.code, message: error.message }
     : { code: "internal", message: error instanceof Error ? error.message : "unknown tool error" },
 });

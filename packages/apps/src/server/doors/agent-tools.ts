@@ -5,7 +5,7 @@ import {
   VENDO_MAKE_TOOL,
   VENDO_SLOTS_LIST_TOOL,
   VENDO_TOOL_TITLES,
-  VendoError,
+  isVendoError,
   type AppId,
   type Json,
   type RunContext,
@@ -311,7 +311,7 @@ const FORBIDDEN_FACTS = "The change was not made: this is the team's copy of the
   + "card themselves, and there is no fork tool here.";
 
 const errorOutcome = (error: unknown): ToolOutcome => {
-  if (error instanceof VendoError) {
+  if (isVendoError(error)) {
     return {
       status: "error",
       error: {

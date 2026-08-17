@@ -8,7 +8,7 @@
  * is where a host names it.
  */
 import { provideCloudAdapters } from "@vendoai/agents";
-import { log, VendoError } from "@vendoai/core";
+import { isVendoError, log, VendoError } from "@vendoai/core";
 import { announceBootSummary, bootSummaryFor } from "./boot-summary.js";
 import { createComposition } from "./compose-context.js";
 import { vendoInstance, wireDepsFor } from "./compose-wire.js";
@@ -395,7 +395,10 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
 
       throw new VendoError("not-found", "unknown Vendo route");
     } catch (error) {
-      if (error instanceof VendoError) return errorResponse(error);
+      // `isVendoError`, not `instanceof`: a host bundle's second @vendoai/core
+      // copy mints a different class, and 0.27.0 answered 501 to every one of
+      // its refusals — a blocked collection read as "Internal Vendo error".
+      if (isVendoError(error)) return errorResponse(error);
       // The wire response stays generic (no internals leak to clients), but
       // the host operator gets the real failure on their own server log.
       log({

@@ -1,5 +1,5 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { deploymentIdentityHeaders, log, raiseCloudError, VendoError } from "@vendoai/core";
+import { deploymentIdentityHeaders, log, raiseCloudError, isVendoError, VendoError } from "@vendoai/core";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
 import {
   CLOUD_BOX_PORT,
@@ -199,7 +199,7 @@ const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
 /** True exactly for the "that state is already gone" answer that the seam's
  * idempotent transitions (destroy twice, stop of a dead machine) absorb. */
 const isGone = (error: unknown): boolean =>
-  error instanceof VendoError && error.code === "not-found";
+  isVendoError(error) && error.code === "not-found";
 
 /** Decode a ref, and report which ref failed when it will not decode.
  *
@@ -374,7 +374,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           // means the sweep destroyed the machine out from under this handle,
           // exactly like a purged id's not-found: both become the thrown
           // not-found the lifecycle's eviction/re-wake recovery keys on.
-          if (error instanceof VendoError && error.code === "conflict") {
+          if (isVendoError(error) && error.code === "conflict") {
             throw new VendoError("not-found", `Vendo Cloud sandbox ${handle.id} is gone (destroyed by the provider): ${error.message}`);
           }
           throw error;

@@ -15,6 +15,7 @@
 import {
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
+  isVendoError,
   VendoError,
   log,
   type LimitAction,
@@ -100,7 +101,7 @@ export function createLimiter({ callback, ops }: {
         // Cloud is rate-limiting or down (`unavailable`) rather than because
         // this user spent anything. Still a DENY — but never dressed as a cap
         // they reached, because nothing was counted.
-        return error instanceof VendoError && error.code === "unavailable"
+        return isVendoError(error) && error.code === "unavailable"
           ? { allow: false, message: SERVICE_BUSY, retryable: true }
           : { allow: false };
       }

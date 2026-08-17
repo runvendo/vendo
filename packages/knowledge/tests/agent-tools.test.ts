@@ -408,6 +408,28 @@ describe("tool policy: engine outage (T2)", () => {
     expect(envelope.hits ?? []).toEqual([]);
   });
 
+  /** The adapter is a HOST's code, which is exactly where a second
+   *  `@vendoai/core` copy lives — so its VendoErrors are another class and the
+   *  operator's line lost the one thing that names the failure: its code. */
+  it("names the CODE of a refusal another realm's VendoError carried", async () => {
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const base = memoryKnowledgeAdapter({ docs });
+    const broken: KnowledgeAdapter = {
+      ...base,
+      async search() {
+        throw Object.assign(new Error("the index is not enabled for this deployment"), {
+          name: "VendoError",
+          code: "blocked",
+        });
+      },
+    };
+
+    await search(createKnowledgeTools(broken), { query: "wire transfers" });
+
+    expect(warnings.mock.calls.map((call) => String(call[0])).join("\n"))
+      .toContain("blocked: the index is not enabled for this deployment");
+  });
+
   it("maps a thrown fetch to unavailable too", async () => {
     const base = memoryKnowledgeAdapter({ docs });
     const broken: KnowledgeAdapter = {

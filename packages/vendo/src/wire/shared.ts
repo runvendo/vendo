@@ -2,6 +2,7 @@ import type { AppsRuntime, AppTokens } from "@vendoai/apps";
 import type { SandboxVenue } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
+  isVendoError,
   VendoError,
   type Json,
   type Membership,
@@ -303,7 +304,7 @@ export async function requestJson(request: Request): Promise<Record<string, unkn
   try {
     return object(await request.json(), "request body");
   } catch (error) {
-    if (error instanceof VendoError) throw error;
+    if (isVendoError(error)) throw error;
     throw new VendoError("validation", "request body must be valid JSON");
   }
 }
