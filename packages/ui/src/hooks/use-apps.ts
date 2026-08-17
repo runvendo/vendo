@@ -25,8 +25,8 @@ export function useApps(options?: PollOptions): {
 } {
   const { client } = useVendoProvider();
   // H15 — one apps poller per client (apps-feed), shared with the launcher's
-  // dot: a panel listing apps and the pill reading the unseen count off the same
-  // rows cost ONE request between them, and cannot disagree in front of anyone.
+  // dot: this hook and the pill reading the unseen count off the same rows cost
+  // ONE request between them, and cannot disagree in front of anyone.
   const feed = appsFeed(client);
   const pollMs = options?.pollMs ?? 0;
   const subscribe = useCallback((listener: () => void) => feed.subscribe(listener, pollMs), [feed, pollMs]);

@@ -2,12 +2,12 @@
  * ONE apps poller per client.
  *
  * The same shape as `approvals-feed.ts`, and for the same reason: the app
- * collection is read by more than one surface — a panel that lists apps, and the
- * launcher pill, which needs the unseen count to light its dot. A module store
- * fed by whichever surface happened to mount cannot do that: the count froze at
- * the moment of mount, so an app that arrived mid-session never lit the dot and
- * rendering one never cleared it, and a host with no app panel at all read zero
- * forever.
+ * collection has more than one reader — every `useApps` caller, and the launcher
+ * pill, which needs the unseen count to light its dot. A module store fed by
+ * whichever of them happened to mount cannot do that: the count froze at the
+ * moment of mount, so an app that arrived mid-session never lit the dot,
+ * rendering one never cleared it, and a host whose surfaces never list apps read
+ * zero forever.
  *
  * One request between them, at the FASTEST cadence any subscriber asked for.
  * `unseen` rides the rows that fetch already returns, so the dot costs no
