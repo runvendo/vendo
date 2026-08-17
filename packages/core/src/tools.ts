@@ -381,12 +381,21 @@ const connectRequiredSchema = z.object({
   message: z.string(),
 }).passthrough() satisfies z.ZodType<ConnectRequired>;
 
-/** 01-core §4 */
+/** 01-core §4
+ *
+ *  `blocked.cause` narrows WHY nothing ran when the reason is nobody's doing:
+ *  `"expired"` marks an approval wait that elapsed unanswered, so a surface can
+ *  say "expired unanswered" instead of misattributing the refusal (H2-G — the
+ *  timeout used to narrate as the person's no). A FIELD, not a new status: the
+ *  union is a closed discriminator to every already-published validator, while
+ *  an optional field passes through them (an old chrome renders the refusal
+ *  attributed to the rules — imprecise, never an accusation). Vocabulary
+ *  matches `ParkedCallOutcome.state: "expired"`. */
 export type ToolOutcome =
   | { status: "ok"; output: Json }
   | { status: "error"; error: { code: string; message: string } }
   | { status: "pending-approval"; approvalId: ApprovalId }
-  | { status: "blocked"; reason: string }
+  | { status: "blocked"; reason: string; cause?: "expired" }
   | { status: "connect-required"; connect: ConnectRequired };
 
 /** 01-core §4 */
@@ -397,7 +406,11 @@ export const toolOutcomeSchema = z.discriminatedUnion("status", [
     error: z.object({ code: z.string(), message: z.string() }).passthrough(),
   }).passthrough(),
   z.object({ status: z.literal("pending-approval"), approvalId: approvalIdSchema }).passthrough(),
-  z.object({ status: z.literal("blocked"), reason: z.string() }).passthrough(),
+  z.object({
+    status: z.literal("blocked"),
+    reason: z.string(),
+    cause: z.literal("expired").optional(),
+  }).passthrough(),
   z.object({ status: z.literal("connect-required"), connect: connectRequiredSchema }).passthrough(),
 ]) satisfies z.ZodType<ToolOutcome>;
 

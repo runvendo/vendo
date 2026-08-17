@@ -31,6 +31,7 @@ import type { VendoClient } from "../client.js";
 // hooks/use-vendo-context.ts, which publishes into the agent's [Situation]
 // channel and returns void.
 import { useVendoProvider } from "../context.js";
+import { identityState } from "./identity-state.js";
 import { onPinAnnounced } from "../pin-events.js";
 import type { PlacementEntry } from "../wire-types.js";
 
@@ -69,6 +70,11 @@ const pollers = new WeakMap<VendoClient, Poller>();
 function createPoller(client: VendoClient): Poller {
   const listeners = new Map<string, Set<() => void>>();
   const settles = new Set<ReturnType<typeof setTimeout>>();
+  // H2-E / #1372: while the wire says forbidden, the tick skips both the read
+  // AND renew's slot-report writes — a signed-out visitor generates zero
+  // traffic. The latch opening (identity signal, or any surface's successful
+  // read) re-reads immediately.
+  const identity = identityState(client);
   let entries = new Map<string, PlacementEntry>();
   let error: Error | undefined;
   let loaded = false;
@@ -76,6 +82,7 @@ function createPoller(client: VendoClient): Poller {
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopPin: (() => void) | undefined;
+  let stopIdentity: (() => void) | undefined;
 
   /** Every (id, label) pair already sent to the registry, and WHEN — once per
    *  client per {@link SLOT_REPORT_REFRESH_MS}, so a page of slots re-rendering
@@ -114,10 +121,12 @@ function createPoller(client: VendoClient): Poller {
     try {
       const answered = await client.apps.placements(slots);
       if (mine !== generation) return;
+      identity.clear();
       entries = new Map(answered.map(item => [item.slot, item]));
       error = undefined;
     } catch (reason) {
       if (mine !== generation) return;
+      identity.note(reason);
       error = reason instanceof Error ? reason : new Error(String(reason));
     }
     loaded = true;
@@ -138,17 +147,71 @@ function createPoller(client: VendoClient): Poller {
     }
   };
 
+  /** The held queue's OWN wake, independent of the poller lifecycle (greptile
+   *  on #1442, round three): a useReportSlot-only mount never calls start(),
+   *  so no other subscription exists to flush what it held. Lazy — created
+   *  only when something is actually held — and self-disposing on the first
+   *  open transition, so a signed-in page carries no extra listener. It
+   *  deliberately survives stop(): it belongs to the queue, not to the
+   *  placement listeners (round two's stranding was scoping it wrong). */
+  let stopHeldFlush: (() => void) | undefined;
+  const ensureHeldFlush = (): void => {
+    if (stopHeldFlush !== undefined) return;
+    stopHeldFlush = identity.subscribe(() => {
+      if (identity.forbidden()) return;
+      stopHeldFlush?.();
+      stopHeldFlush = undefined;
+      flushReports();
+    });
+  };
+
+  /** Send everything queued, batched and capped. Latched-forbidden holds the
+   *  queue in place — a microtask committed before the latch closed must not
+   *  slip a write out either. The stamp is written HERE, at send time: an
+   *  entry that never went out carries no stamp, so nothing held can silence
+   *  its own slot's next mount (overflow needs no forget() for the same
+   *  reason — never stamped, reported by the next page that mounts it). */
+  const flushReports = (): void => {
+    flushing = false;
+    if (identity.forbidden()) {
+      if (queued.length > 0) ensureHeldFlush();
+      return;
+    }
+    if (queued.length === 0) return;
+    const batch = queued;
+    queued = [];
+    const sending = batch.slice(0, SLOTS_REPORT_MAX);
+    if (sending.length < batch.length && developmentMode()) {
+      log({
+        code: "ui.slots-report-overflow",
+        level: "warn",
+        message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
+      });
+    }
+    const now = Date.now();
+    for (const entry of sending) reported.set(keyOf(entry), now);
+    void client.slots.report(sending).catch(() => forget(sending));
+  };
+
   // Self-scheduling, never setInterval: the next tick is armed only once the
   // current read settles, so a slow wire cannot stack overlapping requests.
   const tick = async (): Promise<void> => {
-    renew();
-    await read();
+    if (!identity.forbidden()) {
+      renew();
+      await read();
+    }
     if (running) timer = setTimeout(() => void tick(), POLL_MS);
   };
 
   const start = (): void => {
     if (running) return;
     running = true;
+    stopIdentity = identity.subscribe(() => {
+      if (running && !identity.forbidden()) {
+        void read();
+        flushReports();
+      }
+    });
     stopPin = onPinAnnounced(() => {
       void read();
       const settle = setTimeout(() => {
@@ -171,6 +234,8 @@ function createPoller(client: VendoClient): Poller {
     timer = undefined;
     stopPin?.();
     stopPin = undefined;
+    stopIdentity?.();
+    stopIdentity = undefined;
     for (const settle of settles) clearTimeout(settle);
     settles.clear();
     generation += 1;
@@ -230,33 +295,30 @@ function createPoller(client: VendoClient): Poller {
       // with ("sales", "report Q3") and the second slot never reaches the
       // registry — it is a destination the picker can never offer.
       const key = keyOf(entry);
+      // The stamp belongs to a report that actually went out (flushReports
+      // sets it at send time; the send-failure path forgets it for the same
+      // reason). Stamping at queue time stranded a HELD report: a slot that
+      // mounted latched, unmounted, and remounted after sign-in read its own
+      // stale stamp and stayed silent for the whole refresh window (greptile
+      // on #1442, round two). A held duplicate is deduped against the queue
+      // itself — and the flush still re-arms, so a remount is what finally
+      // sends a queue the torn-down identity subscription left behind.
       const at = reported.get(key);
       if (at !== undefined && Date.now() - at < SLOT_REPORT_REFRESH_MS) return;
-      reported.set(key, Date.now());
-      queued.push(entry);
+      if (!queued.some(item => keyOf(item) === key)) queued.push(entry);
+      // While the wire refuses this visitor, the report is HELD in the queue,
+      // never sent (greptile on #1442: a slot mounting AFTER the latch closed
+      // still wrote POST /slots). The queue's own wake flushes it on sign-in,
+      // whether or not any placements listener ever started the poller.
+      if (identity.forbidden()) {
+        ensureHeldFlush();
+        return;
+      }
       if (flushing) return;
       flushing = true;
       // The same deferral the first placements read uses: every slot mounting in
       // one React commit lands in ONE POST instead of one request per slot.
-      queueMicrotask(() => {
-        flushing = false;
-        const batch = queued;
-        queued = [];
-        const sending = batch.slice(0, SLOTS_REPORT_MAX);
-        if (sending.length < batch.length) {
-          // Forgotten, not dropped: the overflow is reported by the next page
-          // that mounts it, once the slots already in the registry are quiet.
-          forget(batch.slice(SLOTS_REPORT_MAX));
-          if (developmentMode()) {
-            log({
-              code: "ui.slots-report-overflow",
-              level: "warn",
-              message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
-            });
-          }
-        }
-        void client.slots.report(sending).catch(() => forget(sending));
-      });
+      queueMicrotask(flushReports);
     },
   };
 

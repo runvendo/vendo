@@ -244,6 +244,32 @@ describe("the transcript's beats", () => {
     expect(document.querySelector(".fl-beatsummary")?.textContent).toBe("Did 1 thing");
   });
 
+  // An ask that expired unanswered is nobody's no — not the person's (they
+  // never saw it) and not the rules' (nothing refused it). The beat says the
+  // question expired, blaming no one. (H2-G: the timeout used to ride
+  // output-denied and narrate as "you declined it".)
+  it("narrates a timed-out ask as expired, never as the person's no", async () => {
+    await mount([
+      {
+        type: "dynamic-tool",
+        toolName: "host_send_payment",
+        toolCallId: "call_expired",
+        state: "output-available",
+        input: { amount: 4750 },
+        output: {
+          status: "blocked",
+          reason: "The approval request expired unanswered.",
+          cause: "expired",
+        },
+      },
+    ] as unknown as Thread["messages"][number]["parts"]);
+    const expired = document.querySelector("[data-vendo-tool='host_send_payment']");
+    expect(expired?.textContent).toContain("the approval expired unanswered");
+    expect(expired?.textContent).not.toContain("you declined it");
+    expect(expired?.textContent).not.toContain("wasn't allowed");
+    expect(expired?.className).toBe("fl-beat fl-beat-done");
+  });
+
   // The HOST's own rules refusing a call is not the person declining one. The
   // beat used to read "you declined it" directly above the card explaining they
   // had hit a limit — the two lines contradicting each other about who said no.

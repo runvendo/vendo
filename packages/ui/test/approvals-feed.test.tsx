@@ -134,6 +134,48 @@ describe("the shared approvals feed", () => {
     view.unmount();
   });
 
+  // H2-E / #1372: a signed-out visitor's feed must go quiet after the first
+  // forbidden refusal — the field failure was every poller retrying a 403
+  // forever — and wake on the page's identity signal.
+  it("stops entirely on a forbidden refusal, and wakes on the identity signal", async () => {
+    for (let i = 0; i < 8; i += 1) {
+      wire.state.failures.push({
+        method: "GET",
+        path: "/approvals",
+        code: "forbidden",
+        message: "no identity for this request",
+        status: 403,
+      });
+    }
+    const view = render(
+      <VendoProvider client={client}>
+        <Surface pollMs={CADENCE_MS} />
+      </VendoProvider>,
+    );
+    // The first refusal lands…
+    await waitFor(() => expect(polls()).toBe(1));
+    // …and then a full window of silence: a live poller could not stay quiet
+    // for ten cadences (the unmount test's own bound).
+    await settle(WINDOW_MS);
+    expect(polls()).toBe(1);
+    // A tab switch is not a sign-in.
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle(WINDOW_MS);
+    expect(polls()).toBe(1);
+    // The host announces a sign-in: exactly one immediate re-read, and because
+    // the queue still holds refusals it latches again rather than resuming.
+    window.dispatchEvent(new Event("vendo:identity-changed"));
+    await waitFor(() => expect(polls()).toBe(2));
+    await settle(WINDOW_MS);
+    expect(polls()).toBe(2);
+    // A second signal against a wire that now answers: the feed resumes fully.
+    wire.state.failures.length = 0;
+    window.dispatchEvent(new Event("vendo:identity-changed"));
+    await waitFor(() => expect(view.getByTestId("count").textContent).toBe("1"));
+    await waitFor(() => expect(polls()).toBeGreaterThan(3));
+    view.unmount();
+  });
+
   it("one decision clears every surface, with no extra fetch per surface", async () => {
     const view = render(
       <VendoProvider client={client}>

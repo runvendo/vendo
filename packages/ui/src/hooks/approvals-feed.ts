@@ -13,6 +13,7 @@
  */
 import type { ApprovalRequest } from "@vendoai/core";
 import type { VendoClient } from "../client.js";
+import { identityState, type IdentityState } from "./identity-state.js";
 
 export interface ApprovalsSnapshot {
   data: ApprovalRequest[];
@@ -65,8 +66,15 @@ class ApprovalsFeed {
   private readonly cadences = new Map<() => void, number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
+  private stopIdentity: (() => void) | undefined;
 
-  constructor(private readonly list: () => Promise<ApprovalRequest[]>) {}
+  constructor(
+    private readonly list: () => Promise<ApprovalRequest[]>,
+    /** The per-client forbidden latch (H2-E / #1372): a signed-out visitor's
+     *  feed goes quiet after the first refusal instead of retrying forever,
+     *  and wakes on the page's identity signal like every other poller. */
+    private readonly identity: IdentityState,
+  ) {}
 
   read = (): ApprovalsSnapshot => this.snapshot;
 
@@ -75,6 +83,11 @@ class ApprovalsFeed {
     this.cadences.set(listener, pollMs);
     if (first) {
       if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
+      // The latch opening (page signal, or any surface's successful read) is
+      // the wake-up; arm() consults it on the way back to sleep.
+      this.stopIdentity = this.identity.subscribe(() => {
+        if (!this.identity.forbidden()) void this.refresh();
+      });
       void this.refresh();
     } else {
       // A faster subscriber joined: re-arm on the new cadence.
@@ -87,6 +100,8 @@ class ApprovalsFeed {
         return;
       }
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
+      this.stopIdentity?.();
+      this.stopIdentity = undefined;
       this.stop();
       // Nobody is watching. Drop the in-flight response and the rows: the next
       // mount deserves its own first load, not a count that may be minutes old.
@@ -100,9 +115,11 @@ class ApprovalsFeed {
     try {
       const data = await this.list();
       if (generation !== this.generation) return;
+      this.identity.clear();
       this.publish({ data, error: undefined, isLoading: false });
     } catch (reason) {
       if (generation !== this.generation) return;
+      this.identity.note(reason);
       this.publish({ ...this.snapshot, error: asError(reason), isLoading: false });
     } finally {
       // Self-scheduling, like useResource: the next poll is armed only once this
@@ -120,7 +137,10 @@ class ApprovalsFeed {
   private arm(): void {
     this.stop();
     const cadence = this.cadence();
-    if (cadence === undefined || hidden()) return;
+    // Forbidden is a full stop, not a skip: the wire told this visitor no, and
+    // asking again on a timer cannot change the answer — only the identity
+    // signal (or another surface's successful read) can.
+    if (cadence === undefined || hidden() || this.identity.forbidden()) return;
     this.timer = setTimeout(() => void this.refresh(), cadence);
   }
 
@@ -140,9 +160,10 @@ class ApprovalsFeed {
 
   private onVisibility = (): void => {
     // A background tab asks nothing. Coming back asks immediately, so the count
-    // the user returns to is current rather than one cadence stale.
+    // the user returns to is current rather than one cadence stale — unless the
+    // visitor is latched forbidden: a tab switch is not a sign-in.
     if (hidden()) this.stop();
-    else void this.refresh();
+    else if (!this.identity.forbidden()) void this.refresh();
   };
 }
 
@@ -151,7 +172,7 @@ const feeds = new WeakMap<VendoClient, ApprovalsFeed>();
 export function approvalsFeed(client: VendoClient): ApprovalsFeed {
   let feed = feeds.get(client);
   if (feed === undefined) {
-    feed = new ApprovalsFeed(() => client.approvals.pending());
+    feed = new ApprovalsFeed(() => client.approvals.pending(), identityState(client));
     feeds.set(client, feed);
   }
   return feed;

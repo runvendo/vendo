@@ -96,12 +96,16 @@ describe("outcome, guard, and audit schemas", () => {
       { status: "error", error: { code: "upstream", message: "Unavailable", future: true } },
       { status: "pending-approval", approvalId: "apr_1" },
       { status: "blocked", reason: "Policy" },
+      // The one legal cause: an ask that expired unanswered (H2-G). A field,
+      // not a new status — the discriminated union is closed to old readers.
+      { status: "blocked", reason: "The approval request expired unanswered.", cause: "expired" },
       {
         status: "connect-required",
         connect: { connector: "composio", toolkit: "gmail", message: "Connect your gmail account" },
       },
     ]) expect(toolOutcomeSchema.safeParse(outcome).success).toBe(true);
     expect(toolOutcomeSchema.safeParse({ status: "waiting" }).success).toBe(false);
+    expect(toolOutcomeSchema.safeParse({ status: "blocked", reason: "x", cause: "timeout" }).success).toBe(false);
     expect(toolOutcomeSchema.safeParse({ status: "connect-required" }).success).toBe(false);
     expect(toolOutcomeSchema.safeParse({
       status: "connect-required",
