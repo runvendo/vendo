@@ -3,7 +3,7 @@ import { VendoError } from "./errors.js";
 /** Named in every refusal so a caller can tell "this name was never an engine
     collection" from "this build's list is older than yours". Bump it whenever
     ENGINE_COLLECTIONS or ENGINE_COLLECTION_PATTERNS changes. */
-export const ENGINE_ALLOWLIST_VERSION = 2;
+export const ENGINE_ALLOWLIST_VERSION = 3;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -81,6 +81,7 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_inclient_approvals: { kind: "storage" }, // COLLECTION, packages/apps/src/server/remix/inclient.ts:76
   vendo_remix_rejections: { kind: "storage" }, // COLLECTION, packages/apps/src/server/remix/review.ts:65
   vendo_slots: { kind: "storage" }, // SLOTS_COLLECTION, packages/apps/src/server/persistence/slots.ts:24
+  vendo_app_seen: { kind: "storage" }, // APP_SEEN_COLLECTION, packages/apps/src/server/persistence/app-seen.ts:26
   vendo_workspace_commits: { kind: "storage" }, // WORKSPACE_COMMITS, packages/store/src/ops.ts:27
   "automations:captures": { kind: "storage" }, // CAPTURES, packages/automations/src/types.ts:29
   "automations:armed": { kind: "storage" }, // ARMED, packages/automations/src/types.ts:43

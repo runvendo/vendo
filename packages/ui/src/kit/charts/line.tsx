@@ -63,10 +63,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
-    // The slot replaces the dashed box, not its TEXT: what goes in one is an
-    // EmptyState, which draws that same frame itself — nested, it read as a
-    // box inside a box.
-    return empty ?? <ChartEmpty height={height} style={style}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (

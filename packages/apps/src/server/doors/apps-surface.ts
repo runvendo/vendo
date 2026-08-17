@@ -13,6 +13,7 @@ import {
 } from "../../contract/index.js";
 import { createAgentTools } from "./agent-tools.js";
 import { allRecords } from "./access-checks.js";
+import { appSeenStore } from "../persistence/app-seen.js";
 import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -21,9 +22,10 @@ const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
     | "grantedRecords">,
-): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call"> => {
+): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call" | "seen"> => {
   const { config, engine, caller, history, review, opener, owned, requireOwned } = deps;
   const { grantedRecords } = deps;
+  const appSeen = appSeenStore(engine);
   return {
     async get(appId, ctx) {
       const app = await owned(appId, ctx, "viewer");
@@ -51,7 +53,11 @@ const createAppReadDoors = (
           // Corrupt rows cannot be surfaced, but must not hide valid owned apps.
         }
       }
-      return documents;
+      // Arrival — read state is the CALLER's, so it rides the answer rather
+      // than the row: one query for the whole page, on the fetch every surface
+      // already makes.
+      const unseen = await appSeen.unseen(documents.map((document) => document.id), ctx.principal.subject);
+      return documents.map((document) => unseen.has(document.id) ? { ...document, unseen: true } : document);
     },
 
     /**
@@ -71,13 +77,23 @@ const createAppReadDoors = (
       });
     },
 
-    async open(appId, ctx) {
+    async seen(appId, ctx) {
+      await requireOwned(appId, ctx, "viewer");
+      await appSeen.mark(appId, ctx.principal.subject);
+    },
+
+    async open(appId, ctx, options) {
       const app = await requireOwned(appId, ctx, "viewer");
+      // Arrival deliberately does NOT mark here. This door is also how an agent
+      // reads a tree (`vendo_apps_open` through compose-mcp.ts) and how an
+      // automation resolves a surface, and neither is a person looking at a
+      // screen — marking here cleared a human's dot for an app only Claude ever
+      // saw. The person's own render route does the marking (wire/apps.ts).
       // Review-kind (2026-08-02): an unapproved current version is invisible —
       // open() serves the newest APPROVED version from the existing history
       // instead (or the pending state when none was ever approved). Instant
       // kind passes through untouched.
-      return opener(await review.serveDocFor(app), ctx);
+      return opener(await review.serveDocFor(app), ctx, options);
     },
 
     async call(appId, ref, args, ctx) {
@@ -185,7 +201,7 @@ export const createAppsSurface = (
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
-  "get" | "list" | "delete" | "fork" | "share" | "publish"
+  "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, engine, data, history, review, inClientApprovals } = deps;
   const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
@@ -215,6 +231,8 @@ export const createAppsSurface = (
       // the deleter cannot enumerate, and those pages are the ones that would
       // be left holding it.
       await placementRows.clearForApp(appId);
+      // Every person's read state for an id that can never come back.
+      await appSeenStore(engine).clearForApp(appId);
       await reportLifecycle("delete", appId, ctx);
     },
 
