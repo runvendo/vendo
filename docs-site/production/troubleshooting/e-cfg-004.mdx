@@ -1,11 +1,11 @@
 ---
 title: "E-CFG-004"
 sidebarTitle: "E-CFG-004"
-description: "A Next.js host's next.config does not list esbuild in serverExternalPackages, so every generated screen fails its checks."
+description: "A Next.js host's next.config does not list @vendoai/apps in serverExternalPackages, so every generated screen fails its checks."
 ---
 
 ```text config/next-externals
-broken: next.config.ts does not list esbuild in serverExternalPackages
+broken: next.config.ts does not list @vendoai/apps in serverExternalPackages
 ```
 
 `check: config/next-externals` · `error_code: E-CFG-004` · `doctor exits: 1`
@@ -18,14 +18,21 @@ asks for comes back failed. Nothing else looks wrong.
 ## Why
 
 Vendo syntax-checks each generated screen with `esbuild`, imported at runtime
-and deliberately hidden from the bundler. Without `serverExternalPackages`,
-Next bundles `@vendoai/apps` into the server chunk, so that import resolves
-from your app root instead — and under pnpm's strict `node_modules`, esbuild
-was never hoisted there. The checker cannot load, so every screen fails the
-checks floor.
+through a variable specifier behind bundler-ignore comments. Without
+`serverExternalPackages`, Next bundles `@vendoai/apps` into the server chunk, so
+that import becomes a bare resolve from your app root instead — and under pnpm's
+strict `node_modules`, esbuild was never hoisted there (it lives only under
+`node_modules/.pnpm/@vendoai+apps…`). The checker cannot load, so every screen
+fails the checks floor.
 
-PGlite and `@vendoai/store` are on the same list for a related reason: PGlite's
-Emscripten module breaks under production chunking.
+**Listing `"esbuild"` on its own does not fix this.** There is no static
+`"esbuild"` request in the bundle for Next to match against the list — the
+specifier is a variable. `@vendoai/apps` is the entry that matters: externalize
+the package and the import stays inside it, where esbuild is a declared
+dependency.
+
+PGlite and `@vendoai/store` are on the same list for a different reason:
+PGlite's Emscripten module breaks under production chunking.
 
 ## The fix
 
@@ -33,7 +40,7 @@ Add the line inside your config object.
 
 ```ts next.config.ts focus={2}
 const nextConfig = {
-  serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],
+  serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],
 };
 
 export default nextConfig;

@@ -557,7 +557,7 @@ function nextConfigWithExternals(raw: string, missing: readonly string[]): strin
 const NEXT_CONFIG_SCAFFOLD = `const nextConfig = {\n  ${NEXT_SERVER_EXTERNALS_LINE}\n};\n\nexport default nextConfig;\n`;
 
 const NEXT_EXTERNALS_WHY =
-  "Vendo's app checker imports esbuild at runtime, so Next has to leave it out of the server bundle — bundled, it resolves from your app root, where pnpm never hoists esbuild, and every generated screen fails its checks. Doctor fails E-CFG-004 until the line is there.";
+  "@vendoai/apps is the entry that matters: its checker imports esbuild through a variable specifier the bundler cannot see, so an \"esbuild\" entry alone is inert. Bundled, that import resolves from your app root, where pnpm never hoists esbuild, and every generated screen fails its checks while the app looks fine. Doctor fails E-CFG-004 until the line is there.";
 
 /** 04-actions §1 risk ladder projected as advice: destructive asks first,
     writes get reviewed, reads auto-run (no entry). */

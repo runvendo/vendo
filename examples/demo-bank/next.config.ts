@@ -5,12 +5,15 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   // Served in place at demos.vendo.run/maple — see ./src/lib/base-path.
   basePath: BASE_PATH,
-  // The apps engine syntax-checks generated islands with esbuild (native
-  // binary) — keep it out of the Turbopack server bundle. PGlite's Emscripten
-  // module breaks under Turbopack's production chunking ("f.instantiateWasm
-  // is not a function"), so it stays external too — including @vendoai/store,
-  // which loads PGlite for the local default store.
-  serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],
+  // @vendoai/apps is the load-bearing entry: its engine syntax-checks generated
+  // islands with esbuild through a VARIABLE specifier the bundler cannot see, so
+  // an "esbuild" entry alone is inert — bundle the package and that import
+  // becomes a bare resolve from this app's root. It only ever worked here
+  // because the monorepo root hoists esbuild. PGlite's Emscripten module breaks
+  // under Turbopack's production chunking ("f.instantiateWasm is not a
+  // function"), so it stays external too — including @vendoai/store, which loads
+  // PGlite for the local default store.
+  serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],
   // Dev-only: resolve the whole @vendoai workspace graph to its TypeScript
   // source so edits anywhere in packages/*/src hot-reload here instead of
   // waiting on a `pnpm build`. Turbopack matches the request verbatim, so

@@ -64,13 +64,17 @@ export async function detectFramework(root: string): Promise<HostFramework> {
   }
 }
 
-/** What Next must leave OUT of the server bundle. The apps checker imports
-    esbuild at RUNTIME, hidden from the bundler on purpose (apps
-    src/server/checking/toolchain.ts) — bundle @vendoai/apps and that import
-    resolves from the app root instead, where pnpm never hoists esbuild, so every
-    generated screen fails its checks. PGlite's Emscripten module and the store
-    that loads it break under production chunking for the same reason. */
-export const NEXT_SERVER_EXTERNALS: readonly string[] = ["esbuild", "@electric-sql/pglite", "@vendoai/store"];
+/** What Next must leave OUT of the server bundle. `@vendoai/apps` is the entry
+    that fixes the bug, and listing `esbuild` alone does NOT: the apps checker
+    imports it through a VARIABLE specifier behind bundler-ignore comments (apps
+    src/server/checking/toolchain.ts), so there is no static "esbuild" request
+    for Next to match against the list. Bundle @vendoai/apps and that import
+    becomes a bare runtime resolve from the app root, where pnpm never hoists
+    esbuild — every generated screen then fails its checks while the app looks
+    fine. Externalizing the PACKAGE keeps the import inside it, where esbuild is
+    a declared dependency. PGlite's Emscripten module and the store that loads it
+    stay external for their own reason: they break under production chunking. */
+export const NEXT_SERVER_EXTERNALS: readonly string[] = ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"];
 
 /** The property exactly as init writes it and doctor tells you to paste it. */
 export const NEXT_SERVER_EXTERNALS_LINE =

@@ -68,11 +68,11 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 
 ## One Next.js line
 
-`serverExternalPackages` keeps Vendo's native and wasm dependencies out of the bundler.
+`serverExternalPackages` keeps Vendo's app checker and its native and wasm dependencies out of the bundler.
 
 ```ts next.config.ts focus={2}
 const nextConfig = {
-  serverExternalPackages: ["esbuild", "@electric-sql/pglite"],
+  serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite"],
 };
 
 export default nextConfig;
@@ -80,7 +80,7 @@ export default nextConfig;
 
 On Next 14 the key is `experimental.serverComponentsExternalPackages` — same list, old name and location (renamed in Next 15).
 
-`esbuild` syntax-checks generated apps and PGlite backs persistence. The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
+`@vendoai/apps` syntax-checks generated apps with `esbuild` and PGlite backs persistence. `@vendoai/apps` is the entry that matters — it reaches esbuild through a variable specifier the bundler cannot see, so an `"esbuild"` entry on its own is inert ([E-CFG-004](/production/troubleshooting/e-cfg-004)). The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
 
 ## Two models, one key
 

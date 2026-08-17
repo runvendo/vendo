@@ -30,7 +30,7 @@ async function healthy(base?: string): Promise<string> {
     await writeFile(path, body);
   };
   await write("package.json", JSON.stringify({ dependencies: { "@vendoai/vendo": "0.3.0", next: "16" } }));
-  await write("next.config.ts", 'export default { serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"] };\n');
+  await write("next.config.ts", 'export default { serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"] };\n');
   await write("app/layout.tsx", "export default ({children}) => <VendoProvider>{children}<VendoOverlay /></VendoProvider>;");
   await write("app/api/vendo/[...vendo]/route.ts", "export const GET = () => {};\n");
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
@@ -968,7 +968,21 @@ describe("vendo doctor error codes + fix_refs", () => {
     const { exit, report } = await jsonChecks({ targetDir: root });
     const check = report.checks.find((entry) => entry.id === "config/next-externals");
     expect(check).toMatchObject({ status: "broken", error_code: "E-CFG-004" });
-    expect(check?.message).toContain('serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(check?.message).toContain('serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(exit).toBe(1);
+  });
+
+  /** The hole a live run found: an "esbuild" entry without @vendoai/apps is
+   *  inert (the checker's specifier is a variable the bundler cannot see), so
+   *  the check has to fail on the package, not just on esbuild. */
+  it("fails E-CFG-004 on a list that has esbuild but not @vendoai/apps", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "next.config.ts"),
+      'export default { serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"] };\n', "utf8");
+    const { exit, report } = await jsonChecks({ targetDir: root });
+    const check = report.checks.find((entry) => entry.id === "config/next-externals");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-CFG-004" });
+    expect(check?.message).toContain("@vendoai/apps");
     expect(exit).toBe(1);
   });
 
@@ -985,7 +999,7 @@ describe("vendo doctor error codes + fix_refs", () => {
   it("passes config/next-externals on the Next 14 spelling of the same list", async () => {
     const root = await healthy();
     await writeFile(join(root, "next.config.ts"),
-      'export default { experimental: { serverComponentsExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"] } };\n',
+      'export default { experimental: { serverComponentsExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"] } };\n',
       "utf8");
     const { exit, report } = await jsonChecks({ targetDir: root });
     expect(report.checks.find((entry) => entry.id === "config/next-externals")).toMatchObject({ status: "ok" });

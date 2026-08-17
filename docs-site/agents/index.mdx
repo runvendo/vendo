@@ -205,12 +205,14 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    and report them in one line, not a list of diffs.
 
    **Next.js: `serverExternalPackages`.** Init adds
-   `serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"]`
+   `serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"]`
    to `next.config.*` itself, creating the file if the repo has none. It prints
    the line for you to paste instead when the config is one it cannot read as an
    object literal (a function of `phase`, a computed export) — do that paste.
-   Without the line Next bundles Vendo's app checker, whose `esbuild` import
-   then resolves from the app root where pnpm never hoists it, and every
+   `@vendoai/apps` is the entry that matters and an `"esbuild"` entry without it
+   is INERT: the checker reaches esbuild through a variable specifier the bundler
+   cannot see, so there is no static request for Next to match. Bundled, that
+   import resolves from the app root where pnpm never hoists esbuild, and every
    generated screen fails its checks while the app itself looks fine. Doctor
    fails [`E-CFG-004`](/production/troubleshooting/e-cfg-004) until it is there.
    On Next 14 the key is `experimental.serverComponentsExternalPackages`.
