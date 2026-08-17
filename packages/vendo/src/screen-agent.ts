@@ -89,7 +89,7 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  * speak. `instant()`'s `ACT_STEPS = 2` is a specialist that must not think;
  * `DEFAULT_MAX_STEPS = 20` is a resident that may. A screen is neither, and the
  * cap is the definition of "cheap": an ask that needs more than this is an ask
- * for a BUILD, and `escalate` is the honest exit rather than a bigger number.
+ * for a BUILD rather than an ask for a bigger number.
  */
 export const SCREEN_STEPS = 10;
 
@@ -98,11 +98,6 @@ export const SCREEN_STEPS = 10;
  *  or it does not land at all; a second full budget only buys a rewrite of a
  *  screen the person is already looking at. */
 export const REPAIR_STEPS = 3;
-
-/** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
- *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
- *  agent's own, not a product capability anybody else may reach. */
-export const ESCALATE_TOOL = "escalate";
 
 /** The file hand. One document and no path argument — a screen agent has exactly
  *  one app directory, and a tool that takes a path is a tool that can write
@@ -445,15 +440,7 @@ standard Kit the manual documents. There is nothing else to import.${surfaceNote
   \`find\`, write what replaces it in \`replace\`, and quote enough of it to match
   in exactly one place — everything the person is already looking at then stays
   where it is. It lands and is checked exactly like a save.
-- **\`${ESCALATE_TOOL}\`** is the one door out. Writing one screen out of this
-  product's components is all you can do; anything that needs real code, its own
-  server, a file the person uploads, a surface these components cannot express,
-  or any part that must run while nobody is watching — a schedule, a product
-  event — goes through it. A view you could assemble does not keep an ask here:
-  if part of it runs away from the browser, escalate the WHOLE ask. The builder
-  gets the person's own ask verbatim and does its own thinking, so all you write
-  is one plain sentence saying what assembly cannot do here.
-- \`${steps}\` steps is this round's whole budget. Escalate rather than run out of it.
+- \`${steps}\` steps is this round's whole budget.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
@@ -739,30 +726,6 @@ export async function assembleScreen(
     },
   };
 
-  const escalate: HarnessHand = {
-    name: ESCALATE_TOOL,
-    description:
-      "Hand this ask to the builder, which has real code, a real machine and no step budget. Use it when "
-      + "assembling a screen out of this product's components genuinely cannot serve the ask. The person's "
-      + "own ask is the builder's brief — say only why assembly cannot serve it. This ends your turn.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        why: { type: "string", description: "One plain sentence: what assembly cannot do here." },
-      },
-      required: ["why"],
-      additionalProperties: false,
-    },
-    execute: async (args) => {
-      const { why } = args as { why: string };
-      // §4.5: no consent step and no ceremony. The builder gets the person's
-      // ORIGINAL ask plus this one line and does its own thinking — so the only
-      // thing this returns is the fact that the hand-off happened.
-      record.escalated = why;
-      return { handedOver: true };
-    },
-  };
-
   // The small loadout, resolved where the listings are: the assembly verbs by
   // name, plus the host's read tools so a query's real values can be learned when
   // a tool declares no shape. `vendo_make` is excluded by name — it is what called
@@ -810,7 +773,7 @@ export async function assembleScreen(
       return await hand.execute(args, turn);
     },
   });
-  loadout.push(acting(saveApp), acting(editApp), acting(escalate));
+  loadout.push(acting(saveApp), acting(editApp));
 
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],

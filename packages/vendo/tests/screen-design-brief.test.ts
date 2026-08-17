@@ -114,18 +114,6 @@ describe("the writers' design brief", () => {
     expect(screen.model.systemPrompts[0] ?? "").not.toContain("HOST DESIGN RULES:");
   });
 
-  it("names away work on the escalate door itself, not only in the skill", async () => {
-    // Field (linkwarden 2026-08-08): the skill's §3 teaches the <Server>
-    // declaration, but the door's own text listed only real-code reasons to
-    // leave — so a schedule ask got assembled as a plain view and no trigger
-    // was ever authored. The door must name the away case in the same breath.
-    const screen = harness();
-    await screen.assemble();
-    const brief = (screen.model.systemPrompts[0] ?? "").replace(/\s+/g, " ");
-    expect(brief).toContain("must run while nobody is watching");
-    expect(brief).toContain("a schedule, a product event");
-    expect(brief).toContain("escalate the WHOLE ask");
-  });
 });
 
 /** Everything a measured surface adds to the brief, byte for byte. One constant,

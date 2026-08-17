@@ -1,9 +1,9 @@
 /**
- * THE SIX-TYPE MATRIX — the proof `experimentalScreenAgent`'s own comment asked
+ * THE ASK-TYPE MATRIX — the proof `experimentalScreenAgent`'s own comment asked
  * for before the flag could die ("OFF until the six-type proof matrix is
  * walked, because it changes which engine answers every screen ask").
  *
- * Six ask types, all through `vendo_make`, on a REAL composed deployment: real
+ * Five ask types, all through `vendo_make`, on a REAL composed deployment: real
  * store, real guard, real apps pack, real render seam, real checks floor, real
  * front door, real MCP door. Nothing on either side of any seam is stubbed
  * except the two things a test genuinely cannot have — the MODEL (scripted, so
@@ -14,17 +14,15 @@
  *
  *  1. new simple screen        → assembled, row real, view painted
  *  2. edit of an existing one  → lands in place, repaints on the SAME stream id
- *  3. escalate WITH a sandbox  → the build runs, on the person's own words
- *  4. escalate with NO sandbox → a failed receipt that says why, no orphan card
- *  5. assembler unavailable    → a failed receipt that says so, and nothing else runs
- *  6. the MCP door             → an outside agent gets words, and a screen lands
+ *  3. bigger than a screen     → a failed receipt, and no box, because there is no door out
+ *  4. assembler unavailable    → a failed receipt that says so, and nothing else runs
+ *  5. the MCP door             → an outside agent gets words, and a screen lands
  *
- * There is ONE engine behind all six. The brain that used to sit between an
- * escalation and the box is gone, so case 3's proof is now the absence of a
- * middleman: the ask reaches the in-box builder verbatim with the escalation's
- * one line beside it, and NOT ONE brain prompt is spent deciding what to build.
- * Case 2 is the same engine again — an edit is the screen agent opening the
- * app's own document and saving it back.
+ * There is ONE engine behind all five, and no second one behind it. The screen
+ * agent carries no `escalate` hand, so case 3 is what an ask assembly cannot
+ * serve now costs: an honest failure, with the machine sitting right there
+ * unprovisioned. Case 2 is the same engine again — an edit is the screen agent
+ * opening the app's own document and saving it back.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -67,10 +65,6 @@ export default function Spending() {
   );
 }
 `;
-
-/** The one sentence an escalating screen agent hands over. There is nothing
- *  else: the person's own ask is the builder's brief. */
-const ESCALATION_WHY = "this needs real matching code";
 
 /** The same app, after the edit ask — a screen edit is the whole file saved
  *  again, which is the only write path there is. */
@@ -409,7 +403,7 @@ async function walk(options: ScriptOptions & {
 
 const ctx = { principal, venue: "chat" as const, presence: "present" as const, sessionId: "ses_matrix" };
 
-describe("the six-type matrix — every `vendo_make` ask type, one deployment", () => {
+describe("the ask-type matrix — every `vendo_make` ask type, one deployment", () => {
   it("TYPE 1 · a new simple screen is assembled, the row is real, the view is painted", async () => {
     const walked = await walk({
       asks: [{ request: "show me what I spent this month" }],
@@ -472,84 +466,41 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
   }, 60_000);
 
-  it("TYPE 3 · an escalation WITH a sandbox builds, on the person's own words", async () => {
+  it("TYPE 3 · an ask bigger than a screen fails honestly, with the machine sitting right there", async () => {
+    // The loadout carries no door out, so a model that cannot assemble an ask has
+    // exactly one honest move left: say so and stop. A sandbox IS configured here,
+    // which is the whole point — the absence is the loadout's, not the
+    // deployment's, and no box is provisioned to arrive at the same answer.
     const ASK = "match my invoices against payments and show me what didn't clear";
     const walked = await walk({
       sandbox: true,
       asks: [{ request: ASK }],
-      // TWICE: `vendo_make` routes the ask through assembly, and `create` — the
-      // public door it then calls — routes it through assembly again, because a
-      // caller can no longer tell `create` that assembly already answered. Both
-      // runs reach for the same door.
-      screenTurns: [
-        call("escalate", { why: ESCALATION_WHY }, "c1"),
-        call("escalate", { why: ESCALATION_WHY }, "c2"),
-      ],
-    });
-
-    const receipt = walked.receipts[0]!;
-    // Not a failure and not a fall-through apology: the build ran.
-    expect(receipt.status).toBe("ready");
-
-    // THE ASK IS THE BRIEF, AND NOTHING SITS BETWEEN THEM. There is no plan to
-    // anchor on any more: the person's own words reach the in-box builder as its
-    // task, with the escalation's one line beside them, and nothing re-planned
-    // either.
-    const task = walked.box.tasks.join("\n");
-    expect(task).toContain(ASK);
-    expect(task).toContain(ESCALATION_WHY);
-    // THE MIDDLEMAN IS GONE. Not one prompt outside the assembly loop, so no
-    // brain re-planned this and no fill worker wrote into it.
-    expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
-    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER))).toHaveLength(0);
-
-    // THE MACHINE. A box was provisioned and the in-box agent really wrote to
-    // its disk — the fake is a box, not a promise that one happened.
-    expect(walked.box.created).toBeGreaterThan(0);
-    expect(walked.box.tasks.length).toBeGreaterThan(0);
-    expect(walked.box.filesWritten).toContain("/app/fns.js");
-
-    // THE ROW, with the machine on it: this is a graduated app, not a picture.
-    const stored = await walked.vendo.apps.get(receipt.id, ctx);
-    expect(stored).not.toBeNull();
-    expect(stored?.machine).toBeDefined();
-
-    // AND NOTHING WAS PAINTED. There is no instant skeleton to watch: the box
-    // wrote server code, not a screen, so the card holds the receipt's words
-    // rather than a shimmer over an app that does not exist.
-    expect(stored?.tree).toBeUndefined();
-    expect(walked.views).toEqual([]);
-  }, 120_000);
-
-  it("TYPE 4 · an escalation with NO sandbox fails honestly, and leaves no card building forever", async () => {
-    const ASK = "match my invoices against payments and show me what didn't clear";
-    const walked = await walk({
-      asks: [{ request: ASK }],
-      screenTurns: [call("escalate", { why: ESCALATION_WHY }, "c1")],
+      screenTurns: [speak("Assembling a screen out of this product's components cannot serve that.")],
     });
 
     const receipt = walked.receipts[0]!;
     expect(receipt.status).toBe("failed");
-    // The say names the capability gap in the person's terms — no flag name, no
-    // adapter name, nothing for the model to relay that a person cannot act on.
-    expect(receipt.say).toContain("real build");
-    expect(receipt.say).not.toContain("sandbox");
-    // And it names the card the person is looking at, not a label: with no plan
-    // to take a name from, the ask's own words are the title.
+    // It names the card the person is looking at, not a label: the ask's own
+    // words are the title.
     expect(receipt.title).toBe(ASK.slice(0, 60));
 
-    // NOTHING RAN BEHIND IT. There is no second engine to spend a whole build's
-    // latency arriving at a worse version of the screen the person already saw.
+    // NO MACHINE, NO BUILD. Nothing was provisioned and no in-box agent was asked
+    // to write anything, so the failure cost a screen agent's turn and no more.
+    expect(walked.box.created).toBe(0);
+    expect(walked.box.tasks).toEqual([]);
+    expect(walked.box.filesWritten).toEqual([]);
+
+    // NOTHING RAN BEHIND IT either: not one prompt outside the assembly loop, so
+    // no second engine spent a whole build's latency on the same answer.
     expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
+    expect(walked.prompts.filter((prompt) => prompt.includes(BRAIN_MARKER))).toHaveLength(0);
 
     // NO ORPHAN. Nothing was ever painted, so there is no still-forming view for
     // `chrome/thread/parts.tsx` to unmount — the receipt is the whole answer.
     expect(walked.views).toEqual([]);
-    // And the turn is OVER: the walk only returns once the response body is
-    // fully drained, which is what makes the card dead rather than pending.
   }, 60_000);
 
-  it("TYPE 5 · an assembler that produces nothing renderable fails honestly — nothing rescues it", async () => {
+  it("TYPE 4 · an assembler that produces nothing renderable fails honestly — nothing rescues it", async () => {
     // The control case, inverted. The screen agent saved bytes the gauntlet
     // refuses, so the seam painted nothing and stored no row. There is no engine
     // left to fall through to, and an unwired or unserving assembler is a
@@ -570,7 +521,7 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     expect(JSON.stringify(walked.views)).not.toContain("This month");
   }, 60_000);
 
-  it("TYPE 6 · the MCP door: an outside agent asks for a screen, gets words, and a screen lands", async () => {
+  it("TYPE 5 · the MCP door: an outside agent asks for a screen, gets words, and a screen lands", async () => {
     // No stream to paint on — an outside agent has no surface — so "the screen
     // was made" can only be read where it really lives: the store, through the
     // real read path. The words are the receipt, in-band, exactly as the
