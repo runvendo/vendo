@@ -33,6 +33,8 @@ export async function POST(req: Request) {
 }
 ```
 
+`resolvePrincipal` is the `lib/vendo.ts` export from the [quickstart](/existing-agent/quickstart), unchanged here.
+
 A context you build and never pass is a context the tools never see. Skip the `params.requestContext` assignment and every `vendo_*` call fails, which reads at first glance like a broken install.
 
 Set `VENDO_SESSION_KEY` on the same context to carry your own session id into the audit trail. Leave it out and each call mints one.

@@ -83,7 +83,10 @@ describe("runBriefStage", () => {
 
     expect(result.fromStage).toBe(false);
     expect(result.brief).toBe("The humans already described this product.");
-    expect(result.notes).toEqual(["brief stage failed (timed out) — keeping the current brief"]);
+    expect(result.notes).toEqual([
+      "brief stage failed (timed out) — keeping the current brief; "
+      + "the stage's own output is at .vendo/data/extract/brief.json",
+    ]);
   });
 
   it("falls back to the template when the stage fails and no brief exists yet", async () => {

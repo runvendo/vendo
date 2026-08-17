@@ -145,6 +145,21 @@ for a decision.
 Approve and the same call runs with the same arguments. Deny, or let the wait
 expire, and the model is told so and carries on.
 
+No card to render? `session()` is `respond()` with the object kept, and the
+same decision arrives as an event your backend answers itself.
+
+```ts app/api/support/route.ts focus={2-4}
+const session = await support.session(user.id, { headers: req.headers });
+session.on("approval", async ({ request, approve, deny }) => {
+  await (request.call.tool === "refund_order" ? deny() : approve());
+});
+return session.stream(message);
+```
+
+`request` carries the call, its arguments, the tool's descriptor, and the
+principal the turn acts as. The wait is the same 90 seconds, so decide inside
+it. Full shape: [Server API](/reference/server-api).
+
 <Warning>
   This is the interactive lane only. Inside `run()` there is nobody to ask, so
   the call is refused and the card is left standing. See

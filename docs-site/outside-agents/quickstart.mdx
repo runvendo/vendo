@@ -96,6 +96,21 @@ guard, policy, and audit your own UI answers to.
 A subject your product has never heard of is not rejected here. It dies at the
 first real tool call, the same kill switch every other grant answers to.
 
+Your own agent, or a stack the broker posture does not fit? Run
+`npx vendo init --posture local --service-key` instead and the exchange stays on
+your origin — no broker, no browser.
+
+```ts src/vendo/server.ts focus={3}
+export const vendo = createVendo({
+  auth: authJs(),
+  mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } },
+});
+```
+
+Same RFC 8693 body as above, posted to `https://app.maple.com/api/vendo/mcp/token`.
+A key is any opaque string, and rotation is listing both until the old one is
+out of use.
+
 </Step>
 
 <Step title="Wire it into your agent">

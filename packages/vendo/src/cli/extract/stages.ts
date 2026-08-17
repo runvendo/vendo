@@ -218,7 +218,10 @@ export async function runBriefStage(input: BriefStageInput): Promise<BriefStageR
     );
     return { brief: artifact.brief, fromStage: true, notes };
   } catch (error) {
-    notes.push(`brief stage failed (${message(error)}) — keeping the current brief`);
+    notes.push(
+      `brief stage failed (${message(error)}) — keeping the current brief; `
+      + "the stage's own output is at .vendo/data/extract/brief.json",
+    );
   }
   // The "current brief" is an ARTIFACT, so the fallback reads it from the
   // artifact root — the same file as before for callers that don't split.

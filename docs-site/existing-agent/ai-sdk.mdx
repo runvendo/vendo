@@ -11,8 +11,8 @@ The [quickstart](/existing-agent/quickstart) wires an AI SDK loop end to end. Th
 
 `vendoTools` takes the caller and returns a Promise, so it belongs inside the handler rather than at module scope.
 
-```ts app/api/chat/route.ts focus={8,13}
-import { convertToModelMessages, streamText } from "ai";
+```ts app/api/chat/route.ts focus={8,13-14}
+import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
 import { vendoModel } from "@vendoai/vendo/server";
 import { resolvePrincipal, vendo } from "@/lib/vendo";
@@ -24,12 +24,17 @@ export async function POST(req: Request) {
   return streamText({
     model: vendoModel(),
     messages: await convertToModelMessages(messages),
+    stopWhen: stepCountIs(5),
     tools: { ...(await vendoTools(vendo, { principal: caller })) },
   }).toUIMessageStreamResponse();
 }
 ```
 
-`principal` is not nullable, and an auth preset's resolver returns `Principal | null`. Drop the 401 and the call stops typechecking.
+`stopWhen` is not optional in practice. The AI SDK stops after one step by
+default, so without it the turn calls a Vendo tool and ends there — the person
+sees the tool fire and never gets an answer.
+
+`principal` is not nullable, and an auth preset's resolver returns `Principal | null`. Drop the 401 and the call stops typechecking. Both imports come from the `lib/vendo.ts` in the [quickstart](/existing-agent/quickstart).
 
 Pass `sessionId` alongside `principal` to carry your own session id into Vendo's audit trail. Leave it out and the shim mints one per pack build.
 

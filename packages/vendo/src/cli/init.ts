@@ -1469,7 +1469,7 @@ function printClosingSteps(input: {
         ? "the agent is live once you add a model key."
         : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
   }
-  output.log(`${handSteps.length === 0 ? "" : "\n"}Verify everything: \`npx vendo doctor\` (it can start the server and run a live turn).`);
+  output.log(`${handSteps.length === 0 ? "" : "\n"}Verify everything: \`npx vendo doctor\`.`);
 }
 
 /** An undetectable framework has NO safe default: a non-interactive run

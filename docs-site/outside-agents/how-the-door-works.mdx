@@ -92,8 +92,9 @@ A shorter, deliberate menu is named in `.vendo/overrides.json` under
 ```
 
 The door then lists exactly those tools, and a call to any other name returns
-the not-found error an unknown name returns. The menu is resolved fresh on
-every listing and every call, so a tool registered at runtime is never stranded.
+the not-found error an unknown name returns. The menu is a filter, not a
+checked list, so a tool a later `add()` registers is never stranded. The file
+itself resolves once at boot: edit it and restart.
 
 A menu is curation, not a permission boundary. Your policy, approvals, audit,
 `disabled`, and audience exclusions decide what may run, and none of them read
