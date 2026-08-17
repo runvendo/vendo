@@ -3,7 +3,7 @@ import {
   VENDO_APP_REF_KIND,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
-  VendoError,
+  isVendoError,
   canonicalJson,
   log,
   type AgentRunner,
@@ -152,7 +152,7 @@ async function guardedExecute(
     // (`vendo-verbs.ts`, same reasoning). Anything else is ours: the operator gets
     // the cause and the model gets the sentence below, because a `catch {}` that
     // binds nothing makes a door failing on every call look like one nobody wired.
-    if (error instanceof VendoError) return { status: "error", error: { code: error.code, message: error.message } };
+    if (isVendoError(error)) return { status: "error", error: { code: error.code, message: error.message } };
     log({
       code: "vendo.pack-execute-failed",
       level: "error",

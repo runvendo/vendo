@@ -52,6 +52,28 @@ describe("createVendo construction purity (Workers global scope)", () => {
     expect(ensureSchema).toHaveBeenCalledTimes(1);
   });
 
+  /** The wire's catch-all answers a VendoError with the error's OWN status and
+   *  everything else with 501. A host bundle carrying a second `@vendoai/core`
+   *  copy mints VendoErrors of a different class, so `instanceof` said no and a
+   *  store refusal reached the client as "Internal Vendo error" (0.27.0). */
+  it("answers a cross-realm VendoError with its own status, not 501", async () => {
+    const { store } = await tempStore();
+    store.ensureSchema = async () => {
+      throw Object.assign(new Error("vendo_automations is not enabled for this deployment"), {
+        name: "VendoError",
+        code: "blocked",
+      });
+    };
+    const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
+
+    const response = await vendo.handler(new Request("https://host.test/api/vendo/status"));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: { code: "blocked", message: "vendo_automations is not enabled for this deployment" },
+    });
+  });
+
   it("runs schema readiness once, on first request, and starts the sweep then", async () => {
     const timerSpy = vi.spyOn(globalThis, "setInterval");
     const { store, ensureSchema } = await tempStore();

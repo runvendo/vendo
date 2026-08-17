@@ -51,6 +51,23 @@ export class VendoError extends Error {
   }
 }
 
+/**
+ * `instanceof VendoError`, ACROSS REALMS — which is what every caller meant.
+ *
+ * A host bundle can carry two copies of this package (the ESM `dist/` beside the
+ * CJS `dist/cjs/`, the dual-package hazard), and the second copy's VendoErrors
+ * are a different class: same crafted message, same code enum, `instanceof` says
+ * no. 0.27.0 shipped on that: a hosted-store refusal minted in the other realm
+ * missed the wire's `instanceof` gate, reached the catch-all as an unknown fault,
+ * and answered 501 for the life of the process.
+ *
+ * The duck check is as safe as the class check, because the class adds nothing a
+ * caller reads — `name` is set in the constructor and `code` is the enum.
+ */
+export const isVendoError = (error: unknown): error is VendoError =>
+  error instanceof VendoError
+  || (error instanceof Error && error.name === "VendoError" && typeof (error as { code?: unknown }).code === "string");
+
 /** Never throws, even for hostile errors with throwing message/toString getters. */
 export function safeErrorMessage(error: unknown): string {
   try {

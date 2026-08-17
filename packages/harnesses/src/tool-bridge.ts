@@ -3,7 +3,7 @@ import {
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
-  VendoError,
+  isVendoError,
   toVendoWirePart,
   vendoAutomationPartSchema,
   vendoCitationsPartSchema,
@@ -254,7 +254,7 @@ export async function guardedCall(
       // else keeps the generic sentence (consumer-voice law, §3) and the operator
       // gets the cause — a `catch {}` that binds nothing made a door failing on
       // every call indistinguishable from one nobody had wired.
-      if (error instanceof VendoError) {
+      if (isVendoError(error)) {
         outcome = { status: "error", error: { code: error.code, message: error.message } };
       } else {
         log({

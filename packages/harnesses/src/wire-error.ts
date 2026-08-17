@@ -1,4 +1,4 @@
-import { log, VendoError, formatMeterExhausted, meterExhaustedFromError } from "@vendoai/core";
+import { log, isVendoError, formatMeterExhausted, meterExhaustedFromError } from "@vendoai/core";
 
 /** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
  *  (code + operator-crafted message) are safe and actionable, so they travel
@@ -31,15 +31,10 @@ const GENERIC_TURN_ERROR = "An error occurred while generating the response.";
  *  the runtime's, for a harness that threw rather than reported. Logs nothing;
  *  the caller that has the raw error owns the operator's line. */
 export function specificWireErrorMessage(error: unknown): string | undefined {
-  // Name+code duck check besides instanceof: a host bundle can carry a second
+  // `isVendoError`, not `instanceof`: a host bundle can carry a second
   // @vendoai/core copy (dual-package hazard), and its VendoErrors are just as
   // safe — same crafted messages, same code enum.
-  const vendoShaped = error instanceof VendoError
-    || (error instanceof Error && error.name === "VendoError" && typeof (error as { code?: unknown }).code === "string");
-  if (vendoShaped) {
-    const { message, code } = error as { message: string; code: string };
-    return `Vendo: ${message} (${code})`;
-  }
+  if (isVendoError(error)) return `Vendo: ${error.message} (${error.code})`;
   // Pricing v3 (spec §5): the Cloud model gateway's meter refusal reaches this
   // gate as a provider APICallError (statusCode 402, the structured refusal as
   // its response body), never as a VendoError. Only OUR formatter's sentence —
