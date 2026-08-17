@@ -175,6 +175,30 @@ describe("DataTable with model-painted rows", () => {
       .toEqual(["orphan", "row"]);
   });
 
+  // A painted row paints one cell per DATA column, so the trailing actions cell
+  // is the TABLE's to append. Dropping it left every body row one cell short of
+  // its own header — the column misalignment this whole feature exists to
+  // prevent — with no action control anywhere on the table.
+  it("appends the actions cell to a painted row, against that row", () => {
+    const pressed: string[] = [];
+    render(painted({
+      rowActions: (
+        <>
+          <Text field="name" />
+          <Button label="Pay" onClick={() => pressed.push("pay")} />
+        </>
+      ),
+    }));
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers).toHaveLength(4);
+    for (const row of grid()) expect(row).toHaveLength(headers.length);
+    // Published on RowContext, so the control names THIS row's field.
+    expect(grid().map((row) => row[3])).toEqual(["CheckingPay", "SavingsPay", "TravelPay"]);
+
+    fireEvent.click(within(screen.getAllByRole("row")[1]!).getByRole("button", { name: "Pay" }));
+    expect(pressed).toEqual(["pay"]);
+  });
+
   it("still renders the field-binding table when it is handed no children", () => {
     render(<DataTable rows={accounts} columns={[{ key: "name", label: "Account" }, { key: "balance_cents", label: "Cents" }]} />);
     expect(grid()).toEqual([["Checking", "128450"], ["Savings", "900125"], ["Travel", "4200"]]);

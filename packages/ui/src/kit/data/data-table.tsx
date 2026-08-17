@@ -463,7 +463,15 @@ export function DataTable(props: DataTableProps) {
               <TableContext.Provider value={{ columns, visible: visibleCount }}>
                 {bodyRows.map((row, rowIndex) => (
                   <tr key={row.id} style={{ borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline }}>
-                    {painted[row.index] ?? null}
+                    <RowContext.Provider value={row.original}>
+                      {painted[row.index] ?? null}
+                      {/* The actions column is the table's, not the row's: a painted
+                          row paints one cell per DATA column, so without this the
+                          body row is one cell short of its own header. */}
+                      {rowActions === undefined ? null : (
+                        <td style={{ padding: cellPad, textAlign: "right", whiteSpace: "nowrap" }}>{rowActions}</td>
+                      )}
+                    </RowContext.Provider>
                   </tr>
                 ))}
               </TableContext.Provider>
