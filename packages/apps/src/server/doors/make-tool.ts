@@ -3,11 +3,15 @@
  * the two routes behind it: a NEW thing (assembly, escalating to the builder)
  * and a change to one app the caller named.
  *
- * Lifted out of `createAgentTools` unchanged.
+ * It also arms the schedule half of a COMPOUND ask ("build me the board and
+ * refresh it every Monday"), through the automation door — which is the same one
+ * create operation `vendo_automate`, the manifest fold-in and `agent.on` call.
+ * A schedule with nothing to build belongs in `vendo_automate` instead.
  */
 import {
   isUnattended,
   log,
+  safeErrorMessage,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -24,35 +28,23 @@ import {
   type MakeReceipt,
 } from "../../contract/index.js";
 import type { AgentToolsDataDependencies } from "./agent-tools.js";
+import { automationCard } from "./automate-tool.js";
 import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
 import { input, optionalString, resolveAppRef } from "./tool-args.js";
 import type { AppsRuntime, CreateServerWork, EditResult } from "../runtime/types.js";
 
-/** Wave 9 — a ladder-authored automation raises its own card, on create and
- *  edit alike (#881). Published by the side that knows rather than duck-typed
- *  out of the tool's return value at the bridge: the receipt carries words
- *  only. */
+/** An automation authored alongside an app raises its own card (#881).
+ *  Published by the side that knows rather than duck-typed out of the tool's
+ *  return value at the bridge: the receipt carries words only. The card is about
+ *  the RECORD, not the app — an automation has no app reference to render. */
 const publishAutomationCard = (
   stream: (update: VendoViewStreamUpdate) => void,
-  app: { id: AppId; name: string; description?: string },
   automation: NonNullable<EditResult["automation"]>,
 ): void => {
-  stream({
-    id: `vendo-automation-${app.id}`,
-    part: {
-      type: "data-vendo-automation",
-      appId: app.id,
-      name: app.name,
-      enabled: automation.enabled,
-      ...(automation.trigger === undefined ? {} : { trigger: automation.trigger }),
-      ...(app.description === undefined || app.description.length === 0
-        ? {}
-        : { description: app.description }),
-      ...((automation.pendingGrants ?? []).length === 0
-        ? {}
-        : { pendingGrants: automation.pendingGrants!.length }),
-    },
+  const part = automationCard(automation.record, automation.enabled, {
+    pendingGrants: automation.pendingGrants?.length ?? 0,
   });
+  stream({ id: `vendo-automation-${part.automationId}`, part });
 };
 
 /**
@@ -256,7 +248,7 @@ const makeNewApp = async (
   // an edit does. Before this, the envelope died inside `create` and the
   // person's first-ask automation surfaced nothing: no card, no grants.
   if (serverWork?.automation !== undefined && stream !== undefined) {
-    publishAutomationCard(stream, created, serverWork.automation);
+    publishAutomationCard(stream, serverWork.automation);
   }
   // View-only (the store refused the write): the screen IS on the user's
   // page, so this is a success with a caveat, not a failure. Reporting it
@@ -292,16 +284,11 @@ const changeExistingApp = async (
   // this app, and the next editor reading "asked for X, then asked for X
   // again, narrower" is reading the truth.
   await remember(appId);
-  // Wave 9 — a ladder-authored automation raises its own card. Published
-  // HERE, by the side that knows, rather than duck-typed out of this tool's
-  // return value at the bridge: the receipt carries words only.
-  //
-  // The trigger goes over WHOLE, which is what carries the automation's terms
-  // (`Trigger.rules` — the sentences its author wrote) to the card with no
-  // second field to disagree with the document. The document's trigger is the
-  // one this edit authored and landed, so what the card lists is what runs.
+  // An automation this edit authored raises its own card. Published HERE, by the
+  // side that knows, rather than duck-typed out of this tool's return value at
+  // the bridge: the receipt carries words only.
   if (result.automation !== undefined && stream !== undefined) {
-    publishAutomationCard(stream, result.app, result.automation);
+    publishAutomationCard(stream, result.automation);
   }
   return receipt({
     id: result.app.id,
@@ -310,6 +297,59 @@ const changeExistingApp = async (
     say: result.failure === undefined
       ? `${result.app.name} is updated.`
       : `I couldn't make that change to ${result.app.name}.`,
+  });
+};
+
+/**
+ * A COMPOUND ask: "build me the board AND refresh it every Monday".
+ *
+ * The app is built either way — this only decides whether the automation door is
+ * asked for the second half, because asking it spends a model call and most
+ * makes are a screen and nothing else. Deliberately narrow: it wants a recurrence
+ * WORD, not the bare "every" in "show every transaction", because a false
+ * positive here is an automation nobody asked for.
+ */
+const ASKS_TO_RECUR = /\b(?:every|each)\s+(?:\d+\s+)?(?:minute|hour|day|night|morning|afternoon|evening|week|weekday|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b|\b(?:daily|hourly|nightly|weekly|monthly|on a schedule|on a timer)\b/i;
+
+/**
+ * Arm the schedule the same ask asked for, on the app it just produced.
+ *
+ * Through `runtime.automation.author` — so a schedule that arrives with an app
+ * and one asked for on its own are planned, created, armed and audited by
+ * exactly the same code, down to the one create operation underneath.
+ *
+ * Never fatal. The app is on the person's page; an automation that could not be
+ * planned is a sentence on the receipt, not a failed make.
+ */
+const withCompoundSchedule = async (
+  { runtime, ctx, ask, stream }: MakeCall,
+  outcome: ToolOutcome,
+): Promise<ToolOutcome> => {
+  if (outcome.status !== "ok") return outcome;
+  const built = makeReceiptSchema.safeParse(outcome.output);
+  if (!built.success || built.data.status === "failed") return outcome;
+  const made = built.data;
+  const authored = await runtime.automation
+    .author({ appId: made.id as AppId, instruction: ask, mode: "goal" }, ctx)
+    .catch((error: unknown) => {
+      log({
+        code: "apps.compound-schedule-not-armed",
+        level: "warn",
+        message: `[vendo] the schedule asked for alongside ${made.id} was not armed: ${safeErrorMessage(error)}`,
+      });
+      return { ok: false, issues: [safeErrorMessage(error)] } as const;
+    });
+  if (!authored.ok) {
+    return receipt({ ...made, say: `${made.say} I couldn't set up the schedule: ${authored.issues.join("; ")}` });
+  }
+  if (stream !== undefined) {
+    publishAutomationCard(stream, { record: authored.record, enabled: authored.armed });
+  }
+  return receipt({
+    ...made,
+    say: authored.armed
+      ? `${made.say} It runs on the schedule you asked for.`
+      : `${made.say} The schedule is set up but not armed — it needs the user's permission first.`,
   });
 };
 
@@ -359,17 +399,22 @@ export const runMakeTool = async (
     });
   };
   const make: MakeCall = { runtime, dependencies, ctx, ask, stream, remember };
-  if (app === undefined) return await makeNewApp(make, claimed);
   // `slot` says where a NEW app lands. On a change it would have to mean
   // "and also move it", which evicts whatever holds that slot off the back
   // of an edit nobody aimed there — so it is refused, by name, at the one
   // tool that does the moving. Refused before the ref is resolved: the
   // answer does not depend on which app was meant.
-  if (slot !== undefined) {
+  if (app !== undefined && slot !== undefined) {
     throw new VendoError(
       "validation",
       "`slot` says where a new app lands. To move an app that already exists, call vendo_apps_pin with that app and slot.",
     );
   }
-  return await changeExistingApp(make, app);
+  const outcome = app === undefined
+    ? await makeNewApp(make, claimed)
+    : await changeExistingApp(make, app);
+  // The schedule half of a compound ask, read from the person's OWN words — the
+  // `<context>` fence is one calling agent's background, and a stale aside must
+  // not arm anything.
+  return ASKS_TO_RECUR.test(request) ? await withCompoundSchedule(make, outcome) : outcome;
 };
