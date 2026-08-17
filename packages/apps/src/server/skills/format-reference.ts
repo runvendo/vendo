@@ -166,7 +166,10 @@ const VARIABLE_MEANINGS: Record<string, string> = {
   "--vendo-color-border": "hairlines, outlines and dividers",
   "--vendo-color-scheme": "`light` or `dark`, derived from the background",
   "--vendo-font-family": "the body text face",
-  "--vendo-heading-family": "the heading face — set only when this host has one",
+  // The ONE name the emitter may not set (`if (type.headingFamily)`), so the one
+  // meaning that has to carry its own absence and the fallback to write instead.
+  "--vendo-heading-family": "the heading face, set only when this host names one — write it as "
+    + "`var(--vendo-heading-family, var(--vendo-font-family))`",
   "--vendo-mono-family": "the monospace face, for code and figures",
   "--vendo-font-size": "the body text size",
   "--vendo-base-size": "that same size, as the anchor the type scale derives from",
@@ -212,10 +215,11 @@ const variablesPromptSection = (): string => `---
 
 # The host's CSS variables
 
-Every one of these is already set on your screen, at this product's own values.
-Use the NAME — the values are in the brief, and a copied value stops being the
-product's the moment its theme changes. A name outside this list resolves to
-nothing and the declaration it was in silently falls back.
+Every one of these is already set on your screen, at this product's own values,
+unless its own line says otherwise. Use the NAME — the values are in the brief,
+and a copied value stops being the product's the moment its theme changes. A name
+outside this list resolves to nothing and the declaration it was in silently
+falls back.
 
 ${VENDO_THEME_VARIABLE_NAMES.map((name) => `\`${name}\` — ${VARIABLE_MEANINGS[name]}`).join("\n")}
 `;

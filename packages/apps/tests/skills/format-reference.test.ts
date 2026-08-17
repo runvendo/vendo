@@ -15,7 +15,12 @@
  * reshape pipe left in the reference to check.
  */
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
-import { KIT_COMPONENT_NAMES, VENDO_THEME_VARIABLE_NAMES } from "../../src/contract/index.js";
+import {
+  KIT_COMPONENT_NAMES,
+  VENDO_THEME_VARIABLE_NAMES,
+  defaultVendoTheme,
+  themeCssVariables,
+} from "../../src/contract/index.js";
 import { checkComponentScreen } from "../../src/server/checking/component-screen.js";
 import { SCREEN_MODULE, screenCatalog } from "../../src/server/checking/screen-typings.js";
 import { describe, expect, it } from "vitest";
@@ -163,6 +168,22 @@ describe("the reference only teaches what a screen really has", () => {
     expect(named.map(([, name]) => name)).toEqual([...VENDO_THEME_VARIABLE_NAMES]);
     // Names alone would be a list to copy; the point is knowing which to reach for.
     expect(named.filter(([, , meaning]) => (meaning ?? "").trim() === "" || meaning === "undefined")).toEqual([]);
+  });
+
+  /** The list is one fixed set with ONE exception: `--vendo-heading-family` is
+   *  emitted only when a host names a heading face (`themeCssVariables`'s
+   *  `if (type.headingFamily)`). Documenting it flat, beside 51 names that are
+   *  always there, teaches a variable that may not exist — so its line carries
+   *  its own absence and the fallback to write instead, and the preamble's
+   *  promise is what defers to it. */
+  it("says so on the one line whose variable a host may not have set", () => {
+    const conditional = Object.keys(themeCssVariables(defaultVendoTheme));
+
+    expect(VENDO_THEME_VARIABLE_NAMES.filter((name) => !conditional.includes(name)))
+      .toEqual(["--vendo-heading-family"]);
+    expect(VENDO_FORMAT_REFERENCE)
+      .toMatch(/^`--vendo-heading-family` — .*set only when this host names one/m);
+    expect(VENDO_FORMAT_REFERENCE).toContain("unless its own line says otherwise");
   });
 
   it("lands the section in the reference, where the layout paragraph points", () => {
