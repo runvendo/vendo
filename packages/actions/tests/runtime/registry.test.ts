@@ -578,6 +578,20 @@ describe("host HTTP execution", () => {
     expect(failed.error.message).not.toContain("ghp_");
   });
 
+  it("names VENDO_BASE_URL when no origin is configured — not an internal a backend caller never holds", async () => {
+    const bindings = [
+      routeTool("host_probe"),
+      routeTool("host_polls_list", { binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc" } }),
+    ];
+    for (const tool of bindings) {
+      const outcome = await createActions({ tools: [tool] }).execute({ id: "1", tool: tool.name, args: {} }, ctx);
+      expect(outcome.status).toBe("error");
+      if (outcome.status !== "error") return;
+      expect(outcome.error.message).toContain("VENDO_BASE_URL");
+      expect(outcome.error.message).not.toContain("createActions");
+    }
+  });
+
   it("returns validation and network outcomes instead of throwing per-call failures", async () => {
     const missingBase = createActions({ tools: [routeTool("host_by_id", { binding: { kind: "route", method: "GET", path: "/probe/{id}", argsIn: "query" } })] });
     await expect(missingBase.execute({ id: "1", tool: "host_by_id", args: { id: "x" } }, ctx)).resolves.toMatchObject({

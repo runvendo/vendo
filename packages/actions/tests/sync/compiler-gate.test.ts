@@ -8,8 +8,11 @@ import {
   compilerFloorWarning,
   COMPILER_FLOOR,
   noteRejectedCompiler,
+  noteUnresolvableCompiler,
   REQUIRED_COMPILER_API,
   resetCompilerGateForTests,
+  resolveCompiler,
+  setCompilerRoot,
   unsupportedCompiler,
 } from "../../src/sync/compiler-gate.js";
 import { loadTypescript } from "../../src/sync/static-ts.js";
@@ -97,6 +100,54 @@ describe("compilerFloorWarning", () => {
     expect(warning).toContain("4.8.4");
     expect(warning).toContain(`>=${COMPILER_FLOOR}`);
     expect(warning).toContain("ts.isSatisfiesExpression");
+  });
+
+  it("reports a compiler no base could resolve — the npx failure that read as empty extraction", () => {
+    noteUnresolvableCompiler();
+    const warning = compilerFloorWarning();
+    expect(warning).toContain("typescript");
+    expect(warning).toContain("resolves to nothing");
+  });
+
+  it("prefers the named rejection over the unresolvable note — a cause beats a shrug", () => {
+    noteUnresolvableCompiler();
+    noteRejectedCompiler({ version: "4.8.4", missingApi: "isSatisfiesExpression" });
+    expect(compilerFloorWarning()).toContain("4.8.4");
+  });
+});
+
+/** A host root whose node_modules carries a stub typescript at the floor,
+ * version-stamped so a resolution that reached it is unmistakable. */
+async function rootWithCompiler(version: string): Promise<string> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-actions-compiler-root-"));
+  temporaryDirectories.push(root);
+  const stubDirectory = path.join(root, "node_modules", "typescript");
+  await fs.mkdir(stubDirectory, { recursive: true });
+  await fs.writeFile(
+    path.join(stubDirectory, "package.json"),
+    JSON.stringify({ name: "typescript", version, main: "index.js" }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(stubDirectory, "index.js"),
+    `module.exports = Object.fromEntries([["version", ${JSON.stringify(version)}],`
+    + ` ...${JSON.stringify(REQUIRED_COMPILER_API)}.map((api) => [api, () => undefined])]);\n`,
+    "utf8",
+  );
+  await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ name: "host", version: "0.0.0" }), "utf8");
+  return root;
+}
+
+describe("resolveCompiler", () => {
+  it("resolves the SYNCED PROJECT's compiler, not the running install's", async () => {
+    setCompilerRoot(await rootWithCompiler("9.9.9-project"));
+    expect(resolveCompiler()?.version).toBe("9.9.9-project");
+  });
+
+  it("falls back to this install when the project has no compiler of its own", () => {
+    setCompilerRoot(os.tmpdir());
+    expect(resolveCompiler()).not.toBeNull();
+    expect(compilerFloorWarning()).toBeNull();
   });
 });
 

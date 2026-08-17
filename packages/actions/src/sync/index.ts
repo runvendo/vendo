@@ -17,7 +17,7 @@ import {
   type ToolsFile,
 } from "../formats.js";
 import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged } from "./common.js";
-import { compilerFloorWarning } from "./compiler-gate.js";
+import { compilerFloorWarning, setCompilerRoot } from "./compiler-gate.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
 import { captureHostComponents } from "./components.js";
@@ -328,6 +328,7 @@ export async function vendoSync(options: {
 }): Promise<SyncReportWithWarnings> {
   const root = path.resolve(options.root);
   const out = path.resolve(options.out ?? path.join(root, ".vendo"));
+  setCompilerRoot(root); // under `npx` only the project can resolve typescript
   clearAliasCache(); // same-process re-runs (watch mode) must see tsconfig edits
   const warnings: string[] = [];
   const toolsPath = path.join(out, "tools.json");
