@@ -43,6 +43,8 @@ No agent handy? Do it by hand. Three steps, about five minutes.
     ```
 
     Paste the snippet init prints. It comes with your real paths already filled in, and it is the only edit you make by hand.
+
+    On Next.js it also adds one line to your `next.config` — `serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"]`. Vendo checks every generated screen with esbuild at runtime, so it has to stay out of the server bundle. If init could not read your config, it prints the line instead and `vendo doctor` holds you to it ([E-CFG-004](/production/troubleshooting/e-cfg-004)).
   </Step>
 
   <Step title="Continue in your direction">

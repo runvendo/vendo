@@ -1,6 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { stripBom } from "./shared.js";
+import { exists, stripBom } from "./shared.js";
 import { walk } from "./theme/walk.js";
 
 export type HostFramework = "next" | "express" | "unknown";
@@ -62,6 +62,37 @@ export async function detectFramework(root: string): Promise<HostFramework> {
   } catch {
     return "unknown";
   }
+}
+
+/** What Next must leave OUT of the server bundle. The apps checker imports
+    esbuild at RUNTIME, hidden from the bundler on purpose (apps
+    src/server/checking/toolchain.ts) — bundle @vendoai/apps and that import
+    resolves from the app root instead, where pnpm never hoists esbuild, so every
+    generated screen fails its checks. PGlite's Emscripten module and the store
+    that loads it break under production chunking for the same reason. */
+export const NEXT_SERVER_EXTERNALS: readonly string[] = ["esbuild", "@electric-sql/pglite", "@vendoai/store"];
+
+/** The property exactly as init writes it and doctor tells you to paste it. */
+export const NEXT_SERVER_EXTERNALS_LINE =
+  `serverExternalPackages: [${NEXT_SERVER_EXTERNALS.map((name) => JSON.stringify(name)).join(", ")}],`;
+
+/** The list, under either spelling: Next 15's `serverExternalPackages` and Next
+    14's `experimental.serverComponentsExternalPackages` (renamed, same wiring).
+    Group 1 is everything through the `[`, group 2 the names already listed. */
+export const SERVER_EXTERNALS_ARRAY = /(server(?:Components)?ExternalPackages\s*:\s*\[)([^\]]*)/;
+
+/** The host's next.config, whichever extension it uses; null when it has none. */
+export async function nextConfigPath(root: string): Promise<string | null> {
+  for (const file of ["next.config.ts", "next.config.js", "next.config.mjs"]) {
+    if (await exists(join(root, file))) return join(root, file);
+  }
+  return null;
+}
+
+/** Which externals a next.config's TEXT does not already carry. */
+export function missingServerExternals(source: string): string[] {
+  const listed = SERVER_EXTERNALS_ARRAY.exec(source)?.[2] ?? "";
+  return NEXT_SERVER_EXTERNALS.filter((name) => !listed.includes(`"${name}"`) && !listed.includes(`'${name}'`));
 }
 
 /** The workspace packages that look like the real host, for an init run one

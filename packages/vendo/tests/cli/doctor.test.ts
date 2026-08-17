@@ -30,6 +30,7 @@ async function healthy(base?: string): Promise<string> {
     await writeFile(path, body);
   };
   await write("package.json", JSON.stringify({ dependencies: { "@vendoai/vendo": "0.3.0", next: "16" } }));
+  await write("next.config.ts", 'export default { serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"] };\n');
   await write("app/layout.tsx", "export default ({children}) => <VendoProvider>{children}<VendoOverlay /></VendoProvider>;");
   await write("app/api/vendo/[...vendo]/route.ts", "export const GET = () => {};\n");
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
@@ -955,6 +956,45 @@ describe("vendo doctor error codes + fix_refs", () => {
       env: { VENDO_BASE_URL: "https://site.com/maple" },
     });
     expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({ status: "ok" });
+  });
+
+  /** A Next host whose config never externalizes esbuild: Next bundles
+   *  @vendoai/apps into the server chunk, the checker's runtime esbuild import
+   *  then resolves from the app root — where pnpm never hoists it — and every
+   *  generated screen fails its checks. */
+  it("fails E-CFG-004 when a Next host's config does not externalize esbuild", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "next.config.ts"), "export default { reactStrictMode: true };\n", "utf8");
+    const { exit, report } = await jsonChecks({ targetDir: root });
+    const check = report.checks.find((entry) => entry.id === "config/next-externals");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-CFG-004" });
+    expect(check?.message).toContain('serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(exit).toBe(1);
+  });
+
+  it("fails E-CFG-004 when a Next host has no next.config at all", async () => {
+    const root = await healthy();
+    await rm(join(root, "next.config.ts"));
+    const { report } = await jsonChecks({ targetDir: root });
+    expect(report.checks.find((entry) => entry.id === "config/next-externals"))
+      .toMatchObject({ status: "broken", error_code: "E-CFG-004" });
+  });
+
+  /** Next 14 keeps the same list under `experimental.serverComponentsExternalPackages`
+   *  (renamed in 15) — same wiring, so doctor reads both spellings. */
+  it("passes config/next-externals on the Next 14 spelling of the same list", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "next.config.ts"),
+      'export default { experimental: { serverComponentsExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"] } };\n',
+      "utf8");
+    const { exit, report } = await jsonChecks({ targetDir: root });
+    expect(report.checks.find((entry) => entry.id === "config/next-externals")).toMatchObject({ status: "ok" });
+    expect(exit).toBe(0);
+  });
+
+  it("never runs the Next externals check on a host that is not Next", async () => {
+    const { report } = await jsonChecks({ targetDir: await expressHost(true) });
+    expect(report.checks.find((entry) => entry.id === "config/next-externals")).toBeUndefined();
   });
 
   // ENG-422 (field: expense.fyi): a composition wiring supabase() with neither

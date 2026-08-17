@@ -192,8 +192,9 @@ describe("vendo init (zero-question)", () => {
 
     // The summary lists what changed; nothing is left to paste.
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("Wired (2 files):");
+    expect(logs).toContain("Wired (3 files):");
     expect(logs).toContain("+ " + join("app", "api", "vendo", "[...vendo]", "route.ts"));
+    expect(logs).toContain("+ next.config.mjs");
     expect(logs).not.toContain("~ " + join("app", "layout.tsx"));
     expect(logs).toContain("~ package.json");
     // No auth dependency in the fixture: one calm advisory, nothing guessed.
@@ -2087,6 +2088,60 @@ describe("the sync hooks init installs (decision 2)", () => {
     const scripts = (JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
     expect(scripts.predev).toBe("vendo sync --engine codex");
     expect(scripts.prebuild).toBe("vendo sync --strict --ai && tsc");
+  });
+});
+
+/** Next bundles @vendoai/apps into the server chunk, so the app checker's
+    deliberately bundler-hidden `import("esbuild")` resolves at runtime from the
+    app root — where pnpm never hoists esbuild — and every generated screen fails
+    its checks. Our own examples only escaped it by setting this by hand. */
+describe("the next.config repair (Next hosts)", () => {
+  it("adds serverExternalPackages to the config object the host already exports", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      'import type { NextConfig } from "next";\n\nconst nextConfig: NextConfig = {\n  reactStrictMode: true,\n};\n\nexport default nextConfig;\n');
+    expect(await run(root, output())).toBe(0);
+    const config = await readFile(join(root, "next.config.ts"), "utf8");
+    expect(config).toContain('serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(config).toContain("reactStrictMode: true");
+  });
+
+  it("splices only the missing names into a list the host already keeps", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "next.config.ts"),
+      'const nextConfig = {\n  serverExternalPackages: ["@electric-sql/pglite"],\n};\n\nexport default nextConfig;\n');
+    expect(await run(root, output())).toBe(0);
+    expect(await readFile(join(root, "next.config.ts"), "utf8"))
+      .toContain('serverExternalPackages: ["esbuild", "@vendoai/store", "@electric-sql/pglite"],');
+  });
+
+  it("writes a minimal config when the host has none, and re-running changes nothing", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await agentRun(root, sink)).toBe(0);
+    const written = await readFile(join(root, "next.config.mjs"), "utf8");
+    expect(written).toContain('serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(receiptOf(sink.logs).wrote).toContain("next.config.mjs");
+    expect(await run(root, output())).toBe(0);
+    expect(await readFile(join(root, "next.config.mjs"), "utf8")).toBe(written);
+  });
+
+  it("hands back the paste instead of rewriting a config it cannot read", async () => {
+    const root = await fixture();
+    const dynamic = "export default (phase) => ({ reactStrictMode: true });\n";
+    await writeFile(join(root, "next.config.mjs"), dynamic);
+    const sink = output();
+    expect(await agentRun(root, sink)).toBe(0);
+    expect(await readFile(join(root, "next.config.mjs"), "utf8")).toBe(dynamic);
+    const paste = receiptOf(sink.logs).pasteEdits.find((edit) => edit.file === "next.config.mjs");
+    expect(paste?.lines.join("\n")).toContain('serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store"],');
+    expect(sink.logs.join("\n")).toContain("next.config.mjs");
+  });
+
+  it("leaves an Express host's tree alone", async () => {
+    const root = await expressFixture(true);
+    expect(await run(root, output())).toBe(0);
+    expect(Object.keys(await tree(root)).filter((path) => path.startsWith("next.config"))).toEqual([]);
   });
 });
 

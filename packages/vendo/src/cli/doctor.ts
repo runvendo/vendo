@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { Telemetry } from "@vendoai/telemetry";
 import { cloudDoctor, type CloudDoctorResult } from "./cloud/client.js";
-import { checkConfigFiles, checkEjectDrift, checkModelResolution, checkMountAgreement, checkStorePersistence, checkSurfaceOwnership, checkToolCatalog } from "./doctor-config-checks.js";
+import { checkConfigFiles, checkEjectDrift, checkModelResolution, checkMountAgreement, checkNextServerExternals, checkStorePersistence, checkSurfaceOwnership, checkToolCatalog } from "./doctor-config-checks.js";
 import { checkInstalledDeps } from "./doctor-deps-checks.js";
 import { checkMcpArtifacts } from "./doctor-mcp-checks.js";
 import { createDoctorRun, type DoctorRun } from "./doctor-report.js";
@@ -67,6 +67,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   await checkWiring(run);
   await checkInstalledDeps(run);
   await checkConfigFiles(run);
+  await checkNextServerExternals(run);
   await checkStorePersistence(run);
   await checkMountAgreement(run);
   await checkSurfaceOwnership(run);
