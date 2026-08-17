@@ -47,7 +47,7 @@ export function Timeline({
   const entries = Array.isArray(rawEntries) ? rawEntries : [];
   if (entries.length === 0) {
     // The slot replaces the dashed box, not its TEXT — see CardList.
-    return empty !== undefined ? <div data-kit="Timeline" style={style}>{empty}</div> : (
+    return empty !== undefined ? <div data-kit="Timeline" style={style}><EmptyOrForming>{empty}</EmptyOrForming></div> : (
       <div
         data-kit="Timeline"
         style={{

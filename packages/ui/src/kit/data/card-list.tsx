@@ -43,7 +43,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
     // The slot replaces the dashed box, not its TEXT: what goes in one is an
     // EmptyState, which draws that same frame itself — nested, it read as a
     // box inside a box.
-    return empty !== undefined ? <div data-kit="CardList" style={style}>{empty}</div> : (
+    return empty !== undefined ? <div data-kit="CardList" style={style}><EmptyOrForming>{empty}</EmptyOrForming></div> : (
       <div
         data-kit="CardList"
         style={{
