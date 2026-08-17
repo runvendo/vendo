@@ -18,14 +18,16 @@ Install, sign in, and write one `agent()` call at module scope. Only `name` is
 required.
 
 ```bash terminal
-npm install @vendoai/agents ai
-npx vendo login
-npx vendo init
+npm install @vendoai/agents ai@^6
+npx vendoai@latest login
+npx vendoai@latest init
 ```
 
 `vendo login` mints a `VENDO_API_KEY` into `.env.local` and never prints it.
 `vendo init` writes `.vendo/tools.json`, your API read into tool definitions
-with a schema, a risk grade, and a dispatch binding on each one.
+with a schema and a dispatch binding on each one. Extraction grades only what
+the protocol proves; `vendo sync` grades the rest, and until it runs an
+ungraded tool asks before every call.
 
 ```ts lib/agent.ts focus={3-7}
 import { agent, api } from "@vendoai/agents";
@@ -36,6 +38,11 @@ export const support = agent({
   tools: [api()],
 });
 ```
+
+Skipping `vendo login`? Then nothing resolves a model for you, and the first
+turn throws. Install `@ai-sdk/anthropic@^3` and pass your own beside `name`:
+`model: anthropic("claude-sonnet-4-6")`. The store falls back to embedded on
+its own.
 
 <CardGroup cols={4}>
   <Card title="tools">
@@ -80,7 +87,7 @@ export async function POST(req: Request) {
   return support.respond(user.id, message, {
     ...(threadId === undefined ? {} : { threadId }),
     headers: req.headers,
-    user: { id: user.id, plan: user.plan },
+    user: { id: user.id },
   });
 }
 ```
@@ -98,13 +105,14 @@ export async function POST(req: Request) {
 `run()` is work nobody is watching. The same object is awaitable and iterable,
 so `run.events` is the live feed and awaiting it is the report.
 
-```ts app/api/reports/route.ts focus={9,14-17,28}
+```ts app/api/reports/route.ts focus={10,15-18,29}
 import { THREAD_ID_HEADER } from "@vendoai/agents";
 import { support } from "@/lib/agent";
 import { auth } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const user = await auth(req);
+  if (user === null) return new Response("unauthorized", { status: 401 });
   const { brief } = (await req.json()) as { brief: string };
 
   const run = support.run(brief, { as: user.id, signal: req.signal });
@@ -138,9 +146,11 @@ export async function POST(req: Request) {
   closing the tab stops it.
 </Note>
 
-A call the guard wants a person for comes back denied inside a `run()`, because
-nobody is there to ask. [Run](/backend/run) covers what an unattended run may
-touch.
+Away, the menu is already narrower: destructive and ungraded tools are never
+offered, and a read or write call still needs authority a person captured while
+they were present — a grant. Without one the call is denied and its approval id
+lands in `refs.approvals` for someone to answer later. [Run](/backend/run)
+covers what an unattended run may touch.
 
 </Step>
 

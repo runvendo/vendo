@@ -219,6 +219,8 @@ Every wire request resolves a principal, through an `auth` preset's resolver or 
 
 The returned `Principal.subject` scopes threads, apps, approvals, grants, activity, and runs.
 
+A hard-wired subject is a development stand-in, never a deployment:
+
 ```ts
 createVendo({ principal: async () => ({ kind: "user", subject: "dev" }) });
 ```

@@ -198,15 +198,14 @@ import { VendoSlot } from "@vendoai/ui/chrome";
       "Track my savings goals",
     ],
   }}
->
-  <YourOwnCard />
-</VendoSlot>
+/>
 ```
 
 Empty, it renders an invitation: a skeleton, up to three prompt chips that
 prefill the composer, and a button that opens the panel. Filled, the view
-mounts in place. If that view throws, your own `children` come back, never a
-blank hole.
+mounts in place. If that view throws, `children` you passed come back, never a
+blank hole — but they also stand in for the invitation, so a slot that should
+invite has none.
 
 <Columns cols={2}>
   <Frame>

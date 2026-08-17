@@ -25,6 +25,9 @@ export async function triage(ticketId: string, ownerId: string) {
     output: Triage,
   });
 
+  if (report.refs.approvals.length > 0) {
+    throw new Error(`triage parked ${report.refs.approvals.length} approvals`);
+  }
   if (report.status !== "ok" || report.output === undefined) {
     throw new Error(`triage ${report.status}: ${report.summary}`);
   }
@@ -39,6 +42,9 @@ schema, so `report.output` is typed without a cast.
 
 Leave `output` unset and it costs nothing. No schema is sent, and
 `report.output` is simply absent.
+
+A run that parked every call still reports `ok`, because it finished honestly.
+`refs.approvals` is the signal that nothing actually happened.
 
 ## What an unattended run may touch
 

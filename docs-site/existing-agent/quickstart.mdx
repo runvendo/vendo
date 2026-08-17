@@ -25,6 +25,17 @@ Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, 
 
 Move init's `createVendo` call into `lib/vendo.ts` and export the caller resolver beside it. Your chat route, your wire route, and the pack all need the same instance.
 
+```ts lib/vendo.ts
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
+
+const auth = authJs();
+export const resolvePrincipal = (req: Request) => auth.principal(req);
+export const vendo = createVendo({ auth });
+```
+
+Every snippet on this track imports those two from there. Swap `authJs()` for your own provider's preset — [Auth](/production/auth) lists all five.
+
 ```ts AI SDK · app/api/chat/route.ts focus={14}
 import { convertToModelMessages, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
@@ -240,6 +251,8 @@ are not on. So:
 - status "partial": the screen is on their page, the server-side part of it is
   not. Say the line and offer to try that part again. Never rebuild it.
 ```
+
+Those slot ids are yours to publish. A `<VendoSlot id="…">` from `@vendoai/ui/chrome` is a place in one of your own pages a generated view can occupy — without one, every screen lands in the person's own list of views. [Mount the surface](/product/mount-the-surface) has the component.
 
 The same guidance ships to Claude Code as a skill,
 [`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).
