@@ -20,8 +20,11 @@ grep the whole integration:
 | 4 | [`app/page.tsx`](app/page.tsx) | `<VendoProvider>` around the chat and one `dynamic-tool` case that hands tool outputs to `<VendoToolResult>` — app-ref envelopes render the inline app embed, approval-ref envelopes render the approval card, plain data renders nothing. Plus one fenced spacer div: the inline embeds are much taller than chat text, and without it the quickstart's fixed input sits on top of the last card at the bottom of the scroll. |
 
 Plus one config line ([`next.config.ts`](next.config.ts)):
-`serverExternalPackages: ["esbuild", "@electric-sql/pglite"]` keeps Vendo's
-native/wasm modules out of the bundler. The only starter code that *moved* is
+`serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"]`
+keeps Vendo's app checker and its native/wasm modules out of the bundler.
+`@vendoai/apps` is the entry that matters — it reaches esbuild through a variable
+specifier the bundler cannot see, so an `"esbuild"` entry on its own is inert.
+The only starter code that *moved* is
 the weather tool's `execute` body — from an inline `tool()` in the chat route
 into `lib/vendo.ts`, so the lookup runs through policy → approval → audit like
 everything else the agent can touch.
