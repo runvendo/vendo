@@ -1,7 +1,7 @@
 {
   "name": "MapleSpendingDonut",
-  "hash": "sha256:74b56494666ad5088dad6bbafcb585c6dbf0a32ab7de7cefc269367f19ddfcd7",
-  "capturedAt": "2026-08-10T00:40:03.625Z",
+  "hash": "sha256:a47ce4626889eb62ab7e696e010ace4bcf4f30e3a2b098057ef28befcbdadfeb",
+  "capturedAt": "2026-08-17T11:47:16.236Z",
   "module": "src/vendo/registry.tsx",
   "export": "MapleSpendingDonut",
   "entry": "1da99f3c4b9b547279f368f000019bd3958c57442e744a1eff6eeeea4c7844d9",
@@ -16,7 +16,7 @@
   "styles": [
     {
       "path": "src/app/globals.css",
-      "ref": "9283964eac86c1f84276b7f21e362a195256a1d1e8f8e8929a4e875487bd9fb4"
+      "ref": "be824ee9e1001771a4b14f7ff7cbf68b7691fa54a419a1d5e3aed7d7abe0eb0e"
     }
   ],
   "bytes": 20105,

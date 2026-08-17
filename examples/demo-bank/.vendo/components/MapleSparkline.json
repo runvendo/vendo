@@ -1,7 +1,7 @@
 {
   "name": "MapleSparkline",
-  "hash": "sha256:f86cf3823d4108c44fa6cbcbe6bdc6f489cf71dc7473ea50b0ae83d454332558",
-  "capturedAt": "2026-08-10T00:40:03.495Z",
+  "hash": "sha256:3a7437acf46d0aeb74806c0c5638e284cb24f010e9ebddfb1e62b93be4e1fe01",
+  "capturedAt": "2026-08-17T11:47:15.798Z",
   "module": "src/vendo/registry.tsx",
   "export": "MapleSparkline",
   "entry": "1da99f3c4b9b547279f368f000019bd3958c57442e744a1eff6eeeea4c7844d9",
@@ -16,7 +16,7 @@
   "styles": [
     {
       "path": "src/app/globals.css",
-      "ref": "9283964eac86c1f84276b7f21e362a195256a1d1e8f8e8929a4e875487bd9fb4"
+      "ref": "be824ee9e1001771a4b14f7ff7cbf68b7691fa54a419a1d5e3aed7d7abe0eb0e"
     }
   ],
   "bytes": 20105,
