@@ -262,6 +262,15 @@ describe("worldsFor", () => {
     ]);
   });
 
+  /** The folder name is the evidence key the same way a slug is: `maple,maple`
+   *  wrote every contender's `maple/<case>` folder twice, the second pass
+   *  replacing the first's artifacts while both counted in the summary. And a
+   *  name beside `all` asks for nothing `all` does not already cover. */
+  it("takes a world named twice as that world once, and `all` beside a name as the whole corpus", async () => {
+    expect(await worldsFor(worldsDir, "maple,maple")).toEqual(["maple"]);
+    expect(await worldsFor(worldsDir, "maple,all")).toEqual(await worldsFor(worldsDir, "all"));
+  });
+
   it("takes `all` as every world folder there is, in a fixed order", async () => {
     const all = await worldsFor(worldsDir, "all");
 

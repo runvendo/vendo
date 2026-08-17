@@ -456,7 +456,13 @@ export async function writeCase(
  *  total anywhere, so the question the benchmark exists to answer had nowhere to
  *  be answered. */
 export async function worldsFor(worldsDir: string, world: string): Promise<readonly string[]> {
-  if (world !== ALL_WORLDS) return world.split(",");
+  // Unique and first-seen, because the folder name IS the evidence key:
+  // `maple,maple` wrote every contender's `maple/<case>` twice, the second pass
+  // replacing the first's artifacts while both counted in the summary. `all`
+  // anywhere in the list takes the whole corpus, which is why it needs no dedupe
+  // of its own: it already contains every name written beside it.
+  const named = [...new Set(world.split(","))];
+  if (!named.includes(ALL_WORLDS)) return named;
   const entries = await readdir(worldsDir, { withFileTypes: true });
   return entries
     .filter((entry) => entry.isDirectory())
