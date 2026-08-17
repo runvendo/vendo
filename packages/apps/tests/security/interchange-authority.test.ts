@@ -18,7 +18,7 @@ import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.j
 // An attacker crafts a doc/archive that tries to smuggle in: a chosen app id
 // (to collide with / hijack a victim app), a fabricated forkedFrom lineage, a
 // pre-owned snapshot ref (server) pointing at attacker-controlled code, and an
-// armed trigger. All of that must be stripped/rebuilt so the import is inert.
+// somebody else's automations. All of that must be stripped so the import is inert.
 
 const encoder = new TextEncoder();
 
@@ -46,11 +46,8 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; serv
   egress: ["evil.com"],
   secrets: ["STRIPE_KEY"],
   seed: { component: "x", baseline: "sha256:deadbeef", instruction: "make it mine" },
-  triggers: [{
-    id: "main",
-    on: { kind: "host-event", event: "go" },
-    run: { kind: "steps", steps: [{ id: "s1", tool: "notify" }] },
-  }],
+  // Somebody else's automation records, named as if they were this app's.
+  automations: ["atm_victims_own"],
   // Authority fields that are not part of AppDocument at all — must not survive.
   grants: [{ tool: "host_pay" }],
   appId: "app_VICTIM",
@@ -90,7 +87,9 @@ describe("interchange authority forgery", () => {
     expect(imported).not.toHaveProperty("grants");
     expect(imported).not.toHaveProperty("appId");
 
-    // Persisted row is DISABLED — the smuggled trigger is not armed on import.
+    // An automation is a PRINCIPAL's own record, so a copy that carried the ids
+    // would point at the victim's. The list never crosses the copy boundary.
+    expect(imported).not.toHaveProperty("automations");
     const row = await store.records("vendo_apps").get(imported.id);
     expect((row?.data as { enabled: boolean }).enabled).toBe(false);
     expect((row?.data as { subject: string }).subject).toBe("user_attacker");

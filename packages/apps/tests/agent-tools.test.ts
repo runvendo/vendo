@@ -60,6 +60,7 @@ describe("apps agent tools", () => {
 
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
       "vendo_make",
+      "vendo_automate",
       "vendo_apps_reseed",
       "vendo_apps_open",
       "vendo_slots_list",
@@ -85,7 +86,7 @@ describe("apps agent tools", () => {
     // rearranging your own view is not an act on the world, and the history is
     // the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "write", "read", "read", "write", "write", "read", "write", "write",
+      "read", "write", "write", "read", "read", "write", "write", "read", "write", "write",
     ]);
     // The one-narrower-retry instruction survived the merge onto `vendo_make`:
     // without it the model's answer to a rejected change was to rebuild the app

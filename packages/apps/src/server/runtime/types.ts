@@ -13,6 +13,10 @@ import type {
   AppId,
   ApprovalId,
   ApprovalRequest,
+  AutomationId,
+  AutomationRecord,
+  AutomationTask,
+  CreateAutomation,
   FilesAdapter,
   Guard,
   IsoDateTime,
@@ -27,7 +31,6 @@ import type {
   ToolOutcome,
   ToolRegistry,
   ToolSemantics,
-  Trigger,
   UIPayload,
   VendoViewPart,
   WorkspaceFs,
@@ -54,6 +57,32 @@ import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { ShipDiff } from "../remix/ship-diff.js";
 import type { SlotRegistry } from "../persistence/slots.js";
+
+/**
+ * What this block may ask of the automations engine — four verbs, no more.
+ *
+ * An automation is a PRINCIPAL's own record and carries no app reference of any
+ * kind; an app may hold a list of automation ids, and that list is maintained
+ * here and read nowhere else. Which is why {@link AutomationsSeam.resolve} drops
+ * an id nothing answers for instead of failing: the list is a list of names, not
+ * a foreign key, so deleting an automation is simply one fewer entry the next
+ * time the app is read, and deleting the APP leaves the automation firing — it
+ * fails loudly at tool resolution, in the run ledger, which is the designed
+ * behavior and not a thing to guard against.
+ */
+export interface AutomationsSeam {
+  /** THE one create operation — the same one `agent.on` and `vendo_automate`
+   *  call. An input carrying an `id` that is already stored REPLACES it, which
+   *  is what makes a redeploy and a re-synced manifest idempotent. */
+  create: CreateAutomation;
+  /** `automations.enable` — the 07 §3 grant-capture flow. `missing` is what the
+   *  owner still has to allow before an away run can complete unattended. */
+  enable(id: AutomationId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  /** The kill switch (`automations.disable`). */
+  disable(id: AutomationId, ctx: RunContext): Promise<void>;
+  /** The records these ids still name, dead ids dropped. */
+  resolve(ids: readonly AutomationId[], ctx: RunContext): Promise<AutomationRecord[]>;
+}
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
@@ -132,16 +161,14 @@ export interface AppsConfig {
    */
   venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>;
   /**
-   * execution-v2 Wave 9 — the arming seam for ladder-authored automations
-   * (the same seam pattern as AutomationsConfig.runner: this block never
-   * imports the automations engine). When set, a freshly authored trigger is
-   * armed through it — the umbrella wires `automations.enable`, which runs
-   * the 07 §3 grant-capture flow and surfaces the missing standing-grant
-   * approvals (they ride EditResult.automation.pendingGrants). Unset, the
-   * runtime arms the stored row directly and grant capture stays lazy: the
-   * first away run's ungranted step parks the normal approval card.
+   * The automations seam (the same seam pattern as AutomationsConfig.runner:
+   * this block never imports the automations engine, and the engine has no app
+   * concepts to import back — the two meet on the types `@vendoai/core` owns).
+   *
+   * Unset ⇒ no engine is composed: an app is still built and stored, and an ask
+   * that wanted a schedule is told so rather than being told one runs.
    */
-  armAutomation?: (appId: AppId, triggerId: string, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  automations?: AutomationsSeam;
   /**
    * Contract §3.2 — the workspace's OWN blob seam, for source past
    * {@link WORKSPACE_INLINE_MAX_BYTES}. The SAME `FilesAdapter` the workspace rows
@@ -282,22 +309,19 @@ export interface EditResult {
    */
   pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
   /**
-   * execution-v2 Wave 9 — set when this edit rode the escalation ladder to an
-   * automation instead of a box: the authored trigger was written onto the
-   * document and ARMED on the existing automations engine (the enabled row the
-   * tick/emit machinery fires). Grant capture stays lazy — an away run's first
-   * ungranted mutating step parks the normal approval card. No machine is
-   * involved. `resultsCollection` names the app records collection the
-   * automation writes displayable results into (the rows the tree queries).
-   * `pendingGrants` carries the standing-grant approvals the arming seam's
-   * capture flow parked — approving them lets away runs complete unattended.
+   * Set when this edit authored an automation: the RECORD the create operation
+   * minted (owned by the caller, carrying no reference back to this app), with
+   * its id appended to the app's own `automations` list. No machine is involved.
+   * `resultsCollection` names the app records collection the automation writes
+   * displayable results into (the rows the tree queries). `pendingGrants` carries
+   * the standing-grant approvals the enable flow parked — approving them lets
+   * away runs complete unattended.
    */
   automation?: {
-    mode: "steps" | "agentic";
-    trigger: Trigger;
-    /** What the arming actually produced — false when the seam left the
-     * trigger disarmed or arming threw (the issues entry says why). The
-     * thread's automation card needs the true state, not an inference. */
+    record: AutomationRecord;
+    /** What ARMING actually produced — false when the seam left it disarmed or
+     * arming threw (the issues entry says why). The thread's automation card
+     * needs the true state, not an inference. */
     enabled: boolean;
     resultsCollection?: string;
     pendingGrants?: ApprovalRequest[];
@@ -402,7 +426,7 @@ export type { PlacementEntry };
  * it did when this ran as a rung of the escalation ladder.
  */
 export type AutomationAuthorResult =
-  | { ok: true; document: AppDocument; triggerId: string; armed: boolean }
+  | { ok: true; document: AppDocument; record: AutomationRecord; armed: boolean }
   | { ok: false; issues: readonly string[] };
 
 /** 06-apps §1 */
@@ -606,13 +630,11 @@ export interface AppsRuntime {
    * Automation authoring, its own small door — OFF the escalation ladder.
    *
    * "Run this every morning" is not an escalation: it needs no machine and no
-   * sandbox, and it used to travel the rung built for work that does. The
-   * planner, the trigger-id rules, the results-board rewire and the arming are
-   * unchanged; only the way in is.
+   * sandbox, and it used to travel the rung built for work that does.
    */
   automation: {
     author(
-      input: { appId: AppId; instruction: string; mode: "steps" | "agentic" },
+      input: { appId: AppId; instruction: string; mode: AutomationTask["kind"] },
       ctx: RunContext,
     ): Promise<AutomationAuthorResult>;
   };
@@ -673,11 +695,12 @@ export interface AppsRuntime {
   /**
    * Design §4's `schedule` verb: set or change WHEN an app's automation runs.
    *
-   * Only a cron change, and only on an app that already declares a schedule
-   * trigger — authoring a trigger from nothing is `edit`'s job, because it needs
-   * a run model. Re-arms through the composed automations engine afterwards, so
-   * the 07 §3 grant-capture flow runs and any missing standing grants come back
-   * on `missing` rather than failing silently at the first firing.
+   * Only a cron change, and only on an app whose list already names a scheduled
+   * automation — authoring one from nothing is `edit`'s job, because it needs a
+   * task. The change goes through the SAME create operation under the record's
+   * own id, so there is no second write path, and enable re-runs the 07 §3
+   * grant-capture flow: missing standing grants come back on `missing` rather
+   * than failing silently at the first firing.
    *
    * `write`, not `read`: arming future unattended behaviour is a write (build
    * contract §8's lane-D ratification).
