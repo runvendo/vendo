@@ -167,6 +167,14 @@ describe("DataTable with model-painted rows", () => {
     }
   });
 
+  // A row is only valid inside a table, and nothing refuses one written
+  // outside: showing none of its cells would be a blank where content was.
+  it("still shows its cells when it is written outside a DataTable", () => {
+    render(<table><tbody><tr><TableRow><Text text="orphan" /><Text text="row" /></TableRow></tr></tbody></table>);
+    expect(within(screen.getByRole("row")).getAllByRole("cell").map((c) => c.textContent))
+      .toEqual(["orphan", "row"]);
+  });
+
   it("still renders the field-binding table when it is handed no children", () => {
     render(<DataTable rows={accounts} columns={[{ key: "name", label: "Account" }, { key: "balance_cents", label: "Cents" }]} />);
     expect(grid()).toEqual([["Checking", "128450"], ["Savings", "900125"], ["Travel", "4200"]]);

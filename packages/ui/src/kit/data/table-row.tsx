@@ -23,8 +23,11 @@ export interface TableRowProps extends KitStyled {
 export function TableRow({ children, style }: TableRowProps) {
   const table = useContext(TableContext);
   const columns = table?.columns ?? [];
-  const visible = table?.visible ?? columns.length;
   const cells = Children.toArray(children);
+  // Outside a DataTable there are no columns to place cells against, and no
+  // fold. Fail SOFT on the count too: a row that showed none of its cells
+  // would be a blank line where the model wrote content.
+  const visible = table?.visible ?? cells.length;
   return (
     <>
       {cells.slice(0, visible).map((cell, i) => (
