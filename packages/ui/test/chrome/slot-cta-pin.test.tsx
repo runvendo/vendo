@@ -29,17 +29,17 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
     await wire.close();
   });
 
-  it("renders the empty-state CTA as a real, focusable button", () => {
+  it("renders the empty-state CTA as a real, focusable button", async () => {
     render(<VendoProvider client={client}><VendoSlot id="hero" /></VendoProvider>);
-    const cta = screen.getByRole("button", { name: /design a view/i });
+    const cta = await screen.findByRole("button", { name: /design a view/i });
     cta.focus();
     expect(document.activeElement).toBe(cta);
   });
 
-  it("invokes onAuthor with the slot id when the CTA is activated", () => {
+  it("invokes onAuthor with the slot id when the CTA is activated", async () => {
     const onAuthor = vi.fn();
     render(<VendoProvider client={client}><VendoSlot id="hero" onAuthor={onAuthor} /></VendoProvider>);
-    fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /design a view/i }));
     expect(onAuthor).toHaveBeenCalledWith("hero");
   });
 
@@ -51,7 +51,7 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
       </VendoProvider>,
     );
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /design a view/i }));
     expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
   });
 
@@ -62,7 +62,7 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
         <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Track my upcoming renewals" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Track my upcoming renewals" }));
     await screen.findByRole("dialog", { name: "Vendo assistant" });
     const composer = await screen.findByRole("textbox", { name: /message/i });
     await waitFor(() => expect((composer as HTMLTextAreaElement).value).toBe("Track my upcoming renewals"));
@@ -70,38 +70,38 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
     expect(wire.requests.some(request => request.path === "/threads")).toBe(false);
   });
 
-  it("renders the host-configurable invitation copy", () => {
+  it("renders the host-configurable invitation copy", async () => {
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero" emptyState={{ title: "Build your corner", subtitle: "any view you can describe", ctaLabel: "Start" }} />
       </VendoProvider>,
     );
-    expect(screen.getByText("Build your corner")).toBeTruthy();
+    expect(await screen.findByText("Build your corner")).toBeTruthy();
     expect(screen.getByText("any view you can describe")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
   });
 
-  it("keeps the default CTA a safe no-op when no overlay or palette is mounted", () => {
+  it("keeps the default CTA a safe no-op when no overlay or palette is mounted", async () => {
     render(<VendoProvider client={client}><VendoSlot id="hero" /></VendoProvider>);
-    const cta = screen.getByRole("button", { name: /design a view/i });
+    const cta = await screen.findByRole("button", { name: /design a view/i });
     expect(() => fireEvent.click(cta)).not.toThrow();
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
   });
 
-  it("says how to reach the assistant when the press has nowhere to go", () => {
+  it("says how to reach the assistant when the press has nowhere to go", async () => {
     // The third arm of the press, and the only runtime-detected one: no
     // onAuthor, no overlay, no palette. The button used to swallow the press.
     render(<VendoProvider client={client}><VendoSlot id="net-worth-card" /></VendoProvider>);
-    fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /design a view/i }));
     expect(screen.getByRole("status").textContent)
       .toBe("Ask your assistant to build something for this spot. Net worth card");
     // The button that had nowhere to go goes with it — nothing left that lies.
     expect(screen.queryByRole("button", { name: /design a view/i })).toBeNull();
   });
 
-  it("keeps the hint away when the press had somewhere to go", () => {
+  it("keeps the hint away when the press had somewhere to go", async () => {
     render(<VendoProvider client={client}><VendoSlot id="hero" onAuthor={vi.fn()} /></VendoProvider>);
-    fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /design a view/i }));
     expect(screen.queryByRole("status")).toBeNull();
   });
 

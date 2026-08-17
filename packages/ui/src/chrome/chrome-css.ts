@@ -2174,4 +2174,93 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
   .fl-waiting-strip > summary::after { transition: none; }
 }
 
+/* ===== BEGIN S2 shape-true skeleton (lane L2) ===============================
+   The bones a slot waits in when it remembers the app that is coming
+   (chrome/app-shape-cache.ts). Same wash, mask and tokens as .fl-slot-skel, so
+   the shape-true and generic waits are visibly the same material — only one of
+   them knows what it is waiting for. Boxes only: a bone is never a value. */
+/* The generic ghost fades from 30% because its bars are decoration behind a
+   CTA. Bones are the POINT — a silhouette that dissolves before its last region
+   is not the app's shape any more — so this wash carries almost the whole way
+   down and only softens where the slot ends. */
+.fl-slot-bones { justify-content: flex-start;
+  -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent);
+  mask-image: linear-gradient(180deg, #000 78%, transparent); }
+.fl-bone { flex: none; width: 100%; border-radius: 5px;
+  background: color-mix(in srgb, var(--vendo-fg) 10%, transparent); }
+/* Alternating measure: three stacked lines of one width read as a wireframe
+   stencil, not as a page of text about to arrive. */
+.fl-bone[data-bone="line"] { height: 9px; width: 62%; }
+.fl-bone[data-bone="line"]:nth-child(even) { width: 44%; }
+.fl-bone[data-bone="pill"] { height: 16px; width: 110px; border-radius: 8px; }
+.fl-bone[data-bone="control"] { height: 30px; width: 148px; border-radius: 8px; }
+.fl-bone[data-bone="rows"] { height: 40px; }
+.fl-bone[data-bone="slab"] { height: 46px; }
+.fl-bone[data-bone="tiles"] { height: 56px; }
+/* A plot is the tallest thing in an app — the one bone that has to carry its
+   own weight, or arrival is the layout jump the skeleton exists to prevent. */
+.fl-bone[data-bone="chart"] { height: 84px;
+  background: color-mix(in srgb, var(--vendo-fg) 12%, transparent); }
+/* ===== END S2 shape-true skeleton (lane L2) =============================== */
+
+/* ===== BEGIN S3 ✦ chrome on pinned apps (lane L2) ==========================
+   The pinned app's handle borrows <Remixable>'s marks wholesale — same seed,
+   same pill, same popover — so there is one ✦ vocabulary on the page instead
+   of two that almost match. All that is missing is the reveal, which the remix
+   rules scope to .fl-remixable; the slot's filled wrapper is the anchor here
+   (it is already position:relative) and carries the same flag. */
+.fl-slot-filled[data-vendo-revealed] .fl-remix-seed { opacity: 0; transform: scale(1.4); }
+.fl-slot-filled[data-vendo-revealed] .fl-remix-pill { opacity: 1; transform: scale(1); pointer-events: auto; }
+.fl-slot-filled[data-vendo-revealed] .fl-remix-pill:active { transform: scale(.97); }
+/* ===== END S3 ✦ chrome on pinned apps (lane L2) ============================ */
+
+/* ===== BEGIN S3 wet paint (lane L3) ========================================
+   Every node of a STILL-STREAMING payload carries data-vendo-wet="1"
+   (tree/renderer.tsx), and wet ink reads unfinished: dim and slightly
+   desaturated. Assembly is the case this exists for — a partial tree's nodes
+   resolve to real components long before their props arrive, so keying the dim
+   on "the component has not resolved" left the half-built app painting at full
+   strength, reading finished-but-blank instead of in-progress.
+
+   Drying is the removal of the attribute. The node shell survives the swap from
+   silhouette to real component, so the region transitions to full ink in place
+   instead of popping, and the last node drying is the finish the hairline marks.
+
+   The nested reset is load-bearing, not tidiness: opacity MULTIPLIES down the
+   tree, so without it a node four deep would paint at .55^4 and vanish. Only the
+   outermost wet box dims, which is also what makes a forming region read as one
+   wash rather than a gradient.
+
+   The transition IS the whole effect: no keyframes, no stagger, no loop. §8's
+   one-animation law still holds, because a discrete 200ms state change is not a
+   thing that moves while the build runs — the boot hairline stays the only one.
+
+   Reduced motion keeps the dim and drops the transition, so the unfinished state
+   still reads statically: the media query below gates only the transition, and the
+   [data-vendo-motion="reduced"] root kill-switch never touches opacity or filter. */
+.vendo-root [data-vendo-wet="1"] { opacity: .55; filter: saturate(.65); }
+.vendo-root [data-vendo-wet="1"] [data-vendo-wet="1"] { opacity: 1; filter: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .vendo-root [data-vendo-node-id] { transition: opacity .2s ease, filter .2s ease; }
+}
+
+/* The finish: the last section dries and the boot hairline runs its sweep out to
+   the full width once, then dissolves. ONE gesture, one iteration — the build's
+   single moving element taking a bow rather than blinking out.
+
+   Keyed on data-vendo-dried, which ThreadAppCard sets only when a card it
+   WATCHED streaming settles. [data-state="ready"] would not do: a served app's
+   bar is ready from its first frame, and an animation fires at mount, so every
+   iframe app would pulse on arrival — served apps keep their beat bar untouched.
+   26% × 3.85 ≈ the full bar. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-appcard-bar[data-vendo-dried] .fl-boot-hairline {
+    transform-origin: left center; animation: fl-wet-dried .45s cubic-bezier(.22, 1, .36, 1) 1 both; }
+}
+@keyframes fl-wet-dried {
+  from { opacity: 1; transform: scaleX(1); }
+  60%  { opacity: 1; transform: scaleX(3.85); }
+  to   { opacity: 0; transform: scaleX(3.85); } }
+/* ===== END S3 wet paint (lane L3) ========================================== */
+
 `;

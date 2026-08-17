@@ -16,6 +16,9 @@ export function useSlotApp(slotId: string, options: {
 } = {}): {
   /** The app placed in this slot, whatever state its build is in. */
   appId: AppId | undefined;
+  /** What that app calls itself — what the slot's own chrome says about it,
+   *  since an app id is plumbing and never something a person reads. */
+  title: string | undefined;
   /** Where that app's build stands, or undefined when the slot is empty. */
   status: "ready" | "building" | "failed" | undefined;
   error: Error | undefined;
@@ -25,6 +28,7 @@ export function useSlotApp(slotId: string, options: {
   const { entry, error, isLoading, refresh } = usePlacements(slotId, options.enabled ?? true);
   return {
     appId: entry?.app,
+    title: entry?.title,
     status: entry?.status,
     error,
     isLoading,

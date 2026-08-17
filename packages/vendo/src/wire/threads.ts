@@ -1,4 +1,4 @@
-import { defineOwn, isPlainObject, VendoError, withSseKeepalive } from "@vendoai/core";
+import { defineOwn, isPlainObject, THREAD_WINDOW_INITIAL, VendoError, vendoViewWirePartSchema, withSseKeepalive } from "@vendoai/core";
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
 import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
@@ -6,6 +6,31 @@ import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** The effective thread id the agent stamps on every turn response (03 §1). */
 const THREAD_ID_HEADER = "x-vendo-thread-id";
+
+/**
+ * Arrival — the apps a transcript RENDERS.
+ *
+ * The thread card draws each `data-vendo-view` part straight from the part
+ * (`chrome/thread/parts.tsx`), with no `open()` of its own, so nothing in a
+ * thread render reaches the route that marks an app seen. Reading the thread back
+ * IS that render, and it is the one server event a thread render has.
+ *
+ * Parsed with the part's own validator rather than by reaching into its shape:
+ * `vendoViewPart` is the single producer and this is the matching consumer, so a
+ * part the producer would not emit is not counted as a render here either.
+ */
+const renderedApps = (messages: readonly unknown[]): string[] => {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    const parts = isPlainObject(message) ? message["parts"] : undefined;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      const view = vendoViewWirePartSchema.safeParse(part);
+      if (view.success) ids.add(view.data.data.appId);
+    }
+  }
+  return [...ids];
+};
 
 /** Decision 3 (spec 2026-08-05): the situation channel is capped at 8 KB on
     BOTH ends. The client truncates before sending; this is the server's own
@@ -191,6 +216,39 @@ export const threadRoutes: RouteEntry[] = [
     if (request.method === "GET") {
       const thread = await deps.harness.threads.get(id, ctx);
       if (thread === null) throw new VendoError("not-found", `thread not found: ${id}`);
+      // Arrival — opening the conversation renders the apps its view parts name,
+      // so this is where that render is recorded. Person-only by construction,
+      // which is what keeps the property the mark was moved off `open` for: this
+      // route mints `kind:"user"` / `presence:"present"` (wire/context.ts) and the
+      // repository answers only the caller's own threads, so an agent, an
+      // automation, an export or an MCP tool cannot reach it — an away run can
+      // WRITE a view part into a sponsor's thread, and still only the sponsor
+      // reading it back marks it seen.
+      //
+      // Settled, never awaited outright: arrival is bookkeeping and may not change
+      // the answer. A transcript outlives the app it drew, so a view part for a
+      // deleted app would otherwise turn the whole conversation into a 404 —
+      // `seen` re-checks access and throws not-found. A dropped mark costs a dot
+      // that clears one render later.
+      // Only the TRAILING WINDOW, because that is all the client mounts: a long
+      // thread defers its head behind "Show N earlier messages"
+      // (`chrome/thread/scrolling.ts`), and a deferred message is absent from the
+      // DOM, so the app card inside it was never drawn. Marking the whole stored
+      // transcript cleared the dot for apps the person never saw — and the record
+      // is first-seen (`app-seen.ts`), so nothing could take it back.
+      //
+      // The asymmetry is deliberate. An app buried behind the deferred head does
+      // NOT clear on thread open; it still clears the moment the person opens the
+      // app itself (`wire/apps.ts`). A dot that lingers one render too long is a
+      // small annoyance; a dot that clears for something never seen is the exact
+      // failure this whole mechanism exists to prevent, so under-clearing is the
+      // direction to err in. Acknowledging a window as it renders would need a new
+      // client→server signal, which the note at the top of this file says the
+      // architecture deliberately does without.
+      if (deps.mounted.apps) {
+        const rendered = renderedApps(thread.messages.slice(-THREAD_WINDOW_INITIAL));
+        await Promise.allSettled(rendered.map((appId) => deps.apps.seen(appId, ctx)));
+      }
       return json(thread);
     }
     if (request.method === "DELETE") {

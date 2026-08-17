@@ -40,7 +40,7 @@ import { resolvePointer } from "./bindings.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
-import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
+import { deriveFormShape, FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
 import { InClientMount, type InClientFurnishing } from "./host-mount.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
@@ -701,7 +701,7 @@ function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
   if (!node) {
     return (
-      <span data-dangling-node={props.nodeId} style={{ display: "block", width: "100%" }}>
+      <span data-dangling-node={props.nodeId} data-vendo-wet="1" style={{ display: "block", width: "100%" }}>
         <FormingSkeleton name={props.nodeId} />
       </span>
     );
@@ -725,7 +725,7 @@ function NodeRenderer(props: NodeRendererProps) {
   // island the plan declared) shimmers instead of reading as unknown.
   if (node.props?.pending === true) {
     return (
-      <div data-vendo-node-id={node.id} data-vendo-pending="" aria-busy="true">
+      <div data-vendo-node-id={node.id} data-vendo-pending="" data-vendo-wet="1" aria-busy="true">
         <PendingLeaf name={node.component} />
       </div>
     );
@@ -759,6 +759,7 @@ function NodeRenderer(props: NodeRendererProps) {
       outcome={outcome}
       mark={props.marks.get(node.id)}
       shell={shellBox(node, props.components)}
+      wet={props.streaming}
     >
       {content}
       {notice(node.id, outcome)}
@@ -774,12 +775,21 @@ function NodeRenderer(props: NodeRendererProps) {
  * the render that carries the change and never on a first paint, so the effect
  * plays exactly one beat per node per repaint (repaint-motion.ts).
  */
-function NodeShell({ nodeId, outcome, mark, shell, children }: {
+function NodeShell({ nodeId, outcome, mark, shell, wet, children }: {
   nodeId: string;
   outcome: ToolOutcome | undefined;
   mark: NodeMark | undefined;
   /** How much box this shell may generate (`shellBox`). */
   shell: "box" | "contents" | "none";
+  /** This node belongs to a payload that is still streaming, so nothing about it
+   *  is final yet — not the component that resolved, not the props still to come.
+   *  The shell is the one box that survives the swap from silhouette to real
+   *  component, so dropping the attribute here is what lets the region transition
+   *  to full ink instead of popping. Nested wet shells do not compound; the CSS
+   *  resets all but the outermost. Only a "box" can carry it — "none" emits no
+   *  element and "contents" generates none, and a shell with no box is one that
+   *  opacity and filter are both inert on. */
+  wet: boolean;
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -795,6 +805,7 @@ function NodeShell({ nodeId, outcome, mark, shell, children }: {
       data-vendo-node-id={nodeId}
       {...(shell === "contents" ? { style: { display: "contents" } } : {})}
       data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
+      {...(wet && shell === "box" ? { "data-vendo-wet": "1" } : {})}
       {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
     >
       {children}
@@ -1035,32 +1046,36 @@ function StatefulTreeView({
     : null;
 
   return (
-    <div data-vendo-surface="" style={{ ...themeCssVariables(theme), ...SURFACE_CONTAINMENT } as CSSProperties}>
-      <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
-        {dataNotice}
-        {dropBackNotice}
-        {driftNotice}
-        <NodeRenderer
-          nodeId={validation.tree.root}
-          ancestry={new Set()}
-          nodes={repaint.nodes}
-          marks={repaint.marks}
-          generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
-          inClientGranted={inClientGranted}
-          furnishings={furnishings}
-          components={components}
-          data={data ?? validation.tree.data ?? {}}
-          state={viewState}
-          streaming={streaming}
-          outcomes={outcomes}
-          orphans={orphans}
-          runAction={runAction}
-          {...(onReview === undefined ? {} : { onReview })}
-          setViewState={updateState}
-          {...(interactive === undefined ? {} : { screen })}
-        />
-      </NodeErrorBoundary>
-    </div>
+    // A Kit empty state deep in the walk reads `streaming` off this provider:
+    // mid-build it holds a skeleton instead of claiming "No data".
+    <FormingContext.Provider value={streaming}>
+      <div data-vendo-surface="" style={{ ...themeCssVariables(theme), ...SURFACE_CONTAINMENT } as CSSProperties}>
+        <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
+          {dataNotice}
+          {dropBackNotice}
+          {driftNotice}
+          <NodeRenderer
+            nodeId={validation.tree.root}
+            ancestry={new Set()}
+            nodes={repaint.nodes}
+            marks={repaint.marks}
+            generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+            inClientGranted={inClientGranted}
+            furnishings={furnishings}
+            components={components}
+            data={data ?? validation.tree.data ?? {}}
+            state={viewState}
+            streaming={streaming}
+            outcomes={outcomes}
+            orphans={orphans}
+            runAction={runAction}
+            {...(onReview === undefined ? {} : { onReview })}
+            setViewState={updateState}
+            {...(interactive === undefined ? {} : { screen })}
+          />
+        </NodeErrorBoundary>
+      </div>
+    </FormingContext.Provider>
   );
 }
 

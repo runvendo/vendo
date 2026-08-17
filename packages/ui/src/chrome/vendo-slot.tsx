@@ -8,11 +8,14 @@ import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import type { ParkedPress } from "../tree/renderer.js";
+import { useMotionLayoutEffect } from "../tree/repaint-motion.js";
+import { rememberedShape, rememberedSlotShape, rememberShape, rememberSlotApp, type ShapeBox } from "./app-shape-cache.js";
 import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
+import { PinChrome } from "./pin-chrome.js";
 import { openVendoPalette } from "./palette-hotkey.js";
 import { buildFailureNotice } from "./thread/message-data.js";
 
@@ -23,8 +26,27 @@ function slotLabel(id: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** The faint skeleton behind the ghost/empty states — decorative only. */
-function GhostSkeleton() {
+/** The faint skeleton behind the ghost/empty states — decorative only. Given an
+ *  app we have served before, it draws THAT app's bones (S2) instead of the
+ *  generic shimmer; a first-ever visit and an iframe-served app keep the
+ *  shimmer. Read before paint, never during render: the store is client-only,
+ *  and bones the server could not know about are a hydration mismatch. */
+function GhostSkeleton({ appId, slotId }: { appId?: string; slotId?: string }) {
+  const [boxes, setBoxes] = useState<ShapeBox[]>();
+  // By app when the slot knows which one is coming; by SLOT in the window before
+  // the placements read answers, when all it knows is what it held last time.
+  useMotionLayoutEffect(() => setBoxes(
+    appId !== undefined ? rememberedShape(appId)
+      : slotId !== undefined ? rememberedSlotShape(slotId)
+        : undefined,
+  ), [appId, slotId]);
+  if (boxes) {
+    return (
+      <span className="fl-slot-skel fl-slot-bones" aria-hidden="true">
+        {boxes.map((box, i) => <span key={i} className="fl-bone" data-bone={box.kind} />)}
+      </span>
+    );
+  }
   return (
     <span className="fl-slot-skel" aria-hidden="true">
       <span className="fl-skel-line" style={{ width: "54%" }} />
@@ -41,10 +63,10 @@ function GhostSkeleton() {
   );
 }
 
-function SlotGhost({ label, detail, loading = false }: { label: string; detail?: string; loading?: boolean }) {
+function SlotGhost({ label, detail, loading = false, appId, slotId }: { label: string; detail?: string; loading?: boolean; appId?: string; slotId?: string }) {
   return (
     <div className="fl-slot-ghost" role={loading ? "status" : undefined} aria-live={loading ? "polite" : undefined}>
-      <GhostSkeleton />
+      <GhostSkeleton appId={appId} slotId={slotId} />
       <span className="fl-slot-cta">
         <span className="fl-slot-cta-label">{label}</span>
         {detail ? <small>{detail}</small> : null}
@@ -176,9 +198,13 @@ function MountedApp({ appId, onParked }: { appId: string; onParked?: (parked: Pa
     () => ({ ping: () => client.apps.pingMachine(appId) }),
     [appId, client],
   );
+  // The silhouette this app's NEXT wait is drawn in (S2).
+  useEffect(() => {
+    if (surface?.kind === "tree") rememberShape(appId, surface.payload);
+  }, [appId, surface]);
   if (!surface) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
-    return <SlotGhost label="Loading app…" loading />;
+    return <SlotGhost label="Loading app…" loading appId={appId} />;
   }
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
@@ -288,11 +314,20 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   const name = label ?? slotLabel(id);
   useReportSlot(id, name, resolvesItself, description);
 
+  // The slot's own way back to its bones on the next cold load: the digest is
+  // keyed by app, and the skeleton has to paint before the placements read can
+  // name one.
+  useEffect(() => {
+    if (appId !== undefined) rememberSlotApp(id, appId);
+  }, [appId, id]);
+
   // The third arm of the press, reached only when there is nowhere for it to
   // go. Runtime-detected, never a prop: a host that mounts an overlay LATER
   // gets the overlay, and one that never does gets a sentence instead of a
   // button that quietly does nothing (the old behavior).
   const [hint, setHint] = useState(false);
+  // The ✦ popover's Refresh, as a remount key.
+  const [reload, setReload] = useState(0);
   const author = () => {
     if (onAuthor) {
       onAuthor(id);
@@ -333,6 +368,21 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
 
   if (!appId && !pin) {
     if (children !== undefined) return <>{children}</>;
+    // The placements read has not answered, so whether anything is pinned here
+    // is UNKNOWN — and an unknown must never paint as a confident "nothing is
+    // pinned here". The invite is a CLAIM about an empty slot; it waits for a
+    // confirmed one. Until then this is the same honest wait a mounting app
+    // gets: the silhouette the slot held last time, or the calm generic ghost
+    // on a first-ever visit.
+    if (discovery.isLoading) {
+      return (
+        <ChromeRoot>
+          <div className="fl-slot" data-vendo-slot={id}>
+            <SlotGhost label="Loading app…" slotId={id} />
+          </div>
+        </ChromeRoot>
+      );
+    }
     // A placement row is written the moment the app id is minted, so a slot
     // with no markup of its own says what is coming instead of inviting a
     // second ask — the skeleton the empty state already uses, minus the
@@ -393,16 +443,34 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
 
   const Fallback = () => <>{children}</>;
   const mounted = appId
-    ? <MountedApp appId={appId} onParked={parked} />
+    // `reload` remounts the app, so Refresh is a real round trip through
+    // get+open — and the wait is the shape-true skeleton, not a frozen view.
+    ? <MountedApp key={reload} appId={appId} onParked={parked} />
     : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
+  const body = (
+    <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
+      <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>
+    </FluidReveal>
+  );
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
-        <div className="fl-slot-filled">
-          <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
-            <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>
-          </FluidReveal>
-        </div>
+        {/* Only a PLACEMENT gets the ✦: a host-asserted `appId` prop is the
+            host's own markup decision, and offering to unpin it would clear a
+            row the prop goes on winning over. */}
+        {appId !== undefined && resolvesItself ? (
+          <PinChrome
+            appId={appId}
+            slotId={id}
+            title={discovery.title !== undefined && discovery.title !== "" ? discovery.title : name}
+            onRefresh={() => setReload(n => n + 1)}
+            onUnpinned={() => void discovery.refresh()}
+          >
+            {body}
+          </PinChrome>
+        ) : (
+          <div className="fl-slot-filled">{body}</div>
+        )}
       </div>
       {/* Portals to <body> with its own theme boundary, so it is never trapped
           by the host's stacking context around this slot. */}

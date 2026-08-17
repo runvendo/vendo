@@ -36,8 +36,10 @@ import { openVendoConversation } from "./overlay-registry.js";
  */
 
 /** Long enough for cursor travel from the element to the pill, short enough
- *  that the pill does not linger over the page. */
-const GRACE_MS = 200;
+ *  that the pill does not linger over the page. Shared with the pinned app's ✦
+ *  chrome (pin-chrome.tsx), which wears the same marks — two copies of this
+ *  number is two blooms that can drift apart. */
+export const GRACE_MS = 200;
 
 const DISCOVERY_POLL_MS = 5000;
 
@@ -97,9 +99,10 @@ function serializableProps(children: ReactNode): Record<string, Json> {
 
 const NO_APPS: AppDocument[] = [];
 
-/** Either ✦ popover dismisses like any menu: Escape, or pointer-down outside
- *  it. Returns the ref that marks "inside". */
-function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void) {
+/** Every ✦ popover dismisses like any menu: Escape, or pointer-down outside
+ *  it. Returns the ref that marks "inside". Shared with pin-chrome.tsx, which
+ *  scopes one to its popover and one to the app the mark sits on. */
+export function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;

@@ -1,4 +1,5 @@
 import {
+  isPlainObject,
   log,
   VENDO_TREE_FORMAT,
   VendoError,
@@ -14,6 +15,7 @@ import {
   validateTree,
   type AppDocument,
   type ComponentPaintResult,
+  type PendingSurface,
   type TreeQuery,
   type Tree,
   stripServerAuthoritativeFields,
@@ -284,8 +286,9 @@ const additionalVenueState = async (
   }
 };
 
-/** 06-apps §§1–2 — construct the open surface. */
-export const createAppOpener = (
+/** 06-apps §§1–2 — the open surface of a document that is DONE building.
+ *  `createAppOpener` below is what callers get; this is its servable half. */
+const serveOpenApp = (
   caller: AppCaller,
   seedBaselines: readonly SeedBaseline[] = [],
   inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
@@ -309,16 +312,6 @@ export const createAppOpener = (
    */
   venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
-  // A build that is still WRITING this app has nothing terminal to serve. Its row
-  // lands at the first painting save, tens of seconds before the reviewer pass and
-  // its repair round finish, and mounting on the row alone put people in front of
-  // a draft — a wrong NUMBER included — that the build then corrected where nobody
-  // was looking. Not-found is the same answer the app gave a moment earlier with
-  // no row at all, so the wire's build window turns it into the `{kind:"pending"}`
-  // every embed already waits on.
-  if (buildInFlight(app.building)) {
-    throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
-  }
   // A terminally failed build never becomes servable: resolve the poll now
   // with the persisted reason (approvals resolve to denied/expired the same
   // way) instead of leaving the embed to spin to its client deadline.
@@ -460,4 +453,92 @@ export const createAppOpener = (
   return app.components === undefined
     ? { kind: "tree", payload }
     : { kind: "tree", payload, components: componentSources(app.components) };
+};
+
+/**
+ * The GEOMETRY a half-built app may show, read STRAIGHT OFF THE STORED DOCUMENT:
+ * node ids, component names, nesting, and the `streaming` tag that holds the
+ * renderer on the forming silhouette instead of a verdict (renderer.tsx).
+ *
+ * READ, never rendered — that is the whole point of this function's shape. It
+ * used to reduce a freshly SERVED payload, which meant every 1.2s pending poll
+ * ran the full open path on a mid-build document and threw the result away:
+ * ~250 renders across a five-minute build window, each one a compile, a VM boot
+ * and a real query fan-out through the guard, as the user, against the host's own
+ * backend (measured ~90ms and one query execution per poll on a one-query
+ * screen). Nothing here executes the app any more: a poll is a document read.
+ *
+ * Everything a figure could ride is dropped, because a draft's figures are the
+ * ones the build is about to correct. `props` goes because it is where both
+ * artifacts keep their numbers — a v2 tree's as `$path` bindings, a painted
+ * screen's as literals; `data` because it is the resolved query results those
+ * bindings point at; `interactive` and `components` because they are executable
+ * halves that would re-render the draft live in the browser. What is left cannot
+ * express a number — a whitelist, never a redaction.
+ *
+ * Two ids do travel: `root` and each node's own. They are never rendered as text,
+ * and keeping them is what lets the silhouette MORPH into the finished app
+ * instead of remounting it, so they stay — noting that an author who wrote
+ * `key={tx.amount}` would put a figure inside an id it never displays.
+ *
+ * Shape-checked rather than cast, and it cannot throw: a document whose stored
+ * tree is missing, differently tagged, or malformed simply yields no geometry,
+ * which is the contract's ordinary "not paintable yet" and the embed's beat bar.
+ * There is no swallowed error here to report to an operator, so — unlike the
+ * seams above that log — there is nothing for this one to say.
+ */
+const formingTreeOf = (app: AppDocument): UIPayload | undefined => {
+  const tree = app.tree;
+  if (tree === undefined || tree.formatVersion !== VENDO_TREE_FORMAT) return undefined;
+  if (typeof tree.root !== "string" || !Array.isArray(tree.nodes)) return undefined;
+  const nodes = tree.nodes.flatMap((node) => {
+    if (!isPlainObject(node) || typeof node["id"] !== "string" || typeof node["component"] !== "string") return [];
+    const children = node["children"];
+    return [{
+      id: node["id"],
+      component: node["component"],
+      ...(Array.isArray(children) ? { children: structuredClone(children) as Json } : {}),
+    }];
+  });
+  return nodes.length === 0
+    ? undefined
+    : { formatVersion: VENDO_TREE_FORMAT, root: tree.root, nodes, streaming: true };
+};
+
+/**
+ * 06-apps §§1–2 — the one read path a client opens an app through.
+ *
+ * A build that is still WRITING this app has nothing terminal to serve. Its row
+ * lands at the first painting save, tens of seconds before the reviewer pass and
+ * its repair round finish, and mounting on the row alone put people in front of a
+ * draft — a wrong NUMBER included — that the build then corrected where nobody was
+ * looking. So the answer stays the not-found the app gave a moment earlier with no
+ * row at all, which the wire's build window turns into the `{kind:"pending"}`
+ * every embed already waits on.
+ *
+ * `pending` asks for that window's ADDITIVE half instead: the same refusal to
+ * serve, plus whatever geometry the stored document ALREADY holds, so the embed's
+ * 1.2s poll can paint stepped assembly. It is the caller opting into an answer it
+ * must not mount — never a second way to open an app — so it is a flag on this
+ * door rather than a kind `open()` can return on its own. Nothing about it opens
+ * the app: `formingTreeOf` reads the row, so a poll costs a document read and the
+ * build window carries no render load at all.
+ *
+ * A COMPONENT SCREEN therefore rides no geometry, and reads its beat bar instead:
+ * `screenDocument` (write-surface.ts) stores no tree for one, because a screen's
+ * tree is what RENDERING it produces. Its silhouette exists only inside a paint,
+ * and paying for a paint per poll is the load this function exists to avoid.
+ */
+export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
+  (app: AppDocument, ctx: RunContext, options?: { pending?: boolean }) => Promise<OpenSurface | PendingSurface>
+) => {
+  const serve = serveOpenApp(...args);
+  return async (app, ctx, options) => {
+    if (!buildInFlight(app.building)) return await serve(app, ctx);
+    if (options?.pending !== true) {
+      throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
+    }
+    const tree = formingTreeOf(app);
+    return tree === undefined ? { kind: "pending" } : { kind: "pending", tree };
+  };
 };
