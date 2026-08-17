@@ -1,4 +1,4 @@
-import { defineOwn, isPlainObject, VendoError, vendoViewWirePartSchema, withSseKeepalive } from "@vendoai/core";
+import { defineOwn, isPlainObject, THREAD_WINDOW_INITIAL, VendoError, vendoViewWirePartSchema, withSseKeepalive } from "@vendoai/core";
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
 import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
@@ -230,8 +230,24 @@ export const threadRoutes: RouteEntry[] = [
       // deleted app would otherwise turn the whole conversation into a 404 —
       // `seen` re-checks access and throws not-found. A dropped mark costs a dot
       // that clears one render later.
+      // Only the TRAILING WINDOW, because that is all the client mounts: a long
+      // thread defers its head behind "Show N earlier messages"
+      // (`chrome/thread/scrolling.ts`), and a deferred message is absent from the
+      // DOM, so the app card inside it was never drawn. Marking the whole stored
+      // transcript cleared the dot for apps the person never saw — and the record
+      // is first-seen (`app-seen.ts`), so nothing could take it back.
+      //
+      // The asymmetry is deliberate. An app buried behind the deferred head does
+      // NOT clear on thread open; it still clears the moment the person opens the
+      // app itself (`wire/apps.ts`). A dot that lingers one render too long is a
+      // small annoyance; a dot that clears for something never seen is the exact
+      // failure this whole mechanism exists to prevent, so under-clearing is the
+      // direction to err in. Acknowledging a window as it renders would need a new
+      // client→server signal, which the note at the top of this file says the
+      // architecture deliberately does without.
       if (deps.mounted.apps) {
-        await Promise.allSettled(renderedApps(thread.messages).map((appId) => deps.apps.seen(appId, ctx)));
+        const rendered = renderedApps(thread.messages.slice(-THREAD_WINDOW_INITIAL));
+        await Promise.allSettled(rendered.map((appId) => deps.apps.seen(appId, ctx)));
       }
       return json(thread);
     }

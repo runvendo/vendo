@@ -23,6 +23,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  THREAD_WINDOW_INITIAL,
   toVendoWirePart,
   VENDO_APP_FORMAT,
   vendoViewPart,
@@ -70,11 +71,13 @@ async function setup(): Promise<{ vendo: Vendo; store: VendoStore }> {
     await rm(dataDir, { recursive: true, force: true });
   });
   await store.ensureSchema();
-  await store.records("vendo_apps").put({
-    id: "app_arrival",
-    data: { subject: ADA.subject, enabled: false, doc: doc("app_arrival", "Spending") },
-    refs: { subject: ADA.subject },
-  });
+  for (const [id, name] of [["app_arrival", "Spending"], ["app_buried", "Old receipts"]] as const) {
+    await store.records("vendo_apps").put({
+      id,
+      data: { subject: ADA.subject, enabled: false, doc: doc(id, name) },
+      refs: { subject: ADA.subject },
+    });
+  }
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async (req) => (req.headers.get("x-test-user") === null
@@ -88,9 +91,9 @@ async function setup(): Promise<{ vendo: Vendo; store: VendoStore }> {
 /** The thread the person will open, carrying the view part a turn left behind.
  *  Built with the REAL producer (`vendoViewPart` plus its wire envelope), so the
  *  part this consumer counts is the one the four emitters actually write. */
-async function seedRenderedThread(store: VendoStore): Promise<void> {
+const viewMessage = (id: string, appId: string): Record<string, unknown> => {
   const view = vendoViewPart({
-    appId: "app_arrival",
+    appId,
     payload: {
       formatVersion: "vendo-genui/v2",
       root: "root",
@@ -98,15 +101,23 @@ async function seedRenderedThread(store: VendoStore): Promise<void> {
     },
   });
   if (view === undefined) throw new Error("the view part fixture does not parse");
-  await store.records("vendo_threads").put({
-    id: "thr_arrival",
-    data: {
-      subject: ADA.subject,
-      messages: [{ id: "m_view", role: "assistant", parts: [toVendoWirePart(view.part, view.streamId)] }],
-    },
+  return { id, role: "assistant", parts: [toVendoWirePart(view.part, view.streamId)] };
+};
+
+const seedThread = (store: VendoStore, id: string, messages: Array<Record<string, unknown>>): Promise<unknown> =>
+  store.records("vendo_threads").put({
+    id,
+    data: { subject: ADA.subject, messages },
     refs: { subject: ADA.subject },
   });
-}
+
+/** Filler turns, to push a message out of the trailing window. */
+const chatter = (count: number): Array<Record<string, unknown>> =>
+  Array.from({ length: count }, (_unused, index) => ({
+    id: `m_chat_${index}`,
+    role: index % 2 === 0 ? "user" : "assistant",
+    parts: [{ type: "text", text: `turn ${index}` }],
+  }));
 
 const request = (vendo: Vendo, path: string): Promise<Response> =>
   vendo.handler(new Request(`http://arrival.test/api/vendo${path}`, {
@@ -114,11 +125,11 @@ const request = (vendo: Vendo, path: string): Promise<Response> =>
   }));
 
 /** Read the arrival flag back through the route a panel really lists with. */
-async function unseen(vendo: Vendo): Promise<boolean | undefined> {
+async function unseen(vendo: Vendo, appId = "app_arrival"): Promise<boolean | undefined> {
   const response = await request(vendo, "/apps");
   expect(response.status).toBe(200);
   const rows = await response.json() as Array<{ id: string; unseen?: boolean }>;
-  return rows.find((row) => row.id === "app_arrival")?.unseen;
+  return rows.find((row) => row.id === appId)?.unseen;
 }
 
 describe("an app is seen when a PERSON renders it, not when an agent reads it", () => {
@@ -152,11 +163,39 @@ describe("an app is seen when a PERSON renders it, not when an agent reads it", 
 
     // The negative control: the part is in the thread — written exactly as an
     // away run leaves it — and nobody has read the conversation.
-    await seedRenderedThread(store);
+    await seedThread(store, "thr_arrival", [viewMessage("m_view", "app_arrival")]);
     expect(await unseen(vendo)).toBe(true);
 
     // The positive: Ada opens the conversation, which renders the app.
     expect((await request(vendo, "/threads/thr_arrival")).status).toBe(200);
     expect(await unseen(vendo)).toBeUndefined();
+  });
+
+  /**
+   * A LONG conversation, which is where marking the stored transcript and marking
+   * what is on screen stop being the same thing. The client mounts only a trailing
+   * window and defers the head behind "Show N earlier messages"
+   * (`chrome/thread/scrolling.ts`; `packages/ui/test/chrome/extreme-content.test.tsx`
+   * holds it to ≤60 articles in a 400-message thread), so a card in the head is
+   * not drawn — and a mark cannot be taken back.
+   */
+  it("marks the apps inside the trailing window and leaves one buried in the deferred head unseen", async () => {
+    const { vendo, store } = await setup();
+    await seedThread(store, "thr_long", [
+      viewMessage("m_buried", "app_buried"),
+      ...chatter(THREAD_WINDOW_INITIAL),
+      viewMessage("m_recent", "app_arrival"),
+    ]);
+    expect(await unseen(vendo, "app_buried")).toBe(true);
+    expect(await unseen(vendo, "app_arrival")).toBe(true);
+
+    expect((await request(vendo, "/threads/thr_long")).status).toBe(200);
+
+    // On screen, so seen…
+    expect(await unseen(vendo, "app_arrival")).toBeUndefined();
+    // …and never drawn, so still waiting. It clears when she opens the app
+    // itself; it must not clear because a scrollback she never expanded
+    // mentioned it.
+    expect(await unseen(vendo, "app_buried")).toBe(true);
   });
 });
