@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 
 export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control";
 
@@ -32,6 +32,24 @@ export function Skeleton(props: { width?: string | number; height?: string | num
       }}
     />
   );
+}
+
+/**
+ * Is a build still painting this surface? `StatefulTreeView` publishes the
+ * tree's own `streaming` flag here — the same one that holds the skeletons
+ * above — so a Kit component nested anywhere under it can read it without a
+ * prop threaded through the whole vocabulary.
+ */
+export const FormingContext = createContext(false);
+
+/**
+ * A Kit empty state's copy, held back while the build is still in flight: a
+ * component handed no rows YET does not know whether it is empty, and "No data"
+ * on a table that is about to be full is a lie. Settled, the copy is the truth
+ * and shows exactly as before.
+ */
+export function EmptyOrForming({ children }: { children: ReactNode }) {
+  return useContext(FormingContext) ? <Skeleton /> : <>{children}</>;
 }
 
 /**

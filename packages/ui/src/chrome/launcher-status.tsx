@@ -39,7 +39,8 @@ export interface LauncherStatus {
   progress?: { done: number; total: number };
   /** Asks waiting on the user (the numbered badge). */
   askCount: number;
-  /** A finished run the user hasn't looked at (the quiet dot). */
+  /** Something the user hasn't looked at (the quiet dot): a finished run, or an
+   *  app that has never rendered for them. */
   unseenResults: boolean;
   /** The completion toast currently showing, if any. */
   toast?: RunResult;
@@ -63,7 +64,7 @@ export function useLauncherStatus({ open, threadId, onOpen }: {
   const { tools } = useVendoProvider();
   const activity = useSyncExternalStore(subscribeRunActivity, runActivity, () => IDLE_RUN_ACTIVITY);
   const result = useSyncExternalStore(subscribeRunActivity, unseenRunResult, NO_RESULT);
-  const { askCount } = useAttention({ pollMs: ASK_POLL_MS });
+  const { askCount, unseenResults } = useAttention({ pollMs: ASK_POLL_MS });
   const [toast, setToast] = useState<RunResult>();
 
   // While the panel is open, results are seen as they land — the user is
@@ -99,7 +100,7 @@ export function useLauncherStatus({ open, threadId, onOpen }: {
     // open-ended step gets the quiet indeterminate ring instead of a fake bar.
     ...(activity.total > 1 ? { progress: { done: activity.done, total: activity.total } } : {}),
     askCount,
-    unseenResults: !open && result !== undefined,
+    unseenResults: !open && unseenResults,
     ...(!open && toast !== undefined ? { toast } : {}),
     view() {
       setToast(undefined);
@@ -155,7 +156,9 @@ export function LauncherFace({ status, label, icon }: {
     ? `${status.label}…`
     : status.askCount > 0
       ? `${status.askCount} waiting on you`
-      : status.unseenResults ? "New results in your conversation" : "";
+      // The dot means a finished run OR an app that has never rendered for
+      // them, so the spoken half names neither: it says something arrived.
+      : status.unseenResults ? "Something new to look at" : "";
   return (
     <>
       {status.working

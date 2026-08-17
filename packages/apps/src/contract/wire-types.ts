@@ -26,6 +26,14 @@ import {
   type UIPayload,
 } from "@vendoai/core";
 
+/** One row of `GET /apps` — the document, plus what only THIS caller's read can
+ *  say about it. `unseen` is derived per caller and never stored on the row
+ *  every reader shares: set while the app has never rendered for them, absent
+ *  once it has (`persistence/app-seen.ts`). */
+export interface AppListRow extends AppDocument {
+  unseen?: boolean;
+}
+
 /** 06-apps §1 — what `GET /apps/:id/open` returns. */
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
