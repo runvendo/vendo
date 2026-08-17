@@ -201,10 +201,14 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
   if (collection === undefined || !COLLECTION_PATTERN.test(collection)) {
     throw new VendoError("validation", "rows collection must match [A-Za-z0-9_-]{1,64}");
   }
-  if (deps.ops === undefined) {
+  // The appData family is optional on StoreOps, so "no ops surface" and "an ops
+  // surface that omits app rows" are the same answer here: this door is nothing
+  // but app rows.
+  const rows = deps.ops?.appData;
+  if (rows === undefined) {
     throw new VendoError(
       "not-implemented",
-      "A box row is owner-stamped app data, so this door needs the store's named-operation surface: "
+      "A box row is owner-stamped app data, so this door needs the store's appData family: "
       + "it needs a SQL-backed store (`store: postgres(url)`, or the local default) or a "
       + "StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
     );
@@ -214,7 +218,6 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
   // and the owner is the app token's subject — stamped here, on the box's
   // behalf, because the box is never told who the user is.
   const target = { appId, collection: `box:${collection}`, owner };
-  const rows = deps.ops.appData;
 
   // Lane E redaction guard — nothing a box writes or reads through this door
   // may carry a known secret value into a store row or a response body.

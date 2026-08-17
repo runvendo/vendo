@@ -474,11 +474,11 @@ export interface TurnCommit {
 /** The typed contract for all 50 store operations across 14 families.
     Lean by design — this is the CONTRACT interface, not the implementation.
 
-    Four members are OPTIONAL, and all four mean the same thing: an
+    Five members are OPTIONAL, and all five mean the same thing: an
     implementation that cannot serve the family says so by OMITTING it, never by
-    accepting the call and doing something else (`transcripts.appendMessages`,
-    `retention`, `usage` and `turn`, following `RecordStore.claim`/`atomic`).
-    Everything else is required. */
+    accepting the call and doing something else (`appData`,
+    `transcripts.appendMessages`, `retention`, `usage` and `turn`, following
+    `RecordStore.claim`/`atomic`). Everything else is required. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
       effects, and the automations and guard drawers — reached through seven
@@ -502,8 +502,13 @@ export interface StoreOps {
     list(namespace: string, prefix?: string): Promise<string[]>;
   };
   /** Everything generated apps invent. Reads are auto-scoped to the target's
-      owner and writes are stamped with it, so no verb here takes a subject. */
-  appData: {
+      owner and writes are stamped with it, so no verb here takes a subject.
+
+      OPTIONAL: a store with nowhere to keep app rows leaves the family off, and
+      the doors onto it refuse the way a store with no ops surface at all is
+      already refused. Every store this repo ships serves it — see
+      {@link StoreOpsWithAppData}. */
+  appData?: {
     put(target: AppDataTarget, record: RecordInput): Promise<VendoRecord>;
     get(target: AppDataTarget, id: string): Promise<VendoRecord | null>;
     list(target: AppDataTarget, query?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
@@ -667,3 +672,8 @@ export interface StoreOps {
   footprint(): Promise<CollectionFootprint[]>;
   status(): Promise<StoreWireStatus>;
 }
+
+/** A `StoreOps` that serves the optional `appData` family. The stores this repo
+    ships answer with this, so their callers reach app rows without a check —
+    only a THIRD-PARTY surface may omit the family. */
+export type StoreOpsWithAppData = StoreOps & Required<Pick<StoreOps, "appData">>;

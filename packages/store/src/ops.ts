@@ -11,7 +11,7 @@ import {
   type FilesAdapter,
   type Json,
   type RecordStore,
-  type StoreOps,
+  type StoreOpsWithAppData,
   type UsageCountQuery,
   type UsageTallyQuery,
   type UsageTallyRow,
@@ -288,7 +288,7 @@ const rowIdOf = (message: unknown): string => {
 export function createStoreOps(
   store: VendoStore,
   options: { files?: FilesAdapter; workspaceOwner?: string } = {},
-): StoreOps {
+): StoreOpsWithAppData {
   const db = dbFor(store);
   /** Whose drawer a workspace verb addresses. The call names it when the mount
    *  serves more than one user (`/user/**` is the subject's, `/orgs/<org>/**`
@@ -400,7 +400,7 @@ export function createStoreOps(
       messages: input.messages.map((message) => ({ id: rowIdOf(message), message })),
     });
 
-  const ops: StoreOps = {
+  const ops: StoreOpsWithAppData = {
     // -----------------------------------------------------------------------
     // engine — seven verbs onto the routed doors, with the per-collection
     // policy living there; the ONE addition is the allowlist gate, which is why

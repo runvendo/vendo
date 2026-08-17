@@ -13,6 +13,7 @@ import {
   type RecordInput,
   type RecordQuery,
   type StoreOps,
+  type StoreOpsWithAppData,
   type UsageEvent,
   type UsageTallyRow,
   type VendoRecord,
@@ -90,7 +91,7 @@ const copyRecord = (r: VendoRecord): VendoRecord => ({
 // memory StoreOps — just enough to pass the conformance suite
 // ---------------------------------------------------------------------------
 
-export function memoryStoreOps(): StoreOps {
+export function memoryStoreOps(): StoreOpsWithAppData {
   // records: Map<collection, Map<id, record>>
   const collections = new Map<string, Map<string, VendoRecord & { seq: number }>>();
   let sequence = 0;
@@ -380,7 +381,7 @@ export function memoryStoreOps(): StoreOps {
     }
   };
 
-  const appData: StoreOps["appData"] = {
+  const appData: NonNullable<StoreOps["appData"]> = {
     async put(target, record) {
       const collection = appCollection(target);
       refuseSubject(record.refs, "put");
