@@ -90,17 +90,23 @@ const pageExists = (id: string): boolean => {
   );
 };
 
-/** Every published page, as a docs-site-relative path. */
+/** Every published page, as a docs-site-relative path. Snippets are build-time
+    includes, not pages — same rule pageLinks applies to link targets. */
 const everyPage = (): string[] => {
   const root = new URL("docs-site/", REPO_ROOT).pathname;
   const walk = (dir: string): string[] =>
     readdirSync(dir).flatMap((entry) => {
       const path = `${dir}/${entry}`;
-      if (statSync(path).isDirectory()) return walk(path);
+      if (statSync(path).isDirectory()) return entry === "snippets" ? [] : walk(path);
       return path.endsWith(".mdx") ? [path.slice(root.length)] : [];
     });
   return walk(root.replace(/\/$/, "")).sort();
 };
+
+/** Pages kept OUT of the nav on purpose. Mintlify still serves them by URL.
+    The agents playbook is machine-fetched (vendo.run/agents.md); humans get
+    give-it-to-your-agent instead, so the sidebar hides the raw playbook. */
+const HIDDEN_PAGES = ["agents/index.mdx"];
 
 /** Root-relative page links in an .mdx body. Assets are not pages. */
 const pageLinks = (text: string): string[] =>
@@ -140,7 +146,10 @@ describe("the BYO on-ramp page is published", () => {
         existsSync(new URL(`docs-site/${id}.mdx`, REPO_ROOT)) ? `${id}.mdx` : `${id}/index.mdx`,
       ),
     );
-    expect(everyPage().filter((file) => !listed.has(file)), "orphan page, in no nav group").toEqual([]);
+    expect(
+      everyPage().filter((file) => !listed.has(file) && !HIDDEN_PAGES.includes(file)),
+      "orphan page, in no nav group",
+    ).toEqual([]);
   });
 
   it.each([PAGE, PROMPT_PAGE, CONTRACT_PAGE])("%s links only to pages that exist", async (page) => {
