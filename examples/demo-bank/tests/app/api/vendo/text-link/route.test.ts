@@ -69,6 +69,26 @@ describe("a broken channel is not a channel that is switched off", () => {
     }
   })
 
+  it("treats the local-dev loopback URL as no channel, not as a retriable fault", async () => {
+    // instrumentation.ts fills an unset VENDO_BASE_URL with
+    // http://localhost:<port>/maple, so the var is never empty at runtime. Cloud
+    // cannot deliver an inbound text to a laptop, so this is permanent — offering
+    // a "try again" for it would be offering a retry that can never succeed.
+    const minting = vi.spyOn(vendo.channels.text, "link")
+    vi.stubEnv("VENDO_API_KEY", "vk_live_test")
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple")
+    try {
+      const response = await linkFor("vendo-demo")
+
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ data: { url: null } })
+      expect(minting, "nowhere to deliver, so nothing to mint").not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+      minting.mockRestore()
+    }
+  })
+
   it("never even asks when the deployment is not configured for texting", async () => {
     // The permanent answer comes from configuration, not from an error shape —
     // `validation` covers both "no VENDO_BASE_URL" (a setting) and "Cloud

@@ -25,9 +25,16 @@ export const dynamic = "force-dynamic"
  * the flag needs a Vendo Cloud key, and a demo without one must say so rather
  * than hand out a link that cannot work. It is reserved for EXACTLY that: the
  * deployment being configured without one — and that is answered from the
- * CONFIGURATION, not from the shape of an error. The two env vars this channel
- * needs are the same two `createVendo` composes it from: the Cloud key that
- * carries the numbers, and the public URL Cloud delivers back to.
+ * CONFIGURATION, not from the shape of an error. The channel needs two things:
+ * the Cloud key that carries the numbers, and a public URL Cloud can deliver
+ * back to.
+ *
+ * "Public" is load-bearing. `instrumentation.ts` fills an unset VENDO_BASE_URL
+ * with `http://localhost:<port>/maple` so local dev boots, which means the var is
+ * NEVER empty at runtime — a presence check would call this channel configured on
+ * every laptop. Vendo Cloud cannot deliver an inbound text to a loopback address,
+ * so a deployment pointing at one has no texting, permanently, and should say so
+ * rather than offer a retry that can never succeed.
  *
  * Reading it off error codes was the wrong instinct and I had it: `validation`
  * covers both "no VENDO_BASE_URL set" (a setting) and "Cloud returned no
@@ -38,14 +45,30 @@ export const dynamic = "force-dynamic"
  * available here", and a passing failure reported that way would read as
  * permanently switched off. Outages get a 503 the modal offers to retry.
  */
+/** Could Vendo Cloud actually POST an inbound text to this URL? A loopback or
+    unparseable one is a local-dev address, not a public callback. */
+function deliverableUrl(raw: string | undefined): boolean {
+  if (!raw) return false
+  let host: string
+  try {
+    host = new URL(raw).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  return host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]" && host !== "::1"
+    && !host.endsWith(".localhost")
+}
+
 export async function GET(request: Request) {
   // mapleAuth resolves every visitor, signed in or not (the shared demo guest),
   // so null is unreachable here — the seam's type just allows it.
   const principal = await mapleAuth.principal(request)
   if (principal === null) return ok({ url: null })
-  // No key or no public URL means this checkout of the demo has no text channel
-  // at all — the honest, permanent answer, and the one the modal explains.
-  if (!process.env.VENDO_API_KEY || !process.env.VENDO_BASE_URL) return ok({ url: null })
+  // No key, or nowhere public for Cloud to deliver to, means this checkout of the
+  // demo has no text channel at all — the honest, permanent answer.
+  if (!process.env.VENDO_API_KEY || !deliverableUrl(process.env.VENDO_BASE_URL)) {
+    return ok({ url: null })
+  }
   try {
     const { url } = await vendo.channels.text.link(principal)
     return ok({ url })
