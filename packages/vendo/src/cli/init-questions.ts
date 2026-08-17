@@ -46,7 +46,7 @@ const USE_CASE: InitQuestion = {
   id: "use-case",
   prompt: "How will people use your agent? Most apps embed it: your users chat with your product and it builds them real working screens from your data, dashboards, forms, views, right inside your app (recommended). Or: through your own agent loop. Or: from outside AI apps over MCP.",
   options: [
-    { label: "Embedded: chat + generated screens in your app", flag: "--use-case embedded", recommended: true },
+    { label: "Full-Stack Agent: chat + generated screens in your app", flag: "--use-case embedded", recommended: true },
     { label: "Through your own agent loop (AI SDK / Mastra)", flag: "--use-case agent-loop" },
     { label: "From outside AI apps over MCP", flag: "--use-case mcp" },
   ],
