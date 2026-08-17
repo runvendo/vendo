@@ -1,38 +1,35 @@
 ---
 title: "E-MCP-005"
 sidebarTitle: "E-MCP-005"
-description: "The server.json remote does not match the live MCP door."
+description: "Retired: doctor no longer discovers the live door, so it has nothing to compare server.json against."
 ---
 
-# E-MCP-005
+```text retired
+E-MCP-005 — retired, doctor no longer emits this code
+```
 
-<Warning>
-**what doctor prints** (broken)
-
-server.json remote does not match the live MCP door http://localhost:3000/api/vendo/mcp
-</Warning>
-
-`server.json` validates on its own, but the door URL it advertises is not the
-door doctor just probed.
-
-`check mcp/server-json-remote` · `error_code E-MCP-005` · `doctor exits 1`
+`error_code: E-MCP-005` · `status: retired`
 
 ## What you're seeing
 
-This check only runs once `server.json` passes schema validation
-([E-MCP-004](/production/troubleshooting/e-mcp-004)). Doctor compares every
-remote URL declared in the file against the live door URL it just discovery-checked.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-`server.json` is generated once, at a point in time, from whatever URL you
-gave the CLI. If the deployment's domain changes, or the MCP mount path
-changes, the file keeps naming the old URL. The registry entry now describes
-a door that no longer exists at that address.
+This code fired when the remote URL in `server.json` did not match the live
+MCP door doctor had just probed. Doctor no longer probes a door, so it has
+no live URL to compare the file against.
 
 ## The fix
 
-Regenerate `server.json` with the door's current public URL:
+The mismatch is still real, and you check it yourself now. Open
+`server.json`, read the `remotes[].url` entries, and compare them to the
+door's current public URL. `server.json` is generated once from whatever URL
+you gave the CLI, so a domain change or a mount change leaves it naming an
+address that no longer exists.
+
+Regenerate it with the current URL:
 
 ```bash
 npx vendo mcp server-json --domain your-app.example.com \
@@ -40,12 +37,7 @@ npx vendo mcp server-json --domain your-app.example.com \
   --force
 ```
 
-Re-run doctor once the remote in the file matches the URL doctor probes.
-
 ## Related errors
 
-<CardGroup cols={2}>
-  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
-  <Card title="E-MCP-006" href="/production/troubleshooting/e-mcp-006">server.json invalid JSON</Card>
-  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">missing VENDO_BASE_URL</Card>
-</CardGroup>
+- [E-MCP-004](/production/troubleshooting/e-mcp-004) — `server.json` registry validation, still checked on disk
+- [E-MCP-006](/production/troubleshooting/e-mcp-006) — `server.json` that is not valid JSON, still checked on disk

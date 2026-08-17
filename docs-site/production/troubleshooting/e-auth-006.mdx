@@ -1,30 +1,30 @@
 ---
 title: "E-AUTH-006"
 sidebarTitle: "E-AUTH-006"
-description: "Doctor's actAs probe cannot run while the dev server is down."
+description: "Retired: doctor no longer needs a running app, so no check is blocked by a stopped one."
 ---
 
-```text auth/act-as
-broken: cannot probe actAs; start the dev server at <base> and retry
+```text retired
+E-AUTH-006 — retired, doctor no longer emits this code
 ```
 
-`check: auth/act-as` · `error_code: E-AUTH-006` · `doctor exits: 1`
+`error_code: E-AUTH-006` · `status: retired`
 
 ## What you're seeing
 
-This check never got to run at all.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-It follows directly from a failed `/status` round trip. See
-[E-LIVE-002](/production/troubleshooting/e-live-002) for why the dev server
-was unreachable.
+This code marked the `actAs` probe as skipped because your app was not
+answering. Doctor reads files, so a stopped app blocks nothing.
 
 ## The fix
 
-Start the dev server at the probed base, then re-run `npx vendo doctor`.
+Nothing to do.
 
 ## Related errors
 
-- [E-LIVE-002](/production/troubleshooting/e-live-002) — the root cause this check inherits
-- [E-AUTH-003](/production/troubleshooting/e-auth-003) — the present-credential probe, blocked by the same dead server
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — what that probe used to catch, and how to check it by hand
+- [E-CFG-001](/production/troubleshooting/e-cfg-001) — a config check doctor still runs

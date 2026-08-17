@@ -29,8 +29,6 @@ function run(root: string, env: Record<string, string | undefined> = {}): Doctor
     root,
     env,
     json: true, // no console lines from the reporters
-    statusUrl: "http://localhost:3000/api/vendo",
-    fetchImpl: fetch,
     output: { log: () => {}, error: () => {} },
   });
 }

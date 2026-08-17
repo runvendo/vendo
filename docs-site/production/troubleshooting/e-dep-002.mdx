@@ -1,48 +1,42 @@
 ---
 title: "E-DEP-002"
 sidebarTitle: "E-DEP-002"
-description: "Doctor found the running wire serving a different @vendoai/vendo version than the CLI running doctor: a split-brain install."
+description: "Retired: doctor no longer reads the running wire, so it cannot compare its version against the CLI."
 ---
 
-```text deps/version-skew
-broken: the running wire serves @vendoai/vendo <wireVersion> but this CLI is
-<cliVersion> — likely a split-brain install (a direct @vendoai/vendo
-dependency pinned to an older range wins over the vendoai umbrella's). Fix:
-npm install @vendoai/vendo@<cliVersion> (or remove the direct @vendoai/vendo
-dependency and reinstall), then restart the dev server and re-run doctor.
+```text retired
+E-DEP-002 — retired, doctor no longer emits this code
 ```
 
-`<wireVersion>` and `<cliVersion>` are the two versions doctor actually
-found; they never match when this fires.
-
-`check: deps/version-skew` · `error_code: E-DEP-002` · `doctor exits: 1`
+`error_code: E-DEP-002` · `status: retired`
 
 ## What you're seeing
 
-`npx vendo doctor` reports two different `@vendoai/vendo` versions in the
-same run: one from the CLI you just ran, one from the live `/status` probe
-against your dev server.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-A direct `@vendoai/vendo` dependency pinned to an older range wins over the
-`vendoai` umbrella's for the app's import. `npm install vendoai@latest`
-upgrades the CLI while the app silently keeps serving the old runtime. A dev
-server started before an upgrade shows the same skew until it restarts.
+This code caught a split-brain install: the running wire served one
+`@vendoai/vendo` version and the CLI was on another. Doctor read the wire's
+version from the live `/status` route. Doctor now only checks what is on
+disk, so there is no second version to compare against.
 
 ## The fix
 
-Align the runtime with the CLI, then restart the dev server.
+The split-brain install is still real, and you check it yourself now:
 
 ```bash
-npm install @vendoai/vendo@<cli-version>
+npm ls @vendoai/vendo
+npx vendo --version
 ```
 
-Or remove the direct `@vendoai/vendo` dependency from `package.json` and let
-the `vendoai` umbrella provide it, then reinstall. Re-run `npx vendo doctor`
-after the dev server restarts.
+If `npm ls` shows a version your CLI is not on, install the matching one, or
+drop the direct `@vendoai/vendo` dependency from `package.json` and let the
+`vendoai` umbrella provide it. Reinstall after either change.
 
 ## Related errors
 
-- [E-WIRE-011](/production/troubleshooting/e-wire-011): a different split-brain, between the `vendoai` alias and its nested copy
-- [E-DEP-001](/production/troubleshooting/e-dep-001): the `ai` package peer-version check
+- [E-WIRE-011](/production/troubleshooting/e-wire-011) — a different split-brain, between the `vendoai` alias and its nested copy
+- [E-DEP-001](/production/troubleshooting/e-dep-001) — the `ai` package peer-version check, still run on disk
+- [E-DEP-003](/production/troubleshooting/e-dep-003) — the `zod` version check, still run on disk

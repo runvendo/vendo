@@ -1,61 +1,42 @@
 ---
 title: "E-MCP-001"
 sidebarTitle: "E-MCP-001"
-description: "MCP protected-resource metadata did not resolve at the door's well-known path."
+description: "Retired: doctor no longer fetches the door's protected-resource metadata over HTTP."
 ---
 
-# E-MCP-001
+```text retired
+E-MCP-001 — retired, doctor no longer emits this code
+```
 
-<Warning>
-**what doctor prints** (broken)
-
-MCP protected-resource metadata resolves (404)
-</Warning>
-
-The door's OAuth discovery document is missing or broken. Nothing that talks
-to the door over MCP can find out how to authorize against it.
-
-`check mcp/protected-resource` · `error_code E-MCP-001` · `doctor exits 1`
+`error_code: E-MCP-001` · `status: retired`
 
 ## What you're seeing
 
-`vendo doctor` runs only when the composition reports `blocks.mcp: true`. It
-GETs the protected-resource metadata document and the response either never
-arrives, arrives with a non-2xx status, or arrives without a `resource` field.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-RFC 9728 requires an MCP resource server to publish protected-resource
-metadata at a path-inserted well-known URL. A door mounted at
-`/api/vendo/mcp` must serve it at
-`/.well-known/oauth-protected-resource/api/vendo/mcp`, not at the bare
-`/.well-known/oauth-protected-resource`. Doctor fetches exactly that path and
-checks the body for a `resource` string.
-
-The `(404)` in the printed line is whichever HTTP status the origin actually
-returned. When the fetch itself never gets a response, doctor prints
-`MCP protected-resource metadata resolves is unreachable` instead.
+This code fired when the door's OAuth protected-resource document did not
+resolve at its well-known path. Doctor fetched that path over HTTP. It now
+reads files only, so it cannot ask any origin for a document.
 
 ## The fix
 
-Confirm the composition passes `mcp: true` (or an `mcp: {...}` object) to
-`createVendo`, with a working `auth`/`oauth` seam under it. Confirm the
-`.well-known` route is actually reachable at the deployment's origin, not
-swallowed by a reverse proxy or a catch-all middleware in front of the app.
-
-Then confirm the `--url` (or `VENDO_URL`) doctor was run with matches the
-real mount:
+The document still has to resolve, and you check it yourself now. A door
+mounted at `/api/vendo/mcp` serves its metadata at the path-inserted
+well-known URL, per RFC 9728:
 
 ```bash
-npx vendo doctor --url http://localhost:3000/api/vendo
+curl -s https://your-app.example.com/.well-known/oauth-protected-resource/api/vendo/mcp
 ```
 
-Re-run doctor once the document resolves.
+A correct response is JSON with a `resource` string. If it 404s, confirm
+`createVendo` gets `mcp: true` (or an `mcp: {...}` object) with a working
+`auth`/`oauth` seam, and that no reverse proxy or catch-all middleware
+swallows the `.well-known` route.
 
 ## Related errors
 
-<CardGroup cols={2}>
-  <Card title="E-MCP-002" href="/production/troubleshooting/e-mcp-002">authorization-server metadata</Card>
-  <Card title="E-MCP-003" href="/production/troubleshooting/e-mcp-003">server card</Card>
-  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">missing VENDO_BASE_URL</Card>
-</CardGroup>
+- [E-MCP-009](/production/troubleshooting/e-mcp-009) — the door wired without `VENDO_BASE_URL`, which doctor still catches
+- [E-MCP-004](/production/troubleshooting/e-mcp-004) — `server.json` registry validation, still checked on disk

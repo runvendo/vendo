@@ -62,14 +62,6 @@ function hostMatchesDomain(host: string, domain: string): boolean {
   return normalizedHost === normalizedDomain || normalizedHost.endsWith(`.${normalizedDomain}`);
 }
 
-export function remoteUrls(value: unknown): string[] {
-  if (!isRecord(value) || !Array.isArray(value.remotes)) return [];
-  return value.remotes.flatMap((remote) => {
-    if (!isRecord(remote) || remote.type !== "streamable-http" || typeof remote.url !== "string") return [];
-    return [remote.url];
-  });
-}
-
 /** 10-mcp §5 — validate with the vendored registry schema, then enforce the
  * registry's domain-namespace rule that JSON Schema cannot express. */
 export function validateRegistryServer(value: unknown): string[] {
@@ -103,16 +95,3 @@ export function validateRegistryServer(value: unknown): string[] {
   return errors;
 }
 
-export function sameUrl(left: string, right: string): boolean {
-  try {
-    const normalize = (value: string): string => {
-      const url = new URL(value);
-      url.hash = "";
-      if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/$/, "");
-      return url.href;
-    };
-    return normalize(left) === normalize(right);
-  } catch {
-    return false;
-  }
-}

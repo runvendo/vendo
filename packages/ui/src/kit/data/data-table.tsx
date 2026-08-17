@@ -4,7 +4,7 @@
  * column keys, formats each cell by its `format` token, and shows a named-query
  * empty state — none of which the model has to author.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Children, createContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -21,8 +21,10 @@ import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, typ
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
-  /** Field key; supports dot-paths ("client.name"). */
-  key: string;
+  /** Field key; supports dot-paths ("client.name"). Absent on an ACTION column,
+   *  which has no field: a fake key would make its header click-to-sort and its
+   *  contents globally searchable, on data that is not there. */
+  key?: string;
   /** Header label; defaults to a humanized last path segment. */
   label?: string;
   /** Value-tier format applied to every cell. */
@@ -63,10 +65,21 @@ export interface DataTableProps extends KitStyled {
   rowActions?: ReactNode;
   /** Spacing scale for this table's subtree. */
   density?: KitDensity;
+  /** One <TableRow> per record, in `rows` order — the model paints the cells
+   *  itself. Wins over `columns[].cell`. */
+  children?: ReactNode;
 }
 
-const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
+/** What a TableRow needs and cannot be handed as props: the columns it places
+ *  its cells against, and how many still fit (kit/data/table-row.tsx). */
+export const TableContext = createContext<{ columns: DataTableColumn[]; visible: number } | undefined>(undefined);
+
+export const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
   a === "end" ? "right" : a === "center" ? "center" : "left";
+
+/** A column's header text: its own label, or its key humanized. */
+export const headerText = (col: DataTableColumn): string =>
+  col.label ?? humanizeEnum(col.key?.split(".").pop() ?? "");
 
 /** A cell's formatted text, or `null` when the value is unrenderable. `compact`
  *  is the date default — see `compactDateKeys`. */
@@ -87,6 +100,7 @@ function cellText(value: unknown, format: ValueFormat, compact: boolean): string
  * Unrenderable cells (the "—" placeholder) filter as empty.
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn, compact: boolean): string {
+  if (column.key === undefined) return "";
   return cellText(readField(row, column.key), column.format ?? "text", compact) ?? "";
 }
 
@@ -102,7 +116,22 @@ function dateYear(value: unknown): number | undefined {
     : date.getFullYear();
 }
 
-const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
+export const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
+
+/** The line-per-column list a folded column moves into. The cell it rides in
+ *  may be a FIGURE, whose nowrap/tabular is inherited: a folded line is prose,
+ *  and an unbreakable one scrolls the table sideways — the thing folding
+ *  prevents. */
+export const foldStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  marginTop: 4,
+  color: t.muted,
+  fontSize: "0.85em",
+  whiteSpace: "normal",
+  fontVariantNumeric: "normal",
+};
 
 export function DataTable(props: DataTableProps) {
   const {
@@ -156,38 +185,40 @@ export function DataTable(props: DataTableProps) {
    */
   const compactDateKeys = useMemo(() => {
     const thisYear = new Date().getFullYear();
-    return new Set(
-      columns
-        .filter(
-          (col) =>
-            (col.format === "date" || col.format === "datetime") &&
-            data.every((row) => (dateYear(readField(row, col.key)) ?? thisYear) === thisYear),
-        )
-        .map((col) => col.key),
-    );
+    const compact = new Set<string>();
+    for (const { key, format } of columns) {
+      if (key === undefined || (format !== "date" && format !== "datetime")) continue;
+      if (data.every((row) => (dateYear(readField(row, key)) ?? thisYear) === thisYear)) compact.add(key);
+    }
+    return compact;
   }, [columns, data]);
 
   const tanstackColumns = useMemo<Array<ColumnDef<Record<string, unknown>>>>(
     () =>
-      columns.map((col) => ({
-        id: col.key,
-        accessorFn: (row) => readField(row, col.key),
-        header: col.label ?? humanizeEnum(col.key.split(".").pop() ?? col.key),
-        // A slot holds an ELEMENT, never a function (a function prop serializes
-        // as a `$handler` door). The row it belongs to arrives on RowContext,
-        // published once per row below.
-        cell: (ctx) => {
-          if (col.cell !== undefined) return col.cell;
-          const formatted = cellText(ctx.getValue(), col.format ?? "text", compactDateKeys.has(col.key));
-          if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
-          return formatted;
-        },
-        // A dropdown lists the values that exist, so picking one means THIS
-        // value — "includesString" here let a pick of "paid" list the "unpaid"
-        // rows too.
-        filterFn: (row, _columnId, value) =>
-          displayText(row.original, col, compactDateKeys.has(col.key)) === String(value),
-      })),
+      columns.map((col, i) => {
+        const compact = col.key !== undefined && compactDateKeys.has(col.key);
+        return {
+          id: col.key ?? String(i),
+          // No key, no accessor: tanstack's own `getCanSort` is `!!accessorFn`,
+          // so an action column's header stops being click-to-sort by
+          // construction, and its contents stay out of the search.
+          ...(col.key === undefined ? {} : { accessorFn: (row: Record<string, unknown>) => readField(row, col.key!) }),
+          header: headerText(col),
+          // A slot holds an ELEMENT, never a function (a function prop serializes
+          // as a `$handler` door). The row it belongs to arrives on RowContext,
+          // published once per row below.
+          cell: (ctx) => {
+            if (col.cell !== undefined) return col.cell;
+            const formatted = cellText(ctx.getValue(), col.format ?? "text", compact);
+            if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
+            return formatted;
+          },
+          // A dropdown lists the values that exist, so picking one means THIS
+          // value — "includesString" here let a pick of "paid" list the "unpaid"
+          // rows too.
+          filterFn: (row, _columnId, value) => displayText(row.original, col, compact) === String(value),
+        };
+      }),
     [columns, compactDateKeys],
   );
 
@@ -205,7 +236,7 @@ export function DataTable(props: DataTableProps) {
     globalFilterFn: (row, columnId, value) => {
       const col = columns.find((entry) => entry.key === columnId);
       if (!col) return false;
-      return displayText(row.original, col, compactDateKeys.has(col.key))
+      return displayText(row.original, col, compactDateKeys.has(columnId))
         .toLowerCase()
         .includes(String(value).toLowerCase());
     },
@@ -235,10 +266,11 @@ export function DataTable(props: DataTableProps) {
     return map;
   }, [filterableBy, data, columns, compactDateKeys]);
 
-  const columnLabel = (key: string) =>
-    columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);
+  const columnLabel = (key: string) => headerText(columns.find((c) => c.key === key) ?? { key });
 
   const bodyRows = table.getRowModel().rows;
+  /** The rows the model painted itself, one <TableRow> per record. */
+  const painted = Children.toArray(props.children);
 
   /**
    * Columns past the width the surface has FOLD into the first one. The wrapper
@@ -381,8 +413,10 @@ export function DataTable(props: DataTableProps) {
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr ref={headRow} key={hg.id} style={{ background: t.surfaceRaised }}>
-                {shown(hg.headers).map((header) => {
-                  const col = columns.find((c) => c.key === header.column.id);
+                {shown(hg.headers).map((header, i) => {
+                  // By INDEX, not by id: a keyless action column's id is its
+                  // position, which matches no column's key.
+                  const col = columns[i];
                   const sorted = header.column.getIsSorted();
                   return (
                     <th
@@ -394,7 +428,7 @@ export function DataTable(props: DataTableProps) {
                         borderBottom: hairline,
                         padding: cellPad,
                         textAlign: alignCss(col?.align),
-                        cursor: "pointer",
+                        cursor: header.column.getCanSort() ? "pointer" : "default",
                         userSelect: "none",
                         whiteSpace: "nowrap",
                       }}
@@ -420,6 +454,27 @@ export function DataTable(props: DataTableProps) {
                   {empty ?? emptyState}
                 </td>
               </tr>
+            ) : painted.length > 0 ? (
+              // The model painted the cells. Every other thing the table does
+              // still runs on `rows`, so the sorted/filtered row picks its own
+              // painted row by `index` — tanstack's index into the ROOT data
+              // array, which sorting does not touch. The border moves to the
+              // <tr>, because the <td>s belong to the TableRow now.
+              <TableContext.Provider value={{ columns, visible: visibleCount }}>
+                {bodyRows.map((row, rowIndex) => (
+                  <tr key={row.id} style={{ borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline }}>
+                    <RowContext.Provider value={row.original}>
+                      {painted[row.index] ?? null}
+                      {/* The actions column is the table's, not the row's: a painted
+                          row paints one cell per DATA column, so without this the
+                          body row is one cell short of its own header. */}
+                      {rowActions === undefined ? null : (
+                        <td style={{ padding: cellPad, textAlign: "right", whiteSpace: "nowrap" }}>{rowActions}</td>
+                      )}
+                    </RowContext.Provider>
+                  </tr>
+                ))}
+              </TableContext.Provider>
             ) : (
               bodyRows.map((row, rowIndex) => (
                 <tr key={row.id}>
@@ -427,7 +482,7 @@ export function DataTable(props: DataTableProps) {
                       off it. A provider paints no element, so this is still tr > td. */}
                   <RowContext.Provider value={row.original}>
                     {shown(row.getVisibleCells()).map((cell, cellIndex) => {
-                      const col = columns.find((c) => c.key === cell.column.id);
+                      const col = columns[cellIndex];
                       // A slot is elements, not a figure: only formatted text is
                       // one unbreakable atom ("Mar 14" split across two lines
                       // reads as two values). Tabular is the table's own default.
@@ -444,33 +499,18 @@ export function DataTable(props: DataTableProps) {
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           {folded && cellIndex === 0 ? (
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 4,
-                                marginTop: 4,
-                                color: t.muted,
-                                fontSize: "0.85em",
-                                // The cell this rides in may be a FIGURE, whose
-                                // nowrap/tabular is inherited: a folded line is
-                                // prose, and an unbreakable one scrolls the
-                                // table sideways — the thing folding prevents.
-                                whiteSpace: "normal",
-                                fontVariantNumeric: "normal",
-                              }}
-                            >
-                              {columns.slice(visibleCount).flatMap((other) => {
+                            <div style={foldStyle}>
+                              {columns.slice(visibleCount).flatMap((other, j) => {
                                 // A folded column keeps its SLOT — a status
                                 // column reads as its pill here too, not as the
                                 // bare word the slot exists to kill.
                                 const value =
-                                  other.cell ?? displayText(row.original, other, compactDateKeys.has(other.key));
+                                  other.cell ?? displayText(row.original, other, other.key !== undefined && compactDateKeys.has(other.key));
                                 return value === ""
                                   ? []
                                   : [
-                                      <span key={other.key}>
-                                        {columnLabel(other.key)}: {value}
+                                      <span key={j}>
+                                        {headerText(other)}: {value}
                                       </span>,
                                     ];
                               })}

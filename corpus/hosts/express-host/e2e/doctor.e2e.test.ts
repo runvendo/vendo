@@ -1,15 +1,14 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { scriptedModel, startTestHost, textTurn } from "./harness.js";
 
 const hostDir = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const cli = fileURLToPath(new URL("../../../../packages/vendo/bin/vendo.mjs", import.meta.url));
 
-function runDoctor(url: string): Promise<{ code: number | null; output: string }> {
+function runDoctor(): Promise<{ code: number | null; output: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, "doctor", hostDir, "--url", `${url}/api/vendo`], {
+    const child = spawn(process.execPath, [cli, "doctor", hostDir], {
       cwd: repoRoot,
       env: { ...process.env, VENDO_TELEMETRY_DISABLED: "1" },
       stdio: ["ignore", "pipe", "pipe"],
@@ -24,16 +23,10 @@ function runDoctor(url: string): Promise<{ code: number | null; output: string }
 
 describe("vendo doctor on the Express host", () => {
   // Express discovery lands in a parallel lane; this pins its expected behavior.
-  it("recognizes the committed wiring and completes a live status probe", async () => {
-    // `vendo doctor` probes the /doctor/* routes a development composition
-    // mounts, which is what a reader has after `npm run dev`.
-    const host = await startTestHost(scriptedModel([textTurn("unused")]), { trustedOrigin: true, development: true });
-    try {
-      const result = await runDoctor(host.baseUrl);
-      expect(result.code, result.output).toBe(0);
-      expect(result.output).toContain("/status live round-trip");
-    } finally {
-      await host.close();
-    }
+  // Nothing is started: doctor reads the repo, so a green run needs no server.
+  it("recognizes the committed wiring with nothing running", async () => {
+    const result = await runDoctor();
+    expect(result.code, result.output).toBe(0);
+    expect(result.output).toContain("Express server is wired");
   });
 });

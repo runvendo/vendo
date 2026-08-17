@@ -76,8 +76,8 @@ v4 uses its own cookie names and its own JWE derivation, so v4 sessions are
 structurally unreadable here.
 
 Signed-in users resolve as anonymous, and away calls into your host fail its
-session verification even though the doctor probe passes. Upgrade to v5, or
-stay anonymous with `--auth none` until then.
+session verification. Upgrade to v5, or stay anonymous with `--auth none`
+until then.
 
 ### Two options work on any preset
 
@@ -260,23 +260,8 @@ Audit readers that filter on webhook subjects should match
 
 ## Verify the wiring
 
-```bash Terminal highlight={1}
-$ npx vendo doctor
-
-ok: present credentials reach the host API
-ok: actAs mint round-trip verified by the composition's own principal resolver
-```
-
-Doctor probes both seams live. Present-credential forwarding reports
-[`E-AUTH-001`](/production/troubleshooting/e-auth-001) through
-[`E-AUTH-003`](/production/troubleshooting/e-auth-003), and the actAs mint plus
-host verification reports
-[`E-AUTH-004`](/production/troubleshooting/e-auth-004) through
-[`E-AUTH-008`](/production/troubleshooting/e-auth-008).
-
-For Clerk and Auth0 it also round-trips a synthetic away token through your
-verify middleware, so a mismatched secret surfaces before the first real away
-call.
+`vendo doctor` reads files on disk, so it cannot see these seams. Run your app
+and make one real call.
 
 Away calls failing with `not-implemented` mean `actAs` is not configured.
 Failing with `act-as-subject-mismatch` means the grant belongs to a different

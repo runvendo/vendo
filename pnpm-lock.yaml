@@ -384,8 +384,8 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))
       '@mastra/memory':
-        specifier: ^1.22.2
-        version: 1.23.0(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))
+        specifier: ^1.26.1
+        version: 1.26.2(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))
       '@mastra/observability':
         specifier: ^1.16.0
         version: 1.16.1(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))(zod@3.25.76)
@@ -2893,8 +2893,8 @@ packages:
     peerDependencies:
       '@mastra/core': '>=1.0.0-0 <2.0.0-0'
 
-  '@mastra/memory@1.23.0':
-    resolution: {integrity: sha512-UkJcuZ5S/SDfnrXMmigjZxUUQr42zdcIvW7JVmeN5CIt/lOkfJ6Km89nf6IDXpI8nAcvPiU96WcK4WIPHXTjqw==}
+  '@mastra/memory@1.26.2':
+    resolution: {integrity: sha512-9eFJg/9TXEUJmWdJbAJkt4FCa8cNdK1lFEUgXwqpjijnsMLtaLUAeqHz86pI5E34hpJYlPhMwLKiRzM1e4iAsg==}
     engines: {node: '>=22.13.0'}
     peerDependencies:
       '@mastra/core': '>=1.4.1-0 <2.0.0-0'
@@ -2908,6 +2908,12 @@ packages:
 
   '@mastra/schema-compat@1.3.4':
     resolution: {integrity: sha512-2ObUsd21KIVelQy+eKPxJvnMxtmKnWacsIkZovhEYjVcQX9OYTDQ+u4E4RboIJZvurJnFx++/ujQLFznUaEYMg==}
+    engines: {node: '>=22.13.0'}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+
+  '@mastra/schema-compat@1.3.7':
+    resolution: {integrity: sha512-06WfY+j9rulYnDp8CM7pL7JIyrntkMolqmyyb1VJNEzlYTQCIcJcY0SwQiubZv2tztmoYGikszDiRVyXp0E9gA==}
     engines: {node: '>=22.13.0'}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -5823,11 +5829,6 @@ packages:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
 
-  image-size@1.2.1:
-    resolution: {integrity: sha512-rH+46sQJ2dlwfjfhCyNx5thzrv+dtmBIhPHk0zgRUukHzZ/kRueTJXoYYsclBaKcSMBWuGbOFXtioLpzTb5euw==}
-    engines: {node: '>=16.x'}
-    hasBin: true
-
   immer@11.1.11:
     resolution: {integrity: sha512-qzXuyXAkPySAGYkfsAwodDPWT8Zm7/Uo5BNt4BjhMhG5WlWyZZ4wQqnWwdS8kjlQ1Cwu6gjw3A6+0gTQwlyYtw==}
 
@@ -7137,9 +7138,6 @@ packages:
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
-
-  queue@6.0.2:
-    resolution: {integrity: sha512-iHZWu+q3IdFZFX36ro/lKBkSvfkztY5Y7HMiPlOUjhupPcG2JMfst2KKEpu5XndviX/3UhFbRngUPNKtgvtZiA==}
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
@@ -9888,13 +9886,12 @@ snapshots:
       pino: 10.3.1
       pino-pretty: 13.1.3
 
-  '@mastra/memory@1.23.0(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))':
+  '@mastra/memory@1.26.2(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))':
     dependencies:
       '@mastra/core': 1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76)
-      '@mastra/schema-compat': 1.3.4(zod@4.4.3)
+      '@mastra/schema-compat': 1.3.7(zod@4.4.3)
       async-mutex: 0.5.0
       diff: 8.0.4
-      image-size: 1.2.1
       json-schema: 0.4.0
       lru-cache: 11.5.1
       probe-image-size: 7.3.0
@@ -9917,13 +9914,11 @@ snapshots:
       zod-from-json-schema-v3: zod-from-json-schema@0.0.5
       zod-to-json-schema: 3.25.2(zod@3.25.76)
 
-  '@mastra/schema-compat@1.3.4(zod@4.4.3)':
+  '@mastra/schema-compat@1.3.7(zod@4.4.3)':
     dependencies:
       json-schema-to-zod: 2.8.1
       zod: 4.4.3
       zod-from-json-schema: 0.5.6
-      zod-from-json-schema-v3: zod-from-json-schema@0.0.5
-      zod-to-json-schema: 3.25.2(zod@4.4.3)
 
   '@mastra/server@1.51.0(@mastra/core@1.51.0(@bufbuild/protobuf@2.12.1)(@cfworker/json-schema@4.1.1)(ai@6.0.230(zod@3.25.76))(express@5.2.1)(rxjs@7.8.1)(zod@3.25.76))(zod@3.25.76)':
     dependencies:
@@ -12984,10 +12979,6 @@ snapshots:
 
   ignore@7.0.6: {}
 
-  image-size@1.2.1:
-    dependencies:
-      queue: 6.0.2
-
   immer@11.1.11: {}
 
   import-fresh@3.3.1:
@@ -14600,10 +14591,6 @@ snapshots:
   quansync@0.2.11: {}
 
   queue-microtask@1.2.3: {}
-
-  queue@6.0.2:
-    dependencies:
-      inherits: 2.0.4
 
   quick-format-unescaped@4.0.4: {}
 

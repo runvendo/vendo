@@ -28,24 +28,15 @@ allowBuilds:
   unrs-resolver: true
   workerd: true
 
-# 2026-08-07 advisories: image-size GHSA-w3rx-r6r6-pgpr (ICNS parser infinite
-# loop) and GHSA-5p2g-fcmc-qvqq (JXL/HEIF parsers infinite loop), both HIGH,
-# via examples/mastra-agent > @mastra/memory > image-size. Not a
-# stale-lockfile case like every floor in `overrides` below: GitHub's own
-# advisory records report first_patched_version: null for both, and
-# image-size's last release anywhere (npm or GitHub) is 2.0.2 from April
-# 2025 — the "patched >=2.0.3" pnpm audit prints does not exist. Checked
-# upstream too: @mastra/memory 1.26.0 (2026-08-05, its current latest) still
-# pins image-size exactly at 1.2.1, so no version bump anywhere in the chain
-# reaches a fix. Ignored by advisory ID (pnpm's own mechanism for this,
-# `pnpm audit --ignore <GHSA-ID>`, which persists here) rather than an
-# `overrides` floor that can't resolve to a real package version. Re-check
-# both IDs whenever image-size cuts a new release; drop the ignores once one
-# ships >=2.0.3.
-auditConfig:
-  ignoreGhsas:
-    - GHSA-w3rx-r6r6-pgpr
-    - GHSA-5p2g-fcmc-qvqq
+# The 2026-08-07 image-size ignores (GHSA-w3rx-r6r6-pgpr ICNS infinite loop,
+# GHSA-5p2g-fcmc-qvqq JXL/HEIF infinite loop, both HIGH) are GONE
+# (2026-08-16). They were never going to be fixed by a floor — image-size's
+# last release anywhere is still 2.0.2 from April 2025 and both advisories
+# still report first_patched_version: null — so the exit was upstream dropping
+# the package, not patching it: @mastra/memory 1.26.1 (2026-08-12) swapped
+# image-size for probe-image-size, and the example's floor moved to ^1.26.1.
+# image-size is now absent from the tree entirely; `pnpm why image-size -r`
+# finds nothing, which is why the ignores can go rather than be re-justified.
 
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.214'

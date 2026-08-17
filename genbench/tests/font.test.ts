@@ -86,7 +86,10 @@ describe("the world's font", () => {
     const { font: _font, ...bare } = world;
 
     expect(fontFace(bare)).toBe("");
-    expect(pageHtml(TEXT, bare, bundle, "vendo-sonnet")).not.toContain("@font-face");
+    // The bundle carries the product's own built-in Onest face, so the page is
+    // never font-free; the control is that the harness added none of its own.
+    const page = pageHtml(TEXT, bare, bundle, "vendo-sonnet");
+    expect(page.split("@font-face").length).toBe(bundle.split("@font-face").length);
   });
 });
 

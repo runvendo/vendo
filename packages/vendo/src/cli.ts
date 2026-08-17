@@ -19,7 +19,7 @@ Usage: vendo <command> [dir] [options]
 Commands:
   init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
   login           Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
-  doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
+  doctor [dir]    Verify the install on disk: wiring, config files, dependencies, env (--json for agents)
 
 Advanced:
   sync [dir]      Re-extract tools and baselines, then judge what moved — evidence-backed grades, loosenings held for a human (keyless: structural only; --strict is the CI gate)
@@ -31,7 +31,7 @@ Advanced:
 
 Options:
   --agent                    Init only: ask first. Prints the open questions as JSON and writes nothing; re-run with the answers as flags and it writes, ending in a JSON receipt
-  --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail; doctor: auto-start the dev server
+  --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
   --framework <name>         Init only: override framework detection (next, express, custom) — required non-interactively when detection fails
@@ -47,7 +47,7 @@ Options:
   --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
-  --url <url>                Doctor/server-json: mounted wire base or public MCP URL
+  --url <url>                Sync/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --review                   Sync only: show the queued + new loosenings and confirm before writing
   --full                     Sync only: judge the whole catalog instead of only what moved
@@ -94,8 +94,8 @@ const INIT_POSTURE_VALUES = ["local", "broker"];
 /** The user-facing engine families (judge/engine.ts's ENGINE_FAMILIES values) —
     one ladder, so `init --engine` and `sync --engine` accept the same names. */
 const ENGINE_VALUES = ["claude", "codex", "npx"];
-const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
-const DOCTOR_VALUE_OPTIONS = ["--url"];
+const DOCTOR_FLAGS = new Set(["--json"]);
+const DOCTOR_VALUE_OPTIONS: string[] = [];
 const SYNC_FLAGS = new Set([
   "--strict", "--json", "--report", "--review", "--full", "--yes",
   "--theme-refresh", "--ai", "--no-ai", "--no-watermark",
@@ -261,12 +261,7 @@ async function doctorCommand(args: string[]): Promise<number> {
     console.error(`vendo doctor: ${problems.join("; ")}\n\n${HELP}`);
     return 1;
   }
-  return runDoctor({
-    targetDir: target(args),
-    url: option(args, "--url"),
-    json: args.includes("--json"),
-    yes: args.includes("--yes"),
-  });
+  return runDoctor({ targetDir: target(args), json: args.includes("--json") });
 }
 
 async function syncCommand(args: string[]): Promise<number> {

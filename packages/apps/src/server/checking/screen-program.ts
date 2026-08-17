@@ -197,7 +197,10 @@ const propsOf = (ts: typeof TS, checker: TS.TypeChecker, element: TS.JsxOpeningE
 
 const writtenProps = (ts: typeof TS, file: TS.SourceFile, element: TS.JsxOpeningElement | TS.JsxSelfClosingElement): string[] =>
   element.attributes.properties.flatMap((property) =>
-    ts.isJsxAttribute(property) ? [property.name.getText(file)] : []);
+    ts.isJsxAttribute(property) ? [property.name.getText(file)] : [])
+    // `key` is React's own (JSX.IntrinsicAttributes), never a component's — and a
+    // mapped row must write one, so reporting it would bury the real fault.
+    .filter((name) => name !== "key");
 
 /** An element-level props error (an unknown attribute, a missing required one).
  *  The compiler reports it once, on the tag, with both facts buried in a

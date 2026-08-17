@@ -1,44 +1,40 @@
 ---
 title: "E-AUTH-001"
 sidebarTitle: "E-AUTH-001"
-description: "Doctor's present-credential probe posted cookies and a bearer header that never reached the host API."
+description: "Retired: doctor no longer posts a credential probe to your host, so it cannot see credentials get stripped."
 ---
 
-```text auth/present
-broken: present credentials did not reach the host API; set VENDO_BASE_URL
-to the running host origin and restart the dev server
+```text retired
+E-AUTH-001 — retired, doctor no longer emits this code
 ```
 
-`check: auth/present` · `error_code: E-AUTH-001` · `doctor exits: 1`
+`error_code: E-AUTH-001` · `status: retired`
 
 ## What you're seeing
 
-Doctor posted a seeded cookie and bearer header to `<base>/doctor/present`,
-and they did not come back through the wire's own same-origin fetch.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-The wire does not trust the origin it is being probed on, so it strips
-credentials instead of forwarding them. A 404 here instead of this message
-points at a different problem: see the fix below.
+This code fired when doctor posted a seeded cookie and bearer header to
+`<base>/doctor/present` and they did not reach your host API. Doctor checks
+files on disk now. It sends no requests, so there is no round trip to watch.
 
 ## The fix
 
-Set `VENDO_BASE_URL` to the running host origin.
+The problem is still real, and you check it yourself now. Open your app,
+run a turn that calls your own API, and watch the call in the dev server
+log: if it arrives without your session cookie, the wire did not trust the
+origin it was called on.
+
+Set `VENDO_BASE_URL` to the host origin your app actually runs on.
 
 ```bash .env.local
 VENDO_BASE_URL=http://localhost:3000
 ```
 
-Restart the dev server and re-run `npx vendo doctor`.
-
-If the probe answered 404 instead of this message, the composition likely
-never declared itself `development: true` (or `NODE_ENV=development` was
-never set), so the doctor-only routes never mounted. `next dev` sets that
-flag for you; a plain `node` or `tsx` server needs it explicitly.
-
 ## Related errors
 
-- [E-AUTH-002](/production/troubleshooting/e-auth-002) — the same probe, but it never answered at all
-- [E-AUTH-003](/production/troubleshooting/e-auth-003) — the same probe, blocked because the dev server is down
-- [E-AUTH-004](/production/troubleshooting/e-auth-004) — the actAs probe, the away-call sibling of this check
+- [E-CFG-003](/production/troubleshooting/e-cfg-003) — a `VENDO_BASE_URL` mismatch doctor still catches on disk
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — the away-call sibling of this check, also retired

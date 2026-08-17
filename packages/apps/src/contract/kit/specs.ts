@@ -49,7 +49,10 @@ const seriesInput = z.array(z.union([
  */
 const slot = z.unknown().describe("holds Kit elements");
 const tableColumn = z.object({
-  key: z.string(),
+  /** Optional, because an ACTION column has no field: giving it a fake key
+   *  makes its header click-to-sort and its values globally searchable, on data
+   *  that is not there. A keyless column sorts, filters and searches on nothing. */
+  key: z.string().optional(),
   label: z.string().optional(),
   format: valueFormat.optional(),
   align: align.optional(),
@@ -294,10 +297,11 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DataTable",
     group: "data",
-    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys, and formats each cell — you only pass rows and columns. A column's `cell` slot renders Kit value components against that row instead of plain text. Dates in cells are compact (\"Aug 12\"), and columns past the width the screen has FOLD into the first cell rather than scrolling out of sight — prefer few, richer columns.",
+    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys, and formats each cell — you only pass rows and columns. A column's `cell` slot renders Kit value components against that row instead of plain text. Or paint the rows yourself: pass one <TableRow> per record as CHILDREN, in `rows` order, and its children are that row's cells. Do that whenever a cell needs arithmetic a field binding cannot do — a cents column is `<Money amount={row.amount_cents / 100}/>` — or a per-row control. `rows` and `columns` are still required either way: they drive the headers, the sorting, the filtering and the search. Dates in cells are compact (\"Aug 12\"), and columns past the width the screen has FOLD into the first cell rather than scrolling out of sight — prefer few, richer columns.",
+    takesChildren: true,
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token; cell is a slot"),
+      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token; cell is a slot; key is optional on an action column"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
@@ -311,6 +315,16 @@ const BASE_SPECS: KitComponentSpec[] = [
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
+    ],
+  },
+  {
+    name: "TableRow",
+    group: "data",
+    summary: "ONE <DataTable> row you paint yourself. Only valid as a child of <DataTable>, one per record in `rows` order. Its children ARE its cells, one per column, in column order — several components in one cell go in a <Stack>. This is the row that can do arithmetic and hold a control, which a `cell` slot cannot.",
+    takesChildren: true,
+    props: {},
+    examples: [
+      '<TableRow key={a.id}><Text text={a.name}/><Money amount={a.balance_cents / 100}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>',
     ],
   },
   {

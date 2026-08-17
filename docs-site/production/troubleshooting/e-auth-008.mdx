@@ -1,39 +1,37 @@
 ---
 title: "E-AUTH-008"
 sidebarTitle: "E-AUTH-008"
-description: "Doctor's actAs seam is configured and declined the doctor's synthetic test principal."
+description: "Retired: doctor no longer sends a synthetic principal to your actAs seam."
 ---
 
-```text auth/act-as
-warning: actAs is configured and declined the doctor's synthetic principal
-(<detail>) — expected when a subject→user resolver only mints for real
-users; real away runs depend on it accepting real subjects
+```text retired
+E-AUTH-008 — retired, doctor no longer emits this code
 ```
 
-`<detail>` is the wire's own decline reason, or `no detail` when it didn't
-carry one.
-
-`check: auth/act-as` · `error_code: E-AUTH-008` · `doctor exits: 0`
+`error_code: E-AUTH-008` · `status: retired`
 
 ## What you're seeing
 
-A warning: the `actAs` seam is wired and answered, with a no.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-This is expected when your `subject → user` resolver only mints for
-subjects in your host's real user table; doctor's synthetic test subject is
-not one of them. The doctor line names the wire's own decline reason.
+This warning fired when a configured `actAs` seam declined doctor's
+synthetic test principal. Doctor sends no principal now, so the seam is
+never asked.
 
 ## The fix
 
-If the decline is your resolver correctly refusing an unknown subject,
-there is nothing to fix; that is the fail-closed behavior working as
-intended. If the reason instead names a missing secret, set it
-(`AUTH_SECRET`, or the preset's documented variable) and re-run
-`npx vendo doctor`.
+Nothing to do for the warning itself. It was usually expected: a
+`subject → user` resolver that only mints for real users is right to refuse
+a synthetic subject.
+
+What still matters is that the seam accepts your real subjects. Trigger one
+real away action and read the dev server log. If the decline names a missing
+secret, set it (`AUTH_SECRET`, or the preset's documented variable).
 
 ## Related errors
 
-- [E-AUTH-007](/production/troubleshooting/e-auth-007) — no seam configured at all, the state below this one
-- [E-AUTH-004](/production/troubleshooting/e-auth-004) — a mint that fails instead of declining
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — a mint that fails instead of declining, also retired
+- [E-AUTH-007](/production/troubleshooting/e-auth-007) — no seam configured at all, also retired

@@ -1,39 +1,31 @@
 ---
 title: "E-LIVE-003"
 sidebarTitle: "E-LIVE-003"
-description: "Doctor's /status probe returned an execution venue value doctor does not recognize."
+description: "Retired: doctor no longer reads the execution venue from /status."
 ---
 
-```text live/venue
-broken: /status returned an invalid execution venue
+```text retired
+E-LIVE-003 — retired, doctor no longer emits this code
 ```
 
-`check: live/venue` · `error_code: E-LIVE-003` · `doctor exits: 1`
+`error_code: E-LIVE-003` · `status: retired`
 
 ## What you're seeing
 
-`/status` answered, but the `blocks.sandbox` field it reported is not a
-venue doctor recognizes.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-Doctor accepts exactly three venue values, `e2b`, `cloud`, `custom`, plus
-`false` for none configured. Anything else means the `/status` route is
-patched, or the composition response is corrupted.
+This code fired when `/status` reported an execution venue doctor did not
+recognize. Doctor no longer calls `/status`, so it never sees a venue value
+to reject.
 
 ## The fix
 
-Remove any custom `/status` handling in your route, then upgrade
-`@vendoai/vendo` so the stock status route answers.
-
-```bash
-npm install vendoai@latest
-```
-
-Restart the dev server and re-run `npx vendo doctor`.
+Nothing to do.
 
 ## Related errors
 
-- [E-LIVE-004](/production/troubleshooting/e-live-004) — no venue configured at all, the more common case
-- [E-LIVE-005](/production/troubleshooting/e-live-005) — the host predates the venue field entirely
-- [E-LIVE-001](/production/troubleshooting/e-live-001) — the same `/status` route, failing a level up
+- [E-LIVE-004](/production/troubleshooting/e-live-004) — the venue check itself, also retired, with a by-hand replacement
+- [E-CLOUD-001](/production/troubleshooting/e-cloud-001) — the `VENDO_API_KEY` check doctor still runs

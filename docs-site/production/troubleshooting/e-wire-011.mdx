@@ -8,7 +8,7 @@ description: "Doctor found the vendoai alias installed but @vendoai/vendo unreso
 broken: the vendoai alias is installed but @vendoai/vendo is not resolvable
 from this app — the alias keeps its copy nested, so under pnpm every
 @vendoai/vendo/* import in your wiring fails to compile ("Module not found")
-and the route 500s before any live check can mean anything. Fix: <install
+and the route 500s before anything can run. Fix: <install
 command> (keep the alias; both names ship the same wire).
 ```
 
@@ -20,9 +20,9 @@ example `pnpm add @vendoai/vendo`.
 ## What you're seeing
 
 Every wired route answers a 500 whose page reads
-`Module not found: Can't resolve '@vendoai/vendo/server'`. The live checks
-report the server as unreachable, which reads like a dead dev server rather
-than what it actually is.
+`Module not found: Can't resolve '@vendoai/vendo/server'`. Doctor sees the
+alias in your package.json and the missing package on disk, and names the
+gap before you load a single page.
 
 ## Why
 

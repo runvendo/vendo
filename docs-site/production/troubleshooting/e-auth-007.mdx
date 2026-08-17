@@ -1,30 +1,34 @@
 ---
 title: "E-AUTH-007"
 sidebarTitle: "E-AUTH-007"
-description: "Doctor found no actAs seam configured, so away host calls have no credential to use."
+description: "Retired: doctor no longer asks the running composition whether an actAs seam is wired."
 ---
 
-```text auth/act-as
-warning: actAs is not configured; pass createVendo({ actAs }) before
-enabling away host actions
+```text retired
+E-AUTH-007 — retired, doctor no longer emits this code
 ```
 
-`check: auth/act-as` · `error_code: E-AUTH-007` · `doctor exits: 0`
+`error_code: E-AUTH-007` · `status: retired`
 
 ## What you're seeing
 
-A warning: the composition has neither an `auth` preset nor a hand-wired
-`actAs` seam.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-Present (user-in-the-room) calls work fine without it. Away calls, where the
-agent acts through your host API while the user is not at a browser, have no
-credential to use.
+This warning fired when the `actAs` probe reported that no seam was
+configured. Doctor reads files now and never asks the running composition
+what it wired, so it cannot tell.
 
 ## The fix
 
-Wire an auth preset; most presets fill `actAs` for you.
+Read your `createVendo` call. If it has neither an `auth` preset nor a
+hand-wired `actAs`, away calls have no credential: the agent cannot act
+through your API while the user is away. Present calls are unaffected, so a
+present-only install can leave this unset.
+
+Most presets fill `actAs` for you.
 
 ```ts vendo/server.ts
 import { authJs } from "@vendoai/vendo/auth/auth-js";
@@ -33,11 +37,7 @@ import { createVendo } from "@vendoai/vendo/server";
 export const vendo = createVendo({ auth: authJs() });
 ```
 
-Or pass `createVendo({ actAs })` directly before enabling away host actions.
-Leaving this unset is fine for a present-only install; it never blocks
-doctor.
-
 ## Related errors
 
-- [E-AUTH-008](/production/troubleshooting/e-auth-008) — a seam that IS configured, declining on purpose
-- [E-AUTH-004](/production/troubleshooting/e-auth-004) — what a configured seam looks like when it fails
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — a configured seam that fails, also retired
+- [E-WIRE-001](/production/troubleshooting/e-wire-001) — the `createVendo` wiring doctor still reads on disk

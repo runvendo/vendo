@@ -6,6 +6,7 @@ import {
   RISK_RANK,
   applyJudgment,
   classifyField,
+  disabledReason,
   pruneJudgments,
   splitProposal,
   type JudgmentProposal,
@@ -187,6 +188,19 @@ describe("applyJudgment", () => {
   it("does not re-compose disabled when it is already true", () => {
     const applied = applyJudgment(tool({ disabled: true }), judgment({ fields: { audience: "operator" } }));
     expect(applied.disabled).toBe(true);
+  });
+});
+
+describe("disabledReason", () => {
+  // A judgment of a handler that moved is INERT in the merge, so crediting it
+  // sends the developer to edit the one file that did NOT turn the tool off.
+  it("never credits a stale judgment — the binding is checked as applyJudgment checks it", () => {
+    const moved = tool({
+      binding: { kind: "route", method: "POST", path: "/api/invoices", argsIn: "body" },
+      disabled: true,
+    });
+    expect(disabledReason(moved, judgment({ fields: { disabled: true } }), undefined))
+      .toBe("turned off in .vendo/tools.json");
   });
 });
 

@@ -157,7 +157,7 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
             return;
           }
           // The mint is real iff the preset's own session lookup accepts it —
-          // the same round-trip the doctor actAs probe drives over the wire.
+          // the same round-trip the /doctor/act-as route drives over the wire.
           const authed = new Request("https://host.conformance.test/api/vendo/doctor/act-as/echo", {
             headers: parsed.data.headers,
           });

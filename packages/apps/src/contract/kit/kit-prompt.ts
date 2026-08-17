@@ -65,6 +65,9 @@ export const PREAMBLE = [
   "under its name as a caption `Text` instead of costing a column. Only the value",
   "tier and Stack/Row go in a cell, and only containers take children — a Button",
   "in a cell, or anything nested in a chart, is REFUSED, not quietly dropped.",
+  "When a cell needs arithmetic a field binding cannot do — a cents amount, a",
+  "computed figure — or a per-row control, paint the rows yourself instead: one",
+  "`<TableRow>` per record as DataTable children.",
   "",
   `Beside the Kit you have display-only HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` —`,
   "taking children and an inline `style` and nothing else (no className, no id, no",
@@ -97,6 +100,7 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   Stat: ['<Stat label="Total overdue" value={overdue.total_cents / 100} format="money" tone="danger"><Sparkline data={overdue.trend}/></Stat>'],
   DataTable: [
     '<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
+    '<DataTable rows={accounts.data} sortBy="balance_cents desc" columns={[{key:"name",label:"Account"},{key:"balance_cents",label:"Balance",align:"end"},{label:"",align:"end"}]}>{accounts.data.map((a) => (<TableRow key={a.id}><Text text={a.name}/><Money amount={a.balance_cents / 100}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>))}</DataTable>',
   ],
   CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"},{key:"plan",cell:<EnumBadge field="plan"/>}]}/>'],
   LineChart: ['<LineChart data={revenue.data} xKey="month" series={["amount"]} format="money"/>'],

@@ -229,8 +229,12 @@ describe("vendo CLI commands", () => {
     expect(await main(["sync", root, "--key", "--report"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--key requires a value");
 
-    expect(await main(["doctor", root, "--url", "--json"])).toBe(1);
+    expect(await main(["sync", root, "--url", "--report"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--url requires a value");
+
+    // Doctor reads files, so it never took a URL to probe.
+    expect(await main(["doctor", root, "--url", "http://x"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --url");
 
     expect(await main(["doctor", root, "--jsn"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --jsn");

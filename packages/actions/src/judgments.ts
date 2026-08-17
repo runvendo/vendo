@@ -142,6 +142,33 @@ export function applyJudgment(tool: ExtractedTool, judgment: ToolJudgment | unde
 }
 
 /**
+ * Why one host tool is off, named for the layer that turned it off, or
+ * undefined when it is live. The human's override wins the merge, so it is
+ * checked first; an audience grade is the fail-closed exclusion `applyJudgment`
+ * adds above, and it is the only reason no file states outright — which is
+ * exactly how a graded tool used to vanish in silence.
+ */
+export function disabledReason(
+  tool: ExtractedTool,
+  judgment: ToolJudgment | undefined,
+  override: { disabled?: boolean } | undefined,
+): string | undefined {
+  const judged = applyJudgment(tool, judgment);
+  if ((override?.disabled ?? judged.disabled ?? false) !== true) return undefined;
+  if (override?.disabled === true) return "turned off in .vendo/overrides.json";
+  // Binding-checked exactly as `applyJudgment` checks it: a judgment of a
+  // handler that moved is inert, so naming it would send the developer to edit
+  // the one file that did not turn this tool off.
+  if (judgment?.fields.disabled === true && judgment.binding === bindingIdentity(tool.binding)) {
+    return "turned off in .vendo/judgments.json";
+  }
+  if (judged.audience !== undefined && judged.audience !== "end-user") {
+    return `graded audience "${judged.audience}", and only end-user tools are on by default`;
+  }
+  return "turned off in .vendo/tools.json";
+}
+
+/**
  * Drop judgments that no longer describe anything: a name the current catalog
  * does not carry, or one whose binding moved. Keeps the file honest instead of
  * accumulating inert entries a human would have to read past.

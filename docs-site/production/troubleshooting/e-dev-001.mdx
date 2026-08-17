@@ -1,40 +1,31 @@
 ---
 title: "E-DEV-001"
 sidebarTitle: "E-DEV-001"
-description: "Doctor warns when it offered to start your dev server for the live probes and it never answered in time."
+description: "Retired: doctor never starts a dev server, so it can never fail to start one."
 ---
 
-```text dev/start
-warning: could not start the dev server for the probe; start it yourself
-(e.g. `npm run dev`) and re-run `vendo doctor`
+```text retired
+E-DEV-001 — retired, doctor no longer emits this code
 ```
 
-`check: dev/start` · `error_code: E-DEV-001` · `doctor exits: 0`
+`error_code: E-DEV-001` · `status: retired`
 
 ## What you're seeing
 
-Interactive doctor offered to start your dev server for you, and `/status`
-never answered within the startup window. This is a warning, not a failure;
-doctor still exits 0.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-Doctor tried running your package manager's `dev` script and waited for
-`/status` to answer. Something kept it from coming up in time: a slow first
-compile, a crash on boot, or a port already in use.
+This warning fired when doctor offered to start your dev server for its live
+probes and the server never came up in time. Doctor reads files, not
+servers. It never starts anything, so this can never happen.
 
 ## The fix
 
-Start the dev server yourself and wait until it's actually serving requests.
-
-```bash
-npm run dev
-```
-
-Then re-run `npx vendo doctor`. If your app listens on a non-default port
-or mount, pass `--url <base>` or set `VENDO_URL`. Note that `--json` runs
-never attempt to start the dev server themselves; agents own that step.
+Nothing to do. Doctor runs the same whether your app is up or down.
 
 ## Related errors
 
-- [E-CFG-001](/production/troubleshooting/e-cfg-001): a missing `.vendo/` config file, checked before any live probe runs
+- [E-CFG-001](/production/troubleshooting/e-cfg-001) — a missing `.vendo/` config file, one of the checks doctor still runs
+- [E-WIRE-001](/production/troubleshooting/e-wire-001) — missing server wiring, found by reading your source

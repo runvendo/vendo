@@ -30,11 +30,11 @@ credential now, read only when a composition explicitly configures a
 sandbox adapter.
 
 To use the managed Cloud sandbox, leave the `sandbox` slot unset in
-`createVendo` and keep `VENDO_API_KEY` set. Restart the dev server and
-re-run `npx vendo doctor`; the code you would see instead, if any, is
-E-LIVE-004 or E-LIVE-005.
+`createVendo` and keep `VENDO_API_KEY` set. Doctor no longer reads the venue
+at all, so nothing replaces this code: load your app and try a server app to
+see the venue in action.
 
 ## Related errors
 
-- [E-LIVE-004](/production/troubleshooting/e-live-004) — the live check that replaced this one
-- [E-LIVE-005](/production/troubleshooting/e-live-005) — version skew on the same venue field
+- [E-LIVE-004](/production/troubleshooting/e-live-004) — the venue check, also retired
+- [E-LIVE-005](/production/troubleshooting/e-live-005) — version skew on the same venue field, also retired

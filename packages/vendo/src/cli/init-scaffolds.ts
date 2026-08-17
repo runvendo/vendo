@@ -1,5 +1,5 @@
 import { join, relative, sep } from "node:path";
-import { applyJudgment, judgmentsFileSchema, overridesFileSchema } from "@vendoai/actions";
+import { applyJudgment, disabledReason, judgmentsFileSchema, overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import {
   extractServerActions,
   serverActionRegistrations,
@@ -189,6 +189,28 @@ export async function requiredServerActions(root: string): Promise<ServerActionR
   } catch {
     return [];
   }
+}
+
+/**
+ * Host tools this run extracted and then left off WITHOUT being asked to, each
+ * with the layer that turned it off. The run that wrote them has to name them,
+ * or the developer meets the hole later, as an assistant that cannot answer and
+ * will not say why. Whatever the merge decided is what this reports.
+ *
+ * A tool the human disabled in overrides.json is left out: that decision is
+ * theirs and already written down, so repeating it back on every run is the nag
+ * the receipt has always refused to be.
+ */
+export async function disabledTools(root: string): Promise<string[]> {
+  const vendoDir = join(root, ".vendo");
+  const tools = await readVendoFile(join(vendoDir, "tools.json"), (value) => toolsFileSchema.parse(value).tools);
+  const overrides = await readVendoFile(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value).tools);
+  const judgments = await readVendoFile(join(vendoDir, "judgments.json"), (value) => judgmentsFileSchema.parse(value).tools);
+  return (tools ?? []).flatMap((tool) => {
+    if (overrides?.[tool.name]?.disabled === true) return [];
+    const reason = disabledReason(tool, judgments?.[tool.name], overrides?.[tool.name]);
+    return reason === undefined ? [] : [`${tool.name} (${reason})`];
+  });
 }
 
 /** A `.vendo/` file, or null when absent or malformed — both mean "no recorded

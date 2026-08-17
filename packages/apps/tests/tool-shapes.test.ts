@@ -107,6 +107,32 @@ describe("declared output schemas produce the shape cards", () => {
     expect(brief).toContain(UNKNOWN_OUTPUT_SHAPE_NOTE);
   });
 
+  it("says outright when nothing on the list can be READ, so a screen has no data to show", async () => {
+    // Tools exist, but none of them reads. Nothing else in the prompt says so,
+    // and that silence is where a model invents a tool name for the ask.
+    const tools = new FixtureTools([{
+      name: "host_voice_create",
+      description: "POST /api/voice",
+      risk: "write",
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+    }]);
+    const brief = await runtimeWith(tools).toolShapeBrief(ctx);
+
+    expect(brief).toContain("Nothing on this list can be READ");
+    expect(brief).toContain("<Disclaimer>");
+    expect(brief).toContain("never claim the data is empty or missing, which you cannot know");
+  });
+
+  it("stays quiet about the read case when a read tool is on the list", async () => {
+    const tools = new FixtureTools([{
+      name: "host_listItems",
+      description: "List items",
+      risk: "read",
+      inputSchema: { type: "object", properties: {} },
+    }]);
+    expect(await runtimeWith(tools).toolShapeBrief(ctx)).not.toContain("Nothing on this list can be READ");
+  });
+
   it("returns a section even when the product has no tools at all", async () => {
     const brief = await runtimeWith(new FixtureTools([])).toolShapeBrief(ctx);
     expect(typeof brief).toBe("string");

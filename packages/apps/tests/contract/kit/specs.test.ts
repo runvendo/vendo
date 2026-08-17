@@ -95,8 +95,9 @@ describe("the Kit specs", () => {
     // The renderer hands children to every node it renders, so "renders no
     // children" is a fact only the spec can state.
     expect(KIT_CHILDLESS_NAMES).toContain("LineChart");
-    expect(KIT_CHILDLESS_NAMES).toContain("DataTable");
-    for (const container of ["Stack", "Row", "Grid", "Surface", "Card", "Tabs", "Callout", "Form", "Stat"]) {
+    // DataTable stopped being one when a row became something the model may
+    // paint: its children are <TableRow>s, and a TableRow's are its cells.
+    for (const container of ["Stack", "Row", "Grid", "Surface", "Card", "Tabs", "Callout", "Form", "Stat", "DataTable", "TableRow"]) {
       expect(KIT_CHILDLESS_NAMES, container).not.toContain(container);
     }
     // A cell is read, never operated.

@@ -400,6 +400,27 @@ export default function S() { return <Text text={String(useQuery("ghost_list"))}
     expect(text).toContain("the host tools are: list_pending_transfers, list_accounts, search_transfers, cancel_transfer");
   });
 
+  it("tells a screen with NO readable tool to say so, instead of listing tools it cannot read", async () => {
+    // The field failure this closes: refused with a list of write-only tools,
+    // the model invented a plausible read tool, failed five times, then shipped
+    // a screen asserting there was no data above a table of that same data.
+    const result = await checkComponentScreen({
+      source: `import { Text, useQuery } from "@vendo/screen";
+export default function S() { return <Text text={String(useQuery("invoices_list"))} />; }
+`,
+      hostTools: tools.filter(({ risk }) => risk !== "read"),
+      catalog,
+      runQuery: async () => ROWS,
+    });
+    if (result.ok) throw new Error("expected the gauntlet to refuse this screen");
+    const text = result.issues.map(({ message }) => message).join("\n");
+    expect(text).toContain("this product has NO tool a screen can read");
+    expect(text).toContain("do not claim the data is missing or empty, which you cannot know");
+    expect(text).toContain("<Disclaimer>");
+    // The tools it CANNOT read are not offered as if they were an answer.
+    expect(text).not.toContain("cancel_transfer");
+  });
+
   it("refuses a query that WRITES, because a query runs on every render", async () => {
     const { codes, text } = await refusal(`import { Text, useQuery } from "@vendo/screen";
 export default function S() { return <Text text={String(useQuery("cancel_transfer"))} />; }
@@ -642,6 +663,47 @@ export default function S() { return <Text text="x" variant="enormous" />; }
     // Said ONCE: the wire translator's sentence names its own locus, so prefixing
     // its `where` on top of it read `prop "variant" prop "variant" on <Text>`.
     expect(text).not.toContain('prop "variant" prop "variant"');
+  });
+
+  it("never reads `key` as a prop — a mapped row writes one, and the real fault is the one named", async () => {
+    const mapped = (row: string) => checkComponentScreen({
+      source: `import { DataTable, Money, TableRow, Text, useQuery } from "@vendo/screen";
+export default function S() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <DataTable rows={pending.data} columns={[{ key: "recipient", label: "To" }, { key: "amount_cents", label: "Amount" }]}>
+      {pending.data.map((transfer) => (
+        <TableRow key={transfer.id}>
+          <Text text={transfer.recipient} />
+          ${row}
+        </TableRow>
+      ))}
+    </DataTable>
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable", "TableRow"],
+      runQuery: async () => ROWS,
+    });
+
+    // The pattern the Kit prompt teaches, `key` and all.
+    expect(await mapped("<Money amount={transfer.amount_cents / 100} />")).toMatchObject({ ok: true, issues: [] });
+
+    // …and where the KEYED element is broken, `key` must not be what the repair
+    // is told about: it rides along in every element-level props error, and the
+    // model would strip the one attribute React requires — losing the real fault,
+    // which the compiler reports only once, on the same tag.
+    const sentences = async (cell: string): Promise<string> =>
+      (await mapped(cell)).issues.map(({ message }) => message).join("\n");
+    for (const [broken, fault] of [
+      ['<Money amount={1} sparkle={true} />', 'sets unknown prop "sparkle"'],
+      ["<Money amount={transfer.recipient} />", 'prop "amount" on <Money> takes number'],
+    ] as const) {
+      const keyed = await sentences(broken.replace("<Money ", "<Money key={transfer.id} "));
+      expect(keyed).toContain(fault);
+      expect(keyed).toBe(await sentences(broken));
+    }
   });
 
   it("refuses a field the tool's declared response does not carry, and names the real ones", async () => {

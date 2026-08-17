@@ -148,6 +148,9 @@ marks, and no paragraph explaining a heading that explains itself.
 - **Call the query once** only when a tool declares no output schema, or when the
   actual values matter (what a status string really says, whether an amount is in
   cents or dollars).
+- **A cents field never rides a money column.** A binding cannot divide, so a
+  table showing money maps its own \`<TableRow>\` children and does the math
+  inline — as does any cell whose value is computed rather than read.
 - Look up every component you use: \`host/components/<Name>.md\` for this
   product's own, \`references/format.md\` for the ones that ship with the format.
   Props are checked by name, so a guessed prop is a failed app.

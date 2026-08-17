@@ -114,7 +114,7 @@ theme-driven React chrome.
 risk labels, and whether to open the [MCP door](https://docs.vendo.run/capabilities/mcp)
 (a host decision, never a default), extracts your theme automatically, and
 writes the reviewable `.vendo/` directory with its PGlite data directory
-gitignored. Run `vendo doctor` to check wiring and probe `/status`, and
+gitignored. Run `vendo doctor` to check the wiring on disk, and
 `vendo sync` after API changes to refresh extracted tools and remix
 baselines.
 

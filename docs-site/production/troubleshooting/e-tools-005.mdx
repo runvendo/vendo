@@ -1,0 +1,80 @@
+---
+title: "E-TOOLS-005"
+sidebarTitle: "E-TOOLS-005"
+description: "Some extracted host tools are off, so the agent will never offer them."
+---
+
+# E-TOOLS-005
+
+<Warning>
+**what doctor prints** (warning)
+
+2 of 5 extracted host tools are live; the agent will never offer the other 3:
+host_customers_list (graded audience "operator", and only end-user tools are on
+by default), host_admin_purge (turned off in .vendo/overrides.json); To turn one
+back on, set its "disabled": false in .vendo/overrides.json
+</Warning>
+
+Your catalog extracted more tools than the agent can actually use. Nothing is
+broken. This names the gap so you decide, instead of finding out later when the
+assistant cannot answer a question and will not say why.
+
+`check tools/live-surface` · `error_code E-TOOLS-005` · `doctor exits 0` (warning only)
+
+## What you're seeing
+
+A host tool's final state is three layers stacked in order: the extracted
+skeleton in `.vendo/tools.json`, then the AI judge's call in
+`.vendo/judgments.json`, then your own `.vendo/overrides.json`, which wins last.
+
+Doctor compares the number of tools that survive that stack against the number
+in `tools.json`. When they differ, it names each missing tool and the layer that
+turned it off.
+
+## Why a tool is off
+
+**Graded for operators or staff.** The judge decides who a tool is for. A tool
+graded `operator` or `internal` is switched off for the embedded agent by
+default. This is deliberate and fail-closed. An endpoint that returns your whole
+customer book with revenue is not something an end user's assistant should read,
+so Vendo hides it unless you say otherwise.
+
+**Turned off in `judgments.json`.** The judge read the handler and disabled the
+tool outright.
+
+**Turned off in `overrides.json`.** You did this. Nothing to explain.
+
+## The fix
+
+Usually there is nothing to fix. A staff tool staying hidden is the system
+working.
+
+If you have looked at a tool and you want the agent to have it, say so
+explicitly in `.vendo/overrides.json`. Your file is the last word, so this beats
+both the grade and the judge:
+
+```json
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_customers_list": { "disabled": false }
+  }
+}
+```
+
+Enablement resolves once at boot, so restart the app after the edit.
+
+Before you turn one on, check what it actually returns. The reason most staff
+tools are graded that way is that they return every record rather than the
+signed-in user's own. If that is the case here, scope the endpoint per user
+first and re-run `vendo sync`. Then the judge can grade it for end users
+honestly, and you will not need an override at all.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-TOOLS-001" href="/production/troubleshooting/e-tools-001">every tool disabled</Card>
+  <Card title="E-TOOLS-002" href="/production/troubleshooting/e-tools-002">tool surface is empty</Card>
+  <Card title="E-TOOLS-003" href="/production/troubleshooting/e-tools-003">tools ungraded</Card>
+  <Card title="E-TOOLS-004" href="/production/troubleshooting/e-tools-004">tools declare no shape</Card>
+</CardGroup>

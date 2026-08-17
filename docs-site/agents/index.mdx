@@ -89,8 +89,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    `vendoai` is a thin alias of `@vendoai/vendo`, and every file init writes
    imports `@vendoai/vendo/*` — so install BOTH: with the alias alone, pnpm's
    strict `node_modules` cannot resolve those imports and every route 500s with
-   `Module not found: Can't resolve '@vendoai/vendo/server'`, which reaches
-   doctor as `live/*` and `auth/*` breakages that name none of it. The version
+   `Module not found: Can't resolve '@vendoai/vendo/server'`. The version
    check is not optional: stale placeholder versions (0.1.x) exist on npm, and package
    managers with a release-age cooldown (pnpm 11 holds new releases for a
    day by default via `minimumReleaseAge`; npm's `min-release-age` is
@@ -274,8 +273,8 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    - **Theme slots.** Fill anything `.vendo/theme.json` left unresolved from
      the app's own styles.
 
-9. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
-   never starts it for you), then loop:
+9. **Gate on doctor.** Doctor reads the repo, so no server has to be running.
+   Loop:
 
    ```bash
    npx vendo doctor --json
@@ -285,7 +284,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    into the [verify page](/production/troubleshooting). Fix, re-run, repeat until exit 0.
 
 10. **Show it running.** Doctor green is the gate, but your human should SEE
-    the install, not take your word for it. Leave the dev server running,
+    the install, not take your word for it. Start the dev server,
     hand them the exact URL, and give them one concrete first ask to type
     into the product's chat surface. For example: "ask it to build a small
     dashboard from your data; a guarded write will render an approve/deny
@@ -357,13 +356,12 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    ```
 
    Leave `actAs` out. A stub returning empty headers is worse than an absent
-   seam: doctor then runs its live mint-and-verify round-trip and FAILS
-   [`E-AUTH-004`](/production/troubleshooting/e-auth-004), because a fixed demo principal can
-   never echo the probe's own subject. Absent, doctor warns
-   [`E-AUTH-007`](/production/troubleshooting/e-auth-007) and step 9's gate still passes. The
-   price is that your own route-bound tools answer `not-implemented` over the
-   door, while `vendo_make` and the apps tools work. Every client acts as that
-   one person: a demo or an internal tool, not a multi-user product.
+   seam, because a fixed demo principal can never act as anyone else. Doctor
+   cannot see the seam either way, so nothing about it moves step 9's gate.
+   The price of leaving it out is that your own route-bound tools answer
+   `not-implemented` over the door, while `vendo_make` and the apps tools
+   work. Every client acts as that one person: a demo or an internal tool,
+   not a multi-user product.
 
 2. **The discovery route.** Also written by `--use-case mcp`. The door's
    discovery documents live at ORIGIN-ROOT paths, outside `/api/vendo`, so the
@@ -412,12 +410,11 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    the per-user OAuth the door already serves. Recipe:
    [MCP door](/outside-agents/how-the-door-works).
 
-5. **Verify: step 9's gate, nothing new.** Doctor reads the door's posture off
-   the running composition, so the dev server must be up for the MCP checks to
-   run at all. The registry checks grade `server.json` and the challenge only
-   when those files already exist — publishing to the MCP registry is a separate
-   job, not part of reaching green. Every `E-MCP` code with its exact fix:
-   [verify](/production/troubleshooting/e-mcp-001).
+5. **Verify: step 9's gate, nothing new.** The registry checks grade
+   `server.json` and the challenge only when those files already exist —
+   publishing to the MCP registry is a separate job, not part of reaching
+   green. Every `E-MCP` code with its exact fix:
+   [verify](/production/troubleshooting/e-mcp-004).
 
 ## Rules of engagement
 

@@ -340,7 +340,7 @@ describe("a harness-owned credential (Claude Code OAuth / auth token / custom en
   });
 
   it("leaves the runtime model ladder alone: the same env still has NO product-turn credential", async () => {
-    // doctor, doctor-live and dev-creds/model.ts all read this one resolver,
+    // doctor and dev-creds/model.ts both read this one resolver,
     // and an interactive-only OAuth token cannot serve a product turn. Widening
     // it would be a worse bug than the one above.
     const root = await oauthHost();

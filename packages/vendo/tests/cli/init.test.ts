@@ -608,6 +608,33 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs[sink.logs.length - 1]).toBe(`\n→ Don't forget the paste in ${join("app", "layout.tsx")} (frame above)`);
   });
 
+  // A tool the run extracted and then left off WITHOUT being asked to is the one
+  // fact the tail used to drop: the developer met it later, as an assistant that
+  // could not answer and would not say why. The human's own overrides.json
+  // disable stays unmentioned — that is the nag the test above forbids.
+  it("the tail names a tool the machine turned off, with the layer that did it and the way back on", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "api", "customers"), { recursive: true });
+    await writeFile(join(root, "app", "api", "customers", "route.ts"),
+      "export async function GET() { return Response.json({ customers: [] }); }\n");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_customers_list: {
+          binding: "GET /api/customers",
+          fields: { disabled: true },
+          evidence: "the handler returns the whole customer book",
+        },
+      },
+    }));
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const tail = sink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(tail).toContain("tools off: host_customers_list (turned off in .vendo/judgments.json)");
+    expect(tail).toContain('set "disabled": false');
+  });
+
   // Agent-install-dx Layer 2 (key-mint integration): a keyless run's tail
   // carries the complete in-band key story — the auth.md discovery URL, the
   // `vendo login` ceremony, and both flag fallbacks — so the agent never
@@ -2425,7 +2452,7 @@ describe("the five questions", () => {
     expect(await readFile(join(skipped, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:3000");
   });
 
-  it("offers the live check only when nothing is left to paste, and never changes the exit code", async () => {
+  it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {
     // A run that still owes the mount paste: doctor would grade that paste,
     // so offering the check would fail a run that did nothing wrong.
     const owing = await fixture();
@@ -2446,7 +2473,7 @@ describe("the five questions", () => {
       confirmCheck: async (question) => { asked.push(question); return true; },
       runCheck: async () => { throw new Error("doctor exploded"); },
     })).toBe(0);
-    expect(asked).toEqual(["Start your dev server and run a live check now?"]);
+    expect(asked).toEqual(["Check the install now?"]);
   });
 });
 

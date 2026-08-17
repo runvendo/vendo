@@ -563,6 +563,14 @@ export const createBuildSurface = (
           ? `- ${name} — ${UNKNOWN_OUTPUT_SHAPE_NOTE}`
           : `- ${name} — shape: ${describeShapeWithSemantics(shape, semantics[name] ?? {})}`;
       });
+      // A product with tools but no READ tool has no data a screen can show,
+      // and nothing else in the prompt says so. That silence is where a model
+      // invents a tool name instead of admitting there is none for the ask.
+      if (!tools.some(({ risk }) => risk !== "write" && risk !== "destructive")) {
+        cards.push("- Nothing on this list can be READ, so a screen has no data to show from this product."
+          + " If the person asks for data, use <Disclaimer> to say no tool provides it."
+          + " Never name a tool that is not on this list, and never claim the data is empty or missing, which you cannot know.");
+      }
       return `${header}\n${cards.join("\n")}`;
     },
 

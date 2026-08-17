@@ -1,33 +1,30 @@
 ---
 title: "E-AUTH-005"
 sidebarTitle: "E-AUTH-005"
-description: "Doctor's actAs probe threw instead of answering."
+description: "Retired: doctor no longer runs the actAs probe, so it cannot be unreachable."
 ---
 
-```text auth/act-as
-broken: actAs probe is unreachable at <base>/doctor/act-as; restart the dev
-server and check createVendo({ actAs })
+```text retired
+E-AUTH-005 — retired, doctor no longer emits this code
 ```
 
-`check: auth/act-as` · `error_code: E-AUTH-005` · `doctor exits: 1`
+`error_code: E-AUTH-005` · `status: retired`
 
 ## What you're seeing
 
-`/status` answered, but the POST to `<base>/doctor/act-as` threw instead of
-returning a response.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-The dev server died mid-run, or the `actAs` seam itself throws before it can
-answer.
+This code fired when the POST to `<base>/doctor/act-as` threw instead of
+answering. Doctor sends no requests now, so there is no probe to fail.
 
 ## The fix
 
-Restart the dev server, and check `createVendo({ actAs })` (or the `auth`
-preset providing it) for a construction-time error. Re-run
-`npx vendo doctor`.
+Nothing to do.
 
 ## Related errors
 
-- [E-AUTH-004](/production/troubleshooting/e-auth-004) — the same probe, answering but rejecting the mint
-- [E-AUTH-002](/production/troubleshooting/e-auth-002) — the present-credential probe's equivalent unreachable case
+- [E-AUTH-004](/production/troubleshooting/e-auth-004) — the same seam's real failure, also retired, with a by-hand check
+- [E-WIRE-001](/production/troubleshooting/e-wire-001) — the `createVendo` wiring doctor still reads on disk

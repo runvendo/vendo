@@ -16,6 +16,40 @@ export function isVendoKey(key: string): boolean {
   return /^vnd_[0-9a-f]{40}$/.test(key);
 }
 
+/** Human-facing list of what a Cloud key unlocks over OSS single-player. Shown
+ *  whether or not a key is present, so a keyless dev sees the offer.
+ *
+ *  Two bullets, not four. SSO/roles, registry publishing and the adapter-slot
+ *  list are all true and all irrelevant to a person forty seconds into their
+ *  first install; they belong in the console, not the ceremony. Neither line
+ *  may contain "; " — that is the separator every caller joins and the
+ *  renderer splits on. */
+export const CLOUD_UNLOCKS: readonly string[] = [
+  "a free starter model allowance — no card, no model key of your own",
+  "hosted automations, team sharing, and the console",
+];
+
+export interface CloudDoctorResult {
+  present: boolean;
+  ok: boolean;
+  unlocks: readonly string[];
+  error?: string;
+}
+
+/** Check VENDO_API_KEY presence and shape locally; always surface what Cloud
+ *  unlocks. Key problems surface on the first real service call — there is no
+ *  validate endpoint, and no request leaves the machine here. */
+export async function cloudDoctor(options: { env?: Record<string, string | undefined> } = {}): Promise<CloudDoctorResult> {
+  const key = (options.env ?? process.env)["VENDO_API_KEY"];
+  if (key === undefined || key.trim().length === 0) {
+    return { present: false, ok: false, unlocks: CLOUD_UNLOCKS };
+  }
+  if (!isVendoKey(key)) {
+    return { present: true, ok: false, unlocks: CLOUD_UNLOCKS, error: "VENDO_API_KEY is malformed (expected vnd_ + 40 hex chars)" };
+  }
+  return { present: true, ok: true, unlocks: CLOUD_UNLOCKS };
+}
+
 export class CloudError extends Error {
   readonly code: string;
   readonly status: number;

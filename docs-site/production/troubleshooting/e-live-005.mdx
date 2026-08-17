@@ -1,36 +1,31 @@
 ---
 title: "E-LIVE-005"
 sidebarTitle: "E-LIVE-005"
-description: "Doctor's host predates the execution venue field in /status, so the venue check cannot run."
+description: "Retired: doctor no longer reads /status, so it cannot detect a missing venue field."
 ---
 
-```text live/venue
-warning: host /status does not report an execution venue; upgrade
-@vendoai/vendo to enable the venue check
+```text retired
+E-LIVE-005 — retired, doctor no longer emits this code
 ```
 
-`check: live/venue` · `error_code: E-LIVE-005` · `doctor exits: 0`
+`error_code: E-LIVE-005` · `status: retired`
 
 ## What you're seeing
 
-A warning: `/status` does not report a `blocks.sandbox` field at all.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-This is version skew, not a broken install. The installed `@vendoai/vendo`
-predates the `blocks.sandbox` field, so the venue check has nothing to read.
+This warning flagged version skew: the host's `/status` route was old enough
+that it did not report an execution venue at all. Doctor no longer reads
+`/status`, so there is no field to find missing.
 
 ## The fix
 
-Upgrade and restart.
-
-```bash
-npm install vendoai@latest
-```
-
-Restart the dev server, then re-run `npx vendo doctor`.
+Nothing to do.
 
 ## Related errors
 
-- [E-LIVE-004](/production/troubleshooting/e-live-004) — the same check once the field exists but reports no venue
-- [E-DEP-002](/production/troubleshooting/e-dep-002) — a different version-skew code, for the wire itself
+- [E-DEP-001](/production/troubleshooting/e-dep-001) — a version check doctor still runs, against `package.json`
+- [E-DEP-003](/production/troubleshooting/e-dep-003) — the `zod` version check, also read from disk

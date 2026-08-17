@@ -1,56 +1,39 @@
 ---
 title: "E-MCP-003"
 sidebarTitle: "E-MCP-003"
-description: "The MCP server card did not parse."
+description: "Retired: doctor no longer fetches the MCP server card over HTTP."
 ---
 
-# E-MCP-003
+```text retired
+E-MCP-003 — retired, doctor no longer emits this code
+```
 
-<Warning>
-**what doctor prints** (broken)
-
-MCP server card parses (404)
-</Warning>
-
-The door is supposed to describe itself at a well-known path before any
-handshake starts. That description is missing or malformed.
-
-`check mcp/server-card` · `error_code E-MCP-003` · `doctor exits 1`
+`error_code: E-MCP-003` · `status: retired`
 
 ## What you're seeing
 
-Doctor's third discovery probe, run after the protected-resource and
-authorization-server documents both resolve. It GETs
-`<origin>/.well-known/mcp/server-card.json`.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-Doctor expects a JSON object carrying a `name` string and a `transports`
-array. Either the route answers with the wrong status, the body is not JSON,
-or the body is JSON that is missing one of those two fields.
-
-As with the other discovery checks, the `(404)` in the printed line is
-whatever status the origin actually returned; an unreachable origin prints
-`MCP server card parses is unreachable` instead.
+This code fired when the door's server card did not parse. Doctor fetched
+the card over HTTP, and it no longer makes any request.
 
 ## The fix
 
-Check that the door's well-known routes are mounted at the origin doctor
-probed, and that nothing in front of the app (a proxy, a catch-all rewrite,
-a CDN edge rule) rewrites or intercepts the card response before it reaches
-the caller.
+The card still has to parse, and you check it yourself now.
 
 ```bash
 curl -s https://your-app.example.com/.well-known/mcp/server-card.json
 ```
 
-A correct response is a JSON object with `name` and `transports` set. Re-run
-doctor once it comes back clean.
+A correct response is a JSON object with a `name` string and a `transports`
+array. If it comes back wrong, confirm the door's well-known routes are
+mounted at that origin and that nothing in front of the app (a proxy, a
+rewrite, a CDN edge rule) intercepts the response.
 
 ## Related errors
 
-<CardGroup cols={2}>
-  <Card title="E-MCP-001" href="/production/troubleshooting/e-mcp-001">protected-resource metadata</Card>
-  <Card title="E-MCP-002" href="/production/troubleshooting/e-mcp-002">authorization-server metadata</Card>
-  <Card title="E-MCP-004" href="/production/troubleshooting/e-mcp-004">server.json validation</Card>
-</CardGroup>
+- [E-MCP-004](/production/troubleshooting/e-mcp-004) — `server.json` registry validation, still checked on disk
+- [E-MCP-006](/production/troubleshooting/e-mcp-006) — `server.json` that is not valid JSON, still checked on disk

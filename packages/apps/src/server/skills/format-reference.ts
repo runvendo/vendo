@@ -67,6 +67,14 @@ a date, a control — is a component, never HTML you assemble yourself. That hol
 inside a sentence too: an amount in prose is an inline \`<Money>\`, never a \`$\`
 and a \`toFixed\` you typed, which lose the grouping and the host's own currency.
 
+**Tables — bind the plain values, MAP the rest.** A \`<DataTable>\` column binds a
+plain field straight off the row, and that stays the right way to show one. A
+cell that needs arithmetic has nowhere to put it — money in cents, a rate, a
+total, anything derived — so paint those rows yourself: one \`<TableRow>\` per
+record as the table's children, its children being that row's cells in column
+order, and do the math inline: \`<Money amount={row.amount_cents / 100}/>\`. A
+per-row control goes there too. \`rows\` and \`columns\` are required either way.
+
 **Layout — the display tags, plus \`style\`.** \`${DISPLAY_TAG_NAMES.join("`, `")}\`
 are yours to arrange with, and they take children and an inline \`style\` and
 nothing else: no \`className\`, no \`id\`, no handlers. Style them off the host's own
@@ -93,7 +101,7 @@ Save errors tell you exactly what to fix. Fix and save again.
 The ask: "let me cancel a transfer before it goes out."
 
 \`\`\`tsx
-import { Button, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, DataTable, DateTime, Money, Stack, TableRow, Text, tools, useQuery } from "@vendo/screen";
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
@@ -102,30 +110,36 @@ export default function PendingTransfers() {
     <Stack gap={12}>
       <Text text="Transfers waiting to go out" variant="heading" />
 
-      {pending.data.length === 0 ? (
-        <Text text="Nothing is waiting to go out." variant="caption" />
-      ) : (
-        pending.data.map((transfer) => (
-          <Card key={transfer.id} title={transfer.recipient}>
-            <Row justify="between" align="center">
-              <Stack gap={4}>
-                <Money amount={transfer.amount_cents / 100} />
-                <DateTime value={transfer.scheduled_for} mode="date" />
-              </Stack>
-              <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
-            </Row>
-          </Card>
-        ))
-      )}
+      <DataTable
+        rows={pending.data}
+        columns={[
+          { key: "recipient", label: "To" },
+          { key: "amount_cents", label: "Amount", align: "end" },
+          { key: "scheduled_for", label: "Goes out" },
+          { label: "", align: "end" },
+        ]}
+        emptyState="Nothing is waiting to go out."
+      >
+        {pending.data.map((transfer) => (
+          <TableRow key={transfer.id}>
+            <Text text={transfer.recipient} />
+            <Money amount={transfer.amount_cents / 100} />
+            <DateTime value={transfer.scheduled_for} mode="date" />
+            <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
+          </TableRow>
+        ))}
+      </DataTable>
     </Stack>
   );
 }
 \`\`\`
 
-Nothing on that screen is typed in: every value is read off the query, every
-number and date is formatted by the component showing it, the empty list says so
-in one honest line, and the one thing that changes the product files its call
-straight from the press — the product does the asking.
+Nothing on that screen is typed in: every value is read off the query, the cents
+field is divided where it is read instead of being handed to a money column that
+would show it a hundred times over, every number and date is formatted by the
+component showing it, the empty list says so in one honest line, and the one
+thing that changes the product files its call straight from the press — the
+product does the asking.
 
 ---
 
