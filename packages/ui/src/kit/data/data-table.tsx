@@ -133,6 +133,16 @@ export const foldStyle: CSSProperties = {
   fontVariantNumeric: "normal",
 };
 
+/** A width to the FRACTION. `offsetWidth` and `clientWidth` are whole pixels,
+ *  and the element's own rect carries the fraction they rounded away — summing
+ *  rounded column widths against a rounded room overshoots by up to half a pixel
+ *  per column, which folds a column that fits. A rect is all zeroes where nothing
+ *  is laid out (SSR, jsdom), leaving the whole-pixel reading exactly as it was. */
+const unrounded = (whole: number, el: Element): number => {
+  const { width } = el.getBoundingClientRect();
+  return whole + width - Math.round(width);
+};
+
 export function DataTable(props: DataTableProps) {
   const {
     rows: rawRows,
@@ -311,13 +321,14 @@ export function DataTable(props: DataTableProps) {
       if (headers !== undefined && headers.length === expandedHeaderCount) {
         let edge = 0;
         naturalEdges.current = [...headers].slice(0, columns.length)
-          .map((th) => (edge += (th as HTMLElement).offsetWidth));
+          .map((th) => (edge += unrounded((th as HTMLElement).offsetWidth, th)));
       }
       const edges = naturalEdges.current;
       if (edges.length === 0) return;
       // Keep every column that has room, fold only the ones that do not. The
       // first column always stays, however narrow the surface is.
-      setVisibleCount(Math.max(1, edges.filter((right) => right <= node.clientWidth).length));
+      const room = unrounded(node.clientWidth, node);
+      setVisibleCount(Math.max(1, edges.filter((right) => right <= room).length));
     };
     measure();
     const observer = new ResizeObserver(measure);
