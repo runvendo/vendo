@@ -19,12 +19,32 @@ export const WAFER_BASE_URL = "https://pass.wafer.ai/v1";
  *  confirmed against the live endpoint. */
 export const THESYS_MODEL_IDS = { c1: "c1/anthropic/claude-sonnet-4.6/v-20260331" } as const;
 
+/** One frontier model per vendor, all three through OpenRouter's single
+ *  OpenAI-compatible endpoint. One alias per vendor rather than a menu: this is
+ *  the cross-vendor row, and a vendor's second-best model answers a question
+ *  nobody asked. Membership here is what says an alias is served by the router —
+ *  the provider a run builds for it, the key it demands and the one harness it
+ *  may run under all read this. */
+export const OPENROUTER_MODEL_IDS = {
+  claude: "anthropic/claude-opus-5",
+  gpt: "openai/gpt-5.6-sol",
+  gemini: "google/gemini-3.1-pro-preview",
+} as const;
+
+/** The Codex CLI's own model line. That column spawns OpenAI's engine and never
+ *  reads `meter.model`, exactly as `claude-code` spawns Anthropic's, so the id
+ *  here is what prices its session rather than what a provider is built from.
+ *  One alias, and `contenders` in `run.ts` is what keeps it to it. */
+export const CODEX_MODEL_IDS = { sol: "gpt-5.6-sol" } as const;
+
 export type ModelAlias =
   | "opus"
   | "sonnet"
   | "haiku"
   | keyof typeof WAFER_MODEL_IDS
-  | keyof typeof THESYS_MODEL_IDS;
+  | keyof typeof THESYS_MODEL_IDS
+  | keyof typeof OPENROUTER_MODEL_IDS
+  | keyof typeof CODEX_MODEL_IDS;
 
 /**
  * Pinned ids. Each one was checked against the live API through
@@ -43,6 +63,8 @@ export const MODEL_IDS: Readonly<Record<ModelAlias, string>> = {
   haiku: "claude-haiku-4-5-20251001",
   ...WAFER_MODEL_IDS,
   ...THESYS_MODEL_IDS,
+  ...OPENROUTER_MODEL_IDS,
+  ...CODEX_MODEL_IDS,
 };
 
 interface ModelPrice {
@@ -71,6 +93,20 @@ const PRICING: Readonly<Record<string, ModelPrice>> = {
   // flat per-call platform fee is not a token rate and is billed by the driver
   // (`THESYS_CALL_USD` in `thesys.ts`) rather than smuggled in here.
   "c1/anthropic/claude-sonnet-4.6/v-20260331": { inputPerMTok: 3, outputPerMTok: 15 },
+  // The three router rows, read off OpenRouter's models API on 2026-08-17.
+  // OpenRouter takes 0% on tokens, so each is the vendor's own list rate — what
+  // it really charges is 5.5% (min $0.80) on credit TOP-UPS, which is not a
+  // per-token price and so is in no number this meter can produce.
+  // Identical to Anthropic's first-party Opus 5 rate above.
+  "anthropic/claude-opus-5": { inputPerMTok: 5, outputPerMTok: 25 },
+  // The ≤272k-context tier. A genbench prompt is 10-20k tokens, so the $10/$45
+  // tier above it is unreachable here.
+  "openai/gpt-5.6-sol": { inputPerMTok: 5, outputPerMTok: 30 },
+  // The ≤200k tier; Google still labels the model preview.
+  "google/gemini-3.1-pro-preview": { inputPerMTok: 2, outputPerMTok: 12 },
+  // OpenAI's own list rate (platform.openai.com/pricing, read 2026-08-17), not
+  // the router's: the codex CLI bills the platform account directly.
+  "gpt-5.6-sol": { inputPerMTok: 5, outputPerMTok: 30 },
 };
 
 /** Cache reads bill at a tenth of the input rate; 5-minute cache writes at 1.25x. */
