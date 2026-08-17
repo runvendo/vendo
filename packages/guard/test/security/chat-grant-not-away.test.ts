@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
-import { FixtureTools, alice, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
+import { AUTOMATION_ID, FixtureTools, alice, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
 
 // 05 §6 / 07 §3: away runs hold only grants captured while present AND bound to
-// the running app with source "automation". Chat-minted grants never authorize
-// unattended execution, and app binding must match exactly.
+// the firing AUTOMATION with source "automation". Chat-minted grants never
+// authorize unattended execution, and the automation id must match exactly — a
+// record holds no app reference, so that id is the whole binding.
 describe("chat grants never authorize away runs (05 §6)", () => {
-  const awayCtx = (appId = "app_1") =>
+  const awayCtx = (appId = "app_1", automationId = AUTOMATION_ID) =>
     context({
       venue: "automation",
       presence: "away",
       appId,
-      trigger: { runId: "run_away", kind: "host-event" },
+      trigger: { runId: "run_away", kind: "host-event", automationId },
     });
 
   it("a present-minted chat grant does not authorize the away run of the same tool", async () => {
@@ -47,10 +48,10 @@ describe("chat grants never authorize away runs (05 §6)", () => {
     expect(tools.executions).toHaveLength(0);
   });
 
-  it("an automation-source app-bound grant does authorize the away run", async () => {
+  it("an automation-source grant naming the firing record does authorize the away run", async () => {
     const store = createMemoryStore();
     const d = descriptor("write", { name: "host_autograent" });
-    await seedGrant(store, { descriptor: d, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: d, automationId: AUTOMATION_ID, source: "automation" });
     const guard = createGuard({ store });
     const tools = new FixtureTools([d]);
     const bound = guard.bind(tools);
@@ -64,10 +65,11 @@ describe("chat grants never authorize away runs (05 §6)", () => {
     expect(tools.executions).toHaveLength(1);
   });
 
-  it("a standing chat grant bound to a different app parks the away run", async () => {
+  it("a standing chat grant naming no automation parks the away run", async () => {
     const store = createMemoryStore();
     const d = descriptor("write", { name: "host_otherapp" });
-    // Even were this source "automation", the appId mismatch alone must park it.
+    // Two independent reasons to park, and either alone is enough: the source is
+    // "chat", and the grant names no automation for the firing to match.
     await seedGrant(store, { descriptor: d, appId: "app_other", source: "chat" });
     const guard = createGuard({ store });
     const tools = new FixtureTools([d]);

@@ -986,9 +986,6 @@ importers:
 
   packages/automations:
     dependencies:
-      '@vendoai/apps':
-        specifier: workspace:*
-        version: link:../apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core

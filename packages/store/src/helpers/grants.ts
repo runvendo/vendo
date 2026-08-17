@@ -1,6 +1,7 @@
 import {
   VendoError,
   type AppId,
+  type AutomationId,
   type GrantId,
   type IsoDateTime,
   type PermissionGrant,
@@ -14,7 +15,7 @@ import { parsePermissionGrant } from "../validate.js";
 export function grantStore(store: VendoStore): {
   create(principal: Principal, grant: PermissionGrant): Promise<void>;
   get(id: GrantId): Promise<PermissionGrant | null>;
-  list(principal: Principal, filter?: { tool?: string; appId?: AppId; includeInactive?: boolean }): Promise<PermissionGrant[]>;
+  list(principal: Principal, filter?: { tool?: string; appId?: AppId; automationId?: AutomationId; includeInactive?: boolean }): Promise<PermissionGrant[]>;
   revoke(id: GrantId, revokedAt: IsoDateTime): Promise<void>;
 } {
   const db = dbFor(store);
@@ -42,6 +43,12 @@ export function grantStore(store: VendoStore): {
       if (filter.appId !== undefined) {
         params.push(filter.appId);
         clauses.push(`app_id = $${params.length}`);
+      }
+      // What the automations engine asks at fire time: this owner's standing
+      // grants for THIS record. Never app-scoped — an automation names no app.
+      if (filter.automationId !== undefined) {
+        params.push(filter.automationId);
+        clauses.push(`automation_id = $${params.length}`);
       }
       if (filter.includeInactive !== true) {
         clauses.push("revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())");

@@ -6,7 +6,7 @@
 // approvals feed and are decidable in place — the overlay's conversation does
 // not survive a page navigation, so a separate page cannot carry the arming
 // decision.
-import { vendoAutomationPartSchema, type AppId, type ApprovalRequest } from "@vendoai/core";
+import { vendoAutomationPartSchema, type ApprovalRequest } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient } from "../../src/index.js";
@@ -36,11 +36,7 @@ describe("humanizeCron", () => {
 });
 
 describe("triggerLabel — which zone the clock is in", () => {
-  const scheduled = (cron: string) => triggerLabel({
-    id: "main",
-    on: { kind: "schedule", cron },
-    run: { kind: "steps", steps: [{ id: "s", tool: "host_listAccounts" }] },
-  });
+  const scheduled = (cron: string) => triggerLabel({ kind: "schedule", cron });
 
   it("names the zone on a humanized cron clock, because UTC is the zone it fires in", () => {
     // The engine builds every cron with `{ timezone: "UTC" }` (engine.ts §325,
@@ -60,6 +56,14 @@ describe("triggerLabel — which zone the clock is in", () => {
     // reader to misplace, so a zone label here would be noise.
     expect(scheduled("*/5 * * * *")).toBe("*/5 * * * *");
   });
+
+  it("names the connector when a webhook record names no event", () => {
+    // An external record's event is optional: nothing has fired yet, and the
+    // connector is what the person actually armed.
+    expect(triggerLabel({ kind: "external", connector: "stripe" })).toBe("Stripe");
+    expect(triggerLabel({ kind: "external", connector: "gmail", event: "new_bill_email" }))
+      .toBe("New bill email");
+  });
 });
 
 describe("AutomationCard", () => {
@@ -78,11 +82,8 @@ describe("AutomationCard", () => {
           enabled
           description="Emails you when checking dips below $2,000."
           sponsor={{ subject: "user_1", display: "Dana" }}
-          trigger={{
-            id: "main",
-            on: { kind: "schedule", cron: "0 8 * * *" },
-            run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
-          }}
+          when={{ kind: "schedule", cron: "0 8 * * *" }}
+          action="List accounts"
         />
       </VendoProvider>,
     );
@@ -115,11 +116,8 @@ describe("AutomationCard", () => {
             name="Low balance alert"
             enabled
             description={description}
-            trigger={{
-              id: "main",
-              on: { kind: "schedule", cron: "0 8 * * *" },
-              run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
-            }}
+            when={{ kind: "schedule", cron: "0 8 * * *" }}
+            action="List accounts"
           />
         </VendoProvider>,
       );
@@ -160,22 +158,19 @@ describe("AutomationCard", () => {
     expect(CHROME_CSS).toMatch(/\.fl-auto-state \.fl-auto-live \{[^}]*flex-shrink: 0/);
   });
 
-  it("composes the rule from the trigger when the document has no description", () => {
+  it("composes the rule from when → action when the record has no description", () => {
     render(
       <VendoProvider client={client}>
         <AutomationCard
           name="Low balance alert"
           enabled={false}
-          trigger={{
-            id: "main",
-            on: { kind: "schedule", cron: "0 8 * * *" },
-            run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
-          }}
+          when={{ kind: "schedule", cron: "0 8 * * *" }}
+          action="List accounts"
         />
       </VendoProvider>,
     );
     const card = screen.getByRole("article", { name: "Automation — Low balance alert" });
-    // The humanized cron (zone named, because it fires in UTC) → the first step.
+    // The humanized cron (zone named, because it fires in UTC) → the action.
     expect(card.querySelector(".fl-auto-sentence")!.textContent).toBe("Daily at 8:00 AM UTC → List accounts");
     // Disabled says so, and drops the live dot rather than colouring it.
     expect(card.querySelector(".fl-auto-state")!.textContent).toBe("Disabled");
@@ -220,13 +215,11 @@ describe("ThreadPart data-vendo-automation", () => {
       <VendoProvider client={client}>
         <ThreadPart
           part={part({
-            appId: "app_demo",
+            automationId: "atm_demo",
             name: "Weekly spending summary",
             enabled: true,
-            trigger: {
-              on: { kind: "schedule", cron: "0 17 * * 5" },
-              run: { kind: "steps", steps: [{ id: "s", tool: "host_getSpendingInsights" }, { id: "t", tool: "host_listTransactions" }] },
-            },
+            when: { kind: "schedule", cron: "0 17 * * 5" },
+            action: "Get spending insights",
           })}
           partKey="m-0"
           role="assistant"
@@ -239,7 +232,7 @@ describe("ThreadPart data-vendo-automation", () => {
     // ⚠️ TEST EDIT (A1 · Sentence): the trigger and the action used to be two
     // node boxes with sub labels ("Schedule", "2 steps"). They are one rule
     // sentence now, so the wire→card contract is asserted on that sentence —
-    // the humanized cron and the first step still both come off the part.
+    // the humanized cron and the producer's action half both come off the part.
     expect(card.querySelector(".fl-auto-sentence")!.textContent)
       .toBe("Fridays at 5:00 PM UTC → Get spending insights");
     // Backward-compat: this is the OLD wire payload (no pendingGrants) — it
@@ -248,31 +241,26 @@ describe("ThreadPart data-vendo-automation", () => {
     expect(card.textContent).not.toContain("waiting on");
   });
 
-  /** The wire carries the automation's terms on the TRIGGER — the document's own
-      field — so the part the producer already sends (make-tool forwards the
-      whole trigger) delivers them with nothing extra to keep in sync. Pinned
-      through the REAL part schema, because the bridge validates before this
-      renders: a part that fails there never reaches the card at all. */
-  it("carries the trigger's rule sentences onto the card, through the real part schema", () => {
+  /** The wire carries the automation's terms on the PART itself. Pinned through
+      the REAL part schema, because the bridge validates before this renders: a
+      part that fails there never reaches the card at all. */
+  it("carries the record's rule sentences onto the card, through the real part schema", () => {
     const wire = {
       type: "data-vendo-automation",
-      appId: "app_demo",
+      automationId: "atm_demo",
       name: "PG&E autopay",
       enabled: true,
       description: "New PG&E bill → paid from Maple Checking",
-      trigger: {
-        id: "main",
-        on: { kind: "external", connector: "gmail", event: "new_bill_email" },
-        run: { kind: "steps", steps: [{ id: "pay", tool: "host_transferMoney" }] },
-        rules: [
-          "Caps at $200 a bill — anything higher asks you first",
-          // A blank sentence from a sloppy author must cost ITSELF and nothing
-          // else: the schema lets it through (so the card still arrives) and the
-          // renderer drops it. Before, `min(1)` here failed the whole part.
-          "   ",
-          "Skips if checking would drop below $500",
-        ],
-      },
+      when: { kind: "external", connector: "gmail", event: "new_bill_email" },
+      action: "Pay the bill",
+      rules: [
+        "Caps at $200 a bill — anything higher asks you first",
+        // A blank sentence from a sloppy author must cost ITSELF and nothing
+        // else: the schema lets it through (so the card still arrives) and the
+        // renderer drops it. Before, `min(1)` here failed the whole part.
+        "   ",
+        "Skips if checking would drop below $500",
+      ],
     };
     const parsed = vendoAutomationPartSchema.safeParse(wire);
     expect(parsed.success, "a blank rule must never fail the automation part").toBe(true);
@@ -288,24 +276,19 @@ describe("ThreadPart data-vendo-automation", () => {
     ]);
   });
 
-  /** A card is the moment's record, not the settings page: whatever a document
+  /** A card is the moment's record, not the settings page: whatever a record
       says, the render is bounded — six sentences, each at the clamp the rule
       sentence's own action half has always used. */
-  it("bounds what a document can push onto the card", () => {
+  it("bounds what a record can push onto the card", () => {
     render(
       <VendoProvider client={client}>
         <ThreadPart
           part={part({
-            appId: "app_demo",
+            automationId: "atm_demo",
             name: "Noisy",
             enabled: true,
             description: "Runs",
-            trigger: {
-              id: "main",
-              on: { kind: "schedule", cron: "0 8 * * *" },
-              run: { kind: "steps", steps: [{ id: "s", tool: "host_listAccounts" }] },
-              rules: [`${"x".repeat(400)} tail`, ...Array.from({ length: 20 }, (_, index) => `Rule ${index}`)],
-            },
+            rules: [`${"x".repeat(400)} tail`, ...Array.from({ length: 20 }, (_, index) => `Rule ${index}`)],
           })}
           partKey="m-3"
           role="assistant"
@@ -325,7 +308,7 @@ describe("ThreadPart data-vendo-automation", () => {
       <VendoProvider client={client}>
         <ThreadPart
           part={part({
-            appId: "app_demo",
+            automationId: "atm_demo",
             name: "Weekly spending summary",
             enabled: true,
             pendingGrants: 2,
@@ -341,7 +324,7 @@ describe("ThreadPart data-vendo-automation", () => {
     expect(card.textContent).toContain("Enabled · waiting on 2 permissions");
   });
 
-  it("ignores a malformed part (no appId/name)", () => {
+  it("ignores a malformed part (no automationId/name)", () => {
     const { container } = render(
       <VendoProvider client={client}>
         <ThreadPart
@@ -363,27 +346,28 @@ describe("ThreadPart data-vendo-automation — the arming consent surface (#1090
     data,
   }) as never;
 
-  /** The two standing asks the arming capture parks for app_auto — the shape
+  /** The two standing asks the arming capture parks for atm_auto — the shape
    *  the wire's own grant-set fixtures mint (and, since #1093, the shape the
-   *  ref-filtered approvals feed can actually return). */
+   *  ref-filtered approvals feed can actually return). The RECORD it is for
+   *  rides `ctx.trigger`: an automation has no app for the card to match on. */
   const armingAsk = (id: string, tool: string, risk: "read" | "write"): ApprovalRequest => ({
     id,
     call: { id: `call_${id}`, tool, args: {} },
     descriptor: { name: tool, description: "Model-facing line.", inputSchema: { type: "object" }, risk },
-    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this app only)`,
+    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this automation only)`,
     ctx: {
       principal: { kind: "user", subject: "user_1" },
       venue: "automation",
       presence: "present",
-      appId: "app_auto" as AppId,
+      trigger: { runId: "run_arm", kind: "schedule", automationId: "atm_auto" },
     },
     createdAt: "2026-01-01T00:00:00.000Z",
   });
 
-  const renderCard = (wireClient: ReturnType<typeof createVendoClient>, appId: string) => render(
+  const renderCard = (wireClient: ReturnType<typeof createVendoClient>, automationId: string) => render(
     <VendoProvider client={wireClient}>
       <ThreadPart
-        part={part({ appId, name: "Invoice watcher", enabled: true, pendingGrants: 2 })}
+        part={part({ automationId, name: "Invoice watcher", enabled: true, pendingGrants: 2 })}
         partKey="m-consent"
         role="assistant"
         restored={false}
@@ -400,7 +384,7 @@ describe("ThreadPart data-vendo-automation — the arming consent surface (#1090
         armingAsk("apr_set_2", "host_invoices_list", "read"),
       ];
       const wireClient = createVendoClient({ baseUrl: wire.url });
-      renderCard(wireClient, "app_auto");
+      renderCard(wireClient, "atm_auto");
 
       // The consent card arrives from the FEED (never the stream), with every
       // permission row and the one Allow for the whole set.
@@ -429,7 +413,7 @@ describe("ThreadPart data-vendo-automation — the arming consent surface (#1090
 
   it("keeps the part's snapshot count when the feed cannot answer — an error never reads as nothing pending", () => {
     const dead = createVendoClient({ baseUrl: "http://127.0.0.1:9" });
-    renderCard(dead, "app_dead");
+    renderCard(dead, "atm_dead");
     const card = screen.getByRole("article", { name: "Automation — Invoice watcher" });
     expect(card.textContent).toContain("waiting on 2 permissions");
   });

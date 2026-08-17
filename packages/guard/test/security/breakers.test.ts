@@ -2,7 +2,7 @@ import { VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
-import { call, context, descriptor, seedGrant } from "../fixtures/tools.js";
+import { AUTOMATION_ID, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
 
 // 05 §2: deterministic breakers wrap the pipeline and downgrade would-be runs to
 // asks. They sit ABOVE grants — even an away automation grant cannot spend past
@@ -79,13 +79,13 @@ describe("deterministic breakers (05 §2)", () => {
   it("applies the write breaker to an away grant-authorized run", async () => {
     const store = createMemoryStore();
     const d = descriptor("write", { name: "host_away_writes" });
-    await seedGrant(store, { descriptor: d, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: d, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const guard = createGuard({ store, breakers: { maxWritesPerRun: 2, maxCallsPerMinute: 100 } });
     const away = context({
       venue: "automation",
       presence: "away",
       appId: "app_1",
-      trigger: { runId: "run_away_writes", kind: "host-event" },
+      trigger: { runId: "run_away_writes", kind: "host-event", automationId: AUTOMATION_ID },
     });
 
     // The automation grant authorizes the away run (decidedBy "grant", so the

@@ -3,7 +3,9 @@
  * row, the terminal landing every door ends on, and the stopped check an
  * in-flight run interleaves with.
  *
- * Lifted out of `createAutomationsEngine` unchanged.
+ * ONE ledger. The owner / agent / automation / console views are FILTERS over
+ * it, which is why the refs carry all three keys rather than just the one the
+ * first caller happened to need.
  */
 import {
   auditContext,
@@ -69,14 +71,19 @@ export const createRunRows = ({ base: { config, engine, iso, stopped } }: RunRow
     await engine.put(RUNS, {
       id: record.id,
       data: {
-        appId: record.appId,
+        automationId: record.automationId,
         trigger: record.trigger,
         status: record.status,
         record,
         startedAt: record.startedAt,
         ...(record.finishedAt === undefined ? {} : { finishedAt: record.finishedAt }),
       },
-      refs: { app_id: record.appId, status: record.status },
+      refs: {
+        automation_id: record.automationId,
+        subject: record.owner.subject,
+        status: record.status,
+        ...(record.agent === undefined ? {} : { agent: record.agent }),
+      },
     });
     return true;
   };

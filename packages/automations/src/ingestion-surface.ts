@@ -1,93 +1,74 @@
 /**
  * 07 §1's trigger ingestion, all three kinds: the schedule tick (and the timer
  * around it), the host's own product events, and the verified external
- * deliveries a connector webhook carries.
+ * deliveries a webhook carries.
  *
- * Lifted out of `createAutomationsEngine` unchanged.
+ * Every one of them fires records this deployment owns. There is no
+ * "some other authority fires this kind for us" mode any more: Vendo Cloud is a
+ * dumb alarm clock that CALLS this tick, so the engine is always the thing that
+ * decides what is due and always the thing that runs it.
  */
-import { webhookSubject, type Json, type Trigger } from "@vendoai/core";
+import { durationMs, webhookSubject, type AutomationRecord, type Json } from "@vendoai/core";
 import { Cron } from "croner";
 import { z } from "zod";
-import type { AppRowsAccess } from "./app-rows.js";
-import type { ArmedAccess } from "./armed.js";
+import type { AutomationRowsAccess } from "./automation-rows.js";
 import type { EngineBase } from "./engine-context.js";
 import type { AutomationsEngine } from "./index.js";
-import { allRecords, appRef, id, message, parseAppRow } from "./rows.js";
+import { allRecords, automationRef, id, message } from "./rows.js";
 import type { RunExecutionAccess } from "./run-execution.js";
-import { triggerKey } from "./sponsorship.js";
-import { durationMs, validateTrigger } from "./steps.js";
 import {
   DELIVERIES,
   SCHEDULE,
-  WEBHOOK,
   WEBHOOK_MAX_BYTES,
   scheduleSchema,
-  webhookSchema,
-  type AppData,
   type FiredSchedule,
 } from "./types.js";
 import { readLimitedBody, signedWebhookBytes, verifySignature } from "./webhook-signature.js";
 
 export type IngestionSurfaceDeps = {
   base: EngineBase;
-  appRows: AppRowsAccess;
-  armed: ArmedAccess;
+  automations: AutomationRowsAccess;
   execution: RunExecutionAccess;
 };
 
 /** Schedules: the cursor claim, and the convenience timer around it. */
-const createTickDoor = (
-  deps: IngestionSurfaceDeps,
-): Pick<AutomationsEngine, "tick" | "start"> => {
-  const { base: { engine, now, firesLocally }, appRows, armed, execution } = deps;
+const createTickDoor = (deps: IngestionSurfaceDeps): Pick<AutomationsEngine, "tick" | "start"> => {
+  const { base: { engine, now }, automations, execution } = deps;
   let tickTail: Promise<void> = Promise.resolve();
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
-    // Cloud (or whatever other authority) already fires schedule automations for this
-    // deployment — firing them here too would double-run them. Nothing waits on a
-    // decision any more, so a tick is only ever a firing path.
-    if (!firesLocally("schedule")) return [];
     const at = providedNow ?? now();
     const atIso = at.toISOString();
-    // Fetch only schedule-triggered apps (indexed per-kind ref) instead of scanning every
-    // app for every subject, then batch every schedule cursor in one query (was an N+1 get).
-    // Still ONE ref query with a trigger LIST: the ref says "this app has a schedule trigger
-    // somewhere in its list", and the loop below picks out which ones.
-    const appRecords = await appRows.appsFiringOn("schedule");
-    const rows = appRecords.map(parseAppRow);
-    const armedKeys = await armed.armedFor(rows);
-    // Every armed schedule trigger, as (app, trigger) pairs — the unit that fires,
-    // holds a cursor, and is claimed.
-    const dueTriggers = rows.flatMap((row) => armed.armedTriggers(row, armedKeys)
-      .filter((trigger) => trigger.on.kind === "schedule")
-      .map((trigger) => ({ row, trigger })));
-    const cursorKeys = dueTriggers.map(({ row, trigger }) => triggerKey(row.doc.id, trigger.id));
-    const cursorRecords = cursorKeys.length === 0
+    // Indexed per-kind ref, never a scan of every record for every tick.
+    const due = await automations.firingOn("schedule");
+    const cursorRecords = due.length === 0
       ? []
-      : await allRecords(engine, SCHEDULE, { ids: cursorKeys });
+      : await allRecords(engine, SCHEDULE, { ids: due.map((record) => record.id) });
     const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
     const fired: FiredSchedule[] = [];
-    for (const { row, trigger: declared } of dueTriggers) {
-      const trigger = validateTrigger(declared);
-      if (trigger.on.kind !== "schedule") continue;
-      const cursorKey = triggerKey(row.doc.id, trigger.id);
+    for (const record of due) {
+      if (record.when.kind !== "schedule") continue;
       // Every write of this row restates the ref, including the compare-and-swap
-      // replacement: a put that omitted it would strip the app ref the enable
-      // wrote and re-orphan the cursor on the very next tick.
-      const cursorRow = (data: Json) => ({ id: cursorKey, data, refs: appRef(row.doc.id) });
-      const cursorRecord = cursorById.get(cursorKey) ?? null;
+      // replacement: a put that omitted it would strip the ref create wrote and
+      // re-orphan the cursor on the very next tick.
+      const cursorRow = (data: Json) => ({ id: record.id, data, refs: automationRef(record.id) });
+      const cursorRecord = cursorById.get(record.id) ?? null;
       const cursor = cursorRecord === null
-        ? { lastFiredAt: at.toISOString() }
+        ? { lastFiredAt: atIso }
         : scheduleSchema.parse(cursorRecord.data);
+      const timezone = record.timezone ?? "UTC";
       let scheduledFor: string | undefined;
-      if (trigger.on.cron !== undefined) {
-        const next = new Cron(trigger.on.cron, { timezone: "UTC", paused: true }).nextRun(new Date(cursor.lastFiredAt));
+      if (record.when.cron !== undefined) {
+        const next = new Cron(record.when.cron, { timezone, paused: true }).nextRun(new Date(cursor.lastFiredAt));
         if (next !== null && next.getTime() <= at.getTime()) scheduledFor = next.toISOString();
-      } else if (trigger.on.every !== undefined) {
-        const interval = durationMs(trigger.on.every) as number;
-        const due = Date.parse(cursor.lastFiredAt) + interval;
+      } else if (record.when.every !== undefined) {
+        const due = Date.parse(cursor.lastFiredAt) + (durationMs(record.when.every) as number);
         if (due <= at.getTime()) scheduledFor = new Date(due).toISOString();
-      } else if (trigger.on.at !== undefined && cursor.firedAt === undefined && Date.parse(trigger.on.at) <= at.getTime()) {
-        scheduledFor = trigger.on.at;
+      } else if (
+        record.when.at !== undefined
+        && cursor.firedAt === undefined
+        && Date.parse(record.when.at) <= at.getTime()
+      ) {
+        scheduledFor = record.when.at;
       }
       if (scheduledFor === undefined) {
         if (cursorRecord === null) await engine.insertIfAbsent(SCHEDULE, cursorRow(cursor));
@@ -95,9 +76,11 @@ const createTickDoor = (
       }
       const nextCursor = {
         ...cursor,
-        lastFiredAt: at.toISOString(),
-        ...(trigger.on.at === undefined ? {} : { firedAt: at.toISOString() }),
+        lastFiredAt: atIso,
+        ...(record.when.at === undefined ? {} : { firedAt: atIso }),
       };
+      // THE claim, and the whole reason a duplicate tick fires nothing: two ticks
+      // race for one cursor and exactly one of them wins the compare-and-swap.
       let claimed = true;
       if (cursorRecord === null) {
         claimed = await engine.insertIfAbsent(SCHEDULE, cursorRow(nextCursor)) !== null;
@@ -110,8 +93,7 @@ const createTickDoor = (
         // linearize this can offer — one tick at a time is the norm.
         await engine.put(SCHEDULE, cursorRow(nextCursor));
       }
-      if (!claimed) continue;
-      fired.push({ row, trigger, scheduledFor, firedAt: atIso });
+      if (claimed) fired.push({ record, scheduledFor, firedAt: atIso });
     }
     return await execution.runFiredSchedules(fired);
   };
@@ -142,14 +124,12 @@ const createTickDoor = (
 };
 
 /** Host product events — THE host seam (vendo.emit). */
-const createEmitDoor = (
-  deps: IngestionSurfaceDeps,
-): Pick<AutomationsEngine, "emit"> => {
-  const { base: { config }, appRows, armed, execution } = deps;
+const createEmitDoor = (deps: IngestionSurfaceDeps): Pick<AutomationsEngine, "emit"> => {
+  const { base: { config }, automations, execution } = deps;
   const emit: AutomationsEngine["emit"] = async (event, payload, principal) => {
     // Ruling 2026-08-01 — an event emitted by a MEMBER of the org fires that
     // org's automations. Matching only the emitter's own subject meant an
-    // ORG-owned host-event automation could never be fired by anybody: its row
+    // ORG-owned host-event automation could never be fired by anybody: its owner
     // subject is the org id (§9.5) and no principal is ever an org (§9.1 keeps
     // `kind:"org"` refused at the wire). The orgs are ASSERTED through the same
     // §9.1 seam an unattended fire uses, never stored.
@@ -166,25 +146,11 @@ const createEmitDoor = (
       );
     }
     const ids: string[] = [];
-    // Indexed refs per owner (never a scan): the emitter, then each asserted org.
-    for (const subject of [principal.subject, ...orgs]) {
-      const records = await appRows.appsFiringOn("host-event", { subject });
-      const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
-      const armedKeys = await armed.armedFor(rows);
-      for (const row of rows) {
-        // Every matching trigger fires, not just the first: an app may listen to
-        // one event from two triggers, and they are two automations.
-        for (const trigger of armed.armedTriggers(row, armedKeys)) {
-          const source = trigger.on;
-          // Membership is what makes the org's row reachable; whether this run may
-          // proceed at all is the ordinary fire-time gate's call inside startRun
-          // (active sponsorship + matching intent + the SPONSOR still can(editor)),
-          // so an org automation nobody holds any more stops loudly instead of
-          // running for whoever touched the event.
-          if (source.kind === "host-event" && source.event === event) {
-            ids.push(await execution.startRun(row, trigger, "host-event", payload));
-          }
-        }
+    for (const subject of new Set([principal.subject, ...orgs])) {
+      for (const record of await automations.firingOn("host-event", { subject })) {
+        if (record.owner.subject !== subject) continue;
+        if (record.when.kind !== "host-event" || record.when.event !== event) continue;
+        ids.push(await execution.startRun(record, payload));
       }
     }
     return ids;
@@ -234,19 +200,14 @@ const createWebhookRefusals = (
   return { envelope, rejectWebhook };
 };
 
-/** External events (Composio/webhooks), mounted by the umbrella. */
+/** External events, mounted by the umbrella and forwarded here by Cloud's front
+ *  door. */
 const createWebhookDoor = (
   deps: IngestionSurfaceDeps & WebhookRefusals,
 ): Pick<AutomationsEngine, "webhook"> => {
-  const { base: { engine, now, iso, firesLocally }, appRows, armed, execution } = deps;
-  const { envelope, rejectWebhook } = deps;
+  const { base: { engine, now, iso }, automations, execution, envelope, rejectWebhook } = deps;
   const inFlightDeliveries = new Set<string>();
   const webhook: AutomationsEngine["webhook"] = async (request) => {
-    // Cloud (or whatever other authority) already delivers external events for this
-    // deployment (Composio → Cloud) — launching a run here too would double-run it. No
-    // verification, no audit: this is not a rejection, just a no-op the other authority
-    // is already handling.
-    if (!firesLocally("external")) return Response.json({ deferred: true }, { status: 200 });
     const source = new URL(request.url).pathname.split("/").filter(Boolean).at(-1) ?? "";
     const headerResult = z.object({
       id: z.string().min(1),
@@ -276,28 +237,17 @@ const createWebhookDoor = (
       .filter((entry) => entry.startsWith("v1,"))
       .map((entry) => entry.slice(3));
     const signed = signedWebhookBytes(headerResult.data.id, headerResult.data.timestamp, rawBytes);
-    // Indexed per-kind ref, same as the tick — never a scan of every app row.
-    const appRecords = await appRows.appsFiringOn("external");
-    const rows = appRecords.map(parseAppRow);
-    const armedKeys = await armed.armedFor(rows);
-    // Verified per (app, TRIGGER): each external trigger holds its own secret, so
-    // a signature that verifies for one says nothing about a sibling's.
-    const verified: Array<{ row: AppData; trigger: Trigger }> = [];
-    for (const row of rows) {
-      for (const trigger of armed.armedTriggers(row, armedKeys)) {
-        if (trigger.on.kind !== "external" || trigger.on.connector !== source) continue;
-        const secretRecord = await engine.get(WEBHOOK, triggerKey(row.doc.id, trigger.id));
-        if (secretRecord === null) continue;
-        const secret = webhookSchema.safeParse(secretRecord.data);
-        if (!secret.success) continue;
-        let matched = false;
-        for (const candidate of signatures) {
-          if (await verifySignature(secret.data.secret, candidate, signed)) {
-            matched = true;
-            break;
-          }
+    // Verified per RECORD: each external automation holds its own secret, so a
+    // signature that verifies for one says nothing about another's.
+    const verified: AutomationRecord[] = [];
+    for (const record of await automations.firingOn("external")) {
+      if (record.when.kind !== "external" || record.when.connector !== source) continue;
+      if (record.webhookSecret === undefined) continue;
+      for (const candidate of signatures) {
+        if (await verifySignature(record.webhookSecret, candidate, signed)) {
+          verified.push(record);
+          break;
         }
-        if (matched) verified.push({ row, trigger });
       }
     }
     if (verified.length === 0) return await rejectWebhook(source, "webhook signature verification failed");
@@ -309,10 +259,10 @@ const createWebhookDoor = (
     }
     const ids: string[] = [];
     let deduped = 0;
-    for (const { row, trigger } of verified) {
-      // Dedupe per (app, trigger, delivery): one delivery may legitimately fire
-      // two of an app's triggers, and neither is a duplicate of the other.
-      const deliveryKey = `${triggerKey(row.doc.id, trigger.id)}:${headerResult.data.id}`;
+    for (const record of verified) {
+      // Dedupe per (automation, delivery): one delivery may legitimately fire two
+      // records, and neither is a duplicate of the other.
+      const deliveryKey = `${record.id}:${headerResult.data.id}`;
       if (inFlightDeliveries.has(deliveryKey)) {
         deduped += 1;
         continue;
@@ -321,13 +271,8 @@ const createWebhookDoor = (
       try {
         const delivery = {
           id: deliveryKey,
-          data: {
-            appId: row.doc.id,
-            triggerId: trigger.id,
-            deliveryId: headerResult.data.id,
-            receivedAt: iso(),
-          },
-          refs: appRef(row.doc.id),
+          data: { automationId: record.id, deliveryId: headerResult.data.id, receivedAt: iso() },
+          refs: automationRef(record.id),
         };
         // Insert-ONCE: the delivery ledger is the only thing standing between a
         // redelivered webhook and a second run of the automation.
@@ -335,7 +280,7 @@ const createWebhookDoor = (
           deduped += 1;
           continue;
         }
-        ids.push(await execution.startRun(row, trigger, "external", body));
+        ids.push(await execution.startRun(record, body));
       } finally {
         inFlightDeliveries.delete(deliveryKey);
       }

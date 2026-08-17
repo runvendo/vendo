@@ -15,6 +15,7 @@ import { VendoError } from "./errors.js";
 import { isoDateTimeSchema, type IsoDateTime } from "./ids.js";
 import { canonicalJson } from "./jcs.js";
 import { principalSchema, type Principal } from "./principal.js";
+import type { RunContext } from "./run-context.js";
 import { sha256Hex } from "./sha256.js";
 import { stepSchema, triggerSourceSchema, type Step, type TriggerSource } from "./triggers.js";
 
@@ -116,7 +117,7 @@ export const automationRecordSchema = z.object({
  *  Named here so `@vendoai/apps` can hold one without an illegal import. */
 export type CreateAutomation = (
   input: CreateAutomationInput,
-  ctx: { principal: Principal },
+  ctx: RunContext,
 ) => Promise<AutomationRecord>;
 
 export interface CreateAutomationInput {

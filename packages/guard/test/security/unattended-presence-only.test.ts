@@ -2,7 +2,7 @@ import { PRESENCE_ONLY_TOOLS, UNATTENDED_DESTRUCTIVE_REASON, VENDO_APPS_PIN_TOOL
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
-import { FixtureTools, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
+import { AUTOMATION_ID, FixtureTools, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
 
 /**
  * THE LAW's presence-only half has both layers §12 asks for: `projectableForRun`
@@ -18,7 +18,7 @@ const awayCtx = () =>
     venue: "automation",
     presence: "away",
     appId: "app_1",
-    trigger: { runId: "run_1", kind: "schedule" },
+    trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID },
   });
 
 const pinDescriptor = () =>
@@ -50,7 +50,7 @@ describe("THE LAW, presence-only half: refused at the guard, not only hidden", (
     // A standing, app-bound automation grant — the same authority the
     // destructive drill above proves the law beats. Here it is not exotic: it
     // is what "Grant & re-run" leaves behind after one attended tap.
-    await seedGrant(store, { descriptor: pin, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: pin, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const tools = new FixtureTools([pin]);
     const bound = createGuard({ store }).bind(tools);
 

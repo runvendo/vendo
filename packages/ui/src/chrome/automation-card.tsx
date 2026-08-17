@@ -1,4 +1,4 @@
-import type { Trigger } from "@vendoai/core";
+import type { TriggerSource } from "@vendoai/core";
 import { CardLine, CardShell, TICK_GLYPH } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { humanizeToolName } from "./humanize.js";
@@ -46,8 +46,7 @@ export function humanizeCron(cron: string): string | null {
 const clamp = (text: string): string =>
   text.length > 68 ? `${text.slice(0, 67).trimEnd()}…` : text;
 
-export function triggerLabel(trigger: Trigger): string {
-  const source = trigger.on;
+export function triggerLabel(source: TriggerSource): string {
   if (source.kind === "schedule") {
     if (source.every) return `Every ${source.every}`;
     if (source.at) return source.at;
@@ -64,20 +63,26 @@ export function triggerLabel(trigger: Trigger): string {
     }
     return "Scheduled";
   }
-  return humanizeToolName(source.event);
+  if (source.kind === "host-event") return humanizeToolName(source.event);
+  // A webhook record may name no event at all — the connector is then what the
+  // person armed, and the honest label.
+  return humanizeToolName(source.event ?? source.connector);
 }
 
 /** The rule this automation runs by, as one sentence: what starts it → what it
-    then does. The card's title when the document wrote no description of its
+    then does. The card's title when the record wrote no description of its
     own. (It replaced a two-box `trigger → action` diagram, whose second labels
     — "Schedule", "1 action", "N steps" — named the boxes, not the rule, and
-    went with them.) */
-export function automationRule(trigger: Trigger | undefined): string | undefined {
-  if (!trigger) return undefined;
-  const action = trigger.run.kind === "agentic"
-    ? trigger.run.prompt.trim()
-    : trigger.run.steps[0] === undefined ? "" : humanizeToolName(trigger.run.steps[0].tool);
-  return action.length === 0 ? undefined : `${triggerLabel(trigger)} → ${clamp(action)}`;
+    went with them.)
+
+    The ACTION half arrives already humanized: a record's task is the producer's
+    to read, and a card that guessed at one would put words in an automation's
+    mouth. Without it there is no sentence, and the card falls back to the
+    description or the name. */
+export function automationRule(when: TriggerSource | undefined, action: string | undefined): string | undefined {
+  const does = (action ?? "").trim();
+  if (when === undefined || does.length === 0) return undefined;
+  return `${triggerLabel(when)} → ${clamp(does)}`;
 }
 
 /** How many of an automation's terms a CARD shows, and how long each may be.
@@ -85,7 +90,7 @@ export function automationRule(trigger: Trigger | undefined): string | undefined
     owns the full list — so the render is bounded no matter what the document
     says. Blanks and non-strings drop here rather than upstream: the schema lets
     them through on purpose, so one sloppy sentence can never cost the whole
-    automation card (see `Trigger.rules`). */
+    automation card (see `VendoAutomationPart.rules`). */
 const MAX_RULES = 6;
 
 function automationRules(rules: readonly string[]): string[] {
@@ -98,22 +103,21 @@ function automationRules(rules: readonly string[]): string[] {
 }
 
 export interface AutomationCardProps {
-  /** The automation document's display name. */
+  /** The automation record's display name. */
   name: string;
   /** Whether the automations engine reports it enabled. */
   enabled: boolean;
-  /** The document's trigger: the source of the rule sentence AND of the terms
-   *  it runs by (`Trigger.rules`). Omitted → the name is all this card has. */
-  trigger?: Trigger;
-  /** The document's one-line description. Preferred over the composed
-   *  `trigger → action` title: it is the human phrasing of the same rule. */
+  /** The record's trigger — the rule sentence's WHEN half. */
+  when?: TriggerSource;
+  /** The rule sentence's ACTION half, already humanized. Without both halves
+   *  there is no sentence and the name is all this card has. */
+  action?: string;
+  /** The record's one-line description. Preferred over the composed
+   *  `when → action` title: it is the human phrasing of the same rule. */
   description?: string;
   /** E3 — the automation's terms, one sentence each ("Caps at $200 a bill —
    *  anything higher asks you first"), as a tick list under the status line;
-   *  omitted entirely when there are none. Defaults to the trigger's own
-   *  `rules`, which is where the document carries them and how the wire's
-   *  automation part delivers them — a host mounting this card from its own
-   *  data passes them here instead. */
+   *  omitted entirely when there are none. */
   rules?: string[];
   /** Standing-grant asks still undecided (grant sets): the state line reads
    *  "Enabled · waiting on N permissions" until the set is granted. */
@@ -138,17 +142,17 @@ export function sponsorLabel(
 }
 
 /** The read-only automation card (the thread's record of a live automation). */
-export function AutomationCard({ name, enabled, trigger, description, rules, pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
+export function AutomationCard({ name, enabled, when, action, description, rules, pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
   const waiting = enabled && pendingGrants > 0;
   // Law 3 and the title are ONE line now: the rule itself. The description is
   // the human phrasing of that rule and wins when the document wrote one — a
   // BLANK one is not a phrasing, and as the card's 14px title an empty string
   // is a headless card, where as the old quiet line it was merely a gap. The
-  // composed trigger → action is the honest fallback, and a document with
+  // composed when → action is the honest fallback, and a record with
   // neither is only its name. The NAME is still the card's accessible name.
   const described = (description ?? "").trim();
-  const rule = described.length > 0 ? described : automationRule(trigger) ?? name;
-  const terms = automationRules(rules ?? trigger?.rules ?? []);
+  const rule = described.length > 0 ? described : automationRule(when, action) ?? name;
+  const terms = automationRules(rules ?? []);
   // Whether it is on, and whose access it runs with — the state chip and the
   // byline row, folded into one quiet line. " · " is literal here (unlike the
   // approval notes) because these are clauses of one sentence about one thing.

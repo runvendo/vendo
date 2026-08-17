@@ -160,7 +160,7 @@ describe("hostedStore wire", () => {
     const runs = store.records("vendo_runs");
 
     const run = {
-      appId: "app_1",
+      automationId: "atm_1",
       trigger: { kind: "schedule" },
       status: "ok",
       record: { steps: 1 },
@@ -183,11 +183,11 @@ describe("hostedStore wire", () => {
     });
     expect(await runs.get("missing")).toBeNull();
 
-    const listed = await runs.list({ refs: { app_id: "app_1" }, limit: 10 });
+    const listed = await runs.list({ refs: { automation_id: "atm_1" }, limit: 10 });
     expect(listed.records.map((record) => record.id)).toEqual(["run_1"]);
     expect(console_.requests[3]).toMatchObject({
       url: "https://cloud.test/api/v1/store/engine/list",
-      json: { collection: "vendo_runs", query: { refs: { app_id: "app_1" }, limit: 10 } },
+      json: { collection: "vendo_runs", query: { refs: { automation_id: "atm_1" }, limit: 10 } },
     });
 
     // The capability mirror is UNCHANGED by the move onto the engine door:
@@ -559,7 +559,7 @@ async function demoHostJourney(store: VendoStore): Promise<void> {
   await runs.put({
     id: "run_journey",
     data: {
-      appId: "app_budget",
+      automationId: "atm_budget",
       trigger: { kind: "schedule" },
       status: "ok",
       record: { steps: 1 },
@@ -567,7 +567,7 @@ async function demoHostJourney(store: VendoStore): Promise<void> {
       finishedAt: now,
     },
   });
-  const runList = await runs.list({ refs: { app_id: "app_budget" } });
+  const runList = await runs.list({ refs: { automation_id: "atm_budget" } });
   expect(runList.records).toHaveLength(1);
 
   // Audit is append-only through this door on BOTH engines.
@@ -1562,7 +1562,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     for (const [index, startedAt] of started.entries()) {
       await ops.engine.put("vendo_runs", {
         id: `run_${index + 1}`,
-        data: { appId: "app_1", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt },
+        data: { automationId: "atm_1", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt },
       });
     }
     // The forward walk: oldest-first from the bound, with the bound to send
@@ -1588,7 +1588,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     for (const id of ["run_4", "run_5"]) {
       await ops.engine.put("vendo_runs", {
         id,
-        data: { appId: "app_1", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt: "2026-02-04T00:00:00.000Z" },
+        data: { automationId: "atm_1", trigger: { kind: "schedule" }, status: "ok", record: {}, startedAt: "2026-02-04T00:00:00.000Z" },
       });
     }
     const tiedFirst = await ops.engine.list("vendo_runs", { watermark: { field: "started_at", after: started[2]! }, limit: 1 });

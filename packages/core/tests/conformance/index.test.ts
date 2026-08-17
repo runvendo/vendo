@@ -380,14 +380,14 @@ describe("memoryStoreAdapter reserved routing", () => {
         collection: "vendo_runs",
         id: "run_memory_projection",
         data: {
-          appId: app.id,
+          automationId: "atm_memory_projection",
           trigger: { kind: "external", ignored: true },
           status: "running",
           record: { ok: true },
           startedAt: at,
           ignored: true,
         },
-        refs: { app_id: app.id, status: "running" },
+        refs: { automation_id: "atm_memory_projection", status: "running" },
         createdAt: at,
       },
       {

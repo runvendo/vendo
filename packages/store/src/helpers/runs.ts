@@ -1,4 +1,4 @@
-import type { AppId, RunId } from "@vendoai/core";
+import type { AutomationId, RunId } from "@vendoai/core";
 import { dbFor, type VendoStore } from "../store.js";
 import type { RunRow } from "./types.js";
 import { putRunRow, runFromRow } from "./rows.js";
@@ -9,7 +9,7 @@ import { parseRunData } from "../validate.js";
 export function runStore(store: VendoStore): {
   put(run: RunRow): Promise<void>;
   get(id: RunId): Promise<RunRow | null>;
-  list(filter: { appId?: AppId; status?: RunRow["status"]; limit?: number; cursor?: string }): Promise<{ runs: RunRow[]; cursor?: string }>;
+  list(filter: { automationId?: AutomationId; status?: RunRow["status"]; limit?: number; cursor?: string }): Promise<{ runs: RunRow[]; cursor?: string }>;
 } {
   const db = dbFor(store);
   return {
@@ -24,9 +24,9 @@ export function runStore(store: VendoStore): {
       const limit = pageLimit(filter.limit);
       const params: unknown[] = [];
       const clauses: string[] = [];
-      if (filter.appId !== undefined) {
-        params.push(filter.appId);
-        clauses.push(`app_id = $${params.length}`);
+      if (filter.automationId !== undefined) {
+        params.push(filter.automationId);
+        clauses.push(`automation_id = $${params.length}`);
       }
       if (filter.status !== undefined) {
         params.push(filter.status);

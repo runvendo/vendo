@@ -2,7 +2,7 @@ import { UNATTENDED_DESTRUCTIVE_REASON, VENUES } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
-import { alice, FixtureTools, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
+import { alice, AUTOMATION_ID, FixtureTools, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
 
 /**
  * THE LAW (design §12): destructive and external actions are never unattended.
@@ -17,7 +17,7 @@ const awayCtx = () =>
     venue: "automation",
     presence: "away",
     appId: "app_1",
-    trigger: { runId: "run_1", kind: "schedule" },
+    trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID },
   });
 
 describe("THE LAW: unattended destructive calls are refused at the guard", () => {
@@ -26,7 +26,7 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
     const send = descriptor("destructive", { name: "maple_payments_send" });
     // A standing, app-bound automation grant — the strongest authority that
     // exists today. The law must beat it.
-    await seedGrant(store, { descriptor: send, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: send, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const tools = new FixtureTools([send]);
     const bound = createGuard({ store }).bind(tools);
 
@@ -56,7 +56,7 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
     // reads included), so it runs; the old vote refused exactly this call with
     // THE LAW's reason despite the same grant.
     const labelled = descriptor("read", { name: "maple_customer_delete" });
-    await seedGrant(store, { descriptor: labelled, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: labelled, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const tools = new FixtureTools([labelled]);
     const bound = createGuard({ store }).bind(tools);
 
@@ -71,7 +71,7 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
     // Unlabeled means ungraded, and ungraded needs a person — an unattended run
     // has none, so a standing grant cannot authorize it either.
     const ungraded = descriptor("ungraded", { name: "maple_frobnicate_widget" });
-    await seedGrant(store, { descriptor: ungraded, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: ungraded, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const tools = new FixtureTools([ungraded]);
     const bound = createGuard({ store }).bind(tools);
 
@@ -84,7 +84,7 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
   it("still lets an automation READ and WRITE — automations are not crippled", async () => {
     const store = createMemoryStore();
     const update = descriptor("write", { name: "maple_invoice_update" });
-    await seedGrant(store, { descriptor: update, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: update, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const tools = new FixtureTools([update]);
     const bound = createGuard({ store }).bind(tools);
 
@@ -168,13 +168,18 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
   it.each(VENUES)("refuses an away destructive call in venue %s", async (venue) => {
     const store = createMemoryStore();
     const send = descriptor("destructive", { name: "maple_payments_send" });
-    await seedGrant(store, { descriptor: send, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: send, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const tools = new FixtureTools([send]);
     const bound = createGuard({ store }).bind(tools);
 
     const outcome = await bound.execute(
       call(send.name, { amount: 5000 }),
-      context({ venue, presence: "away", appId: "app_1" }),
+      context({
+        venue,
+        presence: "away",
+        appId: "app_1",
+        trigger: { runId: "run_1", kind: "schedule", automationId: AUTOMATION_ID },
+      }),
     );
 
     expect(outcome).toEqual({ status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON });
@@ -198,7 +203,7 @@ describe("THE LAW: unattended destructive calls are refused at the guard", () =>
   it("records the refusal in the audit trail, so a run history can explain itself", async () => {
     const store = createMemoryStore();
     const send = descriptor("destructive", { name: "maple_payments_send" });
-    await seedGrant(store, { descriptor: send, appId: "app_1", source: "automation" });
+    await seedGrant(store, { descriptor: send, appId: "app_1", automationId: AUTOMATION_ID, source: "automation" });
     const guard = createGuard({ store });
     await guard.bind(new FixtureTools([send])).execute(call(send.name, { amount: 1 }), awayCtx());
 

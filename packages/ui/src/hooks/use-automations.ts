@@ -1,5 +1,5 @@
 /** Automation and run transport (08-ui §3, 07-automations §1). */
-import type { AppId, RunId } from "@vendoai/core";
+import type { AutomationId, RunId } from "@vendoai/core";
 import { useCallback } from "react";
 import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
@@ -10,17 +10,17 @@ export function useAutomations(options?: PollOptions): {
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
-  /** Arm/disarm ONE trigger of an app: an automation is an app with a LIST of
-   *  triggers, and each is armed on its own. */
-  enable(id: AppId, triggerId: string): Promise<EnableResult>;
-  disable(id: AppId, triggerId: string): Promise<void>;
+  /** Arm/disarm ONE record: an automation is armed on its own. */
+  enable(id: AutomationId): Promise<EnableResult>;
+  disable(id: AutomationId): Promise<void>;
   runs(filter?: {
-    appId?: AppId;
-    triggerId?: string;
+    automationId?: AutomationId;
+    owner?: string;
+    agent?: string;
     status?: RunStatus;
     cursor?: string;
   }): Promise<{ runs: RunRecord[]; cursor?: string }>;
-  dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
+  dryRun(id: AutomationId): Promise<RunPlan>;
   stopRun(runId: RunId): Promise<void>;
   /** Run it again — a FRESH run of the same automation on the same triggering
    *  event (07 §1 `runs.rerun`). The remedy for a run that failed, and the second
@@ -33,16 +33,16 @@ export function useAutomations(options?: PollOptions): {
   const { data, error, isLoading, refresh } = useResource(list, [] as AutomationEntry[], options);
 
   const enable = useCallback(
-    async (id: AppId, triggerId: string) => {
-      const result = await client.automations.enable(id, triggerId);
+    async (id: AutomationId) => {
+      const result = await client.automations.enable(id);
       await refresh();
       return result;
     },
     [client, refresh],
   );
   const disable = useCallback(
-    async (id: AppId, triggerId: string) => {
-      await client.automations.disable(id, triggerId);
+    async (id: AutomationId) => {
+      await client.automations.disable(id);
       await refresh();
     },
     [client, refresh],

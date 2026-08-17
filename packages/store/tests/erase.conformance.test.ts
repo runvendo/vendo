@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { ERASE_TABLES, eraseStore } from "../src/erase.js";
 import { DDL } from "../src/schema.js";
-import { appFixture, approvalFixture, auditFixture, grantFixture } from "../src/fixtures.test-util.js";
+import { appFixture, approvalFixture, auditFixture, automationFixture, grantFixture } from "../src/fixtures.test-util.js";
 
 // 02-store §5: "A store-level erase API ... erases by subject (full erasure)
 // or by app, cascading the matching data across every table of §2's map, and is
@@ -22,10 +22,10 @@ describe("erase cascade covers the whole schema", () => {
   });
 });
 
-const seedRun = (appId: string): { id: string; data: Record<string, unknown> } => ({
-  id: `run_${appId}`,
+const seedRun = (automationId: string): { id: string; data: Record<string, unknown> } => ({
+  id: `run_${automationId}`,
   data: {
-    appId,
+    automationId,
     trigger: { kind: "schedule" },
     status: "ok",
     record: { done: true },
@@ -71,8 +71,13 @@ for (const backend of backends()) {
       await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
       const event = auditFixture("aud_erase_target", { principal: { kind: "user", subject: erased } });
       await store.records("vendo_audit").put({ id: event.id, data: event });
-      const run = seedRun(doc.id);
-      await store.records("vendo_runs").put(run);
+      // v11: the run belongs to an AUTOMATION, which belongs to the subject —
+      // there is no app on either row for the cascade to follow.
+      await store.records("vendo_automations").put({
+        id: "atm_erase_target",
+        data: automationFixture("atm_erase_target", { kind: "user", subject: erased }),
+      });
+      await store.records("vendo_runs").put(seedRun("atm_erase_target"));
       await store.records("vendo_mcp_grants").put({
         id: "mcpg_erase_target",
         data: { kind: "family", status: "active" },
@@ -128,6 +133,7 @@ for (const backend of backends()) {
         vendo_grants: 1,
         vendo_approvals: 1,
         vendo_audit: 1,
+        vendo_automations: 1,
         vendo_runs: 1,
         vendo_secrets: 0,
         vendo_mcp_clients: 0,
@@ -226,7 +232,6 @@ for (const backend of backends()) {
         await store.records(`app:${id}:notes`).put({ id: `note_${id}`, data: { body: id } });
         await store.blobs(`app:${id}:files`).put("f.txt", new Uint8Array([7]));
         await store.records("vendo_state").put({ id: `${id}:${subject}`, data: { n: 1 } });
-        await store.records("vendo_runs").put(seedRun(id));
         const grant = grantFixture(`grt_${id}`, { subject, appId: id });
         await store.records("vendo_grants").put({ id: grant.id, data: grant });
         const event = auditFixture(`aud_${id}`, { principal: { kind: "user", subject }, appId: id });
@@ -235,6 +240,13 @@ for (const backend of backends()) {
       };
       await seedApp("app_erase_drop");
       await seedApp("app_erase_keep");
+      // v11: runs hang off an automation, which has no app axis at all — an app
+      // erase must leave them exactly where they are.
+      await store.records("vendo_automations").put({
+        id: "atm_erase_by_app",
+        data: automationFixture("atm_erase_by_app", { kind: "user", subject }),
+      });
+      await store.records("vendo_runs").put(seedRun("atm_erase_by_app"));
       await store.records("vendo_threads").put({
         id: "thr_erase_by_app",
         data: { subject, messages: [] },
@@ -245,7 +257,7 @@ for (const backend of backends()) {
       expect(report.vendo_records).toBe(1);
       expect(report.vendo_blobs).toBe(1);
       expect(report.vendo_state).toBe(1);
-      expect(report.vendo_runs).toBe(1);
+      expect(report.vendo_runs).toBe(0); // no app axis since v11 — runs are an automation's
       expect(report.vendo_grants).toBe(1);
       expect(report.vendo_audit).toBe(1);
       expect(report.vendo_knowledge_docs).toBe(1);
@@ -256,7 +268,7 @@ for (const backend of backends()) {
       // The sibling app and the subject's thread survive.
       expect(await store.records("vendo_apps").get("app_erase_keep")).not.toBeNull();
       expect(await store.records("app:app_erase_keep:notes").get("note_app_erase_keep")).not.toBeNull();
-      expect(await store.records("vendo_runs").get("run_app_erase_keep")).not.toBeNull();
+      expect(await store.records("vendo_runs").get("run_atm_erase_by_app")).not.toBeNull();
       expect(await store.records("vendo_grants").get("grt_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_audit").get("aud_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_knowledge_docs").get("kn_app_erase_keep")).not.toBeNull();
