@@ -150,7 +150,14 @@ export const nodeToolchain = (): ScreenToolchain => ({
   async transform(source) {
     const transform = await esbuildTransform;
     if (transform === undefined) {
-      throw new ScreenToolchainUnavailable("no esbuild is reachable from @vendoai/apps");
+      // The why carries its own FIX: a host meets this in a server log, and the
+      // hand that has to act on it is the one that builds the server, not the one
+      // that wrote the screen. The field case is a bundled host — Next inlines
+      // esbuild's Node-only main unless it is named an external.
+      throw new ScreenToolchainUnavailable(
+        "no esbuild is reachable from @vendoai/apps — install esbuild where the server runs and keep it out"
+        + ' of the bundle (Next: serverExternalPackages: ["esbuild"] in next.config)',
+      );
     }
     return { engine: transform(source, "engine"), scan: transform(source, "scan") };
   },

@@ -127,6 +127,12 @@ export interface ComponentScreenOptions {
   toolchain?: ScreenToolchain;
 }
 
+/** The one issue code that is about the DEPLOYMENT and not the screen: the
+ *  toolchain could not run at all, so no screen would have passed and no rewrite
+ *  can help. The floor routes on it — a refusal carrying this code is marked
+ *  environmental all the way out (`ComponentPaintResult.environment`). */
+export const TOOLCHAIN_UNAVAILABLE = "toolchain-unavailable";
+
 const issue = (code: string, message: string): ComponentScreenIssue => ({ code, message });
 
 const refuse = (
@@ -569,9 +575,9 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
     // A toolchain that cannot compile is a FAILED check, not a skipped one:
     // nothing downstream can run without the compiled screen, and a gate that
     // read nothing must not answer "fine".
-    return refuse([issue("compile", error instanceof ScreenToolchainUnavailable
-      ? `the screen could not be compiled: ${error.message}, so nothing about this screen was checked. This check refuses to pass a screen it never read.`
-      : compileMessage(error))]);
+    return refuse([error instanceof ScreenToolchainUnavailable
+      ? issue(TOOLCHAIN_UNAVAILABLE, `the screen could not be compiled: ${error.message}, so nothing about this screen was checked. This check refuses to pass a screen it never read.`)
+      : issue("compile", compileMessage(error))]);
   }
   const compiled = forms.engine;
 

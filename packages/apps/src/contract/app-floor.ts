@@ -30,7 +30,15 @@ export interface AppFloor {
 /** What the floor's component gauntlet hands the render seam: a refusal with
  *  the blocking lines, or everything one paint needs. */
 export type ComponentPaintResult =
-  | { ok: false; blocking: readonly string[] }
+  | {
+    ok: false;
+    blocking: readonly string[];
+    /** The DEPLOYMENT could not check the screen — no compiler where the checks
+     *  run. Set only for that class, because it is the one refusal an author
+     *  cannot act on: handing these sentences back as repair instructions spends
+     *  a writer's whole budget rewriting a screen nothing ever read. */
+    environment?: true;
+  }
   | {
     ok: true;
     nodes: Record<string, TreeNode>;

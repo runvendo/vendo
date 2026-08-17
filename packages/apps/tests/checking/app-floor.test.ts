@@ -23,6 +23,7 @@ import {
 } from "../../src/contract/index.js";
 import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
 import { blocks, createAppFloor } from "../../src/server/checking/floor.js";
+import { ScreenToolchainUnavailable } from "../../src/server/checking/toolchain.js";
 
 const tools: HostToolInfo[] = [{
   name: "host_listInvoices",
@@ -118,6 +119,28 @@ describe("component runs the ONE gauntlet, and it is the paint gate", () => {
     expect(painted.ok).toBe(false);
     if (painted.ok) throw new Error("unreachable");
     expect(painted.blocking.join("\n")).toContain("composed no query runner");
+  });
+
+  it("marks a toolchain that could not RUN as the deployment's fault, remedy and all", async () => {
+    // The field failure: a bundled host where `import("esbuild")` resolves to
+    // nothing (`nodeToolchain`). Nothing the screen's author writes changes it,
+    // so the refusal is marked as environmental — a repair round spent on it is
+    // spent for nothing — and the toolchain's own why reaches the caller
+    // verbatim, so whoever CAN fix it reads the fix.
+    const why = "no esbuild is reachable from @vendoai/apps — install esbuild where the server runs and keep"
+      + ' it out of the bundle (Next: serverExternalPackages: ["esbuild"])';
+    const painted = await floor({
+      toolchain: {
+        transform: async () => { throw new ScreenToolchainUnavailable(why); },
+        typecheck: async () => ({ ok: true, issues: [] }),
+        paint: async () => { throw new Error("the gauntlet never reaches the paint"); },
+      },
+    }).component({ appId: "app_floor", source: GOOD });
+
+    expect(painted.ok).toBe(false);
+    if (painted.ok) throw new Error("unreachable");
+    expect(painted.environment).toBe(true);
+    expect(painted.blocking.join("\n")).toContain(why);
   });
 });
 
