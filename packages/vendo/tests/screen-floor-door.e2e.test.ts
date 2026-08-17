@@ -307,7 +307,7 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
  *  (`packages/apps/tests/checking/app-floor.test.ts` proves that half); here the
  *  loop's answer to it is what is measured, so the floor is a double. */
 const ENVIRONMENT = "the screen could not be compiled: no esbuild is reachable from @vendoai/apps"
-  + " — install esbuild where the server runs, so nothing about this screen was checked.";
+  + " — keep this package out of the server bundle, so nothing about this screen was checked.";
 
 describe("a refusal the loop cannot repair ends the run instead of a rewrite round", () => {
   it("spends ONE model call on an environment fault, and never says 'write the file again'", async () => {

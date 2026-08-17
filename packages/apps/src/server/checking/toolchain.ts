@@ -150,13 +150,17 @@ export const nodeToolchain = (): ScreenToolchain => ({
   async transform(source) {
     const transform = await esbuildTransform;
     if (transform === undefined) {
-      // The why carries its own FIX: a host meets this in a server log, and the
-      // hand that has to act on it is the one that builds the server, not the one
-      // that wrote the screen. The field case is a bundled host — Next inlines
-      // esbuild's Node-only main unless it is named an external.
+      // The why carries its own FIX, and the fix is THIS PACKAGE rather than
+      // esbuild: the import above hides its specifier behind a variable and
+      // bundler-ignore comments, so a bundler never sees an "esbuild" import to
+      // match an external against — naming esbuild alone is inert (measured on a
+      // fresh host). What has to stay out of the bundle is `@vendoai/apps`
+      // itself, so this module is still resolving esbuild from Node at runtime.
+      // The whole list is the one `vendo init` writes, so it pastes as it stands.
       throw new ScreenToolchainUnavailable(
-        "no esbuild is reachable from @vendoai/apps — install esbuild where the server runs and keep it out"
-        + ' of the bundle (Next: serverExternalPackages: ["esbuild"] in next.config)',
+        "no esbuild is reachable from @vendoai/apps — keep this package out of the server bundle (Next:"
+        + ' serverExternalPackages: ["esbuild", "@electric-sql/pglite", "@vendoai/store", "@vendoai/apps"]'
+        + " in next.config)",
       );
     }
     return { engine: transform(source, "engine"), scan: transform(source, "scan") };
