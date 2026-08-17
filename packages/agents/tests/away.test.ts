@@ -29,14 +29,14 @@ const readDescriptor: ToolDescriptor = {
 };
 
 /** The engine's fire-time ctx: the sponsor, venue "automation", presence "away",
- *  and the firing trigger's own id. */
+ *  and the firing automation's own id. */
 const fireCtx = (): RunContext => ({
   principal: { kind: "user", subject: "u_owner" },
   venue: "automation",
   presence: "away",
   sessionId: "sess_run_1",
   appId: "app_digest",
-  trigger: { runId: "run_1", kind: "host-event", id: "nightly" },
+  trigger: { runId: "run_1", kind: "host-event", automationId: "atm_nightly" },
 });
 
 /** A registry the runner is HANDED (the engine passes the task's guard-bound one),
@@ -80,14 +80,14 @@ async function armTrigger(store: VendoStore): Promise<void> {
     scope: { kind: "tool" as const },
     duration: "standing" as const,
     appId: "app_digest",
-    triggerId: "nightly",
+    automationId: "atm_nightly",
     source: "automation" as const,
     grantedAt: new Date().toISOString(),
   };
   await store.records("vendo_grants").put({
     id: grant.id,
     data: grant,
-    refs: { subject: grant.subject, tool: grant.tool, app_id: grant.appId, trigger_id: grant.triggerId },
+    refs: { subject: grant.subject, tool: grant.tool, app_id: grant.appId, automation_id: grant.automationId },
   });
 }
 
@@ -221,13 +221,13 @@ describe("awayRunner", () => {
 
     expect(seen?.interactive).toBe(false);
     // The registry is asked for descriptors with the FIRING ctx — venue, presence
-    // and the trigger id intact, because the guard's away-grant lookup matches on it.
+    // and the automation id intact, because the guard's away-grant lookup matches on it.
     const asked = registry.ctxs.find((ctx) => ctx !== undefined);
     expect(asked).toMatchObject({
       venue: "automation",
       presence: "away",
       appId: "app_digest",
-      trigger: { id: "nightly", runId: "run_1" },
+      trigger: { automationId: "atm_nightly", runId: "run_1" },
     });
   });
 

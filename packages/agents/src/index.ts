@@ -18,6 +18,11 @@ export {
   type VendoAgent,
 } from "./agent.js";
 export {
+  agentAutomationPlan,
+  agentAutomations,
+  type OnOptions,
+} from "./automations.js";
+export {
   awayRunner,
   type AgentReport,
   type AgentRun,
