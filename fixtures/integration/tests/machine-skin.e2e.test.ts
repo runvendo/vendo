@@ -35,7 +35,7 @@ import {
   BOB,
   createStack,
   hostFetch,
-  importAutomation,
+  importApp,
   resetFixture,
   type Stack,
 } from "../src/harness.js";
@@ -148,7 +148,7 @@ describe("machine skin: fn proxy, buildEnv, and the callback surface through the
     stack = await createStack({ sandbox: box.sandbox });
 
     // Import the app through the public wire as ADA.
-    const app = await importAutomation(stack, seedDoc, ADA);
+    const app = await importApp(stack, seedDoc, ADA);
 
     // --- Graduation's machine step (Lane B), as the ROW it leaves behind: the
     // box exists and the document points at its snapshot. Provisioning is the

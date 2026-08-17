@@ -45,7 +45,9 @@ next-env.d.ts
 /.vendo/data/
 voice-e2e/
 
-# fixtures/context-e2e boots its own dev server. A SIBLING of /.next/, never a
-# child: `next build` wipes its whole distDir, so a fixture's dist dir nested
-# under the build's would be deleted out from under a concurrent run.
+# fixtures/context-e2e and tests/vendo/away-drill each boot their own dev
+# server. SIBLINGS of /.next/, never children: `next build` wipes its whole
+# distDir, so a dist dir nested under the build's would be deleted out from
+# under a concurrent run.
 /.next-context-e2e/
+/.next-away-drill/

@@ -63,10 +63,8 @@ const publishStep = {
 
 const stepsPlan = (steps: unknown[]): string => JSON.stringify({
   name: "Overdue chaser",
-  trigger: {
-    on: { kind: "schedule", cron: "0 8 * * *" },
-    run: { kind: "steps", steps },
-  },
+  when: "0 8 * * *",
+  task: { kind: "steps", steps },
   resultsCollection: "chased",
 });
 
@@ -116,22 +114,20 @@ describe("automation authoring refuses irreversible work", () => {
     expect(contract).not.toContain(SEND_TOOL);
   });
 
-  it("refuses an agentic prompt whose point is the destructive tool", async () => {
-    const agentic = JSON.stringify({
+  it("refuses a goal prompt whose point is the destructive tool", async () => {
+    const goal = JSON.stringify({
       name: "Overdue chaser",
-      trigger: {
-        on: { kind: "schedule", cron: "0 8 * * *" },
-        run: {
-          kind: "agentic",
-          prompt: `Find the overdue invoices with host_invoices_list and ${SEND_TOOL} a reminder for each one.`,
-          budget: { maxToolCalls: 20 },
-        },
+      when: "0 8 * * *",
+      task: {
+        kind: "goal",
+        prompt: `Find the overdue invoices with host_invoices_list and ${SEND_TOOL} a reminder for each one.`,
+        budget: { maxToolCalls: 20 },
       },
     });
 
     const result = await planAutomation(
-      { ...stepsInput, mode: "agentic" },
-      scriptedLanguageModel(agentic),
+      { ...stepsInput, mode: "goal" },
+      scriptedLanguageModel(goal),
     );
 
     const refusal = issuesOf(result).find((issue) => issue.includes(SEND_TOOL));
@@ -145,6 +141,6 @@ describe("automation authoring refuses irreversible work", () => {
     expect(result.kind).toBe("plan");
     if (result.kind !== "plan") return;
     expect(result.plan.resultsCollection).toBe("chased");
-    expect(result.plan.trigger.run.kind).toBe("steps");
+    expect(result.plan.task.kind).toBe("steps");
   });
 });

@@ -4,7 +4,7 @@
  *   1. A run whose steps reference two tools, one granted at capture and one
  *      DENIED, executes the granted step and FAILS LOUDLY on the ungranted one,
  *      naming the tool it needed: there is no waiting state left (07 §5).
- *   2. Deciding the captured ask over the wire mints an app-bound
+ *   2. Deciding the captured ask over the wire mints an AUTOMATION-bound
  *      `source:"automation"` grant and RESUMES NOTHING — the failed run stays
  *      failed. The remedy is POST /runs/:id/rerun, a fresh run, and it is that
  *      run which lands the deferred host side effect.
@@ -14,8 +14,8 @@
  *      distinct outcomes across the revocation — now told apart by the run's
  *      error rather than its status — and the host is untouched either way.
  *   4. The 05 §6 boundary at the COMPOSED level: a chat-source grant (minted via a
- *      present chat approval with `remember`, so NO appId binding) never authorizes
- *      an away run — the automation fails loud instead.
+ *      present chat approval with `remember`, so NO automation binding) never
+ *      authorizes an away run — the automation fails loud instead.
  *
  * Nothing here polls. Park and resume are gone, so no run is ever finished by
  * something other than the call that started it: `vendo.emit` and POST
@@ -25,13 +25,13 @@
  * whenever the machine was merely busy.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { UNATTENDED_DESTRUCTIVE_REASON, type AppDocument } from "@vendoai/core";
+import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import {
   ADA,
+  createAutomation,
   createStack,
   decideApprovals,
   hostFetch,
-  importAutomation,
   readSseMidStream,
   resetFixture,
   textTurn,
@@ -51,17 +51,21 @@ afterEach(async () => {
   await stack?.close();
 });
 
-function stepsAutomation(event: string, steps: Array<{ id: string; tool: string; args?: Record<string, string> }>): AppDocument {
-  return {
-    format: "vendo/app@1",
-    id: "app_import_placeholder",
-    name: "J5 automation",
-    triggers: [{ id: "main", on: { kind: "host-event", event }, run: { kind: "steps", steps } }],
-  };
+/** A host-event automation as a RECORD. An automation carries no app reference,
+ *  and a steps task reaches host tools by naming them right here. */
+async function automationFor(
+  event: string,
+  steps: Array<{ id: string; tool: string; args?: Record<string, string> }>,
+): Promise<string> {
+  return (await createAutomation(stack, {
+    owner: ADA,
+    when: { event },
+    task: { kind: "steps", steps },
+  })).id;
 }
 
-async function enableMissing(appId: string): Promise<WireApproval[]> {
-  const enabled = (await (await stack.wireFetch(`/automations/${appId}/enable`, { method: "POST" }, ADA)).json()) as {
+async function enableMissing(automationId: string): Promise<WireApproval[]> {
+  const enabled = (await (await stack.wireFetch(`/automations/${automationId}/enable`, { method: "POST" }, ADA)).json()) as {
     enabled: boolean;
     missing: WireApproval[];
   };
@@ -95,7 +99,7 @@ async function readRun(runId: string): Promise<WireRun> {
 }
 
 /** The fail-loud remedy over the wire (POST /runs/:id/rerun): a FRESH run of the
- *  same trigger on the same event, against live data. Returns its id. */
+ *  same automation on the same event, against live data. Returns its id. */
 async function rerun(runId: string): Promise<string> {
   const response = await stack.wireFetch(`/runs/${runId}/rerun`, { method: "POST" }, ADA);
   expect(response.status).toBe(200);
@@ -109,21 +113,16 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
   // here the re-run would be blocked by the law and this leg could no longer
   // show a decision buying real authority — the exact substitution S2 made in
   // `automations-e2e/fail-loud`. The law's own refusal is leg 3 below.
-  it("fails loud on the ungranted step, mints an app-bound grant on the decision, and the re-run lands the side effect", async () => {
+  it("fails loud on the ungranted step, mints an automation-bound grant on the decision, and the re-run lands the side effect", async () => {
     await resetFixture();
     stack = await createStack();
-    const imported = await importAutomation(
-      stack,
-      stepsAutomation("j5.miss", [
-        { id: "list", tool: LIST },
-        { id: "sweep", tool: UPDATE, args: { id: "event.id", memo: "'j5-swept'" } },
-      ]),
-      ADA,
-    );
-    const appId = imported.id;
+    const automationId = await automationFor("j5.miss", [
+      { id: "list", tool: LIST },
+      { id: "sweep", tool: UPDATE, args: { id: "event.id", memo: "'j5-swept'" } },
+    ]);
 
     // Capture: approve list, DENY sweep — the run will hold a grant for one tool only.
-    const missing = await enableMissing(appId);
+    const missing = await enableMissing(automationId);
     const listId = missing.find((request) => request.call.tool === LIST)!.id;
     const sweepCaptureId = missing.find((request) => request.call.tool === UPDATE)!.id;
     expect((await decideApprovals(stack, [listId], { approve: true }, ADA)).status).toBe(200);
@@ -147,24 +146,40 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
     // The ask it failed on is an away approval owned by ADA, visible on the wire.
     const awaySweep = await pendingAway(UPDATE);
     expect(awaySweep).toBeDefined();
-    const awayRows = await stack.sql<{ venue: string; presence: string; app_id: string | null }>(
+    // The ask carries no appId at all — a firing has no app. What binds it is
+    // the RECORD, on the ctx's trigger, which is also the guard's away-grant key.
+    const awayRows = await stack.sql<{
+      venue: string;
+      presence: string;
+      app_id: string | null;
+      automation_id: string | null;
+    }>(
       `SELECT request->'ctx'->>'venue' AS venue,
               request->'ctx'->>'presence' AS presence,
-              request->'ctx'->>'appId' AS app_id
+              request->'ctx'->>'appId' AS app_id,
+              request->'ctx'->'trigger'->>'automationId' AS automation_id
          FROM vendo_approvals WHERE id = $1`,
       [awaySweep!.id],
     );
-    expect(awayRows).toEqual([{ venue: "automation", presence: "away", app_id: appId }]);
+    expect(awayRows).toEqual([
+      { venue: "automation", presence: "away", app_id: null, automation_id: automationId },
+    ]);
 
     // --- Decide approve over the wire → authority, not a resumption ---------
     expect((await decideApprovals(stack, [awaySweep!.id], { approve: true }, ADA)).status).toBe(200);
-    // The decision minted an app-bound automation grant for the swept tool…
+    // The decision minted an AUTOMATION-bound standing grant for the swept tool,
+    // carrying no app_id: the grant belongs to the record the person was shown.
     expect(await stack.sql(
-      "SELECT subject, tool, app_id, source, duration FROM vendo_grants WHERE tool = $1 AND app_id = $2",
-      [UPDATE, appId],
-    )).toEqual([
-      { subject: ADA.subject, tool: UPDATE, app_id: appId, source: "automation", duration: "standing" },
-    ]);
+      "SELECT subject, tool, app_id, automation_id, source, duration FROM vendo_grants WHERE tool = $1 AND automation_id = $2",
+      [UPDATE, automationId],
+    )).toEqual([{
+      subject: ADA.subject,
+      tool: UPDATE,
+      app_id: null,
+      automation_id: automationId,
+      source: "automation",
+      duration: "standing",
+    }]);
     // …and ran nothing: the failed run is still failed, the host still untouched.
     expect((await readRun(runId)).status).toBe("error");
     expect(await invoice("inv_0003")).toEqual(before);
@@ -185,13 +200,10 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
   it("revocation is live: after DELETE /grants/:id the next run fails loud and the host is untouched", async () => {
     await resetFixture();
     stack = await createStack();
-    const imported = await importAutomation(
-      stack,
-      stepsAutomation("j5.revoke", [{ id: "send", tool: SEND, args: { id: "event.id" } }]),
-      ADA,
-    );
-    const appId = imported.id;
-    const missing = await enableMissing(appId);
+    const automationId = await automationFor("j5.revoke", [
+      { id: "send", tool: SEND, args: { id: "event.id" } },
+    ]);
+    const missing = await enableMissing(automationId);
     expect((await decideApprovals(stack, missing.map((request) => request.id), { approve: true }, ADA)).status).toBe(200);
 
     // First run: the standing grant does NOT authorize the away send. THE LAW
@@ -210,9 +222,9 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
     const grants = (await (await stack.wireFetch("/grants", {}, ADA)).json()) as Array<{
       id: string;
       tool: string;
-      appId?: string;
+      automationId?: string;
     }>;
-    const sendGrant = grants.find((grant) => grant.tool === SEND && grant.appId === appId);
+    const sendGrant = grants.find((grant) => grant.tool === SEND && grant.automationId === automationId);
     expect(sendGrant).toBeDefined();
     expect((await stack.wireFetch(`/grants/${sendGrant!.id}`, { method: "DELETE" }, ADA)).status).toBe(200);
     expect((await stack.sql<{ revoked_at: unknown }>(
@@ -234,7 +246,7 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
     expect(await invoice("inv_0002")).toEqual(before);
   });
 
-  it("a chat-source grant (no appId) never authorizes an away run — the automation fails loud (05 §6)", async () => {
+  it("a chat-source grant (no automation binding) never authorizes an away run — the automation fails loud (05 §6)", async () => {
     // The chat leg needs the scripted model: a destructive delete parks in chat,
     // approve+remember mints a STANDING chat grant with no appId binding.
     await resetFixture();
@@ -281,28 +293,26 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
     )).toEqual([{ source: "chat", app_id: null, duration: "standing" }]);
 
     // --- The automation references the same tool; deny its capture --------
-    const imported = await importAutomation(
-      stack,
-      stepsAutomation("j5.chatgrant", [{ id: "delete", tool: DELETE, args: { id: "event.id" } }]),
-      ADA,
-    );
-    const appId = imported.id;
-    const missing = await enableMissing(appId);
+    const automationId = await automationFor("j5.chatgrant", [
+      { id: "delete", tool: DELETE, args: { id: "event.id" } },
+    ]);
+    const missing = await enableMissing(automationId);
     expect((await decideApprovals(stack, missing.map((request) => request.id), { approve: false }, ADA)).status).toBe(200);
 
     // Grant sets (demo-live-readiness): a consent moment refused WHOLESALE
     // (every capture denied, nothing granted) disarms the automation in the
-    // same decision — the row must not sit enabled-but-ungranted.
+    // same decision — the row must not sit enabled-but-ungranted. GET /automations
+    // is a FLAT list of records now, and `armed` is the field that says so.
     const listed = (await (await stack.wireFetch("/automations", {}, ADA)).json()) as Array<{
-      app: { id: string };
-      triggers: Array<{ enabled: boolean }>;
+      id: string;
+      armed: boolean;
     }>;
-    expect(listed.find((entry) => entry.app.id === appId)?.triggers[0]?.enabled).toBe(false);
+    expect(listed.find((entry) => entry.id === automationId)?.armed).toBe(false);
 
     // Re-arm; the re-minted capture ask stays UNDECIDED — an open ask leaves
     // the automation armed and the ungranted step fails loud at fire time, the
     // moment this leg actually exercises.
-    await enableMissing(appId);
+    await enableMissing(automationId);
 
     // --- Fire: the away run fails loud; the chat grant does not carry across --
     expect(await invoice("inv_0002")).toBeDefined(); // exists before
@@ -312,11 +322,12 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
     expect(failed.steps.at(-1)).toMatchObject({ tool: DELETE, outcome: "pending-approval" });
     const away = await pendingAway(DELETE);
     expect(away).toBeDefined();
-    expect((await stack.sql<{ presence: string; app_id: string | null }>(
-      `SELECT request->'ctx'->>'presence' AS presence, request->'ctx'->>'appId' AS app_id
+    expect((await stack.sql<{ presence: string; automation_id: string | null }>(
+      `SELECT request->'ctx'->>'presence' AS presence,
+              request->'ctx'->'trigger'->>'automationId' AS automation_id
          FROM vendo_approvals WHERE id = $1`,
       [away!.id],
-    ))).toEqual([{ presence: "away", app_id: appId }]);
+    ))).toEqual([{ presence: "away", automation_id: automationId }]);
     // Host untouched: the chat-granted delete never ran away.
     expect(await invoice("inv_0002")).toBeDefined();
   });

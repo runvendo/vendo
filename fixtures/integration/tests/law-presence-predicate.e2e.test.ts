@@ -1,7 +1,7 @@
 /** THE LAW's predicate is PRESENCE, never the venue label (design §12,
  * clarification 2026-07-31) — proven at the COMPOSED wire.
  *
- * `POST /automations/:appId/enable` resolves `{ venue: "automation",
+ * `POST /automations/:id/enable` resolves `{ venue: "automation",
  * presence: "present" }`: a human is right there clicking. When the predicate
  * ORed the venue in, the enable ceremony's descriptor lookup was filtered by
  * the law and a registered host tool came back as
@@ -13,8 +13,7 @@
  * consent card for it, and the card is addressed to a PRESENT person.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { AppDocument } from "@vendoai/core";
-import { ADA, createStack, importAutomation, resetFixture, type Stack } from "../src/harness.js";
+import { ADA, createAutomation, createStack, resetFixture, type Stack } from "../src/harness.js";
 
 const SEND = "host_invoices_send";
 
@@ -27,19 +26,13 @@ describe("THE LAW: the enable ceremony sees the tools it asks about", () => {
   it("enables an automation declaring a destructive host tool and cards it, instead of 'unknown tool'", async () => {
     await resetFixture();
     stack = await createStack();
-    const doc: AppDocument = {
-      format: "vendo/app@1",
-      id: "app_import_placeholder",
-      name: "Law predicate automation",
-      triggers: [{
-        id: "main",
-        on: { kind: "host-event", event: "law.predicate" },
-        run: { kind: "steps", steps: [{ id: "send", tool: SEND, args: { id: "event.id" } }] },
-      }],
-    };
-    const { id: appId } = await importAutomation(stack, doc, ADA);
+    const { id } = await createAutomation(stack, {
+      owner: ADA,
+      when: { event: "law.predicate" },
+      task: { kind: "steps", steps: [{ id: "send", tool: SEND, args: { id: "event.id" } }] },
+    });
 
-    const response = await stack.wireFetch(`/automations/${appId}/enable`, { method: "POST" }, ADA);
+    const response = await stack.wireFetch(`/automations/${id}/enable`, { method: "POST" }, ADA);
     const body = (await response.json()) as {
       enabled?: boolean;
       missing?: Array<{ call: { tool: string }; ctx?: { venue?: string; presence?: string } }>;

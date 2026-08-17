@@ -657,6 +657,14 @@ jobs:
         if: steps.affected.outputs.skip != 'true'
         env:
           SUITES: ${{ matrix.suites }}
+          # The live-agentic leg is the only suite that needs a real model. A
+          # repository secret is not readable by a pull request from a fork, so
+          # handing it out ONLY on a push to main (never a PR, never the merge
+          # queue) is what keeps the key off a run a stranger can trigger — and
+          # the suite's own `describe.skipIf` makes the empty string a clean
+          # no-op everywhere else. Scoped to the automations leg because no
+          # other leg has a live-model suite to unlock.
+          ANTHROPIC_API_KEY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.name == 'automations' && secrets.ANTHROPIC_API_KEY || '' }}
         run: |
           set -euo pipefail
           for pkg in $SUITES; do

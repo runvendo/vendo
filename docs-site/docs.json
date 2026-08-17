@@ -83,6 +83,7 @@
               "backend/quickstart",
               "backend/converse",
               "backend/run",
+              "backend/automate",
               "backend/your-own-surface"
             ]
           },

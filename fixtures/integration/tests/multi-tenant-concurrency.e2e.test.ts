@@ -29,7 +29,8 @@ import {
   createStack,
   decideApprovals,
   hostFetch,
-  importAutomation,
+  createAutomation,
+  importApp,
   loginCookie,
   readSse,
   resetFixture,
@@ -66,25 +67,20 @@ function tenantApp(subject: string): AppDocument {
   } as AppDocument;
 }
 
-/** A tenant-tagged host-event automation that creates one invoice. */
-function tenantAutomation(subject: string): AppDocument {
-  return {
-    format: "vendo/app@1",
-    id: "app_placeholder",
-    name: `Automation for ${subject}`,
-    trigger: {
-      on: { kind: "host-event", event: EVENT },
-      run: {
-        kind: "steps",
-        steps: [{
-          id: "create",
-          tool: CREATE,
-          args: { customerId: "'cus_j10'", amountCents: "111", currency: "'USD'", memo: `'J10 ${subject}'` },
-        }],
-      },
-    },
-  } as AppDocument;
-}
+/** A tenant-tagged host-event automation that creates one invoice. Each tenant
+ *  OWNS its record, which is the whole isolation surface under test here. */
+const tenantAutomation = (tenant: Principal) => createAutomation(stack, {
+  owner: tenant,
+  when: { event: EVENT },
+  task: {
+    kind: "steps",
+    steps: [{
+      id: "create",
+      tool: CREATE,
+      args: { customerId: "'cus_j10'", amountCents: "111", currency: "'USD'", memo: `'J10 ${tenant.subject}'` },
+    }],
+  },
+});
 
 async function hostInvoiceMemos(subject: string): Promise<string[]> {
   const response = await hostFetch("/api/invoices", subject);
@@ -117,14 +113,14 @@ describe("J10: multi-tenant isolation holds under concurrent chat/apps/automatio
         }),
       }, tenant));
       expect(chat.raw.includes("Working on it.")).toBe(true);
-      const app = await importAutomation(stack, tenantApp(tenant.subject), tenant);
+      const app = await importApp(stack, tenantApp(tenant.subject), tenant);
       return { tenant, appId: app.id };
     }));
     const appIdBySubject = new Map(created.map(({ tenant, appId }) => [tenant.subject, appId]));
 
-    // --- Phase 2: import+enable+approve+fire an automation, all at once --------
+    // --- Phase 2: author+enable+approve+fire an automation, all at once --------
     const runs = await Promise.all(TENANTS.map(async (tenant) => {
-      const automation = await importAutomation(stack, tenantAutomation(tenant.subject), tenant);
+      const automation = await tenantAutomation(tenant);
       const enabled = (await (await stack.wireFetch(`/automations/${automation.id}/enable`, { method: "POST" }, tenant)).json()) as {
         enabled: boolean;
         missing: WireApproval[];
@@ -164,13 +160,20 @@ describe("J10: multi-tenant isolation holds under concurrent chat/apps/automatio
     const appRows = await stack.sql<{ subject: string; count: number }>(
       "SELECT subject, COUNT(*)::int AS count FROM vendo_apps GROUP BY subject",
     );
-    // 2 apps per tenant (the plain app + the automation app document).
+    // ONE app per tenant now: the automation is a record in its own table, not a
+    // second app document.
     for (const tenant of TENANTS) {
-      expect(Number(appRows.find((row) => row.subject === tenant.subject)?.count)).toBe(2);
+      expect(Number(appRows.find((row) => row.subject === tenant.subject)?.count)).toBe(1);
     }
-    // vendo_runs is keyed by app_id; a run's owner is its app's subject.
+    const automationRows = await stack.sql<{ subject: string; count: number }>(
+      "SELECT subject, COUNT(*)::int AS count FROM vendo_automations GROUP BY subject",
+    );
+    for (const tenant of TENANTS) {
+      expect(Number(automationRows.find((row) => row.subject === tenant.subject)?.count)).toBe(1);
+    }
+    // vendo_runs is keyed by automation_id; a run's owner is its record's subject.
     const runRows = await stack.sql<{ subject: string; count: number }>(
-      "SELECT a.subject AS subject, COUNT(*)::int AS count FROM vendo_runs r JOIN vendo_apps a ON a.id = r.app_id GROUP BY a.subject",
+      "SELECT m.subject AS subject, COUNT(*)::int AS count FROM vendo_runs r JOIN vendo_automations m ON m.id = r.automation_id GROUP BY m.subject",
     );
     for (const tenant of TENANTS) {
       expect(Number(runRows.find((row) => row.subject === tenant.subject)?.count)).toBe(1);
