@@ -389,12 +389,27 @@ function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
 
 function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
   if (ctx.presence === "away") {
-    // Per AUTOMATION: an away run is one record, consented to on its own — the
-    // person arming it was shown that record's task. An automation carries no
-    // app reference at all, so the id is the whole match; a grant with none can
-    // never authorize an away call.
-    return grant.automationId !== undefined && grant.automationId === ctx.trigger?.automationId
-      && grant.source === "automation";
+    // The binding comes from WHICH IDENTITY THE CTX CARRIES, and the two arms are
+    // MUTUALLY EXCLUSIVE — the discriminator is the TRIGGER, because that is what
+    // makes a run an automation firing at all.
+    //
+    // A FIRING (it carries a trigger) is one record, consented to on its own — the
+    // person arming it was shown that record's task — and a record carries no app
+    // reference, so the automation id is the WHOLE match and a grant naming none
+    // rides nothing away. Keying this arm on `trigger.automationId` instead of on
+    // the trigger's mere presence would let a firing that carries an appId but no
+    // automation id fall through to the app arm and ride an app-bound yes
+    // (mint-grant.test.ts:118-130) — one app's yes riding every automation in it.
+    //
+    // NO trigger at all means it is nobody's firing: a boxed ("machine", layer-2)
+    // app callback, which `wire/box.ts:309-315` mints as
+    // `{ venue: "app", presence: "away", appId }`. It has only the app it runs as,
+    // so the app is the whole match — main's away rule for this venue.
+    if (grant.source !== "automation") return false;
+    if (ctx.trigger !== undefined) {
+      return grant.automationId !== undefined && grant.automationId === ctx.trigger.automationId;
+    }
+    return grant.appId !== undefined && grant.appId === ctx.appId;
   }
   return grant.appId === undefined || grant.appId === ctx.appId;
 }
