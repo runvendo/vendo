@@ -36,18 +36,26 @@ const stopTurn = (): StreamPart[] => [
 ];
 
 /** A meter over a model that replays the given turns, so the loop — not a real
- *  model — decides what lands. */
-function scripted(turns: StreamPart[][]): Meter {
+ *  model — decides what lands. It keeps the brief it was sent, because the only
+ *  honest reading of what the vendo column was handed is the prompt that really
+ *  went on the wire. */
+function scripted(turns: StreamPart[][]): Meter & { system: () => string } {
   const remaining = turns.map((turn) => [...turn]);
   let tick = 0;
+  let system = "";
   const model = new MockLanguageModelV3({
-    doStream: async () => {
+    doStream: async ({ prompt }) => {
+      system = prompt
+        .filter((message) => message.role === "system")
+        .map((message) => message.content as string)
+        .join("\n");
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
       return { stream: simulateReadableStream({ chunks }) };
     },
   });
   return {
+    system: () => system,
     model,
     elapsedMs: () => (tick += 1),
     totals: () => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }),
@@ -82,6 +90,39 @@ beforeAll(async () => {
 });
 
 const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show this month's spending", pass: [], shape: "table" });
+
+/**
+ * The fairness assertion for the column every other column is measured against.
+ *
+ * `diy.test.ts` proves each baseline is handed the world block and nothing more.
+ * This is the same claim on the vendo side: the screen agent's brief ends with
+ * the tools it may hand the person a button for, and that list is the registry's
+ * write half — so every write verb the apps runtime happens to serve landed in
+ * it with its full JSON Schema. `vendo_apps_pin`, `vendo_apps_unpin`,
+ * `vendo_apps_reseed`, `vendo_apps_data_put` and `vendo_apps_data_delete` are
+ * not this world's tools, no case can use one, and no baseline is told they
+ * exist — they were kilobytes of prompt only this column paid for.
+ */
+describe("the vendo column is offered the world's tools and nothing else", () => {
+  const CALL_HEADING = "## This product's tools your screen can CALL";
+
+  /** The names the brief offers as buttons, read off the prompt the model was
+   *  really sent — `toolBrief` prints one `- name — description` line each. */
+  const offeredNames = (system: string): readonly string[] =>
+    [...(system.split(CALL_HEADING)[1] ?? "").matchAll(/^- (\w+) — /gm)].map((match) => match[1]!);
+
+  it("names exactly the world's own write tools, and no platform verb", async () => {
+    const meter = scripted([stopTurn()]);
+    await vendoDriver().run({ world, testCase: caseFor("wireable"), meter });
+
+    // The read half is equipped as real tools with their own schemas, so the
+    // brief's list is the world's writes — the tools a screen can only reach
+    // from a button.
+    expect(offeredNames(meter.system())).toEqual(
+      world.tools.filter((tool) => tool.descriptor.risk === "write").map((tool) => tool.name),
+    );
+  });
+});
 
 describe("the vendo driver reports one revision", () => {
   it("does not report an earlier revision's view beside a final save that never painted", async () => {

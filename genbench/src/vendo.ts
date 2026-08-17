@@ -176,7 +176,18 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   const runtimeTools = apps.agentTools();
   appsTools = {
     async descriptors(listCtx) {
-      return [...(await runtimeTools.descriptors(listCtx)), ...(await verbs.descriptors(listCtx))];
+      // Read-risk only, and that is a FAIRNESS filter, not a permission one. The
+      // screen agent equips the read verbs it needs and offers everything else
+      // it was listed as a tool a button may wire (`screen-agent.ts`'s
+      // `callable`), so serving the runtime's write verbs put `vendo_apps_pin`,
+      // `vendo_apps_unpin`, `vendo_apps_reseed`, `vendo_apps_data_put` and
+      // `vendo_apps_data_delete` in this column's brief with full schemas — ~3KB
+      // of platform surface no bench case can use, and no baseline is handed
+      // (`diy.test.ts`). The world's tools are the only tools any contender may
+      // wire. `validate` still routes: `execute` below is untouched, and the
+      // loop calls it by name rather than off this list.
+      const runtime = await runtimeTools.descriptors(listCtx);
+      return [...runtime.filter((descriptor) => descriptor.risk === "read"), ...(await verbs.descriptors(listCtx))];
     },
     async execute(call, callCtx) {
       const fromVerbs = await verbs.descriptors(callCtx);
