@@ -19,8 +19,10 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import type { VendoComposition } from "./compose-context.js";
+import { cloudKeyOptions } from "./compose-selection.js";
 import { isHostedStore, reportHostedStoreOnce } from "./compose-store.js";
 import { assembleSystemPrompt } from "./prompt.js";
+import { enrolForTicks } from "./tick-enrolment.js";
 
 /** How often a development process ticks its own scheduler. One minute is the
  *  engine's own `start()` default: fine-grained enough for the shortest real
@@ -61,7 +63,8 @@ export function armDevTicker(start: () => () => void, host: Record<symbol, unkno
 /** The automations engine, the create seam the apps doors author through, and
  *  the boot reconcile the ready() latch drives. */
 export const composeAutomations = (composition: VendoComposition): Pick<VendoComposition,
-  "hostedStoreComposed" | "automations" | "createAutomation" | "bootReconcile" | "startDevAutomationsTicker"> => {
+  "hostedStoreComposed" | "automations" | "createAutomation" | "bootReconcile"
+  | "startDevAutomationsTicker" | "enrolForCloudTicks"> => {
   const { store, ops, boundTools, guard, harness, files, capability, inference } = composition;
   const { system, resolveRisk, membershipsSeam, automationsMounted, config } = composition;
   // The same derivation compose-wire's `development` uses: an explicit
@@ -166,12 +169,25 @@ export const composeAutomations = (composition: VendoComposition): Pick<VendoCom
     if (!development || !automationsMounted) return;
     armDevTicker(() => automations.start(DEV_TICK_INTERVAL_MS));
   };
+  // The DEPLOYED half of the same story: Cloud's heartbeat is what wakes a hosted
+  // deployment, and it can only knock on a door it has been told about. Nothing is
+  // configured — the secret is derived from the Cloud key this process already has
+  // — and enrolment is idempotent on (project, host), so every boot of every
+  // replica calling it is the intended usage. Fired from the ready() latch like
+  // the ticker; every condition and every failure lives in enrolForTicks.
+  const enrolForCloudTicks = (): Promise<void> => enrolForTicks({
+    cloud: cloudKeyOptions(),
+    automationsMounted,
+    development,
+    publicUrl: composition.urls?.publicUrl,
+  });
   return {
     hostedStoreComposed,
     automations,
     createAutomation: internals.create,
     bootReconcile,
     startDevAutomationsTicker,
+    enrolForCloudTicks,
   };
 };
 
