@@ -142,6 +142,33 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_report_capability_miss: "Note what I can't do",
 };
 
+/** Prettify a raw tool id / slug into a human label:
+    `host_email_send` → "Email send", `fn:listInvoices` → "List invoices",
+    `gmail_GMAIL_CREATE_EMAIL_DRAFT` → "Gmail create email draft".
+
+    Beside {@link VENDO_TOOL_TITLES} rather than in the render layer for the same
+    reason that table is: §3's voice law binds every surface, and the engine writes
+    consent sentences with no UI on hand (`serviceToolPhrase` is its sibling for
+    service slugs). Chrome's `toolTitle` falls back to it; so does an automation's
+    display name, which is its first step. */
+export function humanizeToolName(raw: string): string {
+  const stripped = raw.replace(/^fn:/i, "").replace(/^host[_:.\- ]?/i, "");
+  const words = stripped
+    // camelCase / PascalCase boundaries
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    // any run of separators
+    .replace(/[._:\-\s]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map(word => word.toLowerCase());
+  // Collapse consecutive duplicate tokens ("gmail GMAIL …" → "gmail …").
+  const deduped = words.filter((word, index) => word !== words[index - 1]);
+  if (deduped.length === 0) return raw;
+  const sentence = deduped.join(" ");
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
 /**
  * The description a MODEL is given for one tool: its human title first, then the
  * operational text.

@@ -2,16 +2,20 @@
  * §9.9's stop sentences, in one place — the list, the fire-time gate and the
  * stopped run row all print them and have to match byte for byte.
  */
-import type { AutomationRecord } from "@vendoai/core";
+import { humanizeToolName, type AutomationRecord } from "@vendoai/core";
 import type { Sponsorship } from "./sponsorship.js";
 
 /** What to CALL an automation in a sentence a person reads. A record has no
  *  name field — it is a task, so the task is the name. Capped, because this
- *  goes inside a sentence and a goal prompt can be a paragraph. */
+ *  goes inside a sentence and a goal prompt can be a paragraph.
+ *
+ *  A goal's prompt is already a person's words; a step's tool is an IDENTIFIER,
+ *  and design §3's voice law is that no surface prints one at someone — so it
+ *  arrives through the same prettifier chrome titles a tool chip with. */
 export const automationName = (record: AutomationRecord): string => {
   const text = record.task.kind === "goal"
     ? record.task.prompt.trim()
-    : record.task.steps[0]?.tool ?? "";
+    : humanizeToolName(record.task.steps[0]?.tool ?? "");
   return text.length <= 60 ? text || record.id : `${text.slice(0, 59)}…`;
 };
 
