@@ -156,7 +156,9 @@ export function LauncherFace({ status, label, icon }: {
     ? `${status.label}…`
     : status.askCount > 0
       ? `${status.askCount} waiting on you`
-      : status.unseenResults ? "New results in your conversation" : "";
+      // The dot means a finished run OR an app that has never rendered for
+      // them, so the spoken half names neither: it says something arrived.
+      : status.unseenResults ? "Something new to look at" : "";
   return (
     <>
       {status.working

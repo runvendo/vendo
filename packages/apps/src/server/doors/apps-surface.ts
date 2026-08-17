@@ -88,7 +88,12 @@ const createAppReadDoors = (
       // placed slot, the palette), so "rendering marks it seen" needs no client
       // to remember anything. Idempotent, so the build-window poll that calls
       // open() every 1.2s writes once.
-      await appSeen.mark(appId, ctx.principal.subject);
+      //
+      // A build still in flight has rendered NOTHING yet, whatever this door
+      // answers it with — so it is not seen. That poll is the same caller
+      // asking again, and the first answer carrying a finished app is the one
+      // that marks it.
+      if (app.building === undefined) await appSeen.mark(appId, ctx.principal.subject);
       // Review-kind (2026-08-02): an unapproved current version is invisible —
       // open() serves the newest APPROVED version from the existing history
       // instead (or the pending state when none was ever approved). Instant
