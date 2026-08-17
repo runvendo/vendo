@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
+import { GRACE_MS, useMenuDismiss } from "./remixable.js";
+import { vendoToast } from "./vendo-toasts.js";
 
 /**
  * S3 — what a person can DO with the app someone pinned into a host slot.
@@ -17,10 +19,13 @@ import { openVendoConversation } from "./overlay-registry.js";
  * CSS-only reveal dies on the way to the pill, so the pill could never be
  * clicked. Touch has no hover at all, so a tap on the app reveals the seed and
  * a tap anywhere else puts it away.
+ *
+ * The bloom's timing and the dismissal are Remixable's own — imported, not
+ * restated, so the two ✦ marks can never drift apart. `useMenuDismiss` is
+ * scoped TWICE here, which is the whole of the touch behavior: the popover
+ * closes on a press outside the popover, and the mark only goes away on a press
+ * outside the APP, so tapping the app cannot undo the tap that revealed it.
  */
-
-/** Cursor travel from the app to the pill, and no longer. */
-const GRACE_MS = 200;
 
 export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, children }: {
   appId: string;
@@ -35,8 +40,8 @@ export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, childre
   const [revealed, setRevealed] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const wrap = useRef<HTMLDivElement>(null);
+  const wrap = useMenuDismiss(open, setOpen);
+  const root = useMenuDismiss(revealed, setRevealed);
   const grace = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(grace.current), []);
 
@@ -54,31 +59,6 @@ export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, childre
       if (root.current?.contains(document.activeElement) !== true) setRevealed(false);
     }, GRACE_MS);
   };
-
-  // Escape and a press outside close the popover. The SEED only goes away when
-  // the press lands outside the app entirely: on touch nothing ever "leaves",
-  // so this is the whole dismissal, and a tap on the app itself must not undo
-  // the tap that just revealed the mark.
-  useEffect(() => {
-    if (!revealed && !open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target instanceof Node ? event.target : null;
-      if (target !== null && wrap.current?.contains(target)) return;
-      setOpen(false);
-      if (target === null || root.current?.contains(target) !== true) setRevealed(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      setRevealed(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [revealed, open]);
 
   const edit = () => {
     setOpen(false);
@@ -100,16 +80,30 @@ export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, childre
     }
   };
 
-  const unpin = async () => {
+  const unpin = () => {
     setBusy(true);
-    try {
-      await client.apps.unplace(appId, slotId);
-    } finally {
-      setBusy(false);
-      setOpen(false);
-      setRevealed(false);
-      onUnpinned();
-    }
+    void client.apps.unplace(appId, slotId).then(
+      () => {
+        setOpen(false);
+        setRevealed(false);
+        onUnpinned();
+      },
+      (reason: unknown) => {
+        // The row is still there, so nothing here may settle as though it were
+        // gone: closing the popover over an app that stayed put is the same lie
+        // the pin ring used to tell from a timer. One honest line — the exact
+        // sentence a refused `apps.place` shows (pin-ceremony.ts) — and the
+        // popover stays open, so Unpin is still under the cursor to try again.
+        if (developmentMode()) {
+          log({
+            code: "ui.pin-chrome-unplace-failed",
+            level: "warn",
+            message: `[vendo] VendoSlot "${slotId}": unpinning ${appId} failed — ${String(reason)}`,
+          });
+        }
+        vendoToast({ text: "That didn’t go through — try again.", state: "error" });
+      },
+    ).finally(() => setBusy(false));
   };
 
   return (
@@ -143,7 +137,7 @@ export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, childre
           <div className="fl-remix-menu" role="group" aria-label={title}>
             <button type="button" onClick={edit}>Edit in chat</button>
             <button type="button" onClick={() => { setOpen(false); onRefresh(); }}>Refresh</button>
-            <button type="button" className="is-danger" disabled={busy} onClick={() => void unpin()}>
+            <button type="button" className="is-danger" disabled={busy} onClick={unpin}>
               {busy ? "Unpinning…" : "Unpin"}
             </button>
           </div>

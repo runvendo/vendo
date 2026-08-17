@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoOverlay, VendoSlot } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoSlot, VendoToasts, dismissAllVendoToasts } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 /** S3 — the ✦ popover on a pinned app, reached and driven by the keyboard
@@ -20,6 +20,8 @@ describe("pinned-app ✦ chrome (keyboard)", () => {
 
   afterEach(async () => {
     cleanup();
+    dismissAllVendoToasts();
+    vi.restoreAllMocks();
     await wire.close();
   });
 
@@ -68,5 +70,25 @@ describe("pinned-app ✦ chrome (keyboard)", () => {
     expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
     const composer = await screen.findByRole("textbox", { name: /message/i });
     await waitFor(() => expect((composer as HTMLTextAreaElement).value).toBe("Update Invoices: "));
+  });
+
+  it("a refused unpin says so and stays retryable — it never settles as done", async () => {
+    const refused = vi.spyOn(client.apps, "unplace").mockRejectedValue(new Error("nope"));
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero" />
+        <VendoToasts />
+      </VendoProvider>,
+    );
+
+    fireEvent.click(await pill());
+    fireEvent.click(screen.getByRole("button", { name: "Unpin" }));
+
+    // The row is still there, so the popover is too — with Unpin under the
+    // cursor where the person left it.
+    expect(await screen.findByText(/didn.t go through/i)).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Unpin" }).hasAttribute("disabled")).toBe(false));
+    expect(refused).toHaveBeenCalledWith("app_1", "hero");
   });
 });
