@@ -1,0 +1,37 @@
+<svg width="640" height="400" viewBox="0 0 640 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A generated screen pinned into your app's own grid of cards">
+  <rect width="640" height="400" fill="#f7f7fa"/>
+  <!-- your app window -->
+  <rect x="60" y="48" width="520" height="304" rx="14" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <line x1="60" y1="88" x2="580" y2="88" stroke="#ececf4" stroke-width="2"/>
+  <circle cx="88" cy="68" r="5" fill="#d9d9e3"/>
+  <circle cx="108" cy="68" r="5" fill="#d9d9e3"/>
+  <circle cx="128" cy="68" r="5" fill="#d9d9e3"/>
+  <text x="560" y="75" text-anchor="end" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">your app</text>
+  <!-- top row: your own cards -->
+  <rect x="92" y="112" width="150" height="86" rx="10" fill="#f3f3f8"/>
+  <rect x="106" y="128" width="70" height="9" rx="4.5" fill="#e0e0ea"/>
+  <rect x="106" y="146" width="100" height="14" rx="7" fill="#d3d3df"/>
+  <rect x="254" y="112" width="150" height="86" rx="10" fill="#f3f3f8"/>
+  <rect x="268" y="128" width="70" height="9" rx="4.5" fill="#e0e0ea"/>
+  <rect x="268" y="146" width="100" height="14" rx="7" fill="#d3d3df"/>
+  <rect x="416" y="112" width="132" height="86" rx="10" fill="#f3f3f8"/>
+  <rect x="430" y="128" width="62" height="9" rx="4.5" fill="#e0e0ea"/>
+  <rect x="430" y="146" width="88" height="14" rx="7" fill="#d3d3df"/>
+  <!-- bottom row: the generated tile, pinned among yours -->
+  <rect x="92" y="214" width="250" height="104" rx="10" fill="#f9f7ff" stroke="#6c3bff" stroke-width="2.5"/>
+  <path transform="translate(118,242)" d="M0,-11 C1.7,-4 4,-1.7 11,0 C4,1.7 1.7,4 0,11 C-1.7,4 -4,1.7 -11,0 C-4,-1.7 -1.7,-4 0,-11 Z" fill="#6c3bff"/>
+  <rect x="140" y="236" width="110" height="12" rx="6" fill="#e6ddff"/>
+  <rect x="112" y="278" width="14" height="26" rx="4" fill="#6c3bff"/>
+  <rect x="134" y="268" width="14" height="36" rx="4" fill="#a78bfa"/>
+  <rect x="156" y="286" width="14" height="18" rx="4" fill="#6c3bff"/>
+  <rect x="178" y="262" width="14" height="42" rx="4" fill="#a78bfa"/>
+  <rect x="200" y="274" width="14" height="30" rx="4" fill="#6c3bff"/>
+  <rect x="238" y="268" width="88" height="9" rx="4.5" fill="#ece4fb"/>
+  <rect x="238" y="286" width="66" height="9" rx="4.5" fill="#ece4fb"/>
+  <!-- your other card -->
+  <rect x="354" y="214" width="194" height="104" rx="10" fill="#f3f3f8"/>
+  <rect x="368" y="230" width="80" height="9" rx="4.5" fill="#e0e0ea"/>
+  <rect x="368" y="248" width="120" height="14" rx="7" fill="#d3d3df"/>
+  <rect x="368" y="276" width="150" height="9" rx="4.5" fill="#e8e8f0"/>
+  <rect x="368" y="294" width="110" height="9" rx="4.5" fill="#e8e8f0"/>
+</svg>

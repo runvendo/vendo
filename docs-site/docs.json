@@ -50,6 +50,7 @@
           {
             "group": "Get started",
             "pages": [
+              "what-is-vendo",
               "index",
               "how-vendo-works"
             ]
@@ -57,11 +58,11 @@
           {
             "group": "Give it to your agent",
             "pages": [
-              "agents/index"
+              "give-it-to-your-agent"
             ]
           },
           {
-            "group": "In your product",
+            "group": "Vendo's Full-Stack Agent",
             "pages": [
               "product/quickstart",
               "product/how-it-works",

@@ -1,0 +1,35 @@
+<svg width="640" height="400" viewBox="0 0 640 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A panel rendered inside your own product UI">
+  <rect width="640" height="400" fill="#f7f7fa"/>
+  <!-- your app window -->
+  <rect x="60" y="48" width="520" height="304" rx="14" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <line x1="60" y1="88" x2="580" y2="88" stroke="#ececf4" stroke-width="2"/>
+  <circle cx="88" cy="68" r="5" fill="#d9d9e3"/>
+  <circle cx="108" cy="68" r="5" fill="#d9d9e3"/>
+  <circle cx="128" cy="68" r="5" fill="#d9d9e3"/>
+  <text x="560" y="75" text-anchor="end" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">your app</text>
+  <!-- app content skeleton -->
+  <rect x="92" y="116" width="150" height="16" rx="8" fill="#e6e6ee"/>
+  <rect x="92" y="152" width="180" height="10" rx="5" fill="#efeff4"/>
+  <rect x="92" y="172" width="150" height="10" rx="5" fill="#efeff4"/>
+  <rect x="92" y="192" width="168" height="10" rx="5" fill="#efeff4"/>
+  <rect x="92" y="224" width="184" height="88" rx="10" fill="#f3f3f8"/>
+  <rect x="106" y="240" width="120" height="10" rx="5" fill="#e4e4ec"/>
+  <rect x="106" y="258" width="90" height="10" rx="5" fill="#e4e4ec"/>
+  <!-- vendo panel -->
+  <rect x="316" y="104" width="232" height="224" rx="12" fill="#f9f7ff" stroke="#6c3bff" stroke-width="2.5"/>
+  <path transform="translate(348,136)" d="M0,-13 C2,-4.5 4.5,-2 13,0 C4.5,2 2,4.5 0,13 C-2,4.5 -4.5,2 -13,0 C-4.5,-2 -2,-4.5 0,-13 Z" fill="#6c3bff"/>
+  <rect x="372" y="129" width="120" height="14" rx="7" fill="#e6ddff"/>
+  <!-- stat tiles -->
+  <rect x="336" y="160" width="96" height="56" rx="8" fill="#ffffff" stroke="#e9e2fb" stroke-width="2"/>
+  <rect x="348" y="172" width="40" height="8" rx="4" fill="#d9ccff"/>
+  <rect x="348" y="188" width="56" height="12" rx="6" fill="#3a3745"/>
+  <rect x="444" y="160" width="88" height="56" rx="8" fill="#ffffff" stroke="#e9e2fb" stroke-width="2"/>
+  <rect x="456" y="172" width="36" height="8" rx="4" fill="#d9ccff"/>
+  <rect x="456" y="188" width="48" height="12" rx="6" fill="#3a3745"/>
+  <!-- bars -->
+  <rect x="340" y="262" width="18" height="42" rx="4" fill="#6c3bff"/>
+  <rect x="366" y="246" width="18" height="58" rx="4" fill="#a78bfa"/>
+  <rect x="392" y="270" width="18" height="34" rx="4" fill="#6c3bff"/>
+  <rect x="418" y="236" width="18" height="68" rx="4" fill="#a78bfa"/>
+  <rect x="444" y="256" width="18" height="48" rx="4" fill="#6c3bff"/>
+</svg>

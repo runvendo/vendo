@@ -69,7 +69,7 @@ Your repo, your API, and your auth stay on your side. Vendo Cloud runs the manag
     The signed-in user's own headers, forwarded only to the API origin you configured. For unattended runs, a short-lived token your server mints from your own secret, naming the user who set the automation up.
   </Accordion>
   <Accordion title="Where do prompts go?" defaultOpen>
-    To Vendo's model gateway, which speaks the Anthropic API. A prompt carries your instructions, your theme and knowledge index, the user's messages, and tool schemas.
+    To Vendo's model gateway. A prompt carries your instructions, your theme and knowledge index, the user's messages, and tool schemas.
 
     The agent never sees your audit log.
   </Accordion>
@@ -77,7 +77,7 @@ Your repo, your API, and your auth stay on your side. Vendo Cloud runs the manag
     Threads and audit rows live in Vendo Cloud's hosted store. Delete any of it through the erase API, which drops the rows for good.
   </Accordion>
   <Accordion title="What can generated apps reach?" defaultOpen>
-    Model-written screens run in a WebAssembly VM with no DOM, no network, and no clock. Full generated apps run in a sandbox and reach only the domains you approved, one approval per domain.
+    A screen the model writes never runs in your page. Its code runs in a WebAssembly VM that can't touch anything — no DOM, no network, no clock — and your surface renders what comes out. A full generated app runs in a sandbox whose network is an allowlist: it reaches only domains you approved, one approval per domain.
 
     Their tool calls come back through your server, under the same guard and the same approvals as a call from your own chat.
   </Accordion>
@@ -136,26 +136,28 @@ Edit these by hand any time. init prints the change instead of overwriting a fil
 
 Same setup so far. The code differs from here.
 
-<CardGroup cols={3}>
-  <Card title="In your product" href="/product/quickstart">
-    Vendo runs the loop and renders screens in your brand.
+<div className="direction-cards">
+  <CardGroup cols={3}>
+    <Card title="Vendo's Full-Stack Agent" href="/product/quickstart" img="/images/cards/direction-product.svg">
+      Vendo runs the loop and renders screens in your brand.
 
-    `<VendoProvider>{children}`
+      `<VendoProvider>`
 
-    Quickstart →
-  </Card>
-  <Card title="In your existing agent" href="/existing-agent/quickstart">
-    Keep your loop. Vendo adds tools and renders the result.
+      Quickstart →
+    </Card>
+    <Card title="In your existing agent" href="/existing-agent/quickstart" img="/images/cards/direction-existing-agent.svg">
+      Keep your loop. Vendo adds tools and renders the result.
 
-    `...(await vendoTools(vendo, { principal }))`
+      `vendoTools(vendo)`
 
-    Quickstart →
-  </Card>
-  <Card title="From outside agents" href="/outside-agents/quickstart">
-    Your own agent, acting as the signed-in user.
+      Quickstart →
+    </Card>
+    <Card title="From outside agents" href="/outside-agents/quickstart" img="/images/cards/direction-outside-agents.svg">
+      Your own agent, acting as the signed-in user.
 
-    `createVendo({ mcp: true, oauth })`
+      `createVendo({ mcp: true })`
 
-    Quickstart →
-  </Card>
-</CardGroup>
+      Quickstart →
+    </Card>
+  </CardGroup>
+</div>
