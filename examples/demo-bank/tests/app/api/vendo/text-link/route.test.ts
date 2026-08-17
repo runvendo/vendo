@@ -44,6 +44,14 @@ describe("GET /api/vendo/text-link", () => {
 })
 
 describe("a broken channel is not a channel that is switched off", () => {
+  /** The route answers "no channel here" from the CONFIGURATION, so reaching the
+   *  mint at all takes a configured-looking deployment. */
+  const configured = <T,>(run: () => Promise<T>): Promise<T> => {
+    vi.stubEnv("VENDO_API_KEY", "vk_live_test")
+    vi.stubEnv("VENDO_BASE_URL", "https://maple.test")
+    return run().finally(() => vi.unstubAllEnvs())
+  }
+
   it("answers 503 when minting fails for an operational reason", async () => {
     // A console outage, a store blip, a vendor timeout. Distinct from the
     // configuration cases above, which really do mean "no texting here".
@@ -51,7 +59,7 @@ describe("a broken channel is not a channel that is switched off", () => {
       new VendoError("unavailable", "Vendo Cloud channels is unavailable"),
     )
     try {
-      const response = await linkFor("vendo-demo")
+      const response = await configured(() => linkFor("vendo-demo"))
 
       expect(response.status).toBe(503)
       const body = await response.json() as { error?: { code?: string } }
@@ -61,19 +69,17 @@ describe("a broken channel is not a channel that is switched off", () => {
     }
   })
 
-  it("still answers url: null when the deployment simply has no Cloud key", async () => {
-    // The `not-implemented` half of the configuration case, pinned explicitly so
-    // the two never collapse back into one catch.
-    const minting = vi.spyOn(vendo.channels.text, "link").mockRejectedValue(
-      new VendoError("not-implemented", "the text channel needs VENDO_API_KEY"),
-    )
-    try {
-      const response = await linkFor("vendo-demo")
+  it("never even asks when the deployment is not configured for texting", async () => {
+    // The permanent answer comes from configuration, not from an error shape —
+    // `validation` covers both "no VENDO_BASE_URL" (a setting) and "Cloud
+    // returned no identity" (an outage), so no code-based rule separates them.
+    const minting = vi.spyOn(vendo.channels.text, "link")
 
-      expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({ data: { url: null } })
-    } finally {
-      minting.mockRestore()
-    }
+    const response = await linkFor("vendo-demo")
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ data: { url: null } })
+    expect(minting, "no key, no call").not.toHaveBeenCalled()
+    minting.mockRestore()
   })
 })

@@ -1,4 +1,3 @@
-import { VendoError } from "@vendoai/core"
 import { ok, serverError } from "@/server/http"
 import { mapleAuth, vendo } from "@/vendo/server"
 
@@ -25,29 +24,32 @@ export const dynamic = "force-dynamic"
  * `url: null` is the graceful "this deployment has no text channel" answer —
  * the flag needs a Vendo Cloud key, and a demo without one must say so rather
  * than hand out a link that cannot work. It is reserved for EXACTLY that: the
- * deployment being CONFIGURED without one, which surfaces two ways: the
- * unconfigured adapter refusing with `not-implemented` (no Cloud key), and
- * `validation` when no public URL is set for Cloud to deliver to. Both mean the
- * same thing to a person — texting is not available on this deployment.
+ * deployment being configured without one — and that is answered from the
+ * CONFIGURATION, not from the shape of an error. The two env vars this channel
+ * needs are the same two `createVendo` composes it from: the Cloud key that
+ * carries the numbers, and the public URL Cloud delivers back to.
  *
- * Everything else is an outage, not a setting: a store blip, a console that is
- * down, a vendor timeout. Answering `url: null` to those would tell the customer
- * their text channel is switched OFF, and the modal caches that because it does
- * not revalidate — so one transient failure would read as permanently disabled.
- * Those get a 503 the UI can retry.
+ * Reading it off error codes was the wrong instinct and I had it: `validation`
+ * covers both "no VENDO_BASE_URL set" (a setting) and "Cloud returned no
+ * identity to text" (an outage), so no code-based rule can separate them. With
+ * the check up front, every error from `link()` is unambiguously an outage.
+ *
+ * That matters because `url: null` is sticky in the UI: it means "texting is not
+ * available here", and a passing failure reported that way would read as
+ * permanently switched off. Outages get a 503 the modal offers to retry.
  */
 export async function GET(request: Request) {
   // mapleAuth resolves every visitor, signed in or not (the shared demo guest),
   // so null is unreachable here — the seam's type just allows it.
   const principal = await mapleAuth.principal(request)
   if (principal === null) return ok({ url: null })
+  // No key or no public URL means this checkout of the demo has no text channel
+  // at all — the honest, permanent answer, and the one the modal explains.
+  if (!process.env.VENDO_API_KEY || !process.env.VENDO_BASE_URL) return ok({ url: null })
   try {
     const { url } = await vendo.channels.text.link(principal)
     return ok({ url })
   } catch (error) {
-    const unavailableByConfig = error instanceof VendoError
-      && (error.code === "not-implemented" || error.code === "validation")
-    if (unavailableByConfig) return ok({ url: null })
     console.error("[maple] text-link mint failed", {
       error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
     })

@@ -33,7 +33,13 @@ export const useNotifications = () => useSWR<Notification[]>("/api/notifications
  *  looking at (or already scanned). */
 export const useTextLink = (enabled: boolean) =>
   useSWR<{ url: string | null }>(enabled ? "/api/vendo/text-link" : null, f, {
+    // Deliberately quiet: every mint replaces the user's outstanding code, so a
+    // focus or reconnect must not silently invalidate the code on their phone.
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     revalidateIfStale: false,
+    // A failure, though, has nothing to protect — and left alone it would strand
+    // the dialog on its loading state for good. `mutate()` from the retry button
+    // is the only thing that asks again.
+    shouldRetryOnError: false,
   })

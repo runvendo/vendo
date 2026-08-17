@@ -66,12 +66,16 @@ export function TextChannelCard() {
   // replaces the user's outstanding code.
   const [requested, setRequested] = React.useState(false)
   const [closing, setClosing] = React.useState(false)
-  const { data } = useTextLink(requested)
+  const { data, error, isLoading, mutate } = useTextLink(requested)
 
   const url = data?.url ?? null
   // Only an ANSWERED request can say "no channel here" — until then the plate
   // waits, so opening the modal never flashes an apology it is about to retract.
   const unavailable = data !== undefined && data.url === null
+  // An outage is NOT the same answer as "no channel here": the first is passing
+  // and worth another try, the second is permanent. Without this the dialog sits
+  // on its skeleton for good, because nothing revalidates a failed request.
+  const failed = error !== undefined && data === undefined
 
   const open = (): void => {
     setRequested(true)
@@ -166,7 +170,21 @@ export function TextChannelCard() {
             Ask Maple anything by text — it answers as you, exactly as it does here.
           </p>
 
-          {unavailable ? (
+          {failed ? (
+            <div className="mt-5 rounded-xl bg-hover px-4 py-3">
+              <p className="text-xs leading-relaxed text-muted">
+                Couldn&rsquo;t reach Maple&rsquo;s texting service just now.
+              </p>
+              <button
+                type="button"
+                onClick={() => void mutate()}
+                disabled={isLoading}
+                className="mt-2.5 inline-flex h-8 items-center justify-center rounded-lg border border-border bg-surface px-3 text-xs font-medium text-ink transition-[background-color,transform] duration-150 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15 active:scale-95 disabled:opacity-60"
+              >
+                {isLoading ? "Trying…" : "Try again"}
+              </button>
+            </div>
+          ) : unavailable ? (
             <p className="mt-5 rounded-xl bg-hover px-4 py-3 text-xs leading-relaxed text-muted">
               Texting isn&rsquo;t switched on for this deployment yet, so there&rsquo;s no number to
               hand you.
@@ -206,10 +224,12 @@ export function TextChannelCard() {
             </>
           )}
 
+          {failed ? null : (
           <p className="mt-5 text-xs leading-relaxed text-muted">
             One text links your phone — send it as it is; the code is already inside and lasts 30
             minutes. A contact card called Maple comes back: text that from then on.
           </p>
+          )}
         </div>
       </dialog>
     </Card>
