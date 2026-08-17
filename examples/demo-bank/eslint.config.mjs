@@ -9,10 +9,13 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
-    // fixtures/context-e2e's dev server. Its dist dir is a SIBLING of `.next`
-    // and not a child (CLAUDE.md: `next build` wipes its whole distDir), which
-    // is exactly why the `.next/**` line above does not already cover it.
-    ".next-context-e2e/**",
+    // Every test dev server's dist dir (MAPLE_DIST_DIR: fixtures/context-e2e,
+    // tests/vendo/away-drill). Each is a SIBLING of `.next` and not a child
+    // (CLAUDE.md: `next build` wipes its whole distDir), which is exactly why
+    // the `.next/**` line above does not already cover them. Matched by glob,
+    // not enumerated: `pnpm test` leaves these compiled bundles on disk, and a
+    // release's `pnpm lint` ran over `.next-away-drill` and failed (v0.27.0).
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
