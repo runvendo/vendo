@@ -605,9 +605,9 @@ describe("a derivation that returns its number as text", () => {
    * figure it states and no other.
    */
   it("does not let a mask the data holds clear a money claim it merely resembles", async () => {
-    // Maple Checking's mask is "4471". Neither of these screens is that mask: one
-    // is it a hundredfold off, the other is it with the decimals money carries.
-    for (const shown of ["$44.71", "$4,471.00"]) {
+    // Maple Checking's mask is "4471". None of these screens is that mask: one is
+    // it a hundredfold off, the others are it printed as money.
+    for (const shown of ["$44.71", "$4,471.00", "$4,471"]) {
       const result = await auditing(
         `Available ${shown}`,
         proposing({ [shown]: "return data.list_accounts.data[0].mask;" }),

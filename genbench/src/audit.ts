@@ -57,10 +57,11 @@ export const AUDITOR_CONTRACT = {
    *  `toLocaleString()` — hands back a string, and the string rule wanted the
    *  screen's characters verbatim, so "2850.00" was convicted against a screen
    *  showing "$2,850.00": the same money, refused on punctuation, three times on
-   *  the 2026-08-16 runs. The string comparison now ignores the punctuation
-   *  printing adds — a currency mark, thousands commas, surrounding space — and
-   *  nothing else. It is still text, never a number: a mask is not rescaled, so
-   *  "4471" clears the mask and neither $44.71 nor $4,471.00.
+   *  the 2026-08-16 runs. A string the program BUILT is now compared with the
+   *  punctuation printing adds ignored — currency mark, thousands commas, space.
+   *  A string the DATA holds is an identifier and still clears the screen's
+   *  characters and nothing else, so an account's mask clears the mask and none
+   *  of $44.71, $4,471.00 or $4,471. Neither is parsed or rescaled.
    *  7: the anti-cheat's allowlist of exempt arithmetic constants is gone, and
    *  a literal that matches the value is settled by a counterfactual run
    *  instead — `data; return 3` was clearing a fabricated 3 on every screen,
@@ -318,19 +319,24 @@ function check(program: string, text: string, data: Readonly<Record<string, unkn
   // technicality. A derivation that FORMATS its answer the way the screen does —
   // `toFixed(2)`, `toLocaleString()` — returns a string for the same reason, and
   // "2850.00" was being convicted against a screen showing "$2,850.00": the same
-  // money, refused on the currency mark and the comma. So the comparison ignores
-  // the punctuation printing adds and NOTHING else. It is still text: the digits
-  // must match as written, so this stays clear of the numbers' scale tolerance,
-  // which exists for an honest accident of arithmetic and would otherwise let an
-  // account's "4471" clear a fabricated $44.71 or $4,471.00. The program has to
-  // have READ the field, or `return "4471"` would clear a mask no tool answered
-  // with.
-  if (
-    typeof ran.value === "string" &&
-    derivesFromData(program) &&
-    ran.value.replace(PRINTED, "") === text.replace(PRINTED, "")
-  ) {
-    return { program, result: ran.value, verdict: "cleared-by-audit" };
+  // money, refused on the currency mark and the comma.
+  //
+  // What separates those two is where the string CAME FROM, not what it looks
+  // like — "4471" is an account's mask and "4471" is a fabricated $4,471 with the
+  // printing taken off, and no reading of the characters tells them apart. A
+  // string the data holds is an identifier: it clears the screen's characters and
+  // nothing else, exactly as before. A string the program BUILT is a printed
+  // number, so the punctuation printing adds — currency mark, thousands commas,
+  // surrounding space — is ignored and the digits must still match as written.
+  // Neither is ever parsed or rescaled: the numbers' scale tolerance is for an
+  // honest accident of arithmetic, and a mask put through it clears any of
+  // $44.71, $4,471.00 and $4,471.
+  if (typeof ran.value === "string" && derivesFromData(program)) {
+    const identifier = JSON.stringify(data).includes(JSON.stringify(ran.value));
+    const cleared = identifier
+      ? ran.value.trim() === text.trim()
+      : ran.value.replace(PRINTED, "") === text.replace(PRINTED, "");
+    if (cleared) return { program, result: ran.value, verdict: "cleared-by-audit" };
   }
   return offender(`rejected: returned ${JSON.stringify(ran.value) ?? String(ran.value)}, which is not a number`);
 }
