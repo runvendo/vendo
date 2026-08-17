@@ -516,6 +516,39 @@ describe("automations enable and grant capture", () => {
     });
   });
 
+  /** The `vendo.json` fold-in's step list verbatim — `manifest-triggers.ts` writes
+   *  `[{ id: "fire", tool: `fn:${fn}` }]` and then arms it, so this is the whole
+   *  of what one of the four authoring doors asks the engine to consent to. */
+  it("arms an automation whose only step is an app function, with nothing to capture", async () => {
+    const engine = createAutomations({ tools: registry([readTool]), guard, store, now: () => NOW });
+    const record = await create(engine, {
+      id: "atm_manifest_fn",
+      authoredBy: "manifest",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [{ id: "fire", tool: "fn:chaseInvoices" }] },
+    });
+
+    expect(await engine.enable(record.id, ctx())).toMatchObject({ enabled: true, missing: [] });
+    expect((await store.records("vendo_approvals").list()).records).toEqual([]);
+  });
+
+  /** The other half of the rule: dropping `fn:` may not widen what runs without
+   *  consent. A host tool named beside an app function is still asked for. */
+  it("still captures the host tool a step list names beside its app function", async () => {
+    const engine = createAutomations({ tools: registry([readTool]), guard, store, now: () => NOW });
+    const record = await create(engine, {
+      id: "atm_mixed_fn",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [
+        { id: "fire", tool: "fn:chaseInvoices" },
+        { id: "read", tool: readTool.name },
+      ] },
+    });
+
+    expect((await engine.enable(record.id, ctx())).missing.map(({ call }) => call.tool))
+      .toEqual([readTool.name]);
+  });
+
   it("captures every descriptor for goal runs and mints or discards on decisions", async () => {
     const engine = createAutomations({ tools: registry([readTool, writeTool]), guard, store, now: () => NOW });
     const record = await create(engine, {
