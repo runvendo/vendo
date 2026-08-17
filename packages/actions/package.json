@@ -64,7 +64,8 @@
   },
   "peerDependencies": {
     "@auth/core": ">=0.41.3",
-    "next": ">=14"
+    "next": ">=14",
+    "zod": ">=3.25.0 <5"
   },
   "peerDependenciesMeta": {
     "@auth/core": {

@@ -40,6 +40,16 @@
  *      ./v4 (skateshop landmine; six packages fixed in 174aa430, ui+agent
  *      missed and fixed alongside this rule).
  *
+ *   5. ONE ZOD PEER RANGE — every published block that lists "zod" in
+ *      dependencies must declare the SAME zod peer, ZOD_PEER_RANGE. The peer is
+ *      what makes pnpm bind the HOST's zod; a block with only the dependency
+ *      keeps its own copy, so on a host pinning another zod major the block set
+ *      splits into two zod instances and a schema built in one is not a schema
+ *      in the other — core's riskLabelSchema inside guard's z.object threw
+ *      "expected a Zod schema" and every tool call died (#1314). Uniform or
+ *      nothing: a mixed posture is what split the set. Private packages are
+ *      apps, not libraries — they have no consumer to share zod with.
+ *
  * Runs in `pnpm lint` at the root. No dependencies; Node >= 20.
  *
  * Known residual gaps (accepted): computed dynamic imports (import(`@vendoai/${x}`))
@@ -174,6 +184,9 @@ const ONLY_SUBPATHS = {
  * carry a zod floor at least this high (rule 4 above).
  */
 const ZOD_V4_EXPORT_FLOOR = [3, 25, 0];
+
+/** The one zod peer range every published block that bundles zod declares (rule 5). */
+const ZOD_PEER_RANGE = ">=3.25.0 <5";
 
 /** One comparator: an operator (or none) over a possibly-partial version —
  * "^3.25.0", "~3.25.0", ">=3.25.0", ">= 3.25.0", "3.25.76", "<5". A missing
@@ -391,6 +404,13 @@ for (const dir of dirs) {
         );
       }
     }
+  }
+
+  // 5 on the manifest
+  if (!pkg.private && pkg.dependencies?.zod && pkg.peerDependencies?.zod !== ZOD_PEER_RANGE) {
+    errors.push(
+      `${pkg.name}: bundles "zod" as a dependency but its zod peer is "${pkg.peerDependencies?.zod ?? "missing"}", not "${ZOD_PEER_RANGE}" — declare the same peer as every other block (#1314).`,
+    );
   }
 
   // 2 + 3 on the sources
