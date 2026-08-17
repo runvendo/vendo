@@ -223,7 +223,7 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Money",
     group: "values",
-    summary: "Currency from an amount ALREADY in dollars. Formatters never convert units: a minor-unit (cents) field is divided by 100 where you read it.",
+    summary: "An amount shown as currency. It expects DOLLARS and never converts — tool data is usually cents, so divide where you read it: `amount_cents / 100`. Hand it 2850 un-divided and the screen shows $2,850.00, not $28.50.",
     props: {
       amount: data(z.number(), "the amount in dollars (major units)"),
       currency: config(z.string(), "ISO 4217 code, default USD"),

@@ -62,7 +62,7 @@ describe("kitPrompt()", () => {
 
   it("includes canonical examples and the money rule — dollars in, /100 at the read", () => {
     expect(prompt).toContain("Money");
-    expect(prompt).toContain("formatters never convert units");
+    expect(prompt).toContain("none of them converts");
     expect(prompt).toContain("/ 100");
   });
 

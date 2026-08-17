@@ -123,10 +123,10 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
   /**
    * THE BUDGET, re-measured 2026-08-17 when types and one worked example apiece
    * went back into the line: 53 bricks, 227 icon names and 53 examples cost
-   * 29,081 characters (~8.1k tokens), against the 20,396 the same 53 bricks cost
+   * 29,214 characters (~8.1k tokens), against the 20,396 the same 53 bricks cost
    * as bare prop NAMES. That growth is the change — a name alone never said what
    * may be written beside it — and it is bought against `kitPrompt`'s
-   * section-per-brick catalog, which costs 36,158 for the same bricks with no
+   * section-per-brick catalog, which costs 36,291 for the same bricks with no
    * icon names at all.
    *
    * The ceiling is 32,000, and the per-brick bound is the half that bites: at 440
