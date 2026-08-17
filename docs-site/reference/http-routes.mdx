@@ -129,7 +129,7 @@ An app machine calls back into the host through `/box/*`, authenticated with `Au
 | `/box/rows/<collection>` | GET | list durable rows. Query: `refs.<key>=<value>`, `limit`, `cursor`. Any other parameter is a `400` |
 | `/box/rows/<collection>/<id>` | GET · DELETE | read one row · delete it |
 | `/box/rows/<collection>/<id>` | PUT | body is exactly `{ data, refs? }`, JSON, 256 KiB cap. An unexpected key is a `400` |
-| `/box/tools/<name>` | POST | `{ args }` → `ToolOutcome`, executed through the same guard-bound registry chat uses. A pending-approval outcome is relayed, never bypassed |
+| `/box/tools/<name>` | POST | `{ args }` → `ToolOutcome`, executed through the same guard-bound registry chat uses. A pending-approval outcome is relayed, never bypassed, and approving it runs that exact call |
 
 Collection names match `^[A-Za-z0-9_-]{1,64}$` and row ids run 1 to 256 characters. Anything else under `/box/` answers `404`.
 
