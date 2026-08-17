@@ -264,7 +264,15 @@ export function playPinCeremony({ appId, slot, confirmed, dismiss = () => {} }: 
     return;
   }
   const lifted = source !== null && from !== null && !reduced ? liftGhost(source, from) : null;
-  const settle = (destination: Element) => void confirmed?.then(() => pulse(destination), () => {});
+  // The destination is re-resolved when the confirmation lands, never the element
+  // the flight aimed at: a slow confirmation outlives that node — landing the pin
+  // re-renders the slot, which REPLACES the element — and a detached element
+  // measures 0, so holding the reference swallowed the ring entirely on a host
+  // whose `onPin` was slow. Re-resolving is what the rAF hops above already do.
+  const settle = () => void confirmed?.then(() => {
+    const landed = destinationOf(slot);
+    if (landed !== null) pulse(landed);
+  }, () => {});
 
   dismiss();
 
@@ -291,10 +299,10 @@ export function playPinCeremony({ appId, slot, confirmed, dismiss = () => {} }: 
         return;
       }
       if (lifted === null || from === null) {
-        settle(destination);
+        settle();
         return;
       }
-      fly(lifted, from, to, () => settle(destination));
+      fly(lifted, from, to, settle);
     });
   });
 }

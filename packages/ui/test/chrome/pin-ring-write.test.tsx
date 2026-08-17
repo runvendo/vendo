@@ -6,11 +6,13 @@
 // write (live fixture wire, and a client pointed at one that has since shut
 // down), an `onPin`-only host, whose own mirror is the only confirmation there
 // is, and a direct caller of the public `playPinCeremony` that confirms nothing.
+// The mirror image matters just as much: a SLOW confirmation must still ring,
+// which is its own case here.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { playPinCeremony, usePinAction } from "../../src/chrome/index.js";
+import { VendoSlot, playPinCeremony, usePinAction } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 /** jsdom ships no Web Animations API. Only the ghost's flight is kept — it is
@@ -67,8 +69,11 @@ describe("the settle ring answers to the pin, never to the timer", () => {
       return animation as unknown as Animation;
     } as unknown as typeof Element.prototype.animate;
     // jsdom lays nothing out, so both ends of the flight would measure absent.
+    // `isConnected` is load-bearing, not caution: a DETACHED element measures 0
+    // in a real browser, and a selector-only stub would size a node that is no
+    // longer on the page — which is exactly the bug the slow-onPin case catches.
     Element.prototype.getBoundingClientRect = function rect(this: Element) {
-      const laidOut = this.matches("[data-vendo-app-embed], [data-vendo-slot]");
+      const laidOut = this.isConnected && this.matches("[data-vendo-app-embed], [data-vendo-slot]");
       return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: laidOut ? 300 : 0, height: laidOut ? 200 : 0 } as DOMRect;
     };
     wire = await createWireServer();
@@ -115,6 +120,42 @@ describe("the settle ring answers to the pin, never to the timer", () => {
     expect(onPin).toHaveBeenCalledWith({ appId: "app_1", payload: {} });
     await settled();
     expect(ring()).toBeNull();
+
+    mirrored();
+    await waitFor(() => expect(ring()).toBeTruthy());
+  });
+
+  it("still rings when the host's onPin is slow, after the slot has re-rendered", async () => {
+    // A slow mirror must arrive LATE, never not at all. Landing the pin makes the
+    // real VendoSlot re-read and re-render, which REPLACES its element — so the
+    // ceremony cannot hold the node it flew to and measure it once the host
+    // finally answers, because by then it is detached and measures 0. Nothing is
+    // stubbed on either side of that seam: the write, the announce and the slot's
+    // re-read are all real, which is the only way this can disagree.
+    const card = document.createElement("div");
+    card.className = "vendo-root";
+    card.innerHTML = `<div data-vendo-app-embed="app_1">Your view</div>`;
+    document.body.append(card);
+
+    let mirrored = () => {};
+    const onPin = vi.fn(() => new Promise<void>(resolve => { mirrored = () => resolve(); }));
+    render(
+      <VendoProvider client={client} onPin={onPin} pinSlot="hero">
+        <VendoSlot id="hero" />
+        <PinButton />
+      </VendoProvider>,
+    );
+    const slot = () => document.querySelector("[data-vendo-slot]");
+    await waitFor(() => expect(slot()).toBeTruthy());
+    const flownTo = slot();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    await land();
+
+    // The pin really landed and the slot really re-rendered, while onPin is still
+    // pending — the precondition this case exists for.
+    await waitFor(() => expect(slot()).not.toBe(flownTo));
+    expect(flownTo!.isConnected).toBe(false);
 
     mirrored();
     await waitFor(() => expect(ring()).toBeTruthy());
