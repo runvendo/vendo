@@ -1631,6 +1631,48 @@ describe("dry runs, run visibility, goal execution, and stopping", () => {
     expect((await engine.runs.list({ automationId: record.id, status: "ok" }, ctx())).runs).toHaveLength(1);
   });
 
+  /** 07 §5 — the owner and agent views are FILTERS over the one ledger. Both are
+   *  declared on the public surface and both are mapped from a query param on the
+   *  public `/runs` route, so a filter the store cannot answer is a 500 on a
+   *  documented door rather than a result. */
+  it("filters the one ledger by owner and by agent", async () => {
+    const store = memoryStoreAdapter();
+    const engine = createAutomations({
+      tools: registry([readTool]),
+      guard: new GuardDouble(),
+      store,
+      now: () => NOW,
+      memberships: async () => [{ org: "org_acme" }],
+    });
+    register(engine, async () => ({ status: "ok", summary: "mine", toolCalls: [] }));
+    register(engine, async () => ({ status: "ok", summary: "theirs", toolCalls: [] }), "nightly");
+    // §9.1 — the org is ASSERTED for this caller, so it speaks for both subjects
+    // and both records' runs are its to read.
+    const member: RunContext = { ...ctx(), memberships: [{ org: "org_acme" }] };
+    const mine = await create(engine, {
+      id: "atm_ledger_mine",
+      when: { event: "go" },
+      task: { kind: "goal", prompt: "mine" },
+    }, member);
+    const theirs = await create(engine, {
+      id: "atm_ledger_org",
+      owner: { kind: "user", subject: "org_acme" },
+      when: { event: "go" },
+      task: { kind: "goal", prompt: "theirs" },
+      agent: "nightly",
+    }, member);
+
+    await engine.emit("go", {}, member.principal);
+
+    expect((await engine.runs.list({}, member)).runs).toHaveLength(2);
+    expect((await engine.runs.list({ owner: "org_acme" }, member)).runs)
+      .toMatchObject([{ automationId: theirs.id }]);
+    expect((await engine.runs.list({ owner: "user_a" }, member)).runs)
+      .toMatchObject([{ automationId: mine.id }]);
+    expect((await engine.runs.list({ agent: "nightly" }, member)).runs)
+      .toMatchObject([{ automationId: theirs.id }]);
+  });
+
   it("marks an in-flight goal run stopped, discards the late result, and rejects terminal stops", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();

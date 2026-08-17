@@ -44,10 +44,14 @@ const createRunReadDoors = (
     ) {
       return { runs: [] };
     }
+    // Only what the ledger is KEYED by goes to the store: `vendo_runs` carries an
+    // automation id and a status and nothing else — a run names no subject of its
+    // own, which is also why the erase cascade reaches a person's runs through
+    // their automations (packages/store/src/erase.ts). Owner and agent are read
+    // off the row in the walk below, exactly as `list` reads an automation's
+    // `agent` off its row.
     const refs = {
       ...(filter.automationId === undefined ? {} : { automation_id: filter.automationId }),
-      ...(filter.owner === undefined ? {} : { subject: filter.owner }),
-      ...(filter.agent === undefined ? {} : { agent: filter.agent }),
       ...(filter.status === undefined ? {} : { status: filter.status }),
     };
     const runs: RunRecord[] = [];
@@ -65,6 +69,8 @@ const createRunReadDoors = (
       });
       for (const stored of page.records) {
         const run = parseRunRecord(stored);
+        if (filter.owner !== undefined && run.owner.subject !== filter.owner) continue;
+        if (filter.agent !== undefined && run.agent !== filter.agent) continue;
         if (automations.speaksFor(ctx, run.owner.subject)) runs.push(publicRun(run));
       }
       cursor = page.cursor;

@@ -4,8 +4,10 @@
  * in-flight run interleaves with.
  *
  * ONE ledger. The owner / agent / automation / console views are FILTERS over
- * it, which is why the refs carry all three keys rather than just the one the
- * first caller happened to need.
+ * it — but only the two keys `vendo_runs` DECLARES are refs (routing.ts), and a
+ * run names no subject of its own. Owner and agent are read off the row by
+ * `runs.list`; writing them here as refs no store would answer is what made
+ * `runs.list({ owner })` throw.
  */
 import {
   auditContext,
@@ -80,9 +82,7 @@ export const createRunRows = ({ base: { config, engine, iso, stopped } }: RunRow
       },
       refs: {
         automation_id: record.automationId,
-        subject: record.owner.subject,
         status: record.status,
-        ...(record.agent === undefined ? {} : { agent: record.agent }),
       },
     });
     return true;
