@@ -21,6 +21,7 @@ import {
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
+  AppListRow,
   ApprovalResolution,
   AutomationEntry,
   ConnectableToolkit,
@@ -95,7 +96,7 @@ export interface VendoClient {
   };
 
   apps: {
-    list(): Promise<AppDocument[]>;
+    list(): Promise<AppListRow[]>;
     create(input: { prompt: string }): Promise<AppDocument>;
     get(id: AppId): Promise<AppDocument>;
     delete(id: AppId): Promise<void>;
@@ -111,6 +112,9 @@ export interface VendoClient {
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;
+    /** POST /apps/:id/seen — the idempotent arrival mark. Rendering an app marks
+        it server-side; this is for a surface that only LISTED it. */
+    seen(id: AppId): Promise<void>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
     /** POST /apps/:id/reseed — rebuild the remix against the host's current

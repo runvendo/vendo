@@ -323,6 +323,13 @@ export const appRoutes: RouteEntry[] = [
     if (op(wire, "POST", "fork")) {
       return json(await deps.apps.fork(appId, ctx));
     }
+    // Arrival (2026-08-17) — an idempotent per-caller mark. Rendering already
+    // marks through open(); this is the mark for a surface that shows an app it
+    // never opened.
+    if (op(wire, "POST", "seen")) {
+      await deps.apps.seen(appId, ctx);
+      return json({});
+    }
     return undefined;
   }),
 ];

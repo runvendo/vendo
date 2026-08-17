@@ -13,6 +13,7 @@ import {
 } from "../../contract/index.js";
 import { createAgentTools } from "./agent-tools.js";
 import { allRecords } from "./access-checks.js";
+import { appSeenStore } from "../persistence/app-seen.js";
 import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -21,9 +22,10 @@ const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
     | "grantedRecords">,
-): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call"> => {
+): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call" | "seen"> => {
   const { config, engine, caller, history, review, opener, owned, requireOwned } = deps;
   const { grantedRecords } = deps;
+  const appSeen = appSeenStore(engine);
   return {
     async get(appId, ctx) {
       const app = await owned(appId, ctx, "viewer");
@@ -51,7 +53,11 @@ const createAppReadDoors = (
           // Corrupt rows cannot be surfaced, but must not hide valid owned apps.
         }
       }
-      return documents;
+      // Arrival — read state is the CALLER's, so it rides the answer rather
+      // than the row: one query for the whole page, on the fetch every surface
+      // already makes.
+      const unseen = await appSeen.unseen(documents.map((document) => document.id), ctx.principal.subject);
+      return documents.map((document) => unseen.has(document.id) ? { ...document, unseen: true } : document);
     },
 
     /**
@@ -71,8 +77,18 @@ const createAppReadDoors = (
       });
     },
 
+    async seen(appId, ctx) {
+      await requireOwned(appId, ctx, "viewer");
+      await appSeen.mark(appId, ctx.principal.subject);
+    },
+
     async open(appId, ctx, options) {
       const app = await requireOwned(appId, ctx, "viewer");
+      // Arrival — this is the door every render goes through (the embed, a
+      // placed slot, the palette), so "rendering marks it seen" needs no client
+      // to remember anything. Idempotent, so the build-window poll that calls
+      // open() every 1.2s writes once.
+      await appSeen.mark(appId, ctx.principal.subject);
       // Review-kind (2026-08-02): an unapproved current version is invisible —
       // open() serves the newest APPROVED version from the existing history
       // instead (or the pending state when none was ever approved). Instant
@@ -185,7 +201,7 @@ export const createAppsSurface = (
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
-  "get" | "list" | "delete" | "fork" | "share" | "publish"
+  "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, engine, data, history, review, inClientApprovals } = deps;
   const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;

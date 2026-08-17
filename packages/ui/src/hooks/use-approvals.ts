@@ -9,6 +9,7 @@ import {
   type RunResult,
 } from "../chrome/run-activity.js";
 import { APPROVALS_LOADING, approvalsFeed } from "./approvals-feed.js";
+import { subscribeUnseenApps, unseenApps } from "./use-apps.js";
 import { type PollOptions } from "./use-resource.js";
 
 /** SSR / first-render snapshot, stable across calls. */
@@ -43,6 +44,8 @@ export function useApprovals(options?: PollOptions): {
 }
 
 const NO_RESULT = (): RunResult | undefined => undefined;
+/** SSR / first-render snapshot for the unseen count. */
+const NO_UNSEEN = () => 0;
 
 /**
  * The ONE attention source. Everything that asks for the user's attention
@@ -59,8 +62,11 @@ export function useAttention(options?: PollOptions): ReturnType<typeof useApprov
   askCount: number;
   /** Alias for the rows behind that count, in the strip's own words. */
   asks: ApprovalRequest[];
-  /** A finished run whose result nobody has looked at yet (the quiet dot). */
+  /** Something arrived that nobody has looked at yet (the quiet dot): a
+   *  finished run's result, or an app that has never rendered for this person. */
   unseenResults: boolean;
+  /** How many of those are apps — the arrival half of the dot. */
+  unseenApps: number;
   /** The finished run itself — headline + the thread to deep-link into. */
   lastResult: RunResult | undefined;
   /** The user looked: clears the dot (and any completion toast). */
@@ -68,11 +74,15 @@ export function useAttention(options?: PollOptions): ReturnType<typeof useApprov
 } {
   const approvals = useApprovals(options);
   const lastResult = useSyncExternalStore(subscribeRunActivity, unseenRunResult, NO_RESULT);
+  // Arrival — the count rides `useApps`'s existing list fetch (use-apps.ts), so
+  // reading it here adds no request and cannot disagree with the panel's rows.
+  const apps = useSyncExternalStore(subscribeUnseenApps, unseenApps, NO_UNSEEN);
   return {
     ...approvals,
     askCount: approvals.pending.length,
     asks: approvals.pending,
-    unseenResults: lastResult !== undefined,
+    unseenResults: lastResult !== undefined || apps > 0,
+    unseenApps: apps,
     lastResult,
     markResultsSeen: markRunResultsSeen,
   };

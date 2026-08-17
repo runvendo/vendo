@@ -34,6 +34,7 @@ import type {
 } from "@vendoai/core";
 import type {
   AppDocument,
+  AppListRow,
   BriefingPack,
   NormalizedCatalog,
   PendingSurface,
@@ -568,9 +569,19 @@ export interface AppsRuntime {
    */
   toolShapeBrief(ctx: RunContext): Promise<string>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
-  list(ctx: RunContext): Promise<AppDocument[]>;
+  list(ctx: RunContext): Promise<AppListRow[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /**
+   * Arrival (2026-08-17) — mark this app seen BY THIS CALLER, so the launcher's
+   * dot and the panel's "New" marker stop pointing at it. Idempotent, and
+   * viewer-scoped: being able to see the app is the whole act being recorded.
+   *
+   * Rendering marks it on its own — `open` is the one door every render passes
+   * through, so nothing has to remember to call this. The door (and its wire
+   * route) is for a surface that shows an app it never opened.
+   */
+  seen(appId: AppId, ctx: RunContext): Promise<void>;
   /**
    * Placement (2026-08-05) — "show this app in that slot", as a ROW keyed by
    * (subject, slot) rather than a string on the document.
