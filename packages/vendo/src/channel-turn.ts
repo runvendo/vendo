@@ -130,6 +130,13 @@ export async function runChannelTurn(
     venue: "chat",
     presence: "present",
     sessionId: event.eventId,
+    // What authenticates this turn's HOST calls. `presence: "present"` is true —
+    // a person is holding their phone, which is what lets the guard ask them to
+    // approve a payment — but there is no browser request here, so there are no
+    // credentials to forward. Without this the actions layer takes the present
+    // path, calls the host API with nothing, and the agent ends up apologising
+    // for a sign-in problem the person cannot do anything about.
+    channelLink: { channel: "text", linkedAt: link.linkedAt ?? new Date().toISOString() },
   };
   const send = (text: string): Promise<void> =>
     deps.channel.send({ conversationId: event.conversationId, text });
