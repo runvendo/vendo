@@ -574,12 +574,13 @@ export interface AppsRuntime {
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;
   /**
    * Arrival (2026-08-17) — mark this app seen BY THIS CALLER, so the launcher's
-   * dot and the panel's "New" marker stop pointing at it. Idempotent, and
-   * viewer-scoped: being able to see the app is the whole act being recorded.
+   * quiet dot stops pointing at it. Idempotent, and viewer-scoped: being able to
+   * see the app is the whole act being recorded.
    *
-   * Rendering marks it on its own — `open` is the one door every render passes
-   * through, so nothing has to remember to call this. The door (and its wire
-   * route) is for a surface that shows an app it never opened.
+   * Called by the one route a PERSON's render comes through (`GET /apps/:id/open`,
+   * wire/apps.ts). Deliberately not called by `open` itself: an agent reading a
+   * tree over MCP and an automation resolving a surface both go through that
+   * door, and neither is anybody looking at a screen.
    */
   seen(appId: AppId, ctx: RunContext): Promise<void>;
   /**

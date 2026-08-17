@@ -8,8 +8,8 @@ import {
   unseenRunResult,
   type RunResult,
 } from "../chrome/run-activity.js";
+import { appsFeed } from "./apps-feed.js";
 import { APPROVALS_LOADING, approvalsFeed } from "./approvals-feed.js";
-import { subscribeUnseenApps, unseenApps } from "./use-apps.js";
 import { type PollOptions } from "./use-resource.js";
 
 /** SSR / first-render snapshot, stable across calls. */
@@ -47,6 +47,11 @@ const NO_RESULT = (): RunResult | undefined => undefined;
 /** SSR / first-render snapshot for the unseen count. */
 const NO_UNSEEN = () => 0;
 
+/** The apps cadence, matching the ask cadence: the badge and the dot ride two
+ *  different collections, and a person reads them as one signal, so they must
+ *  not be able to sit a poll apart. */
+const APPS_POLL_MS = 5_000;
+
 /**
  * The ONE attention source. Everything that asks for the user's attention
  * counts from here: the launcher's numbered badge, the approvals queue, and the
@@ -72,11 +77,19 @@ export function useAttention(options?: PollOptions): ReturnType<typeof useApprov
   /** The user looked: clears the dot (and any completion toast). */
   markResultsSeen(): void;
 } {
+  const { client } = useVendoProvider();
   const approvals = useApprovals(options);
   const lastResult = useSyncExternalStore(subscribeRunActivity, unseenRunResult, NO_RESULT);
-  // Arrival — the count rides `useApps`'s existing list fetch (use-apps.ts), so
-  // reading it here adds no request and cannot disagree with the panel's rows.
-  const apps = useSyncExternalStore(subscribeUnseenApps, unseenApps, NO_UNSEEN);
+  // Arrival — the SHARED apps feed, at this hook's own cadence. Whoever else is
+  // listing apps shares the request; nobody listing them at all (a host with no
+  // app panel) still gets a live count, which a store fed by someone else's
+  // mount could never do.
+  const feed = appsFeed(client);
+  const subscribeApps = useCallback(
+    (listener: () => void) => feed.subscribe(listener, options?.pollMs ?? APPS_POLL_MS),
+    [feed, options?.pollMs],
+  );
+  const apps = useSyncExternalStore(subscribeApps, feed.unseenCount, NO_UNSEEN);
   return {
     ...approvals,
     askCount: approvals.pending.length,

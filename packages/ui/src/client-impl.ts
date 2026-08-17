@@ -234,9 +234,6 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
           body: bytes as BodyInit,
         }),
       fork: id => json(`/apps/${idPath(id)}/fork`, "POST"),
-      seen: async id => {
-        await json(`/apps/${idPath(id)}/seen`, "POST");
-      },
       shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
       reseed: id => json(`/apps/${idPath(id)}/reseed`, "POST"),
       seedFrom: body => json("/apps/seed", "POST", body),

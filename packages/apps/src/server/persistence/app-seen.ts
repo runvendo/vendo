@@ -34,10 +34,16 @@ export interface AppSeenStore {
   mark(appId: AppId, subject: string): Promise<void>;
   /** Which of `appIds` this person has never had rendered to them. */
   unseen(appIds: readonly AppId[], subject: string): Promise<ReadonlySet<AppId>>;
+  /** Drop every person's read state for one app (app-deletion cleanup). */
+  clearForApp(appId: AppId): Promise<void>;
 }
 
-/** An app id is colon-free by its own grammar (`packages/core/src/ids.ts`), so
- *  the pair cannot shift however the subject is spelled. */
+/** `appIdSchema` pins only the `app_` PREFIX (`packages/core/src/ids.ts:39`), so
+ *  the type does not forbid a colon and this pair is not unambiguous by grammar.
+ *  It is unambiguous by the MINT: every app id Vendo writes is `app_` + a uuid
+ *  (`doors/build-surface.ts`, `apps-surface.ts` fork), which carries no colon.
+ *  Nothing parses this id — both halves are known at every call — so the pair
+ *  only has to be unique, and it is. */
 const rowId = (appId: AppId, subject: string): string => `${appId}:${subject}`;
 
 export const appSeenStore = (engine: EngineOps): AppSeenStore => ({
@@ -51,8 +57,20 @@ export const appSeenStore = (engine: EngineOps): AppSeenStore => ({
   },
 
   async unseen(appIds, subject) {
-    const rows = await listAllEngineRecords(engine, APP_SEEN_COLLECTION, { refs: { subject } });
-    const seen = new Set(rows.map((record) => record.id));
-    return new Set(appIds.filter((appId) => !seen.has(rowId(appId, subject))));
+    // Point reads for the page in hand, never a scan of this person's history:
+    // the row set grows with every app they have ever opened, and the answer
+    // only ever concerns the ids being listed.
+    const rows = await Promise.all(
+      appIds.map((appId) => engine.get(APP_SEEN_COLLECTION, rowId(appId, subject))),
+    );
+    return new Set(appIds.filter((_appId, index) => rows[index] === null));
+  },
+
+  async clearForApp(appId) {
+    // Swept by APP, not by one subject: a shared app was seen by people the
+    // deleter cannot enumerate (the same argument placements.ts makes).
+    for (const record of await listAllEngineRecords(engine, APP_SEEN_COLLECTION, { refs: { app_id: appId } })) {
+      await engine.delete(APP_SEEN_COLLECTION, record.id);
+    }
   },
 });

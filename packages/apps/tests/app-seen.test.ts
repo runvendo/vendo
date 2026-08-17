@@ -9,6 +9,7 @@ import type { RunContext, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import type { AppDocument } from "../src/contract/index.js";
 import { createApps } from "../src/server/index.js";
+import { APP_SEEN_COLLECTION } from "../src/server/persistence/app-seen.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
@@ -53,5 +54,22 @@ describe("app arrival", () => {
     await runtime.seen("app_1", ctx);
 
     expect(await unseenByApp()).toEqual({ app_1: false, app_2: true });
+  });
+
+  it("takes every person's read state with the app when it is deleted", async () => {
+    const store = memoryStore();
+    const engine = engineOverAdapter(store);
+    await seedAppRow(engine, doc("app_1", "Spending"), ctx.principal.subject);
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
+    await runtime.seen("app_1", ctx);
+    const rows = async () => (await store.records(APP_SEEN_COLLECTION).list({})).records.length;
+
+    expect(await rows()).toBe(1);
+
+    await runtime.delete("app_1", ctx);
+
+    // Not "the deleter's rows": a shared app was seen by people the owner
+    // cannot enumerate, and an id that can never come back must leave none.
+    expect(await rows()).toBe(0);
   });
 });

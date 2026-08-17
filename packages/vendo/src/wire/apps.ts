@@ -84,7 +84,12 @@ async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunC
     // tree's geometry, so the embed's poll has something to show. Everything
     // below stays the not-found disambiguation it was: no row, another subject's
     // row, a terminal failure.
-    return json(await deps.apps.open(appId, ctx, { pending: true }));
+    const surface = await deps.apps.open(appId, ctx, { pending: true });
+    // Arrival — a `pending` answer put nothing on screen (that is the whole
+    // point of the flag), so it is not a render. The opener's own build-window
+    // decision is the gate here; nothing re-reads `building` to guess at it.
+    if (surface.kind !== "pending") await deps.apps.seen(appId, ctx);
+    return json(surface);
   } catch (reason) {
     if (!(reason instanceof VendoError && reason.code === "not-found")) throw reason;
     // Build contract §9.4 — the probe is a DIAGNOSTIC for a caller who
@@ -245,7 +250,14 @@ export const appRoutes: RouteEntry[] = [
     }
     if (op(wire, "GET", "open")) {
       if (wire.url.searchParams.get("pending") === "1") return openWithPendingWindow(wire, appId, ctx);
-      return json(await deps.apps.open(appId, ctx));
+      const surface = await deps.apps.open(appId, ctx);
+      // Arrival — THIS is what "rendering marks it seen" means: a person's
+      // browser asked for a surface to put on screen. The runtime door is not
+      // the place for it (an agent's `vendo_apps_open` and an automation both
+      // pass through there); a build still in flight never reaches this line,
+      // because open() answers not-found until it can serve.
+      await deps.apps.seen(appId, ctx);
+      return json(surface);
     }
     if (op(wire, "POST", "call")) {
       const body = await requestJson(request);
@@ -322,13 +334,6 @@ export const appRoutes: RouteEntry[] = [
     }
     if (op(wire, "POST", "fork")) {
       return json(await deps.apps.fork(appId, ctx));
-    }
-    // Arrival (2026-08-17) — an idempotent per-caller mark. Rendering already
-    // marks through open(); this is the mark for a surface that shows an app it
-    // never opened.
-    if (op(wire, "POST", "seen")) {
-      await deps.apps.seen(appId, ctx);
-      return json({});
     }
     return undefined;
   }),

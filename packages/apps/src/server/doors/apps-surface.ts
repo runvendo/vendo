@@ -84,16 +84,11 @@ const createAppReadDoors = (
 
     async open(appId, ctx, options) {
       const app = await requireOwned(appId, ctx, "viewer");
-      // Arrival — this is the door every render goes through (the embed, a
-      // placed slot, the palette), so "rendering marks it seen" needs no client
-      // to remember anything. Idempotent, so the build-window poll that calls
-      // open() every 1.2s writes once.
-      //
-      // A build still in flight has rendered NOTHING yet, whatever this door
-      // answers it with — so it is not seen. That poll is the same caller
-      // asking again, and the first answer carrying a finished app is the one
-      // that marks it.
-      if (app.building === undefined) await appSeen.mark(appId, ctx.principal.subject);
+      // Arrival deliberately does NOT mark here. This door is also how an agent
+      // reads a tree (`vendo_apps_open` through compose-mcp.ts) and how an
+      // automation resolves a surface, and neither is a person looking at a
+      // screen — marking here cleared a human's dot for an app only Claude ever
+      // saw. The person's own render route does the marking (wire/apps.ts).
       // Review-kind (2026-08-02): an unapproved current version is invisible —
       // open() serves the newest APPROVED version from the existing history
       // instead (or the pending state when none was ever approved). Instant
@@ -236,6 +231,8 @@ export const createAppsSurface = (
       // the deleter cannot enumerate, and those pages are the ones that would
       // be left holding it.
       await placementRows.clearForApp(appId);
+      // Every person's read state for an id that can never come back.
+      await appSeenStore(engine).clearForApp(appId);
       await reportLifecycle("delete", appId, ctx);
     },
 

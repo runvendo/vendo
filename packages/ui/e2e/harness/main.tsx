@@ -1675,6 +1675,49 @@ function composerThreadClient(client: VendoClient): VendoClient {
   };
 }
 
+/**
+ * Arrival — the launcher's quiet dot for an app nobody has looked at.
+ *
+ * The rows carry `unseen` and opening the app is what drops it, which is exactly
+ * what the real deployment does: the person's `GET /apps/:id/open` marks it
+ * server-side (packages/vendo/src/wire/apps.ts) and the next list poll comes back
+ * without the flag. That server rule is proven over a real store and the real
+ * route table in `packages/vendo/tests/apps-seen.seam.test.ts`; what only a
+ * browser can show is the pill lighting and then clearing on its own, with no
+ * reload — so this client is the two answers, in order.
+ */
+function arrivalClient(client: VendoClient): VendoClient {
+  const app = { format: "vendo/app@1", id: "app_arrival", name: "Spending", ui: "tree" as const };
+  let opened = false;
+  return {
+    ...client,
+    // No pending asks: a waiting decision outranks the dot by design (the pill
+    // shows the numbered badge instead), so the arrival mark can only be judged
+    // on a pill with nothing else to say.
+    approvals: { ...client.approvals, pending: async () => [] },
+    apps: {
+      ...client.apps,
+      list: async () => [opened ? app : { ...app, unseen: true }],
+      open: (async () => {
+        opened = true;
+        return { kind: "tree", payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } };
+      }) as VendoClient["apps"]["open"],
+    },
+  };
+}
+
+function ArrivalDotScenario() {
+  const client = useMemo(() => arrivalClient(baseClient), []);
+  return (
+    <VendoProvider client={client} components={components} theme={mapleTheme}>
+      {/* The person's render, in the one gesture a spec can drive: this is the
+          same call the embed makes when it puts the app on screen. */}
+      <button type="button" onClick={() => void client.apps.open("app_arrival")}>Render Spending</button>
+      <VendoOverlay />
+    </VendoProvider>
+  );
+}
+
 function ComposerScenario({ theme }: { theme: Partial<VendoTheme> }) {
   return (
     <VendoProvider client={composerThreadClient(baseClient)} components={components} theme={theme}>
@@ -1877,6 +1920,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-citations": return { title: "Thread — knowledge citations (K1)", content: <ThreadCitationsScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
+    case "/arrival-dot": return { title: "Arrival — the dot for an app nobody has seen", content: <ArrivalDotScenario />, ownProvider: true };
     case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
     case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };

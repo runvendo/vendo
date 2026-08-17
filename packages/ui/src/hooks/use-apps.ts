@@ -3,26 +3,14 @@ import {
   type AppDocument,
   type AppId,
 } from "@vendoai/core";
-import { useCallback, useEffect } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { useVendoProvider } from "../context.js";
 import type { AppListRow } from "../wire-types.js";
-import { type PollOptions, useResource } from "./use-resource.js";
+import { APPS_LOADING, appsFeed } from "./apps-feed.js";
+import { type PollOptions } from "./use-resource.js";
 
-/** How many apps have never rendered for this person — what the launcher's dot
- *  reads. Published by the list fetch every surface already makes (the row
- *  carries `unseen`), so the pill costs no request of its own and there is no
- *  second poller to keep in step with this one. */
-let unseen = 0;
-const listeners = new Set<() => void>();
-
-export const unseenApps = (): number => unseen;
-
-export const subscribeUnseenApps = (listener: () => void): (() => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+/** SSR / first-render snapshot, stable across calls. */
+const loadingSnapshot = () => APPS_LOADING;
 
 export function useApps(options?: PollOptions): {
   apps: AppListRow[];
@@ -34,20 +22,16 @@ export function useApps(options?: PollOptions): {
   fork(id: AppId): Promise<AppDocument>;
   exportApp(id: AppId): Promise<Uint8Array>;
   importApp(bytes: Uint8Array): Promise<AppDocument>;
-  /** The arrival mark for a surface that LISTS an app without rendering it —
-   *  rendering marks it on its own, server-side. Idempotent. */
-  markSeen(id: AppId): Promise<void>;
 } {
   const { client } = useVendoProvider();
-  const list = useCallback(() => client.apps.list(), [client]);
-  const { data, error, isLoading, refresh } = useResource(list, [] as AppListRow[], options);
-
-  useEffect(() => {
-    const next = data.filter((app) => app.unseen === true).length;
-    if (next === unseen) return;
-    unseen = next;
-    for (const listener of listeners) listener();
-  }, [data]);
+  // H15 — one apps poller per client (apps-feed), shared with the launcher's
+  // dot: a panel listing apps and the pill reading the unseen count off the same
+  // rows cost ONE request between them, and cannot disagree in front of anyone.
+  const feed = appsFeed(client);
+  const pollMs = options?.pollMs ?? 0;
+  const subscribe = useCallback((listener: () => void) => feed.subscribe(listener, pollMs), [feed, pollMs]);
+  const { data, error, isLoading } = useSyncExternalStore(subscribe, feed.read, loadingSnapshot);
+  const refresh = useCallback(() => feed.refresh(), [feed]);
 
   const create = useCallback(
     async (prompt: string) => {
@@ -72,13 +56,6 @@ export function useApps(options?: PollOptions): {
     },
     [client, refresh],
   );
-  const markSeen = useCallback(
-    async (id: AppId) => {
-      await client.apps.seen(id);
-      await refresh();
-    },
-    [client, refresh],
-  );
   const exportApp = useCallback((id: AppId) => client.apps.exportApp(id), [client]);
   const importApp = useCallback(
     async (bytes: Uint8Array) => {
@@ -89,5 +66,5 @@ export function useApps(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { apps: data, error, isLoading, refresh, create, remove, fork, exportApp, importApp, markSeen };
+  return { apps: data, error, isLoading, refresh, create, remove, fork, exportApp, importApp };
 }
