@@ -8,6 +8,8 @@ import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import type { ParkedPress } from "../tree/renderer.js";
+import { useMotionLayoutEffect } from "../tree/repaint-motion.js";
+import { rememberedShape, rememberShape, type ShapeBox } from "./app-shape-cache.js";
 import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
@@ -23,8 +25,21 @@ function slotLabel(id: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** The faint skeleton behind the ghost/empty states — decorative only. */
-function GhostSkeleton() {
+/** The faint skeleton behind the ghost/empty states — decorative only. Given an
+ *  app we have served before, it draws THAT app's bones (S2) instead of the
+ *  generic shimmer; a first-ever visit and an iframe-served app keep the
+ *  shimmer. Read before paint, never during render: the store is client-only,
+ *  and bones the server could not know about are a hydration mismatch. */
+function GhostSkeleton({ appId }: { appId?: string }) {
+  const [boxes, setBoxes] = useState<ShapeBox[]>();
+  useMotionLayoutEffect(() => setBoxes(appId === undefined ? undefined : rememberedShape(appId)), [appId]);
+  if (boxes) {
+    return (
+      <span className="fl-slot-skel fl-slot-bones" aria-hidden="true">
+        {boxes.map((box, i) => <span key={i} className="fl-bone" data-bone={box.kind} />)}
+      </span>
+    );
+  }
   return (
     <span className="fl-slot-skel" aria-hidden="true">
       <span className="fl-skel-line" style={{ width: "54%" }} />
@@ -41,10 +56,10 @@ function GhostSkeleton() {
   );
 }
 
-function SlotGhost({ label, detail, loading = false }: { label: string; detail?: string; loading?: boolean }) {
+function SlotGhost({ label, detail, loading = false, appId }: { label: string; detail?: string; loading?: boolean; appId?: string }) {
   return (
     <div className="fl-slot-ghost" role={loading ? "status" : undefined} aria-live={loading ? "polite" : undefined}>
-      <GhostSkeleton />
+      <GhostSkeleton appId={appId} />
       <span className="fl-slot-cta">
         <span className="fl-slot-cta-label">{label}</span>
         {detail ? <small>{detail}</small> : null}
@@ -176,9 +191,13 @@ function MountedApp({ appId, onParked }: { appId: string; onParked?: (parked: Pa
     () => ({ ping: () => client.apps.pingMachine(appId) }),
     [appId, client],
   );
+  // The silhouette this app's NEXT wait is drawn in (S2).
+  useEffect(() => {
+    if (surface?.kind === "tree") rememberShape(appId, surface.payload);
+  }, [appId, surface]);
   if (!surface) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
-    return <SlotGhost label="Loading app…" loading />;
+    return <SlotGhost label="Loading app…" loading appId={appId} />;
   }
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }

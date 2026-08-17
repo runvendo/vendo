@@ -2174,4 +2174,33 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
   .fl-waiting-strip > summary::after { transition: none; }
 }
 
+/* ===== BEGIN S2 shape-true skeleton (lane L2) ===============================
+   The bones a slot waits in when it remembers the app that is coming
+   (chrome/app-shape-cache.ts). Same wash, mask and tokens as .fl-slot-skel, so
+   the shape-true and generic waits are visibly the same material — only one of
+   them knows what it is waiting for. Boxes only: a bone is never a value. */
+/* The generic ghost fades from 30% because its bars are decoration behind a
+   CTA. Bones are the POINT — a silhouette that dissolves before its last region
+   is not the app's shape any more — so this wash carries almost the whole way
+   down and only softens where the slot ends. */
+.fl-slot-bones { justify-content: flex-start;
+  -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent);
+  mask-image: linear-gradient(180deg, #000 78%, transparent); }
+.fl-bone { flex: none; width: 100%; border-radius: 5px;
+  background: color-mix(in srgb, var(--vendo-fg) 10%, transparent); }
+/* Alternating measure: three stacked lines of one width read as a wireframe
+   stencil, not as a page of text about to arrive. */
+.fl-bone[data-bone="line"] { height: 9px; width: 62%; }
+.fl-bone[data-bone="line"]:nth-child(even) { width: 44%; }
+.fl-bone[data-bone="pill"] { height: 16px; width: 110px; border-radius: 8px; }
+.fl-bone[data-bone="control"] { height: 30px; width: 148px; border-radius: 8px; }
+.fl-bone[data-bone="rows"] { height: 40px; }
+.fl-bone[data-bone="slab"] { height: 46px; }
+.fl-bone[data-bone="tiles"] { height: 56px; }
+/* A plot is the tallest thing in an app — the one bone that has to carry its
+   own weight, or arrival is the layout jump the skeleton exists to prevent. */
+.fl-bone[data-bone="chart"] { height: 84px;
+  background: color-mix(in srgb, var(--vendo-fg) 12%, transparent); }
+/* ===== END S2 shape-true skeleton (lane L2) =============================== */
+
 `;
