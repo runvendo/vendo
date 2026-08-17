@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { PROJECT_ID_SALT } from "@vendoai/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runSync } from "../../src/cli/sync.js";
+import { runSync, whatMoved } from "../../src/cli/sync.js";
+import type { SyncFlowResult } from "../../src/cli/sync-flow.js";
 import { telemetryCapture } from "../../src/cli/telemetry.test-util.js";
 
 afterEach(() => {
@@ -994,5 +995,89 @@ describe("sync --full writes the theme fill it paid for", () => {
     expect(written.colors.accent).toBe("#112233");
     expect(written.typography.fontFamily).toBe("Inter, sans-serif");
     expect(messages.logs.join("\n")).toContain("filled by the AI pass (accent, fontFamily)");
+  });
+});
+
+/** Minimal flow result for the footer formatter — only the fields `whatMoved` reads. */
+function flowForFooter(overrides: {
+  tools?: Partial<SyncFlowResult["report"]["tools"]>;
+  judged?: SyncFlowResult["judged"];
+  baselines?: SyncFlowResult["baselines"];
+  components?: SyncFlowResult["components"];
+}): SyncFlowResult {
+  return {
+    report: {
+      tools: { added: [], removed: [], changed: [], ...overrides.tools },
+      breaking: [],
+      toolSchemas: { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
+      pins: { captured: [], drifted: [] },
+      remixableErrors: [],
+      catalog: { discovered: 0, registered: 0 },
+      components: { captured: [], drifted: [] },
+      warnings: [],
+    },
+    judged: overrides.judged ?? { ran: false },
+    theme: null,
+    themeSummary: null,
+    themeDraft: null,
+    counts: { tools: 0, routes: 0 },
+    impact: null,
+    baselines: overrides.baselines ?? null,
+    components: overrides.components ?? null,
+    notes: [],
+    cloudKey: undefined,
+  };
+}
+
+describe("sync footer whatMoved (#1174)", () => {
+  it("reports hardened fields and keeps queued loosenings last", () => {
+    expect(whatMoved(flowForFooter({
+      tools: { added: ["host_new"], changed: ["host_a"] },
+      judged: {
+        ran: true,
+        hardened: 8,
+        schemasInferred: 0,
+        looseningsApproved: 0,
+        looseningsQueued: 2,
+      },
+      baselines: { pushed: ["a"], pruned: [] },
+    }))).toBe("+1 tool · ~1 changed · 8 fields hardened · pushed to Cloud · 2 loosenings queued");
+  });
+
+  it("uses the mock's register for approved loosenings and schemas", () => {
+    expect(whatMoved(flowForFooter({
+      tools: { added: ["a", "b"] },
+      judged: {
+        ran: true,
+        hardened: 0,
+        schemasInferred: 3,
+        looseningsApproved: 2,
+        looseningsQueued: 0,
+      },
+      components: { pushed: ["Button"], pruned: [], modules: { uploaded: 0, deleted: 0 } },
+    }))).toBe("+2 tools · 3 schemas inferred · 2 loosenings applied · pushed to Cloud");
+  });
+
+  it("says judged when the pass ran with zero findings, unlike structural-only", () => {
+    expect(whatMoved(flowForFooter({
+      tools: { added: ["host_new"], changed: ["host_a"] },
+      judged: {
+        ran: true,
+        hardened: 0,
+        schemasInferred: 0,
+        looseningsApproved: 0,
+        looseningsQueued: 0,
+      },
+    }))).toBe("+1 tool · ~1 changed · judged");
+
+    // Keyless / structural-only: tallies unset — no judgment fragment at all.
+    expect(whatMoved(flowForFooter({
+      tools: { added: ["host_new"], changed: ["host_a"] },
+      judged: { ran: true },
+    }))).toBe("+1 tool · ~1 changed");
+  });
+
+  it("returns undefined when nothing moved and judgment never ran", () => {
+    expect(whatMoved(flowForFooter({ judged: { ran: false } }))).toBeUndefined();
   });
 });

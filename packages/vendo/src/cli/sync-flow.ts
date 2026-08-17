@@ -118,9 +118,22 @@ async function withSpin<T>(
   }
 }
 
+/** What the judgment pass handed back — `ran` means the pass was invoked;
+ *  the tallies are present only when it returned `status: "judged"`, so a
+ *  zero-finding judgment is distinguishable from a keyless structural-only
+ *  run in the sync footer (#1174). */
+export interface SyncFlowJudged {
+  ran: boolean;
+  engine?: "claude" | "codex" | "npx-engine";
+  hardened?: number;
+  schemasInferred?: number;
+  looseningsApproved?: number;
+  looseningsQueued?: number;
+}
+
 export interface SyncFlowResult {
   report: SyncReportWithWarnings;
-  judged: { ran: boolean; engine?: "claude" | "codex" | "npx-engine" };
+  judged: SyncFlowJudged;
   /** The theme re-scan: which slots this run took from the host, and which the
    *  host disagrees with but a human owns. null = nothing to reconcile (the
    *  file was just created, or there is none). */
@@ -580,6 +593,15 @@ async function runGradingStages(input: {
     judged.ran = true;
     const engine = selection.engine === undefined ? undefined : ENGINE_BY_HARNESS_ID[selection.engine.harness.id];
     if (engine !== undefined) judged.engine = engine;
+    // Tallies ride on the result only for a real judgment — structural-only /
+    // up-to-date leave them unset so the footer can tell those apart from a
+    // judged run that found nothing to harden (#1174).
+    if (pass.status === "judged") {
+      judged.hardened = pass.hardened;
+      judged.schemasInferred = pass.schemasInferred;
+      judged.looseningsApproved = pass.approved;
+      judged.looseningsQueued = pass.queued;
+    }
   } catch (error) {
     note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
     judged.ran = false;
