@@ -158,6 +158,11 @@ export interface VendoComposition {
    *  no laptop has one. Same ready()-latch arming as the sweep. Filled by
    *  compose-automations.ts; a no-op outside development. */
   startDevAutomationsTicker: () => void;
+  /** The other half: a DEPLOYED process is woken by Cloud's heartbeat, which can
+   *  only knock on a door it has been told about. Same ready()-latch firing;
+   *  never rejects, and shouts if it could not enrol. Filled by
+   *  compose-automations.ts. */
+  enrolForCloudTicks: () => Promise<void>;
   /** The boot-once latch every handler/emit touch awaits. */
   ready: () => Promise<void>;
   /** Filled by compose-apps.ts, read by `resolveRisk` inside a later check. */

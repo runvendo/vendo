@@ -29,6 +29,7 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CODE_AUTOMATION_OWNER } from "../src/compose-automations.js";
 import { createVendo, type Vendo } from "../src/server.js";
+import { deriveTickSecret } from "../src/tick-enrolment.js";
 import { systemRoutes } from "../src/wire/misc.js";
 
 /** A tick secret exactly as Cloud mints one: 32 random BYTES, carried as
@@ -185,6 +186,47 @@ describe("the firing door's two credentials, side by side", () => {
 
     expect((await vendo.handler(tick({ authorization: "Bearer " }))).status).toBe(401);
     expect((await vendo.handler(tick((await signed(KEY_BYTES)).headers))).status).toBe(401);
+  });
+});
+
+/** A Cloud deployment configures NOTHING: the secret Cloud signs with is derived
+ *  from the VENDO_API_KEY the deployment already has, and enrolment publishes it.
+ *  So the door has to accept that derived value — and must still let an operator
+ *  who set VENDO_TICK_SECRET keep it (hard BYO rule). */
+describe("the Cloud deployment nobody configured a tick secret on", () => {
+  const CLOUD_KEY = `vnd_${"a".repeat(40)}`;
+  const decoded = (secret: string): Uint8Array<ArrayBuffer> =>
+    new Uint8Array(Buffer.from(secret, "base64url"));
+
+  it("answers 202 to a heartbeat signed with the secret DERIVED from VENDO_API_KEY", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", undefined);
+    vi.stubEnv("VENDO_API_KEY", CLOUD_KEY);
+    // Booting a Cloud deployment enrols it, and this one has no VENDO_BASE_URL to
+    // publish — so the shout IS the enrolment wiring, live, at the ready() latch.
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { vendo } = await setup();
+    const derived = await deriveTickSecret(CLOUD_KEY);
+    const heartbeat = await signed(decoded(derived));
+
+    // ORACLE — the shipped verifier says a knock keyed on this secret's decoded
+    // bytes is good, so a 401 below would be the DOOR's fault, not the signer's.
+    expect(await verifySignature(derived, heartbeat.signature, heartbeat.signed)).toBe(true);
+
+    expect((await vendo.handler(tick(heartbeat.headers))).status).toBe(202);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("VENDO_BASE_URL"));
+  });
+
+  it("still lets VENDO_TICK_SECRET win when the operator set one", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", SECRET);
+    vi.stubEnv("VENDO_API_KEY", CLOUD_KEY);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { vendo } = await setup();
+
+    expect((await vendo.handler(tick(bearer))).status).toBe(202);
+    // And the derived value is not a SECOND key into the door: the override wins
+    // outright, so what enrolment published is the one secret Cloud may knock with.
+    const derived = await deriveTickSecret(CLOUD_KEY);
+    expect((await vendo.handler(tick((await signed(decoded(derived))).headers))).status).toBe(401);
   });
 });
 
