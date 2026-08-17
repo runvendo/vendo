@@ -76,7 +76,9 @@ export default defineConfig({
     command: harnessCommand(port),
     cwd: packageRoot,
     url: `${baseURL}/thread`,
-    reuseExistingServer: false,
+    // Reuse only the dev server: it hot-reloads, while a reused `vite preview`
+    // would serve the previous build.
+    reuseExistingServer: process.env.VENDO_HARNESS_DEV === "1",
     timeout: 180_000,
     stdout: "pipe",
     stderr: "pipe",

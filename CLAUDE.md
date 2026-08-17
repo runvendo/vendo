@@ -91,6 +91,14 @@ generated UI in a sandboxed, brand-native surface.
   names breaks merges. No browser runs in CI (2026-08-06) — headless
   mis-resolves `:focus-visible` and `light-dark()`, so the Playwright suites
   stay a LOCAL pre-PR gate.
+- Iterating on a browser spec is two-speed. While you are editing, start ONE
+  warm hot-reloading harness (`VENDO_HARNESS_DEV=1` plus a pinned
+  `VENDO_HARNESS_PORT`) and rerun specs against it with the same two variables —
+  reuse is dev-mode-only, so every rerun skips the build and starts in seconds.
+  Then one run WITHOUT the flag — a fresh production build — is the proof of
+  record, and the only result worth reporting. A production run never reuses a
+  server: `vite preview` serves whatever was built last, so a reused one greens
+  the previous build.
 - `--continue` and a turbo concurrency bound are the standing rule wherever the
   suite runs: `--continue` so one red package never hides every other package's
   result; the bound (2 in CI's `test-rest`, 4 in the root `test` /
