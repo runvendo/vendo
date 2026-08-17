@@ -72,7 +72,7 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 
 ```ts next.config.ts focus={2}
 const nextConfig = {
-  serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite"],
+  serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],
 };
 
 export default nextConfig;
@@ -80,7 +80,7 @@ export default nextConfig;
 
 On Next 14 the key is `experimental.serverComponentsExternalPackages` — same list, old name and location (renamed in Next 15).
 
-`@vendoai/apps` syntax-checks generated apps with `esbuild` and PGlite backs persistence. `@vendoai/apps` is the entry that matters — it reaches esbuild through a variable specifier the bundler cannot see, so an `"esbuild"` entry on its own is inert ([E-CFG-004](/production/troubleshooting/e-cfg-004)). The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
+`@vendoai/apps` syntax-checks generated apps with `esbuild`, and PGlite — loaded by `@vendoai/store` — backs persistence. `@vendoai/apps` is the entry that matters: it reaches esbuild through a variable specifier the bundler cannot see, so an `"esbuild"` entry on its own is inert. Paste all four — `vendo doctor` fails [`E-CFG-004`](/production/troubleshooting/e-cfg-004) on any one that is missing. The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
 
 ## Two models, one key
 
