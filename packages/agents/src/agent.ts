@@ -20,6 +20,7 @@ import {
   type SeatModels,
   type Skill,
   type ToolRegistry,
+  type When,
 } from "@vendoai/core";
 import { createGuard, isGuardInstance, permissionsHandler, type GuardRules, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters, vendo } from "@vendoai/harnesses";
@@ -28,6 +29,7 @@ import { resolveDevCredential } from "@vendoai/harnesses/inference/credential";
 import { createStore, hostedStore, storeFiles, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import { declareAutomation, type OnOptions } from "./automations.js";
 import { startRun, type AgentRun, type RunOptions } from "./away.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
@@ -106,6 +108,23 @@ export interface VendoAgent {
    *  happened. Venue "automation", presence "away", non-interactive — so a tool
    *  the guard wants a person for parks, and `refs.approvals` is who to ask. */
   run<T = never>(task: string, options?: RunOptions<T>): AgentRun<T>;
+  /**
+   * Declare an automation this agent runs unattended. A bare string is a cron
+   * expression; the other four shapes are `{ every }`, `{ at }`, `{ event }` and
+   * `{ webhook }`.
+   *
+   *     support.on("0 9 * * 1", "summarize the week and email ops");
+   *     support.on({ every: "1d" }, "refresh credit scores");
+   *     support.on({ event: "payment.failed" }, "triage and notify the user");
+   *     support.on("0 2 * * *", "rebuild the digest", { id: "nightly-digest" });
+   *
+   * Returns void because it is a DECLARATION: it is validated here and now — a
+   * bad cron throws at module load, with what, why, a did-you-mean and the docs
+   * — and reconciled against the store when `createVendo` boots. The code is the
+   * consent, so deleting the call disarms the automation on the next deploy;
+   * `disable()` by a person outlives every redeploy.
+   */
+  on(when: When, task: string, options?: OnOptions): void;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
   /**
    * This agent's MCP door, present exactly when its harness thinks outside this
@@ -370,6 +389,7 @@ export function agent(config: AgentConfig): VendoAgent {
       return session.stream(message, options.signal === undefined ? {} : { signal: options.signal });
     },
     run: (task, options) => startRun(deps, task, options),
+    on: (when, task, options) => declareAutomation(built, when, task, options),
     async session(subject, options) {
       await requireModel();
       return createSession(deps, subject, options);
