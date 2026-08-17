@@ -232,6 +232,44 @@ describe("driving Codex", () => {
     expect(outcome.session).toEqual({ turns: 2 });
   });
 
+  /** stdout is not obliged to end on a newline, and the last line a session
+   *  writes is the one carrying its tokens: held back and never flushed, a whole
+   *  finished session bills at zero. */
+  it("bills a final event that arrives without a newline after it", async () => {
+    const unterminated: CodexSpawn = (_command, _args, options) => ({
+      output: (async function* () {
+        await writeFile(join(options.cwd, "index.html"), "<p>done</p>");
+        yield JSON.stringify({ type: "turn.completed", usage: TURN_USAGE });
+      })(),
+      kill: () => undefined,
+    });
+    const outcome = await runCase(unterminated);
+
+    expect(outcome.usage).toEqual(billed(1));
+    expect(outcome.session).toEqual({ turns: 1 });
+    expect(outcome.artifact).toBe("<p>done</p>");
+  });
+
+  /** The other half of that flush: what a killed process leaves at the end of
+   *  stdout is half a line, and parsing it throws. Swallowed, or the session's
+   *  own failure sentence is replaced by a JSON error about a line nobody
+   *  needed. */
+  it("swallows the half line a killed process leaves behind", async () => {
+    const cut: CodexSpawn = (_command, _args, options) => ({
+      output: (async function* () {
+        await writeFile(join(options.cwd, "index.html"), "<p>half</p>");
+        yield line({ type: "turn.completed", usage: TURN_USAGE });
+        yield '{"type":"item.completed","item":{"id":"item_1"';
+      })(),
+      kill: () => undefined,
+    });
+    const outcome = await runCase(cut);
+
+    expect(outcome.failure).toBeUndefined();
+    expect(outcome.usage).toEqual(billed(1));
+    expect(outcome.artifact).toBe("<p>half</p>");
+  });
+
   it("reports a session that ended badly as a failure, with whatever it wrote", async () => {
     const outcome = await runCase(
       writingCodex(["<p>half</p>"], {}, { type: "turn.failed", error: { message: "context window exhausted" } }),

@@ -147,18 +147,35 @@ const spawnCodex: CodexSpawn = (command, args, options) => {
   };
 };
 
-/** The `--json` stream, one event per line. A line that is not JSON is the CLI
- *  talking to a person and is dropped; a half line is held until the rest of it
- *  arrives, because stdout chunks do not land on line boundaries. */
+/** One line of the `--json` stream, or nothing: a line the CLI wrote for a
+ *  person to read, and the half line a killed process leaves behind, are both
+ *  things this driver has no use for. */
+const parsed = (line: string): Record<string, unknown> | undefined => {
+  if (!line.startsWith("{")) return undefined;
+  try {
+    return JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+};
+
+/** The `--json` stream, one event per line. A half line is held until the rest
+ *  of it arrives, because stdout chunks do not land on line boundaries. */
 async function* events(output: AsyncIterable<string>): AsyncGenerator<Record<string, unknown>> {
   let held = "";
   for await (const chunk of output) {
     const lines = (held + chunk).split("\n");
     held = lines.pop() ?? "";
     for (const line of lines) {
-      if (line.startsWith("{")) yield JSON.parse(line) as Record<string, unknown>;
+      const event = parsed(line);
+      if (event !== undefined) yield event;
     }
   }
+  // A stream can end on a whole event with nothing after it, and the last event
+  // a session sends is the one carrying its tokens: held back and never flushed,
+  // a finished session bills at zero.
+  const last = parsed(held);
+  if (last !== undefined) yield last;
 }
 
 const numberOf = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
