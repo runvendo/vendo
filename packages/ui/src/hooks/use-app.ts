@@ -8,6 +8,7 @@ import {
 import { effectiveAppBuildUiDeadlineMs } from "@vendoai/apps/contract";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoProvider } from "../context.js";
+import { isForbiddenError } from "./identity-state.js";
 import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";
 
 /** How many times a load may try before the error becomes the user's problem.
@@ -85,7 +86,10 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
         return;
       } catch (reason) {
         if (!current()) return;
-        if (attempt >= LOAD_ATTEMPTS) {
+        // A forbidden refusal is terminal on the first answer (H2-E / #1372):
+        // the retry ladder exists for transient failures, and re-asking a wire
+        // that refused this visitor's identity burns the attempts for nothing.
+        if (isForbiddenError(reason) || attempt >= LOAD_ATTEMPTS) {
           setError(reason instanceof Error ? reason : new Error(String(reason)));
           setIsLoading(false);
           return;

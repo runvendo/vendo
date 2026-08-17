@@ -16,6 +16,7 @@
 import { useEffect, useRef } from "react";
 import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../client-impl.js";
 import { useVendoClientOrNone } from "../context.js";
+import { identityState } from "../hooks/identity-state.js";
 import type { ApprovalResolution } from "../wire-types.js";
 
 /** Slower than the approvals feed on purpose: this is the backstop for a
@@ -41,6 +42,7 @@ export function useParkedApprovals(
 
   useEffect(() => {
     if (client === undefined || outstanding === "") return undefined;
+    const identity = identityState(client);
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const settle = async (only?: ReadonlySet<string>): Promise<void> => {
@@ -50,7 +52,12 @@ export function useParkedApprovals(
         // resumed call INSIDE the decision, so a read landing in that window
         // finds neither a pending ask nor an outcome yet. The next pass asks
         // again and the pending notice stands meanwhile — today's behavior.
-        const resolution = await client.approvals.get(approvalId).catch(() => undefined);
+        // The one exception is a forbidden refusal, which feeds the page-wide
+        // latch (H2-E) so this backstop goes quiet with everything else.
+        const resolution = await client.approvals.get(approvalId).catch((reason: unknown) => {
+          identity.note(reason);
+          return undefined;
+        });
         if (!live) return;
         if (resolution !== undefined && resolution.state !== "pending") {
           latest.current.onResolved(nodeId, resolution);
@@ -58,9 +65,10 @@ export function useParkedApprovals(
       }
     };
     const poll = async (): Promise<void> => {
-      // A background tab asks nothing (the approvals feed's rule); the first
-      // tick after the person comes back picks the answer up.
-      if (!hidden()) await settle();
+      // A background tab asks nothing (the approvals feed's rule), and a
+      // latched-forbidden page asks nothing either; the cadence keeps ticking
+      // so the first tick after either lifts picks the answer up.
+      if (!hidden() && !identity.forbidden()) await settle();
       if (live) timer = setTimeout(() => void poll(), POLL_MS);
     };
     const onDecided = (event: Event): void => {

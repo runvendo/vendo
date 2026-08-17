@@ -7,6 +7,7 @@
  * a remount, so a newly-pending approval (or thread, run, …) appears on its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IDENTITY_CHANGED_EVENT, isForbiddenError } from "./identity-state.js";
 
 /** Opt-in polling knob accepted by every collection hook. */
 export interface PollOptions {
@@ -45,6 +46,12 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
   const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
   const loadedRef = useRef(false);
+  // H2-E / #1372 — a forbidden refusal is a full stop for the POLL, not a
+  // transient to retry: on a preset-authed deployment a signed-out visitor's
+  // every read correctly 403s, and re-asking on a cadence cannot change the
+  // answer. Manual refresh() still works (an explicit call is its own signal),
+  // a success clears the latch, and the page's identity event wakes the poll.
+  const forbiddenRef = useRef(false);
 
   const refresh = useCallback(async () => {
     const generation = (generationRef.current += 1);
@@ -52,11 +59,13 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
     try {
       const next = await fetcher();
       if (generation !== generationRef.current) return;
+      forbiddenRef.current = false;
       setData(next);
       setError(undefined);
       loadedRef.current = true;
     } catch (reason) {
       if (generation !== generationRef.current) return;
+      if (isForbiddenError(reason)) forbiddenRef.current = true;
       setError(asError(reason));
     } finally {
       if (generation === generationRef.current) setIsLoading(false);
@@ -85,18 +94,27 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      if (!hidden()) await refresh();
+      // Forbidden skips the fetch, not the cadence — no restart machinery, and
+      // zero requests while latched (the field failure was endless 403 spam).
+      if (!hidden() && !forbiddenRef.current) await refresh();
       if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
     };
     timer = setTimeout(() => void tick(), pollMs);
     const onVisible = () => {
-      if (!hidden() && !cancelled) void refresh();
+      // A tab switch is not a sign-in: the latch holds through it.
+      if (!hidden() && !cancelled && !forbiddenRef.current) void refresh();
+    };
+    const onIdentity = () => {
+      forbiddenRef.current = false;
+      if (!cancelled) void refresh();
     };
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisible);
+    if (typeof window !== "undefined") window.addEventListener(IDENTITY_CHANGED_EVENT, onIdentity);
     return () => {
       cancelled = true;
       clearTimeout(timer);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
+      if (typeof window !== "undefined") window.removeEventListener(IDENTITY_CHANGED_EVENT, onIdentity);
     };
   }, [pollMs, refresh]);
 

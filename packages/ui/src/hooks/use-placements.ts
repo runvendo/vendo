@@ -31,6 +31,7 @@ import type { VendoClient } from "../client.js";
 // hooks/use-vendo-context.ts, which publishes into the agent's [Situation]
 // channel and returns void.
 import { useVendoProvider } from "../context.js";
+import { identityState } from "./identity-state.js";
 import { onPinAnnounced } from "../pin-events.js";
 import type { PlacementEntry } from "../wire-types.js";
 
@@ -69,6 +70,11 @@ const pollers = new WeakMap<VendoClient, Poller>();
 function createPoller(client: VendoClient): Poller {
   const listeners = new Map<string, Set<() => void>>();
   const settles = new Set<ReturnType<typeof setTimeout>>();
+  // H2-E / #1372: while the wire says forbidden, the tick skips both the read
+  // AND renew's slot-report writes — a signed-out visitor generates zero
+  // traffic. The latch opening (identity signal, or any surface's successful
+  // read) re-reads immediately.
+  const identity = identityState(client);
   let entries = new Map<string, PlacementEntry>();
   let error: Error | undefined;
   let loaded = false;
@@ -76,6 +82,7 @@ function createPoller(client: VendoClient): Poller {
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopPin: (() => void) | undefined;
+  let stopIdentity: (() => void) | undefined;
 
   /** Every (id, label) pair already sent to the registry, and WHEN — once per
    *  client per {@link SLOT_REPORT_REFRESH_MS}, so a page of slots re-rendering
@@ -114,10 +121,12 @@ function createPoller(client: VendoClient): Poller {
     try {
       const answered = await client.apps.placements(slots);
       if (mine !== generation) return;
+      identity.clear();
       entries = new Map(answered.map(item => [item.slot, item]));
       error = undefined;
     } catch (reason) {
       if (mine !== generation) return;
+      identity.note(reason);
       error = reason instanceof Error ? reason : new Error(String(reason));
     }
     loaded = true;
@@ -141,14 +150,19 @@ function createPoller(client: VendoClient): Poller {
   // Self-scheduling, never setInterval: the next tick is armed only once the
   // current read settles, so a slow wire cannot stack overlapping requests.
   const tick = async (): Promise<void> => {
-    renew();
-    await read();
+    if (!identity.forbidden()) {
+      renew();
+      await read();
+    }
     if (running) timer = setTimeout(() => void tick(), POLL_MS);
   };
 
   const start = (): void => {
     if (running) return;
     running = true;
+    stopIdentity = identity.subscribe(() => {
+      if (running && !identity.forbidden()) void read();
+    });
     stopPin = onPinAnnounced(() => {
       void read();
       const settle = setTimeout(() => {
@@ -171,6 +185,8 @@ function createPoller(client: VendoClient): Poller {
     timer = undefined;
     stopPin?.();
     stopPin = undefined;
+    stopIdentity?.();
+    stopIdentity = undefined;
     for (const settle of settles) clearTimeout(settle);
     settles.clear();
     generation += 1;

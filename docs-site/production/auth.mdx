@@ -258,6 +258,25 @@ Audit readers that filter on webhook subjects should match
 
 ---
 
+## Signed-out visitors
+
+A visitor your resolver answers `null` for is refused with `forbidden` — the
+host owns sign-in, so that is correct. The chrome treats the first such
+refusal as a full stop: every poller (threads, approvals, slots) goes quiet
+instead of retrying a 403 forever, and switching tabs does not wake them.
+
+Everything resumes on its own after a full-page sign-in redirect. If your app
+signs users in without a page load, announce it:
+
+```ts
+window.dispatchEvent(new Event("vendo:identity-changed"));
+```
+
+Dispatch it after sign-in, sign-out, or a workspace switch — the chrome
+re-checks immediately.
+
+---
+
 ## Verify the wiring
 
 `vendo doctor` reads files on disk, so it cannot see these seams. Run your app
