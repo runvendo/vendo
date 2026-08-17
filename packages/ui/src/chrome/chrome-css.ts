@@ -2214,4 +2214,23 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
 .fl-slot-filled[data-vendo-revealed] .fl-remix-pill:active { transform: scale(.97); }
 /* ===== END S3 ✦ chrome on pinned apps (lane L2) ============================ */
 
+/* ==================== S3 · WET PAINT (lane L3 · append-only fence) ====================
+   A section the renderer has not resolved yet carries data-vendo-wet="1"
+   (tree/renderer.tsx, isWet), and wet ink reads unfinished: dim and slightly
+   desaturated. Drying is the removal of that attribute — the node shell is the one
+   box that survives the swap from silhouette to real component, so the section
+   transitions to full ink in place instead of popping.
+
+   The transition IS the whole effect: no keyframes, no stagger, no loop. §8's
+   one-animation law still holds, because a discrete 200ms state change is not a
+   thing that moves while the build runs — the boot hairline stays the only one.
+
+   Reduced motion keeps the dim and drops the transition, so the unfinished state
+   still reads statically: the media query below gates only the transition, and the
+   [data-vendo-motion="reduced"] root kill-switch never touches opacity or filter. */
+[data-vendo-wet="1"] { opacity: .55; filter: saturate(.65); }
+@media (prefers-reduced-motion: no-preference) {
+  [data-vendo-node-id] { transition: opacity .2s ease, filter .2s ease; }
+}
+
 `;

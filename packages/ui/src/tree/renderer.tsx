@@ -697,11 +697,22 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
     );
 }
 
+/** A section whose implementation has not arrived yet, so what the reader sees is
+ *  a silhouette: it paints WET (dim, desaturated) until the real thing lands and
+ *  the attribute drops. Mid-stream only — an unresolved name in a FINAL payload
+ *  is a notice, and a verdict is not unfinished. */
+function isWet(node: TreeNode, props: NodeRendererProps): boolean {
+  if (!props.streaming) return false;
+  return node.source === "generated"
+    ? props.generated[node.component] === undefined
+    : resolveBuiltin(node, props.components) === undefined;
+}
+
 function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
   if (!node) {
     return (
-      <span data-dangling-node={props.nodeId} style={{ display: "block", width: "100%" }}>
+      <span data-dangling-node={props.nodeId} data-vendo-wet="1" style={{ display: "block", width: "100%" }}>
         <FormingSkeleton name={props.nodeId} />
       </span>
     );
@@ -725,7 +736,7 @@ function NodeRenderer(props: NodeRendererProps) {
   // island the plan declared) shimmers instead of reading as unknown.
   if (node.props?.pending === true) {
     return (
-      <div data-vendo-node-id={node.id} data-vendo-pending="" aria-busy="true">
+      <div data-vendo-node-id={node.id} data-vendo-pending="" data-vendo-wet="1" aria-busy="true">
         <PendingLeaf name={node.component} />
       </div>
     );
@@ -759,6 +770,7 @@ function NodeRenderer(props: NodeRendererProps) {
       outcome={outcome}
       mark={props.marks.get(node.id)}
       shell={shellBox(node, props.components)}
+      wet={isWet(node, props)}
     >
       {content}
       {notice(node.id, outcome)}
@@ -774,12 +786,18 @@ function NodeRenderer(props: NodeRendererProps) {
  * the render that carries the change and never on a first paint, so the effect
  * plays exactly one beat per node per repaint (repaint-motion.ts).
  */
-function NodeShell({ nodeId, outcome, mark, shell, children }: {
+function NodeShell({ nodeId, outcome, mark, shell, wet, children }: {
   nodeId: string;
   outcome: ToolOutcome | undefined;
   mark: NodeMark | undefined;
   /** How much box this shell may generate (`shellBox`). */
   shell: "box" | "contents" | "none";
+  /** Still forming. The shell is the one box that survives the swap from
+   *  silhouette to real component, so dropping the attribute here is what lets
+   *  the section transition to full ink instead of popping. Only a "box" carries
+   *  it: "none" emits no element and "contents" generates none, and opacity and
+   *  filter are both inert on a shell with no box. */
+  wet: boolean;
   children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -795,6 +813,7 @@ function NodeShell({ nodeId, outcome, mark, shell, children }: {
       data-vendo-node-id={nodeId}
       {...(shell === "contents" ? { style: { display: "contents" } } : {})}
       data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
+      {...(wet && shell === "box" ? { "data-vendo-wet": "1" } : {})}
       {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
     >
       {children}
