@@ -1,6 +1,10 @@
 import { expect, type Page } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
-export const screenshotPath = (name: string) => new URL(`./screenshots/${name}.png`, import.meta.url).pathname;
+// fileURLToPath, not URL#pathname: pathname renders a Windows file URL as
+// "/C:/…", which the fs then reads as "C:\C:\…" — every capture on a Windows
+// machine failed at the write, after the page had already proven ready.
+export const screenshotPath = (name: string) => fileURLToPath(new URL(`./screenshots/${name}.png`, import.meta.url));
 
 /**
  * Hold one real wire request open, and hand back its release. Nothing about the

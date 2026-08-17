@@ -13,6 +13,7 @@ const shots = [
   { scenario: "tree", file: "tree", ready: '[data-dangling-node="not-yet-streamed"]' },
   { scenario: "tree-themed", file: "tree-themed", ready: '[data-vendo-node-id="host"]' },
   { scenario: "appframe", file: "appframe", ready: 'section[aria-label="HTTP app frame same-origin"] iframe' },
+  { scenario: "signed-out", file: "signed-out", ready: ".fl-signedout" },
 ] as const;
 
 for (const shot of shots) {

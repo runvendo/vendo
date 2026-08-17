@@ -970,6 +970,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   transition: opacity .28s ease .1s, border-right-width 0s .45s; }
 .fl-split-rail { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column;
   transition: flex-basis .45s cubic-bezier(.22, 1, .36, 1), filter .22s ease; }
+/* The signed-out panel (H2-E): one centered quiet line where the thread would
+   be — same ground, no chrome, nothing that looks broken. */
+.fl-signedout { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.fl-signedout-line { margin: 0; font-size: 15px; color: var(--vendo-muted-foreground, #6b7280); text-align: center; }
 .fl-overlay-panel[data-vendo-expanded] { width: min(1500px, 96vw); height: min(940px, 94vh); }
 .fl-overlay-panel[data-vendo-expanded] .fl-split-rail { flex-basis: max(360px, 33.5%); }
 .fl-overlay-panel[data-vendo-expanded] .fl-split-stage { opacity: 1; border-right-width: 1px;

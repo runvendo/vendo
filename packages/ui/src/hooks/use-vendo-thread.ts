@@ -11,6 +11,7 @@ import {
 } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoProvider } from "../context.js";
+import { identityState } from "./identity-state.js";
 import { currentSituation } from "../situation.js";
 import { publishThreadRun, retireThreadRun, type VendoBeat } from "../chrome/run-activity.js";
 import { publishWorkbenchPart } from "../chrome/workbench-store.js";
@@ -195,7 +196,10 @@ export function useVendoThread(threadId?: string) {
   useEffect(() => {
     if (warmedClients.has(client)) return;
     warmedClients.add(client);
-    client.threads.warm().catch(() => {});
+    // Still best-effort, but a forbidden refusal feeds the page-wide latch
+    // (H2-E): the warm call is often the overlay's FIRST wire contact, so it
+    // is what tells the signed-out panel to render without waiting for a poll.
+    client.threads.warm().catch((reason: unknown) => identityState(client).note(reason));
   }, [client]);
   // Beats belong to the RUNNING turn: clearing on the settle (rather than on the
   // next turn's start) is one rule that answers both halves of §3.4's ephemeral

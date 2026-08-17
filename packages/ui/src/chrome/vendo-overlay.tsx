@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncE
 import { createPortal } from "react-dom";
 import { useVendoProvider, useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
+import { useSignedOut } from "../hooks/identity-state.js";
 import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
 import { useApprovalModal } from "./approval-modal.js";
@@ -113,6 +114,16 @@ export interface VendoOverlayProps {
   /** Docked panel width in CSS px (default 420) — also the amount the host
    *  page reflows by, so the two can never disagree. */
   dockWidth?: number;
+  /**
+   * The one line the panel shows a visitor the wire refused for missing
+   * identity (H2-E / #1372) — host-brandable, defaulting to
+   * "Sign in to use the agent." The launcher still renders (nothing about
+   * wire health hides it); only the panel content changes, and the server's
+   * developer-facing resolver message never reaches this surface. The panel
+   * returns to the conversation on `vendo:identity-changed` or the first
+   * successful wire read.
+   */
+  signedOutNotice?: string;
 }
 
 /** Whisper caption duration — long enough to read two short lines, short
@@ -583,6 +594,19 @@ function WorkspaceToggle({ hidden, expanded, suggest, onToggle }: {
   );
 }
 
+/** The panel's whole answer to a visitor the wire refused for missing
+ *  identity: one quiet, host-brandable line (never the server's
+ *  developer-facing resolver paragraph — consumer voice law; the
+ *  `connectRefusalCopy` precedent). Internal like HistoryPicker: the notice
+ *  is the overlay's plumbing, not API. */
+function SignedOutNotice({ notice }: { notice?: string | undefined }) {
+  return (
+    <div className="fl-signedout" role="status">
+      <p className="fl-signedout-line">{notice ?? "Sign in to use the agent."}</p>
+    </div>
+  );
+}
+
 /** 08-ui §4 — floating modal launcher with focus containment and restoration.
  *  Supported entry API (ENG-220): positioned launcher by default, controlled +
  *  uncontrolled programmatic open/close, panel portaled to document.body with
@@ -598,6 +622,7 @@ export function VendoOverlay({
   greeting,
   placement = "center",
   dockWidth = 420,
+  signedOutNotice,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -617,6 +642,11 @@ export function VendoOverlay({
   const { resumeThreadId, setResumeThreadId, historyOpen, setHistoryOpen, forgetForFreshStart } =
     useRememberedConversation(conversationKey);
   const theme = useVendoTheme();
+  const { client } = useVendoProvider();
+  // H2-E / #1372 — the wire refused this visitor for missing identity. The
+  // launcher stays (nothing about wire health hides it); the PANEL answers
+  // with one quiet line instead of a conversation that can only error.
+  const signedOut = useSignedOut(client);
   const takeover = useMobileTakeover();
   const { docked, dockedOpen } = dockPosture(placement, takeover.active, open);
   const pin = usePinAction();
@@ -1072,15 +1102,19 @@ export function VendoOverlay({
               }}
             />
             <div className="fl-split-rail" key="rail">
-              <PrefillScopeContext.Provider value={prefillScope.current}>
-                <Thread
-                  key={`${conversationKey ?? 0}:${conversationEpoch}:${resumeThreadId ?? "new"}`}
-                  {...resumeThreadProps(resumeThreadId)}
-                  discoverability={dial}
-                  firstRunGreeting={greeting}
-                  onThreadId={adoptThreadId}
-                />
-              </PrefillScopeContext.Provider>
+              {signedOut ? (
+                <SignedOutNotice notice={signedOutNotice} />
+              ) : (
+                <PrefillScopeContext.Provider value={prefillScope.current}>
+                  <Thread
+                    key={`${conversationKey ?? 0}:${conversationEpoch}:${resumeThreadId ?? "new"}`}
+                    {...resumeThreadProps(resumeThreadId)}
+                    discoverability={dial}
+                    firstRunGreeting={greeting}
+                    onThreadId={adoptThreadId}
+                  />
+                </PrefillScopeContext.Provider>
+              )}
             </div>
           </div>
         </SplitViewContext.Provider>

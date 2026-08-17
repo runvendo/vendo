@@ -17,6 +17,7 @@
  * exactly as long as their client does.
  */
 import { VendoError } from "@vendoai/core";
+import { useSyncExternalStore } from "react";
 
 /** The page signal: the host announces "who is signed in changed" (sign-in,
  *  sign-out, workspace switch). Every gated poller re-checks on it. */
@@ -45,6 +46,14 @@ export function identityState(client: object): IdentityState {
     states.set(client, state);
   }
   return state;
+}
+
+/** React view of the latch — the overlay's signed-out panel reads this. SSR
+ *  and the first client render answer false: the latch can only close after a
+ *  real wire read, so hydration always agrees with the server. */
+export function useSignedOut(client: object): boolean {
+  const state = identityState(client);
+  return useSyncExternalStore(state.subscribe, state.forbidden, () => false);
 }
 
 function createState(): IdentityState {

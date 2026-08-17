@@ -435,6 +435,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
         return;
       }
 
+      // A client may declare itself identity-less via header (harness: the
+      // signed-out overlay scenario renders beside signed-in surfaces sharing
+      // this wire) — every read answers the preset hosts' real refusal, the
+      // same header-forcing pattern x-vendo-force-posture set.
+      if (request.headers["x-vendo-force-forbidden"] !== undefined) {
+        wireError(response, "forbidden", "no identity for this request: the `principal:` resolver returned null.", 403);
+        return;
+      }
+
       const failureIndex = state.failures.findIndex(failure => failure.method === method && failure.path === url.pathname);
       if (failureIndex >= 0) {
         const [failure] = state.failures.splice(failureIndex, 1);

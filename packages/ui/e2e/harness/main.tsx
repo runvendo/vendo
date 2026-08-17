@@ -1971,8 +1971,29 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/affordances": return { title: "Affordances (Maple) — copy, attach, connect dock", content: <AffordancesScenario theme={mapleTheme} />, ownProvider: true };
     case "/affordances-dark": return { title: "Affordances — dark", content: <AffordancesScenario theme={darkTheme} />, ownProvider: true };
     case "/toasts": return { title: "Toasts", content: <ToastsScenario />, ownProvider: true };
+    case "/signed-out": return { title: "Overlay — signed out (H2-E)", content: <SignedOutScenario />, ownProvider: true };
     default: return { title: "Unknown scenario", content: <p role="alert">Unknown browser scenario: {pathname}</p> };
   }
+}
+
+/** H2-E — the overlay for a visitor the wire refuses: its OWN client (the
+ *  latch is per client; the other scenarios' clients stay signed in) whose
+ *  every read the wire answers 403 via the force header, so the latch trips
+ *  through the REAL path — the warm call or the badge poll, whichever lands
+ *  first — and the panel opens to the signed-out line. */
+const signedOutClient = createVendoClient({
+  baseUrl: "/api/vendo",
+  headers: { "x-vendo-force-forbidden": "1" },
+});
+
+function SignedOutScenario() {
+  return (
+    <VendoProvider client={signedOutClient} theme={mapleTheme}>
+      <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'>
+        <VendoOverlay />
+      </AutoOpen>
+    </VendoProvider>
+  );
 }
 
 function Harness() {
