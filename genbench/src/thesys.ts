@@ -80,6 +80,23 @@ const FONT_SCALE: Readonly<Record<string, string>> = {
   fontLabel2ExtraSmallHeavy: "500 10px/1.2",
 };
 
+/** Ten steps of one hue, light to dark — the shape `defaultChartPalette` has in
+ *  every preset they ship. A `VendoTheme` names ONE accent, so the ramp is mixed
+ *  from it toward white and then toward black. Their charts read this token and
+ *  fall back to their own blue without it (`paletteFromTheme` in their
+ *  `Charts/utils/PalletUtils`), which is what painted a Maple chart in another
+ *  product's colour until it was set. */
+const chartRamp = (accent: string): string[] => {
+  const channels = [1, 3, 5].map((at) => parseInt(accent.slice(at, at + 2), 16));
+  return [0.88, 0.7, 0.5, 0.28, 0.1, -0.12, -0.3, -0.48, -0.66, -0.82].map(
+    (towards) =>
+      `#${channels
+        .map((value) => Math.round(value + ((towards > 0 ? 255 : 0) - value) * Math.abs(towards)))
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("")}`,
+  );
+};
+
 /**
  * The world's brand in the vendor's own tokens — best effort, and published so
  * the configuration this column is measured under can be read rather than
@@ -95,12 +112,13 @@ const FONT_SCALE: Readonly<Record<string, string>> = {
  *
  * It is a mapping and not a translation: their ladder is finer than a
  * `VendoTheme`'s, so anything the world does not name — the wider corner radii,
- * the shadows, their chart palette — keeps their default, and is a difference
- * this column wears honestly.
+ * the shadows — keeps their default, and is a difference this column wears
+ * honestly.
  */
-export function crayonTheme(theme: VendoTheme): Record<string, string> {
+export function crayonTheme(theme: VendoTheme): Record<string, string | string[]> & { defaultChartPalette: string[] } {
   const family = theme.typography.fontFamily;
   return {
+    defaultChartPalette: chartRamp(theme.colors.accent),
     backgroundFills: theme.colors.background,
     containerFills: theme.colors.surface,
     elevatedFills: theme.colors.surfaceRaised ?? theme.colors.surface,
@@ -142,11 +160,15 @@ async function bundle(): Promise<Bundled> {
     // Never written — the CSS import makes this a two-output build, and esbuild
     // asks for somewhere to have put them.
     outdir: "thesys",
-    // Their renderer pulls in KaTeX, whose stylesheet references a dozen font
-    // files. Inlined rather than emitted, because the page is opened with no
-    // network: a `url()` pointing anywhere is a request the harness aborts and
-    // a console error that would fail this column's `renders` check.
-    loader: { ".woff2": "dataurl", ".woff": "dataurl", ".ttf": "dataurl" },
+    // Their renderer pulls in KaTeX, whose stylesheet references sixty-odd font
+    // files. They are DROPPED rather than emitted or inlined. Emitting leaves a
+    // `url()` the harness aborts, and inlining them as data URLs put 1.5MB of
+    // base64 inside the page's one `<style>` — which the judge's SOURCE channel
+    // keeps, because that channel drops script bodies and nothing else, so this
+    // column alone arrived past the grader's context window (1.69M tokens) and
+    // could never be graded. No screen here renders maths, and the world's own
+    // face is injected by the harness, so nothing is lost by their absence.
+    loader: { ".woff2": "empty", ".woff": "empty", ".ttf": "empty" },
     define: { "process.env.NODE_ENV": '"production"' },
   });
   const text = (extension: string): string =>
