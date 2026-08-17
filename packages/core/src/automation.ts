@@ -134,8 +134,10 @@ export interface CreateAutomationInput {
   armed?: boolean;
 }
 
-/** Where a rejected declaration sends its author. */
-export const AUTOMATIONS_DOCS_URL = "https://vendo.run/docs/capabilities/automations";
+/** Where a rejected declaration sends its author. The docs are their own host —
+ *  `vendo.run/docs/**` is a 404, so a refusal built on it sends the developer to
+ *  a dead page. */
+export const AUTOMATIONS_DOCS_URL = "https://docs.vendo.run/capabilities/automations";
 
 /** `<n><s|m|h|d>`, or null. The tick reads it too, so it is stated once here
  *  rather than once per package. */

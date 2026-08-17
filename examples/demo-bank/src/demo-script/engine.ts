@@ -426,7 +426,6 @@ async function automationCardPart(
  *  then the native response resumes this turn. */
 async function surfaceGrantSet(
   writer: Writer,
-  ctx: RunContext,
   key: AutomationKey,
   asks: ApprovalRequest[],
   grantSetId: string,
@@ -450,9 +449,6 @@ async function surfaceGrantSet(
     type: "data-vendo-grant-set",
     toolCallId,
     grantSetId,
-    // The set belongs to an AUTOMATION; this field predates app-less
-    // automations and nothing resolves it, so it names the record.
-    appId: demoAutomationId(key, ctx.principal.subject),
     name: demoAutomationDisplay[key].name,
     permissions: asks.map((ask) => ({
       approvalId: ask.id,
@@ -593,7 +589,7 @@ async function weeklyBeat(context: BeatContext): Promise<void> {
   if (missing.length > 0) {
     await streamText(writer, grantConsentLine(missing.length), signal);
     await beat(500, 800);
-    await surfaceGrantSet(writer, ctx, "weekly", missing, grantSetId ?? `gset_weekly_${ctx.principal.subject}`);
+    await surfaceGrantSet(writer, "weekly", missing, grantSetId ?? `gset_weekly_${ctx.principal.subject}`);
     return; // the turn parks on the set; the resume continues it
   }
   // A re-run with the grants already standing: straight to the confirmation.
@@ -628,7 +624,7 @@ async function lowBalanceBeat(context: BeatContext): Promise<void> {
   if (missing.length > 0) {
     await streamText(writer, grantConsentLine(missing.length), signal);
     await beat(500, 800);
-    await surfaceGrantSet(writer, ctx, "lowbalance", missing, grantSetId ?? `gset_lowbalance_${ctx.principal.subject}`);
+    await surfaceGrantSet(writer, "lowbalance", missing, grantSetId ?? `gset_lowbalance_${ctx.principal.subject}`);
     return; // parked on the set; the resume continues
   }
   await automationArmedConfirmation(context, "lowbalance");

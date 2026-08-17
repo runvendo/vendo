@@ -49,11 +49,17 @@ export const sponsorshipSchema = z.object({
 
 /** The tools an automation DECLARES it will use: its steps' host tools, deduped.
  *  A goal declares nothing — its toolset is whatever the registry binds at fire
- *  time, which is not a declaration. */
+ *  time, which is not a declaration.
+ *
+ *  An `fn:` step is dropped because it is not a host tool: it is the app's own
+ *  server code, run inside the app's own box, which never sees host credentials
+ *  (`packages/apps/src/server/escalation/fn.ts`) — so the host has no descriptor
+ *  to grade, no hash to bind, and nothing to consent to. Its authority is the
+ *  app's boundary, and the automation's own kill switch is what revokes it. */
 export const declaredSurface = (record: AutomationRecord): string[] =>
   record.task.kind !== "steps"
     ? []
-    : [...new Set(record.task.steps.map((step) => step.tool))];
+    : [...new Set(record.task.steps.map((step) => step.tool).filter((tool) => !tool.startsWith("fn:")))];
 
 /** The intent this record's consent is bound to — core's own content hash, the
  *  SAME one that mints a declaration's default id. One hash, so "this changed"

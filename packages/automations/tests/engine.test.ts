@@ -516,6 +516,39 @@ describe("automations enable and grant capture", () => {
     });
   });
 
+  /** The `vendo.json` fold-in's step list verbatim — `manifest-triggers.ts` writes
+   *  `[{ id: "fire", tool: `fn:${fn}` }]` and then arms it, so this is the whole
+   *  of what one of the four authoring doors asks the engine to consent to. */
+  it("arms an automation whose only step is an app function, with nothing to capture", async () => {
+    const engine = createAutomations({ tools: registry([readTool]), guard, store, now: () => NOW });
+    const record = await create(engine, {
+      id: "atm_manifest_fn",
+      authoredBy: "manifest",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [{ id: "fire", tool: "fn:chaseInvoices" }] },
+    });
+
+    expect(await engine.enable(record.id, ctx())).toMatchObject({ enabled: true, missing: [] });
+    expect((await store.records("vendo_approvals").list()).records).toEqual([]);
+  });
+
+  /** The other half of the rule: dropping `fn:` may not widen what runs without
+   *  consent. A host tool named beside an app function is still asked for. */
+  it("still captures the host tool a step list names beside its app function", async () => {
+    const engine = createAutomations({ tools: registry([readTool]), guard, store, now: () => NOW });
+    const record = await create(engine, {
+      id: "atm_mixed_fn",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [
+        { id: "fire", tool: "fn:chaseInvoices" },
+        { id: "read", tool: readTool.name },
+      ] },
+    });
+
+    expect((await engine.enable(record.id, ctx())).missing.map(({ call }) => call.tool))
+      .toEqual([readTool.name]);
+  });
+
   it("captures every descriptor for goal runs and mints or discards on decisions", async () => {
     const engine = createAutomations({ tools: registry([readTool, writeTool]), guard, store, now: () => NOW });
     const record = await create(engine, {
@@ -672,6 +705,28 @@ describe("automations enable and grant capture", () => {
       consumedAt: NOW.toISOString(),
     });
   });
+
+  /** Design §3's voice law — a consent sentence may never print an identifier at
+   *  someone. A steps record has no name field, so its first step is what names
+   *  it, and it has to arrive in words. */
+  it("names a steps automation in the consent sentence in words, not in its step's identifier", async () => {
+    const invoicesTool: ToolDescriptor = {
+      name: "host_invoices_list",
+      description: "List invoices.",
+      inputSchema: { type: "object" },
+      risk: "read",
+    };
+    const engine = createAutomations({ tools: registry([invoicesTool]), guard, store, now: () => NOW });
+    const record = await create(engine, {
+      id: "atm_named_steps",
+      when: { event: "go" },
+      task: { kind: "steps", steps: [{ id: "list", tool: invoicesTool.name }] },
+    });
+
+    const { missing } = await engine.enable(record.id, ctx());
+
+    expect(missing[0]?.inputPreview).toContain('Allow "Invoices list" to');
+  });
 });
 
 describe("grant sets: one set per enable, dedupe against pending", () => {
@@ -722,6 +777,16 @@ describe("grant sets: one set per enable, dedupe against pending", () => {
         grantSetId: result.grantSetId,
       });
     }
+  });
+
+  /** The RECORD has to name its set, because that is where the consent surface
+   *  reads it from: chrome resolves the automation through `automations.list()`
+   *  and settles the whole set with the id it finds there
+   *  (`packages/ui/src/chrome/thread/automation-consent.tsx`). */
+  it("stamps the set on the record, so a surface holding only the id can settle it", async () => {
+    const result = await engine.enable(WEEKLY, ctx());
+
+    expect((await engine.get(WEEKLY, ctx()))?.grantSetId).toBe(result.grantSetId);
   });
 
   it("re-running enable() reuses the pending ask — no duplicate ApprovalRequest per (automation, tool)", async () => {
@@ -1549,6 +1614,51 @@ describe("dry runs, run visibility, goal execution, and stopping", () => {
     expect((await store.records("automations:captures").list()).records).toHaveLength(0);
   });
 
+  /** `dryRun` is public surface, and a manifest automation's only step is an app
+   *  function — so a preview of one has to ANSWER. An `fn:` ref is the app's own
+   *  server code, so it is listed (a preview says what would run) but never
+   *  resolved against the host registry and never a missing grant. */
+  it("previews an app-function step instead of resolving it against the host registry", async () => {
+    const store = memoryStoreAdapter();
+    const engine = createAutomations({
+      tools: registry([readTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const record = await create(engine, {
+      id: "atm_dryrun_fn",
+      authoredBy: "manifest",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [
+        { id: "fire", tool: "fn:chaseInvoices" },
+        { id: "read", tool: readTool.name },
+      ] },
+    });
+
+    const plan = await engine.dryRun(record.id, ctx());
+
+    expect(plan.steps).toEqual([
+      { id: "fire", tool: "fn:chaseInvoices", wouldAsk: false },
+      { id: "read", tool: readTool.name, wouldAsk: true },
+    ]);
+    expect(plan.grantsMissing).toEqual([readTool.name]);
+  });
+
+  /** The loud path the case above must not soften: a step naming a HOST tool this
+   *  deployment does not offer is a broken automation, and the preview says so
+   *  rather than quietly dropping the step. */
+  it("still refuses a preview whose step names a host tool the registry has never heard of", async () => {
+    const store = memoryStoreAdapter();
+    const engine = createAutomations({
+      tools: registry([readTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const record = await create(engine, {
+      id: "atm_dryrun_typo",
+      when: "0 8 * * *",
+      task: { kind: "steps", steps: [{ id: "read", tool: "host_invoices_lst" }] },
+    });
+
+    await expect(engine.dryRun(record.id, ctx())).rejects.toThrow(/unknown tool in automation: host_invoices_lst/);
+  });
+
   it("surfaces a scheduler-refused run (pricing v3 §5) as a failed run carrying the blocked reason", async () => {
     // Under a hosted store, Cloud's scheduler is the firing authority for
     // schedule/external automations and writes run rows with the same shape
@@ -1629,6 +1739,48 @@ describe("dry runs, run visibility, goal execution, and stopping", () => {
     expect(await engine.runs.get(runId!, ctx("other"))).toBeNull();
     expect((await engine.runs.list({}, ctx("other"))).runs).toEqual([]);
     expect((await engine.runs.list({ automationId: record.id, status: "ok" }, ctx())).runs).toHaveLength(1);
+  });
+
+  /** 07 §5 — the owner and agent views are FILTERS over the one ledger. Both are
+   *  declared on the public surface and both are mapped from a query param on the
+   *  public `/runs` route, so a filter the store cannot answer is a 500 on a
+   *  documented door rather than a result. */
+  it("filters the one ledger by owner and by agent", async () => {
+    const store = memoryStoreAdapter();
+    const engine = createAutomations({
+      tools: registry([readTool]),
+      guard: new GuardDouble(),
+      store,
+      now: () => NOW,
+      memberships: async () => [{ org: "org_acme" }],
+    });
+    register(engine, async () => ({ status: "ok", summary: "mine", toolCalls: [] }));
+    register(engine, async () => ({ status: "ok", summary: "theirs", toolCalls: [] }), "nightly");
+    // §9.1 — the org is ASSERTED for this caller, so it speaks for both subjects
+    // and both records' runs are its to read.
+    const member: RunContext = { ...ctx(), memberships: [{ org: "org_acme" }] };
+    const mine = await create(engine, {
+      id: "atm_ledger_mine",
+      when: { event: "go" },
+      task: { kind: "goal", prompt: "mine" },
+    }, member);
+    const theirs = await create(engine, {
+      id: "atm_ledger_org",
+      owner: { kind: "user", subject: "org_acme" },
+      when: { event: "go" },
+      task: { kind: "goal", prompt: "theirs" },
+      agent: "nightly",
+    }, member);
+
+    await engine.emit("go", {}, member.principal);
+
+    expect((await engine.runs.list({}, member)).runs).toHaveLength(2);
+    expect((await engine.runs.list({ owner: "org_acme" }, member)).runs)
+      .toMatchObject([{ automationId: theirs.id }]);
+    expect((await engine.runs.list({ owner: "user_a" }, member)).runs)
+      .toMatchObject([{ automationId: mine.id }]);
+    expect((await engine.runs.list({ agent: "nightly" }, member)).runs)
+      .toMatchObject([{ automationId: theirs.id }]);
   });
 
   it("marks an in-flight goal run stopped, discards the late result, and rejects terminal stops", async () => {

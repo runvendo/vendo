@@ -306,8 +306,7 @@ export interface VendoGrantSetPart {
   /** The set every permission below belongs to — one decision settles all
    *  (mirrors the automations engine's enable() grantSetId). */
   grantSetId: string;
-  appId: AppId;
-  /** The automation document's display name. */
+  /** The automation's display name. */
   name: string;
   /** Every requested permission: its pending guard approval, the tool, the
    *  descriptor's one-line description, and its risk. */
@@ -323,7 +322,6 @@ export const vendoGrantSetPartSchema = z.object({
   type: z.literal("data-vendo-grant-set"),
   toolCallId: z.string(),
   grantSetId: z.string().min(1),
-  appId: appIdSchema,
   name: z.string().min(1),
   permissions: z.array(z.object({
     approvalId: approvalIdSchema,

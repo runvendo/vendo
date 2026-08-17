@@ -46,6 +46,10 @@ describe("toTriggerSource", () => {
     expect(error.code).toBe("validation");
     expect(error.message).toContain('"0 9 * * 1"');
     expect(error.message).toContain(AUTOMATIONS_DOCS_URL);
+    // …on the host the docs actually answer on. Every other in-repo docs link is
+    // built on this origin; `vendo.run/docs/**` returns 404, so the link a
+    // refusal hands its author has to be checked, not just present.
+    expect(AUTOMATIONS_DOCS_URL.startsWith("https://docs.vendo.run/")).toBe(true);
   });
 
   it("refuses a cron that is short a field or out of range", () => {
