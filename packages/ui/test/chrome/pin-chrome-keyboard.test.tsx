@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoSlot, VendoToasts, dismissAllVendoToasts } from "../../src/chrome/index.js";
+import { featuredEmbed, initialSplitViewState, splitViewReducer } from "../../src/chrome/split-view.js";
 import { createWireServer } from "../wire-server.js";
 
 /** S3 — the ✦ popover on a pinned app, reached and driven by the keyboard
@@ -90,5 +91,30 @@ describe("pinned-app ✦ chrome (keyboard)", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Unpin" }).hasAttribute("disabled")).toBe(false));
     expect(refused).toHaveBeenCalledWith("app_1", "hero");
+  });
+});
+
+/** "Edit in chat" promises the overlay is scoped to THAT app. A pinned app lives
+ *  in a host slot, so the conversation has never embedded it — and a pick for an
+ *  app with no embed used to be dropped on the floor, leaving whatever was
+ *  already on the stage there while the composer named the pinned one. Showing
+ *  one app and talking about another is worse than either alone. */
+describe("the workspace pick a pinned app's ✦ makes", () => {
+  const viewOf = (appId: string) =>
+    ({ type: "embed", appId, payload: { formatVersion: "vendo-genui/v2" } }) as const;
+
+  it("never leaves a different app on the stage", () => {
+    // A conversation that already put a view on the stage.
+    const other = splitViewReducer(initialSplitViewState, viewOf("app_other"));
+    expect(featuredEmbed(other)?.appId).toBe("app_other");
+
+    // ✦ Edit in chat on the pinned app — one this thread has never embedded.
+    const picked = splitViewReducer(other, { type: "feature", appId: "app_pinned" });
+    expect(picked.selectedAppId).toBe("app_pinned");
+    expect(featuredEmbed(picked)?.appId).not.toBe("app_other");
+    expect(featuredEmbed(picked)).toBeUndefined();
+
+    // And the moment the edit gives that app a view, it is the one on the stage.
+    expect(featuredEmbed(splitViewReducer(picked, viewOf("app_pinned")))?.appId).toBe("app_pinned");
   });
 });
