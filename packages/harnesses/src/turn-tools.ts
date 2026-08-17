@@ -364,11 +364,24 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           const approved = await waiter.wait(approvalId, approvalWaitMs);
           approval = approved === undefined ? "timed-out" : approved ? "approved" : "denied";
           if (approved === undefined) {
-            return finish({
-              status: "denied",
-              reason: "The approval timed out.",
-              needs: { kind: "approval", approvalId },
-            });
+            // An elapsed wait is nobody's no (H2-G): the model still reads a
+            // denial that names what it needs, but the typed outcome the
+            // screen persists carries `cause: "expired"` so the beat can say
+            // the question expired instead of blaming the person — the
+            // ai-SDK's output-denied state MEANS "the person answered no",
+            // which is exactly what did not happen here.
+            return finish(
+              {
+                status: "denied",
+                reason: "The approval timed out.",
+                needs: { kind: "approval", approvalId },
+              },
+              {
+                status: "blocked",
+                reason: "The approval request expired unanswered.",
+                cause: "expired",
+              },
+            );
           }
           if (!approved) return finish({ status: "denied", reason: "You turned this down." });
         }

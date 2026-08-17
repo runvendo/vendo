@@ -377,6 +377,19 @@ describe("turn.tools.call — §1.4 approvals", () => {
     await expect(tools.call("pay", {})).resolves.toEqual({ status: "ok", output: { sent: true } });
   });
 
+  it("interactive=true: a timeout settles as expired for the screen, denied only for the model", async () => {
+    const { tools, mirrored } = harness({ registry, guard, approvalWaitMs: 20 });
+    const result = await tools.call("pay", { amount: 10 });
+    // The model reads the same denial it always did (parity H1 rests on it)…
+    expect(result).toMatchObject({ status: "denied", needs: { kind: "approval" } });
+    // …but the typed outcome the screen persists is NOT the person's no:
+    // nobody answered, and only the cause lets the beat say so.
+    const settled = mirrored.find((event) => event.kind === "result") as
+      Extract<MirrorEvent, { kind: "result" }>;
+    expect(settled.outcome).toMatchObject({ status: "blocked", cause: "expired" });
+    expect(registry.invocations.pay).toBeUndefined();
+  });
+
   it("interactive=true: an unresolvable approval still resolves — call() never suspends the run", async () => {
     const deafGuard = testGuard({ pay: "ask" });
     // A guard whose decisions never arrive: the frozen bound is the only exit.

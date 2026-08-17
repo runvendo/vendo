@@ -285,6 +285,15 @@ export function toolCallRefused(part: UIMessage["parts"][number]): boolean {
     && (part.output as { status?: unknown } | null | undefined)?.status === "blocked";
 }
 
+/** The narrower case inside `toolCallRefused`: an ask whose wait elapsed with
+    no answer (H2-G). Nobody's no at all — not the person's (they never
+    answered) and not the rules' — so the beat says the question expired
+    instead of attributing the refusal to anyone. */
+export function toolCallExpired(part: UIMessage["parts"][number]): boolean {
+  return isToolUIPart(part) && toolCallRefused(part)
+    && (part.output as { cause?: unknown } | null | undefined)?.cause === "expired";
+}
+
 /** A failed, refused or declined call is CONTENT, not progress: its beat stays
     visible after the turn folds, and it never counts as a thing the agent did.
     Everything else is progress, and progress folds into the summary. */

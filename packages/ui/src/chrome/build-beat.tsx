@@ -10,7 +10,7 @@ import { useVendoProvider } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { memberSchema, type CardFieldRow } from "./field-rows.js";
 import { argValue, humanizeToolName, toolTitle, type ToolMeta } from "./humanize.js";
-import { toolCallRefused } from "./thread/message-data.js";
+import { toolCallExpired, toolCallRefused } from "./thread/message-data.js";
 import type { VendoBeat } from "./run-activity.js";
 
 /**
@@ -551,6 +551,9 @@ export function BuildBeat({
   // The host's own rules saying no, which is nobody's decline: the person was
   // never asked, so the line has to name the rules instead of them.
   const refused = toolCallRefused(part);
+  // Narrower still: an ask that expired unanswered is nobody's no at all —
+  // not the person's and not the rules' — so the line blames no one (H2-G).
+  const expired = toolCallExpired(part);
   const label = toolTitle(name, tools[name]);
   const result = done && !refused ? toolResultSummary(part.output) : undefined;
   const mark: BeatMark = error ? "error" : declined || refused ? "declined" : done ? "done"
@@ -569,6 +572,7 @@ export function BuildBeat({
         mark={mark}
         label={waiting ? `${label} — waiting for your approval`
           : error ? `${label} — couldn't finish`
+          : expired ? `${label} — the approval expired unanswered`
           : refused ? `${label} — wasn't allowed`
           : declined ? `${label} — you declined it`
           : done ? label

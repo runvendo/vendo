@@ -50,6 +50,7 @@ function fixture(options: {
    *  is pinned in `packages/vendo/tests/render-wrap-slot.test.ts`, where both
    *  blocks are legal; here a fake wrap pins the slot's own mechanics. */
   wrapWorkspace?: Parameters<typeof createHarnessRuntime>[0]["wrapWorkspace"];
+  approvalWaitMs?: number;
 } = {}) {
   const guard = options.guard ?? testGuard();
   const registry = boundRegistry(
@@ -73,6 +74,7 @@ function fixture(options: {
     harnessState: options.harnessState ?? memoryHarnessStateStore(),
     ...(options.liveTurn === undefined ? {} : { liveTurn: options.liveTurn }),
     ...(options.wrapWorkspace === undefined ? {} : { wrapWorkspace: options.wrapWorkspace }),
+    ...(options.approvalWaitMs === undefined ? {} : { approvalWaitMs: options.approvalWaitMs }),
   });
   /** Run a turn AND drain the response, exactly as a host route does. The
    *  stream's onFinish (persistence, state, audit) only fires on consumption —
@@ -371,6 +373,20 @@ describe("mirroring — tool calls are the runtime's job, never a yield", () => 
     expect(parts.some((part) => part.type === "tool-output-denied")).toBe(false);
     expect(parts.find((part) => part.type === "tool-output-available"))
       .toMatchObject({ output: { status: "blocked", reason: "blocked" } });
+    await expect(convertToModelMessages(await persisted(f))).resolves.toBeDefined();
+  });
+
+  it("mirrors a TIMED-OUT ask as expired — never output-denied, and the transcript still converts", async () => {
+    const deafGuard = testGuard({ maple_invoices_list: "ask" });
+    // Decisions never arrive: the frozen bound is the only exit.
+    deafGuard.onApprovalDecision = () => () => undefined;
+    const f = fixture({ guard: deafGuard, tools, approvalWaitMs: 25 });
+    const parts = await f.run(callingHarness());
+    // Nobody answered, so the part must not carry the state whose ai-SDK
+    // meaning is "the person answered no".
+    expect(parts.some((part) => part.type === "tool-output-denied")).toBe(false);
+    expect(parts.find((part) => part.type === "tool-output-available"))
+      .toMatchObject({ output: { status: "blocked", cause: "expired" } });
     await expect(convertToModelMessages(await persisted(f))).resolves.toBeDefined();
   });
 
