@@ -23,6 +23,15 @@ import type { Visit } from "./render.js";
  * one thing the Kit's markup (`<span role=switch>`, Base UI's) and a hand-written
  * page's (`<input type=checkbox>`) have in common; the two native inputs are here
  * because they carry their role implicitly rather than in an attribute.
+ *
+ * A `<select>` is one of them as of 2026-08-18, on top of being the precondition
+ * `supply` satisfies below. "Pick a value and it saves" — `onChange` calling the
+ * tool, with no button beside it — is a real screen, and a whole world's worth of
+ * them recorded `pressed: 0` and failed for having nothing to press. It is the one
+ * species whose press is not a click: see `intent`. `[role=listbox]` and
+ * `[role=combobox]` stay out — a listbox is the CONTAINER of the options a person
+ * picks, so pressing it fires nothing and moves nothing and would invent exactly
+ * the dead control this fixes, and a combobox trigger is a `button` already.
  */
 const SPECIES = [
   "button",
@@ -34,6 +43,7 @@ const SPECIES = [
   "[role=menuitem]",
   "input[type=checkbox]",
   "input[type=radio]",
+  "select",
 ];
 
 /** A control hidden from assistive tech is the SAME control as the one beside it:
@@ -86,6 +96,20 @@ const TYPED = "probe input";
 /** What "switched on" looks like whoever drew the control — `aria-checked` where
  *  the page paints its own toggle, `:checked` where it uses the browser's. */
 const ON = "[aria-checked=true], :checked";
+
+/**
+ * What a control ALREADY BEING the one showing looks like, on the control itself:
+ * the selected tab, the item marked as where you are, the radio already on.
+ *
+ * Pressing one of these calls nothing and moves nothing BY DESIGN — that is
+ * idempotence, not deadness — and the floor read it as a dead control, so the
+ * screens that had it right were the ones convicted: the tab a `price-book` screen
+ * opens on, in two columns of one run. A checkbox and a switch are deliberately
+ * absent, because pressing one FLIPS it and is never a no-op. `aria-current="false"`
+ * is the spelling for "not the current one", so it says what it means here too.
+ */
+const ALREADY =
+  "[aria-selected=true], [aria-current]:not([aria-current=false]), [role=radio][aria-checked=true], input[type=radio]:checked";
 
 /** A press that never lands says "fired nothing", which is the verdict either
  *  way; this only stops one stuck control from spending the case's whole budget.
@@ -174,6 +198,11 @@ export interface Probed {
    *  was dismissed, a toggle flipped. What tells a control that only changes local
    *  state apart from one that is dead, since neither asks the host for anything. */
   readonly changed: boolean;
+  /** The control was ALREADY the one showing when it was pressed (`ALREADY`), so
+   *  calling nothing and moving nothing is what it is supposed to do. Present
+   *  exactly when it was: the floor grades such a press as neither earned nor
+   *  missed, and without this it read it as a dead control. */
+  readonly alreadyActive?: true;
   readonly calls: readonly Fired[];
 }
 
@@ -192,6 +221,12 @@ interface Look {
    *  switch a person can see move was a control that did nothing — the false
    *  failure that pressing toggles at all would otherwise have invented. */
   readonly on: number;
+  /** How many of the screen's controls a person could press right now. Unlocking
+   *  the button beside a chooser moves none of the three numbers above, so by
+   *  those alone the choice that opens "Pick a category, then Save cap" did
+   *  nothing — the same false failure one turn on, and the one pressing choosers
+   *  at all would otherwise have invented (2026-08-18). */
+  readonly live: number;
 }
 
 /** Nothing evaluated in the page may be a NAMED function: tsx compiles this file
@@ -204,13 +239,14 @@ interface Look {
  *  reading them as an exception loses the whole case instead of one press. */
 const look = async (page: Page): Promise<Look> =>
   await page.evaluate(
-    (on: string) => ({
+    (what: { on: string; live: string }) => ({
       calls: window.vendo?.calls ?? [],
       text: document.body.innerText.length,
       elements: document.querySelectorAll("*").length,
-      on: document.querySelectorAll(on).length,
+      on: document.querySelectorAll(what.on).length,
+      live: document.querySelectorAll(what.live).length,
     }),
-    ON,
+    { on: ON, live: ACTIONABLE },
   );
 
 /** The wait a press earns: until it asks the host for something it had not asked
@@ -218,16 +254,25 @@ const look = async (page: Page): Promise<Look> =>
  *  A press that does neither spends the whole bound and is read as it stands,
  *  which is the honest verdict for a dead control. */
 const settle = async (page: Page, before: Look): Promise<void> => {
-  // The selector rides along rather than being spelled a second time here: this
-  // wait and the reading above have to agree about what "on" means.
-  const was = { calls: before.calls.length, text: before.text, elements: before.elements, on: before.on, onSelector: ON };
+  // The selectors ride along rather than being spelled a second time here: this
+  // wait and the reading above have to agree about what "on" and "live" mean.
+  const was = {
+    calls: before.calls.length,
+    text: before.text,
+    elements: before.elements,
+    on: before.on,
+    live: before.live,
+    onSelector: ON,
+    liveSelector: ACTIONABLE,
+  };
   await page
     .waitForFunction(
       (mark: typeof was) =>
         window.vendo.calls.length > mark.calls
         || document.body.innerText.length !== mark.text
         || document.querySelectorAll("*").length !== mark.elements
-        || document.querySelectorAll(mark.onSelector).length !== mark.on,
+        || document.querySelectorAll(mark.onSelector).length !== mark.on
+        || document.querySelectorAll(mark.liveSelector).length !== mark.live,
       was,
       { timeout: EFFECT_MS },
     )
@@ -236,16 +281,21 @@ const settle = async (page: Page, before: Look): Promise<void> => {
 
 /**
  * Everything the screen is asking for, given once, in document order: every
- * chooser set to its first REAL option, then every empty field answered.
+ * chooser still on its placeholder set to its first REAL option, then every empty
+ * field answered.
  *
  * Option zero is usually the placeholder — "Assign to…", value `""` — which is
  * the exact state the control was guarded against, so it is skipped. One pass and
  * no second guess: nothing here hunts for the combination that unlocks a screen,
  * because a probe that hunts returns a verdict that depends on how long it hunted.
  *
- * What it TYPED comes back, to go on the press it enabled. Only an empty field:
- * a value already in the box is the screen's own, and typing over it would take
- * away a default the press should have carried.
+ * What it TYPED comes back, to go on the press it enabled. Only an empty box, and
+ * as of 2026-08-18 only an unanswered chooser, because those are the same case: a
+ * value the screen is already showing is the screen's OWN, the shot everybody
+ * grades shows it, and overwriting it sends the tool something no screen ever
+ * displayed — a mismatch the judge reads as the screen's bug. It set every select
+ * on the page, so a form defaulting priority to `high` showed `high` and sent
+ * `urgent`, and was convicted for the harness's edit.
  */
 const supply = async (page: Page): Promise<Filled[]> => {
   const choosers = page.locator(CHOICE);
@@ -253,7 +303,9 @@ const supply = async (page: Page): Promise<Filled[]> => {
   for (let index = 0; index < many; index += 1) {
     const chooser = choosers.nth(index);
     const option = await chooser
-      .evaluate((node: HTMLSelectElement) => [...node.options].find((choice) => choice.value !== "" && !choice.disabled)?.value)
+      .evaluate((node: HTMLSelectElement) =>
+        node.value === "" ? [...node.options].find((choice) => choice.value !== "" && !choice.disabled)?.value : undefined,
+      )
       .catch(() => undefined);
     if (option !== undefined) await chooser.selectOption(option, { timeout: CLICK_MS }).catch(() => undefined);
   }
@@ -277,13 +329,40 @@ const supply = async (page: Page): Promise<Filled[]> => {
 };
 
 /** What a control is called, in the words a person reads off it — or, for a box
- *  with no words of its own, the hint written inside it. */
+ *  with no words of its own, the hint written inside it. A chooser's own words are
+ *  every option it holds; what a person reads off it is the one it is SHOWING, so
+ *  that is its name and the six-line blob `innerText` returns is not. */
 const nameOf = async (element: Locator, index: number): Promise<string> => {
-  const text = await element.innerText().catch(() => "");
+  const showing = await element
+    .evaluate((node: Element) => (node instanceof HTMLSelectElement ? (node.selectedOptions[0]?.text ?? "") : undefined))
+    .catch(() => undefined);
+  const text = showing ?? (await element.innerText().catch(() => ""));
   const aria = await element.getAttribute("aria-label").catch(() => null);
   const hint = await element.getAttribute("placeholder").catch(() => null);
   return (text || aria || hint || "").trim() || `control ${index + 1}`;
 };
+
+/**
+ * What pressing this control MEANS, read off the element itself — before the
+ * press, because the press is what changes both answers.
+ *
+ * `option` — a chooser is pressed by CHOOSING, and this is what it would choose:
+ * the first real option that is not the one already showing. Re-choosing the
+ * option a `<select>` is already on fires no `change` at all, so a screen that
+ * saves on choice would read as a dead control; and the placeholder is no more a
+ * choice here than it is in `supply`.
+ *
+ * `already` — pressing it could only repeat what the screen already shows
+ * (`ALREADY`), a chooser with no option but the one it is on included.
+ */
+const intent = async (element: Locator): Promise<{ option?: string; already: boolean }> =>
+  await element
+    .evaluate((node: Element, already: string) => {
+      if (!(node instanceof HTMLSelectElement)) return { already: node.matches(already) };
+      const option = [...node.options].find((choice) => choice.value !== "" && !choice.disabled && !choice.selected);
+      return option === undefined ? { already: true } : { option: option.value, already: false };
+    }, ALREADY)
+    .catch(() => ({ already: false }));
 
 /**
  * One press, read the same way whichever side of a dialog's edge it is on.
@@ -297,7 +376,13 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pro
   // the screen belongs to the choice, and crediting it to the press would let a
   // chooser make a dead button look like a live one.
   const before = await look(visit.page);
-  await element.click({ timeout: CLICK_MS }).catch(() => undefined);
+  const { option, already } = await intent(element);
+  // Every species is pressed by clicking, except the one that is pressed by
+  // choosing. What it DID is read the same way for both.
+  await (option === undefined
+    ? element.click({ timeout: CLICK_MS })
+    : element.selectOption(option, { timeout: CLICK_MS })
+  ).catch(() => undefined);
   await settle(visit.page, before);
 
   // Read after the press has landed, so a confirmation the runtime paints a
@@ -318,8 +403,13 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pro
   return {
     label,
     ...(said === undefined ? {} : { dialog: said }),
+    ...(already ? { alreadyActive: true as const } : {}),
     changed:
-      after === undefined || after.text !== before.text || after.elements !== before.elements || after.on !== before.on,
+      after === undefined
+      || after.text !== before.text
+      || after.elements !== before.elements
+      || after.on !== before.on
+      || after.live !== before.live,
     // Only what THIS press asked for. The recorder is the page's, not the
     // press's, so handing over the whole array credited one load-time call to
     // every control on the screen and graded a dead button as wired.

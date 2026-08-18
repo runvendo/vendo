@@ -467,13 +467,15 @@ Four checks, all **deterministic**, and no model touches any of them:
 - **wiredActions** — the probe pressed every control on the page and every call
   that fired names a real tool with schema-valid arguments. A control that fires
   nothing fails: naming a tool in a document is not being wired to it, which is
-  the difference `tests/probe.test.ts` exists to keep honest. A case tagged
-  `action` has to show one press that really called a tool — or a confirmation
-  that WORKS, which since 2026-08-17 means the probe pressed inside the dialog
-  and found both halves of it (below). A screen asked to DO something and proven
-  by zero tool calls is not proven. `pressed` records how many controls there
-  were to press, so a screen that passed with none is distinguishable from one
-  whose controls all held, and the preview prints both
+  the difference `tests/probe.test.ts` exists to keep honest. Unless it moved the
+  screen, or was already the active one — the tab a screen opens on calls nothing
+  on purpose (below). A case tagged `action` has to show one press that really
+  called a tool — or a confirmation that WORKS, which since 2026-08-17 means the
+  probe pressed inside the dialog and found both halves of it (below). A screen
+  asked to DO something and proven by zero tool calls is not proven. `pressed`
+  records how many controls there were to press, so a screen that passed with
+  none is distinguishable from one whose controls all held, and the preview
+  prints both
 
 A pass on the last one is not always a pass. A screen with nothing to press
 clears it **vacuously** — it was neither earned nor missed, so it stays out of
@@ -491,10 +493,23 @@ rubric line now, graded by the judge against the tool data the judge is shown.
 
 Every **species** of control a person can press, by the role it answers to:
 `button`, `[role=button]`, `a[href]`, `[role=switch]`, `[role=checkbox]`,
-`[role=radio]`, `[role=menuitem]`, and the browser's own `input[type=checkbox]`
-and `input[type=radio]`. A control marked `aria-hidden` is skipped: Base UI pairs
-the switch or radio a person presses with a hidden proxy input that carries the
-form value, and pressing both would grade one control twice.
+`[role=radio]`, `[role=menuitem]`, the browser's own `input[type=checkbox]` and
+`input[type=radio]`, and `select` (2026-08-18). A control marked `aria-hidden` is
+skipped: Base UI pairs the switch or radio a person presses with a hidden proxy
+input that carries the form value, and pressing both would grade one control twice.
+
+A `<select>` is the one species whose press is not a click. The probe presses it by
+**choosing** — the first real option that is not the one already showing — because
+"pick a value and it saves" is a real screen, an `onChange` that calls the tool with
+no button anywhere near it, and every one of them recorded `pressed: 0` and
+auto-failed its `action` case for having nothing to press. Two worlds of one run
+were built that way, nine choosers and zero buttons on a screen. *Not the one
+already showing* is load-bearing: re-choosing the option a select already holds
+fires no `change` at all, so a screen with no placeholder would have read as dead
+however well it is wired. `[role=listbox]` and `[role=combobox]` stay out — a
+listbox is the container of the options a person picks, so pressing it fires
+nothing and moves nothing and would invent the very dead control this fixes, and a
+combobox trigger is a `button` already.
 
 Buttons alone was the whole list until tonight, and it measured
 **reachability-by-probe rather than wiring**. Three of the four `vendo` floor
@@ -505,11 +520,17 @@ case — while a screen of always-enabled buttons that call nothing recorded a
 press each and scored better for being button-shaped.
 
 A control the screen has **locked** gets one precondition satisfied. If it is
-disabled, one pass over the screen in document order sets every `<select>` to its
-first real option — skipping the placeholder whose value is empty — and fills
-every empty text box (`input[type=text]`, an `input` with no type, `textarea`)
-with the harness's own sentinel, `probe input` (2026-08-18); then it is given a
-second look, bounded by a second. "Pick an agent, then press Assign" and "type a
+disabled, one pass over the screen in document order sets every `<select>` still on
+its placeholder to its first real option — skipping the placeholder whose value is
+empty — and fills every empty text box (`input[type=text]`, an `input` with no
+type, `textarea`) with the harness's own sentinel, `probe input` (2026-08-18); then
+it is given a second look, bounded by a second. **Still on its placeholder** is the
+same rule as **empty** box, and it was missing (2026-08-18): the pass set every
+select on the page, so a form whose priority defaults to `high` showed `high` in the
+shot everybody grades and fired the call with `urgent` in it, and the judge —
+comparing the screen against the call it is told about — correctly convicted the
+screen of the harness's edit. A value the screen is already showing is the screen's
+own, and the press should carry it. "Pick an agent, then press Assign" and "type a
 reason, then press Deny" are correctly built screens, and both were failing
 shapes. A value the harness invents is data no screen claimed, which is why the
 probe used to type nothing at all; the sentinel is what resolves that. The fill
@@ -522,15 +543,30 @@ with a dead control. A form the screen never locked is pressed **as it stands**,
 empty boxes and all: that is what a hasty person can do, and what the call
 carries is the screen's own doing.
 
-What a press DID is read the same way for every species, with one number added to
-the two that were already there: how many of the screen's controls are switched
-on (`[aria-checked=true]`, `:checked`), beside its text length and its element
-count. A toggle that flips changes neither of the other two, so without it every
-toggle bound only to local state would have been graded dead the moment the probe
-started pressing toggles.
+What a press DID is read the same way for every species, in four numbers: the
+screen's text length, its element count, how many of its controls are switched on
+(`[aria-checked=true]`, `:checked`), and how many a person could press right now
+(2026-08-18). Each of the last two exists because a widening needed it. A toggle
+that flips changes neither of the first two, so without the third every toggle
+bound only to local state would have been graded dead the moment the probe started
+pressing toggles; unlocking the button beside a chooser moves none of the first
+three, so without the fourth the choice that opens "Pick a category, then Save cap"
+would be graded dead the moment the probe started pressing choosers.
 
-Nothing about what PASSES moved with that widening. A pressed control still has
-to call a real tool with valid arguments or visibly move the screen, and a dead
+One press is read as neither a pass nor a failure: the control that was
+**already the active one** (2026-08-18) — `[aria-selected=true]`, `[aria-current]`,
+a radio already on, or a chooser with no option but the one it holds. Pressing it
+calls nothing and moves nothing *by design*, which is idempotence and not deadness,
+and the floor read it as a dead control: a `price-book` screen whose tabs work
+failed `wiredActions` for the one tab a person was already looking at, in two
+columns of one run. It is its own binding kind now — `already-active — a no-op by
+design` — that neither earns a pass nor costs one, the way a screen with nothing to
+press is vacuous rather than wrong. It has to be **detectable** to be excused: a
+row's *Open* button that no-ops because that row is already open, with nothing in
+the markup saying so, is still recorded as a control that did nothing.
+
+Nothing else about what PASSES moved with those widenings. A pressed control still
+has to call a real tool with valid arguments or visibly move the screen, and a dead
 always-enabled button still fails — the widening is in what gets pressed, and it
 is the same widening for every column. What a confirmation has to show DID move,
 later the same day, and that change is next.
@@ -778,8 +814,20 @@ absent evidence is not a pass. Filling the text a locked control is waiting for
 typed reason used to record `pressed: 0` and fail the action case it correctly
 implements, and now it is pressed and graded — while a screen whose field is
 decoration is now pressed and can fail. Both directions, so no run recorded
-before it compares with one after it. Guarding every write (2026-08-18) is a
-fifth: the seam answers a write `pending-approval` and approves it a tick later
+before it compares with one after it. Three more probe fairness fixes landed under
+that fourth heading the same day, and they move the same two directions. A
+`<select>` is a control that gets pressed, by choosing an option it is not already
+on, so a screen whose only actuator is `onChange` goes from `pressed: 0` and an
+auto-failed action case to graded — and a chooser wired to nothing, or one whose
+choice unlocks nothing a person could see, now fails where it was invisible. The
+precondition pass leaves a chooser that already holds a real value alone, so a form
+with a default fires the value it displays instead of the harness's overwrite: the
+call in the trace changes, and with it the judge's reading of screens it used to
+convict. And a control that was already the active one is recorded as a no-op by
+design rather than as a dead one, so a screen that failed on the tab it opens on
+passes. Every one of the three is the same code for every column. Guarding every
+write (2026-08-18) is a fifth: the seam answers a write `pending-approval` and
+approves it a tick later
 instead of answering `ok` on the spot, so a page that shows what a write answered
 shows something different, and the vendo column paints the product's own
 "Waiting for your approval" notice where it used to paint nothing. No floor check
@@ -791,14 +839,19 @@ so every prompt that describes the seam changed too — the same added bytes for
 every column, which is what keeps them comparable with each other.
 
 The probe presses one control per fresh page, so a screen with many controls
-costs many reloads, and a locked control costs one pass over the screen's selects
-and empty text boxes on top of its reload. A dialog costs one full walk back to
-it per control inside it, on top of that. That pass is the only precondition the
-probe satisfies — a choice a `<select>` is asking for, and text a box is empty of
-— so a control guarded behind a ticked box, a typed *amount* the sentinel is not,
-or an earlier step stays unpressed and ungraded. It runs before the press that
-opens a dialog and never inside one, so a control locked behind a field in the
-dialog itself is still recorded as unproven. Multi-step flows are followed
+costs many reloads — the choosers among them included, which is what a table of
+nine of them costs now — and a locked control costs one pass over the screen's
+unanswered selects and empty text boxes on top of its reload. A dialog costs one
+full walk back to it per control inside it, on top of that. That pass is the only
+precondition the probe satisfies — a choice a `<select>` is asking for, and text a
+box is empty of — so a control guarded behind a ticked box, a typed *amount* the
+sentinel is not, or an earlier step stays unpressed and ungraded. A chooser that is
+only ever a precondition is pressed on its own page all the same, and it holds by
+unlocking something a person could press; where it guards a control that needs a
+second condition as well, it unlocks nothing visible and is recorded as a control
+that did nothing. The pass runs before the press that opens a dialog and never
+inside one, so a control locked behind a field in the dialog itself is still
+recorded as unproven. Multi-step flows are followed
 exactly one dialog deep: a confirmation that opens a second confirmation is
 recorded as a press that changed the screen, and nothing inside the second one is
 pressed. A control that navigates off the screen — a link with an `href` — is

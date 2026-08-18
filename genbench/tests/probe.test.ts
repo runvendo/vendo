@@ -160,6 +160,47 @@ const WIRED_CHECKBOX = screen(
   });`,
 );
 
+/**
+ * The tab the screen opens on, beside the tab it does not.
+ *
+ * Pressing the selected tab calls nothing and moves nothing BY DESIGN — it is
+ * already showing what it switches to — and that recorded as a dead control, so a
+ * `price-book` screen correctly opened on Plumbing failed `wiredActions` for the
+ * one press it had right. Two columns of one run, on the same screen.
+ */
+const TABS = screen(
+  `<button role="tab" aria-selected="true">Plumbing</button>
+  <button id="other" role="tab" aria-selected="false">Electrical</button>`,
+  `document.getElementById("other").addEventListener("click", function () {
+    window.vendo.callTool("list_transfers", { limit: 5 });
+  });`,
+);
+
+/** The same no-op one species over: a radio already on. Pressing it cannot change
+ *  what it says, so there is nothing to fire and nothing to move. */
+const PICKED = screen(`<input id="monthly" type="radio" aria-label="Monthly" checked>`);
+
+/**
+ * A screen with no button at all: choosing the value IS the save.
+ *
+ * `<Select onChange={(e) => tools.categorize_expense(...)}>` with nothing beside it
+ * is a real screen — two worlds of one run are built out of it, nine choosers and
+ * zero buttons — and the probe pressed buttons, toggles and boxes, so every one of
+ * them recorded `pressed: 0` and auto-failed the action case it correctly
+ * implements. What the probe chooses is the first REAL option that is not the one
+ * already showing: re-choosing what a select already holds fires no `change` at
+ * all, so a screen with no placeholder would read as dead however well it is wired.
+ */
+const SAVES_ON_CHOICE = screen(
+  `<select id="cap" aria-label="Coffee cap">
+    <option value="1000">$10 a month</option>
+    <option value="5000">$50 a month</option>
+  </select>`,
+  `document.getElementById("cap").addEventListener("change", function () {
+    window.vendo.callTool("set_budget", { category: "coffee", limit_cents: Number(this.value) });
+  });`,
+);
+
 /** The two halves of a locked control, identical until the choice is made. */
 const guarded = (handler: string): string =>
   screen(
@@ -190,6 +231,34 @@ const GUARDED = guarded(`document.getElementById("category").addEventListener("c
  *  and it stays locked. That is a screen being CAREFUL, and it goes unpressed and
  *  ungraded rather than failing for a control nobody can press. */
 const LOCKED = guarded("");
+
+/**
+ * The same locked button with a second chooser beside the one it waits for,
+ * already holding a value the screen itself picked.
+ *
+ * The precondition pass set EVERY select on the page to its first real option, so
+ * the shot everybody grades said "$50 a month" and the call carried $10 — and the
+ * judge, comparing the two, correctly convicted the screen of the harness's edit.
+ * A value the screen is already showing is the screen's own, exactly as the text
+ * already in a box is.
+ */
+const DEFAULTED = screen(
+  `<select id="category"><option value="">Pick a category</option><option value="coffee">coffee</option></select>
+  <select id="cap" aria-label="Coffee cap">
+    <option value="1000">$10 a month</option>
+    <option value="5000" selected>$50 a month</option>
+  </select>
+  <button id="go" disabled>Save cap</button>`,
+  `document.getElementById("category").addEventListener("change", function () {
+    document.getElementById("go").disabled = this.value === "";
+  });
+  document.getElementById("go").addEventListener("click", function () {
+    window.vendo.callTool("set_budget", {
+      category: document.getElementById("category").value,
+      limit_cents: Number(document.getElementById("cap").value),
+    });
+  });`,
+);
 
 /**
  * The same shape one turn further: a button correctly locked until a reason is
@@ -459,11 +528,16 @@ describe("the click probe grades what a browser actually does", () => {
     it("sets the choice a locked control is waiting for, then presses it", async () => {
       const trace = await traceOf(GUARDED);
 
-      // One control, not two: a `<select>` is what the screen ASKS for, not an
-      // actuator, so it is set and never graded. `changed: false` is the other
-      // half of that — the screen moving under the choice belongs to the choice,
-      // and crediting it to the press would make a dead button look alive.
+      // Two controls, in document order: a `<select>` is what the screen ASKS for
+      // AND a species in its own right (2026-08-18), so it is pressed on its own
+      // page as well as set on the button's. It holds on having unlocked the
+      // button — which moves none of the screen's text, elements or toggles, and
+      // is why what a person can press is counted too. `changed: false` on the
+      // button is the other half of that: the screen moving under the choice
+      // belongs to the choice, and crediting it to the press would make a dead
+      // button look alive.
       expect(trace).toEqual([
+        { label: "Pick a category", changed: true, calls: [] },
         {
           label: "Save cap",
           changed: false,
@@ -471,6 +545,35 @@ describe("the click probe grades what a browser actually does", () => {
         },
       ]);
       expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
+    });
+
+    it("presses a chooser by choosing, and grades a screen that saves on the choice", async () => {
+      const trace = await traceOf(SAVES_ON_CHOICE);
+
+      // Named by the option it was SHOWING, fired with the one it moved to: the
+      // two together are the "not the one already showing" rule, which is the
+      // whole reason a select with no placeholder can be pressed at all.
+      expect(trace).toEqual([
+        {
+          label: "$10 a month",
+          changed: false,
+          calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
+        },
+      ]);
+      expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
+    });
+
+    it("leaves a chooser that already holds a real value alone", async () => {
+      const trace = await traceOf(DEFAULTED);
+
+      // $50 is the screen's own default and it is what the call carries. Set to
+      // its first option like the chooser beside it, the screen would have shown
+      // one number and sent another.
+      expect(trace.find((probed) => probed.label === "Save cap")).toEqual({
+        label: "Save cap",
+        changed: false,
+        calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
+      });
     });
 
     it("types into the field a locked control is waiting for, then presses it", async () => {
@@ -502,11 +605,56 @@ describe("the click probe grades what a browser actually does", () => {
       expect(trace[0]).not.toHaveProperty("filled");
     });
 
-    it("leaves a control that stays locked unpressed, rather than failing a careful screen", async () => {
+    it("leaves a control that stays locked unpressed, and never counts it as a press", async () => {
       const trace = await traceOf(LOCKED);
 
-      expect(trace).toEqual([]);
-      expect(wiredActions(trace, world)).toEqual({ pass: true, pressed: 0, bindings: [] });
+      // The button is the careful half — still locked after the choice, so it is
+      // never pressed and never graded, and `pressed: 1` is the chooser rather
+      // than it. That chooser is wired to nothing and unlocks nothing, so it is a
+      // dead control and is graded as one, exactly as a dead button is.
+      expect(trace).toEqual([{ label: "Pick a category", changed: false, calls: [] }]);
+
+      const result = wiredActions(trace, world);
+      expect(result.pressed).toBe(1);
+      expect(result.bindings).toEqual([
+        { where: "Pick a category", effect: "none", why: "pressing it called nothing and changed nothing" },
+      ]);
+    });
+  });
+
+  /**
+   * Idempotence is not deadness (2026-08-18).
+   *
+   * Pressing the control that is ALREADY the active one — the tab the screen opens
+   * on, the radio already picked — calls nothing and moves nothing because that is
+   * what it is supposed to do. The floor read it as a dead control, so a screen
+   * whose tabs work failed on the one tab a person is already looking at. It is its
+   * own kind now: it neither earns a pass nor costs one, the way a screen with
+   * nothing to press is vacuous rather than wrong.
+   */
+  describe("reads a control that is already the active one as a no-op", () => {
+    it("passes the tab the screen opens on, and grades the one beside it as usual", async () => {
+      const trace = await traceOf(TABS);
+
+      expect(trace).toEqual([
+        { label: "Plumbing", alreadyActive: true, changed: false, calls: [] },
+        { label: "Electrical", changed: false, calls: [{ name: "list_transfers", args: { limit: 5 } }] },
+      ]);
+
+      const result = wiredActions(trace, world, ["action"]);
+      expect(result.bindings[0]).toEqual({
+        where: "Plumbing",
+        effect: "already-active",
+        why: "already-active — a no-op by design",
+      });
+      expect(result.pass).toBe(true);
+    });
+
+    it("reads a radio that is already on the same way", async () => {
+      const trace = await traceOf(PICKED);
+
+      expect(trace).toEqual([{ label: "Monthly", alreadyActive: true, changed: false, calls: [] }]);
+      expect(wiredActions(trace, world).pass).toBe(true);
     });
   });
 

@@ -6,9 +6,11 @@ export interface Binding {
   readonly where: string;
   /** What pressing it did. `tool` — it asked the host for something. `state` — it
    *  asked for nothing and the screen moved anyway, which is every legitimate
-   *  local control: opening a dialog, switching a tab, dismissing a row. `none` —
-   *  it asked for nothing and nothing happened, which is a dead control. */
-  readonly effect: "tool" | "state" | "none";
+   *  local control: opening a dialog, switching a tab, dismissing a row.
+   *  `already-active` — it was already the one showing, so asking for nothing and
+   *  moving nothing is what it is supposed to do. `none` — it asked for nothing and
+   *  nothing happened with somewhere to go, which is a dead control. */
+  readonly effect: "tool" | "state" | "already-active" | "none";
   /** Absent when the press fired nothing at all. */
   readonly tool?: string;
   /** Only asked of a press that fired a tool: a state-only control names no tool,
@@ -72,16 +74,22 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
  * What a live control looks like — written once, because the report spells the
  * same verdict beside every binding it prints.
  *
- * A press holds two ways. It asked the host for something the world declares,
+ * A press holds three ways. It asked the host for something the world declares,
  * with arguments that world would accept. Or it asked for nothing and the screen
  * moved anyway: an interactive screen legitimately has controls that only change
  * local state, and grading "it called nothing" as dead would fail a screen for
- * having a dialog, a tab or a dismiss button on it.
+ * having a dialog, a tab or a dismiss button on it. Or the control was ALREADY the
+ * active one (2026-08-18) — the tab the screen opens on, the radio already picked
+ * — where calling nothing and moving nothing is the correct behaviour and the
+ * screens that had it right were the ones convicted for it.
  *
- * Only a press that asked for nothing AND changed nothing is a dead control.
+ * Only a press that asked for nothing AND changed nothing AND had somewhere to go
+ * is a dead control.
  */
 export const holds = (binding: Binding): boolean =>
-  binding.effect === "state" || (binding.known === true && binding.argsValid === true);
+  binding.effect === "state"
+  || binding.effect === "already-active"
+  || (binding.known === true && binding.argsValid === true);
 
 /**
  * Whether one press asked the host to CHANGE something — a tool the world
@@ -165,7 +173,9 @@ export function wiredActions(
           ? { where: candidate.label, effect: "state", why: "opened a confirmation — each control inside it was pressed on a fresh page" }
           : candidate.changed
             ? { where: candidate.label, effect: "state", why: "changed the screen without calling a tool" }
-            : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
+            : candidate.alreadyActive === true
+              ? { where: candidate.label, effect: "already-active", why: "already-active — a no-op by design" }
+              : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
       ];
     }
     return candidate.calls.map((call): Binding => {
