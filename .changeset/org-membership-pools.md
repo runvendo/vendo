@@ -25,5 +25,7 @@ name collision, so metering an org by the host's own key keeps working — overr
 it for every member of that org, because half an org on `org:<orgId>` and half on
 your own key is one allowance split across two meters that each under-count. A
 policy naming an org nobody asserted still fails closed rather than reading zero.
-Maple demonstrates it: the branch shares 200 messages a month, on top of a
-per-person daily cap.
+An inbound text asks the same seam for the linked subject — it is keyed on the
+principal, not a request — so a member who texts draws on the org's allowance
+instead of quietly outside it. Maple demonstrates it: the branch shares 200
+messages a month, on top of a per-person daily cap.

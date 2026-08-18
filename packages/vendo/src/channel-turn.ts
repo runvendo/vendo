@@ -13,6 +13,7 @@ import {
   AGENT_CONTEXT_MARK,
   type ApprovalRequest,
   type AutomationId,
+  type Membership,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
@@ -100,6 +101,12 @@ export interface ChannelTurnDeps {
   /** Read-only, and only to NAME an automation whose grant set is being asked
    *  about: the asks themselves are read off the guard's pending feed. */
   automations: Pick<AutomationsEngine, "get">;
+  /** Build contract §9.1 — the host's orgs for the LINKED subject. The seam is
+   *  keyed on the principal rather than the request precisely so a session-less
+   *  path can ask it, and a texted turn must: without it a member who texts is in
+   *  none of their org's pools, so their messages and builds neither count against
+   *  the org's allowance nor accrue to it. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
 }
 
 /** A schema property description cut down to a label: everything before the
@@ -329,6 +336,10 @@ export async function runChannelTurn(
 ): Promise<void> {
   const { event, link } = input;
   const principal: Principal = { kind: "user", subject: link.subject };
+  // Asserted, never stored — one call, like the wire's own resolver. A link is
+  // minted for a host subject, so this principal is never the ephemeral visitor
+  // that resolver skips the seam for.
+  const memberships = await deps.memberships?.(principal);
   const ctx: RunContext = {
     principal,
     venue: "chat",
@@ -341,6 +352,7 @@ export async function runChannelTurn(
     // path, calls the host API with nothing, and the agent ends up apologising
     // for a sign-in problem the person cannot do anything about.
     channelLink: { channel: "text", linkedAt: link.linkedAt ?? new Date().toISOString() },
+    ...(memberships === undefined ? {} : { memberships }),
   };
   const send = (text: string): Promise<void> =>
     deps.channel.send({ conversationId: event.conversationId, text });

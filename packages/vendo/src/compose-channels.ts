@@ -164,6 +164,7 @@ export const composeChannels = (composition: VendoComposition): Pick<VendoCompos
           links,
           asks,
           automations: composition.automations,
+          memberships: composition.membershipsSeam,
         },
         { event, link: known },
       );

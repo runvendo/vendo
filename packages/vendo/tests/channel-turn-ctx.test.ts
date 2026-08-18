@@ -1,7 +1,9 @@
 import type { RunContext } from "@vendoai/core";
+import { memoryStoreOps } from "@vendoai/core/conformance";
 import { describe, expect, it, vi } from "vitest";
 import type { ChannelLink } from "../src/channel-links.js";
-import { cronProse, runChannelTurn } from "../src/channel-turn.js";
+import { cronProse, runChannelTurn, type ChannelTurnDeps } from "../src/channel-turn.js";
+import { createLimiter } from "../src/limits.js";
 
 describe("cronProse", () => {
   it("words the shapes an agent actually mints, beside the raw value", () => {
@@ -54,8 +56,9 @@ const event = {
   receivedAt: "2026-08-17T10:22:11.211Z",
 };
 
-function turnDeps(captured: { ctx?: RunContext }) {
+function turnDeps(captured: { ctx?: RunContext }, memberships?: ChannelTurnDeps["memberships"]) {
   return {
+    memberships,
     harness: {
       stream: vi.fn(async (input: { ctx: RunContext }) => {
         captured.ctx = input.ctx;
@@ -101,6 +104,22 @@ describe("the ctx a texted turn runs under", () => {
       principal: { kind: "user", subject: "vendo-demo" },
       sessionId: "evt_1",
     });
+  });
+
+  it("asks the memberships seam for the linked subject, so the org's allowance is spent and debited", async () => {
+    // The org pool is DERIVED from the ctx's memberships (limits.ts), so a texted
+    // turn that never asked the seam is silently outside every org cap: it does
+    // not count against the allowance and does not accrue to it. The real limiter
+    // over a real meter is what says otherwise.
+    const captured: { ctx?: RunContext } = {};
+    const usage = memoryStoreOps().usage!;
+    const limiter = createLimiter({ callback: () => true, ops: usage });
+
+    await runChannelTurn(turnDeps(captured, async () => [{ org: "maple" }]), { event, link });
+    await limiter.gate("message", captured.ctx!);
+
+    expect(captured.ctx?.memberships).toEqual([{ org: "maple" }]);
+    expect(await usage.count({ action: "message", poolKey: "org:maple", since: new Date(0) })).toBe(1);
   });
 
   it("stamps a link that never recorded its time, rather than omitting the evidence", async () => {

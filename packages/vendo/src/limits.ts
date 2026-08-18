@@ -58,6 +58,10 @@ const ALL_TIME = new Date(0);
  *  bucket the host asked to meter. */
 const orgPools = (memberships: RunContext["memberships"]): Record<string, string> =>
   Object.fromEntries((memberships ?? [])
+    // A JS host's seam can answer anything, and this runs OUTSIDE gate's try, so a
+    // malformed entry is skipped rather than thrown on: a TypeError here would be
+    // the turn rejecting instead of a verdict.
+    .filter((entry) => typeof entry?.org === "string")
     .map(({ org }) => encodeGrantPrincipal({ kind: "org", org }))
     // An id the grammar cannot parse BACK — empty, or carrying its own `/` — is a
     // name no grant can be stored under either (`validate.ts` refuses the row), so

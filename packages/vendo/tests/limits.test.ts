@@ -84,14 +84,16 @@ describe("the limiter's verdict", () => {
     expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(0);
   });
 
-  it("answers a verdict when the memberships seam says NULL", async () => {
+  it("answers a verdict when the memberships seam answers NULL, or a malformed entry", async () => {
     const limiter = createLimiter({ callback: () => true, ops: meter() });
 
     // The pool derivation reads `ctx.memberships` OUTSIDE the policy's try, so a
     // throw there is not a deny — it is the whole turn rejecting. A JS host's seam
-    // can answer null, and every other consumer of it tolerates one.
-    await expect(limiter.gate("message", ctxFor({ memberships: null as never })))
-      .resolves.toEqual({ allow: true });
+    // can answer any of these, and every other consumer of it tolerates them.
+    for (const memberships of [null, [null], [{ org: 7 }], [{}]]) {
+      await expect(limiter.gate("message", ctxFor({ memberships: memberships as never })))
+        .resolves.toEqual({ allow: true });
+    }
   });
 
   it("carries the host's own sentence out of a denial", async () => {
