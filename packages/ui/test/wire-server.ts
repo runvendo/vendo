@@ -1132,7 +1132,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
           ],
           components: { [componentName]: `export default function Fork() { return <p>${component} fork</p>; }` },
         });
-        minted.seed = { component, baseline: "sha256:fixture", instruction };
+        minted.seed = { component, baseline: "sha256:fixture", wishes: [instruction] };
         state.apps.push(minted);
         return json(response, minted);
       }

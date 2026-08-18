@@ -144,7 +144,7 @@ export default function Page() {
     expect(app.seed).toEqual({
       component: "MapleNetWorthCard",
       baseline: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-      instruction: "call out the trend",
+      wishes: ["call out the trend"],
     });
     // Not one byte of the capture — no seat, no sub-modules, no host stylesheet.
     const stored = JSON.stringify(app);
@@ -204,7 +204,7 @@ export default function Page() {
     expect(app.seed).toEqual({
       component: "MapleNetWorthCard",
       baseline: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-      instruction: "call out the trend",
+      wishes: ["call out the trend"],
     });
     // The provenance — including the instruction a re-seed replays — survives
     // the round trip. There is no captured seat to survive.
