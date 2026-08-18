@@ -16,10 +16,21 @@ runs it.
 
 The pack takes the caller you already resolved, so it is built inside the handler. Spread it beside your own tools.
 
-```bash
-npm install @vendoai/vendo ai @ai-sdk/react
+<CodeGroup>
+
+```bash npm
+npm install @vendoai/vendo ai@^6 @ai-sdk/react@^3
 npx vendo init
 ```
+
+```bash pnpm
+pnpm add @vendoai/vendo ai@^6 @ai-sdk/react@^3
+pnpm exec vendo init
+```
+
+</CodeGroup>
+
+Pin the majors. Vendo peers `ai` at 6, and a bare `ai` installs 7 today — npm accepts the conflict, then every turn fails at runtime and `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001).
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
 
@@ -184,6 +195,24 @@ One component covers all three, so you never branch on the envelope yourself.
 
 Run your own chat and ask for something behind your API. The answer comes back as a working card, inside your own bubble.
 
+<Note>
+  **Set `VENDO_BASE_URL` in development.** A `vendo_*` tool call is a real HTTP
+  request back at your own API, so something has to name the origin to send it
+  to. Vendo learns that origin from requests that reach the wire route init
+  wrote — but on this path the tool runs in *your* chat route, which is not one
+  of them, so name it yourself:
+
+  ```bash .env.local
+  VENDO_BASE_URL=http://localhost:3000
+  ```
+
+  Use the port your dev server actually prints. Without it, the first tool call
+  comes back with `Cannot execute … set VENDO_BASE_URL, or pass baseUrl`, and
+  forwarding the caller's own credentials is refused. Deployments set it to the
+  public URL, path prefix included ([environment
+  variables](/reference/environment-variables)).
+</Note>
+
 <Frame>
   <img
     src="/images/existing-agents/ai-sdk-dashboard.png"
@@ -252,7 +281,7 @@ are not on. So:
   not. Say the line and offer to try that part again. Never rebuild it.
 ```
 
-Those slot ids are yours to publish. A `<VendoSlot id="…">` from `@vendoai/ui/chrome` is a place in one of your own pages a generated view can occupy — without one, every screen lands in the person's own list of views. [Mount the surface](/product/mount-the-surface) has the component.
+Those slot ids are yours to publish. A `<VendoSlot id="…">` from `@vendoai/vendo/react` is a place in one of your own pages a generated view can occupy — without one, every screen lands in the person's own list of views. [Mount the surface](/product/mount-the-surface) has the component.
 
 The same guidance ships to Claude Code as a skill,
 [`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).

@@ -17,11 +17,21 @@ it.
 Install, sign in, and write one `agent()` call at module scope. Only `name` is
 required.
 
-```bash terminal
+<CodeGroup>
+
+```bash npm
 npm install @vendoai/agents ai@^6
 npx vendoai@latest login
 npx vendoai@latest init
 ```
+
+```bash pnpm
+pnpm add @vendoai/agents ai@^6
+pnpm dlx vendoai@latest login
+pnpm dlx vendoai@latest init
+```
+
+</CodeGroup>
 
 `vendo login` mints a `VENDO_API_KEY` into `.env.local` and never prints it.
 `vendo init` writes `.vendo/tools.json`, your API read into tool definitions
@@ -38,6 +48,23 @@ export const support = agent({
   tools: [api()],
 });
 ```
+
+<Note>
+  **Set `VENDO_BASE_URL` before the first turn.** `api()` tools are not
+  in-process calls — each one is a real HTTP request back at your own API, and
+  `api()` reads this variable to know where to send it. There is no Vendo route
+  mounted on this path for it to learn the origin from, so unset means the first
+  tool call throws `Cannot execute … set VENDO_BASE_URL, or pass baseUrl`.
+
+  ```bash .env.local
+  VENDO_BASE_URL=http://localhost:3000
+  ```
+
+  Use the port your own server listens on. In production it is the deployment's
+  full public URL, path prefix included; `api({ baseUrl })` overrides it, and
+  `VENDO_HOST_API_URL` is the answer when your API answers on another origin
+  ([environment variables](/reference/environment-variables)).
+</Note>
 
 Skipping `vendo login`? Then nothing resolves a model for you, and the first
 turn throws. Install `@ai-sdk/anthropic@^3` and pass your own beside `name`:

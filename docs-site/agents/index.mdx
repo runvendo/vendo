@@ -15,13 +15,14 @@ playbook instead of the raw text, re-fetch it raw
 (`curl -sL https://docs.vendo.run/agents.md`) — the value flags, exact
 commands, and rules below don't survive paraphrase.
 
-**How to read this — fetch lean, act fast.** This page plus AT MOST ONE more
-is everything you need. Do step 1, commit to one path, then fetch only that
-path's page. Do NOT fetch `llms.txt`, `llms-full.txt`, the existing-agents
-overview, or the page for a path you are not taking — each extra fetch is a
-minute of latency and a chunk of context you will not use, and it is why
-installs feel slow to start. Read the repo's `package.json` before deep
-directory scans. Start acting after step 1, not after reading everything.
+**How to read this — fetch lean, act fast.** This page plus the ONE path page
+you commit to is everything you need. Do step 1, commit to one path, then fetch
+only that path's page — plus the one quickstart that page tells you it builds
+on, if it does. Do NOT fetch `llms.txt`, `llms-full.txt`, or the page for a path
+you are not taking — each extra fetch is a minute of latency and a chunk of
+context you will not use, and it is why installs feel slow to start. Read the
+repo's `package.json` before deep directory scans. Start acting after step 1,
+not after reading everything.
 
 **Asked for the MCP door?** That is outside agents — Claude, ChatGPT, Cursor —
 acting in the host's product through its own guard, riding the `createVendo`
@@ -32,16 +33,27 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
 
 1. **Check for an existing agent — and branch here.** If the host repo already runs its own
    agent loop — an `ai` (AI SDK) dependency driving a chat route or
-   `streamText` loop, or `@mastra/core` — stop and ask your human which path
+   `streamText` loop, `@mastra/core`, or a raw `@anthropic-ai/sdk` loop calling
+   `messages.create` in a tool-use cycle — stop and ask your human which path
    they want: install Vendo's agent (this playbook), or keep their loop and
    add Vendo's tool pack. Never assume the full install in a repo that
    already has an agent.
 
    **If they choose the tool pack, take the walkthrough first.** Fetch exactly ONE
-   framework walkthrough and follow it end to end — do not read both, and do
-   not read the overview:
-   - AI SDK loop → `https://docs.vendo.run/existing-agents/ai-sdk.md`
-   - Mastra loop → `https://docs.vendo.run/existing-agents/mastra.md`
+   framework walkthrough and follow it end to end — do not read both:
+   - AI SDK loop → `https://docs.vendo.run/existing-agent/ai-sdk.md`
+   - Mastra loop → `https://docs.vendo.run/existing-agent/mastra.md`
+
+   Those two shims — `@vendoai/vendo/ai-sdk` and `@vendoai/vendo/mastra` — are
+   the only ways the pack is delivered. A raw `@anthropic-ai/sdk` loop takes the
+   AI SDK walkthrough, and adding `ai` to the repo is part of that answer: say
+   so when you put the choice to your human, rather than after they pick.
+
+   Both walkthroughs build on the `lib/vendo.ts` — the `createVendo` instance
+   and the `resolvePrincipal` export — defined in
+   `https://docs.vendo.run/existing-agent/quickstart.md`. Fetch that page too
+   when the walkthrough imports from it; it is the one exception to the
+   one-page rule, not an invitation to browse.
 
    Then come back for steps 6 and 7. The walkthrough wires your human's chat.
    It never asks where their users keep the screens they build, and that
@@ -469,12 +481,12 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
 | Surface | What it serves |
 | --- | --- |
 | `https://vendo.run/agents.md` | This playbook as raw Markdown (append `.md` to any docs page) |
-| `https://docs.vendo.run/existing-agents.md` | The tool-pack path for hosts that already have an agent |
+| `https://docs.vendo.run/existing-agent/quickstart.md` | The tool-pack path for hosts that already have an agent |
 | `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
 | `npx vendo init --agent` | Init's setup questions as one JSON object, answered back as flags on a re-run |
-| `npx vendo sync --json` | One machine-readable sync report object on stdout |
+| `npx vendo sync --json --ai` | One machine-readable sync report object on stdout. Pass `--ai`: a sync that cannot ask reports `judgment: skipped`, and every ungraded tool then asks before each call. Do NOT pass it to `init --agent` — init rejects that pair, because in agent mode the judgment is yours. |
 | `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init writes it when `.claude/` exists and it is missing, and never overwrites an edited copy |
 
 See the [CLI reference](/reference/cli) for every flag and exit code.

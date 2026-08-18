@@ -18,9 +18,17 @@ No agent handy? Do it by hand. Three steps, about five minutes.
   <Step title="Install">
     One package. Only the blocks your project uses ship.
 
-    ```bash terminal
+    <CodeGroup>
+
+    ```bash npm
     npm install @vendoai/vendo
     ```
+
+    ```bash pnpm
+    pnpm add @vendoai/vendo
+    ```
+
+    </CodeGroup>
   </Step>
 
   <Step title="Run npx vendo init">
@@ -34,12 +42,12 @@ No agent handy? Do it by hand. Three steps, about five minutes.
       Clerk auth (@clerk/nextjs)
 
     ? How will people use your agent?
-        Vendo's Full-Stack Agent  a panel inside your own UI
-        In your existing agent    you keep the loop, Vendo adds tools + UI
-        From outside agents       your own agent over MCP
+        Embedded in my app — chat + generated UI            recommended
+        Through my own agent loop (AI SDK / Mastra)
+        From outside agents over MCP (experimental)
 
-      … init takes it from there: logs you into Vendo Cloud, writes
-        the wiring, and prints one snippet for you to paste.
+      … init takes it from there: it asks how you want to run models,
+        writes the wiring, and prints one snippet for you to paste.
     ```
 
     Paste the snippet init prints. It comes with your real paths already filled in, and it is the only edit you make by hand.
@@ -58,12 +66,12 @@ No agent handy? Do it by hand. Three steps, about five minutes.
       Clerk auth (@clerk/nextjs)
 
     ? How will people use your agent?
-        Vendo's Full-Stack Agent  a panel inside your own UI
-        In your existing agent    you keep the loop, Vendo adds tools + UI
-        From outside agents       your own agent over MCP
+        Embedded in my app — chat + generated UI            recommended
+        Through my own agent loop (AI SDK / Mastra)
+        From outside agents over MCP (experimental)
 
-      … init takes it from there: logs you into Vendo Cloud, writes
-        the wiring, and prints one snippet for you to paste.
+      … init takes it from there: it asks how you want to run models,
+        writes the wiring, and prints one snippet for you to paste.
     ```
 
     Each answer is a path. Continue with the one you picked:
