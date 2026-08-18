@@ -27,7 +27,9 @@ export interface TimelineProps extends KitStyled {
 }
 
 /** A timestamp field is a date most of the time and a plain label the rest of
- *  it; an unformattable value reads as itself rather than disappearing. */
+ *  it; a value the Kit will not parse reads as ITSELF rather than disappearing —
+ *  and a stamp already written for a reader is exactly that case: "Aug 15,
+ *  7:42 AM" names no year, and re-parsing it dated the entry 2001. */
 function timeText(value: unknown): string {
   return applyFormat(value, "datetime") ?? (value === undefined || value === null ? "" : String(value));
 }

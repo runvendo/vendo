@@ -205,11 +205,22 @@ export interface DateTimeOptions {
   timeZone?: string;
 }
 
+/**
+ * The one string shape the Kit will PARSE — ISO 8601, naming a full day at
+ * least. A string that names less than that is already display text, and handing
+ * it to `new Date` buys a GUESS: V8's fallback parser fills a missing year with
+ * 2001, so "Aug 15, 7:42 AM" came back as August 15th 2001 and a timeline dated
+ * every entry twenty-five years ago. "Week 1" parses too, to New Year's Day 2001.
+ * A formatter may render nothing, but it may never invent the part it was not
+ * told, so anything looser is refused here and reads as itself at the call site.
+ */
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}/u;
+
 function toDate(value: DateInput | undefined): Date | null {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   if (typeof value === "number") return Number.isFinite(value) ? new Date(value) : null;
-  if (typeof value === "string") {
-    const d = new Date(value);
+  if (typeof value === "string" && ISO_DAY.test(value.trim())) {
+    const d = new Date(value.trim());
     return Number.isNaN(d.getTime()) ? null : d;
   }
   return null;
@@ -225,8 +236,9 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 ];
 
 /**
- * Format a date/time. Accepts ISO strings, epoch millis, or `Date`. Returns
- * `null` for anything unparseable.
+ * Format a date/time. Accepts ISO strings, epoch millis, or `Date` — and ONLY
+ * those. Returns `null` for anything else, including a stamp that is already
+ * written for a reader ("Aug 15, 7:42 AM"), which the caller shows as it stands.
  *
  * KNOWN COST of the value tier's removal: this totality now covers only the
  * places the KIT still formats — a chart's axis, the chrome. A screen writes

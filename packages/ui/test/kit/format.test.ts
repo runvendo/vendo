@@ -162,6 +162,18 @@ describe("formatDateTime", () => {
     expect(formatDateTime(Number.NaN)).toBeNull();
     expect(formatDateTime(undefined as unknown as string)).toBeNull();
   });
+
+  it("refuses a string that names less than a full day, rather than guessing the rest", () => {
+    // V8's fallback parser answers a yearless stamp with 2001 — "Aug 15, 7:42 AM"
+    // became August 15th 2001, and "Week 1" became New Year's Day. Text already
+    // written for a reader is not data to re-read; the caller shows it as it is.
+    for (const written of ["Aug 15, 7:42 AM", "Aug 15", "Week 1", "15 Aug", "2026-08"]) {
+      expect(formatDateTime(written, { mode: "datetime" }), written).toBeNull();
+    }
+    // A full ISO day, with or without a clock, is still parsed.
+    expect(formatDateTime("2026-08-15", { mode: "date" })).toBe("Aug 15, 2026");
+    expect(formatDateTime("2026-08-15 07:42:00Z", { mode: "datetime", timeZone: "UTC" })).toMatch(/7:42/);
+  });
 });
 
 describe("isRenderableNumber", () => {

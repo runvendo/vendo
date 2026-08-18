@@ -112,6 +112,17 @@ describe("Timeline", () => {
     expect(screen.getByText("Aug 1, 2026")).toBeTruthy();
   });
 
+  it("shows a stamp that names no year as it stands, inventing none", () => {
+    // The artifact handed `displayTime` strings — "Aug 15, 7:42 AM", already
+    // written for a reader. Re-parsed, V8 fills the missing year with 2001, so
+    // every entry on that timeline read "Aug 15, 2001".
+    render(
+      <Timeline entries={[{ id: "d", what: "Coffee", displayTime: "Aug 15, 7:42 AM" }]} titleField="what" timeField="displayTime" />,
+    );
+    expect(screen.getByText("Aug 15, 7:42 AM")).toBeTruthy();
+    expect(screen.queryByText(/2001/)).toBeNull();
+  });
+
   it("renders the cell slot once per entry, each against its OWN entry", () => {
     // The VM called the slot function once per entry, in `entries` order, and a
     // timeline paints in that same order — so the match is positional, unlike a
