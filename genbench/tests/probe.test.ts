@@ -389,6 +389,27 @@ const BESIDE = screen(
   });`,
 );
 
+/**
+ * A confirmation that was ALREADY on the screen when the press began.
+ *
+ * `reset()` re-paints the page inside the same script world, so a toast an earlier
+ * candidate's press opened can be portalled into the fresh body by the previous
+ * document's still-live runtime — and the press that follows was credited with it.
+ * `buildlog/build-detail` lost its "offers exactly one control to run it again"
+ * line that way: "View lint log" was recorded as having opened "Build queued to
+ * run again.", the retry toast from three presses earlier, and the judge correctly
+ * read that as a second control that reruns the build. It stands in the markup
+ * here because the only thing that matters is that the words were up BEFORE this
+ * press — a lingering toast and a mounted one are the same evidence.
+ */
+const LINGERING = screen(
+  `<div role="dialog"><p>Build queued to run again.</p></div>
+  <button id="go">Cancel transfer</button>`,
+  `document.getElementById("go").addEventListener("click", function () {
+    window.vendo.callTool("cancel_transfer", { id: "tr_1" });
+  });`,
+);
+
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
 let shooter: Shooter;
@@ -785,6 +806,17 @@ describe("the click probe grades what a browser actually does", () => {
       const trace = await traceOf(chain(`add("Yes, cancel it", null);`, "x".repeat(900)));
 
       expect(trace[0]!.dialog).toBe("x".repeat(500));
+    });
+
+    it("credits a press with a confirmation it opened, never with one already standing", async () => {
+      const trace = await traceOf(LINGERING);
+
+      // The words were on the screen before the click, so they are not this
+      // press's evidence — and nothing inside a dialog this control never opened
+      // is walked as a way out of it.
+      expect(trace).toEqual([
+        { label: "Cancel transfer", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+      ]);
     });
   });
 });

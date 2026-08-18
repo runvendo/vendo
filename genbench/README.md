@@ -641,6 +641,15 @@ kept anyway, and by construction: every path is walked on a page painted from
 scratch, so no in-dialog press can see what another one did, and the candidate
 that follows is pressed on a page that has forgotten all of it.
 
+A dialog belongs to the press that **opened** it. One already standing when the
+press began is read on both sides and left off the trace: repainting a page reuses
+the same script world, so a toast an earlier press opened can be portalled into
+the fresh body by the previous document's still-live runtime, and the press that
+happened to follow was credited with it. `buildlog/build-detail` lost *offers
+exactly one control to run it again* that way — "View lint log" was recorded as
+opening "Build queued to run again.", the retry toast from three presses earlier,
+which the judge correctly read as a second control that reruns the build.
+
 ## Liveness
 
 Whether a screen is **bound** to the host's data or merely **decorated** with it.
@@ -749,6 +758,12 @@ judge's context can hold. The lines arrive shuffled and are mapped back
 after, and the shuffle is **seeded from the case's own stamp**, so one case is
 asked in one order — the same for every column of it and the same on every rerun.
 
+The strike is on the **brand**, not on the word: `vendor`, `vendors`, `vendorId`
+and `vendor_name` reach the judge as written. Striking them was a live scoring
+bug — two of the fourteen worlds keep vendors, and every sentence about one
+arrived as "host", in the screen AND in the tool data the honesty line is graded
+against, so the judge compared a garbled screen with a garbled ground truth.
+
 Every verdict is `pass`, `fail` or `na`, and carries one clause naming the
 evidence it was reached on. Each line arrives labelled `[correctness]` or
 `[design]`, because only a DESIGN line may honestly be `na`: its subject may
@@ -837,6 +852,15 @@ the others. The sentence the writers are given caught up with it the same day:
 `worldBlock` in `src/vendo.ts` now names the parked answer beside the other two,
 so every prompt that describes the seam changed too — the same added bytes for
 every column, which is what keeps them comparable with each other.
+
+Three grading bugs closed later on 2026-08-18, and each moves numbers. The
+judge's identity strike no longer eats the word `vendor`, so every
+`trades-accounting` and `property-management` case is graded on prose the harness
+used to garble. A confirmation is credited only to the press that opened it, so a
+screen convicted of a control it does not have is scored on what it really does.
+And the rubric gained a paragraph — a note and a verdict that disagree are an
+error, which was 11% of the honesty failures — so `rubricVersion` is **5** and no
+verdict recorded under 4 compares with one after it.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of

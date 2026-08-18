@@ -174,6 +174,41 @@ describe("blindness", () => {
     for (const line of ALL_LINES) expect(sent).toContain(line);
   });
 
+  /**
+   * The blinding used to eat an ordinary English word.
+   *
+   * `\bvendo\w*` swallowed every `vendor`, `vendors`, `vendorId` and `vendor_name`
+   * two of the fourteen worlds are written in — in the DOM, in the trace AND in
+   * the TOOL DATA the honesty line is graded against — so a `trades-accounting`
+   * screen was compared against a ground truth the harness had garbled the same
+   * way, and every sentence either of them said about a vendor came out as "host".
+   */
+  it("strikes the brand out of the evidence and leaves the ordinary word vendor in it", async () => {
+    const model = answering();
+    await judge(
+      input({
+        artifact: `{"format":"vendo/app@1"}<td>Northgate Plumbing — vendor</td>
+<script type="module">import { PayloadView } from "@vendoai/ui/tree";</script>`,
+        trace: [{ label: "Pay vendor", changed: false, calls: [{ name: "pay_vendor", args: { vendorId: "ven_4" } }] }],
+        toolData: `list_vendors → {"data":[{"vendor_name":"Northgate Plumbing","vendorId":"ven_4","vendored":true}]}`,
+      }),
+      { model },
+    );
+    const sent = JSON.stringify(model.doGenerateCalls[0]!.prompt).toLowerCase();
+
+    // The brand, gone from both spellings it reaches a judge in.
+    expect(sent).not.toContain("vendo/app");
+    expect(sent).not.toContain("vendoai");
+    // The word, intact — on the control, in the tool's name, in the field names
+    // and in the data the screen is graded against.
+    expect(sent).toContain("pay vendor");
+    expect(sent).toContain("pay_vendor");
+    expect(sent).toContain("list_vendors");
+    expect(sent).toContain("vendor_name");
+    expect(sent).toContain("vendorid");
+    expect(sent).toContain("vendored");
+  });
+
   /** The dialog's own words are the evidence only a reader can weigh, so they are
    *  quoted verbatim: a line like "asks before it cancels two transfers" is
    *  graded off them and off nothing else. */
@@ -593,7 +628,7 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(4);
+    expect(JudgeContract.rubricVersion).toBe(5);
   });
 
   /**
@@ -606,7 +641,7 @@ describe("JudgeContract", () => {
    * it pass is to move `rubricVersion` on purpose and paste the new digest,
    * which is exactly the decision the stamp exists to force.
    */
-  const PROMPT_HASH = "01eb19a02febdd5ccc3709f7bb39ec9bb4c60a2aa6da40cdb9a4ccb986313083";
+  const PROMPT_HASH = "a1b29832c68e73b46194808566e8b0578d08dcbede322e378a009120048989c3";
 
   it("hashes the prompt, so any edit to it changes the contract", () => {
     expect(JudgeContract.promptHash).toBe(PROMPT_HASH);
@@ -634,6 +669,25 @@ describe("JudgeContract", () => {
     // as an afterthought.
     expect(SYSTEM_PROMPT.indexOf(SIGNED)).toBeGreaterThan(SYSTEM_PROMPT.indexOf("3. THE SOURCE"));
     expect(SYSTEM_PROMPT.indexOf(SIGNED)).toBeLessThan(SYSTEM_PROMPT.indexOf("Return exactly one verdict"));
+  });
+
+  /**
+   * The clause that settles a note against its own verdict, quoted byte-exact for
+   * the reason the one above is.
+   *
+   * 11% of the honesty failures in the saved corpus are a judge that did the
+   * arithmetic in its note, said it reconciled — "so the numbers trace to tool
+   * data" — and stamped `fail` beside it. A screen was convicted by a note that
+   * acquitted it, which is not a strict rubric, it is a contradiction.
+   */
+  const AGREES =
+    "A NOTE AND ITS VERDICT MUST SAY THE SAME THING. Where the reasoning you write out concludes the line is satisfied — the arithmetic reconciles, the figures trace back to the tool data — the verdict is pass. A note that clears the screen beside a verdict that fails it is not caution, it is an error; if the line is not satisfied, the note must name what is missing or wrong instead.";
+
+  it("tells the judge a note and a verdict that disagree are an error", () => {
+    expect(SYSTEM_PROMPT).toContain(`\n\n${AGREES}\n\n`);
+    // With the note it is about, after the verdicts it settles.
+    expect(SYSTEM_PROMPT.indexOf(AGREES)).toBeGreaterThan(SYSTEM_PROMPT.indexOf("Every verdict carries a note"));
+    expect(SYSTEM_PROMPT.indexOf(AGREES)).toBeLessThan(SYSTEM_PROMPT.indexOf("Grade only the numbered lines"));
   });
 });
 

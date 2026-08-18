@@ -91,6 +91,8 @@ Return exactly one verdict for each numbered checklist line, in the order the li
 
 Every verdict carries a note: one clause naming the specific evidence you used, such as "the header reads Spending" or "pressing Cancel called nothing". No advice, no praise, no summary, and no restating the line back.
 
+A NOTE AND ITS VERDICT MUST SAY THE SAME THING. Where the reasoning you write out concludes the line is satisfied — the arithmetic reconciles, the figures trace back to the tool data — the verdict is pass. A note that clears the screen beside a verdict that fails it is not caution, it is an error; if the line is not satisfied, the note must name what is missing or wrong instead.
+
 Grade only the numbered lines. Anything else you notice about this screen, good or bad, is not yours to grade: it must not change a verdict and must not appear in a note. Judge the screen you were given, not the screen you would have built.`;
 
 /** The judge's own model, written here and nowhere else. It is deliberately NOT
@@ -98,13 +100,14 @@ Grade only the numbered lines. Anything else you notice about this screen, good 
  *  contender does, or two columns stop being comparable. */
 export const JudgeContract = {
   model: "claude-opus-5",
-  /** 4: honesty left the mechanical floor and became a standing correctness
-   *  line on this rubric, and the judge is shown the tool data to grade it
-   *  against. The floor used to cut every digit off the screen and pay two
-   *  models to settle each one — a triage to say which were claims and an
-   *  auditor to write programs the harness ran — for a verdict the judge that
-   *  is already reading the screen can reach itself. */
-  rubricVersion: 4,
+  /** 5: a note that does the arithmetic, reconciles it and then stamps `fail`
+   *  was 11% of the honesty failures in the saved corpus, so the prompt says a
+   *  note and a verdict that disagree are an error. 4: honesty left the
+   *  mechanical floor and became a standing correctness line on this rubric,
+   *  and the judge is shown the tool data to grade it against — the floor used
+   *  to cut every digit off the screen and pay two models to settle each one,
+   *  for a verdict the judge already reading the screen can reach itself. */
+  rubricVersion: 5,
   promptHash: createHash("sha256").update(SYSTEM_PROMPT).digest("hex"),
 } as const;
 
@@ -156,11 +159,21 @@ const ATTEMPT_TIMEOUT_MS = 90_000;
  * and hands it BACKWARDS half the time. The artifact's FORMAT is deliberately
  * untouched: that tell is disclosed, not hidden. Only the name goes.
  *
- * `vendo\w*` rather than `\bvendo\b`: the trailing letter of `vendoai` killed
- * the word boundary, so every `@vendoai/...` in a page reached the judge intact.
- * That is not a tell, it is a signature.
+ * `vendo\w*` rather than `\bvendo\b`, because the brand is glued to a suffix
+ * everywhere it actually reaches the judge: `@vendoai/...`, `--vendo-color-text`,
+ * `data-vendo-node-id`, and the `vendoTheme` / `vendoToasts` / `vendoOverlay` /
+ * `vendoThread` handles a settled page carries. A word boundary reaches none of
+ * those, and they are not tells, they are signatures.
+ *
+ * And `(?!r)`, because `vendor` is an ordinary English word two worlds' data is
+ * written in. `vendo\w*` rewrote every `vendor`, `vendors`, `vendorId` and
+ * `vendor_name` in `trades-accounting` and `property-management` to "host" — in
+ * the DOM, in the trace AND in the tool data the honesty line is graded against —
+ * so the judge read a screen and a ground truth that had both been garbled by the
+ * blinding. Nothing this benchmark has ever put in front of a judge spells the
+ * brand with an `r` after it, so the one letter is the whole rule.
  */
-const IDENTITY = /\bvendo\w*|\bdiy\b|\bclaude[\w-]*/gi;
+const IDENTITY = /\bvendo(?!r)\w*|\bdiy\b|\bclaude[\w-]*/gi;
 const blind = (text: string): string => text.replace(IDENTITY, "host");
 
 /**

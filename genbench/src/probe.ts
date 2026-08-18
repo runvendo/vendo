@@ -365,6 +365,32 @@ const intent = async (element: Locator): Promise<{ option?: string; already: boo
     .catch(() => ({ already: false }));
 
 /**
+ * Every confirmation standing on the screen right now, in the words a person
+ * reads off it.
+ *
+ * Read on BOTH sides of a press, because a dialog that was already up is not this
+ * press's. `reset()` re-paints the page inside the SAME script world, so the
+ * previous document's still-live runtime can portal a toast it opened into the
+ * fresh body a beat later — and the press that happens to follow was credited
+ * with it. `buildlog/build-detail` lost "offers exactly one control to run it
+ * again" that way: "View lint log" was recorded as opening "Build queued to run
+ * again.", the retry toast from three presses earlier, and the judge correctly
+ * read that as a second control that reruns the build.
+ *
+ * All of them rather than the first, so which one a press opened does not depend
+ * on where in the document a lingering one landed — a portalled toast goes to the
+ * end of the body, past the dialog the screen itself mounts. `allInnerTexts`
+ * waits for nothing, which is what every press that opens no dialog needs.
+ */
+const dialogsOn = async (page: Page): Promise<string[]> =>
+  await page
+    .locator("[role=dialog]")
+    .filter({ visible: true })
+    .allInnerTexts()
+    .then((texts) => texts.map((text) => text.trim().slice(0, DIALOG_CHARS)))
+    .catch(() => []);
+
+/**
  * One press, read the same way whichever side of a dialog's edge it is on.
  *
  * A press inside a confirmation is a press: it lands late for the same reason,
@@ -376,6 +402,7 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pro
   // the screen belongs to the choice, and crediting it to the press would let a
   // chooser make a dead button look like a live one.
   const before = await look(visit.page);
+  const stood = await dialogsOn(visit.page);
   const { option, already } = await intent(element);
   // Every species is pressed by clicking, except the one that is pressed by
   // choosing. What it DID is read the same way for both.
@@ -386,13 +413,9 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pro
   await settle(visit.page, before);
 
   // Read after the press has landed, so a confirmation the runtime paints a
-  // frame late is still a confirmation and not a control that did nothing.
-  // `isVisible` first because it answers on a missing element instead of
-  // waiting for one, which every press that opens no dialog is.
-  const dialog = visit.page.locator("[role=dialog]").first();
-  const said = (await dialog.isVisible().catch(() => false))
-    ? (await dialog.innerText().catch(() => "")).trim().slice(0, DIALOG_CHARS)
-    : undefined;
+  // frame late is still a confirmation and not a control that did nothing — and
+  // credited to this press only if it was not already standing.
+  const said = (await dialogsOn(visit.page)).find((text) => !stood.includes(text));
 
   // A press that navigated away — a link with an href — leaves no screen to
   // read: it went somewhere, which is the change, and it asked the host for
