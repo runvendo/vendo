@@ -175,7 +175,27 @@ const createDecisionSubscriber = (
         if (await spendApproval(approval)) await grants.mintGrant(data.request, parsed.automationId);
       }
       await engine.delete(CAPTURES, approvalId);
-      if (!approved) {
+      // A MACHINE deny is not an answer. The guard stamps who said no on the row
+      // (`#decideApprovals`), and only `"human"` is a person: `"system"` is the
+      // hour-long TTL sweep or an abandoned ask. The decision callback carries just
+      // (id, approved), so the provenance can only be read here, off the row.
+      //
+      // Live 2026-08-18 on production Maple, automation atm_d50cd48e: 33 arming
+      // asks were created at 11:26 and all 33 were denied by the sweep at 12:27 —
+      // createdAt plus exactly the parked-call TTL — and the record flipped to
+      // armed=false at 12:27:37. Nobody ever decided anything. The person's
+      // automation turned itself off an hour after they set it up, silently,
+      // because an expiry read as a refusal. The guard already draws this exact
+      // line for standing denials (it enforces only `deniedBy: "human"`); this was
+      // the one place that did not, and it is the same hazard class the supersede
+      // path below is already careful about.
+      //
+      // A guard that stamps nothing keeps today's behaviour, so no BYO guard
+      // regresses; a human NO still disarms, so the channel's "Okay — I turned it
+      // off." stays true.
+      const deniedBySystem = approval !== null
+        && approvalRowSchema.safeParse(approval.data).data?.deniedBy === "system";
+      if (!approved && !deniedBySystem) {
         // Deny is transactional at the DECISION (criterion 19, deny half), but
         // disarms ONLY a consent moment that ended with NOTHING granted: no
         // capture asks left pending for the record and no live automation-source
