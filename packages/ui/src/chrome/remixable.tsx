@@ -244,7 +244,7 @@ export function Remixable({ review = false, children }: RemixableProps) {
   const openChat = () => {
     const opened = openVendoConversation({
       prompt: `Remix my ${slot}: `,
-      context: `The view being remixed is the "${slot}" component on the host's page.`,
+      context: `The view being remixed is the host component "${slot}". When you make the remix, pass component=${slot} verbatim.`,
       send: false,
     });
     if (!opened && developmentMode()) {
