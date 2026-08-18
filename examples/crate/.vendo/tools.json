@@ -81,7 +81,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_addShipmentEvent",
@@ -217,7 +217,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_adjustStock",
@@ -354,7 +354,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_cancelOrder",
@@ -545,7 +545,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_createRefund",
@@ -668,7 +668,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_createShipment",
@@ -792,7 +792,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_fulfillOrder",
@@ -979,7 +979,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_getCustomer",
@@ -989,7 +989,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "The customer id (cus_1) or their email address. Either works."
+            "description": "The customer id (cus_1) or their email address. Either works. A NAME does not — names are not unique here, so a name 404s. When a name is all you have, search GET /api/customers?q= first and use the id it returns."
           }
         },
         "required": [
@@ -1299,7 +1299,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_getOrder",
@@ -1694,7 +1694,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_getProduct",
@@ -1827,7 +1827,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_getShipment",
@@ -2127,7 +2127,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_getShopSummary",
@@ -2466,7 +2466,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_listCustomers",
@@ -2562,7 +2562,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_listOrders",
@@ -2765,7 +2765,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_listProducts",
@@ -2877,7 +2877,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_listRefunds",
@@ -2984,7 +2984,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_listShipments",
@@ -3130,7 +3130,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     },
     {
       "name": "host_resetDemo",
@@ -3182,7 +3182,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:d3f2803d94fb39c1acba6e6681b340eaff6ca055b873f29d6d037fcdf71d2b8e"
+      "srcHash": "sha256:f2c0c8425e7abfd0932dc2d7184c965048f98d0412086b4cc15f1bf4ccf26a3d"
     }
   ]
 }

@@ -328,7 +328,7 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "The customer id (cus_1) or their email address. Either works.",
+            "description": "The customer id (cus_1) or their email address. Either works. A NAME does not — names are not unique here, so a name 404s. When a name is all you have, search GET /api/customers?q= first and use the id it returns.",
             "schema": {
               "type": "string"
             }
