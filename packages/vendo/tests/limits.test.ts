@@ -18,6 +18,7 @@ import {
   type LimitUser,
   type RunContext,
   type StoreOps,
+  type UsageEvent,
   type VendoLogEvent,
   type VendoViewStreamingToolCall,
   type VendoViewStreamUpdate,
@@ -81,6 +82,16 @@ describe("the limiter's verdict", () => {
 
     await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: false });
     expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(0);
+  });
+
+  it("answers a verdict when the memberships seam says NULL", async () => {
+    const limiter = createLimiter({ callback: () => true, ops: meter() });
+
+    // The pool derivation reads `ctx.memberships` OUTSIDE the policy's try, so a
+    // throw there is not a deny — it is the whole turn rejecting. A JS host's seam
+    // can answer null, and every other consumer of it tolerates one.
+    await expect(limiter.gate("message", ctxFor({ memberships: null as never })))
+      .resolves.toEqual({ allow: true });
   });
 
   it("carries the host's own sentence out of a denial", async () => {
@@ -279,6 +290,19 @@ describe("the meter reader the policy is handed", () => {
     expect(await usage.count({ action: "generation", poolKey: "ws_maple", since: ALL_TIME })).toBe(1);
     expect(await usage.count({ action: "generation", poolKey: "org_maple", since: ALL_TIME })).toBe(1);
   });
+
+  it("stamps a key ONCE when a host pool names a derived org's own key", async () => {
+    const usage = meter();
+    const recorded: UsageEvent[] = [];
+    const limiter = createLimiter({
+      callback: () => true,
+      ops: { ...usage, record: async (event) => { recorded.push(event); await usage.record(event); } },
+    });
+
+    await limiter.gate("message", ctxFor({ memberships: [{ org: "maple" }], pools: { seat: "org:maple" } }));
+
+    expect(recorded[0]?.poolKeys).toEqual(["org:maple"]);
+  });
 });
 
 describe("the user the policy decides about", () => {
@@ -311,6 +335,24 @@ describe("the user the policy decides about", () => {
     }));
 
     expect(seen?.pools).toEqual(["org:maple", "org:acme"]);
+  });
+
+  it("says `[]` when the host wired pools and this user is in none — in-none is not un-wired", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    await limiter.gate("message", ctxFor({ pools: {} }));
+
+    expect(seen?.pools).toEqual([]);
+  });
+
+  it("skips an org id the §9.2 grammar cannot parse back — a derived name a grant could never address", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    await limiter.gate("message", ctxFor({ memberships: [{ org: "maple" }, { org: "maple/eu" }, { org: "" }] }));
+
+    expect(seen?.pools).toEqual(["org:maple"]);
   });
 
   it("carries NO pools key when the host asserted neither pools nor memberships", async () => {

@@ -16,6 +16,7 @@ import {
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   encodeGrantPrincipal,
+  isGrantPrincipal,
   isVendoError,
   VendoError,
   log,
@@ -55,11 +56,14 @@ const ALL_TIME = new Date(0);
  *
  *  Teams are deliberately absent: a team is a slice of an org's allowance, not a
  *  bucket the host asked to meter. */
-const orgPools = (memberships: RunContext["memberships"] = []): Record<string, string> =>
-  Object.fromEntries(memberships.map(({ org }) => {
-    const pool = encodeGrantPrincipal({ kind: "org", org });
-    return [pool, pool];
-  }));
+const orgPools = (memberships: RunContext["memberships"]): Record<string, string> =>
+  Object.fromEntries((memberships ?? [])
+    .map(({ org }) => encodeGrantPrincipal({ kind: "org", org }))
+    // An id the grammar cannot parse BACK — empty, or carrying its own `/` — is a
+    // name no grant can be stored under either (`validate.ts` refuses the row), so
+    // it is no pool: a derived name is always one a grant could address.
+    .filter(isGrantPrincipal)
+    .map((pool) => [pool, pool]));
 
 /** The host's policy, bound to the meter it decides on.
  *
@@ -80,7 +84,10 @@ export function createLimiter({ callback, ops }: {
       const user: LimitUser = {
         ...ctx.principal,
         ...(ctx.user === undefined ? {} : { facts: ctx.user }),
-        ...(poolNames.length === 0 ? {} : { pools: poolNames }),
+        // A host that ANSWERED the pools seam said something even with `{}` — "in
+        // none" is not "not wired" — so the key is absent only when neither the
+        // seam nor a membership produced one.
+        ...(ctx.pools === undefined && poolNames.length === 0 ? {} : { pools: poolNames }),
       };
       // Pre-bound to THIS subject: a policy never names one, so it can never
       // read another person's usage by accident.
@@ -125,8 +132,10 @@ export function createLimiter({ callback, ops }: {
       }
       if (decision !== true) return decision === false ? { allow: false } : decision;
       // Awaited, not fire-and-forget: the next action's count has to see this
-      // one, and a dropped write is a limit that never arrives.
-      await ops.record({ subject, action, at: new Date(), poolKeys: Object.values(pools) });
+      // one, and a dropped write is a limit that never arrives. Keys DEDUPED: a
+      // host pool naming a derived org's own key is one bucket, stamped once.
+      const poolKeys = [...new Set(Object.values(pools))];
+      await ops.record({ subject, action, at: new Date(), poolKeys });
       return { allow: true };
     },
   };
