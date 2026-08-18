@@ -6,7 +6,9 @@ import { densityVars, font, hairline, microLabel, numeric, resolveTone, t, toneC
 export interface StatProps extends KitStyled {
   /** Metric name. */
   label: string;
-  /** Raw value; formatted by `format` (money takes major units, never cents). */
+  /** The figure. A number reads through `format` (money takes major units, never
+   *  cents); a string is text that was already formatted — `toLocaleString` — and
+   *  renders as given. */
   value: number | string;
   /** Value-tier format. */
   format?: ValueFormat;
@@ -38,7 +40,15 @@ const STAT_VALUE_MAX_CHARS = 40;
 export function Stat({ label, value, format = "text", durationUnit, durationSigned, unit, trend, tone, density, icon, style, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
-  const shown = applyFormat(value, format, { unit: durationUnit, signed: durationSigned });
+  // A token that cannot read the value falls back to the value ITSELF when that
+  // value is a string: the string is text somebody already formatted — the VM
+  // bridges Intl now, so `total.toLocaleString("en-US")` beside format="money" is
+  // the shape reaching this prop — and it used to paint the em dash meant for
+  // missing data. A number keeps the placeholder: one no formatter can print is
+  // data we do not have. The date tokens still PARSE a string, so an ISO value
+  // never reaches the fallback.
+  const shown = applyFormat(value, format, { unit: durationUnit, signed: durationSigned })
+    ?? (typeof value === "string" ? applyFormat(value, "text") : null);
   const formatted = shown !== null && unit !== undefined ? `${shown} ${unit}` : shown;
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;

@@ -130,7 +130,8 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   Toast: ['<Toast open={sent} onClose={() => setSent(false)} message="Reminders sent." tone="success"/>'],
   // Containers: the child shape is the teaching, not the child's own props.
   Card: ['<Card title="Overdue" description="Worst first"><DataTable .../></Card>'],
-  Grid: ["<Grid minChildWidth={160}><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
+  // Bare: a grid of tiles wraps on its own now, so the floor is not the lesson.
+  Grid: ["<Grid><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
   Tabs: ['<Tabs tabs={["Overview","Detail"]}><Stat .../><DataTable .../></Tabs>'],
 };
 

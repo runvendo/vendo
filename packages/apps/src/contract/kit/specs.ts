@@ -305,14 +305,14 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Grid",
     group: "layout",
-    summary: "Equal-width columns. A fixed count CLIPS its cells on a narrow screen rather than shrinking them, so a grid of stats sets minChildWidth and wraps; name columns only for a fixed layout.",
+    summary: "Equal-width columns that WRAP to fit, so cells never clip — write it bare for a grid of tiles. A fixed count is kept at every width, which is what clips on a narrow screen, so name columns only where the layout genuinely needs one.",
     takesChildren: true,
     props: {
-      columns: config(z.number().int().positive(), "column count (fixed layouts only)"),
-      minChildWidth: config(z.number().int().positive(), "auto-fit: narrowest a cell may get in px; cells wrap instead of clipping. 160 suits Stat tiles. Wins over columns"),
+      columns: config(z.number().int().positive(), "a FIXED column count, kept however narrow the screen gets — for a layout that needs the count, not for tiles"),
+      minChildWidth: config(z.number().int().positive(), "the floor cells wrap at, in px; 160 without you. Wins over columns"),
       gap: config(z.number(), "pixels between cells"),
     },
-    examples: ["<Grid minChildWidth={160}><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
+    examples: ["<Grid><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
   },
   {
     name: "SplitPane",
@@ -548,7 +548,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     takesChildren: true,
     props: {
       label: copy(z.string(), "metric name", { required: true }),
-      value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
+      value: data(z.union([z.number(), z.string()]), "the figure — format it yourself with toLocaleString, or hand over the number and name a format token; a string renders as given and Stat does the typography either way", { required: true }),
       format: config(valueFormat, "value tier format"),
       durationUnit: config(durationUnit, DURATION_DOC.durationUnit),
       durationSigned: config(z.boolean(), DURATION_DOC.durationSigned),

@@ -61,6 +61,23 @@ describe("Stat", () => {
     expect(capped.getAttribute("title")).toBe(prose);
   });
 
+  /** THE FAILURE: the VM bridges Intl now, so a screen writes the idiom it was
+   *  trained on — `total.toLocaleString("en-US")` — and a tile that ALSO named
+   *  its token turned that text into the em dash reserved for missing data,
+   *  because a token reads NUMBERS. A string is already the figure; there is
+   *  nothing left for the token to do. */
+  it("renders a value that was formatted upstream as given, whatever token was named", () => {
+    render(<Stat label="Total" value={(57_000).toLocaleString("en-US")} format="money" />);
+    expect(screen.getByText("57,000")).toBeTruthy();
+  });
+
+  /** And the fallback is what a token could NOT read, never a bypass: the date
+   *  tokens parse a string, so an ISO value still formats. */
+  it("still lets the date token parse a string value", () => {
+    render(<Stat label="Renews" value="2026-03-14" format="date" />);
+    expect(screen.getByText("Mar 14, 2026")).toBeTruthy();
+  });
+
   it("leaves a short text value untouched — no tooltip, no truncation", () => {
     render(<Stat label="Plan" value="Growth (annual)" />);
     const value = screen.getByText("Growth (annual)");

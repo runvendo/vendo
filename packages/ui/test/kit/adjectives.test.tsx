@@ -242,4 +242,16 @@ describe("Grid minChildWidth", () => {
     const { container } = render(<Grid columns={3} />);
     expect(kit(container, "Grid").style.gridTemplateColumns).toBe("repeat(3, minmax(0, 1fr))");
   });
+
+  /** THE FAILURE, and it was self-inflicted: a bare `<Grid>` was two FIXED
+   *  columns, so every grid of tiles clipped below ~480px — and screens learned
+   *  to write past the default rather than trust it (`minChildWidth` 21 times
+   *  against `columns` once). Bare, it now wraps at the floor screens themselves
+   *  write; a NAMED count is still fixed, exactly as before. */
+  it("wraps to fit when nothing is named, and stays fixed only for a named count", () => {
+    expect(kit(render(<Grid />).container, "Grid").style.gridTemplateColumns)
+      .toBe("repeat(auto-fit, minmax(min(160px, 100%), 1fr))");
+    expect(kit(render(<Grid columns={2} />).container, "Grid").style.gridTemplateColumns)
+      .toBe("repeat(2, minmax(0, 1fr))");
+  });
 });

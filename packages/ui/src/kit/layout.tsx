@@ -96,23 +96,37 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, den
 }
 
 export interface GridProps extends KitStyled {
+  /** A FIXED column count, kept at every width — which is what CLIPS on a narrow
+   *  screen. Name it only where the layout genuinely needs the count; left out,
+   *  the cells wrap. */
   columns?: number;
-  /** Narrowest a cell may get, in px. Wins over `columns`. */
+  /** Narrowest a cell may get, in px. Wins over `columns`, and
+   *  {@link BARE_MIN_CHILD_WIDTH} is what a bare Grid uses. */
   minChildWidth?: number;
   gap?: number;
   density?: KitDensity;
   grow?: boolean | number;
 }
 
-/** Equal-width columns. */
-export function Grid({ columns = 2, minChildWidth = 0, gap, density, grow, style, children }: PropsWithChildren<GridProps>) {
-  const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
+/** The floor a Grid nobody sized wraps at, in px — the width screens themselves
+ *  write when they name one (586 of the corpus's 632 `minChildWidth` values), and
+ *  the width a Stat tile reads at. */
+const BARE_MIN_CHILD_WIDTH = 160;
+
+/** Equal-width columns, wrapping to fit. */
+export function Grid({ columns, minChildWidth, gap, density, grow, style, children }: PropsWithChildren<GridProps>) {
+  const safe = typeof columns === "number" && Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
   // A fixed count CLIPS its cells once the screen is narrower than the count
-  // needs; auto-fit wraps them instead. The inner `min()` is what keeps the last
-  // single column from overflowing a surface narrower than the floor itself.
+  // needs, so it is what a Grid does only where the screen ASKED for a count:
+  // bare, it auto-fits and wraps. Two fixed columns was a default the Kit
+  // inflicted on itself — every grid of tiles clipped below ~480px, and screens
+  // learned to write `minChildWidth` past it rather than trust the bare form.
+  // The inner `min()` is what keeps the last single column from overflowing a
+  // surface narrower than the floor itself.
+  const floor = minChildWidth ?? (columns === undefined ? BARE_MIN_CHILD_WIDTH : 0);
   const template =
-    minChildWidth > 0
-      ? `repeat(auto-fit, minmax(min(${Math.floor(minChildWidth)}px, 100%), 1fr))`
+    floor > 0
+      ? `repeat(auto-fit, minmax(min(${Math.floor(floor)}px, 100%), 1fr))`
       : `repeat(${safe}, minmax(0, 1fr))`;
   return (
     <div
