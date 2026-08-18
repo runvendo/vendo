@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { checks, holds, splitChecks, type Binding, type Check, type WiredActionsResult } from "./floor.js";
 import { HONESTY_LINE, type JudgeResult, type LineVerdict, type Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
+import type { Fired } from "./probe.js";
 import type { CaseResult } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
@@ -444,13 +445,18 @@ const livenessRow = (results: readonly CaseResult[], contenders: readonly string
  * as PATHS rather than as bindings — so read off the bindings alone the whole
  * flow counted as a dialog, or as nothing at all. Read the same way the dialog
  * reading is read: off the trace, and only for a tool the world calls a write.
+ * Including the confirmation such a step ENDS in, since the probe walks that too
+ * (2026-08-18) — the `capacity-rebalance` shape, whose write is the Modal's button
+ * two presses in — because a flow the floor calls proven must not read as a flow
+ * that reached nothing here.
  */
 const reached = (result: CaseResult, world: World | undefined): "write" | "dialog" | "none" => {
   const writes = new Set(
     (world?.tools ?? []).filter((tool) => tool.descriptor.risk === "write").map((tool) => tool.name),
   );
+  const called = (calls: readonly Fired[]): boolean => calls.some((call) => writes.has(call.name));
   const wrote = result.trace.some((probed) =>
-    (probed.revealed ?? []).some((path) => path.calls.some((call) => writes.has(call.name))));
+    (probed.revealed ?? []).some((path) => called(path.calls) || (path.inside ?? []).some((deeper) => called(deeper.calls))));
   if (wrote || result.floor.wiredActions.bindings.some((binding) => binding.tool !== undefined && writes.has(binding.tool))) {
     return "write";
   }

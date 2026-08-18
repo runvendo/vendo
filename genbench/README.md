@@ -554,9 +554,17 @@ press each and scored better for being button-shaped.
 A control the screen has **locked** gets one precondition satisfied. If it is
 disabled, one pass over the screen in document order sets every `<select>` still on
 its placeholder to its first real option — skipping the placeholder whose value is
-empty — and fills every empty text box (`input[type=text]`, an `input` with no
-type, `textarea`) with the harness's own sentinel, `probe input` (2026-08-18); then
-it is given a second look, bounded by a second. **Still on its placeholder** is the
+empty — and fills every empty box (`input[type=text]`, `input[type=number]`, an
+`input` with no type, `textarea`) with the harness's own sentinel: `probe input`, or
+the digit `3` where the box is a **number** (2026-08-18); then it is given a second
+look, bounded by a second. The number box was the one the pass could not see, and
+`project-tracker/file-bug` — "priority, assignee, estimate, and file it" — failed
+`actionProven` for it: the required estimate stayed empty, the submit it guards never
+unlocked, and the case recorded two choices and no press that asked the host for
+anything. It takes a digit rather than the string because a number box will not hold
+the string at all, so `probe input` would have left it as empty as never touching it.
+
+**Still on its placeholder** is the
 same rule as **empty** box, and it was missing (2026-08-18): the pass set every
 select on the page, so a form whose priority defaults to `high` showed `high` in the
 shot everybody grades and fired the call with `urgent` in it, and the judge —
@@ -725,6 +733,20 @@ Two things differ from the dialog walk, and both on purpose:
   the only verdict a reveal can reach is that an `action` case's write is
   **proven** (`acted: "revealed"`), which is why walking one press further moves
   the floor in one direction only
+
+The last step of that form is often a **confirmation**, so a press inside a reveal
+that opens a `[role=dialog]` is walked exactly as a press on the screen itself is:
+the dialog's words and every way out of it go on that path (`dialog` and `inside` on
+`Path`, the same two fields a top-level press carries). `capacity-rebalance` failed
+`actionProven` a second time for the want of it, with the whole flow right — *Hand
+off* reveals a picker and a *Confirm*, *Confirm* opens a Modal, and the Modal's own
+button is what calls `assign_issue`, one press past where the reveal walk stopped.
+Getting back to that dialog for each of its paths is the walk back to the reveal plus
+the reveal's own presses in order, replayed; it has to be, because the Kit draws a
+Modal's close affordance **before** its footer, so pressed in one pass the ✕ takes the
+control that writes off the screen before its turn comes. **Reveal, then dialog, and
+there it stops** — the dialog walk records no dialog of its own, so the depth is two
+by construction and nothing can grow it.
 
 A dialog and a reveal are never both walked for one press: a dialog's controls ARE
 controls that press revealed, and walking them twice would press each way out of a
@@ -1000,14 +1022,35 @@ to stop losing the honesty line to a confirmation echoing the probe's own choice
 back. `rubricVersion` stays **5**: the rubric and the prompt are untouched, and what
 changed is what the trace tells the judge.
 
+Two more probe fairness fixes land under that same heading, from the same run's
+sweep, and they split the two directions between them. Walking into a **confirmation
+a revealed press opened** extends the reveal walk by exactly one level, so an
+`action` case can now be proven by a write two presses inside an inline step — the
+`capacity-rebalance` shape, where *Hand off* reveals a *Confirm* and *Confirm* opens
+the Modal that calls the tool. It moves the floor in **one direction only**, for
+`revealed`'s reason: those paths are not bindings, so nothing new can fail on them.
+Answering a required **number** box (`input[type=number]`, with the digit `3`) moves
+it in **both**, exactly as filling a text box did: a screen whose submit is gated on
+an estimate used to record the choices around it and never the press, and is pressed
+and graded now — while a number field that is decoration is now pressed and can
+fail. Re-probing the saved pages of the run that found them flips exactly the two
+cases named and leaves the other 376 verdicts identical, `team-permissions` — whose
+one control really is a local filter — included. Both are the same code for every
+column, and both are the same kind of break as the fixes above them: a trace
+recorded before them carries neither the nested paths nor the filled number, and
+absent evidence has never been a pass here, so no earlier run's `actionProven`
+compares with a later one's. The judge's reading moves with them too, because the
+confirmation a revealed press opened is now narrated to it in the words a person
+reads off the dialog.
+
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of
 nine of them costs now — and a locked control costs one pass over the screen's
-unanswered selects and empty text boxes on top of its reload. A dialog costs one
+unanswered selects and empty boxes on top of its reload. A dialog costs one
 full walk back to it per control inside it, on top of that. That pass is the only
-precondition the probe satisfies — a choice a `<select>` is asking for, and text a
-box is empty of — so a control guarded behind a ticked box, a typed *amount* the
-sentinel is not, or an earlier step stays unpressed and ungraded. A chooser that is
+precondition the probe satisfies — a choice a `<select>` is asking for, and a value a
+text or number box is empty of — so a control guarded behind a ticked box, a *date*
+or an *amount* neither sentinel is, or an earlier step stays unpressed and ungraded. A chooser that is
 only ever a precondition is pressed on its own page all the same, and it holds by
 unlocking something a person could press; where it guards a control that needs a
 second condition as well, it unlocks nothing visible and is recorded as a control
@@ -1019,10 +1062,15 @@ press left standing rather than reloading for each — but a screen where every 
 reveals a small form pays for all of them. Multi-step flows are followed
 exactly one dialog deep: a confirmation that opens a second confirmation is
 recorded as a press that changed the screen, and nothing inside the second one is
-pressed. A reveal is one level deep the same way, and it is one PASS as well as one
-level: the controls it revealed are pressed in document order, so a step whose
-dismiss sits before its confirm loses the confirm, and a control that only appears
-after two of them are answered is never reached. A step the screen keeps in the
+pressed. A reveal reaches one press further — the confirmation at the end of an
+inline form is walked, so the depth is reveal then dialog — and there it stops for
+the same reason, a dialog inside that dialog being recorded and not entered. A reveal
+is also one PASS as well as one level: the controls it revealed are pressed in
+document order, so a step whose dismiss sits before its confirm loses the confirm,
+and a control that only appears after two of them are answered is never reached. And
+a reveal whose confirmation is walked pays for it: each way out of that dialog costs
+the whole step replayed from a fresh page, so a table of rows that each reveal a
+confirmed form is the most expensive screen the probe meets. A step the screen keeps in the
 markup and merely un-hides is not a reveal either — identity is what a control is
 and says, not whether it is laid out — so those controls are pressed as controls of
 the screen, from the page's first count, exactly as they were before. A control that navigates off the screen — a link with an `href` — is

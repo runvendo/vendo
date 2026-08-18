@@ -241,13 +241,26 @@ const choseText = (chose: readonly Chosen[] | undefined): string => {
 };
 
 /** One walked press, in the same words as a press on the screen itself — with what
- *  the harness chose to make it, where it was a chooser. */
+ *  the harness chose to make it, where it was a chooser, and with the confirmation
+ *  it opened where it opened one (2026-08-18): the last step of a revealed form is
+ *  often a dialog, the probe walks into it now, and a record that stopped at its
+ *  words could not evidence "pressing confirm hands the issue over" any more than
+ *  the dialog walk could before it went inside. */
 const pathsText = (paths: readonly Path[]): string =>
   paths
     .map((path) => {
       const asked = askedText(path.calls);
-      const did = asked !== "" ? `called ${asked}` : path.changed ? "called nothing, and the screen moved" : "called nothing";
-      return `${choseText(path.chose)}pressing "${path.label}" ${did}`;
+      const opened = path.dialog === undefined ? "" : `opened a confirmation: ${JSON.stringify(path.dialog)}`;
+      const did =
+        asked !== ""
+          ? `called ${asked}${opened === "" ? "" : ` and ${opened}`}`
+          : opened !== ""
+            ? opened
+            : path.changed
+              ? "called nothing, and the screen moved"
+              : "called nothing";
+      const within = path.inside === undefined ? "" : `\n    inside that confirmation, ${insideText(path.inside)}`;
+      return `${choseText(path.chose)}pressing "${path.label}" ${did}${within}`;
     })
     .join("; ");
 

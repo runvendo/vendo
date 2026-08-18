@@ -83,8 +83,15 @@ const CHOICE = "select:not([disabled])";
  * goes on the trace beside the press it enabled, and a tool call carrying it is
  * proof the field is wired to the tool rather than decoration. A field the screen
  * disabled or froze is not a field it is asking for, exactly as with a chooser.
+ *
+ * A NUMBER box is one of them as of 2026-08-18, and it was the one box the probe
+ * could not see. "Priority, assignee, estimate — and file it" is a form with one
+ * field that is not text: the required estimate stayed empty, so the submit it
+ * guards never unlocked, and `project-tracker/file-bug` recorded two choices and no
+ * press that asked the host for anything. It is answered with a digit rather than
+ * the string every other box gets — see `TYPED_NUMBER`.
  */
-const ENTRY = ["input[type=text]", "input:not([type])", "textarea"]
+const ENTRY = ["input[type=text]", "input[type=number]", "input:not([type])", "textarea"]
   .map((field) => `${field}:not([disabled]):not([readonly])`)
   .join(", ");
 
@@ -92,6 +99,13 @@ const ENTRY = ["input[type=text]", "input:not([type])", "textarea"]
  *  screen must type the same thing, and what the harness typed has to be
  *  recognisable as the harness's wherever the trace is read. */
 const TYPED = "probe input";
+
+/** And what a NUMBER box is answered with, because `TYPED` is not a number and a
+ *  number box will not hold it: the letters land nowhere, the box stays empty, and
+ *  the submit it guards stays locked — which is the failure that adding the box to
+ *  `ENTRY` at all would otherwise have shipped unchanged. One fixed digit, for
+ *  `TYPED`'s reason, and a plausible answer to whatever the field is asking for. */
+const TYPED_NUMBER = "3";
 
 /** What "switched on" looks like whoever drew the control — `aria-checked` where
  *  the page paints its own toggle, `:checked` where it uses the browser's. */
@@ -194,6 +208,14 @@ export interface Path {
   readonly label: string;
   /** The dialog closed, or the screen moved under it. */
   readonly changed: boolean;
+  /** The visible text of a `[role=dialog]` THIS press opened, and every control
+   *  inside it — the same two fields as on a press at the top level, read the same
+   *  way (2026-08-18). Carried only by a press inside a REVEAL, where the flow's
+   *  last step is a confirmation: `insideDialog` strips both from the paths it
+   *  returns, so the nesting the types permit is one level and the walk stops
+   *  there. See `insideReveal`. */
+  readonly dialog?: string;
+  readonly inside?: readonly Path[];
   /** Present exactly when this press was a CHOICE — a chooser is pressed by
    *  choosing, inside a walk as much as outside one, and a call carrying the
    *  harness's pick has to say whose pick it was wherever it is read. */
@@ -229,11 +251,15 @@ export interface Probed {
    * `capacity-rebalance` and `my-issues-inbox` failed `actionProven` in the columns
    * that had them right, with the write one press past where the evidence stopped.
    *
-   * The walk is one level deep and never recursive, exactly like `inside`, and it is
-   * the one the reveal itself asks for: the new controls are pressed in document
-   * order on the page the opening press left standing, because a picker and the Save
-   * beside it are one step and not two ways out of the same question. Absent where a
-   * press revealed nothing, or where nothing it revealed could be pressed.
+   * The walk is the one the reveal itself asks for: the new controls are pressed in
+   * document order on the page the opening press left standing, because a picker and
+   * the Save beside it are one step and not two ways out of the same question.
+   * Absent where a press revealed nothing, or where nothing it revealed could be
+   * pressed.
+   *
+   * A revealed press that opens a DIALOG carries that dialog and its own walk, so
+   * the depth here is reveal then dialog and stops: `insideDialog` walks no dialog a
+   * press inside a dialog opened, which is the same bound `inside` has always had.
    */
   readonly revealed?: readonly Path[];
   /** The fields the harness filled to get this press, and with what. Present
@@ -433,14 +459,21 @@ const supply = async (page: Page): Promise<Given> => {
   const filled: Filled[] = [];
   for (let index = 0; index < asked; index += 1) {
     const field = fields.nth(index);
-    if ((await field.inputValue().catch(() => TYPED)) !== "") continue;
+    // Whether the box is empty and what KIND of box it is, in one reading: a number
+    // box takes a different answer, and asking twice is a second round trip for
+    // something the first one was already looking at.
+    const box = await field
+      .evaluate((node: HTMLInputElement | HTMLTextAreaElement) => ({ empty: node.value === "", number: node.type === "number" }))
+      .catch(() => undefined);
+    if (box === undefined || !box.empty) continue;
+    const value = box.number ? TYPED_NUMBER : TYPED;
     // Filled, then LEFT: `input` is what a keystroke fires and `change` is what
     // leaving the box fires, and a screen may gate on either one.
     await field
-      .fill(TYPED, { timeout: CLICK_MS })
+      .fill(value, { timeout: CLICK_MS })
       .then(() => field.blur())
       .catch(() => undefined);
-    filled.push({ field: await nameOf(field, index), value: TYPED });
+    filled.push({ field: await nameOf(field, index), value });
   }
   return { chose, filled };
 };
@@ -637,19 +670,48 @@ const insideDialog = async (visit: Visit, reopen: () => Promise<void>): Promise<
  * than pressed into thin air: a five-second click that lands on nothing would go on
  * the trace as a control that did nothing, which invents exactly the dead control
  * this walk exists to stop inventing.
+ *
+ * And the last step of the form is often a CONFIRMATION, so a press in here that
+ * opens a dialog is walked exactly as one at the top level is (2026-08-18). The
+ * probe stopped at the reveal's edge, and `project-tracker/capacity-rebalance`
+ * failed `actionProven` with the whole flow right and the write one press further
+ * in: "Hand off" revealed a picker and a Confirm, Confirm opened a Modal, and the
+ * Modal's own button is what calls `assign_issue`. Reveal then dialog, and there it
+ * stops — `insideDialog` never walks a dialog a press inside a dialog opened, so
+ * the depth is two and cannot grow.
+ *
+ * `reopen` is the walk back to the reveal itself, handed in by the caller for
+ * `insideDialog`'s reason: only the caller knows which control opened it. Getting
+ * back to the DIALOG is that walk plus the presses in here that led to it, which is
+ * why the sequence so far is kept.
  */
-const insideReveal = async (visit: Visit, appeared: readonly number[]): Promise<Path[]> => {
+const insideReveal = async (visit: Visit, appeared: readonly number[], reopen: () => Promise<void>): Promise<Path[]> => {
   const controls = visit.page.locator(CONTROLS);
   const paths: Path[] = [];
+  // The presses that got the screen here, in the order they were made. Replayed,
+  // never re-read: this is how a dialog one of them opened gets back on the screen.
+  // Read inside the same turn it is written, so the last entry is always this press.
+  const walked: Array<{ index: number; label: string }> = [];
   for (const index of appeared) {
     const control = controls.nth(index);
     const live = control.and(visit.page.locator(ACTIONABLE)).filter({ visible: true });
     if ((await live.count()) === 0) continue;
-    const { probed } = await press(visit, control, await nameOf(control, index));
+    const label = await nameOf(control, index);
+    const { probed } = await press(visit, control, label);
+    walked.push({ index, label });
     paths.push({
       label: probed.label,
       changed: probed.changed,
       ...(probed.chose === undefined ? {} : { chose: probed.chose }),
+      ...(probed.dialog === undefined
+        ? {}
+        : {
+            dialog: probed.dialog,
+            inside: await insideDialog(visit, async () => {
+              await reopen();
+              for (const step of walked) await press(visit, controls.nth(step.index), step.label);
+            }),
+          }),
       calls: probed.calls,
     });
   }
@@ -706,16 +768,16 @@ export async function probe(visit: Visit): Promise<Probed[]> {
       ...(given.filled.length === 0 ? {} : { filled: given.filled }),
       ...(chose.length === 0 ? {} : { chose }),
     };
+    // The same walk again, for whichever second step this press opened: the screen
+    // from scratch, what it asked for where this control needed it, then this
+    // control. Its result is thrown away — it is how the screen gets back to where
+    // the press left it, not a second reading of the press itself.
+    const reopen = async (): Promise<void> => {
+      await visit.reset();
+      if (gave) await supply(visit.page);
+      await press(visit, element, label);
+    };
     if (probed.dialog !== undefined) {
-      // The same walk again, for the next path inside the dialog: the screen from
-      // scratch, what it asked for where this control needed it, then this control.
-      // Its result is thrown away — it is how the dialog gets back on the screen,
-      // not a second reading of the press that opened it.
-      const reopen = async (): Promise<void> => {
-        await visit.reset();
-        if (gave) await supply(visit.page);
-        await press(visit, element, label);
-      };
       trace.push({ ...pressed, inside: await insideDialog(visit, reopen) });
       continue;
     }
@@ -723,7 +785,7 @@ export async function probe(visit: Visit): Promise<Probed[]> {
     // controls ARE controls the press revealed, and walking them twice would press
     // each way out of a confirmation a second time under a name that says the
     // opposite about what isolation it got.
-    const paths = appeared.length === 0 ? [] : await insideReveal(visit, appeared);
+    const paths = appeared.length === 0 ? [] : await insideReveal(visit, appeared, reopen);
     trace.push(paths.length === 0 ? pressed : { ...pressed, revealed: paths });
   }
   return trace;

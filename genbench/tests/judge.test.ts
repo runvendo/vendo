@@ -421,6 +421,46 @@ describe("blindness", () => {
     );
   });
 
+  /**
+   * And when the last step of that inline flow is a CONFIRMATION (2026-08-18).
+   *
+   * `project-tracker/capacity-rebalance` builds exactly this: "Hand off" reveals a
+   * picker and a Confirm, Confirm opens a Modal, and the Modal's own button is what
+   * calls the tool. The record stopped at the reveal's edge, so the write was as
+   * unreadable to the judge as one behind a top-level dialog used to be — the words
+   * of the confirmation and the calls behind it are both here now.
+   */
+  it("renders the confirmation a revealed press opened, and the presses inside it", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Hand off",
+        changed: true,
+        calls: [],
+        revealed: [
+          { label: "Pick an assignee", changed: true, chose: [{ field: "Pick an assignee", value: "Rosa Iyer" }], calls: [] },
+          {
+            label: "Confirm",
+            changed: true,
+            dialog: DIALOG,
+            calls: [],
+            inside: [
+              { label: "Reassign", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+              { label: "✕", changed: true, calls: [] },
+            ],
+          },
+        ],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressing "Confirm" opened a confirmation: ${JSON.stringify(DIALOG)}`
+        + `\n    inside that confirmation, pressing "Reassign" called cancel_transfer({"id":"tr_1"});`
+        + ` pressing "✕" called nothing, and the screen moved`,
+    );
+  });
+
   /** A control that was ALREADY the one showing — the active tab, the picked
    *  radio — is a no-op by design (2026-08-18, floor.ts's `already-active`
    *  binding), not a dead one; "called nothing, and changed nothing" alone

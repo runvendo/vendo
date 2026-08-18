@@ -204,14 +204,21 @@ export function wiredActions(
     .map((candidate) => checkConfirmation(candidate.inside, world));
   // A write one press inside an inline reveal is the action, proven (2026-08-18):
   // "press Hand off, pick an assignee, press Confirm" is one flow, and the probe
-  // used to stop at the first press of it. Nothing else about the reveal is graded
-  // — its paths are not bindings, so a revealed control that did nothing costs the
-  // screen nothing. Walking further can only ever prove more.
+  // used to stop at the first press of it. The flow's last step is often a
+  // confirmation, so a write inside a dialog a revealed press OPENED counts the
+  // same way — the probe walks that dialog now, and stopping at its edge is the
+  // same missing press one turn further along. Nothing else about the reveal is
+  // graded — its paths are not bindings, so a revealed control that did nothing
+  // costs the screen nothing. Walking further can only ever prove more.
   const acted = bindings.some((binding) => binding.effect === "tool" && holds(binding))
     ? "tool"
     : confirmations.some((broken) => broken === undefined)
       ? "confirmation"
-      : trace.some((candidate) => (candidate.revealed ?? []).some((path) => wrote(path.calls, world)))
+      : trace.some((candidate) =>
+            (candidate.revealed ?? []).some(
+              (path) => wrote(path.calls, world) || (path.inside ?? []).some((deeper) => wrote(deeper.calls, world)),
+            ),
+          )
         ? "revealed"
         : undefined;
   const why = !tags.includes("action") || acted !== undefined

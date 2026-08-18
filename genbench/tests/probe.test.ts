@@ -281,6 +281,31 @@ const REQUIRED_TEXT = screen(
   });`,
 );
 
+/**
+ * The same shape again, with the one box that is not text.
+ *
+ * "Priority, assignee, estimate — and file it" is a form with a required NUMBER,
+ * and the probe's `ENTRY` matched text boxes only: the estimate stayed empty, the
+ * submit it guards never unlocked, and `project-tracker/file-bug` recorded two
+ * choices and no press that asked the host for anything. The value has to be a
+ * number too — a number box will not hold `probe input` at all, so the string would
+ * have left the box as empty as never touching it — which is why the call below
+ * carries the digit rather than a `NaN`.
+ */
+const REQUIRED_NUMBER = screen(
+  `<input id="estimate" type="number" placeholder="Estimate (points)">
+  <button id="go" disabled>File it</button>`,
+  `document.getElementById("estimate").addEventListener("input", function () {
+    document.getElementById("go").disabled = this.value === "";
+  });
+  document.getElementById("go").addEventListener("click", function () {
+    window.vendo.callTool("set_budget", {
+      category: "coffee",
+      limit_cents: Number(document.getElementById("estimate").value),
+    });
+  });`,
+);
+
 /** The same form with nothing locked. The probe does NOT type here: a screen that
  *  asks for nothing before it acts is pressed exactly as a hasty person would
  *  press it, and what an empty box sent is the screen's own doing. */
@@ -350,6 +375,62 @@ const REVEALS_DISMISS = screen(
     });
   });`,
 );
+
+/**
+ * The inline step whose LAST control is a confirmation.
+ *
+ * `project-tracker/capacity-rebalance` failed `actionProven` with the whole flow
+ * right: "Hand off" reveals a picker and a Confirm, Confirm opens a Modal, and the
+ * Modal's own button is what calls the tool — one press past where the reveal walk
+ * stopped. So a reveal's press is walked into its dialog now, exactly as a press on
+ * the screen itself is.
+ *
+ * The way OUT is deliberately first in document order, which is where the Kit's own
+ * Modal puts it — the close affordance is drawn before the footer. Pressed in one
+ * pass, that "✕" closes the dialog and the control that writes is gone before its
+ * turn; only the fresh page each path is given can reach it. So this page is the
+ * proof that the dialog walk's isolation is really being used, and not merely
+ * wired up.
+ */
+const HANDOFF_SAID = "Reassign this issue? It hands the issue to a different teammate.";
+const handoff = (through: string): string =>
+  screen(
+    `<button id="go">Hand off</button><div id="step"></div>`,
+    `document.getElementById("go").addEventListener("click", function () {
+    var step = document.getElementById("step");
+    step.innerHTML =
+      '<select id="who"><option value="">Choose a teammate</option><option value="acc_savings">Maya Okafor</option></select>'
+      + '<button id="confirm" disabled>Confirm</button><button id="back">Cancel</button>';
+    document.getElementById("who").addEventListener("change", function () {
+      document.getElementById("confirm").disabled = this.value === "";
+    });
+    document.getElementById("back").addEventListener("click", function () { step.innerHTML = ""; });
+    document.getElementById("confirm").addEventListener("click", function () {
+      var dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      var message = document.createElement("p");
+      message.textContent = ${JSON.stringify(HANDOFF_SAID)};
+      var close = document.createElement("button");
+      close.setAttribute("aria-label", "Close");
+      close.textContent = "\\u2715";
+      close.addEventListener("click", function () { dialog.remove(); });
+      var act = document.createElement("button");
+      act.textContent = "Reassign";
+      ${through}
+      dialog.append(message, close, act);
+      document.getElementById("root").append(dialog);
+    });
+  });`,
+  );
+
+const HANDS_OFF = handoff(`act.addEventListener("click", function () {
+        window.vendo.callTool("set_budget", { category: "coffee", limit_cents: 5000 });
+        dialog.remove();
+      });`);
+
+/** The same three presses and the same confirmation, with the one control that
+ *  writes wired to nothing. Walking further must not turn this into a pass. */
+const HANDS_OFF_DEAD = handoff("");
 
 /**
  * The whole confirmation chain: the press opens a `[role=dialog]` with a message
@@ -685,6 +766,24 @@ describe("the click probe grades what a browser actually does", () => {
       expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
     });
 
+    it("answers a required NUMBER box with a number, then presses what it unlocked", async () => {
+      const trace = await traceOf(REQUIRED_NUMBER);
+
+      // The digit rather than the string, because a number box holds one and not
+      // the other: the value the harness supplied is on the trace under its own
+      // name, and the call carries `3` rather than the `NaN` a text answer would
+      // have sent — or the nothing an unfilled box would have.
+      expect(trace).toEqual([
+        {
+          label: "File it",
+          changed: false,
+          filled: [{ field: "Estimate (points)", value: "3" }],
+          calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 3 } }],
+        },
+      ]);
+      expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
+    });
+
     it("types nothing at a form that is not locked, and presses it as it stands", async () => {
       const trace = await traceOf(OPEN_FORM);
 
@@ -963,6 +1062,54 @@ describe("the click probe grades what a browser actually does", () => {
       // that lands on nothing would read as a control that did nothing.
       expect(trace[0]!.revealed).toEqual([{ label: "Not now", changed: true, calls: [] }]);
       expect(wiredActions(trace, world, ["action"]).acted).toBeUndefined();
+    });
+
+    it("walks into a confirmation a revealed press opened, and proves the write behind it", async () => {
+      const trace = await traceOf(HANDS_OFF);
+
+      const confirmed = trace[0]!.revealed!.find((path) => path.label === "Confirm")!;
+      // The dialog's own words are on the press that opened it, one level in, and
+      // both ways out of it were pressed — each on a page that walked the whole
+      // step again, which is the only way the "✕" drawn before them does not take
+      // the one that writes off the screen first.
+      expect(confirmed.dialog).toContain(HANDOFF_SAID);
+      expect(confirmed.inside).toEqual([
+        // Named by the words on it — the "✕" a person actually reads — because
+        // `nameOf` prefers what a control SAYS to what it is labelled.
+        { label: "✕", changed: true, calls: [] },
+        { label: "Reassign", changed: true, calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }] },
+      ]);
+
+      const result = wiredActions(trace, world, ["action"]);
+      expect(result.pass).toBe(true);
+      expect(result.acted).toBe("revealed");
+    });
+
+    it("fails the same flow when the confirmation behind the step is wired to nothing", async () => {
+      const trace = await traceOf(HANDS_OFF_DEAD);
+
+      // Identical to a person up to the last press. Both ways out were reached and
+      // neither wrote, so walking two levels bought this screen nothing.
+      const confirmed = trace[0]!.revealed!.find((path) => path.label === "Confirm")!;
+      expect(confirmed.inside).toEqual([
+        { label: "✕", changed: true, calls: [] },
+        { label: "Reassign", changed: false, calls: [] },
+      ]);
+
+      const result = wiredActions(trace, world, ["action"]);
+      expect(result.pass).toBe(false);
+      expect(result.acted).toBeUndefined();
+    });
+
+    it("stops at the dialog a reveal opened, and never walks a dialog inside one", async () => {
+      const trace = await traceOf(HANDS_OFF);
+
+      // Reveal, then dialog, then stop: the depth is two by construction, because
+      // `insideDialog` records no dialog of its own. Nothing here can grow it.
+      for (const path of trace[0]!.revealed!.find((step) => step.label === "Confirm")!.inside!) {
+        expect(path).not.toHaveProperty("dialog");
+        expect(path).not.toHaveProperty("inside");
+      }
     });
 
     it("does not walk a dialog twice by calling its controls a reveal", async () => {

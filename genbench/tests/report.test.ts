@@ -516,6 +516,40 @@ describe("the preview page", () => {
     );
   });
 
+  /** And the same row when that inline step ENDS in a confirmation — the
+   *  `capacity-rebalance` shape, whose write is the Modal's own button two presses
+   *  in. The probe walks that dialog (2026-08-18), so the cell has to read as far
+   *  as the floor does or a flow the floor calls proven reads here as one that
+   *  reached nothing. */
+  it("counts a write inside the confirmation an inline reveal opened", async () => {
+    const graded = pressed("vendo-sonnet", "cancel-transfer", [
+      {
+        label: "Hand off",
+        changed: true,
+        calls: [],
+        revealed: [
+          { label: "Pick an assignee", changed: true, calls: [] },
+          {
+            label: "Confirm",
+            changed: true,
+            dialog: "Reassign this issue?",
+            calls: [],
+            inside: [
+              { label: "✕", changed: true, calls: [] },
+              { label: "Reassign", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+            ],
+          },
+        ],
+      },
+    ]);
+    const html = await preview([graded], { "cancel-transfer": world }, new Set(["cancel-transfer"]));
+
+    expect(graded.floor.wiredActions.acted).toBe("revealed");
+    expect(html).toContain(
+      `<tr><th>writes</th><td class="muted">action cases whose presses called a write tool</td><td>1/1</td></tr>`,
+    );
+  });
+
   /** The row needs to be told which cases asked, because no `result.json` says
    *  it — and a run whose world folder has moved since loses the row the way it
    *  loses the data panel, rather than reporting a zero nobody earned. */
