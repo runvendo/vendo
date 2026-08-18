@@ -7,7 +7,7 @@
  * binds by CLOSURE: the arithmetic, the composition and that row's own handler
  * all live where the row is in scope. The screen VM calls the function once per
  * row and hands the component a LIST of elements, one per row, in the order of
- * the rows prop (apps `contract/kit/specs.ts` KIT_PER_ROW_SLOTS).
+ * the rows prop (apps `contract/kit/specs.ts` KIT_SLOT_PROPS).
  *
  * What is left here is what every container that reads records shares: the ONE
  * dot-path resolver, the bare-KEY shorthand each list prop takes, and the pick

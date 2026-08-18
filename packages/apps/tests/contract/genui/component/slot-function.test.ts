@@ -1,18 +1,21 @@
 /**
- * A slot the Kit paints once per row, written as a function of the row.
+ * A slot written as a FUNCTION that returns its element — one law, every slot.
  *
  * `rowActions={(row) => <Button onClick={() => tools.cancel({ id: row.id })}/>}`
- * is what React trains anyone to write, and it was the one thing that could not
- * work: a function prop crossed the VM boundary as a single `$handler` door, so
- * the table was handed a callback where an element belongs and the column came
- * out blank — or, worse, one handler for forty rows.
+ * and `footer={() => <Button/>}` are what React trains anyone to write, and they
+ * were the one thing that could not work: a function prop crossed the VM boundary
+ * as a single `$handler` door, so the component was handed a callback where an
+ * element belongs and the slot came out blank — or, worse, one handler for forty
+ * rows.
  *
- * Now the VM calls it. Once per row, each call under its own slot path, so every
- * row's handler is its own — which is what makes the closure over `row` real.
- * What comes out is a LIST, and the Kit matches it back to the rows it drew.
+ * Now the VM calls it. A slot the Kit paints once is called with no arguments,
+ * because it has no row to be a function of; a per-row slot is called once per
+ * row, each call under its own slot path, so every row's handler is its own —
+ * which is what makes the closure over `row` real. What comes out then is a LIST,
+ * and the Kit matches it back to the rows it drew.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { KIT_PER_ROW_SLOTS } from "../../../../src/contract/kit/specs.js";
+import { KIT_SLOT_PROPS } from "../../../../src/contract/kit/specs.js";
 import { warmScreenEngine, type NestedNode } from "../../../../src/contract/genui/component/index.js";
 import { bootTsx, nodeOf } from "./screen-fixture.test-util.js";
 
@@ -125,14 +128,109 @@ export default function S() {
   });
 
   it("declares a rows prop for every per-row slot — a function has to map over something", () => {
-    for (const [component, slots] of Object.entries(KIT_PER_ROW_SLOTS)) {
+    for (const [component, slots] of Object.entries(KIT_SLOT_PROPS)) {
       for (const [prop, spec] of Object.entries(slots)) {
+        if (spec.rows === undefined) continue;
         expect(spec.rows, `${component}.${prop}`).toBeTypeOf("string");
       }
     }
-    expect(KIT_PER_ROW_SLOTS.DataTable).toEqual({
+    expect(KIT_SLOT_PROPS.DataTable).toEqual({
       columns: { rows: "rows", field: "cell" },
       rowActions: { rows: "rows" },
+      toolbar: {},
+      empty: {},
     });
+  });
+});
+
+/**
+ * THE OTHER ARITY, and the carve-out that is gone: a slot the Kit paints ONCE,
+ * written as a function of nothing.
+ *
+ * The per-row slots learned to take a function and the rest did not, so
+ * `footer={() => <Button/>}` — the same reflex, one component over — still crossed
+ * as a `$handler` and painted nothing. One law now: the VM calls whatever function
+ * a declared slot holds, and a slot with no rows behind it is called with no
+ * arguments.
+ */
+describe("a slot painted once, written as a function", () => {
+  it("calls it with no arguments and paints what it returns", () => {
+    const screen = bootTsx(`
+import { Button, Card, Text } from "@vendo/screen";
+export default function Panel() {
+  return <Card title="Transfers" footer={() => <Button label="New transfer" />}><Text text="body" /></Card>;
+}
+`);
+    try {
+      const card = nodeOf(screen.tree(), "Card")!;
+      const footer = card.props.footer as NestedNode;
+      expect(footer.component).toBe("Button");
+      expect(footer.props.label).toBe("New transfer");
+      // Sigilled, like any element in a prop, so the renderer builds a component
+      // back out of it rather than reading it as data.
+      expect((footer as { $element?: unknown }).$element).toBe(true);
+    } finally {
+      screen.dispose();
+    }
+  });
+
+  it("keeps the handlers inside it, one door apiece", () => {
+    const screen = bootTsx(`
+import { Button, Card, Row, Text, tools } from "@vendo/screen";
+export default function Panel() {
+  return (
+    <Card
+      title="Transfers"
+      footer={() => (
+        <Row>
+          <Button label="Cancel" onClick={() => tools.cancel_invoice({ id: "in_1" })} />
+          <Button label="Retry" onClick={() => tools.cancel_invoice({ id: "in_2" })} />
+        </Row>
+      )}
+    >
+      <Text text="body" />
+    </Card>
+  );
+}
+`);
+    try {
+      const footer = nodeOf(screen.tree(), "Card")!.props.footer as NestedNode;
+      const ids = handlerIds(footer);
+      expect(new Set(ids).size).toBe(2);
+      expect(screen.fire(ids[1]!).intents).toEqual([
+        { id: "i1", tool: "cancel_invoice", args: { id: "in_2" } },
+      ]);
+    } finally {
+      screen.dispose();
+    }
+  });
+
+  /** A slot nested in a description object takes the same function, with the same
+   *  arity: `Accordion.items[].content` has no rows behind it either. */
+  it("calls a nested slot's function too, and leaves the rest of the entry alone", () => {
+    const screen = bootTsx(`
+import { Accordion, Text } from "@vendo/screen";
+export default function Panels() {
+  return <Accordion items={[{ label: "Terms", content: () => <Text text="the terms" /> }]} />;
+}
+`);
+    try {
+      const items = nodeOf(screen.tree(), "Accordion")!.props.items as Array<Record<string, unknown>>;
+      expect(items[0]!.label).toBe("Terms");
+      expect((items[0]!.content as NestedNode).props.text).toBe("the terms");
+    } finally {
+      screen.dispose();
+    }
+  });
+
+  /** A function that throws is a PAINT failure, the same path a function of the
+   *  row takes — the VM calls it during the paint, so the throw is the paint's. */
+  it("fails the paint when the function throws", () => {
+    expect(() => bootTsx(`
+import { Card, Text } from "@vendo/screen";
+export default function Panel() {
+  return <Card title="Transfers" footer={() => { throw new Error("no footer for you"); }}><Text text="body" /></Card>;
+}
+`)).toThrow(/no footer for you/u);
   });
 });

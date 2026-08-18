@@ -564,7 +564,7 @@ describe("DataTable — a slot written as a function of the row", () => {
     { id: "in_2", client: "Acme", amount: 900 },
     { id: "in_3", client: "Borealis", amount: 1_750 },
   ];
-  /** That map, done by hand (apps genui/component/vm-program.ts `emitPerRow`). */
+  /** That map, done by hand (apps genui/component/vm-program.ts `emitSlot`). */
   const perRow = <T,>(of: (row: (typeof invoices)[number]) => T): T[] => invoices.map(of);
   const bodyRows = () => screen.getAllByRole("row").slice(1);
   const cancelButtons = () => bodyRows().map((row) => within(row).getByRole("button").textContent);

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { validateProps } from "../../../src/contract/kit/schema.js";
 import {
   KIT_CHILDLESS_NAMES,
-  KIT_PER_ROW_SLOTS,
   KIT_SHARED_PROP_NAMES,
+  KIT_SLOT_PROPS,
   KIT_SPECS,
   kitPropClasses,
   kitSpec,
@@ -109,14 +109,28 @@ describe("the Kit specs", () => {
   });
 
   /**
-   * A per-row slot is a FUNCTION of the row now, so the units a field is stored
-   * in are the screen's to divide where it reads them — which is where the
-   * `semantic` token used to do it, invisibly, off a word the host copied across.
-   * `<Money value={row.compute_cost / 100}/>` says the same thing in the file,
-   * where a reader can see it.
+   * EVERY slot may be written as a function returning its element, so this table
+   * is the VM's whole lookup: a slot missing from it is a function prop that
+   * crosses as a `$handler` and paints nothing.
+   *
+   * The per-row half is pinned by name because its function is the one that takes
+   * arguments — and because the units a field is stored in are the screen's to
+   * divide where it reads them, which is where the `semantic` token used to do it,
+   * invisibly, off a word the host copied across. `<Money value={row.compute_cost /
+   * 100}/>` says the same thing in the file, where a reader can see it.
    */
-  it("names which slots the screen may write as a function of the row, and what they map over", () => {
-    expect(KIT_PER_ROW_SLOTS).toEqual({
+  it("names every slot by the prop that arrives, and which of them map over rows", () => {
+    expect(KIT_SLOT_PROPS.DataTable).toEqual({
+      columns: { rows: "rows", field: "cell" },
+      rowActions: { rows: "rows" },
+      toolbar: {},
+      empty: {},
+    });
+    const perRow = Object.fromEntries(Object.entries(KIT_SLOT_PROPS)
+      .map(([component, slots]) =>
+        [component, Object.fromEntries(Object.entries(slots).filter(([, { rows }]) => rows !== undefined))] as const)
+      .filter(([, slots]) => Object.keys(slots).length > 0));
+    expect(perRow).toEqual({
       DataTable: { columns: { rows: "rows", field: "cell" }, rowActions: { rows: "rows" } },
       CardList: { fields: { rows: "items", field: "cell" } },
       KeyValue: { items: { rows: "record", field: "cell" } },
@@ -125,13 +139,17 @@ describe("the Kit specs", () => {
       BarChart: { tooltip: { rows: "data" } },
       DonutChart: { tooltip: { rows: "data" } },
     });
-    // Every rows prop it names is a prop that component really has — a slot that
-    // maps over a prop nobody passes maps over nothing.
-    for (const [component, slots] of Object.entries(KIT_PER_ROW_SLOTS)) {
-      for (const { rows } of Object.values(slots)) {
-        expect(kitSpec(component)?.props[rows], `${component}.${rows}`).toBeDefined();
+    // Every prop it keys, and every rows prop it names, is a prop that component
+    // really has — a slot on a prop nobody passes is a slot nothing paints.
+    for (const [component, slots] of Object.entries(KIT_SLOT_PROPS)) {
+      for (const [prop, { rows }] of Object.entries(slots)) {
+        expect(kitSpec(component)?.props[prop], `${component}.${prop}`).toBeDefined();
+        if (rows !== undefined) expect(kitSpec(component)?.props[rows], `${component}.${rows}`).toBeDefined();
       }
     }
+    // The shared adjectives are folded in too: `hint` holds elements on every
+    // control that takes one, so a function written there is a slot, not a handler.
+    expect(KIT_SLOT_PROPS.Input?.hint).toEqual({});
   });
 
 

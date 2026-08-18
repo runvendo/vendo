@@ -316,20 +316,18 @@ const typeIssue = (
     if (key !== undefined) return at(key);
   }
 
-  // A slot handed something that is not an element, which in practice is a
-  // FUNCTION: the VM serializes a function prop as a `$handler` door
-  // (`genui/component/vm-program.ts` `emitValue`), so the slot receives a
-  // callback the renderer cannot paint and the slot renders BLANK with every gate
-  // green — how a generated screen shipped a column of empty cells.
+  // A slot handed something that is neither an element nor a function returning
+  // one, which in practice is a function of the ROW: this is the slot painted
+  // ONCE, so the VM calls it with no arguments (`genui/component/vm-program.ts`
+  // `emitSlot`) and the element it tries to build reads a field off `undefined`.
   //
-  // This is the slot painted ONCE, which has no row to be a function OF. A
-  // per-row slot is typed `VendoRowSlot` and takes the function, so it never
-  // reaches here (screen-typings.ts).
+  // A per-row slot is typed `VendoRowSlot` and takes the row's function, so it
+  // never reaches here (screen-typings.ts).
   const slot = SLOT_REFUSED.test(sentence) ? slotLocus(ts, file, node) : undefined;
   if (slot !== undefined) {
     return at(`writes ${/^Type '([^']+)'/u.exec(sentence)?.[1] ?? "a value that is not an element"} in the "${slot.name}" slot`
       + `${slot.key === undefined ? "" : ` of ${slot.key}`}`
-      + " — this slot is painted once, so it holds ELEMENTS and a function prop serializes as a callback the renderer cannot paint."
+      + " — this slot is painted once, so it holds ELEMENTS, or a function of NO arguments that returns them."
       + " Write the element itself.");
   }
 

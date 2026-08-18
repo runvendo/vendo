@@ -32,8 +32,8 @@ import {
   ICON_NAME_DESCRIPTION,
   KIT_COMPONENT_NAMES,
   KIT_ICON_NAMES,
-  KIT_PER_ROW_SLOTS,
   KIT_SCREEN_COMPONENT_NAMES,
+  KIT_SLOT_PROPS,
   SLOT_PROP_DESCRIPTION,
   kitSpec,
   type KitComponentSpec,
@@ -85,38 +85,42 @@ export const SCREEN_TYPINGS_FILE = "/vendo-screen-typings.d.ts";
 // ---- zod → TS type text ---------------------------------------------------
 
 /**
- * What a slot may hold — an element tree, and NOT a function.
+ * What a slot may hold — an element tree, or a function that returns one.
  *
- * A slot painted ONCE has no row to be a function of, and the screen VM
- * serializes a function prop as a `$handler` door
- * (`genui/component/vm-program.ts` `emitValue`), so `header={() => <Text/>}`
- * hands the component a callback where an element belongs and it paints BLANK.
- * Printed as `any`, that screen passed the whole gauntlet — compile, types,
- * paint, tree — and rendered nothing there. Named, the compiler refuses it.
+ * One law for every slot: the element, or the function that makes it. The VM
+ * calls whichever it was given (`genui/component/vm-program.ts` `emitSlot`) and
+ * emits the result where the slot sits, so `header={() => <Text/>}` is as real as
+ * `header={<Text/>}`.
+ *
+ * The ARITY is the only thing that differs, and it is what this alias states: a
+ * slot painted ONCE has no row to be a function of, so its function takes
+ * nothing. A `(row) => …` written here would be called with no row and read a
+ * field off `undefined` — the compiler is the only thing that can refuse it, and
+ * {@link ROW_SLOT_TYPE} is the other arity.
  *
  * The wire printer keeps the permissive alias: a stored document's slot holds a
  * SERIALIZED element (an `$element`-sigilled object) that no type here
- * describes, and JSON cannot carry a closure, so the door this shuts was never
- * open there.
+ * describes, and JSON cannot carry a closure, so neither form reaches it.
  */
 export const SLOT_TYPE = "VendoSlot";
 const SLOT_DECLARATION =
-  `declare type ${SLOT_TYPE} = JSX.Element | string | number | boolean | null | undefined | readonly ${SLOT_TYPE}[];`;
+  `declare type ${SLOT_TYPE} = JSX.Element | string | number | boolean | null | undefined | readonly ${SLOT_TYPE}[] | (() => ${SLOT_TYPE});`;
 const WIRE_SLOT_DECLARATION = `declare type ${SLOT_TYPE} = any;`;
 
 /**
- * What a PER-ROW slot may hold: the same element tree, or a function of the row
- * that returns one.
+ * The same law at the other arity: a slot the Kit paints once PER ROW, whose
+ * function is handed the row.
  *
  * A per-row slot is painted once for every row, so a function of the row is the
  * only way to say something different in each — and it is what React trains
  * anyone to write. The VM calls it once per row and hands the component that
- * row's own element (`vm-program.ts` `emitPerRow`), so the closure is real: the
+ * row's own element (`vm-program.ts` `emitSlot`), so the closure is real: the
  * handler inside `rowActions={(row) => <Button onClick={() => …row.id…}/>}` is
  * that row's handler and nobody else's.
  *
- * A separate alias rather than a widened {@link SLOT_TYPE}, because the rest of
- * the slots still cannot take one and the compiler is the only thing that says so.
+ * A separate alias rather than a widened {@link SLOT_TYPE} because the ARGUMENTS
+ * differ, not the law: a function of the row written in a slot painted once is
+ * called with no row, and this is the only place that can say so.
  */
 export const ROW_SLOT_TYPE = "VendoRowSlot";
 const ROW_SLOT_DECLARATION =
@@ -515,7 +519,8 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
  *
  *  `Element` is BRANDED rather than empty. `{}` is the type every value is
  *  assignable to — a closure included — so an empty `Element` made
- *  {@link SLOT_TYPE} admit exactly the function it exists to refuse. A JSX
+ *  {@link SLOT_TYPE} admit every function, including the two it must refuse: one
+ *  that reads a row where there is no row, and one that returns no element. A JSX
  *  expression is typed `JSX.Element` by the compiler whatever its shape, so the
  *  brand costs a screen nothing; the name is the VM's own sigil for a serialized
  *  element (`genui/component/vm-program.ts` `emitValue`). */
@@ -550,15 +555,15 @@ const REACT_MODULE = `declare module "react" {
 }`;
 
 const componentPropsText = (spec: KitComponentSpec, note?: TypeNote): string => {
-  const perRow = KIT_PER_ROW_SLOTS[spec.name];
+  const slots = KIT_SLOT_PROPS[spec.name];
   const fields = Object.entries(spec.props).map(([name, prop]) => {
     const text = prop.schema.description === ACTION_PROP_DESCRIPTION
       ? HANDLER_TYPE
       : zodTypeText(prop.schema, 0, at(note, `prop "${name}"`));
-    // Every slot this prop prints is a PER-ROW slot when the prop carries one —
-    // `rowActions` is the slot itself, `columns[].cell` is a field of one — so the
-    // substitution is over the printed text rather than threaded through the walk.
-    const typed = perRow?.[name] === undefined ? text : text.replaceAll(SLOT_TYPE, ROW_SLOT_TYPE);
+    // Every slot this prop prints is a PER-ROW slot when the prop's slot maps over
+    // rows — `rowActions` is the slot itself, `columns[].cell` is a field of one — so
+    // the substitution is over the printed text rather than threaded through the walk.
+    const typed = slots?.[name]?.rows === undefined ? text : text.replaceAll(SLOT_TYPE, ROW_SLOT_TYPE);
     return `${name}${prop.required === true ? "" : "?"}: ${typed}`;
   });
   const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];

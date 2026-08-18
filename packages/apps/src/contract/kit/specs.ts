@@ -44,11 +44,13 @@ export const ICON_NAME_DESCRIPTION = "lucide icon name in kebab-case";
  * exactly like it, being optional is what keeps its component teachable at all
  * (`KIT_NON_SCREEN_NAMES`).
  *
- * A slot the Kit paints once PER ROW may also be written as a FUNCTION of the
- * row — `cell: (row) => <Money value={row.amount / 100}/>` — which is the
- * natural React form and now the recommended one: the screen VM calls it once
- * for each row and hands the Kit that row's own element, with that row's own
- * handlers ({@link KIT_PER_ROW_SLOTS}).
+ * Every slot may also be written as a FUNCTION that returns the element — the
+ * natural React form, and for the per-row slots the recommended one: the screen
+ * VM calls it and paints what it returns ({@link KIT_SLOT_PROPS}). A slot the Kit
+ * paints once per ROW is called once for each — `cell: (row) => <Money
+ * value={row.amount / 100}/>`, that row's own element with that row's own
+ * handlers — and every other slot is called with no arguments at all, because it
+ * has no row to be a function of.
  *
  * The DESCRIPTION is the marker a slot is known by: `z.unknown()` prints as
  * `any`, which types nothing at all, so the component screen's typings print a
@@ -1079,36 +1081,42 @@ export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => {
 });
 
 /**
- * WHERE A SLOT MAY BE WRITTEN AS A FUNCTION OF THE ROW — the screen VM's copy of
- * the `perRow` law, keyed by the prop that ARRIVES.
+ * EVERY SLOT, keyed by the prop that ARRIVES — the screen VM's copy of the slot
+ * law.
  *
- * `cell={(row) => <Money value={row.amount / 100}/>}` is the natural React form,
- * and the one the Kit could not paint: a function prop crosses the VM boundary as
- * a `$handler` door, so the column came out blank. Now the VM calls it once per
- * row and hands over a LIST of elements — which is why the rows have to be
- * reachable from the same props object, and why each entry says which prop holds
- * them.
+ * A slot takes the element, or the function that returns it, and the VM calls
+ * whichever it was given (`genui/component/vm-program.ts` `emitSlot`). That is one
+ * law at two arities: a slot the Kit paints once per row is called with `(row, i)`
+ * and hands over a LIST of elements — which is why the rows have to be reachable
+ * from the same props object, and why those entries say which prop holds them —
+ * and every other slot is called with no arguments and emits the one element it
+ * returns. Written as a function and NOT known here, a slot crosses the VM
+ * boundary as a `$handler` door instead, so the component is handed a callback
+ * where an element belongs and paints blank: this table is what keeps that from
+ * happening, so it is derived from {@link KIT_SPECS} rather than from `SLOTS`,
+ * where the shared adjectives' slots (`hint`) are not yet folded in.
  *
  * Two shapes, because a slot is either a prop of its own (`rowActions`) or a
  * field of the description objects one prop holds (`columns[].cell`) — the same
  * distinction `at` draws, read from the arriving prop's end.
  */
-export interface KitRowSlot {
-  /** The prop holding the rows the slot is painted once for. */
-  rows: string;
+export interface KitSlotProp {
+  /** The prop holding the rows the slot is painted once for. Absent means the Kit
+   *  paints the slot ONCE, so its function takes no arguments. */
+  rows?: string;
   /** The field of each description object that IS the slot, when the arriving
    *  prop is a list of descriptions rather than the slot itself. */
   field?: string;
 }
 
-export const KIT_PER_ROW_SLOTS: Readonly<Record<string, Readonly<Record<string, KitRowSlot>>>> =
-  Object.fromEntries(Object.entries(SLOTS).flatMap(([component, slots]) => {
-    const found: Array<[string, KitRowSlot]> = [];
-    for (const [name, spec] of Object.entries(slots)) {
-      if (spec.perRow !== true || spec.rows === undefined) continue;
-      found.push(spec.at === undefined ? [name, { rows: spec.rows }] : [spec.at, { rows: spec.rows, field: name }]);
+export const KIT_SLOT_PROPS: Readonly<Record<string, Readonly<Record<string, KitSlotProp>>>> =
+  Object.fromEntries(KIT_SPECS.flatMap((spec) => {
+    const found: Array<[string, KitSlotProp]> = [];
+    for (const [name, slot] of Object.entries(spec.slots ?? {})) {
+      const rows = slot.perRow === true && slot.rows !== undefined ? { rows: slot.rows } : {};
+      found.push(slot.at === undefined ? [name, rows] : [slot.at, { ...rows, field: name }]);
     }
-    return found.length === 0 ? [] : [[component, Object.fromEntries(found)]];
+    return found.length === 0 ? [] : [[spec.name, Object.fromEntries(found)]];
   }));
 
 /**

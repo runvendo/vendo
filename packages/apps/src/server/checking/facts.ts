@@ -255,7 +255,7 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
    *  the renderer dropped the descendant. */
   const checkSlot = (nodeId: string, path: string, slot: KitSlotSpec, value: unknown, sigil = true, parent?: string): void => {
     // A per-row slot written as a function of the row emits one element PER ROW,
-    // so the LIST is where the elements are (`vm-program.ts` `emitPerRow`).
+    // so the LIST is where the elements are (`vm-program.ts` `emitSlot`).
     if (slot.perRow === true && Array.isArray(value)) {
       value.forEach((row, index) => checkSlot(nodeId, `${path}[${index}]`, slot, row, sigil, parent));
       return;

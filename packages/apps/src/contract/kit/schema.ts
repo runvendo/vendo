@@ -52,9 +52,9 @@ export function data(schema: ZodTypeAny, doc: string, options?: PropOptions): Pr
 export interface KitSlotSpec {
   /** 1-line "what goes here". */
   doc: string;
-  /** Painted once per row/entry rather than once for the component — so it may
-   *  be written as a FUNCTION of the row, and the screen VM calls it once per
-   *  row (`KIT_PER_ROW_SLOTS`). */
+  /** Painted once per row/entry rather than once for the component — so the
+   *  function form of this slot takes the ROW, and the screen VM calls it once per
+   *  row instead of once (`KIT_SLOT_PROPS`). */
   perRow?: boolean;
   /** The prop holding the rows a `perRow` slot is painted once for. Required on
    *  one — it is what the VM maps the slot's function over. */

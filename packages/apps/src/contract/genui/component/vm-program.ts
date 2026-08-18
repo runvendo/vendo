@@ -32,7 +32,7 @@
  * same trick.
  */
 import { TREE_MAX_NODES } from "@vendoai/core";
-import { KIT_PER_ROW_SLOTS } from "../../kit/specs.js";
+import { KIT_SLOT_PROPS } from "../../kit/specs.js";
 import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from "./preact-source.js";
 
 /**
@@ -174,7 +174,7 @@ const ENGINE = `(function () {
   // forever: a re-render that moves a row does not renumber the rows above it,
   // and a keyed row keeps its handlers even when a row is inserted over it. A
   // per-row slot puts the row's index IN that path, which is the whole of how one
-  // slot written once becomes one handler per row (see emitPerRow below).
+  // slot written once becomes one handler per row (see emitSlot below).
   var slots = {}, minted = 0, drawer = {};
 
   // A key that would mean the prototype chain rather than data once the host
@@ -215,27 +215,33 @@ const ENGINE = `(function () {
     return out;
   }
 
-  // The Kit's per-row slot law as data (contract/kit/specs.ts KIT_PER_ROW_SLOTS),
-  // onto a bare object so a component NAME can never answer off Object.prototype.
-  var ROW_SLOTS = Object.assign(create(null), ${JSON.stringify(KIT_PER_ROW_SLOTS)});
+  // The Kit's slot law as data (contract/kit/specs.ts KIT_SLOT_PROPS), onto a bare
+  // object so a component NAME can never answer off Object.prototype.
+  var SLOT_PROPS = Object.assign(create(null), ${JSON.stringify(KIT_SLOT_PROPS)});
 
-  // A slot the Kit paints once per row, written as a function of the row: called
-  // HERE, once per row, each call under its OWN slot path — and distinct paths
+  // A slot written as a FUNCTION returning its element: called HERE, and what it
+  // returns is emitted at the slot's own path. No \`rows\` in the declaration means
+  // the Kit paints the slot once, so the call takes no arguments; a per-row slot is
+  // called once for every row, each call under its OWN path — and distinct paths
   // mint distinct handler ids, which is the whole of what makes a closure over one
-  // row a real closure. What comes out is a list the component matches to its rows.
-  function emitPerRow(fn, rows, slot, depth) {
+  // row a real closure. What comes out then is a list the component matches to its
+  // rows.
+  function emitSlot(fn, props, declared, slot, depth) {
+    if (declared.rows === undefined) return emitValue(fn(), slot, depth);
+    var rows = props[declared.rows];
     if (!isArray(rows)) return emitValue(fn(rows, 0), slot, depth);
     var out = [];
     for (var i = 0; i < rows.length; i++) out.push(emitValue(fn(rows[i], i), slot + "[" + i + "]", depth));
     return out;
   }
 
-  // One prop that carries a per-row slot: the slot itself (\`rowActions\`), or a
+  // One prop that carries a slot: the slot itself (\`footer\`, \`rowActions\`), or a
   // list of field descriptions each of which may carry one (\`columns[].cell\`).
   // An ELEMENT written in either place still emits as the element it is.
-  function emitRowProp(value, rows, field, slot, depth) {
+  function emitSlotProp(value, props, declared, slot, depth) {
+    var field = declared.field;
     if (field === undefined) {
-      return typeof value === "function" ? emitPerRow(value, rows, slot, depth) : emitValue(value, slot, depth);
+      return typeof value === "function" ? emitSlot(value, props, declared, slot, depth) : emitValue(value, slot, depth);
     }
     if (!isArray(value)) return emitValue(value, slot, depth);
     var out = [];
@@ -250,7 +256,7 @@ const ENGINE = `(function () {
         var name = fields[at];
         if (unsafe(name)) continue;
         described[name] = name === field
-          ? emitPerRow(entry[name], rows, path + "." + name, depth + 1)
+          ? emitSlot(entry[name], props, declared, path + "." + name, depth + 1)
           : emitValue(entry[name], path + "." + name, depth + 1);
       }
       out.push(described);
@@ -261,15 +267,15 @@ const ENGINE = `(function () {
   function emitProps(props, type, slot, depth) {
     var out = create(null);
     if (props === null || typeof props !== "object") return out;
-    var rowSlots = ROW_SLOTS[type], names = keys(props);
+    var slotProps = SLOT_PROPS[type], names = keys(props);
     for (var at = 0; at < names.length; at++) {
       var key = names[at];
       if (key === "children" || key === "key" || key === "ref" || unsafe(key)) continue;
-      var row = rowSlots === undefined ? undefined : rowSlots[key];
+      var declared = slotProps === undefined ? undefined : slotProps[key];
       var path = slot + "#" + key;
-      var value = row === undefined
+      var value = declared === undefined
         ? emitValue(props[key], path, depth)
-        : emitRowProp(props[key], props[row.rows], row.field, path, depth);
+        : emitSlotProp(props[key], props, declared, path, depth);
       if (value !== undefined) out[key] = value;
     }
     return out;

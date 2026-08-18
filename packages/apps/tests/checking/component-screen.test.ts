@@ -1080,7 +1080,7 @@ export default function Ledger() {
    * for a year the one thing that could not work: a function prop serialized as a
    * single `$handler` door, so the table was handed a callback where an element
    * belongs and the column painted blank. The VM calls it now, once per row
-   * (vm-program.ts `emitPerRow`), so the compiler admits it and the paint proves
+   * (vm-program.ts `emitSlot`), so the compiler admits it and the paint proves
    * it: two rows, two amounts, each computed from its own row.
    */
   it("admits a per-row cell written as a function of the row", async () => {
@@ -1102,11 +1102,12 @@ export default function Ledger() {
     expect(cells.map(({ props }) => props.value)).toEqual([42, 9]);
   });
 
-  /** Every slot, not just a cell: `Tabs.tabs[].content`, `Accordion.items[].content`
-   *  and `Tooltip.content` hold elements the same way, and each wrote its own
-   *  `z.unknown()` instead of the shared one — so each was a hole of exactly the
-   *  same shape. One screen, all three, one refusal apiece. */
-  it("refuses a function in the OTHER element slots too", async () => {
+  /** EVERY slot, not just a per-row one: `Tabs.tabs[].content`,
+   *  `Accordion.items[].content` and `Tooltip.content` are painted ONCE, so their
+   *  function takes no arguments — and for as long as only the per-row slots could
+   *  be functions, the same reflex one component over crossed as a `$handler` and
+   *  painted nothing. One screen, all three, one element apiece. */
+  it("admits a function in the slots painted ONCE, and paints what it returns", async () => {
     const result = await painted(`import { Accordion, Tabs, Text, Tooltip } from "@vendo/screen";
 
 export default function Panels() {
@@ -1119,11 +1120,31 @@ export default function Panels() {
 }
 `);
 
-    expect(result.issues.map(({ code }) => code)).toEqual(["types", "types", "types"]);
-    for (const { message } of result.issues) {
-      expect(message).toContain('in the "content" slot');
-      expect(message).toContain("this slot is painted once, so it holds ELEMENTS");
-    }
+    expect(result.issues).toEqual([]);
+    const nodes = Object.values(result.initialTree?.nodes ?? {});
+    const slotText = (component: string, read: (props: Record<string, unknown>) => unknown): unknown =>
+      (read(nodes.find((node) => node.component === component)!.props) as { props: { text: string } }).props.text;
+    expect(slotText("Tabs", (props) => (props.tabs as Array<{ content: unknown }>)[0]!.content)).toBe("none");
+    expect(slotText("Accordion", (props) => (props.items as Array<{ content: unknown }>)[0]!.content)).toBe("terms");
+    expect(slotText("Tooltip", (props) => props.content)).toBe("hint");
+  });
+
+  /** The arity is the line the compiler still draws: a slot painted once is called
+   *  with NOTHING, so a function of the row written in one would read a field off
+   *  `undefined`. It is the only refusal left in this class, and it says which
+   *  arity the slot wanted. */
+  it("refuses a function OF THE ROW in a slot painted once", async () => {
+    const result = await painted(`import { Text, Tooltip } from "@vendo/screen";
+
+export default function Panels() {
+  return <Tooltip content={(row) => <Text text={row.label} />}><Text text="?" /></Tooltip>;
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain('in the "content" slot');
+    expect(message).toContain("this slot is painted once, so it holds ELEMENTS, or a function of NO arguments");
   });
 
   /**

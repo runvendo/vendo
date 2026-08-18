@@ -18,7 +18,7 @@ const rows = [
 /**
  * What a per-row slot ARRIVES as. The screen wrote `cell: (row) => elements` and
  * the VM called it once per row, in `rows` order, handing the Kit a list — this
- * is that map, done by hand (apps genui/component/vm-program.ts `emitPerRow`).
+ * is that map, done by hand (apps genui/component/vm-program.ts `emitSlot`).
  */
 const perRow = <T,>(of: (row: (typeof rows)[number]) => T): T[] => rows.map(of);
 
