@@ -119,6 +119,7 @@
             "group": "Capabilities",
             "pages": [
               "capabilities/api-tools",
+              "capabilities/custom-tools",
               "capabilities/connected-accounts",
               "capabilities/automations"
             ]

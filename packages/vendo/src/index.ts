@@ -81,3 +81,6 @@ export {
   type ConnectorDiscoveryPorts,
   type ServiceToolMatch,
 } from "./connector-discovery.js";
+// Writing a tool by hand for the `tools:` slot — beside the registries above
+// for the same reason: it is a VALUE a host composing capability needs.
+export { defineTool } from "@vendoai/core";
