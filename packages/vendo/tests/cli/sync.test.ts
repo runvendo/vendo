@@ -71,13 +71,111 @@ describe("vendo sync", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledOnce();
-    expect(fetchImpl).toHaveBeenCalledWith("http://dev.test/api/vendo/sync/impact", {
+    expect(fetchImpl).toHaveBeenCalledWith("http://dev.test/api/vendo/sync/impact", expect.objectContaining({
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify({ tools: ["host_x", "host_y"] }),
-    });
+      signal: expect.any(AbortSignal),
+    }));
     expect(messages.logs).toContain("impact: host_x breaks 2 automations, 1 app, 3 grants");
     expect(messages.logs).toContain("impact: host_y no saved references");
+  });
+
+  it("queries the impact endpoint at VENDO_BASE_URL's mount path, not the hardcoded default (#1176)", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [], automations: [], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+
+    await runSync({
+      targetDir: ".",
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://localhost:3000/maple/api/vendo/sync/impact", expect.objectContaining({
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ tools: ["host_x"] }),
+      signal: expect.any(AbortSignal),
+    }));
+  });
+
+  it("prefers VENDO_URL from the env over VENDO_BASE_URL", async () => {
+    vi.stubEnv("VENDO_URL", "http://tunnel.test/root/api/vendo");
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [], automations: [], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+
+    await runSync({
+      targetDir: ".",
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://tunnel.test/root/api/vendo/sync/impact", expect.any(Object));
+  });
+
+  it("falls back to the default wire URL and says which variable fixes it (#1176)", async () => {
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => { throw new Error("offline"); }) as typeof fetch;
+
+    await runSync({
+      targetDir: ".",
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(messages.logs).toContain("impact unknown — dev server not reachable at http://localhost:3000/api/vendo (set VENDO_URL or VENDO_BASE_URL in .env, or pass --url)");
+  });
+
+  it("does not suggest setting VENDO_BASE_URL when a configured value was already used", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => { throw new Error("offline"); }) as typeof fetch;
+
+    await runSync({
+      targetDir: ".",
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(messages.logs).toContain("impact unknown — dev server not reachable at http://localhost:3000/maple/api/vendo");
+    expect(messages.logs).not.toContain("set VENDO_URL or VENDO_BASE_URL");
+  });
+
+  it("reads VENDO_BASE_URL from a real .env.local in the target dir (#1176)", async () => {
+    // The seam: the value lives ONLY in the project's dotenv — the path main
+    // never honored. A BLANK shell value yields to the file (readEnvFiles'
+    // precedence rule), so no matter what this machine exports, the file
+    // decides and the assertion stays deterministic.
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const dir = await mkdtemp(join(tmpdir(), "vendo-sync-dotenv-"));
+    await writeFile(join(dir, ".env.local"), "VENDO_BASE_URL=http://localhost:3456/maple\n", "utf8");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [], automations: [], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+
+    try {
+      await runSync({
+        targetDir: dir,
+        output: messages.output,
+        fetchImpl,
+        sync: async () => report([{ tool: "host_x", change: "removed" }]),
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://localhost:3456/maple/api/vendo/sync/impact", expect.any(Object));
   });
 
   it("falls back when impact is unreachable and keeps strict exit two", async () => {

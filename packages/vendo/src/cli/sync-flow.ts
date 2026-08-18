@@ -4,6 +4,7 @@ import type { z } from "zod";
 import type { ExtractedTool } from "@vendoai/actions";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { VendoThemeFont } from "@vendoai/apps/contract";
+import { joinUrl } from "@vendoai/core";
 import type { ToolImpact } from "../sync-impact.js";
 import {
   pushHostComponents,
@@ -610,14 +611,47 @@ async function runGradingStages(input: {
   return { judged, themeDraft };
 }
 
+/** The wire base the impact check asks about, resolved against the SAME env
+ *  the flow already merged (dotenv + shell, #567's reader) before its
+ *  zero-config default: `VENDO_URL` outright; else `VENDO_BASE_URL`, whose
+ *  path prefix is exactly the mount the wire hangs off — a host served under
+ *  `/maple` lives at `/maple/api/vendo` (#1176). A value that is not a URL
+ *  throws from joinUrl, so it fails through to the default: this probe is
+ *  fail-soft by design. */
+function resolveWireUrl(env: Record<string, string | undefined>): string | undefined {
+  const url = env["VENDO_URL"]?.trim();
+  if (url !== undefined && url !== "") return url;
+  const base = env["VENDO_BASE_URL"]?.trim();
+  if (base === undefined || base === "") return undefined;
+  try {
+    return joinUrl(base, "/api/vendo").href;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How long the impact probe waits for the dev server's answer. Fail-soft: a
+ *  timeout reads as "impact unknown" like any other unreachable answer. But
+ *  the probe now follows VENDO_BASE_URL, which IS set in deploy environments
+ *  (where sync runs in prebuild), so a hung remote host must not be able to
+ *  stall the build beyond this bound. */
+const IMPACT_PROBE_TIMEOUT_MS = 10_000;
+
 async function probeImpact(input: {
   report: SyncReportWithWarnings;
   options: SyncFlowOptions;
   output: SyncFlowOptions["output"];
   note: (message: string) => void;
+  env: Record<string, string | undefined>;
 }): Promise<ToolImpact[] | null> {
-  const { report, options, output, note } = input;
-  const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+  const { report, options, output, note, env } = input;
+  // `envWireUrl` stays defined when a configured value was USED, so the
+  // failure note below only suggests setting one when the probe truly fell
+  // through to the hardcoded default — telling someone whose VENDO_BASE_URL
+  // is set but whose dev server is down to "set VENDO_BASE_URL" would be
+  // pointing at a variable they already have.
+  const envWireUrl = resolveWireUrl(env);
+  const wireUrl = (options.url ?? envWireUrl ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
   const tools = [...new Set([
     ...report.breaking.map((breaking) => breaking.tool),
     ...report.tools.changed,
@@ -628,13 +662,18 @@ async function probeImpact(input: {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify({ tools }),
+      signal: AbortSignal.timeout(IMPACT_PROBE_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
     const impact = impactResponse(await response.json());
     printImpact(output, impact);
     return impact;
   } catch {
-    note(`impact unknown — dev server not reachable at ${wireUrl}`);
+    note(
+      options.url === undefined && envWireUrl === undefined
+        ? `impact unknown — dev server not reachable at ${wireUrl} (set VENDO_URL or VENDO_BASE_URL in .env, or pass --url)`
+        : `impact unknown — dev server not reachable at ${wireUrl}`,
+    );
     return null;
   }
 }
@@ -761,7 +800,7 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   const notes_ = { note, noteError };
   const { themeSummary, themeMs, theme } = await resolveTheme({ root, vendoDir, mode, options, note });
   const { judged, themeDraft } = await runGradingStages({ root, vendoDir, mode, env, options, output, themeSummary, notes: notes_ });
-  const impact = await probeImpact({ report, options, output, note });
+  const impact = await probeImpact({ report, options, output, note, env });
 
   // Pin baselines → Vendo Cloud (decision 4). Part of a NORMAL keyed run, not
   // something `--report` gates: the console's Remix reviews screen cannot show
