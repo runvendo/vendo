@@ -112,7 +112,6 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   Textarea: ['<Textarea label="Note" rows={4} value={note} onChange={(e) => setNote(e.target.value)}/>'],
   Checkbox: ['<Checkbox label="Include paid" checked={paid} onChange={(e) => setPaid(e.target.checked)}/>'],
   DatePicker: ['<DatePicker label="Due date" value={due} onChange={(e) => setDue(e.target.value)}/>'],
-  Select: ['<Select label="Client" options={clients.data} labelField="name" valueField="id" value={clientId} onChange={(e) => setClientId(e.target.value)}/>'],
   Form: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client" disabled={!name.trim()}><Input .../></Form>'],
   EmptyState: ['<EmptyState icon="inbox" title="No invoices yet" description="They show up here the moment one is issued."><Button label="New invoice" onClick={() => tools.create_invoice({})}/></EmptyState>'],
   // The overlays: `open` is state the screen holds, and `onClose` is the setter

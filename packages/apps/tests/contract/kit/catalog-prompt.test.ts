@@ -76,6 +76,24 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
     expect(body({ only: ["Avatar"] }).at(-1)).toBe(`- example: \`${promptExamples(kitSpec("Avatar")!)[0]}\``);
   });
 
+  /**
+   * A CHOICE A PERSON CAN TELL APART. `labelField` names ONE field, and the entry
+   * used to forbid the alternative in the same breath it taught that — "no
+   * reshaping" — so an ask for the plans with their prices beside them got a list
+   * of bare names and the price nowhere on the screen at all.
+   *
+   * A native `<option>` shows TEXT (`ui` forms/select.tsx), so one string composed
+   * in the same `.map` that prepared the rows is the whole fix, and no prop had to
+   * be invented for it. What the entry has to carry is the composition, because a
+   * model reads the example long before it reads the prose.
+   */
+  it("composes a Select label in data prep rather than forbidding it", () => {
+    const select = entry("Select");
+    expect(select).not.toContain("no reshaping");
+    expect(select).toContain("options={plans.data.map(");
+    expect(select).toContain('labelField="label"');
+  });
+
   it("leads with the data props — law 1 is the one an entry must not bury", () => {
     const lines = body({ only: ["DataTable"] });
     const at = (prefix: string) => lines.findIndex((line) => line.startsWith(prefix));

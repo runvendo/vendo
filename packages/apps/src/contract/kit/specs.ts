@@ -676,7 +676,7 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Select",
     group: "forms",
-    summary: "A dropdown over a RAW array of tool output. Map objects with labelField/valueField — no reshaping. `multiple` selects several, and reports the whole selection as an array.",
+    summary: "A dropdown over an array of tool output. Map objects with labelField/valueField; where a choice needs two fields — a plan's price beside its name — compose that one label in data prep. `multiple` selects several, and reports the whole selection as an array.",
     props: {
       options: data(options, OPTIONS_DOC, { required: true }),
       label: copy(z.string(), "field label"),
@@ -695,7 +695,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     // everything else on the screen can read it. What the state STARTS as is
     // the screen's own business — an empty string until someone picks, a value
     // the ask named — and nothing here says.
-    examples: ['<Select label="Client" options={clients.data} labelField="name" valueField="id" value={clientId} onChange={(e) => setClientId(e.target.value)}/>'],
+    examples: ['<Select label="Plan" options={plans.data.map((p) => ({ ...p, label: `${p.name} — ${money(p.price_cents)}` }))} labelField="label" valueField="id" value={planId} onChange={(e) => setPlanId(e.target.value)}/>'],
   },
   {
     name: "DatePicker",

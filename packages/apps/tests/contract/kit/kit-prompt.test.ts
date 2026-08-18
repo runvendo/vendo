@@ -169,7 +169,7 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
   // ways at once.
   it("shows a Select paired with the screen state it reads", () => {
     const prompt = kitPrompt({ only: ["Select"] });
-    expect(prompt).toContain("value={clientId}");
+    expect(prompt).toContain("value={planId}");
     expect(prompt).not.toContain("No `value` prop on Select");
   });
 });
