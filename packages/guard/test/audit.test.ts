@@ -59,8 +59,6 @@ describe("audit persistence, query, and export", () => {
     });
     await expect(bound.execute(call("host_granted", {}, "audit_grant"), ctx)).resolves.toMatchObject({ status: "ok" });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{
       kind: string;
       subject: string;
@@ -114,8 +112,6 @@ describe("audit persistence, query, and export", () => {
       error: { code: "act-as-subject-mismatch" },
     });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{ outcome: string | null; decided_by: string | null; grant_id: string | null }>(
       `SELECT event->>'outcome' AS outcome,
               event->>'decidedBy' AS decided_by,
@@ -144,8 +140,6 @@ describe("audit persistence, query, and export", () => {
     // The identity is audit enrichment, not model/UI payload: stripped here.
     expect(outcome).toEqual({ status: "ok", output: { sent: true } });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{ detail: string | null }>(
       `SELECT event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
     );
@@ -173,8 +167,6 @@ describe("audit persistence, query, and export", () => {
       error: { code: "not-implemented", message: "the host declined away execution for this action" },
     });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{ detail: string | null }>(
       `SELECT event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
     );
@@ -199,8 +191,6 @@ describe("audit persistence, query, and export", () => {
       connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail" },
     });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{ outcome: string | null; detail: string | null }>(
       `SELECT event->>'outcome' AS outcome, event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
     );

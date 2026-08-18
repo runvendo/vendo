@@ -32,8 +32,6 @@ describe("sweepExpiredApprovals", () => {
   async function parkWrite(guard: ReturnType<typeof guardOf>, principal = alice, id = "call_x") {
     const bound = guard.bind(new FixtureTools());
     const outcome = await bound.execute(call("host_write", { value: 1 }, id), context({ principal }));
-    // Settle the after-the-fact audit row before the fixture store closes.
-    await guard.flush();
     if (outcome.status !== "pending-approval") throw new Error("expected a parked write");
     return outcome.approvalId;
   }

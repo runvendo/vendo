@@ -39,10 +39,8 @@ describe("approval single-use holds across guard instances (store CAS)", () => {
     const config = { store: sqlStore, policy: { rules: [{ match: {}, action: "ask" as const }] } };
     const toolsA = new FixtureTools();
     const toolsB = new FixtureTools();
-    const guardA = createGuard(config);
-    const guardB = createGuard(config);
-    const boundA = guardA.bind(toolsA);
-    const boundB = guardB.bind(toolsB);
+    const boundA = createGuard(config).bind(toolsA);
+    const boundB = createGuard(config).bind(toolsB);
     const c = call("host_write", { amount: 7 }, "call_xproc");
 
     const parked = await boundA.execute(c, context());
@@ -53,8 +51,6 @@ describe("approval single-use holds across guard instances (store CAS)", () => {
     const [a, b] = await Promise.all([boundA.execute(c, context()), boundB.execute(c, context())]);
     expect([a.status, b.status].sort()).toEqual(["ok", "pending-approval"]);
     expect(toolsA.executions.length + toolsB.executions.length).toBe(1);
-    // Settle the after-the-fact audit rows before the fixture store closes.
-    await Promise.all([guardA.flush(), guardB.flush()]);
   });
 
   it("two guard instances racing approve vs deny land exactly one decision", async () => {

@@ -73,8 +73,6 @@ describe("grant descriptorHash drift → lapse → re-approval (05 §2 step 2, c
     );
     const granted2 = await boundV2.execute(call("host_drift", { x: 3 }, "drift_grant_2"), context());
     expect(granted2).toMatchObject({ status: "ok" });
-    // Settle the after-the-fact audit rows before the fixture store closes.
-    await guard.flush();
     expect(toolsV2.executions).toHaveLength(1);
 
     // Both grants persist in the public SQL table: same tool, distinct hashes.
@@ -108,8 +106,6 @@ describe("deterministic breakers through bind (05 §2)", () => {
       bound.execute(call(read.name, {}, "bob_1"), context({ principal: bob })),
     ).resolves.toMatchObject({ status: "ok" });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{
       subject: string;
       outcome: string | null;
@@ -159,8 +155,6 @@ describe("deterministic breakers through bind (05 §2)", () => {
       status: "ok",
     });
 
-    // The tool-call row is written after the fact; a raw-SQL reader settles it.
-    await guard.flush();
     const rows = await sqlStore.query<{ outcome: string | null; decided_by: string | null }>(
       `SELECT event->>'outcome' AS outcome, event->>'decidedBy' AS decided_by
        FROM vendo_audit WHERE kind = 'tool-call' AND tool = 'host_write' ORDER BY at`,
@@ -193,7 +187,5 @@ describe("confirmEach tier is unsuppressible (05 §2 step 1, §4)", () => {
     await expect(
       bound.execute(call(confirmEachDesc.name, {}, "crit_exec"), context()),
     ).resolves.toMatchObject({ status: "pending-approval" });
-    // Settle the after-the-fact audit row before the fixture store closes.
-    await guard.flush();
   });
 });

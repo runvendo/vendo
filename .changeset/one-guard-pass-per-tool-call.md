@@ -33,14 +33,6 @@ seats now dial the Cloud gateway through it, so a turn does not re-handshake
 after every idle gap. A host that passes its own `fetch` — or its own ai-SDK
 model object — still wins.
 
-The tool-call audit row is written after the fact. It is the LAST thing a
-guarded call does, nothing downstream reads it, and the write was already
-best-effort in substance, so the caller no longer waits on that store round trip
-for an answer it already has. Every row still lands, in the order the calls did.
-Reading the trail through the guard (`audit.query`, `audit.export`) settles the
-outstanding writes first, so a reader can never race them, and `createGuard`
-returns a `flush()` for anyone reading the table by another route.
-
 A refused connect check costs one broker lookup instead of two. The connect gate
 runs twice for one tool call — the harness preflight rules a call to an
 unconnected service out before an approval can be minted for it, and the
