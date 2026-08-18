@@ -168,7 +168,11 @@ function grader(): { model: MockLanguageModelV3; source: () => string; shown: ()
           {
             type: "text" as const,
             text: JSON.stringify({
-              verdicts: Array.from({ length: asked }, () => ({ verdict: "pass", note: "the screenshot shows it" })),
+              verdicts: Array.from({ length: asked }, (_, index) => ({
+                line: index + 1,
+                verdict: "pass",
+                note: "the screenshot shows it",
+              })),
             }),
           },
         ],

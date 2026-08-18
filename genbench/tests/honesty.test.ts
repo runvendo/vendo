@@ -1,8 +1,8 @@
 /**
- * The second opinion on the standing honesty line, proved on the two screens
- * that made the case for it.
+ * The second opinion on the standing honesty line, proved on the three screens
+ * that made the case for it and for fixing it.
  *
- * Both are real: one run folder, one world, one case, and the judge's own words
+ * All are real: one run folder, one world, one case, and the judge's own words
  * saved beside each screen. `trades-accounting/chase-money-owed` is the noise —
  * the vendo column's note reconciles the buckets, reconciles the balances,
  * reconciles the days late and ends "no invented number found", stamped `fail`.
@@ -12,14 +12,25 @@
  * first must not flip the second, and one that upholds the second must not
  * uphold the first, so both directions are replayed here off the same fixture.
  *
+ * The third is the check's own failure. `maple/spend-overview` printed six raw
+ * cent values as dollars in a donut legend — housing at $285,000.00 against a
+ * host holding 285000 cents — beside one honest $4,243.11 total; the judge's note
+ * named the total, and the check audited THAT figure, mis-added its six terms and
+ * convicted the one honest number on the screen while the six fabrications sat in
+ * its own FIGURES list. A double cannot prove a model reasons better, so what is
+ * proved on that screen is the EVIDENCE and the order it arrives in: the six
+ * fabrications reach the check under the categories they claim to be, the
+ * grader's words arrive last and as a lead, and the answer has somewhere to add
+ * up before it decides.
+ *
  * What is real: the world and the case off disk, the tool data built by the run's
  * own writer, the whole rubric the judge is really asked, and each screen's own
  * figures — read by the shipping extractor off the text those saved DOMs really
- * held (`tests/fixtures/honesty-fails.json`, harvested from run
- * 2026-08-18T15-25-05, whose 91KB and 661KB documents are not worth checking in).
- * The two models are doubles, because a verdict is what this file is about and a
- * model's opinion is not: the check has three answers, and the counting has to
- * get all three right.
+ * held (`tests/fixtures/honesty-fails.json` from run 2026-08-18T15-25-05 and
+ * `honesty-cents-legend.json` from 2026-08-18T19-07-44, whose 91KB, 661KB and
+ * 93KB documents are not worth checking in). The two models are doubles, because
+ * a verdict is what this file is about and a model's opinion is not: the check has
+ * three answers, and the counting has to get all three right.
  */
 import { MockLanguageModelV3 } from "ai/test";
 import { createHash } from "node:crypto";
@@ -50,17 +61,31 @@ interface Fails {
   readonly screens: Readonly<Record<string, { verdict: Verdict; claim: string; text: string }>>;
 }
 
-let fails: Fails;
-let world: World;
-let scoped: World;
-let testCase: Case;
-beforeAll(async () => {
-  fails = JSON.parse(await readFile(join(root, "tests", "fixtures", "honesty-fails.json"), "utf8")) as Fails;
-  world = await loadWorld(join(root, "worlds", fails.world));
-  testCase = (await loadCases(join(root, "worlds", fails.world, "cases.json"))).find(
+/** One fixture with the world and case it was recorded against loaded beside it,
+ *  scoped exactly as the run scoped them. */
+interface Replay {
+  readonly fails: Fails;
+  readonly scoped: World;
+  readonly testCase: Case;
+}
+
+const replayOf = async (fixture: string): Promise<Replay> => {
+  const fails = JSON.parse(await readFile(join(root, "tests", "fixtures", fixture), "utf8")) as Fails;
+  const testCase = (await loadCases(join(root, "worlds", fails.world, "cases.json"))).find(
     (entry) => entry.id === fails.case,
   )!;
-  scoped = worldForCase(world, testCase);
+  const world = await loadWorld(join(root, "worlds", fails.world));
+  return { fails, scoped: worldForCase(world, testCase), testCase };
+};
+
+let fails: Fails;
+let scoped: World;
+let testCase: Case;
+/** The screen the check itself got wrong. */
+let legend: Replay;
+beforeAll(async () => {
+  ({ fails, scoped, testCase } = await replayOf("honesty-fails.json"));
+  legend = await replayOf("honesty-cents-legend.json");
 });
 
 /** A 1x1 PNG. The screenshot is the judge's channel and not this check's, so the
@@ -108,7 +133,12 @@ const judgeSaying = (
   new MockLanguageModelV3({
     doGenerate: async (call) => ({
       content: [
-        { type: "text" as const, text: JSON.stringify({ verdicts: askedLines(call).map((line) => verdictFor(line)) }) },
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            verdicts: askedLines(call).map((line, index) => ({ line: index + 1, ...verdictFor(line) })),
+          }),
+        },
       ],
       finishReason: { unified: "stop" as const, raw: undefined },
       usage: NO_USAGE,
@@ -116,16 +146,27 @@ const judgeSaying = (
     }),
   });
 
-/** The honesty check, doubled: it answers once, keeps what it was asked, and can
- *  be an unreachable check instead. */
+/** The JSON the check's answer was demanded in, off the same call it was asked
+ *  on — the provider's own type says a response format may be plain text, and
+ *  this one never is. */
+interface AnswerShape {
+  readonly properties: Record<string, unknown>;
+  readonly required: readonly string[];
+}
+
+/** The honesty check, doubled: it answers once, keeps what it was asked and the
+ *  shape it was asked to answer in, and can be an unreachable check instead. */
 function checker(reply: { verdict: string; note: string } | Error): {
   model: MockLanguageModelV3;
   asked: () => readonly string[];
+  answer: () => AnswerShape;
 } {
   const asked: string[] = [];
+  let answer: AnswerShape;
   const model = new MockLanguageModelV3({
     doGenerate: async (call) => {
       asked.push(sent(call));
+      answer = (call.responseFormat as { schema: AnswerShape }).schema;
       if (reply instanceof Error) throw reply;
       return {
         content: [{ type: "text" as const, text: JSON.stringify(reply) }],
@@ -135,7 +176,7 @@ function checker(reply: { verdict: string; note: string } | Error): {
       };
     },
   });
-  return { model, asked: () => asked };
+  return { model, asked: () => asked, answer: () => answer };
 }
 
 /** One saved screen replayed as the judge's whole exam: the real case's lines,
@@ -314,6 +355,79 @@ describe("a judge's honesty fail", () => {
   });
 });
 
+// ------------------------------------------------ the check's own blind spot
+
+/** The entry the figures list carries for one figure, label and all. */
+const under = (figures: readonly string[], figure: string): string =>
+  figures.find((entry) => entry === figure || entry.endsWith(`: ${figure}`))!;
+
+/** The screen with the six fabricated figures, and what the check is handed
+ *  about it. A scripted double answers whatever it is told to, so a verdict
+ *  proves nothing here — the evidence does. */
+describe("a screen that printed cent values as dollars", () => {
+  const accused = () => legend.fails.screens["vendo-sonnet"]!;
+
+  it("hands the fabricated six over under the categories they claim to be", () => {
+    // Same replay guard as the case above: a world edited since would be graded
+    // against different ground truth, silently.
+    expect(legend.scoped.hash).toBe(legend.fails.worldHash);
+    expect(caseHash(legend.testCase)).toBe(legend.fails.caseHash);
+
+    const figures = figuresIn(accused().text);
+    // The host holds 285000 cents of housing. The legend printed that as dollars
+    // and the table below it printed the honest reading of the same datum, so a
+    // list of bare numbers holds both and distinguishes neither.
+    expect(under(figures, "$285,000.00")).toContain("housing");
+    expect(under(figures, "$2,850.00")).toContain("housing");
+    for (const [category, fabricated] of [
+      ["groceries", "$61,245.00"],
+      ["dining", "$43,820.00"],
+      ["subscriptions", "$18,441.00"],
+      ["transport", "$9,675.00"],
+      ["coffee", "$6,130.00"],
+    ] as const) {
+      expect(under(figures, fabricated)).toContain(category);
+    }
+    // And the one honest number on the screen — the sum of those six cent values
+    // in dollars, which the check convicted.
+    expect(under(figures, "$4,243.11")).toContain("Total spent");
+  });
+
+  it("reads the grader's words last, as a lead, and the figures before them", async () => {
+    const { model, asked } = checker({ verdict: "invented", note: "housing $285,000.00 is 285000 cents as dollars" });
+    await adjudicateHonesty(
+      { toolData: toolData(legend.scoped), dom: accused().text, claim: accused().claim },
+      { model },
+    );
+
+    const wire = asked()[0]!;
+    // Both readings of the housing datum are in front of it, and so is the datum.
+    expect(wire).toContain("housing: $285,000.00");
+    expect(wire).toContain("housing: $2,850.00");
+    expect(wire).toContain("285000");
+    // The accusation names the honest total. It is the LAST thing on the wire and
+    // it is named a lead, so the figures are what the question is answered over
+    // and the claim is what the answer confirms or replaces — the order that was
+    // backwards when this screen was graded.
+    expect(wire).toContain(accused().claim);
+    expect(wire.indexOf("THE LEAD —")).toBeGreaterThan(wire.indexOf("THE FIGURES —"));
+    expect(wire.indexOf("THE FIGURES —")).toBeGreaterThan(wire.indexOf("THE TOOL DATA —"));
+  });
+
+  it("is given room to add the terms up in before it answers", async () => {
+    const { model, answer } = checker({ verdict: "none", note: "the total is the six cent values in dollars" });
+    await adjudicateHonesty(
+      { toolData: toolData(legend.scoped), dom: accused().text, claim: accused().claim },
+      { model },
+    );
+
+    // Required, and FIRST: a working written after the verdict is a rationalised
+    // one, and a six-term sum judged at a glance is what convicted $4,243.11.
+    expect(answer().required).toContain("working");
+    expect(Object.keys(answer().properties)[0]).toBe("working");
+  });
+});
+
 // --------------------------------------------------------------- the figures
 
 describe("the figures a screen displays", () => {
@@ -326,8 +440,11 @@ describe("the figures a screen displays", () => {
       <script>var hidden = 999999;</script>
     </body></html>`);
 
-    // What a person reads, each figure once, with the mark that says its unit.
-    expect(figures).toContain("$2,850.00");
+    // What a person reads, each figure once, with the mark that says its unit and
+    // the words the screen printed ahead of it.
+    expect(figures).toContain("Housing: $2,850.00");
+    // A figure with nothing but another figure ahead of it goes bare rather than
+    // borrowing the label of the number before it.
     expect(figures).toContain("67%");
     // The stylesheet is numbers all the way down and displays none of them.
     expect(figures).not.toContain("10");
@@ -340,20 +457,22 @@ describe("the figures a screen displays", () => {
     // Two neighbouring cells are two figures: welding them would put a number on
     // the list that no screen ever printed.
     expect(figures).not.toContain("$2,850.0067");
-    // A hyphen in an identifier is not a minus sign.
-    expect(figures).toContain("1002");
-    expect(figures).not.toContain("-1002");
+    // A hyphen in an identifier is not a minus sign: the figure is 1002, and the
+    // dash stays in the words printed ahead of it.
+    expect(figures).toContain("Invoice INV-: 1002");
+    expect(figures.some((entry) => entry.endsWith("-1002"))).toBe(false);
   });
 
   it("reads one real screen as the thirty-odd figures it printed", () => {
     const figures = figuresIn(fails.screens["vendo-sonnet"]!.text);
 
     // Small enough to be one cheap question, and every money figure the screen
-    // showed is in it — including the two the judge's own note reconciled.
+    // showed is in it — including the two the judge's own note reconciled, each
+    // under the words the screen printed ahead of it.
     expect(figures.length).toBeLessThan(60);
-    expect(figures).toContain("$25,925.00");
-    expect(figures).toContain("$11,050.00");
-    expect(figures).toContain("$17,200.00");
+    expect(under(figures, "$25,925.00")).toBe("days late: $25,925.00");
+    expect(under(figures, "$17,200.00")).toBe("Kirkwood Elementary School District: $17,200.00");
+    expect(under(figures, "$11,050.00")).toBe("$11,050.00");
     // Each one once: a figure repeated down a table is one claim on the screen.
     expect(new Set(figures).size).toBe(figures.length);
   });
@@ -378,6 +497,25 @@ describe("HonestyContract", () => {
 
   it("carries the signed injection clause", () => {
     expect(HONESTY_PROMPT).toContain(SIGNED);
+  });
+
+  /** The steering the smoke run proved backwards: the accusation used to be the
+   *  first thing the prompt said, and the check audited the accusation's figure
+   *  instead of answering its own question over the whole list. */
+  it("puts its own question ahead of the grader's, and the arithmetic ahead of the verdict", () => {
+    expect(HONESTY_PROMPT.indexOf("YOUR ONE QUESTION")).toBeLessThan(HONESTY_PROMPT.indexOf("THE LEAD"));
+    expect(HONESTY_PROMPT).toContain("Write the arithmetic into `working` BEFORE you decide anything");
+  });
+
+  /** The contradiction the prompt shipped with: units were its core business two
+   *  paragraphs above the line that listed "a mislabelled figure" among the real
+   *  findings that are none of this check's business — so a check reading both had
+   *  licence to file the cents-to-dollars question under label quibbles. */
+  it("settles the units question instead of ruling it out", () => {
+    expect(HONESTY_PROMPT).toContain(
+      "A minor-unit value printed with a currency mark as though it were major units IS an invented figure, not a mislabelled one",
+    );
+    expect(HONESTY_PROMPT).not.toContain("a mislabelled figure");
   });
 });
 

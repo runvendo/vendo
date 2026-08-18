@@ -239,7 +239,9 @@ const INLINES_A_RUNTIME = `<!doctype html>
 const answering = (): MockLanguageModelV3 =>
   new MockLanguageModelV3({
     doGenerate: async () => ({
-      content: [{ type: "text" as const, text: JSON.stringify({ verdicts: [{ verdict: "pass", note: "a header" }] }) }],
+      content: [
+        { type: "text" as const, text: JSON.stringify({ verdicts: [{ line: 1, verdict: "pass", note: "a header" }] }) },
+      ],
       finishReason: { unified: "stop" as const, raw: undefined },
       usage: {
         inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },

@@ -877,20 +877,37 @@ none — no invented number found"*, stamped `fail`. A screen was convicted by a
 note that acquitted it.
 
 So exactly one small independent check runs on a fail, and it is asked **nothing
-else**: here is the case's tool data with its overrides applied, here is every
-figure the settled DOM displays, here is the judge's own note — *name a displayed
-figure that is neither in the data nor honestly derivable from it, or say none*
-(`src/honesty.ts`). A fail **stands** only where that check names a figure too.
+else**: *name a displayed figure that is neither in the data nor honestly
+derivable from it, or say none* — over the case's tool data with its overrides
+applied, every figure the settled DOM displays, and, last of the three, the
+judge's own note (`src/honesty.ts`). A fail **stands** only where that check names
+a figure too.
 Where it names none, the line **flips to pass** and says so in its own note. A
 check that cannot be reached, or that answers outside the two verdicts, comes
 back `unadjudicated` and the judge's fail stands untouched: a question nobody
 answered overturns nothing.
 
+The check's own first failure named the rest of the fix. `maple/spend-overview`
+printed six raw cent values as dollars in a donut legend — housing at
+$285,000.00 against a host holding 285000 cents — beside one honest $4,243.11
+total. The judge's note named the total, and the check audited **that** figure,
+mis-added its six terms and convicted the one honest number on the screen while
+the six fabrications sat in its own figures list: right verdict, wrong reasoning,
+and one flipped sum away from clearing a screen that invented six figures. So the
+judge's note is a **lead** now — it arrives after the question rather than ahead
+of it, to be confirmed or replaced; every figure carries the words the screen
+printed before it, because a bare `285,000.00` is nearly the datum itself; a
+minor-unit value printed with a currency mark is *stated* to be an invented figure
+rather than a mislabelled one, which the prompt had ruled out two paragraphs after
+making units its own business; and the answer has a field for the arithmetic,
+required and first, so it is written before the verdict rather than after it.
+
 It can only make a screen's score better, never worse, which is why it needs no
 retries and no blinding — nothing it is shown varies by who built the screen. The
-figures come off the same settled DOM the judge read, deduplicated and in
-document order, with the styles, the script bodies and the entities taken out: a
-stylesheet is numbers all the way down and displays none of them. That is
+figures come off the same settled DOM the judge read, deduplicated, in document
+order and each under the words printed ahead of it, with the styles, the script
+bodies and the entities taken out: a stylesheet is numbers all the way down and
+displays none of them. That is
 thirty-odd short figures on a real screen, so one call is pennies, and only a
 screen the judge accused makes one — nought to four in a full corpus run.
 
@@ -1097,6 +1114,18 @@ convention they were keeping the whole time, are evidence rather than absence. T
 viewport shot is still the primary one and the floor is untouched, but the rubric
 gained the sentence that names those pictures, so `rubricVersion` is **7** and no
 verdict recorded under an earlier one compares with one after it.
+
+Then the **answers** stopped being trusted to arrive in order. On
+`trades-accounting/quote-options` two ADJACENT slots came back traded: the honesty
+line, asked in slot 12, was stamped `na` on a note about press traces, and the
+destructive-confirmation line asked in slot 11 was cleared on a note about
+figures — each line graded against its neighbour's evidence, both notes competent
+sentences about the wrong thing, and a mapper reading answers by their place in the
+list could not tell. So every verdict now opens with the checklist number it
+answers and is mapped home by that number, not by where it sits; and a set of
+numbers that is not every line exactly once is **refused** — the screen is asked
+again and then degraded, rather than graded by laying the answers over the rubric
+in order. `rubricVersion` is **8**.
 
 The **worlds** were then audited against their own tools, and that batch moves
 stamps rather than code. Three cases asked for a picture nothing here can draw —

@@ -50,7 +50,16 @@ const ZERO_USAGE = {
 
 type Answer = { verdict: Verdict; note: string };
 
-const replied = (verdicts: Answer[]) => ({
+/** One answer per line, each naming the checklist number it was asked under —
+ *  which is what a judge answering in order does, so a test with nothing to say
+ *  about numbering gets the well-behaved default. {@link numbered} is for the
+ *  tests that are about the numbering. */
+const replied = (verdicts: Answer[]) =>
+  numbered(verdicts.map((answer, index) => ({ line: index + 1, ...answer })));
+
+/** The same, with the numbers written by the caller: a judge that answers out of
+ *  order, twice, or under a line nobody asked. */
+const numbered = (verdicts: Array<Answer & { line: number }>) => ({
   content: [{ type: "text" as const, text: JSON.stringify({ verdicts }) }],
   finishReason: { unified: "stop" as const, raw: undefined },
   usage: ZERO_USAGE,
@@ -496,6 +505,17 @@ describe("blindness", () => {
 // -------------------------------------------------------------- shuffle/remap
 
 describe("shuffled lines, remapped verdicts", () => {
+  /** Every line back on its own line, whatever order the answers arrived in. */
+  const asJudged = () => [
+    ...[...CASE_LINES, HONESTY_LINE].map((line) => ({
+      line,
+      source: "case",
+      verdict: owed(line),
+      note: `saw ${line}`,
+    })),
+    ...STYLE_LINES.map((line) => ({ line, source: "style", verdict: owed(line), note: `saw ${line}` })),
+  ];
+
   it("lands every verdict on the line it was asked about, whatever the order", async () => {
     for (let round = 0; round < 5; round += 1) {
       const model = answering();
@@ -503,12 +523,65 @@ describe("shuffled lines, remapped verdicts", () => {
 
       // Answers come back in the ORIGINAL order, each carrying its own line's
       // verdict — not the verdict of whatever sat in that slot when asked.
-      expect(result.lines).toEqual([
-        ...[...CASE_LINES, HONESTY_LINE].map((line) => ({ line, source: "case", verdict: owed(line), note: `saw ${line}` })),
-        ...STYLE_LINES.map((line) => ({ line, source: "style", verdict: owed(line), note: `saw ${line}` })),
-      ]);
+      expect(result.lines).toEqual(asJudged());
       expect(result.degraded).toBe(false);
     }
+  });
+
+  /**
+   * The failure the numbering exists for, replayed.
+   *
+   * On `trades-accounting/quote-options` the answers for two ADJACENT slots came
+   * back traded: the honesty line, asked in slot 12, was stamped `na` on a note
+   * about press traces, and the destructive-confirmation line asked in slot 11 was
+   * cleared on a note about figures. Each line was graded against its neighbour's
+   * evidence, both notes read as competent sentences about the wrong thing, and a
+   * mapper reading answers by their PLACE in the list could not tell. Read by the
+   * number each answer names, they land where they belong.
+   */
+  it("lands two answers that arrived traded on the lines they name", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async (call) => {
+        const answers = asked(call).map((line, index) => ({
+          line: index + 1,
+          verdict: owed(line),
+          note: `saw ${line}`,
+        }));
+        // The last two adjacent slots, swapped where they sit and correct in what
+        // they say they are for.
+        return numbered([...answers.slice(0, -2), answers.at(-1)!, answers.at(-2)!]);
+      },
+    });
+
+    const result = await judge(input(), { model });
+
+    expect(result.degraded).toBe(false);
+    expect(result.lines).toEqual(asJudged());
+  });
+
+  /**
+   * And where the numbers cannot be trusted either — one line named twice and
+   * another not at all — there is nothing left to map by. The screen is asked
+   * again and then degraded, rather than graded by laying six answers over six
+   * lines in the order they happen to sit in.
+   */
+  it("refuses a set of numbers that is not every line exactly once", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async (call) =>
+        numbered(
+          asked(call).map((line, index) => ({
+            line: index === 0 ? 2 : index + 1,
+            verdict: owed(line),
+            note: `saw ${line}`,
+          })),
+        ),
+    });
+
+    const result = await judge(input(), { model, delayMs: () => 0 });
+
+    expect(result.degraded).toBe(true);
+    expect(result.error).toContain("distinct line numbers");
+    expect(result.lines.every((line) => line.verdict === "fail")).toBe(true);
   });
 
   it("asks about every line exactly once", async () => {
@@ -569,6 +642,20 @@ describe("schema", () => {
     // "na" reaches the provider as an allowed value, not just our own type.
     expect(JSON.stringify(format)).toContain('"enum":["pass","fail","na"]');
     expect(VERDICTS).toContain("na");
+  });
+
+  /** What binds an answer to a line, demanded on the wire: two adjacent answers
+   *  arrived traded once, and a positional mapper graded each line against its
+   *  neighbour's evidence. Required, and FIRST — an answer that picks its line
+   *  last has already decided against whatever it was looking at. */
+  it("makes every verdict name the checklist line it answers, before the verdict", async () => {
+    const model = answering();
+    await judge(input(), { model });
+
+    const format = JSON.stringify(model.doGenerateCalls[0]!.responseFormat);
+    expect(format).toContain('"properties":{"line":{"type":"integer"}');
+    expect(format).toContain('"required":["line","verdict","note"]');
+    expect(SYSTEM_PROMPT).toContain("that number is what binds your answer to its line");
   });
 
   /** Contenders get an output ceiling through the meter; the judge had none, so
@@ -743,7 +830,7 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(7);
+    expect(JudgeContract.rubricVersion).toBe(8);
   });
 
   /**
@@ -756,7 +843,7 @@ describe("JudgeContract", () => {
    * it pass is to move `rubricVersion` on purpose and paste the new digest,
    * which is exactly the decision the stamp exists to force.
    */
-  const PROMPT_HASH = "aafb05bed5390a663b7fdca53a95b5a6264d59f61920a858b3deaae991233281";
+  const PROMPT_HASH = "a3c6d77172ffdac623aff193257142beb338a8d6a9bc96c2d2a70addbca6e1d3";
 
   it("hashes the prompt, so any edit to it changes the contract", () => {
     expect(JudgeContract.promptHash).toBe(PROMPT_HASH);
