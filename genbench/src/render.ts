@@ -378,6 +378,33 @@ const CHART_SCAFFOLDING = '[class*="recharts-cartesian-axis-tick"], #recharts_me
  *  picture buys less than the judge's attention on the screen itself costs. */
 const MOST_WIDE_TABLES = 3;
 
+/**
+ * How much a scroller has to hide before it counts as hiding anything.
+ *
+ * A one- or two-pixel reading is not a column past a fold, it is arithmetic:
+ * rounded column widths summed against a rounded room, a fractional border, a
+ * scrollbar gutter — the same overshoot `unrounded` exists for in the Kit's own
+ * `data-table.tsx`. Believing one is expensive. A 2px artifact on
+ * `subscription-billing/renewal-schedule`'s root Stack armed this whole path on
+ * 45 of 54 vendo cases, and on that one it cost the case. 8px is under one
+ * character at any size any screen here draws, so nothing a person could read
+ * hides beneath this.
+ */
+const PAST_THE_FOLD_PX = 8;
+
+/**
+ * The widest picture worth taking.
+ *
+ * `max-content` leaves the expanded block's own width INDEFINITE, and a
+ * `width:100%` child of an indefinite block resolves against Chromium's 1e6px
+ * sentinel — measured at 1,000,002px on the case above, where a `<select>` did
+ * exactly that and Chromium answered the element shot with `Unable to capture
+ * screenshot`. A ceiling keeps the picture inside what Chromium will capture
+ * whatever the layout does, and past a few thousand pixels a shot of a table is
+ * unreadable anyway.
+ */
+const WIDEST_SHOT_PX = 4000;
+
 /** The mark the expansion below leaves on a container so the shooter out here can
  *  find it again, taken off with the widths it set. */
 const WIDE = "data-genbench-wide";
@@ -393,11 +420,21 @@ const WIDE = "data-genbench-wide";
  * looking at (`SYSTEM_PROMPT` in `judge.ts`). Written against the frame rather
  * than against a width, so widening the frame is one edit up there and none here.
  *
- * The container is found from the TABLE outwards — the nearest ancestor that clips
- * it — so the Kit's scroll wrapper and a hand-written `overflow-x:auto` div are
- * found by one rule, and a column that draws its table with `role="table"` divs is
- * read the same way. Anything with nothing to scroll pays one `evaluate` and no
- * screenshots, which is most cases.
+ * The container is found from the TABLE outwards, and the walk STOPS at the first
+ * ancestor that clips the table at all — that element is where the table's
+ * overflow ends, so the Kit's `overflow-x:auto` wrapper (`data-table.tsx`) and a
+ * hand-written one are found by one rule, and a column that draws its table with
+ * `role="table"` divs is read the same way. If that wrapper scrolls, its picture
+ * is what scrolling reveals; if it merely clips (`hidden`, `clip`) then nothing
+ * past it is reachable by a person either, so there is nothing to reveal.
+ *
+ * Nothing further out is ever the answer, and the page itself never is. Walking
+ * on until SOMETHING measured wide is what broke the case this guard is written
+ * from: the walk climbed past a scroll wrapper with nothing to scroll, out to
+ * `subscription-billing/renewal-schedule`'s root Stack, and widened the page's own
+ * layout — which resolved a `width:100%` `<select>` to 1e6px and threw out of the
+ * shot. Anything with nothing to scroll pays one `evaluate` and no screenshots,
+ * which is most cases.
  *
  * `max-content` rather than a measured width: it is whatever the table asks for,
  * including columns a resize observer hands back once the room is there. And the
@@ -406,32 +443,44 @@ const WIDE = "data-genbench-wide";
  */
 async function wideTables(page: Page): Promise<Buffer[]> {
   const was = await page.evaluate(
-    ([mark, cap]: [string, number]) => {
-      const clipping = new Set<HTMLElement>();
+    ([mark, most, fold, widest]: [string, number, number, number]) => {
+      const scrollers = new Set<HTMLElement>();
       for (const table of document.querySelectorAll<HTMLElement>('table, [role="table"]')) {
-        for (let node: HTMLElement | null = table; node !== null; node = node.parentElement) {
-          if (node.scrollWidth - node.clientWidth > 1) {
-            clipping.add(node);
-            break;
+        // Never `document.body` or the element above it: a document that scrolls
+        // sideways is the page's own layout, not a table's fold.
+        for (let node: HTMLElement | null = table; node !== null && node !== document.body; node = node.parentElement) {
+          const overflowX = getComputedStyle(node).overflowX;
+          if (overflowX === "visible") continue;
+          if ((overflowX === "auto" || overflowX === "scroll") && node.scrollWidth - node.clientWidth > fold) {
+            scrollers.add(node);
           }
+          break;
         }
       }
-      return [...clipping].slice(0, cap).map((node, index) => {
+      return [...scrollers].slice(0, most).map((node, index) => {
         const style = node.getAttribute("style");
         node.setAttribute(mark, String(index));
         node.style.width = "max-content";
-        node.style.maxWidth = "none";
+        node.style.maxWidth = `${widest}px`;
         node.style.overflow = "visible";
         return style;
       });
     },
-    [WIDE, MOST_WIDE_TABLES] as [string, number],
+    [WIDE, MOST_WIDE_TABLES, PAST_THE_FOLD_PX, WIDEST_SHOT_PX] as [string, number, number, number],
   );
 
   const shots: Buffer[] = [];
   // One at a time: two element shots of one page would race each other's scroll.
   for (let index = 0; index < was.length; index += 1) {
-    shots.push(await page.locator(`[${WIDE}="${index}"]`).screenshot());
+    try {
+      shots.push(await page.locator(`[${WIDE}="${index}"]`).screenshot());
+    } catch {
+      // A BONUS picture, and the screen it belongs to has already been shot and
+      // read. So a shot that cannot be taken costs nothing but itself: no record,
+      // the styles below still come off, and the next one is still tried. It cost
+      // a whole case once — `Unable to capture screenshot` threw out of `shot()`
+      // and auto-failed all eleven of one case's rubric lines.
+    }
   }
 
   await page.evaluate(

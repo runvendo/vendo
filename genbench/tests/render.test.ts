@@ -14,6 +14,7 @@
  */
 import type { UIPayload } from "@vendoai/core";
 import { MockLanguageModelV3 } from "ai/test";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -36,8 +37,8 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => await shooter.close());
 
-const worldNamed = async (name: string): Promise<World> =>
-  await loadWorld(join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds", name));
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const worldNamed = async (name: string): Promise<World> => await loadWorld(join(root, "worlds", name));
 
 /** A page that reaches out. It records what came back on itself, so the test
  *  reads the page's own account of the request rather than the harness's.
@@ -358,6 +359,38 @@ td,th{white-space:nowrap;padding:8px 14px;border-bottom:1px solid #eee}</style><
 <script>window.__settled = true;</script>
 </body></html>`;
 
+/** Far wider than any picture is worth: one table that asks for ten times the
+ *  cap, inside a scroller that really does scroll. */
+const RUNS_OFF_FOREVER = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ledger</title>
+<style>body{margin:0;padding:20px;font:14px system-ui}
+.scroller{overflow-x:auto}
+table{width:40000px}
+td{white-space:nowrap;padding:8px 14px}</style></head>
+<body><div class="scroller"><table><tbody><tr><td>one</td><td>of many</td></tr></tbody></table></div>
+<script>window.__settled = true;</script>
+</body></html>`;
+
+/**
+ * A page that defeats the cap with its own `!important`, and asks for a picture
+ * Chromium will not take: a million pixels across and six hundred down.
+ *
+ * The point is not the CSS trick, it is that SOMETHING will always be
+ * uncapturable — the live failure was this exact refusal, reached by a route the
+ * cap now closes. A bonus picture that cannot be taken must cost nothing but
+ * itself.
+ */
+const DEFEATS_THE_CAP = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>renewals</title>
+<style>body{margin:0;padding:20px;font:14px system-ui}
+.scroller{overflow-x:auto;max-width:none!important}
+table{width:1000000px}
+td{white-space:nowrap;padding:8px 14px;height:600px}</style></head>
+<body><h1>Upcoming renewals</h1>
+<div class="scroller"><table><tbody><tr><td>Northwind</td><td>$12,480.00</td></tr></tbody></table></div>
+<script>window.__settled = true;</script>
+</body></html>`;
+
 /** A table that FITS: two short columns at the same viewport, so nothing about it
  *  is past any fold and nothing should be shot twice. */
 const FITS_IN_THE_FRAME = `<!doctype html>
@@ -421,6 +454,106 @@ describe("a table that scrolls sideways", () => {
     const visit = await shooter.visit(FITS_IN_THE_FRAME);
     try {
       expect((await visit.shot()).tables).toEqual([]);
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+
+  /**
+   * The screen that proved what believing a rounding artifact costs.
+   *
+   * `subscription-billing/renewal-schedule` in run 2026-08-18T18-47-44 lost all
+   * ELEVEN of its rubric lines to `Unable to capture screenshot`: a 2px artifact
+   * on the page's own root Stack read as a fold, the walk climbed past a scroll
+   * wrapper that had nothing to scroll and widened the page's layout instead of a
+   * table, a `width:100%` `<select>` resolved against the now-indefinite block to
+   * Chromium's 1e6px sentinel, and the throw came out of `shot()`. It armed on 45
+   * of that run's 54 vendo cases.
+   *
+   * Replayed through the Kit from that run's own payload, lifted verbatim out of
+   * the saved `page.html`: the file itself is 2.9MB, because the page the product
+   * renders inlines its whole runtime, and the payload is the same screen at a
+   * hundred-and-eightieth of the size — the same trade `honesty.test.ts` makes in
+   * checking in figures rather than documents.
+   */
+  it("is not shot when a page's own layout merely rounds, and the case lives", async () => {
+    const payload = JSON.parse(
+      await readFile(join(root, "tests", "fixtures", "renewal-schedule-screen.json"), "utf8"),
+    ) as UIPayload;
+    const world = await worldNamed("subscription-billing");
+    const visit = await shooter.visit(pageHtml(payload, world, bundle, "vendo-sonnet"));
+    try {
+      // The fixture is only worth anything while it is still the defect: nothing
+      // that scrolls hides anything, and something out past the tables measures a
+      // couple of pixels wide anyway.
+      const measured = await visit.page.evaluate(() => {
+        const hides = (node: HTMLElement): number => node.scrollWidth - node.clientWidth;
+        const ancestry = (table: HTMLElement): HTMLElement[] => {
+          const nodes: HTMLElement[] = [];
+          for (let node: HTMLElement | null = table; node !== null; node = node.parentElement) nodes.push(node);
+          return nodes;
+        };
+        const tables = [...document.querySelectorAll<HTMLElement>('table, [role="table"]')].map(ancestry);
+        return {
+          scrollers: tables.flat().filter((node) => /^(auto|scroll)$/.test(getComputedStyle(node).overflowX)).map(hides),
+          rounding: tables.flat().map(hides).filter((hidden) => hidden > 0),
+        };
+      });
+      expect(measured.scrollers).not.toEqual([]);
+      expect(measured.scrollers.filter((hidden) => hidden > 0)).toEqual([]);
+      expect(measured.rounding).not.toEqual([]);
+      expect(Math.max(...measured.rounding)).toBeLessThanOrEqual(8);
+
+      const { png, tables } = await visit.shot();
+
+      expect({ width: widthOf(png), height: png.readUInt32BE(20) }).toEqual({ width: 1280, height: 900 });
+      expect(tables).toEqual([]);
+    } finally {
+      await visit.close();
+    }
+  }, 120_000);
+
+  it("is never shot wider than the cap, however far the table runs on", async () => {
+    const visit = await shooter.visit(RUNS_OFF_FOREVER);
+    try {
+      const { tables } = await visit.shot();
+
+      // The table asks for 40000px. The picture stops where Chromium can still
+      // take one, and a judge can still read one.
+      expect(tables).toHaveLength(1);
+      expect(widthOf(tables[0]!)).toBe(4000);
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+
+  it("costs the case nothing when Chromium refuses the picture anyway", async () => {
+    const visit = await shooter.visit(DEFEATS_THE_CAP);
+    try {
+      const { png, tables, visibleText } = await visit.shot();
+
+      // The shot really was attempted: this scroller hides most of a million
+      // pixels, so an empty `tables` below can only be the refusal, swallowed.
+      const hidden = await visit.page.evaluate(() => {
+        const scroller = document.querySelector<HTMLElement>(".scroller")!;
+        return scroller.scrollWidth - scroller.clientWidth;
+      });
+      expect(hidden).toBeGreaterThan(8);
+      expect(tables).toEqual([]);
+
+      // And the case keeps everything it had: the graded shot and the reading were
+      // taken before the bonus was tried, and a refusal cannot reach back for
+      // them.
+      expect({ width: widthOf(png), height: png.readUInt32BE(20) }).toEqual({ width: 1280, height: 900 });
+      expect(visibleText).toContain("Upcoming renewals");
+
+      // The page is still the page the probe walks next, too: the mark and the
+      // widths came off even though the shot never happened.
+      const after = await visit.page.evaluate(() => ({
+        marked: document.querySelectorAll("[data-genbench-wide]").length,
+        style: document.querySelector(".scroller")!.getAttribute("style"),
+      }));
+      expect(after).toEqual({ marked: 0, style: null });
     } finally {
       await visit.close();
     }
