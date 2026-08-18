@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/automations",
-  "version": "0.27.1",
+  "version": "0.28.0",
   "description": "Automations as first-class principal-owned records: trigger ingestion, scheduling, the two task kinds, and one run ledger.",
   "keywords": [
     "ai",

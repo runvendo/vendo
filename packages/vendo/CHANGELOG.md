@@ -1,5 +1,219 @@
 # @vendoai/vendo
 
+## 0.28.0
+
+### Minor Changes
+
+- 0143c4e: The stored `tree` leaves the app document. The model never writes layout and no
+  production door mints a tree-only app — an app IS its `app.tsx`, and its tree is
+  what RENDERING that produces — so the field, the branch that served it, the paint
+  path gated on it and the fact checks that walked it are all deleted.
+
+  What changes for a host: `AppDocument.tree` is gone from the type and the schema,
+  and `.vendoapp` no longer carries it. A row written before this still opens — the
+  field is STRIPPED on the way out of the store and on the way in, never refused —
+  because such a document opens on its `source` like any other. A document with no
+  usable source at all now RESOLVES as `{kind:"failed"}` with a reason naming why,
+  instead of throwing and leaving an embed to poll to its deadline; importing a
+  `.vendoapp` that holds a layout and no source is refused in the same words rather
+  than minting a row that can never open.
+
+  BREAKING for a host's own checks: a check that read `document.tree` reads
+  `undefined` now and will never see a tree there again. The rendered tree moves
+  onto `CheckInput.renderedTree`, beside `document` and `request`, where it belongs —
+  it is what the person is about to see, not something a document carries — and
+  every such check must move to that field.
+
+  The tree as a RENDER language is untouched — `UIPayload`/`TreeNode`, the
+  renderer, the streamed view parts, the render seam, and `ui: "tree"` as the
+  surface kind all stay exactly as they were.
+
+- 62c8630: The channel can text you first, and it stops talking itself out of the job.
+
+  One sentence of hidden grounding rode on every inbound text: "you cannot send
+  scheduled, recurring or unprompted texts, and you cannot set any of that up from
+  here — say so plainly if asked, point to the app, and say it is coming soon." It
+  was written about delivery. Next to a user's actual ask it read as a
+  channel-wide restriction, and on 2026-08-18 the agent refused four separate
+  transfer requests over text — "isn't something I'm able to do from here… do that
+  directly in the Maple app" — without ever searching its tool catalog, on a
+  prompt carrying three copies of the search-first instruction. The web surface,
+  which has no such note, moves the same money without a blink. The note itself
+  taught the refusal. It was also false about automations, which a texted user can
+  set up perfectly well.
+
+  The channel now states the one limit it actually has, and names the way around
+  it: "To text the user later, set up an automation for it — the Text me action is
+  how an automation reaches this phone, and its grant is part of arming. You cannot
+  otherwise send scheduled, recurring or unprompted texts. That is this channel's
+  only limit: anything else your tools can do, you can do right here in this
+  conversation."
+
+  That last clause is only true because the action it points at now exists.
+  `vendo_text_me` sends one text to the person the run is FOR, from any surface — a
+  web chat, an app, an automation firing at 6am while they are asleep. It composes
+  exactly when the text channel does, so a deployment that never asked for texts
+  is not offered a tool whose every call could only refuse.
+
+  Its input is `{ text }` and nothing else. There is no number to pass, so no model
+  output can aim a text at a phone that is not the current user's own: the
+  destination is read from that subject's link row, which only exists because the
+  signed-in user asked for a code and texted it back. Consent is the machinery that
+  was already there — a `write` descriptor on the one registry, so a live turn
+  parks whatever card the host's policy calls for, and an away firing needs the
+  standing grant that arming mints. "Text me when the rent clears" is allowed once,
+  on the screen where it is armed, and delivered from then on.
+
+  Nothing is claimed that did not happen. A user with no phone linked gets a
+  result carrying the connect link itself, minted fresh, so the agent can offer it
+  instead of apologising; a phone the router can no longer reach gets a result that
+  says the text did not go through and that reconnecting will fix it. The link row
+  remembers the conversation the person's own messages arrive on, which is the only
+  address the channel has — the deployment never learns the router's addressing,
+  and never sends to a bare number.
+
+### Patch Changes
+
+- 7ba8318: A human typing `npx vendo init` is a human, not a script. `npx`/`npm exec` runs
+  its target as a synthetic package script literally named `npx`, and the CLI read
+  any `npm_lifecycle_event` as proof a lifecycle hook had started the run — so the
+  command every doc prints came up mute: the use-case question, the auth confirm,
+  the deploy URL and the AI-grading consent were all skipped and the run silently
+  took "embedded". Only that one synthetic name is exempt now; real hooks
+  (`predev`, `postinstall`, any `npm run …`) keep their exemption, and the TTY
+  requirement is unchanged, so CI and piped runs stay as quiet as they were.
+- 650e5eb: A store that asks for a table gets one. Vendo Cloud's typed data plane answers
+  the first write to an undeclared table with `409 {error: "schema-proposal",
+proposal}` — the DDL that would make the write legal — and the SDK could not
+  read it: the body's `error` is a string, the wire envelope requires an object,
+  so the parse failed, the bare status took over, and the caller got "conflict —
+  store wire request failed with HTTP 409" with the server's proposal erased. Every
+  app's first row write to a new collection failed, on Cloud, with nothing in the
+  error to say why.
+
+  The store client now declares what it can read on every request
+  (`x-vendo-store-capabilities: schema-proposal`, scoped to store traffic — no
+  other wire grows a header), confirms a proposal on the mount's schema door and
+  replays the write under the SAME idempotency key, so one logical mutation stays
+  one. It loops for the multi-step case (create_table, then add_column) and stops
+  after three rounds; a proposal on an operation that names no app is never
+  confirmed against a guessed one. Both readings of a store failure recognize the
+  proposal, so the StoreAdapter façade — the surface an app's own writes take —
+  heals exactly like the op client.
+
+  Independently: `parseStoreWireError` stops discarding bodies it cannot parse. An
+  unrecognized error body now rides a bounded snippet in the message, and a schema
+  proposal reads as the new `schema-proposal` error code with the proposal intact
+  on `detail` — so the next protocol skew is diagnosable from the error alone
+  instead of from a live repro.
+
+- 45a4600: Init asks where the app runs in DEV, and stops asking where it deploys. The dev
+  origin is the one Vendo cannot learn: an own-loop tool call, a backend process
+  and the MCP door each make a real HTTP request back at the host's own API and
+  never see a wire request to read an origin off, so every one of those installs
+  met `Cannot execute … set VENDO_BASE_URL` on its first turn — after a run that
+  had reported itself finished. Interactive init now asks one question, prefilled
+  with the port the host's own `dev` script names, and writes the answer to
+  `.env.local` as `VENDO_BASE_URL`. Enter is the whole interaction, and the
+  terminal echoes the value it wrote rather than calling an accepted default a
+  skip.
+
+  A run that cannot ASK still writes nothing: the prefill is an answer only when a
+  person accepts it, and a guessed origin is worse than an absent one — unset, dev
+  learns the request's own origin and production fails loud, both unchanged.
+  `--base-url` is that same answer as a flag (dev origin, `.env.local`), and it
+  travels in `--agent` mode's question list like every other decision a person owns.
+
+  "Where will this deploy?" is gone, with the `.env.example` rewrite that went with
+  it. Production is told at deploy time, not asked at init: `.env.example`'s
+  `VENDO_BASE_URL` block is now an instruction — dev is already in `.env.local`, and
+  the real value goes in the hosting platform's own environment settings, never in a
+  committed file and never in `.env.local`, where a public URL would repoint local
+  dev's discovery, callbacks and credential forwarding at the deployed origin. The
+  MCP arm reads the dev answer for the client URL it prints, so the address a user
+  pastes into Claude is the app they are actually running, and its first step now
+  points at deploy time for the public one.
+
+  No platform variable is ever consulted: nothing infers an origin from `VERCEL_URL`
+  or any sibling. The URL is set by the person who knows it, or it is loudly unset.
+
+- a54af91: A "no tool for that" conclusion now requires the search. The capability-miss
+  prompt told the agent to report a no-matching-tool miss "before replying", and
+  the discovery section told it to search find_tools "before concluding you
+  can't" — two instructions, one situation, and the model may satisfy either. On
+  a live text-channel transfer ask it satisfied the first: filed the miss off its
+  equipped read tools alone and told the customer it couldn't send money, while
+  "Send money" sat one find_tools call away. The miss bullet now names the search
+  as the only way to establish "no available tool" on a surface that has one.
+- c2805b4: The composition has an address, and doctor knows what the install is for.
+
+  `vendo init` now writes the Next composition to its own module — `lib/vendo.ts`
+  (`src/lib/` when the app directory is under `src/`) — exporting `vendo`, with
+  the wire route a thin `nextVendoHandler` over it. Every docs page and every
+  snippet init prints already said `import { vendo } from "@/lib/vendo"`; that
+  file finally exists, so an agent loop, a backend job and the origin-root
+  discovery route can all reach the SAME instance instead of composing a second
+  wire that shares none of the first one's state. The specifier is the `@/` alias
+  where the host declares one and a relative path otherwise, so the generated
+  route compiles either way; the MCP path now opens its door in that one module
+  rather than a second one beside the route, and the registration map follows the
+  composition it is imported from. Existing installs are untouched — init only
+  ever creates files, and doctor grades both shapes.
+
+  Init records the resolved use case in `.vendo/install.json`, and doctor reads
+  it: an agent-loop or MCP install mounts no Vendo UI by design, so E-WIRE-004
+  and E-WIRE-006 no longer fail a host that is correct by construction — doctor
+  says which checks it skipped and why. An unattended re-run keeps the recorded
+  answer instead of falling back to embedded.
+
+  A missing model credential is a visible warning now (E-MODEL-001) instead of a
+  note `--json` swallowed, so an agent stops reading "green" on a host that
+  cannot answer a single turn. Doctor still exits 0: production keys live where
+  it cannot read them.
+
+  Also: the models question offers "I already have a Vendo key — paste it", so a
+  dev with a key stops minting a second one; `.env.example` names the host's own
+  dev port instead of always `:3000`, and says out loud that an agent loop and any
+  backend process need `VENDO_BASE_URL` even in dev; and every fix-it text that
+  reaches a non-interactive audience names `vendo sync --ai`, the spelling that
+  actually grades without a consent prompt nobody is there to answer.
+
+- 45a4600: E-MCP-009 grades the door init actually wrote. The composition moved into its own
+  module (`lib/vendo.ts`, `src/lib/vendo.ts` under a src layout) and doctor's MCP
+  path list never followed, so on every host init scaffolded since then the check
+  found no composition at all and said NOTHING — no failure, no check, nothing to
+  notice — which is the precise outcome a hard FAIL exists to prevent: a door whose
+  discovery advertises the wrong origin, surfacing hours later in someone else's
+  terminal as "Claude can't find my server". The list now leads with the current
+  module and keeps every legacy location (the route's sibling `vendo.ts`, the inline
+  route, the Express and runtime-neutral modules), in the same order
+  `doctor-wiring-checks.ts` reads them, so older installs grade exactly as they did.
+
+  Expect the intended failure to reappear: an MCP-wired host with neither
+  `VENDO_BASE_URL` nor `mcp: { baseUrl }` fails E-MCP-009 and exits 1, where it had
+  been silently green. Interactive `vendo init` now answers it in dev by writing the
+  dev origin to `.env.local`; production sets the variable where it deploys.
+
+- Updated dependencies [b9392b9]
+- Updated dependencies [650e5eb]
+- Updated dependencies [0143c4e]
+- Updated dependencies [c2805b4]
+- Updated dependencies [62c8630]
+- Updated dependencies [919cd75]
+- Updated dependencies [1117c45]
+- Updated dependencies [0143c4e]
+  - @vendoai/actions@0.28.0
+  - @vendoai/core@0.28.0
+  - @vendoai/store@0.28.0
+  - @vendoai/apps@0.28.0
+  - @vendoai/ui@0.28.0
+  - @vendoai/agents@0.28.0
+  - @vendoai/automations@0.28.0
+  - @vendoai/guard@0.28.0
+  - @vendoai/harnesses@0.28.0
+  - @vendoai/knowledge@0.28.0
+  - @vendoai/mcp@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes

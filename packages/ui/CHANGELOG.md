@@ -1,5 +1,55 @@
 # @vendoai/ui
 
+## 0.28.0
+
+### Minor Changes
+
+- 1117c45: The expanded workspace reads left to right now: the conversation docks as the
+  left rail and the featured view renders large on the right stage — the canvas
+  convention, where you talk on the left and the built thing appears beside your
+  words. The header cluster (history, expand, new conversation, close) stays the
+  chat column's furniture, gliding to the rail's edge on the same spring the
+  panes ride, and the embed's shared-element flight lands on the stage's new
+  side. Dock and mobile takeover are unchanged — neither ever shows the stage.
+- 0143c4e: An embed watching a code-first build now paints the app TAKING SHAPE instead of a
+  bar. `GET /apps/:id/open?pending=1` carries the `tree` it always had room for, and
+  what fills it is the render the build already made: a code-first build renders its
+  half-written `app.tsx` on every landed commit to decide whether anything may paint
+  at all, and that render's SHAPE is now offered to the build-window poll.
+
+  Geometry only, through the same whitelist that shipped with the wire field — node
+  ids, component names and nesting, tagged `streaming`. No props, no resolved data,
+  no interactive VM, no component sources: a build's draft carries figures its repair
+  round is about to correct, and nobody may be shown a number the build is about to
+  change.
+
+  The renderer paints that shape node by node. A node the build has not filled in
+  yet — a name and a place, no props — now holds its own silhouette instead of
+  nothing, so a screen written from layout and text grows across paints rather than
+  sitting behind one skeleton until it lands.
+
+  Nothing is persisted. No document keeps a tree; the shape lives in the serving
+  process's memory for the length of the build and nowhere else, so a poll served
+  before the first paint — or by another process — finds nothing and the embed reads
+  its beat bar, exactly as it did before.
+
+### Patch Changes
+
+- 919cd75: A signed-out visitor sees a quiet panel, not a broken agent. When the wire
+  refuses a visitor for missing identity, the overlay's launcher still renders —
+  nothing about wire health hides it — but opening it now shows one
+  host-brandable line ("Sign in to use the agent.", or the new `signedOutNotice`
+  overlay prop) instead of a conversation that can only error. The server's
+  developer-facing resolver message never reaches the surface, and the
+  conversation returns on `vendo:identity-changed` or the first successful wire
+  read. Completes the signed-out state the poller latch started.
+- Updated dependencies [650e5eb]
+- Updated dependencies [0143c4e]
+- Updated dependencies [62c8630]
+- Updated dependencies [0143c4e]
+  - @vendoai/core@0.28.0
+  - @vendoai/apps@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes

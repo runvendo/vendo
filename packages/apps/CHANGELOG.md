@@ -1,5 +1,62 @@
 # @vendoai/apps
 
+## 0.28.0
+
+### Minor Changes
+
+- 0143c4e: The stored `tree` leaves the app document. The model never writes layout and no
+  production door mints a tree-only app — an app IS its `app.tsx`, and its tree is
+  what RENDERING that produces — so the field, the branch that served it, the paint
+  path gated on it and the fact checks that walked it are all deleted.
+
+  What changes for a host: `AppDocument.tree` is gone from the type and the schema,
+  and `.vendoapp` no longer carries it. A row written before this still opens — the
+  field is STRIPPED on the way out of the store and on the way in, never refused —
+  because such a document opens on its `source` like any other. A document with no
+  usable source at all now RESOLVES as `{kind:"failed"}` with a reason naming why,
+  instead of throwing and leaving an embed to poll to its deadline; importing a
+  `.vendoapp` that holds a layout and no source is refused in the same words rather
+  than minting a row that can never open.
+
+  BREAKING for a host's own checks: a check that read `document.tree` reads
+  `undefined` now and will never see a tree there again. The rendered tree moves
+  onto `CheckInput.renderedTree`, beside `document` and `request`, where it belongs —
+  it is what the person is about to see, not something a document carries — and
+  every such check must move to that field.
+
+  The tree as a RENDER language is untouched — `UIPayload`/`TreeNode`, the
+  renderer, the streamed view parts, the render seam, and `ui: "tree"` as the
+  surface kind all stay exactly as they were.
+
+- 0143c4e: An embed watching a code-first build now paints the app TAKING SHAPE instead of a
+  bar. `GET /apps/:id/open?pending=1` carries the `tree` it always had room for, and
+  what fills it is the render the build already made: a code-first build renders its
+  half-written `app.tsx` on every landed commit to decide whether anything may paint
+  at all, and that render's SHAPE is now offered to the build-window poll.
+
+  Geometry only, through the same whitelist that shipped with the wire field — node
+  ids, component names and nesting, tagged `streaming`. No props, no resolved data,
+  no interactive VM, no component sources: a build's draft carries figures its repair
+  round is about to correct, and nobody may be shown a number the build is about to
+  change.
+
+  The renderer paints that shape node by node. A node the build has not filled in
+  yet — a name and a place, no props — now holds its own silhouette instead of
+  nothing, so a screen written from layout and text grows across paints rather than
+  sitting behind one skeleton until it lands.
+
+  Nothing is persisted. No document keeps a tree; the shape lives in the serving
+  process's memory for the length of the build and nowhere else, so a poll served
+  before the first paint — or by another process — finds nothing and the embed reads
+  its beat bar, exactly as it did before.
+
+### Patch Changes
+
+- Updated dependencies [650e5eb]
+- Updated dependencies [0143c4e]
+- Updated dependencies [62c8630]
+  - @vendoai/core@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes
