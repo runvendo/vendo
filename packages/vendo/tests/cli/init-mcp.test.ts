@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { doorWellKnownPaths } from "../../src/door-paths.js";
+import { compositionSpecifier, routeSource } from "../../src/cli/init-scaffolds.js";
 import { generateServiceKey, mcpStepLines, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
 
 const cleanup: string[] = [];
@@ -13,10 +14,17 @@ afterEach(async () => {
 
 const clerk = { preset: "clerk", dependency: "@clerk/nextjs" } as const;
 
+/** How the discovery route reaches the composition module. Assembled rather
+    than written literally: an escaping relative specifier spelled inline reads
+    to the dependency guard as a real import. */
+const COMPOSITION_SPECIFIER = ["..", "..", "..", "lib", "vendo"].join("/");
+
 function plan(overrides: Partial<McpPlanInput> = {}): McpPlan {
   return planMcp({
     root: "/host",
     appDir: "/host/app",
+    composition: "/host/lib/vendo.ts",
+    compositionSpecifier: COMPOSITION_SPECIFIER,
     framework: "next",
     authWired: clerk,
     serverActions: true,
@@ -29,38 +37,31 @@ function plan(overrides: Partial<McpPlanInput> = {}): McpPlan {
 }
 
 describe("planMcp — the files", () => {
-  it("writes the composition and the origin-root discovery route alongside a thin route", () => {
-    const { changes, routeSource } = plan();
-    expect(changes.map((change) => change.path)).toEqual([
-      "app/api/vendo/[...vendo]/vendo.ts",
-      "app/.well-known/[...vendo]/route.ts",
-    ]);
-    // A Next.js route module may export only route handlers, so the route is
-    // thin and the composition lives next door.
-    expect(routeSource).toContain(`import { vendo } from "./vendo";`);
-    expect(routeSource).not.toMatch(/import\s*\{[^}]*\bcreateVendo\b/);
+  it("adds only the origin-root discovery route: the composition it opens is the one the wire route already imports", () => {
+    const { changes, compositionSource } = plan();
+    expect(changes.map((change) => change.path)).toEqual(["app/.well-known/[...vendo]/route.ts"]);
+    expect(compositionSource).toContain("export const vendo = createVendo({");
   });
 
-  it("opens the door in the composition it authors, with the preset that carries the oauth seam", () => {
-    const [composition] = plan().changes;
-    expect(composition!.after).toContain(`import { clerk } from "@vendoai/vendo/auth/clerk";`);
-    expect(composition!.after).toContain("auth: clerk(),");
-    expect(composition!.after).toContain("mcp: true,");
-    expect(composition!.after).toContain("export const vendo = createVendo({");
+  it("opens the door in that composition, with the preset that carries the oauth seam", () => {
+    const composition = plan().compositionSource!;
+    expect(composition).toContain(`import { clerk } from "@vendoai/vendo/auth/clerk";`);
+    expect(composition).toContain("auth: clerk(),");
+    expect(composition).toContain("mcp: true,");
   });
 
   it("points the discovery route at the SAME instance the wire serves", () => {
-    const wellKnown = plan().changes[1]!;
+    const wellKnown = plan().changes[0]!;
     // Instance identity is how wellKnownVendoHandler resolves its path set
     // (server.ts:447-452) — a second createVendo() here 404s every path.
-    expect(wellKnown.after).toContain(`import { vendo } from "../../api/vendo/[...vendo]/vendo";`);
+    expect(wellKnown.after).toContain(`import { vendo } from ${JSON.stringify(COMPOSITION_SPECIFIER)};`);
     expect(wellKnown.after).not.toMatch(/import\s*\{[^}]*\bcreateVendo\b/);
     expect(wellKnown.after).toContain("export const { GET, POST } = wellKnownVendoHandler(vendo);");
   });
 
   it("imports the generated action map only when the host has server actions", () => {
-    expect(plan().changes[0]!.after).toContain(`import { serverActions } from "./vendo-actions";`);
-    expect(plan({ serverActions: false }).changes[0]!.after).not.toContain("./vendo-actions");
+    expect(plan().compositionSource).toContain(`import { serverActions } from "./vendo-actions";`);
+    expect(plan({ serverActions: false }).compositionSource).not.toContain("./vendo-actions");
   });
 });
 
@@ -69,7 +70,7 @@ describe("planMcp — what it refuses to write", () => {
     const blocked = plan({ authWired: null });
     expect(blocked.blocked).toMatch(/cannot open without one/);
     expect(blocked.changes).toEqual([]);
-    expect(blocked.routeSource).toBeNull();
+    expect(blocked.compositionSource).toBeNull();
     expect(blocked.steps).toEqual([]);
   });
 
@@ -86,8 +87,8 @@ describe("planMcp — the service key", () => {
   it("generates and wires one under local posture", () => {
     const local = plan({ serviceKey: true });
     expect(local.serviceKeyValue).toMatch(/^[0-9a-f]{64}$/);
-    expect(local.changes[0]!.after).toContain("const serviceKey = process.env.VENDO_SERVICE_KEY");
-    expect(local.changes[0]!.after).toContain(`mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },`);
+    expect(local.compositionSource).toContain("const serviceKey = process.env.VENDO_SERVICE_KEY");
+    expect(local.compositionSource).toContain(`mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },`);
     expect(local.steps.at(-1)).toContain("/api/vendo/mcp/token");
   });
 
@@ -98,8 +99,8 @@ describe("planMcp — the service key", () => {
   it("generates nothing under broker posture and points at the console instead", () => {
     const broker = plan({ serviceKey: true, posture: "broker" });
     expect(broker.serviceKeyValue).toBeUndefined();
-    expect(broker.changes[0]!.after).toContain("mcp: true,");
-    expect(broker.changes[0]!.after).not.toContain("serviceAuth");
+    expect(broker.compositionSource).toContain("mcp: true,");
+    expect(broker.compositionSource).not.toContain("serviceAuth");
     expect(broker.steps.at(-1)).toContain("console's keys page");
   });
 
@@ -219,9 +220,15 @@ describe("the generated MCP door answers every well-known path (seam)", () => {
     // imports, and `@vendoai/vendo/*` off a real node_modules link.
     const root = await mkdtemp(join(PACKAGE_ROOT, ".mcp-seam-"));
     cleanup.push(root);
+    const routePath = join(root, "app", "api", "vendo", "[...vendo]", "route.ts");
+    const composition = join(root, "lib", "vendo.ts");
+    // The specifiers come from the SAME helper init uses, so a change that
+    // makes the route unable to reach the composition fails here.
     const built = planMcp({
       root,
       appDir: join(root, "app"),
+      composition,
+      compositionSpecifier: await compositionSpecifier(root, join(root, "app", ".well-known", "[...vendo]")),
       framework: "next",
       authWired: clerk,
       serverActions: false,
@@ -230,9 +237,9 @@ describe("the generated MCP door answers every well-known path (seam)", () => {
       serviceKey: true,
       baseUrl: BASE_URL,
     });
-    const routePath = join(root, "app", "api", "vendo", "[...vendo]", "route.ts");
     const files = [
-      { absolute: routePath, after: built.routeSource! },
+      { absolute: routePath, after: routeSource(await compositionSpecifier(root, dirname(routePath))) },
+      { absolute: composition, after: built.compositionSource! },
       ...built.changes,
     ];
     for (const file of files) {

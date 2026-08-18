@@ -12,10 +12,16 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
 });
 
+/** A resolved model credential, pinned. Every fixture below is about WIRING,
+ *  and a host with no model now carries a visible E-MODEL-001 warning — which
+ *  would otherwise land in each of those suites' `errors` as noise. The
+ *  credential tests pass their own `env` and override this. */
+const MODEL_PINNED = { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-test" };
+
 /** Doctor is static: the only seam the suite holds is the environment, which
- *  it pins empty so no stray .env file or shell variable decides a check. */
+ *  it pins so no stray .env file or shell variable decides a check. */
 async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number> {
-  return runDoctor({ env: {}, ...options });
+  return runDoctor({ env: MODEL_PINNED, ...options });
 }
 
 async function healthy(base?: string): Promise<string> {
@@ -91,6 +97,26 @@ async function customHost(wired: boolean): Promise<string> {
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
   await write(".vendo/data/.gitignore", "*\n");
   return root;
+}
+
+interface CodedCheck {
+  id: string;
+  status: string;
+  message: string;
+  error_code?: string;
+  fix_ref?: string;
+}
+
+/** The machine surface, parsed: --json prints exactly one object. */
+async function jsonChecks(options: Parameters<typeof runDoctor>[0]): Promise<{ exit: number; report: { exit: number; wired: boolean; checks: CodedCheck[] } }> {
+  const logs: string[] = [];
+  const exit = await doctor({
+    json: true,
+    output: { log: (m) => logs.push(m), error: () => {} },
+    telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    ...options,
+  });
+  return { exit, report: JSON.parse(logs[0]!) as { exit: number; wired: boolean; checks: CodedCheck[] } };
 }
 
 function output(): { logs: string[]; errors: string[]; sink: { log(message: string): void; error(message: string): void } } {
@@ -337,6 +363,66 @@ describe("vendo doctor", () => {
   });
 });
 
+/**
+ * The install's own answer to "how will people reach the agent?", which init
+ * records in `.vendo/install.json`. An agent-loop or MCP install mounts no
+ * Vendo UI by design, so E-WIRE-004 and E-WIRE-006 failed a host that was
+ * correct by construction — doctor could not be a gate for either path.
+ */
+describe("vendo doctor reads the recorded use case", () => {
+  /** A host with the wire route and NO client mount at all. */
+  async function uiLess(useCase?: string): Promise<string> {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"), "export default ({children}) => <html>{children}</html>;");
+    if (useCase !== undefined) {
+      await writeFile(join(root, ".vendo", "install.json"), JSON.stringify({ format: "vendo/install@1", useCase }));
+    }
+    return root;
+  }
+
+  it.each(["agent-loop", "mcp"])("skips the mounted-UI checks for a %s install and says why", async (useCase) => {
+    const { exit, report } = await jsonChecks({ targetDir: await uiLess(useCase) });
+    expect(exit).toBe(0);
+    expect(report.checks.map((check) => check.error_code)).not.toContain("E-WIRE-004");
+    expect(report.checks.map((check) => check.error_code)).not.toContain("E-WIRE-006");
+    // The skip is stated, not silent — an absent check with no explanation is
+    // indistinguishable from a check that never ran.
+    expect(report.checks.find((check) => check.id === "wiring/use-case"))
+      .toMatchObject({ status: "ok", message: expect.stringContaining(`use case ${useCase}`) });
+    // Everything that is NOT about a mounted surface still runs.
+    expect(report.checks.find((check) => check.id === "wiring/next-route")).toMatchObject({ status: "ok" });
+  });
+
+  it("keeps failing an embedded install, and an install that recorded nothing at all", async () => {
+    for (const root of [await uiLess("embedded"), await uiLess()]) {
+      const { exit, report } = await jsonChecks({ targetDir: root });
+      expect(exit).toBe(1);
+      expect(report.checks.map((check) => check.error_code)).toEqual(
+        expect.arrayContaining(["E-WIRE-004", "E-WIRE-006"]),
+      );
+      expect(report.checks.find((check) => check.id === "wiring/use-case")).toBeUndefined();
+    }
+  });
+
+  it("skips the client half on Express and unknown-framework hosts too", async () => {
+    for (const host of [await expressHost(false), await customHost(false)]) {
+      await writeFile(join(host, ".vendo", "install.json"), JSON.stringify({ format: "vendo/install@1", useCase: "agent-loop" }));
+      const { report } = await jsonChecks({ targetDir: host });
+      const codes = report.checks.map((check) => check.error_code);
+      expect(codes).not.toContain("E-WIRE-002");
+      expect(codes).not.toContain("E-WIRE-008");
+      expect(codes).not.toContain("E-WIRE-006");
+    }
+  });
+
+  it("ignores a malformed or unknown recorded value rather than trusting it", async () => {
+    const root = await uiLess("who-knows");
+    expect((await jsonChecks({ targetDir: root })).exit).toBe(1);
+    await writeFile(join(root, ".vendo", "install.json"), "{ not json");
+    expect((await jsonChecks({ targetDir: root })).exit).toBe(1);
+  });
+});
+
 describe("vendo doctor (model credentials + --json + cloud)", () => {
   it("states the winning model credential rung and any active VENDO_MODEL_* pins — nothing more", async () => {
     const messages = output();
@@ -370,11 +456,16 @@ describe("vendo doctor (model credentials + --json + cloud)", () => {
     expect(bare.logs).toContain("ok: model credential: explicit ANTHROPIC_API_KEY (anthropic)");
   });
 
-  it("reports NO winning credential for a bare provider key — doctor tells the runtime's truth", async () => {
+  it("reports NO winning credential for a bare provider key — as a VISIBLE warning that still exits 0", async () => {
     // The selection law's honesty requirement: doctor reads the same resolver the
     // runtime rides, so a host whose only key is ANTHROPIC_API_KEY must be told it
     // has no model — not blessed with "ok: model credential". Blessing it is how a
     // certified-healthy composition failed its first turn.
+    //
+    // It rides `warn`, not `note`: notes are suppressed under --json, so the one
+    // agent-facing surface saw a green report on a host that could answer
+    // nothing. Still exit 0 — production keys legitimately live where doctor
+    // cannot read them.
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
@@ -382,10 +473,23 @@ describe("vendo doctor (model credentials + --json + cloud)", () => {
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
-    expect(messages.logs).toContain(
-      "model credential: none found — set a model key or VENDO_API_KEY, or the agent cannot answer",
-    );
+    expect(messages.errors.join("\n")).toContain("warning: model credential: none found");
     expect(messages.logs.some((line) => line.startsWith("ok: model credential:"))).toBe(false);
+
+    // …and the machine surface carries the code and its fix_ref.
+    const logs: string[] = [];
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      json: true,
+      output: { log: (m) => logs.push(m), error: () => {} },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const report = JSON.parse(logs[0]!) as { exit: number; wired: boolean; checks: Array<{ id: string; status: string; error_code?: string; fix_ref?: string }> };
+    const credential = report.checks.find((check) => check.id === "model/credential");
+    expect(credential).toMatchObject({ status: "warning", error_code: "E-MODEL-001", fix_ref: doctorFixRef("E-MODEL-001") });
+    expect(report.wired).toBe(true);
+    expect(report.exit).toBe(0);
   });
 
   it("emits one machine-readable JSON object a script can consume", async () => {
@@ -538,25 +642,6 @@ describe("vendo doctor (model credentials + --json + cloud)", () => {
  *  full `fix_ref` URL into docs.vendo.run/agents/verify. Passing checks carry
  *  neither (nothing to fix). */
 describe("vendo doctor error codes + fix_refs", () => {
-  interface CodedCheck {
-    id: string;
-    status: string;
-    message: string;
-    error_code?: string;
-    fix_ref?: string;
-  }
-
-  async function jsonChecks(options: Parameters<typeof runDoctor>[0]): Promise<{ exit: number; report: { exit: number; wired: boolean; checks: CodedCheck[] } }> {
-    const logs: string[] = [];
-    const exit = await doctor({
-      json: true,
-      output: { log: (m) => logs.push(m), error: () => {} },
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-      ...options,
-    });
-    return { exit, report: JSON.parse(logs[0]!) as { exit: number; wired: boolean; checks: CodedCheck[] } };
-  }
-
   it("stamps every failing check with a registered error_code and a full fix_ref URL", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-codes-broken-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -650,6 +735,10 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(warning).toMatchObject({ status: "warning", error_code: "E-TOOLS-004" });
     expect(warning?.message).toContain("inputs 1/1 · outputs 0/1");
     expect(warning?.message).toContain("host_invoices_list");
+    // The command that actually does it. Doctor's audience is largely agents
+    // and CI, where a bare `vendo sync` skips the judgment pass and the
+    // advice never lands.
+    expect(warning?.message).toContain("run `vendo sync --ai`");
 
     const coveredRoot = await healthy();
     await writeFile(join(coveredRoot, ".vendo", "tools.json"),
@@ -658,6 +747,21 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(covered.report.checks.find((check) => check.error_code === "E-TOOLS-004")).toBeUndefined();
     expect(covered.report.checks.find((check) => check.id === "tools/schemas"))
       .toMatchObject({ status: "ok", message: "catalog: inputs 1/1 · outputs 1/1" });
+  });
+
+  it("names `vendo sync --ai` in the ungraded-catalog fix too", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "ungraded",
+        inputSchemaSource: "declared", outputSchemaSource: "declared",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    const graded = (await jsonChecks({ targetDir: root })).report.checks.find((check) => check.id === "tools/graded");
+    expect(graded).toMatchObject({ status: "warning", error_code: "E-TOOLS-003" });
+    expect(graded?.message).toContain("run `vendo sync --ai` with a model key to grade");
   });
 
   it("warns E-TOOLS-005 naming each tool the merge left off, and keeps the exit green", async () => {

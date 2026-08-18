@@ -153,7 +153,10 @@ describe("runCloudStep", () => {
     });
     expect(asked).toEqual([{
       question: "How do you want to run models?",
-      values: ["cloud", "byo", "later"],
+      // "vendo-key" is the answer for someone who ALREADY has one: the device
+      // login mints a key, so without it they grow a second one or quit the
+      // wizard to re-run with --cloud-key.
+      values: ["cloud", "vendo-key", "byo", "later"],
     }]);
     // "Decide later" leaves a fully working keyless install — OSS law intact.
     expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
@@ -204,6 +207,50 @@ describe("runCloudStep", () => {
     const joined = messages.logs.join("\n");
     expect(joined).toContain("ANTHROPIC_API_KEY saved to .env.local (…efgh)");
     expect(joined).not.toContain("sk-ant-api03-abcdefgh");
+  });
+
+  /** "I already have a Vendo key": the device login MINTS one, so without this
+      answer a dev who already has a key either grows a second one or quits the
+      wizard to re-run with --cloud-key. */
+  it("lands a pasted VENDO_API_KEY exactly where the mint would, and never starts a login", async () => {
+    const root = await tempRoot();
+    const messages = output();
+    const result = await runCloudStep({
+      root,
+      output: messages.sink,
+      yes: false,
+      isTty: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      select: async () => "vendo-key",
+      askSecret: async () => goodKey,
+      deviceLogin: async () => { throw new Error("minted a second key"); },
+    });
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${goodKey}`);
+    // wroteEnvLocal is what makes init re-read .env.local, so THIS run's model
+    // passes ride the key just pasted.
+    expect(result).toEqual({ keyPresent: true, keyValid: true, wroteEnvLocal: true });
+    const joined = messages.logs.join("\n");
+    expect(joined).toContain(`VENDO_API_KEY saved to .env.local (…${goodKey.slice(-4)})`);
+    expect(joined).not.toContain(goodKey);
+  });
+
+  it("refuses a paste that is not a Vendo key rather than writing a value nothing can use", async () => {
+    const root = await tempRoot();
+    const messages = output();
+    const result = await runCloudStep({
+      root,
+      output: messages.sink,
+      yes: false,
+      isTty: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      select: async () => "vendo-key",
+      askSecret: async () => "sk-ant-api03-wrong-kind-of-key",
+    });
+    expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
+    await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(messages.errors.join("\n")).toContain("expected vnd_ + 40 hex chars");
   });
 
   it("an unrecognisable key prefix asks which variable rather than guessing one", async () => {

@@ -3,7 +3,7 @@ import { realpath } from "node:fs/promises";
 import { stdin, stdout } from "node:process";
 import { dirname, join, relative, resolve } from "node:path";
 import { ENV_KEY_VARS, type DevCredential } from "../dev-creds/resolve.js";
-import { cloudDoctor, type CloudDoctorResult } from "./cloud/client.js";
+import { cloudDoctor, isVendoKey, type CloudDoctorResult } from "./cloud/client.js";
 import { runDeviceLogin } from "./cloud/device-login.js";
 import type { SelectOption } from "./pretty.js";
 import {
@@ -225,12 +225,15 @@ export interface CloudStepResult {
   wroteKeyVar?: string;
 }
 
-/** The three answers to "how do you want to run models?". */
-export type ModelsAnswer = "cloud" | "byo" | "later";
+/** The four answers to "how do you want to run models?". */
+export type ModelsAnswer = "cloud" | "vendo-key" | "byo" | "later";
 
 const MODELS_QUESTION = "How do you want to run models?";
 const MODELS_OPTIONS: SelectOption[] = [
   { value: "cloud", label: "Vendo Cloud — free key in ~30s", hint: "recommended" },
+  // The device login MINTS a key, so without this a dev who already has one
+  // either grew a second key or quit the wizard to re-run with --cloud-key.
+  { value: "vendo-key", label: "I already have a Vendo key — paste it", hint: "VENDO_API_KEY" },
   { value: "byo", label: "Bring my own key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_…)" },
   { value: "later", label: "Decide later" },
 ];
@@ -330,6 +333,9 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
   if (chosen === "byo" && tty && options.askSecret !== undefined) {
     return pasteProviderKey(options, options.askSecret);
   }
+  if (chosen === "vendo-key" && tty && options.askSecret !== undefined) {
+    return pasteVendoKey(options, options.askSecret);
+  }
   if (chosen !== "cloud") {
     if (tty) {
       output.log("Skipped — run `vendo login` any time; the key lands in .env.local.");
@@ -368,6 +374,33 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
     output.error("Vendo Cloud login did not complete; run `vendo login` and re-run `vendo init`.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
+  return { keyPresent: true, keyValid: true, wroteEnvLocal: true };
+}
+
+/** "I already have a Vendo key" — the same landing as `--cloud-key` and as the
+    mint, through the same writer, so the rest of the run cannot tell the three
+    apart. The shape is checked locally, exactly as `cloudDoctor` checks an
+    ambient one; a key that is well-formed but revoked surfaces on the first
+    real service call, because there is no validate endpoint to ask. */
+async function pasteVendoKey(
+  options: CloudStepOptions,
+  askSecret: NonNullable<CloudStepOptions["askSecret"]>,
+): Promise<CloudStepResult> {
+  const { root, output } = options;
+  const key = (await askSecret("Paste your VENDO_API_KEY — lands in .env.local, never committed:")).trim();
+  if (key === "") {
+    output.log("Skipped — run `vendo login` any time; the key lands in .env.local.");
+    return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
+  }
+  if (!isVendoKey(key)) {
+    output.error("That is not a Vendo key (expected vnd_ + 40 hex chars) — nothing was written. Run `vendo login` to mint one, or re-run with --cloud-key <key>.");
+    return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
+  }
+  await upsertEnvLocal(root, "VENDO_API_KEY", key);
+  output.log(`VENDO_API_KEY saved to .env.local (…${key.slice(-4)})`);
+  await ensureEnvLocalIgnored(root, output);
+  // wroteEnvLocal is what makes the caller re-read .env.local and re-resolve the
+  // credential, so THIS run's model passes already ride the key just pasted.
   return { keyPresent: true, keyValid: true, wroteEnvLocal: true };
 }
 

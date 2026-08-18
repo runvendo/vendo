@@ -15,6 +15,11 @@ import { CLI_VERSION } from "./shared.js";
  *
  * This is the ONE module a CI check enumerates to assert every code has a
  * matching verify-page anchor (no registry rot).
+ *
+ * An AREA groups checks, not severities: E-MODEL-001 is a WARNING (doctor still
+ * exits 0 — a host may keep its key outside the files doctor can read), and it
+ * carries a code for the same reason every other finding does, so an agent can
+ * grep it and follow the fix_ref.
  */
 export const DOCTOR_ERROR_CODES = {
   "E-WIRE-001": "Express server is not wired with createVendo from @vendoai/vendo/server",
@@ -73,6 +78,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-TURN-001": "RETIRED — doctor no longer runs a model turn",
   "E-TURN-002": "RETIRED — doctor no longer runs a model turn",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
+  "E-MODEL-001": "no model credential resolves (the wire is wired, but the agent cannot answer a single turn)",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
   "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
