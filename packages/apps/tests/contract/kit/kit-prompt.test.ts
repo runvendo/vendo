@@ -29,7 +29,7 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
   // preamble, because 31 restatements would cost a fifth of the catalog.
   it("teaches tone and density in the preamble and never in a component's prop list", () => {
     const preamble = kitPrompt();
-    expect(preamble).toContain("Two adjectives.");
+    expect(preamble).toContain("## Two adjectives");
     // …and the preamble no longer claims them for components that drop them.
     expect(preamble).not.toContain("on every component");
     for (const name of ["DataTable", "Stat", "Card", "Divider"]) {

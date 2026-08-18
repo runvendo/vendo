@@ -8,19 +8,31 @@ import { KIT_SPECS, kitSpec } from "../../../src/contract/kit/specs.js";
 const body = (options: Parameters<typeof catalogPrompt>[0] = {}) =>
   catalogPrompt({ ...options, omitPreamble: true }).split("\n");
 
-describe("catalogPrompt() — the whole catalog, one line per component", () => {
+/** One component's whole entry, as the model reads it. */
+const entry = (name: string, options: Parameters<typeof catalogPrompt>[0] = {}) =>
+  body({ ...options, only: [name] }).join("\n");
+
+describe("catalogPrompt() — the whole catalog, one entry per component", () => {
   // The FORMAT is pinned against the spec's own prose rather than a copy of it:
   // a summary reworded in specs.ts is not a regression here, a changed shape is.
-  it("renders a component as name, summary, then typed props by class", () => {
-    expect(body({ only: ["Money"] })[0]).toBe(
-      `<Money> ${kitSpec("Money")!.summary} · data: value: number · config: currency: string`,
-    );
+  //
+  // The whole entry, line for line: the run-on line this replaced (everything
+  // separated by mid-dots, the example jammed underneath) is exactly what a
+  // partial assertion would let back in.
+  it("renders a component as a heading, its summary, then typed props by class", () => {
+    expect(body({ only: ["Money"] })).toEqual([
+      "### <Money>",
+      kitSpec("Money")!.summary,
+      "- data: `value: number`",
+      "- config: `currency: string`",
+      `- example: \`${promptExamples(kitSpec("Money")!)[0]}\``,
+    ]);
   });
 
   it("marks a required prop with `!` and leaves an optional one bare", () => {
-    const line = body({ only: ["Stat"] })[0]!;
-    expect(line).toContain("data: value!: number|string");
-    expect(line).toContain("copy: label!: string, trend: string");
+    const stat = entry("Stat");
+    expect(stat).toContain("- data: `value!: number|string`");
+    expect(stat).toContain("- copy: `label!: string`, `trend: string`");
   });
 
   /**
@@ -38,7 +50,7 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
   it("renders a prop's type from its own schema, enum values and all", () => {
     const mode = kitSpec("DateTime")!.props["mode"]!.schema as z.ZodEnum<[string, ...string[]]>;
     const fromSchema = mode.options.map((value) => JSON.stringify(value)).join("|");
-    expect(body({ only: ["DateTime"] })[0]).toContain(`config: mode: ${fromSchema}`);
+    expect(entry("DateTime")).toContain(`\`mode: ${fromSchema}\``);
     expect(fromSchema).toBe('"date"|"time"|"datetime"|"relative"');
   });
 
@@ -49,62 +61,65 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
     // The union is part of the shape: a column may be the bare KEY the preamble
     // teaches, or the described object — printing only one half would send the
     // model writing the other into a prop it thinks is illegal.
-    expect(body({ only: ["DataTable"] })[0]).toContain("columns: (string|{key?, label?, format?, align?, cell?})[]");
-    expect(body({ only: ["Button"] })[0]).toContain("onClick: fn");
-    expect(body({ only: ["Surface"] })[0]).toContain("header: element");
+    expect(entry("DataTable")).toContain("`columns: (string|{key?, label?, format?, align?, cell?})[]`");
+    expect(entry("Button")).toContain("`onClick: fn`");
+    expect(entry("Surface")).toContain("`header: element`");
   });
 
-  /** ONE example per component, indented under its line — the half a prop list
+  /** ONE example per component, last line of its entry — the half a prop list
    *  cannot give, and taken from the same place `kitPrompt` takes it, so the two
    *  prompts can never show the model different idioms. */
   it("carries exactly one worked example per component", () => {
-    expect(body().filter((line) => line.startsWith("  "))).toHaveLength(KIT_SPECS.length);
-    expect(body({ only: ["Money"] })[1]).toBe(`  ${promptExamples(kitSpec("Money")!)[0]}`);
+    expect(body().filter((line) => line.startsWith("- example: "))).toHaveLength(KIT_SPECS.length);
+    expect(body({ only: ["Money"] }).at(-1)).toBe(`- example: \`${promptExamples(kitSpec("Money")!)[0]}\``);
   });
 
-  it("leads with the data props — law 1 is the one a line must not bury", () => {
-    const line = body({ only: ["DataTable"] })[0]!;
-    expect(line.indexOf("data: rows!")).toBeLessThan(line.indexOf("config:"));
-    expect(line.indexOf("config:")).toBeLessThan(line.indexOf("copy:"));
+  it("leads with the data props — law 1 is the one an entry must not bury", () => {
+    const lines = body({ only: ["DataTable"] });
+    const at = (prefix: string) => lines.findIndex((line) => line.startsWith(prefix));
+    expect(at("- data: `rows!")).toBeGreaterThan(-1);
+    expect(at("- data: `rows!")).toBeLessThan(at("- config:"));
+    expect(at("- config:")).toBeLessThan(at("- copy:"));
   });
 
   // Each adjective sits on the props of the components that read it so validation
-  // admits it there; the preamble teaches it once, and restating it on 39 lines
+  // admits it there; the preamble teaches it once, and restating it in 39 entries
   // would undo the compression the format exists for.
   it("never spends a line on the shared adjectives", () => {
     for (const name of ["DataTable", "Stat", "Card", "Divider"]) {
-      const line = body({ only: [name] })[0]!;
-      expect(line, name).not.toContain("tone");
-      expect(line, name).not.toContain("density");
+      const props = body({ only: [name] }).filter((line) => /^- (data|config|copy):/.test(line)).join("\n");
+      expect(props, name).not.toContain("tone");
+      expect(props, name).not.toContain("density");
     }
   });
 
-  it("carries every slot with its doc, and marks the per-row ones", () => {
-    const line = body({ only: ["DataTable"] })[0]!;
-    expect(line).toContain(`slot cell (per row): ${kitSpec("DataTable")!.slots!["cell"]!.doc}`);
+  it("carries every slot with its doc on its own line, and marks the per-row ones", () => {
+    expect(entry("DataTable")).toContain(`- slot \`cell\` (per row): ${kitSpec("DataTable")!.slots!["cell"]!.doc}`);
     // A non-per-row slot carries its doc WITHOUT the marker — without this the
     // per-row half is unfalsifiable, since marking every slot would still pass.
-    const timeline = body({ only: ["Timeline"] })[0]!;
-    expect(timeline).toContain(`slot marker: ${kitSpec("Timeline")!.slots!["marker"]!.doc}`);
-    expect(timeline).not.toContain("slot marker (per row)");
+    const timeline = entry("Timeline");
+    expect(timeline).toContain(`- slot \`marker\`: ${kitSpec("Timeline")!.slots!["marker"]!.doc}`);
+    expect(timeline).not.toContain("slot `marker` (per row)");
   });
 
-  it("teaches every registered component, one line each, and nothing else", () => {
-    const lines = body();
-    const taught = lines.filter((line) => line.startsWith("<")).map((line) => line.slice(1, line.indexOf(">")));
+  it("teaches every registered component, one entry each, and nothing else", () => {
+    const taught = body()
+      .filter((line) => line.startsWith("### <"))
+      .map((line) => line.slice("### <".length, line.indexOf(">")));
     expect(taught).toEqual(KIT_SPECS.map((spec) => spec.name));
   });
 
   it("merges the host's own components into the one list, marked [host]", () => {
     const host = [{ name: "AccountCard", description: "A Maple account with its balance." }];
     const lines = body({ host });
-    expect(lines).toContain("<AccountCard> [host] A Maple account with its balance.");
-    // One list: the host entry sits among the Kit's lines, not under a heading.
-    expect(lines.filter((line) => line.startsWith("<"))).toHaveLength(KIT_SPECS.length + 1);
+    expect(lines).toContain("### <AccountCard> [host]");
+    expect(lines).toContain("A Maple account with its balance.");
+    // One list: the host entry sits among the Kit's entries, not under a heading.
+    expect(lines.filter((line) => line.startsWith("### <"))).toHaveLength(KIT_SPECS.length + 1);
     // …and `only` scopes both halves the same way.
-    expect(body({ host, only: ["Money"] }).filter((line) => line.startsWith("<"))).toHaveLength(1);
-    expect(body({ host, only: ["AccountCard"] })[0]).toBe(
-      "<AccountCard> [host] A Maple account with its balance.",
+    expect(body({ host, only: ["Money"] }).filter((line) => line.startsWith("### <"))).toHaveLength(1);
+    expect(entry("AccountCard", { host })).toBe(
+      "### <AccountCard> [host]\nA Maple account with its balance.",
     );
   });
 
@@ -127,23 +142,24 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
   });
 
   /**
-   * THE BUDGET, re-measured 2026-08-18 when the Kit's private dialect came out:
-   * 54 bricks and 54 examples cost 26,693 characters (~6.7k tokens), against
-   * `kitPrompt`'s 36,183 for the same bricks as a section apiece.
+   * THE BUDGET, re-measured 2026-08-18 when the run-on line became an entry:
+   * 54 bricks cost 28,355 characters (~7.1k tokens), against `kitPrompt`'s
+   * 36,376 for the same bricks as a section apiece.
    *
-   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 460
-   * characters a brick — its line AND its example — the 55-brick kit still fits
-   * (25,300), while a brick that grew past 460 would break that promise long
-   * before the total noticed. Both numbers move DELIBERATELY, in a commit that
-   * says why, and this one is the dialect: an example that writes a real closure
-   * (`onSubmit={() => tools.create_client({ name })}`) is longer than one that
-   * wrote a tool's name in a string, and the natural form is the point.
+   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 490
+   * characters a brick — heading, summary, props, slots AND example — the
+   * 55-brick kit still fits (26,950 plus the preamble), while a brick that grew
+   * past 490 would break that promise long before the total noticed.
+   *
+   * Both numbers move DELIBERATELY, in a commit that says why, and this move is
+   * the LAYOUT: 460 bought a run-on line per brick, which is exactly what came
+   * back as unreadable. A heading and a line break per kind of fact costs ~28
+   * characters a brick, and readability is what the extra buys.
    */
   it("stays under the section-per-brick catalog, with room for the 55-brick kit", () => {
     const prompt = catalogPrompt();
     expect(prompt.length).toBeLessThanOrEqual(32_000);
     expect(prompt.length).toBeLessThan(kitPrompt().length);
-    const lines = body().filter((line) => line.startsWith("<") || line.startsWith("  "));
-    expect(lines.join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(460);
+    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(490);
   });
 });

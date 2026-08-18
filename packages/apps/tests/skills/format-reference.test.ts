@@ -185,17 +185,18 @@ describe("the reference only teaches what a screen really has", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("unless its own line says otherwise");
   });
 
-  it("lands the section in the reference, where the layout paragraph points", () => {
+  it("lands the section in the reference, where the layout bullet points", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("# The host's CSS variables");
-    expect(VENDO_FORMAT_REFERENCE).toContain("is listed at the end of this file");
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/is listed at the end of this\s+file/);
   });
 
-  it("carries the whole catalog, one line per component, generated from the specs", () => {
+  it("carries the whole catalog, one entry per component, generated from the specs", () => {
     // Everything that ships with the format has to be IN here, or its props are
     // unknowable. The host's own components are pointed at from the skill body,
     // which is the one place that names their directory.
     expect(VENDO_FORMAT_REFERENCE).toContain("# The Kit");
-    expect(VENDO_FORMAT_REFERENCE).toMatch(/^<DataTable> .* · data: rows!/m);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/^### <DataTable>$/m);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/^- data: `rows!/m);
     expect(VENDO_FORMAT_REFERENCE).not.toContain("host/components");
   });
 

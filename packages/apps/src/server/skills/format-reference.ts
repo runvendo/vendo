@@ -29,9 +29,10 @@ const APP_FILE: (typeof HOT_PATH_FILES)[number] = SCREEN_FILE;
 
 const CHAPTER = `# The screen file
 
-An app is ONE file — \`${APP_FILE}\`, in the app's own directory
-\`user/apps/app_<name>/\` — holding a React component, default-exported. Saving it
-repaints the person's screen.
+- An app is ONE file: \`${APP_FILE}\`, in the app's own directory
+  \`user/apps/app_<name>/\`.
+- It holds a React component, default-exported.
+- Saving it repaints the person's screen.
 
 \`\`\`tsx
 import { useState } from "react";
@@ -47,8 +48,9 @@ Those two imports are everything there is. Nothing else can be loaded.
 - Synchronous, and it hands back the tool's result EXACTLY as the tool returns
   it — read the field names off the tool's own schema.
 - The input is any value you have: a piece of state, something you computed, a
-  field off another query. Read the same tool twice with different inputs where
-  the screen needs two answers.
+  field off another query.
+- Read the same tool twice with different inputs where the screen needs two
+  answers.
 
 ## Actions — \`tools.<tool_name>(args)\`
 
@@ -62,12 +64,13 @@ Those two imports are everything there is. Nothing else can be loaded.
   confirm step of your own: no "are you sure" panel, no second button, no
   \`confirming\` state.
 - The exception: a confirmation the person ASKED for, or one press that fires a
-  whole batch of calls. That one is part of their app — a \`<Modal>\` saying how
-  many, with the button that runs the loop LAST in its \`footer\` (that footer is
-  a right-aligned row, so the last button is the one a person reaches for). A
-  guarded host still asks once per call on top of it, and that is the trade:
-  only your Modal can say how many, and being asked twice beats a batch that
-  goes out silently.
+  whole batch of calls. That one is part of their app.
+  - Write it as a \`<Modal>\` saying how many, with the button that runs the loop
+    LAST in its \`footer\` — that footer is a right-aligned row, so the last
+    button is the one a person reaches for.
+  - A guarded host still asks once per call on top of it, and that is the trade:
+    only your Modal can say how many, and being asked twice beats a batch that
+    goes out silently.
 
 ## Components and plain HTML
 
@@ -78,10 +81,11 @@ Those two imports are everything there is. Nothing else can be loaded.
   offer.
 - Display tags take children and an inline \`style\`, nothing else — no handlers,
   so anything that ACTS is a component.
-- Whatever you build yourself, style it off the host's own CSS variables
+- Whatever you build yourself, style off the host's own CSS variables
   (\`var(--vendo-color-accent)\`, \`var(--vendo-density-content-gap)\`), never
-  hard-coded values — a hard-coded color is your color, not the product's; every
-  variable there is, and what each one means, is listed at the end of this file.
+  hard-coded values: a hard-coded color is your color, not the product's.
+- Every variable there is, and what each one means, is listed at the end of this
+  file.
 - Figures in prose still go through the value components: an amount in a
   sentence is an inline \`<Money>\`, never a \`$\` and a \`toFixed\` you typed —
   those lose the grouping and the host's currency.
@@ -89,7 +93,8 @@ Those two imports are everything there is. Nothing else can be loaded.
 ## The sandbox
 
 - No network, no storage, no timers, no clock: no \`fetch\`, no \`localStorage\`,
-  no \`setTimeout\`, no \`new Date()\`. A style that fetches (\`url(…)\`) is dropped.
+  no \`setTimeout\`, no \`new Date()\`.
+- A style that fetches (\`url(…)\`) is dropped.
 - \`key={…}\` on every row you \`.map\`.
 
 ## State — \`useState\`
@@ -211,11 +216,12 @@ const variablesPromptSection = (): string => `---
 
 # The host's CSS variables
 
-Every one of these is already set on your screen, at this product's own values,
-unless its own line says otherwise. Use the NAME — the values are in the brief,
-and a copied value stops being the product's the moment its theme changes. A name
-outside this list resolves to nothing and the declaration it was in silently
-falls back.
+- Every one of these is already set on your screen, at this product's own values,
+  unless its own line says otherwise.
+- Use the NAME, never a copied value: the values are in the brief, and a copy
+  stops being the product's the moment its theme changes.
+- A name outside this list resolves to nothing, and the declaration it was in
+  silently falls back.
 
 ${VENDO_THEME_VARIABLE_NAMES.map((name) => `\`${name}\` — ${VARIABLE_MEANINGS[name]}`).join("\n")}
 `;

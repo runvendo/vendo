@@ -58,7 +58,6 @@ import {
   inputSchemaIsBlind,
   modelToolDescription,
   UNKNOWN_INPUT_SCHEMA_NOTE,
-  UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
 import {
   queryKey,
@@ -310,22 +309,26 @@ const appDirectory = (appId: AppId): string => `/user/apps/${appId}`;
  * the tools this loop may never call, but which an `on*` attribute may name. That
  * is the only part of the registry the model's own tool list cannot tell it about.
  *
- * EVERY tool gets both lines. A slot nothing could read prints its unknown
- * sentence rather than nothing (outputs) or a bare `{}` (inputs): `{}` reads as
- * "takes no arguments", so a blind tool would be called with none. A DECLARED
- * empty input still prints its schema — that IS the host's contract.
+ * WHAT IT RETURNS IS NOT HERE. The briefing pack's shape card already carries
+ * every tool's response, in this host's own units and annotated with them
+ * (`AppsRuntime.toolShapeBrief`, TOOL RESPONSE SHAPES) — and it rides the same
+ * prompt, so a raw `returns:` JSON beside it was the same shape twice, the second
+ * time worse. The INPUT stays: nothing else in the prompt says what a handler
+ * must send, and a button wired with guessed argument names is the one failure
+ * this section exists to prevent.
+ *
+ * A slot nothing could read prints its unknown sentence rather than a bare `{}`:
+ * `{}` reads as "takes no arguments", so a blind tool would be called with none.
+ * A DECLARED empty input still prints its schema — that IS the host's contract.
  */
 export function toolBrief(wireable: readonly ToolListing[]): string {
   if (wireable.length === 0) return "This product has no tools your screen could call.";
   return wireable
     .map((listing) => {
-      const shape = listing.outputSchema === undefined
-        ? `\n  ${UNKNOWN_OUTPUT_SHAPE_NOTE}`
-        : `\n  returns: ${JSON.stringify(listing.outputSchema)}`;
       const input = inputSchemaIsBlind(listing.inputSchema)
         ? `\n  ${UNKNOWN_INPUT_SCHEMA_NOTE}`
         : `\n  input: ${JSON.stringify(listing.inputSchema)}`;
-      return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}`;
+      return `- ${listing.name} — ${modelToolDescription(listing)}${input}`;
     })
     .join("\n");
 }
@@ -595,9 +598,10 @@ const judgeScreen = async (
  *  where it always did. */
 const surfaceNote = (viewport: ScreenInput["viewport"]): string => {
   if (viewport === undefined) return "";
-  return `\n\nYou are writing into \`${viewport.width}×${viewport.height}\` CSS pixels, and nothing wider than that is
-on the person's screen. Fewer, richer columns rather than a table that runs off
-the edge, and a stat grid that wraps rather than a fixed count that clips.`;
+  return `\n- You are writing into \`${viewport.width}×${viewport.height}\` CSS pixels — nothing wider than that is on
+  the person's screen.
+- Fewer, richer columns rather than a table that runs off the edge, and a stat
+  grid that wraps rather than a fixed count that clips.`;
 };
 
 /**
@@ -611,51 +615,56 @@ the edge, and a stat grid that wraps rather than a fixed count that clips.`;
  */
 const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[]): string => `# In this loop
 
-You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
-above tells you to read is already below, and everything it tells you to write goes
-through the tools below.
+- You have no machine: no shell, no \`Task\`, no files on disk.
+- Everything the skill above tells you to read is already below, and everything it
+  tells you to write goes through the tools below.
+- Build from the components that already exist: this product's own catalog and the
+  standard Kit the manual documents. There is nothing else to import.
+- A value the ask names must be READABLE AS TEXT on the screen — not implied by a
+  chart, not behind a click.
+- Never look for a tool that builds the app for you. There isn't one, and that is
+  deliberate.${surfaceNote(input.viewport)}
 
-Build from the components that already exist: this product's own catalog and the
-standard Kit the manual documents. There is nothing else to import.${surfaceNote(input.viewport)}
+## Your two hands
 
-A value the ask names must be READABLE AS TEXT on the screen — not implied by a
-chart, not behind a click.
-
-- **\`${SAVE_APP_TOOL}\`** saves this app's whole file. Every save that parses
-  repaints the person's screen, so save as you go — a save is cheap and silence is
-  not. Every save is checked as it
-  lands — if something is wrong with it, the save tells you exactly what to fix.
-  It also tells you what the person's screen actually GOT: whether the save
-  painted, and what each of your queries delivered.
-  Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
-  have besides the file. Record what reading the file could not tell them — why
-  you narrowed something, a constraint the tools imposed, a shape you ruled out. Never record what you did or in what order; that is narration, and
-  it crowds out the one line that mattered.
+- **\`${SAVE_APP_TOOL}\`** saves this app's whole file.
+  - Every save that parses repaints the person's screen, so save as you go — a
+    save is cheap and silence is not.
+  - Every save is checked as it lands — if something is wrong with it, the save
+    tells you exactly what to fix.
+  - It also tells you what the person's screen actually GOT: whether the save
+    painted, and what each of your queries delivered.
+  - Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
+    have besides the file. Record what reading the file could not tell them — why
+    you narrowed something, a constraint the tools imposed, a shape you ruled out.
+  - Never record what you did or in what order; that is narration, and it crowds
+    out the one line that mattered.
 - **\`${EDIT_APP_TOOL}\`** replaces exact passages of the file you already saved.
-  Fixing errors? Send edits, not a rewrite — all of them in one call, and they
-  land together or not at all. Quote the text that goes in each \`find\`, write
-  what replaces it in \`replace\`, and quote enough of it to match in exactly one
-  place — everything the person is already looking at then stays where it is. It
-  lands and is checked exactly like a save.
-
-Never look for a tool that builds the app for you. There isn't one, and that is
-deliberate.
+  - Fixing errors? Send edits, not a rewrite — all of them in one call, and they
+    land together or not at all.
+  - Quote the text that goes in each \`find\`, write what replaces it in
+    \`replace\`, and quote enough of it to match in exactly one place —
+    everything the person is already looking at then stays where it is.
+  - It lands and is checked exactly like a save.
 
 ## Your last words are what the person is told
 
-Say what they now have IN THE SAME MESSAGE as your last save — the words and the
-save that finishes the screen travel in one turn, and a turn spent only to speak
-is a turn the person sits through. One or two plain sentences, in their words, and
-nothing after it. Those exact words are what the assistant repeats to them, so
-they can only claim what your saves reported: what painted, and what each query
-delivered — which is the other reason to save as you go, so the save you speak
-beside holds no surprises. If a query brought back no data or a save never reached
-the screen, say that plainly instead of describing the part that is blank.
+- Say what they now have IN THE SAME MESSAGE as your last save — the words and
+  the save that finishes the screen travel in one turn, and a turn spent only to
+  speak is a turn the person sits through.
+- One or two plain sentences, in their words, and nothing after it.
+- Those exact words are what the assistant repeats to them, so they can only
+  claim what your saves reported: what painted, and what each query delivered —
+  which is the other reason to save as you go, so the save you speak beside holds
+  no surprises.
+- If a query brought back no data or a save never reached the screen, say that
+  plainly instead of describing the part that is blank.
 
 ## This product's tools your screen can CALL, but you cannot call here
 
-The screen calls one as \`tools.<name>(args)\` from an event handler, and that is
-the only way an app of yours changes anything.
+- The screen calls one as \`tools.<name>(args)\` from an event handler, and that is
+  the only way an app of yours changes anything.
+- What each one RETURNS is in TOOL RESPONSE SHAPES above; below is what to send it.
 
 ${toolBrief(wireable)}`;
 

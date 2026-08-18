@@ -70,7 +70,7 @@ describe("the Kit's own types survive the zod the host installed", () => {
   it("says the same thing to the MODEL — the catalog prompt walks the same schemas", async () => {
     const { catalogPrompt } = await import("../../src/contract/kit/catalog-prompt.js");
 
-    const money = catalogPrompt({ only: ["Money"], omitPreamble: true }).split("\n")[0] ?? "";
+    const money = catalogPrompt({ only: ["Money"], omitPreamble: true });
 
     expect(money).toContain("value: number");
     expect(money).toContain("currency: string");

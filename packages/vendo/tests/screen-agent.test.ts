@@ -102,17 +102,27 @@ const spendSummary: ToolDescriptor = {
 };
 
 /** A MUTATING host tool. Assembly is a read-only job (§4.2, "no mutating host
- *  tools"), so this must never be on the loadout — which is precisely why its
- *  declared shape has to reach the model in PROSE: a screen may still wire a
- *  button to it, and the brief's tool section is the only place the model can
- *  read it. Its probe field is separate from the read tool's, so the two halves of
- *  that split can go red independently. */
+ *  tools"), so this must never be on the loadout — which is precisely why what a
+ *  handler must SEND it has to reach the model in PROSE: a screen may still wire
+ *  a button to it, and the brief's tool section is the only place that says what
+ *  goes in the call. Its probe field is separate from the read tool's, so the two
+ *  halves of that split can go red independently.
+ *
+ *  What it RETURNS is deliberately NOT in the brief — the briefing pack's shape
+ *  card carries every tool's response — so the output probe below is asserted
+ *  ABSENT. */
 const sendMoney: ToolDescriptor = {
   ...readTool("maple_pay", "destructive"),
   title: "Send money",
+  inputSchema: {
+    type: "object",
+    required: ["wire_probe_cents"],
+    properties: { wire_probe_cents: { type: "integer" }, currency: { type: "string" } },
+    additionalProperties: false,
+  },
   outputSchema: {
     type: "object",
-    properties: { wire_probe_cents: { type: "integer" }, currency: { type: "string" } },
+    properties: { wire_return_probe: { type: "integer" } },
   },
 };
 
@@ -338,18 +348,25 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     expect(offered).not.toContain("find_tools");
   });
 
-  it("writes out the DECLARED shape of a tool the screen can WIRE, and never one it can CALL", async () => {
+  it("writes out what a tool the screen can WIRE must be SENT, and never one it can CALL", async () => {
     // The brief's tool section is the loadout's COMPLEMENT: an equipped tool
     // already arrives with its own description and its own JSON Schema, so
     // restating it would be the same tool twice in one prompt. What is left over is
     // the write side — the tools this loop may never call but an `onClick` may name
-    // — and that half exists nowhere else the model can read.
+    // — and its INPUT exists nowhere else the model can read.
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
     await screen.assemble("show me my spending");
     const system = screen.model.systemPrompts[0] ?? "";
-    // The wireable half, with the field names a handler needs and no way to learn.
+    // The wireable half, with the argument names a handler needs and no way to
+    // learn.
     expect(system).toContain("wire_probe_cents");
     expect(system).toContain("maple_pay — Send money");
+    // …and NOT its response shape: the briefing pack's own `TOOL RESPONSE SHAPES`
+    // card carries every tool's, this one included, so a `returns:` JSON here was
+    // the same bytes twice in one prompt.
+    expect(system).not.toContain("wire_return_probe");
+    expect(system).not.toContain("returns:");
+    expect(system).toContain("What each one RETURNS is in TOOL RESPONSE SHAPES above");
     // …and the equipped read tool is absent from the prose entirely, schema and
     // name alike. It is on the model's tool list instead.
     expect(system).not.toContain("screen_probe_cents");

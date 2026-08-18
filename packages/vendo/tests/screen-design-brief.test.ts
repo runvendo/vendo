@@ -147,13 +147,15 @@ describe("the writers' design brief", () => {
   });
 });
 
-/** Everything a measured surface adds to the brief, byte for byte. One constant,
- *  because the two cases below are the same claim from either side: this text is
- *  there when the host measured, and the brief is exactly this text away from the
- *  one it has always assembled when nobody did. */
-const SURFACE_PARAGRAPH = "\n\nYou are writing into `420×880` CSS pixels, and nothing wider than that is\n"
-  + "on the person's screen. Fewer, richer columns rather than a table that runs off\n"
-  + "the edge, and a stat grid that wraps rather than a fixed count that clips.";
+/** Everything a measured surface adds to the brief, byte for byte — two bullets
+ *  on the note's own opening list. One constant, because the two cases below are
+ *  the same claim from either side: this text is there when the host measured, and
+ *  the brief is exactly this text away from the one it has always assembled when
+ *  nobody did. */
+const SURFACE_PARAGRAPH = "\n- You are writing into `420×880` CSS pixels — nothing wider than that is on\n"
+  + "  the person's screen.\n"
+  + "- Fewer, richer columns rather than a table that runs off the edge, and a stat\n"
+  + "  grid that wraps rather than a fixed count that clips.";
 
 /** One run through `assembleScreen`, which is where a `ScreenInput` — and the
  *  host's viewport with it — enters. Not the `vendo_make` route above: a

@@ -36,7 +36,9 @@ const BODY = `# Building an app
 Somebody asked for something they want to look at or use. You are going to build
 it out of this product's own components and its own live data.
 
-Two references, both paths relative to the directory you are working in:
+## Two references
+
+Both paths are relative to the directory you are working in.
 
 - \`host/skills/building-apps/references/format.md\` — how to write the screen. It
   is the \`references/format.md\` beside this skill.
@@ -46,28 +48,28 @@ Two references, both paths relative to the directory you are working in:
   detail.
 
 **Your hands are how an app gets built.** You write the screen file yourself.
-If your tool list has no app-creation or app-edit tool, that is deliberate and
-not a gap — writing the file IS the mechanism, and the screen repaints on every
-save. Do not go searching for a tool that builds the app for you.
+
+- If your tool list has no app-creation or app-edit tool, that is deliberate and
+  not a gap — writing the file IS the mechanism, and the screen repaints on every
+  save.
+- Do not go searching for a tool that builds the app for you.
 
 ## Write early. Write as you go.
 
 The person is watching, and their screen re-renders every time you save a file
-that parses, so:
+that parses.
 
-1. Save **after every section you finish**, so the app grows in front of them
-   rather than arriving all at once at the end.
-2. **Every save is checked on its way to the screen, and what the checks find
-   comes back to you.** The errors are teaching messages — they name exactly what
-   to fix. Fix it and save again.
-
-**You are not done while a save's errors stand.** Not "mostly clean", and not
-"the rest looks cosmetic". Fix by editing the text in place, never by rewriting
-the file: quote the exact text that goes, enough of it to match in exactly one
-place, and write what replaces it. A rewritten file moves the whole app under the
-person reading it.
-
-Writing everything once at the end works and feels dead. Don't.
+- Save **after every section you finish**, so the app grows in front of them
+  rather than arriving all at once at the end.
+- **Every save is checked on its way to the screen, and what the checks find
+  comes back to you.** The errors are teaching messages — they name exactly what
+  to fix. Fix it and save again.
+- **You are not done while a save's errors stand.** Not "mostly clean", and not
+  "the rest looks cosmetic".
+- Fix by editing the text in place, never by rewriting the file: quote the exact
+  text that goes, enough of it to match in exactly one place, and write what
+  replaces it. A rewritten file moves the whole app under the person reading it.
+- Writing everything once at the end works and feels dead. Don't.
 
 ## Know the data before you write it
 
@@ -76,10 +78,9 @@ Writing everything once at the end works and feels dead. Don't.
 - **Call the query once** only when a tool declares no output schema, or when the
   actual values matter (what a status string really says, whether an amount is in
   cents or dollars).
-
-**A hole is a \`<Disclaimer>\`.** Where this product cannot serve part of the ask,
-say that in one sentence and build nothing around it. Never a placeholder part,
-never an empty card standing in for a feature, never a chart of zeros.
+- **A hole is a \`<Disclaimer>\`.** Where this product cannot serve part of the
+  ask, say that in one sentence and build nothing around it. Never a placeholder
+  part, never an empty card standing in for a feature, never a chart of zeros.
 `;
 
 export const buildingAppsSkill: Skill = {
