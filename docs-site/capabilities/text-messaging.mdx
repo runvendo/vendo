@@ -1,0 +1,227 @@
+---
+title: "Text messaging"
+sidebarTitle: "Text messaging"
+description: "Each user links a phone from inside your product, then texts the agent, which acts as them exactly as it does in the web chat."
+---
+
+Text is a second surface on the same agent. A user links a phone once, and from
+then on their texts run as them, on the same tools, the same guard, and the same
+grants as their web chat. Automations they arm can text them back — one line of
+code away from your existing setup.
+
+## Enable the channel
+
+Set `channels.text` and provide a Vendo Cloud key. Cloud carries the numbers and
+the delivery; the phone-to-user binding lives in your store.
+
+```ts app/api/vendo/[...vendo]/route.ts focus={4}
+const vendo = createVendo({
+  principal: resolvePrincipal,
+  instructions: "...",
+  channels: { text: true },
+});
+```
+
+Requirements:
+
+- `VENDO_API_KEY` — Cloud carries the texts. Without it the channel refuses at
+  compose and names the missing key.
+- `VENDO_BASE_URL` — Cloud needs your deployment's public URL to register the
+  inbound door on the first link.
+
+Unset the key or leave `channels` off and the channel is silently absent — no
+tools, no routes, no nagging.
+
+## The linking flow
+
+A user opens one link inside your product and taps send on the prefilled
+message. That is the whole flow.
+
+<Steps>
+  <Step title="They open the link">
+    The wire route `GET /api/vendo/channels/text/link` mints a claim code and
+    hands back a `sms:` URL with the connect message prefilled. On a phone the
+    route redirects straight into the messages app; on desktop it renders a
+    page with the number, the code, and a QR anchor.
+  </Step>
+  <Step title="They send the message">
+    Cloud's router keeps that first message and reads the code off its tail —
+    no webhook event carries the code separately. The deployment claims it
+    silently.
+  </Step>
+  <Step title="The agent replies to what they asked">
+    Anything they typed after the code is their first real turn. The reply is
+    the answer to their question, not a receipt for a code they never typed
+    themselves.
+  </Step>
+</Steps>
+
+Codes live 30 minutes and are single-use. A code that is unknown, spent, or
+expired is silently ignored — the same as any other text.
+
+Read and manage the link server-side through `vendo.channels.text`:
+
+```ts
+const invite = await vendo.channels.text.link(principal);   // { url }
+const status = await vendo.channels.text.status(principal); // { linked, phone? }
+await vendo.channels.text.unlink(principal);
+```
+
+`status` returns the phone masked (`+1 ••• ••• 4242`) — enough to recognize your
+own number, never enough to read someone else's.
+
+## What a texted turn is
+
+A texted turn is a chat turn. Same agent, same tools, same guard.
+
+- **It authenticates as the texting user.** The link binding projects to a host
+  auth grant through the `ActAs` seam, so a host tool call carries the credentials
+  of the person on the other end of the text — not the process, and not the caller
+  of the wire. A texted "what did I spend on food last month?" reaches your host
+  API as that user.
+- **Presence stays present.** A person is holding their phone, so the guard can
+  ask them to approve a call rather than refusing it outright.
+- **The thread is its own.** The channel keeps a separate rolling thread rather
+  than reusing the user's last web chat, so texting style does not persist into
+  their next web turn. A conversation quiet for a day rolls to a fresh thread.
+- **It reads like a text.** The agent is told, as hidden grounding, to write one
+  short paragraph, plain sentences, no markdown, no bullets, no links unless
+  asked.
+
+The stored thread is normal history — it shows up in the host app's thread list
+alongside web chats.
+
+## Consent over SMS
+
+The guard's asks travel the same way messages do, and the wording matches.
+
+### Approval asks
+
+A guarded tool call parks a card in the thread and the channel delivers it as a
+plain-text ask. One line per argument, labelled from the host tool's own input
+schema description when it has one and the spaced-out property name when it
+does not. Values stay verbatim — the ask is the safety boundary, so nothing is
+paraphrased.
+
+```text
+Send money — needs your approval:
+- Amount in cents: 2500
+- Recipient name: Jordan Avery
+Reply YES to approve, or NO to cancel.
+```
+
+Schedule-shaped values render as human prose beside the raw expression, so a
+cron the person has to understand before saying yes reads as a phrase:
+
+```text
+Set this to run on its own — needs your approval:
+- When it runs: every 15 minutes (*/15 * * * *)
+- Task: check my checking balance and text me
+Reply YES to approve, or NO to cancel.
+```
+
+`YES` and `NO` are the only replies the decider matches. The header never says
+"OK" or "reply to approve": the ask would otherwise teach the one reply that
+would not decide it.
+
+### Standing permissions for an automation
+
+Arming an automation over text also captures its standing-permission set. Those
+asks are approval rows, not stream parts, so they used to only show up in the
+host app's web approvals feed — invisible to a texts-only user.
+
+Now, after a texted turn finishes, one automation's outstanding permissions go
+out as one more text:
+
+```text
+check my checking balance and text me — needs your permission to run on its own:
+- Text me
+- Look it up in the docs
+Reply YES to allow all of these, or NO to cancel it.
+```
+
+`YES` decides the whole set in one batch call on the same guard door the web
+feed uses — all-or-none, never a half-granted set. `NO` mints nothing and turns
+the automation off; the reply says which of the two happened.
+
+One question at a time: nothing new goes out while the conversation is holding a
+card or a set ask it has not answered.
+
+## Text the user first
+
+`vendo_text_me` is the action that sends one text to the person the run is for.
+It is auto-registered whenever the text channel is composed, so anything the
+agent already reaches — a web turn that finishes after the tab closes, an
+automation firing while the user is away — can text them.
+
+**Input:** `{ text: string }`. That is the whole signature. There is no number
+to pass, so no model output can aim a text at a phone that is not the current
+subject's own — the destination is read from that user's own link row.
+
+**Consent:** the same machinery as every other write. In a present turn the
+guard parks a card. In an away automation firing, the standing grant the arming
+`YES` minted is what lets it run.
+
+**Failures:**
+
+- No phone this can reach — the tool answers with the connect link itself, so
+  the agent can offer it in place.
+- The phone was reachable but the router could not deliver — the tool says
+  plainly the text did not go through, so the agent will not fabricate a "sent".
+
+### In a live text conversation
+
+Do not use `vendo_text_me` to answer the person you are already texting — the
+turn's own reply is delivered as a text. The tool exists for later texts and
+for turns that started on another surface.
+
+### In an automation
+
+An automation the user armed with "text me when the rent clears" arms the
+`vendo_text_me` permission once, in the same grant set as everything else it
+needs. Every firing after that texts them with no further ask:
+
+```ts lib/agent.ts
+import { agent } from "@vendoai/agents";
+
+export const rent = agent({ name: "rent" });
+
+rent.on({ every: "1d" }, "check whether the rent posted overnight and text me if it did");
+```
+
+See [Automations](/capabilities/automations) for the shape of `.on()` and how
+grants settle.
+
+## The wire
+
+Every route is scoped to the resolved principal. There is no caller-supplied
+subject and no cross-user read.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/api/vendo/channels/text/link` | GET | mint a claim code, hand back the `sms:` link |
+| `/api/vendo/channels/text/inbound` | POST | Cloud's inbound door, bearer-authenticated to a secret derived from `VENDO_API_KEY` |
+| `/api/vendo/channels/text` | * | status and unlink, keyed to the caller's own subject |
+
+The inbound door is silent to anyone without the bearer, so a deployment that
+opted out has no open surface.
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Automations" href="/capabilities/automations">
+    Fire the same tools on a schedule or by an event — including `vendo_text_me`.
+
+    Automations →
+  </Card>
+  <Card title="Connected accounts" href="/capabilities/connected-accounts">
+    Each user's own Gmail, Slack, or GitHub — same principal, same grants.
+
+    Connected accounts →
+  </Card>
+  <Card title="Handler options" href="/reference/handler-options">
+    Every `createVendo` option, including `channels`.
+
+    Reference →
+  </Card>
+</CardGroup>
