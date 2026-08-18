@@ -5,6 +5,7 @@ import { checks, holds, splitChecks, type Binding, type Check, type WiredActions
 import { HONESTY_LINE, type JudgeResult, type LineVerdict, type Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
 import type { Fired } from "./probe.js";
+import { VIEWPORT } from "./render.js";
 import type { CaseResult } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
@@ -561,9 +562,8 @@ body{margin:0;background:var(--page);color:var(--ink);
   font:450 15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;border-top:3px solid var(--ink);}
 /* Room for the fixed call feed, so the last column is never hidden under it.
-   The cap lives here rather than on the grid track: it is what stops a column
-   from stretching past the width its screen was designed at, and it is the one
-   number to move if a world ever ships more than three contenders. */
+   The width cap here is just a sane page width — each iframe caps itself at
+   VIEWPORT's own width below, so this isn't what keeps a screen life-sized. */
 .wrap{max-width:1560px;margin:0 auto;padding:32px 24px calc(var(--feed) + 32px)}
 h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 .meta{margin:16px 0 0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -595,16 +595,13 @@ h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 /* Provenance, never a score: quieter than the prompt it sits under. */
 .source{margin:6px 0 0;font-size:12px;color:var(--ter);max-width:62ch}
 .source a{color:inherit}
-/* Every contender in ONE row, because the whole page is a comparison and a
-   column you have to scroll to find is a column you never compare.
-
-   The max track sizing function must stay FLEXIBLE. auto-fit counts its
-   repetitions off the max when that max is a definite length, so the previous
-   minmax(360px,540px) asked "how many 540px columns fit?" and answered two at
-   every viewport — the third wrapped a full row down, where lazy loading then
-   kept it blank. With 1fr the count comes off the 360px min instead: three
-   columns from ~1176px up, two below that, one on a phone. */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;margin-top:24px}
+/* One contender per row. Three abreast used to fit each iframe into a
+   360-540px box, but the grading frame is VIEWPORT below (1280x900) —
+   squeezed that narrow, a contender's page reflows into a layout nobody's
+   screen actually shows, so the preview stops resembling what the judge
+   saw. Stacking leaves the iframe room to sit at (up to) its own graded
+   width. */
+.grid{display:grid;grid-template-columns:1fr;gap:24px;margin-top:24px}
 .col{background:var(--card);border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05)}
 .col>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 h2{margin:0;font-size:15px;font-weight:600}
@@ -613,11 +610,12 @@ h2{margin:0;font-size:15px;font-weight:600}
 .score.ok{color:var(--ok);background:#e8f3ed}.score.no{color:var(--no);background:#fbeceb}
 /* Full-bleed to the card's edges: the card's own padding was costing the
    embedded screen 40px of width, which is the difference between a contender's
-   page fitting and its right-hand controls being clipped. The frame is the one
-   thing on this page that must be as close as possible to the 480px the
-   screenshots are shot at, so it gets the whole card. */
+   page fitting and its right-hand controls being clipped. The frame is capped
+   at VIEWPORT's own width and shaped to its aspect ratio — the exact box the
+   screenshot was shot in — and centered, so a monitor wide enough to fit it
+   renders the contender's page at the size it was graded at. */
 figure{margin:16px -20px 0;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden}
-iframe{display:block;width:100%;height:660px;border:0;background:#fff}
+iframe{display:block;width:100%;max-width:${VIEWPORT.width}px;aspect-ratio:${VIEWPORT.width}/${VIEWPORT.height};margin:0 auto;border:0;background:#fff}
 .blank{padding:48px 16px;text-align:center;font-size:13px;color:var(--ter)}
 /* The judge's evidence, not the artifact: small, captioned, and inlined so it
    survives the file being moved. The live page above it does not. */

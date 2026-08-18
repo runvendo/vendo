@@ -12,6 +12,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { wiredActions, type FloorResult } from "../src/floor.js";
 import { HONESTY_LINE, JudgeContract, type JudgeResult } from "../src/judge.js";
 import type { Probed } from "../src/probe.js";
+import { VIEWPORT } from "../src/render.js";
 import { writePreview, writeSummary, type RunSummary } from "../src/report.js";
 import { unjudged, type CaseResult } from "../src/run.js";
 import { loadCases, loadWorld, worldForCase, type World } from "../src/world.js";
@@ -144,6 +145,17 @@ describe("the preview page", () => {
     );
 
     expect(html.indexOf("vendo-sonnet")).toBeLessThan(html.indexOf("diy-sonnet"));
+  });
+
+  it("frames the embedded screen at the graded VIEWPORT, one contender per row rather than squeezed three to a column", async () => {
+    const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.")], { "pending-transfers": world });
+
+    // One per row, not the old three-wide grid: a narrower box would reflow a
+    // contender's page into a layout the judge never scored.
+    expect(html).toContain(".grid{display:grid;grid-template-columns:1fr;");
+    // The iframe itself caps at the graded frame's own width and shape, so a
+    // wide-enough monitor shows the contender's page at the size it was judged.
+    expect(html).toContain(`max-width:${VIEWPORT.width}px;aspect-ratio:${VIEWPORT.width}/${VIEWPORT.height}`);
   });
 
   it("gives every case its own section rather than stacking them under one prompt", async () => {
