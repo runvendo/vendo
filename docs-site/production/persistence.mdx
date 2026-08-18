@@ -100,10 +100,10 @@ table.
 import { eraseStore } from "@vendoai/vendo/server";
 
 // Everything this subject owns, across every table.
-const report = await eraseStore(vendo.store).bySubject(subjectId);
+const report = await eraseStore(vendo.store, { files }).bySubject(subjectId);
 
 // Everything one app owns.
-const byApp = await eraseStore(vendo.store).byApp(appId);
+const byApp = await eraseStore(vendo.store, { files }).byApp(appId);
 ```
 
 Each call returns per-table deleted counts, so you can log the cascade or

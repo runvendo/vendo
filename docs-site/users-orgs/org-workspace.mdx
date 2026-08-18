@@ -1,0 +1,151 @@
+---
+title: "The org workspace"
+sidebarTitle: "The org workspace"
+description: "A file tree the org owns instead of a person, so work outlives whoever made it — what gets mounted, who may write where, and what happens when two people commit at once."
+---
+
+Everything a person builds lives in a workspace, and by default that workspace is
+theirs. Every org your host asserts is mounted beside it.
+
+## What gets mounted
+
+Three mounts, and no others.
+
+| Mount | Whose it is |
+| --- | --- |
+| `/user` | The caller's private area. Nobody else reaches it |
+| `/orgs/<orgId>` | One per asserted membership, owned by the org |
+| `/host` | What your deployment projects in for the turn, read-only for everyone |
+
+All of a caller's orgs are mounted **at once**. There is no active org and nothing
+to switch — `/orgs` lists exactly what this request's `memberships` seam
+asserted, and it is absent entirely for a caller who belongs to nothing.
+
+A `scratch` directory inside `/user` or any org mount is working space that is
+never committed.
+
+---
+
+## Ownership is the path
+
+The owner of a path is read off the path itself: the first segment under `/orgs`
+is the org id, and everything else belongs to the caller.
+
+Nothing is transferred and no row moves when someone leaves, because there was
+never a pointer to their subject to update. That is what makes the tree survive
+people.
+
+<Note>
+  The org id is one path segment, so an id containing `/` is unaddressable. Keep
+  the `org` string you assert free of slashes.
+</Note>
+
+---
+
+## Who may read and write where
+
+An asserted membership for that org is the precondition. Without one, the answer
+is no — a path naming an org you are not in is refused before any rule below is
+consulted.
+
+Past that, three rules decide:
+
+- **An app's subtree defers to that app's grants.** Under
+  `/orgs/<orgId>/apps/<appId>`, access is whatever [Sharing](/users-orgs/sharing)
+  says it is, root row included.
+- **`policy.json` is members-read, admin-write.** Every member of the org may read
+  `/orgs/<orgId>/policy.json`; only a member you asserted with `admin: true` may
+  write it. See [Org policy](/users-orgs/org-policy).
+- **The rest of the mount belongs to the membership.** Outside app subtrees and
+  outside `policy.json`, any asserted member of the org may read and write it.
+
+<Warning>
+  That last rule is not admin-gated. An ordinary member can write anywhere in the
+  org mount that is not an app subtree or `policy.json` — `admin` buys implicit
+  app ownership and the policy file, not write control over the tree.
+</Warning>
+
+Access is checked twice: once when the turn opens, to decide what the agent may
+even see, and again at commit against live rows. A membership or grant you revoke
+mid-session therefore bites at the commit, while reads already served stand.
+
+---
+
+## Members only
+
+An outsider is not told an org exists. Reading a path in an org you have no
+membership for fails the same way a path that was never written fails:
+
+```text highlight={1}
+ENOENT: no such file or directory, open '/orgs/acme/notes.md'
+```
+
+A write refusal names your own mounts rather than theirs, so "no such org" and
+"no orgs at all" read differently to you and identically to an outsider:
+
+```text
+EACCES: permission denied, open '/orgs/acme/notes.md' (the workspace holds /host, /orgs, /user)
+```
+
+A refused commit picks its code on the same principle: a caller who cannot even
+read the path gets not-found, and only a caller proven to be a viewer gets
+forbidden. A `forbidden` to an outsider would be an existence oracle for every
+org app id.
+
+---
+
+## Two people, one file
+
+Org paths commit under **compare-and-swap**. The turn remembers the revision it
+opened each file at, and the commit lands only if that revision is still current.
+
+A conflict is a returned status, not a thrown error:
+
+```ts highlight={2}
+const result = await workspace.commit();
+if (result.status === "conflict") {
+  // result.paths — the files someone else moved under you
+}
+```
+
+Nothing in a conflicted batch lands, deletions included, so a partial commit can
+never silently drop data. Re-read the paths and apply your change again.
+
+Commits are batched per owner, so a conflict in an org mount does not take the
+same turn's `/user` writes down with it. `/user` itself is last-write-wins — a
+private file has no second writer to race.
+
+The shipped surface says this in plain words when a generated app loses the race:
+"The save did not land — someone else changed this app. Save again."
+
+---
+
+## When someone leaves
+
+Drop them from your own roster and their mount is gone on their very next
+request. There is nothing to propagate.
+
+Erasing that person leaves the org's tree standing, because none of it was ever
+theirs — see [Erasing a user](/users-orgs/erasing-a-user).
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Sharing" href="/users-orgs/sharing">
+    The grants an app subtree defers to, and the three principals they name.
+
+    `appAccess(store).grant`
+  </Card>
+  <Card title="Org policy" href="/users-orgs/org-policy">
+    The one file in the mount an ordinary member may read but not write.
+
+    `/orgs/<orgId>/policy.json`
+  </Card>
+  <Card title="Persistence" href="/production/persistence">
+    Where these files actually land, and what the store refuses.
+
+    `vendo_apps`
+  </Card>
+</CardGroup>

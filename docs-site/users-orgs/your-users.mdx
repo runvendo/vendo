@@ -1,0 +1,143 @@
+---
+title: "Your users"
+sidebarTitle: "Your users"
+description: "Who Vendo thinks a person is, where that comes from, and what you can tell it about them — the subject everything hangs off, and the facts you assert beside it."
+---
+
+Vendo mints no identity of its own. A user here is one string, and everything
+else is derived from it.
+
+## A user is a subject
+
+A principal is four fields, and only two of them are yours to fill:
+
+```ts
+interface Principal {
+  kind: "user" | "org";
+  subject: string;
+  display?: string;
+  ephemeral?: boolean;
+}
+```
+
+`subject` is the whole model. Threads, apps, records, grants, approvals,
+activity, and runs all hang off that one string, and a row never crosses
+subjects.
+
+So it has to be **stable**. Use the immutable id from your own tables, never an
+email or username someone can change — a subject that moves is a user who lost
+everything they built.
+
+Your resolver may only mint `kind: "user"`. Returning `kind: "org"` is rejected
+at the wire, because org context is derived from membership rather than
+resolved; so is any subject in the reserved `vendo:` namespace.
+
+[Auth](/production/auth) is where the resolver itself lives — the presets, the
+session decode, and away runs. This page is only about what rides on top of it.
+
+---
+
+## Telling Vendo about them
+
+`facts` is the profile you assert. It is not part of the principal; it is a
+second seam, resolved from the same request, and it is a flat bag of JSON.
+
+```ts app/api/vendo/[...vendo]/route.ts highlight={6,7,8,9,10}
+export const vendo = createVendo({
+  auth: authJs({
+    user: async (subject) => {
+      const user = await db.user.findUnique({ where: { id: subject } });
+      if (!user) return null;
+      return {
+        display: user.name,
+        facts: { plan: user.plan, role: user.role, seats: user.seatCount },
+      };
+    },
+  }),
+});
+```
+
+Re-asserted on every request, so a plan change binds on the user's next turn.
+There is nothing to invalidate.
+
+<Note>
+  `facts` is a preset seam. A hand-wired `principal(request)` has no facts
+  channel — pass an `auth` preset if you want one.
+</Note>
+
+---
+
+## What the model sees
+
+Facts become the prompt's `[User]` block, one `key: value` line per fact,
+rebuilt every turn. Assert nothing and the block does not exist at all.
+
+```text [User]
+name: Priya Raman
+plan: pro
+role: org admin
+```
+
+This is data the agent may reason about out loud. **Never put a secret in it** —
+no tokens, no keys, no internal flags you would not want quoted back to the
+person. Secrets belong in `secrets`, and tool credentials in `actAs`.
+
+---
+
+## What your own code sees
+
+The same facts reach your own choke points, where they are the tier branch:
+
+| Where | Reads it as |
+| --- | --- |
+| The limits policy | `user.facts` — see [Limits](/users-orgs/limits) |
+| A guard check | `ctx.user` |
+| A tool's `execute` | `ctx.user` |
+
+`ctx.context` is the sibling bag for things the model must not see. It is passed
+to guards and tools and is never rendered into the prompt.
+
+---
+
+## Signed-out and ephemeral visitors
+
+A resolver that answers `null` refuses the request — the host owns sign-in, so
+that is correct. [Auth](/production/auth) covers what the chrome does next.
+
+To serve logged-out visitors, resolve them to a principal of your own and mark
+it `ephemeral: true`. That subject still chats and still builds, but four doors
+close:
+
+- The `memberships` seam is **not even asked**, so an ephemeral visitor belongs
+  to no org by construction.
+- Connecting an external account is refused — that needs a signed-in user.
+- The MCP door will not open a session for them.
+- They cannot mint an in-client approval.
+
+<Warning>
+  Every visitor you resolve to the same ephemeral subject **is** the same user,
+  and shares one set of threads and apps. Key the subject off something of your
+  own if that is not what you want.
+</Warning>
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Auth" href="/production/auth">
+    The resolver that mints the subject, and the presets that fill it.
+
+    `auth: authJs()`
+  </Card>
+  <Card title="Orgs & memberships" href="/users-orgs/orgs-and-memberships">
+    Who this person works with, asserted the same way and just as fresh.
+
+    `memberships`
+  </Card>
+  <Card title="Erasing a user" href="/users-orgs/erasing-a-user">
+    The other end of the lifecycle — one call, every table.
+
+    `eraseStore(...).bySubject`
+  </Card>
+</CardGroup>

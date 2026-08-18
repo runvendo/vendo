@@ -197,6 +197,18 @@
                 ]
               }
             ]
+          },
+          {
+            "group": "Users & orgs",
+            "pages": [
+              "users-orgs/your-users",
+              "users-orgs/orgs-and-memberships",
+              "users-orgs/sharing",
+              "users-orgs/org-workspace",
+              "users-orgs/org-policy",
+              "users-orgs/limits",
+              "users-orgs/erasing-a-user"
+            ]
           }
         ]
       },
