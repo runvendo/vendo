@@ -14,6 +14,14 @@
  * workers read (`componentsPromptSection`), so it cannot drift from the code — and
  * it now teaches the same idiom this chapter does, so nothing here has to correct
  * it (`contract/kit/kit-prompt.ts`).
+ *
+ * The WORKED SCREENS are the other half of the teaching, and each one is there for
+ * a shape a model does not reach for from prose: a total reduced off the rows and
+ * repeated where it is acted on, a fixed column count for a compare-these ask, a
+ * detail pane opened on the first row with the row action on every row. One stacked
+ * card list was the only example for a while, and a stacked card list is what came
+ * back. They are pinned in `tests/skills/format-reference.test.ts`, which runs each
+ * of them through the real save-time gauntlet.
  */
 import { DISPLAY_TAG_NAMES } from "../../contract/kit/index.js";
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
@@ -64,10 +72,8 @@ Those two imports are everything there is. Nothing else can be loaded.
   confirm step of your own: no "are you sure" panel, no second button, no
   \`confirming\` state.
 - The exception: a confirmation the person ASKED for, or one press that fires a
-  whole batch of calls. That one is part of their app.
-  - Write it as a \`<Modal>\` saying how many, with the button that runs the loop
-    LAST in its \`footer\` — that footer is a right-aligned row, so the last
-    button is the one a person reaches for.
+  whole batch of calls. That one is part of their app, and the second worked
+  screen below is its shape.
   - A guarded host still asks once per call on top of it, and that is the trade:
     only your Modal can say how many, and being asked twice beats a batch that
     goes out silently.
@@ -106,7 +112,7 @@ Those two imports are everything there is. Nothing else can be loaded.
 
 ---
 
-## One worked screen, end to end
+## Worked screens
 
 The ask: "let me cancel a transfer before it goes out."
 
@@ -136,6 +142,100 @@ export default function PendingTransfers() {
         ))
       )}
     </Stack>
+  );
+}
+\`\`\`
+
+The ask: "what do I owe this month, and let me pay it all at once." A total the ask
+names is COMPUTED off the rows the screen drew, and said again in the dialog that
+acts on it.
+
+\`\`\`tsx
+import { useState } from "react";
+import { Button, DataTable, Modal, Money, Num, Row, Stack, Stat, Text, tools, useQuery } from "@vendo/screen";
+
+export default function BillsDue() {
+  const bills = useQuery("list_open_bills");
+  const [confirming, setConfirming] = useState(false);
+  const total = bills.data.reduce((sum, bill) => sum + bill.amount_cents, 0) / 100;
+
+  return (
+    <Stack gap={12}>
+      <Row justify="between" align="center">
+        <Stat label="Due this month" value={total} format="money" />
+        <Button label="Pay all" onClick={() => setConfirming(true)} />
+      </Row>
+      <DataTable rows={bills.data} columns={["payee", { key: "due_on", label: "Due", format: "date" }, { key: "amount_cents", label: "Amount", align: "end", cell: (bill) => <Money value={bill.amount_cents / 100} /> }]} />
+      <Modal open={confirming} onClose={() => setConfirming(false)} title="Pay every open bill?"
+        footer={<Button label="Pay all" onClick={async () => { for (const bill of bills.data) await tools.pay_bill({ id: bill.id }); }} />}>
+        <Text>This pays <Num value={bills.data.length} /> bills, <Money value={total} /> in total.</Text>
+      </Modal>
+    </Stack>
+  );
+}
+\`\`\`
+
+The ask: "compare the plans side by side." An ask that names the things to compare
+gets a fixed \`columns\` — \`minChildWidth\` is for tiles whose count the data decides.
+
+\`\`\`tsx
+import { Button, Card, Grid, KeyValue, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+export default function ComparePlans() {
+  const plans = useQuery("list_plans");
+
+  return (
+    <Stack gap={12}>
+      <Text text="Every plan, side by side" variant="heading" />
+      <Grid columns={3} gap={8}>
+        {plans.data.map((plan) => (
+          <Card key={plan.id} title={plan.name}>
+            <Stack gap={6}>
+              <Money value={plan.price_cents / 100} />
+              <KeyValue record={plan} items={[{ key: "seats", label: "Seats" }, { key: "support", label: "Support" }]} />
+              <Button label="Switch" onClick={() => tools.switch_plan({ id: plan.id })} />
+            </Stack>
+          </Card>
+        ))}
+      </Grid>
+    </Stack>
+  );
+}
+\`\`\`
+
+The ask: "let me work through the open tickets one at a time." Three habits: the
+selection starts on the FIRST row, never on nothing; the row action is on EVERY row,
+disabled with its reason where it does not apply; and the filter's choices are read
+off the data rather than typed out, so they cannot disagree with it.
+
+\`\`\`tsx
+import { useState } from "react";
+import { Button, DataTable, KeyValue, Row, Select, SplitPane, Stack, Tooltip, tools, useQuery } from "@vendo/screen";
+
+export default function Tickets() {
+  const tickets = useQuery("list_tickets");
+  const rows = tickets.data;
+  const [openId, setOpenId] = useState(rows[0].id);
+  const [category, setCategory] = useState("");
+  const shown = category === "" ? rows : rows.filter((row) => row.category === category);
+
+  return (
+    <SplitPane size="45%">
+      <Stack gap={8}>
+        <Select label="Category" placeholder="All categories" value={category}
+          options={[...new Set(rows.map((row) => row.category))]}
+          onChange={(e) => setCategory(e.target.value)} />
+        <DataTable rows={shown} columns={["subject", "status"]} rowActions={(row) => (
+          <Row gap={6}>
+            <Button label="Open" disabled={row.id === openId} onClick={() => setOpenId(row.id)} />
+            <Tooltip label={row.status === "closed" ? "Already closed" : "Close this ticket"}>
+              <Button label="Close" variant="danger" disabled={row.status === "closed"} onClick={() => tools.close_ticket({ id: row.id })} />
+            </Tooltip>
+          </Row>
+        )} />
+      </Stack>
+      <KeyValue record={rows.find((row) => row.id === openId)} items={["subject", "category", "assignee", "status"]} />
+    </SplitPane>
   );
 }
 \`\`\`

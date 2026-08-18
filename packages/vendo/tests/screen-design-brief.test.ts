@@ -154,8 +154,9 @@ describe("the writers' design brief", () => {
  *  nobody did. */
 const SURFACE_PARAGRAPH = "\n- You are writing into `420×880` CSS pixels — nothing wider than that is on\n"
   + "  the person's screen.\n"
-  + "- Fewer, richer columns rather than a table that runs off the edge, and a stat\n"
-  + "  grid that wraps rather than a fixed count that clips.";
+  + "- What a person sees in that frame is all anyone sees, and EVERYTHING the ask\n"
+  + "  names has to be in it — never dropped to make room. Fit is the Kit's job:\n"
+  + "  cells truncate, a narrow frame keeps columns by `priority`, panes stack.";
 
 /** One run through `assembleScreen`, which is where a `ScreenInput` — and the
  *  host's viewport with it — enters. Not the `vendo_make` route above: a
@@ -176,13 +177,17 @@ async function briefFor(viewport?: ScreenInput["viewport"]): Promise<string> {
 }
 
 describe("the surface the screen is written for", () => {
-  it("names the room the screen has, and what to spend it on", async () => {
+  it("names the room the screen has, and asks for everything inside it", async () => {
     // Judged 2026-08-12: eight-column tables whose "Status column is cut off
     // beyond the viewport" and a stat row clipped to "$1,113.1(" — every one of
     // them written by a writer that was never told how wide it was writing.
     const brief = await briefFor({ width: 420, height: 880 });
     expect(brief).toContain("`420×880` CSS pixels");
     expect(brief).toContain(SURFACE_PARAGRAPH);
+    // The frame is what is SEEN, never a budget to shed content into: the rubrics
+    // grade a screen on the ask being present, so a brief that told the writer to
+    // carry "fewer, richer columns" was coaching it to drop what it was asked for.
+    expect(brief).not.toContain("Fewer, richer columns");
   });
 
   it("says nothing about a surface nobody measured", async () => {

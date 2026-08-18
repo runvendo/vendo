@@ -612,13 +612,19 @@ const judgeScreen = async (
 /** How much room the screen has, when the host said. Said ONLY then: a screen
  *  cannot measure its own surface, so a width this file guessed would read to the
  *  writer exactly like one the host measured. Absent, the paragraph above it ends
- *  where it always did. */
+ *  where it always did.
+ *
+ *  A measured frame used to be read as a budget to spend — "fewer, richer
+ *  columns", a grid that wraps — and a writer told to shed content in a small
+ *  frame sheds the thing the ask named. Fit is the Kit's job, not the writer's,
+ *  so the frame says what is SEEN instead of what to leave out. */
 const surfaceNote = (viewport: ScreenInput["viewport"]): string => {
   if (viewport === undefined) return "";
   return `\n- You are writing into \`${viewport.width}×${viewport.height}\` CSS pixels — nothing wider than that is on
   the person's screen.
-- Fewer, richer columns rather than a table that runs off the edge, and a stat
-  grid that wraps rather than a fixed count that clips.`;
+- What a person sees in that frame is all anyone sees, and EVERYTHING the ask
+  names has to be in it — never dropped to make room. Fit is the Kit's job:
+  cells truncate, a narrow frame keeps columns by \`priority\`, panes stack.`;
 };
 
 /**
