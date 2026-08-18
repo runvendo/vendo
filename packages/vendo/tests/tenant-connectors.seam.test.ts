@@ -24,7 +24,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
-import { tenantConnectorSecret, type Principal, type RunContext } from "@vendoai/core";
+import {
+  tenantConnectorSecret,
+  type Json,
+  type Principal,
+  type RunContext,
+  type ToolDefinition,
+} from "@vendoai/core";
 import { createStore, eraseStore, secretStore, storeFiles, storeSecrets, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { bootSummaryFor } from "../src/boot-summary.js";
@@ -33,15 +39,15 @@ import { createVendo, type Vendo } from "../src/server.js";
 
 const ADA: Principal = { kind: "user", subject: "user_ada" };
 
-/** A run as a member of one org — the `memberships` the host asserts per
- *  request (build contract §9.1), which is the only thing that selects an
- *  overlay. */
-const runAs = (org: string): RunContext => ({
+/** A run as a member of the given orgs, in that order — the `memberships` the
+ *  host asserts per request (build contract §9.1), which is the only thing that
+ *  selects an overlay. */
+const runAs = (...orgs: string[]): RunContext => ({
   principal: ADA,
   venue: "chat",
   presence: "present",
-  sessionId: `s_${org}`,
-  memberships: [{ org }],
+  sessionId: `s_${orgs.join("|")}`,
+  memberships: orgs.map((org) => ({ org })),
 });
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -57,16 +63,20 @@ async function jsonBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 /** A real MCP server on a real port, advertising one real tool. It records the
  *  authorization header it was called with, which is how the vaulted token is
- *  proven to travel all the way to the far end. */
+ *  proven to travel all the way to the far end, and every JSON-RPC method it was
+ *  asked for — the only way to prove a server was NEVER reached. */
 async function startMcpServer(tool: string): Promise<{
   url: string;
   authorizations: string[];
+  calls: string[];
   stop: () => Promise<void>;
 }> {
   const authorizations: string[] = [];
+  const calls: string[] = [];
   const server = createServer((req, res) => void (async (): Promise<void> => {
     const body = await jsonBody(req);
     const { id, method } = body as { id?: unknown; method?: string };
+    if (typeof method === "string") calls.push(method);
     if (typeof req.headers.authorization === "string") authorizations.push(req.headers.authorization);
     res.setHeader("content-type", "application/json");
     if (method === "initialize") {
@@ -101,7 +111,7 @@ async function startMcpServer(tool: string): Promise<{
     await new Promise<void>((resolve) => server.close(() => resolve()));
   };
   cleanups.push(stop);
-  return { url: `http://127.0.0.1:${port}`, authorizations, stop };
+  return { url: `http://127.0.0.1:${port}`, authorizations, calls, stop };
 }
 
 /** The spec ONE tenant pastes. `servers[0]` is deliberately somewhere else, so
@@ -159,7 +169,10 @@ async function startRestApi(): Promise<{
  *  and unset is the posture the rest of this file exercises. Only the test that
  *  executes one passes a policy, so the guard runs the call instead of parking
  *  it for approval (an OpenAPI GET grades `ungraded`, which asks by default). */
-async function deployment(policy?: "autopilot"): Promise<{ vendo: Vendo; store: VendoStore }> {
+async function deployment(
+  policy?: "autopilot",
+  tools?: ToolDefinition[],
+): Promise<{ vendo: Vendo; store: VendoStore }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-connectors-"));
   const store = createStore({ dataDir, encryption: { key: randomBytes(32).toString("base64") } });
   cleanups.push(async () => {
@@ -173,13 +186,14 @@ async function deployment(policy?: "autopilot"): Promise<{ vendo: Vendo; store: 
     store,
     profileDir: dataDir,
     ...(policy === undefined ? {} : { guard: { policy } }),
+    ...(tools === undefined ? {} : { tools }),
   });
   return { vendo, store };
 }
 
 /** What a run is really offered, off the registry every door executes through. */
-const toolNames = async (vendo: Vendo, org: string): Promise<string[]> =>
-  (await vendo.guardedTools.descriptors(runAs(org))).map((descriptor) => descriptor.name);
+const toolNames = async (vendo: Vendo, ...orgs: string[]): Promise<string[]> =>
+  (await vendo.guardedTools.descriptors(runAs(...orgs))).map((descriptor) => descriptor.name);
 
 describe("a tenant registers its own MCP server", () => {
   it("registers by connecting, and hands back the tools the server really advertised", async () => {
@@ -286,6 +300,30 @@ describe("a tenant registers its own MCP server", () => {
     expect(acme.authorizations).toContain("Bearer tok_acme_live");
   });
 
+  it("never sends the old token to a url the tenant re-registered without one", async () => {
+    const { vendo, store } = await deployment();
+    const original = await startMcpServer("lookup_invoice");
+    await vendo.tenantConnectors.register({
+      org: "acme", name: "billing", kind: "mcp", url: original.url, token: "tok_acme_live",
+    });
+    expect(await storeSecrets(store).get(tenantConnectorSecret("acme", "billing"))).toBe("tok_acme_live");
+
+    // The tenant moves its server and pastes no token this time. `register`
+    // validated against the new url with NO credential, so that is what every
+    // later call must use too.
+    const moved = await startMcpServer("lookup_invoice");
+    const result = await vendo.tenantConnectors.register({
+      org: "acme", name: "billing", kind: "mcp", url: moved.url,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(await storeSecrets(store).get(tenantConnectorSecret("acme", "billing"))).toBeUndefined();
+    moved.authorizations.length = 0;
+    await vendo.guardedTools.descriptors(runAs("acme"));
+    expect(moved.calls).toContain("tools/list");
+    expect(moved.authorizations).toEqual([]);
+  });
+
   it("answers a typed error when the tenant's server is down", async () => {
     const { vendo } = await deployment();
     const acme = await startMcpServer("lookup_invoice");
@@ -360,6 +398,90 @@ describe("a tenant registers its own MCP server", () => {
     expect(await vendo.tenantConnectors.list("globex")).toHaveLength(1);
     expect(await storeSecrets(store).get(tenantConnectorSecret("globex", "logistics"))).toBe("tok_globex_live");
     expect(await storeSecrets(store).get("API_TOKEN")).toBe("host_owned");
+  });
+});
+
+describe("a person who belongs to two orgs", () => {
+  it("keeps every tool when both orgs chose the SAME connector name", async () => {
+    const { vendo } = await deployment();
+    const acme = await startMcpServer("lookup_invoice");
+    const globex = await startMcpServer("lookup_invoice");
+    // Both tenants called their connector "billing", so both compose the tool
+    // name `mcp_billing_lookup_invoice`. One shared registry answers that with a
+    // conflict throw and serves NOTHING — host tools included — to a person
+    // whose only mistake was belonging to both.
+    await vendo.tenantConnectors.register({ org: "acme", name: "billing", kind: "mcp", url: acme.url });
+    await vendo.tenantConnectors.register({ org: "globex", name: "billing", kind: "mcp", url: globex.url });
+
+    const both = await toolNames(vendo, "acme", "globex");
+    // The shared surface is whole — the collision took nothing with it.
+    expect(both).toEqual(expect.arrayContaining(await toolNames(vendo, "unregistered")));
+    // ...and the colliding name is offered exactly ONCE, or the model has two
+    // tools it cannot tell apart and no way to address either.
+    expect(both.filter((name) => name === "mcp_billing_lookup_invoice")).toHaveLength(1);
+  });
+
+  it("runs the first org it asserted, which is the one the listing offered", async () => {
+    const { vendo } = await deployment("autopilot");
+    const acme = await startMcpServer("lookup_invoice");
+    const globex = await startMcpServer("lookup_invoice");
+    await vendo.tenantConnectors.register({ org: "acme", name: "billing", kind: "mcp", url: acme.url });
+    await vendo.tenantConnectors.register({ org: "globex", name: "billing", kind: "mcp", url: globex.url });
+    // Both were reached while the registries were built; only the call matters.
+    await toolNames(vendo, "globex", "acme");
+    acme.calls.length = 0;
+    globex.calls.length = 0;
+
+    await vendo.guardedTools.execute(
+      { id: "call_collide", tool: "mcp_billing_lookup_invoice", args: {} },
+      runAs("globex", "acme"),
+    );
+
+    expect(globex.calls).toContain("tools/call");
+    expect(acme.calls).not.toContain("tools/call");
+  });
+
+  it("cannot confuse one org named \"a,b\" with membership in a and b", async () => {
+    const { vendo } = await deployment();
+    const server = await startMcpServer("lookup_invoice");
+    await vendo.tenantConnectors.register({ org: "a", name: "billing", kind: "mcp", url: server.url });
+
+    // A cache keyed by the joined membership list read these two as the same
+    // caller, and handed org "a,b" the tools of orgs a and b.
+    expect(await toolNames(vendo, "a", "b")).toContain("mcp_billing_lookup_invoice");
+    expect(await toolNames(vendo, "a,b")).not.toContain("mcp_billing_lookup_invoice");
+  });
+});
+
+/** A host tool named exactly what the tenant registration below will compose
+ *  (`mcp_<registration>_<tool>`), so the two genuinely collide. */
+const SHADOW_HOST_TOOL: ToolDefinition = {
+  name: "mcp_shadow_probe",
+  title: "The host's own probe",
+  description: "The host's own tool, which a tenant must never displace.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  risk: "read",
+  execute: async () => ({ ran: "host" }) as unknown as Json,
+};
+
+describe("a tenant that names a tool after a host tool", () => {
+  it("is offered once, and it is the HOST's tool that runs", async () => {
+    const { vendo } = await deployment("autopilot", [SHADOW_HOST_TOOL]);
+    const tenant = await startMcpServer("probe");
+    await vendo.tenantConnectors.register({ org: "acme", name: "shadow", kind: "mcp", url: tenant.url });
+
+    const offered = await toolNames(vendo, "acme");
+    expect(offered.filter((name) => name === "mcp_shadow_probe")).toHaveLength(1);
+
+    tenant.calls.length = 0;
+    const outcome = await vendo.guardedTools.execute(
+      { id: "call_shadow", tool: "mcp_shadow_probe", args: {} },
+      runAs("acme"),
+    );
+
+    expect(outcome).toMatchObject({ status: "ok", output: { ran: "host" } });
+    // The tenant's server was never even asked — the shadowing is structural.
+    expect(tenant.calls).toEqual([]);
   });
 });
 

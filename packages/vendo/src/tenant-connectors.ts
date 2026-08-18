@@ -139,8 +139,10 @@ function connectorFor(row: Registration, token: string | undefined): Connector {
 export interface ComposedTenantConnectors {
   /** The public handle. Carries no overlay affordance of any kind. */
   api: TenantConnectors;
-  /** The registry this run is served, or `undefined` for the shared one. */
-  overlay(ctx: ToolListingContext | RunContext | undefined): Promise<ToolRegistry | undefined>;
+  /** The registries this run's asserted orgs add to the shared one, in the
+   *  order they were asserted. Empty for a run that asserts no org, or whose
+   *  orgs have registered nothing. */
+  overlay(ctx: ToolListingContext | RunContext | undefined): Promise<ToolRegistry[]>;
 }
 
 export function createTenantConnectors(deps: {
@@ -161,9 +163,15 @@ export function createTenantConnectors(deps: {
   const readToken = async (org: string, name: string): Promise<string | undefined> =>
     deps.ops === undefined ? undefined : (await deps.ops.secrets.get(secretName(org, name))) ?? undefined;
 
-  /** Every overlay registry built so far, keyed by the run's asserted orgs. A
-   *  registration change clears the WHOLE map: registering is a rare dev-side
-   *  operation, and one `clear()` beats bookkeeping which keys held which org. */
+  /** ONE registry per ORG, keyed by the org id itself — never one per membership
+   *  COMBINATION. Two orgs' connectors sharing a registration name compose the
+   *  same tool name, and a shared registry answers that with a `conflict` throw
+   *  (actions/runtime/registry.ts) that takes the whole listing down, host tools
+   *  included, for a person who merely belongs to both. Kept apart, each org's
+   *  registry only ever sees its own connectors, so the collision cannot form;
+   *  the merge below is where the two meet, and it is a de-duplication, not a
+   *  build. A plain org id is also unambiguous as a key, which a joined list of
+   *  them would not be. */
   const cache = new Map<string, Promise<ToolRegistry | undefined>>();
 
   const api: TenantConnectors = {
@@ -180,15 +188,22 @@ export function createTenantConnectors(deps: {
         // Validate by CONNECTING: the discovered tools are the proof, and they
         // are what the caller gets back.
         const tools = await connectorFor(row, input.token).descriptors();
-        if (input.token !== undefined) {
-          if (deps.ops === undefined) {
-            throw new VendoError(
-              "not-implemented",
-              "this deployment's store has no secret vault, so a tenant connector token cannot be stored: "
-              + "use the default store (or any store on the named-operation surface — Vendo Cloud, your own Postgres via createStore).",
-            );
-          }
-          await deps.ops.secrets.set(secretName(input.org, input.name), input.token);
+        if (input.token !== undefined && deps.ops === undefined) {
+          throw new VendoError(
+            "not-implemented",
+            "this deployment's store has no secret vault, so a tenant connector token cannot be stored: "
+            + "use the default store (or any store on the named-operation surface — Vendo Cloud, your own Postgres via createStore).",
+          );
+        }
+        if (deps.ops !== undefined) {
+          // The vault always ends up holding exactly what this call VALIDATED
+          // with. A re-registration that pasted no token drops the old one
+          // instead of leaving runtime to send a credential to a url its owner
+          // never paired it with — which is also the only way `register`'s
+          // discovery and the later live calls can be the same request.
+          const vaulted = secretName(input.org, input.name);
+          if (input.token === undefined) await deps.ops.secrets.delete(vaulted);
+          else await deps.ops.secrets.set(vaulted, input.token);
         }
         await records().put({
           id: rowId(input.org, input.name),
@@ -197,7 +212,7 @@ export function createTenantConnectors(deps: {
           // existing erase cascade's subject leg reaches these rows.
           refs: { subject: input.org },
         });
-        cache.clear();
+        cache.delete(input.org);
         return { status: "ok", tools };
       } catch (error) {
         return failed(error);
@@ -211,7 +226,7 @@ export function createTenantConnectors(deps: {
     async remove(org, name) {
       await records().delete(rowId(org, name));
       if (deps.ops !== undefined) await deps.ops.secrets.delete(secretName(org, name));
-      cache.clear();
+      cache.delete(org);
     },
 
     async test(org, name) {
@@ -230,6 +245,21 @@ export function createTenantConnectors(deps: {
   const connectorsFor = async (org: string): Promise<Connector[]> =>
     await Promise.all((await rowsFor(org)).map(async (row) => connectorFor(row, await readToken(row.org, row.name))));
 
+  const registryFor = (org: string): Promise<ToolRegistry | undefined> => {
+    let built = cache.get(org);
+    if (built === undefined) {
+      built = (async () => {
+        const connectors = await connectorsFor(org);
+        return connectors.length === 0 ? undefined : deps.bind(connectors);
+      })();
+      // A failed build is never cached: without this one transient store blip
+      // leaves a rejected promise here and every later turn rethrows it.
+      built.catch(() => cache.delete(org));
+      cache.set(org, built);
+    }
+    return built;
+  };
+
   return {
     api,
     async overlay(ctx) {
@@ -238,47 +268,56 @@ export function createTenantConnectors(deps: {
       // does, and org-policy.ts reads memberships off it the same way), so the
       // orgs are there at runtime. A ctx without them simply has no overlay.
       const orgs = assertedOrgs((ctx ?? {}) as RunContext);
-      if (orgs.length === 0) return undefined;
-      const key = orgs.join(",");
-      let built = cache.get(key);
-      if (built === undefined) {
-        built = (async () => {
-          const tenant = (await Promise.all(orgs.map(connectorsFor))).flat();
-          return tenant.length === 0 ? undefined : deps.bind(tenant);
-        })();
-        // A failed build is never cached: without this one transient store blip
-        // leaves a rejected promise here and every later turn rethrows it.
-        built.catch(() => cache.delete(key));
-        cache.set(key, built);
-      }
-      return built;
+      const registries = await Promise.all(orgs.map(registryFor));
+      return registries.filter((registry): registry is ToolRegistry => registry !== undefined);
     },
   };
 }
 
-/** THE selection point: the shared surface, plus THIS run's tenant registry.
+/** THE selection point: the shared surface, plus the registries this run's orgs
+ *  add to it.
  *
- *  The join is a merge of two registries (the same shape @vendoai/agents' own
- *  multi-source registry takes), never a filter over one combined set — a run
- *  whose orgs registered nothing is handed the base registry untouched, and a
- *  run whose org did is handed a second registry another tenant's connector was
- *  never in. The base is asked FIRST, so a tenant server can never shadow a host
- *  tool by naming one of its own after it. */
+ *  A merge of registries (the same shape @vendoai/agents' own multi-source
+ *  registry takes), never a filter over one combined set — a run whose orgs
+ *  registered nothing is handed the base registry untouched, and a run whose org
+ *  did is handed a registry another tenant's connector was never in.
+ *
+ *  ONE order decides everything, and the base leads it. A name the base carries
+ *  is the base's, so a tenant server can never shadow a host tool by naming one
+ *  of its own after it; after that, the first org the caller asserted wins. The
+ *  listing and the dispatch walk that same order, so the tool a person is
+ *  offered is always the tool that runs. */
 export function withTenantOverlay(
   base: ToolRegistry,
   overlay: ComposedTenantConnectors["overlay"],
 ): ToolRegistry {
   return {
     async descriptors(ctx) {
-      const tenant = await overlay(ctx);
-      if (tenant === undefined) return base.descriptors(ctx);
-      return [...await base.descriptors(ctx), ...await tenant.descriptors(ctx)];
+      const tenants = await overlay(ctx);
+      if (tenants.length === 0) return base.descriptors(ctx);
+      // A copy: the registries below cache the array they answer with, and
+      // appending to it would rewrite the deployment's own tool surface.
+      const merged = [...await base.descriptors(ctx)];
+      const taken = new Set(merged.map(({ name }) => name));
+      for (const tenant of tenants) {
+        for (const descriptor of await tenant.descriptors(ctx)) {
+          if (taken.has(descriptor.name)) continue;
+          taken.add(descriptor.name);
+          merged.push(descriptor);
+        }
+      }
+      return merged;
     },
     async execute(call, ctx) {
-      const tenant = await overlay(ctx);
-      if (tenant !== undefined && (await tenant.descriptors()).some(({ name }) => name === call.tool)) {
-        return tenant.execute(call, ctx);
+      const tenants = await overlay(ctx);
+      if (tenants.length === 0) return base.execute(call, ctx);
+      for (const registry of [base, ...tenants]) {
+        if ((await registry.descriptors()).some(({ name }) => name === call.tool)) {
+          return registry.execute(call, ctx);
+        }
       }
+      // Claimed by nobody: the base answers, so an unknown name gets the same
+      // not-found the rest of the deployment already produces.
       return base.execute(call, ctx);
     },
   };
