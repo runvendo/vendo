@@ -162,6 +162,11 @@ const EFFECT_MS = 2_000;
  *  that a dialog of fine print becomes the whole trace. */
 const DIALOG_CHARS = 500;
 
+/** The same bound on what a press REVEALED in words, for the same reason: enough
+ *  of it to tell a tab that paints its category from one that lights itself up,
+ *  and not so much that one press of a long table becomes the whole trace. */
+const SHOWED_CHARS = 500;
+
 export interface Fired {
   readonly name: string;
   readonly args: unknown;
@@ -277,6 +282,30 @@ export interface Probed {
    *  was dismissed, a toggle flipped. What tells a control that only changes local
    *  state apart from one that is dead, since neither asks the host for anything. */
   readonly changed: boolean;
+  /**
+   * What the press put on the screen IN WORDS, bounded (2026-08-18).
+   *
+   * `revealed` above is the CONTROLS a press put there; this is what it SAYS. The
+   * probe recorded the first and not the second, so a tab that paints a whole
+   * category of rows and a tab that only lights itself up were the same entry —
+   * `changed: true`, and nothing about what changed. The judge, which reads this
+   * trace and not the screen mid-press, called the working one broken:
+   * `trades-accounting/price-book` lost three correctness lines to "the HVAC and
+   * Electrical tabs are inert per the trace", against a trace saying `changed:
+   * true` for both of them.
+   *
+   * Present only where the record was otherwise BLIND — the press moved the screen,
+   * asked the host for nothing, and opened no dialog. A press that called something
+   * already says what it did, a dialog already carries its own words, and a press
+   * that moved nothing has nothing to show.
+   */
+  readonly showed?: string;
+  /** The press was a CHOICE the chooser never took (2026-08-18). The harness never
+   *  got to ask the question, so nothing about this control was tested — see
+   *  `choose`. Present exactly when a chooser's value had not moved after a retry;
+   *  the floor grades it as neither earned nor missed, as it does `alreadyActive`,
+   *  and without it a dropped choice read as a dead control. */
+  readonly choiceDropped?: true;
   /** The control was ALREADY the one showing when it was pressed (`ALREADY`), so
    *  calling nothing and moving nothing is what it is supposed to do. Present
    *  exactly when it was: the floor grades such a press as neither earned nor
@@ -294,7 +323,11 @@ export interface Probed {
  *  what the trace records can never disagree about what changed. */
 interface Look {
   readonly calls: readonly Fired[];
-  readonly text: number;
+  /** Everything the screen is showing, in the words a person reads. Compared by
+   *  LENGTH for "did that press do anything" — which is all the wait below can
+   *  afford to poll — and read line by line for `showedBy`, which is what the
+   *  press put there. */
+  readonly body: string;
   readonly elements: number;
   /** How many of the screen's controls are switched on. A toggle that flips
    *  changes neither the text nor the element count, so by those two alone a
@@ -331,7 +364,7 @@ const look = async (page: Page): Promise<Look> =>
   await page.evaluate(
     (what: { on: string; live: string; selects: string; sep: string }) => ({
       calls: window.vendo?.calls ?? [],
-      text: document.body.innerText.length,
+      body: document.body.innerText,
       elements: document.querySelectorAll("*").length,
       on: document.querySelectorAll(what.on).length,
       live: document.querySelectorAll(what.live).length,
@@ -349,7 +382,7 @@ const settle = async (page: Page, before: Look): Promise<void> => {
   // wait and the reading above have to agree about what "on" and "live" mean.
   const was = {
     calls: before.calls.length,
-    text: before.text,
+    text: before.body.length,
     elements: before.elements,
     on: before.on,
     live: before.live,
@@ -399,6 +432,29 @@ const controlsOn = async (page: Page): Promise<string[]> =>
     )
     .catch(() => []);
 
+/**
+ * What a press put on the screen in WORDS: the lines that are showing now and
+ * were not showing before, bounded (2026-08-18).
+ *
+ * By LINE, because `innerText` already breaks a screen into the blocks a person
+ * reads it in, and because a line that was on the screen before is not new however
+ * far it moved — so a press that only re-orders a table shows nothing, and a press
+ * that swaps a panel's whole contents shows the new panel. Trimmed on both sides
+ * for the same reason `controlsOn` uses `textContent`: identity must not move with
+ * layout.
+ *
+ * `undefined` where the press showed nothing new, which is what keeps the field off
+ * a press that has nothing to say.
+ */
+const showedBy = (before: string, after: string): string | undefined => {
+  const had = new Set(before.split("\n").map((line) => line.trim()));
+  const fresh = after
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !had.has(line));
+  return fresh.length === 0 ? undefined : fresh.join(" · ").slice(0, SHOWED_CHARS);
+};
+
 /** Which of the controls on the screen now were not on it before, as indices into
  *  `CONTROLS` in document order on the page as the press left it. A signature that
  *  was already there is not new however many copies of it there are now: this would
@@ -412,6 +468,34 @@ interface Given {
   readonly chose: readonly Chosen[];
   readonly filled: readonly Filled[];
 }
+
+/**
+ * A chooser answered, and CHECKED — because a `selectOption` that never landed is
+ * silent (2026-08-18).
+ *
+ * Playwright will not set a control until it is visible, enabled and STILL, and on
+ * a loaded machine a screen that is a frame from settling can spend that whole
+ * bound without ever taking the choice. Nothing throws that the caller sees: the
+ * failure is swallowed like every other press's, and the trace then reports a
+ * choice the page was never given — with `changed: false` beside it, because
+ * nothing moved. That is a dead control by every reading the floor has, and it is
+ * the only floor failure in the 2026-08-18T21-39-10 sweep: the FIRST of
+ * `project-tracker/open-issues`'s two choosers, on a screen that is correctly
+ * wired, whose second chooser took its value fine one reload later.
+ *
+ * So the value is read back, and a choice that did not land is made once more
+ * before it is believed. Once, not until it works: a probe that retries without a
+ * bound returns a verdict that depends on how long it tried. `false` is the harness
+ * saying it never got to ask the question — never the screen answering it.
+ */
+const choose = async (chooser: Locator, value: string): Promise<boolean> => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await chooser.selectOption(value, { timeout: CLICK_MS }).catch(() => undefined);
+    const now = await chooser.evaluate((node: HTMLSelectElement) => node.value).catch(() => undefined);
+    if (now === value) return true;
+  }
+  return false;
+};
 
 /**
  * Everything the screen is asking for, given once, in document order: every
@@ -449,8 +533,9 @@ const supply = async (page: Page): Promise<Given> => {
     // SHOWING: read after, it would report the harness's own pick as the field
     // that pick went into.
     const field = await nameOf(chooser, index);
-    await chooser.selectOption(option.value, { timeout: CLICK_MS }).catch(() => undefined);
-    chose.push({ field, value: option.text });
+    // Reported only if it LANDED: a precondition the screen never received is not
+    // one the trace may tell the judge about.
+    if (await choose(chooser, option.value)) chose.push({ field, value: option.text });
   }
   // Visible only: a field the screen is not showing is not one it is asking for,
   // and waiting out the bound on each of them would spend the case's budget.
@@ -568,11 +653,11 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pre
   const had = await controlsOn(visit.page);
   const { option, already } = await intent(element);
   // Every species is pressed by clicking, except the one that is pressed by
-  // choosing. What it DID is read the same way for both.
-  await (option === undefined
-    ? element.click({ timeout: CLICK_MS })
-    : element.selectOption(option.value, { timeout: CLICK_MS })
-  ).catch(() => undefined);
+  // choosing. What it DID is read the same way for both — but only a choice can
+  // be checked afterwards, so only a choice knows whether it landed.
+  let dropped = false;
+  if (option === undefined) await element.click({ timeout: CLICK_MS }).catch(() => undefined);
+  else dropped = !(await choose(element, option.value));
   await settle(visit.page, before);
 
   // Read after the press has landed, so a confirmation the runtime paints a
@@ -587,25 +672,36 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pre
   const after = await look(visit.page).catch(() => undefined);
   const appeared = after === undefined ? [] : appearedIn(had, await controlsOn(visit.page));
   if (after === undefined) await visit.reset();
+  const changed =
+    after === undefined
+    || after.body.length !== before.body.length
+    || after.elements !== before.elements
+    || after.on !== before.on
+    || after.live !== before.live
+    || after.chosen !== before.chosen;
+  // Only what THIS press asked for. The recorder is the page's, not the press's,
+  // so handing over the whole array credited one load-time call to every control
+  // on the screen and graded a dead button as wired.
+  const calls = after?.calls.slice(before.calls.length) ?? [];
+  // And what it SHOWED, recorded only where those two leave the record blind: the
+  // press moved the screen, asked the host for nothing, and opened no dialog. Any
+  // other press already says what it did.
+  const showed =
+    after !== undefined && changed && calls.length === 0 && said === undefined
+      ? showedBy(before.body, after.body)
+      : undefined;
   return {
     probed: {
       label,
       ...(said === undefined ? {} : { dialog: said }),
       ...(already ? { alreadyActive: true as const } : {}),
+      ...(dropped ? { choiceDropped: true as const } : {}),
       // The harness's own pick, on the press it was made by, for the same reason a
-      // fill is on the press it bought.
-      ...(option === undefined ? {} : { chose: [{ field: label, value: option.text }] }),
-      changed:
-        after === undefined
-        || after.text !== before.text
-        || after.elements !== before.elements
-        || after.on !== before.on
-        || after.live !== before.live
-        || after.chosen !== before.chosen,
-      // Only what THIS press asked for. The recorder is the page's, not the
-      // press's, so handing over the whole array credited one load-time call to
-      // every control on the screen and graded a dead button as wired.
-      calls: after?.calls.slice(before.calls.length) ?? [],
+      // fill is on the press it bought — and never a pick the chooser refused.
+      ...(option === undefined || dropped ? {} : { chose: [{ field: label, value: option.text }] }),
+      changed,
+      ...(showed === undefined ? {} : { showed }),
+      calls,
     },
     appeared,
   };

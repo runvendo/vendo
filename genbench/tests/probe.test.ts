@@ -201,6 +201,63 @@ const SAVES_ON_CHOICE = screen(
   });`,
 );
 
+/** The same chooser around a page that puts the value back, once or forever — the
+ *  one shape a dropped choice and a refused one share, since both leave the
+ *  chooser holding what it held. */
+const chooser = (handler: string): string =>
+  screen(
+    `<select id="cap" aria-label="Coffee cap">
+    <option value="1000">$10 a month</option>
+    <option value="5000">$50 a month</option>
+  </select>`,
+    handler,
+  );
+
+/**
+ * A chooser whose first answer does not stick.
+ *
+ * `selectOption` is silent when it fails — the failure is swallowed like every
+ * other press's — so a choice that never landed was recorded as a choice that did,
+ * with `changed: false` beside it because nothing had moved. That is a dead control
+ * by every reading the floor has, and it convicted a correctly wired screen: the
+ * only floor failure of the 2026-08-18T21-39-10 sweep was
+ * `project-tracker/open-issues`'s FIRST chooser, whose twin — pressed one reload
+ * later — took its value fine. The value is read back now, and a choice that did
+ * not land is made once more before it is believed.
+ */
+const REFUSES_ONCE = chooser(`var refused = false;
+  document.getElementById("cap").addEventListener("change", function () {
+    if (!refused) { refused = true; this.value = "1000"; return; }
+    window.vendo.callTool("set_budget", { category: "coffee", limit_cents: Number(this.value) });
+  });`);
+
+/** And one that never takes it. The retry is bounded at one, because a probe that
+ *  retries until it works returns a verdict that depends on how long it tried — so
+ *  this is what the harness looks like when it never got to ask the question. */
+const REFUSES_ALWAYS = chooser(`document.getElementById("cap").addEventListener("change", function () {
+    this.value = "1000";
+  });`);
+
+/**
+ * The tab the run was actually failed on: pressing it swaps the panel beneath it.
+ *
+ * It asks the host for nothing and moves the screen, which recorded as
+ * `changed: true` and not one word about WHAT changed — so a tab that paints a
+ * whole category of rows and a tab that only lights itself up were the same entry.
+ * The judge reads this trace and not the screen mid-press, and it called the
+ * working one broken: `trades-accounting/price-book` lost three correctness lines
+ * to "the HVAC and Electrical tabs are inert per the trace", against a trace saying
+ * `changed: true` for both of them.
+ */
+const SWAPS_PANEL = screen(
+  `<button role="tab" aria-selected="true">Plumbing</button>
+  <button id="hvac" role="tab" aria-selected="false">HVAC</button>
+  <p id="panel">Drain snaking</p>`,
+  `document.getElementById("hvac").addEventListener("click", function () {
+    document.getElementById("panel").textContent = "Rooftop units and ductwork";
+  });`,
+);
+
 /** The two halves of a locked control, identical until the choice is made. */
 const guarded = (handler: string): string =>
   screen(
@@ -612,9 +669,15 @@ describe("the click probe grades what a browser actually does", () => {
     expect(wiredActions(trace, world).pass).toBe(true);
   });
 
-  it("passes a button that only changes the screen, and says that is what it did", async () => {
+  it("passes a button that only changes the screen, and says what it put there", async () => {
     const trace = await traceOf(STATE_ONLY);
-    expect(trace).toEqual([{ label: "Cancel transfer", changed: true, calls: [] }]);
+
+    // And says WHAT changed, not only that something did (2026-08-18): the words
+    // the press revealed are the difference between a control that paints a panel
+    // and one that only lights itself up, and the judge has no other way to tell.
+    expect(trace).toEqual([
+      { label: "Cancel transfer", changed: true, showed: "Transfer to Alex Rivera, arriving Tuesday", calls: [] },
+    ]);
 
     const result = wiredActions(trace, world);
     expect(result.pass).toBe(true);
@@ -734,6 +797,50 @@ describe("the click probe grades what a browser actually does", () => {
       expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
     });
 
+    /**
+     * The choice is read back, so a chooser that did not take it gets asked twice.
+     *
+     * Nothing about `selectOption` says it failed, so the probe believed a choice
+     * the page never received and recorded `changed: false` beside a value it
+     * claimed to have set — a dead control by every reading the floor has, and the
+     * only floor failure of the 2026-08-18T21-39-10 sweep.
+     */
+    it("asks a chooser twice when the first answer did not stick", async () => {
+      const trace = await traceOf(REFUSES_ONCE);
+
+      // The second answer landed, so this is an ordinary chooser press: the value
+      // moved, the tool fired with it, and nothing on the trace says the harness
+      // had to ask twice — which is right, because the screen answered.
+      expect(trace).toEqual([
+        {
+          label: "$10 a month",
+          changed: true,
+          chose: [{ field: "$10 a month", value: "$50 a month" }],
+          calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
+        },
+      ]);
+      expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
+    });
+
+    /** And a chooser whose value never moves after that second ask is the HARNESS
+     *  reporting it never got to put the question — its own binding kind, the way
+     *  an already-active control is, rather than a dead control the screen is
+     *  charged for. Never `chose`, either: a value the page refused is not one the
+     *  trace may tell the judge the screen was given. */
+    it("blames nobody for a chooser that would not take a value at all", async () => {
+      const trace = await traceOf(REFUSES_ALWAYS);
+
+      expect(trace).toEqual([{ label: "$10 a month", changed: false, choiceDropped: true, calls: [] }]);
+
+      const result = wiredActions(trace, world);
+      expect(result.pass).toBe(true);
+      expect(result.bindings[0]).toEqual({
+        where: "$10 a month",
+        effect: "choice-dropped",
+        why: "the chooser never took the harness's value, so it was never put to the question",
+      });
+    });
+
     it("leaves a chooser that already holds a real value alone", async () => {
       const trace = await traceOf(DEFAULTED);
 
@@ -850,6 +957,31 @@ describe("the click probe grades what a browser actually does", () => {
       const trace = await traceOf(PICKED);
 
       expect(trace).toEqual([{ label: "Monthly", alreadyActive: true, changed: false, calls: [] }]);
+      expect(wiredActions(trace, world).pass).toBe(true);
+    });
+
+    /**
+     * And the tab BESIDE it says what it painted, not just that it painted
+     * something (2026-08-18).
+     *
+     * The floor was never the problem here — a press that moves the screen has
+     * always held — the JUDGE was: "called nothing, and changed the screen" is the
+     * same sentence for a tab that swaps in a whole category and a tab that only
+     * highlights itself, and it read the working one as inert on the run that found
+     * this. So the words the press revealed are on the trace, bounded, and the line
+     * a person could already read stays off it.
+     */
+    it("records what a tab painted, not only that the screen moved", async () => {
+      const trace = await traceOf(SWAPS_PANEL);
+
+      expect(trace).toEqual([
+        { label: "Plumbing", alreadyActive: true, changed: false, calls: [] },
+        { label: "HVAC", changed: true, showed: "Rooftop units and ductwork", calls: [] },
+      ]);
+      // "Drain snaking" is gone and "HVAC" was on the screen all along: what the
+      // press SHOWED is what is there now and was not there before, by the line.
+      expect(trace[1]!.showed).not.toContain("Drain snaking");
+      expect(trace[1]!.showed).not.toContain("HVAC");
       expect(wiredActions(trace, world).pass).toBe(true);
     });
   });
@@ -1012,11 +1144,15 @@ describe("the click probe grades what a browser actually does", () => {
       const trace = await traceOf(REVEALS);
 
       // The chosen option is on the path that chose it, in the words it SHOWS —
-      // the same reason a filled box is on the press it bought, one level in.
+      // the same reason a filled box is on the press it bought, one level in. And
+      // `showed` is what the opening press put on the screen IN WORDS (2026-08-18):
+      // "changed the screen" said that something appeared and never what, which is
+      // the whole reason a working tab could read as an inert one.
       expect(trace).toEqual([
         {
           label: "Set a cap",
           changed: true,
+          showed: "Pick a cap · $50 a month · Save cap",
           calls: [],
           revealed: [
             { label: "Pick a cap", changed: true, chose: [{ field: "Pick a cap", value: "$50 a month" }], calls: [] },

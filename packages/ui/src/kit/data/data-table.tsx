@@ -5,7 +5,7 @@
  * state — none of which the model has to author. A cell's TEXT is the field as
  * the screen prepared it; formatting figures is the screen's own job.
  */
-import { Children, createContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Children, createContext, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -120,14 +120,34 @@ export const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"
 export const headerText = (col: DataTableColumn): string =>
   col.label ?? col.header ?? humanizeEnum(col.key?.split(".").pop() ?? "");
 
+/** The words a cell's own elements SPELL, where they spell any: a slot written
+ *  as `<Text>Out for delivery</Text>` carries them as children, and one that
+ *  computes its label (`<EnumBadge value="in_progress"/>`) carries none. Nothing
+ *  renders here to find out — this reads the elements the screen handed over. */
+const slotText = (node: ReactNode): string =>
+  typeof node === "string" || typeof node === "number"
+    ? String(node)
+    : Array.isArray(node)
+      ? node.map(slotText).join("")
+      : isValidElement(node)
+        ? slotText((node.props as { children?: ReactNode }).children)
+        : "";
+
 /**
  * The text a cell SHOWS, which is the only thing a filter may compare against:
  * the person filters on what is in front of them, not on the raw field behind
  * it. Unrenderable cells (the "—" placeholder) filter as empty.
+ *
+ * A `cell` slot IS what is shown wherever there is one, so it is what is read —
+ * its own words where it spells them, the humanized token where it does not.
+ * This used to read the raw field either way, so a column of "In progress" pills
+ * offered `in_progress` in its dropdown: a word nobody on that screen could see,
+ * under a heading promising the column.
  */
-function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
+function displayText(row: Record<string, unknown>, column: DataTableColumn, cell?: ReactNode): string {
   if (column.key === undefined) return "";
-  return applyFormat(readField(row, column.key), "text") ?? "";
+  const raw = applyFormat(readField(row, column.key), "text") ?? "";
+  return column.cell === undefined ? raw : slotText(cell) || humanizeEnum(raw);
 }
 
 export const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
@@ -271,7 +291,8 @@ export function DataTable(props: DataTableProps) {
         // A dropdown lists the values that exist, so picking one means THIS
         // value — "includesString" here let a pick of "paid" list the "unpaid"
         // rows too.
-        filterFn: (row, _columnId, value) => displayText(row.original, col) === String(value),
+        filterFn: (row, _columnId, value) =>
+          displayText(row.original, col, forRow(col.cell, row.original)) === String(value),
       })),
     [columns, forRow],
   );
@@ -290,7 +311,8 @@ export function DataTable(props: DataTableProps) {
     globalFilterFn: (row, columnId, value) => {
       const col = columns.find((entry) => entry.key === columnId);
       if (!col) return false;
-      return displayText(row.original, col).toLowerCase().includes(String(value).toLowerCase());
+      return displayText(row.original, col, forRow(col.cell, row.original))
+        .toLowerCase().includes(String(value).toLowerCase());
     },
     // Every column renders text, so every column is searchable on that text.
     // The default excludes any column whose raw value is not a string or number
@@ -310,13 +332,13 @@ export function DataTable(props: DataTableProps) {
       const col = columns.find((entry) => entry.key === key) ?? { key };
       const set = new Set<string>();
       for (const row of data) {
-        const text = displayText(row, col);
+        const text = displayText(row, col, forRow(col.cell, row));
         if (text !== "") set.add(text);
       }
       map.set(key, [...set].sort());
     }
     return map;
-  }, [filterableBy, data, columns]);
+  }, [filterableBy, data, columns, forRow]);
 
   const columnLabel = (key: string) => headerText(columns.find((c) => c.key === key) ?? { key });
 

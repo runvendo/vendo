@@ -53,16 +53,21 @@ describe("cell slots", () => {
   });
 
   // The slot changes what a cell SHOWS, never what the column IS: sorting,
-  // filtering and search still run off `key`.
-  it("still filters a slotted column on its key", () => {
+  // filtering and search still run off `key`. What the dropdown OFFERS is the
+  // other half — the pill's own word, because that is what the person is picking
+  // between. It used to offer the raw `overdue` under a column of "Overdue"
+  // pills, which named a value nobody on that screen could see.
+  it("still filters a slotted column on its key, in the words its pills paint", () => {
     render(<DataTable rows={rows} columns={columns} filterableBy={["status"]} />);
     const filter = screen.getByRole("combobox", { name: "Filter by Status" });
-    expect(within(filter).getByRole("option", { name: "overdue" })).toBeTruthy();
+    expect(within(filter).getByRole("option", { name: "Overdue" })).toBeTruthy();
 
-    fireEvent.change(filter, { target: { value: "overdue" } });
+    fireEvent.change(filter, { target: { value: "Overdue" } });
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.queryByText("Acme")).toBeNull();
-    expect(screen.queryByText("Paid")).toBeNull();
+    // In the TABLE: "Paid" is a word the dropdown now offers too, and the
+    // filtered-out row's pill is the one that has to be gone.
+    expect(within(screen.getByRole("table")).queryByText("Paid")).toBeNull();
   });
 
   it("searches a slotted column on the text its key produces", () => {

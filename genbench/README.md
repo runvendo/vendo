@@ -603,6 +603,14 @@ pressing toggles; unlocking the button beside a chooser moves none of the first
 three, so without the fourth the choice that opens "Pick a category, then Save cap"
 would be graded dead the moment the probe started pressing choosers.
 
+What a press REVEALED in words is recorded beside those numbers (2026-08-18): the
+lines of `document.body.innerText` that are showing after it and were not showing
+before, bounded at 500 characters. The numbers say something moved; they never say
+what, and the judge reads this trace rather than the screen. It is carried only
+where the record was otherwise blind — the press moved the screen, asked the host
+for nothing, and opened no dialog — because any other press already says what it
+did. No floor check reads it.
+
 One press is read as neither a pass nor a failure: the control that was
 **already the active one** (2026-08-18) — `[aria-selected=true]`, `[aria-current]`,
 a radio already on, or a chooser with no option but the one it holds. Pressing it
@@ -614,6 +622,16 @@ design` — that neither earns a pass nor costs one, the way a screen with nothi
 press is vacuous rather than wrong. It has to be **detectable** to be excused: a
 row's *Open* button that no-ops because that row is already open, with nothing in
 the markup saying so, is still recorded as a control that did nothing.
+
+A second press is read the same way, and it is the HARNESS's fault rather than the
+screen's: a chooser that never took the value it was given. `selectOption` is
+silent when it fails, so a choice that never landed was recorded as a choice that
+did, with `changed: false` beside it because nothing had moved — a dead control by
+every reading the floor has. The value is read back now and a choice that did not
+land is made once more, once and no more, before it is believed; a chooser still
+holding what it held after that is `choice-dropped — the chooser never took the
+harness's value`, which earns nothing and costs nothing, and its `chose` stays off
+the trace because a value the page refused is not one the screen was given.
 
 Nothing else about what PASSES moved with those widenings. A pressed control still
 has to call a real tool with valid arguments or visibly move the screen, and a dead
@@ -1154,6 +1172,29 @@ and the other 158 still compare with each other.
 The frame those pictures are taken in widened from **480px to 1280px** in the
 same batch. That moves the screenshots the judge reads for every column at once,
 so no verdict shot at 480 compares with one shot at 1280.
+
+Three fixes off the **2026-08-18T21-39-10** sweep close the last of that batch, and
+they split three ways. A press that moved the screen now says WHAT it put there, so
+the trace stops reading like a dead control: `trades-accounting/price-book` lost
+three correctness lines to "the HVAC and Electrical tabs are inert per the trace",
+against a trace saying `changed: true` for both — the rows behind those tabs, the
+$42.00 spiral duct and the $3,850.00 panel among them, are on the trace now. It
+moves the JUDGE in both directions and no floor check reads it. A chooser that
+never took the harness's value is `choice-dropped` rather than a dead control,
+which moves the floor in **one direction only**: it was the sweep's single floor
+failure (`project-tracker/open-issues`'s first of two choosers, on a correctly wired
+screen whose second chooser took its value fine one reload later), and the retry
+means most such presses now land instead of being excused. And a required argument
+sent **empty** is invalid, which moves the floor in **both**: `move_issue({issue_id:
+"CAI-142", status:""})` was stamped `argsValid: true` on
+`project-tracker/my-issues-inbox`, so the judge failed the line while the floor
+cleared the screen — that one status control now fails `wired` and the five beside
+it, which send real statuses, still pass and still prove the case's action. All
+three are the same code for every column. `rubricVersion` is untouched — the rubric
+and the prompt did not move, only what the trace tells the judge and what the floor
+does with an empty slot — but a trace recorded before them carries neither the
+revealed words nor the checked choice, so no earlier run's `wired` or `pressed`
+compares with a later one's.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of

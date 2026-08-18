@@ -358,6 +358,15 @@ function traceText(trace: readonly Probed[]): string {
       // control that was ALREADY the one showing (2026-08-18): "called nothing, and
       // changed nothing" reads to the judge as dead, when calling and moving
       // nothing is exactly what pressing an active tab or a picked radio should do.
+      //
+      // And "changed the screen" alone was the same misreading in the other
+      // direction (2026-08-18): it says a press moved something without saying
+      // WHAT, so a tab that paints a whole category read exactly like a tab that
+      // lights itself up — `trades-accounting/price-book` lost three correctness
+      // lines to "the HVAC and Electrical tabs are inert per the trace", against a
+      // trace saying both had changed the screen. The words the press revealed are
+      // on it now, so the judge grades what appeared rather than the fact that
+      // something did.
       const opened = probed.dialog === undefined ? "" : `opened a confirmation: ${JSON.stringify(probed.dialog)}`;
       const did =
         asked !== ""
@@ -365,10 +374,14 @@ function traceText(trace: readonly Probed[]): string {
           : opened !== ""
             ? opened
             : probed.changed
-              ? "called nothing, and changed the screen"
+              ? probed.showed === undefined
+                ? "called nothing, and changed the screen"
+                : `called nothing, and revealed: ${JSON.stringify(probed.showed)}`
               : probed.alreadyActive === true
                 ? "already active, a no-op by design"
-                : "called nothing, and changed nothing";
+                : probed.choiceDropped === true
+                  ? "the harness could not get this chooser to take a value, so nothing about it was tested"
+                  : "called nothing, and changed nothing";
       const within =
         probed.inside !== undefined
           ? `\n  inside the confirmation, ${insideText(probed.inside)}`

@@ -282,6 +282,29 @@ describe("wiredActions", () => {
     expect(result.bindings[0]).toMatchObject({ known: true, argsValid: false, why: 'missing required argument "id"' });
   });
 
+  /**
+   * A required argument sent EMPTY is the same failure as one not sent at all
+   * (2026-08-18).
+   *
+   * `move_issue({issue_id:"CAI-142", status:""})` was stamped `argsValid: true` —
+   * a status control that carried no status — so the judge failed the line
+   * ("the Done segment called move_issue with status:\"\"") while the floor cleared
+   * the screen and let it prove its `action` case on the strength of that call.
+   * Schema-driven and not a guess about the value: the tool declares the argument
+   * required, so an empty slot is a slot the screen did not fill.
+   */
+  it("fails a required argument sent empty", () => {
+    const result = wiredActions(pressed("cancel_transfer", { id: "" }), world);
+    expect(result.pass).toBe(false);
+    expect(result.bindings[0]).toMatchObject({ known: true, argsValid: false, why: 'required argument "id" is empty' });
+  });
+
+  it("does not let a write with an empty required argument prove an action case", () => {
+    const result = wiredActions(pressed("cancel_transfer", { id: "" }), world, ["action"]);
+    expect(result.acted).toBeUndefined();
+    expect(result.why).toContain("no press ever asked the host for anything");
+  });
+
   it("fails an argument the tool does not declare", () => {
     const result = wiredActions(pressed("cancel_transfer", { id: "tr_1", force: true }), world);
     expect(result.bindings[0]).toMatchObject({ argsValid: false, why: 'unknown argument "force"' });

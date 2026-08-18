@@ -8,9 +8,11 @@ export interface Binding {
    *  asked for nothing and the screen moved anyway, which is every legitimate
    *  local control: opening a dialog, switching a tab, dismissing a row.
    *  `already-active` — it was already the one showing, so asking for nothing and
-   *  moving nothing is what it is supposed to do. `none` — it asked for nothing and
-   *  nothing happened with somewhere to go, which is a dead control. */
-  readonly effect: "tool" | "state" | "already-active" | "none";
+   *  moving nothing is what it is supposed to do. `choice-dropped` — it is a chooser
+   *  that never took the harness's value (`choose` in `probe.ts`), so the question
+   *  was never put to it. `none` — it asked for nothing and nothing happened with
+   *  somewhere to go, which is a dead control. */
+  readonly effect: "tool" | "state" | "already-active" | "choice-dropped" | "none";
   /** Absent when the press fired nothing at all. */
   readonly tool?: string;
   /** Only asked of a press that fired a tool: a state-only control names no tool,
@@ -54,7 +56,7 @@ export interface FloorResult {
 // -------------------------------------------------------------- wired actions
 
 /** The derived input schemas are all `{type:"object", properties, required,
- *  additionalProperties:false}`, so validating them takes four rules, not a
+ *  additionalProperties:false}`, so validating them takes five rules, not a
  *  schema library. */
 function checkArgs(args: unknown, schema: Record<string, unknown>): string | undefined {
   if (typeof args !== "object" || args === null || Array.isArray(args)) return "arguments are not an object";
@@ -63,6 +65,15 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
   const given = args as Record<string, unknown>;
   for (const name of required) {
     if (!Object.hasOwn(given, name)) return `missing required argument "${name}"`;
+    // The same failure one step on: the slot is there and there is nothing in it.
+    // `move_issue({issue_id:"CAI-142", status:""})` was stamped `argsValid: true`
+    // on 2026-08-18 — a status control that carried no status — so the judge
+    // failed the line ("the Done segment called move_issue with status:\"\"") while
+    // the floor cleared the screen and even let it prove its `action` case. Read
+    // off the SCHEMA and not off the value: the tool declares this argument
+    // required, and every `takes` key is (`inputSchemaFrom` in `world.ts`), so a
+    // required argument sent empty is one the screen did not supply.
+    if (given[name] === "") return `required argument "${name}" is empty`;
   }
   for (const [name, value] of Object.entries(given)) {
     const expected = properties[name]?.type;
@@ -85,12 +96,18 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
  * — where calling nothing and moving nothing is the correct behaviour and the
  * screens that had it right were the ones convicted for it.
  *
+ * Or the press never happened: a chooser that would not take the harness's value
+ * (2026-08-18) was never asked the question, and reading its silence as an answer
+ * convicted a correctly wired screen of a dead control — the only floor failure in
+ * the 2026-08-18T21-39-10 sweep.
+ *
  * Only a press that asked for nothing AND changed nothing AND had somewhere to go
  * is a dead control.
  */
 export const holds = (binding: Binding): boolean =>
   binding.effect === "state"
   || binding.effect === "already-active"
+  || binding.effect === "choice-dropped"
   || (binding.known === true && binding.argsValid === true);
 
 /**
@@ -177,7 +194,9 @@ export function wiredActions(
             ? { where: candidate.label, effect: "state", why: "changed the screen without calling a tool" }
             : candidate.alreadyActive === true
               ? { where: candidate.label, effect: "already-active", why: "already-active — a no-op by design" }
-              : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
+              : candidate.choiceDropped === true
+                ? { where: candidate.label, effect: "choice-dropped", why: "the chooser never took the harness's value, so it was never put to the question" }
+                : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
       ];
     }
     return candidate.calls.map((call): Binding => {

@@ -219,6 +219,45 @@ describe("DataTable", () => {
     expect(screen.queryByText("Acme")).toBeNull();
   });
 
+  /**
+   * …and a column with a `cell` slot is no exception, though it used to be. The
+   * dropdown read the raw field while the cells painted the slot, so a table of
+   * "In progress" pills offered `in_progress` — a word nobody on that screen
+   * could see, under a heading that promised the column.
+   */
+  it("offers a filter in the words a cell SLOT shows, not the token behind it", () => {
+    const tickets = [
+      { id: 1, title: "Login loop", status: "in_progress", stage: "triage" },
+      { id: 2, title: "Slow export", status: "done", stage: "shipping" },
+    ];
+    const stages: Record<string, string> = { triage: "Needs triage", shipping: "Out for delivery" };
+    render(
+      <DataTable
+        rows={tickets}
+        columns={[
+          { key: "title", label: "Title" },
+          // A slot that computes its own label spells no words to read, so the
+          // humanized token stands in — which is exactly what it paints.
+          { key: "status", label: "Status", cell: tickets.map((t) => <EnumBadge value={t.status} />) },
+          // A slot that DOES spell its words is read, so a label no humanizing
+          // could have produced still reaches the dropdown.
+          { key: "stage", label: "Stage", cell: tickets.map((t) => <Text>{stages[t.stage]}</Text>) },
+        ]}
+        filterableBy={["status", "stage"]}
+      />,
+    );
+    const options = (name: string) =>
+      within(screen.getByRole("combobox", { name })).getAllByRole("option").map((option) => option.textContent);
+    expect(options("Filter by Status")).toEqual(["All Status", "Done", "In progress"]);
+    expect(options("Filter by Stage")).toEqual(["All Stage", "Needs triage", "Out for delivery"]);
+
+    // And the pick still narrows: the words the dropdown offers are the words the
+    // filter compares, or it lists the column and answers with nothing.
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter by Status" }), { target: { value: "In progress" } });
+    expect(screen.getByText("Login loop")).toBeTruthy();
+    expect(screen.queryByText("Slow export")).toBeNull();
+  });
+
   it("never breaks a formatted figure across two lines", () => {
     render(<DataTable rows={rows} columns={columns} />);
     expect(screen.getByText("$2,500.00").closest("td")!.style.whiteSpace).toBe("nowrap");

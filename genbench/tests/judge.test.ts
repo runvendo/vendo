@@ -491,6 +491,37 @@ describe("blindness", () => {
     expect(traceSent(model.doGenerateCalls[0]!)).toContain(`pressed "Plumbing" — already active, a no-op by design`);
   });
 
+  /**
+   * The other half of that misreading (2026-08-18): "changed the screen" says a
+   * press moved something and never WHAT, so a tab that paints a whole category
+   * reads exactly like a tab that lights itself up. It cost
+   * `trades-accounting/price-book` three correctness lines — "the HVAC and
+   * Electrical tabs are inert per the trace" — against a trace saying both had
+   * changed the screen.
+   */
+  it("renders what a press revealed in words, not only that the screen moved", async () => {
+    const model = answering();
+    const trace: Probed[] = [{ label: "HVAC", changed: true, showed: "Rooftop units · Ductwork", calls: [] }];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "HVAC" — called nothing, and revealed: "Rooftop units · Ductwork"`,
+    );
+  });
+
+  /** And a chooser the harness never got to answer says so, rather than reading as
+   *  a control that was pressed and did nothing (2026-08-18, `choose` in
+   *  `probe.ts`). */
+  it("renders a chooser that never took a value as a question never put, not a dead control", async () => {
+    const model = answering();
+    const trace: Probed[] = [{ label: "All Status", changed: false, choiceDropped: true, calls: [] }];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "All Status" — the harness could not get this chooser to take a value, so nothing about it was tested`,
+    );
+  });
+
   it("keeps the artifact's format while taking its name — a tree still reads as a tree", async () => {
     const model = answering();
     await judge(input({ artifact: '{"format":"vendo/app@1","ui":"tree","nodes":[{"component":"Stat"}]}' }), { model });
