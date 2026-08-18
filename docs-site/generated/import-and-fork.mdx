@@ -39,7 +39,7 @@ Two copies are refused outright, and both refusals are loud.
 
 ## Forking one of your components
 
-Wrap a component and a user can make it theirs. The fork starts from your real source, copied byte for byte by the engine, never regenerated and never retyped by a model.
+Wrap a component and a user can make it theirs. What they get is a new screen, generated from what they asked for — nothing copies your source into it. Your captured baseline is provenance: what the remix started from, and what a later update replays against.
 
 ```tsx focus={3-5}
 import { Remixable } from "@vendoai/ui/chrome";
@@ -49,7 +49,7 @@ import { Remixable } from "@vendoai/ui/chrome";
 </Remixable>
 ```
 
-At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hover into a **✦ Remix** pill, and pressing it copies the captured source into the user's own fork with no model call.
+At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hover into a **✦ Remix** pill, and pressing it opens the conversation your page already has, prefilled and unsent. The wish is typed there, and the agent mints the remix from it.
 
 <Frame>
   <img
@@ -60,9 +60,9 @@ At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hove
   />
 </Frame>
 
-The fork renders in place, because the wrapper is the mount boundary. The page morphs for that user alone.
+The remix renders in place, because the wrapper is the mount boundary. The page morphs for that user alone.
 
-Forking is a user gesture the engine executes, so the model never decides to fork. The route dedupes per user and per component, so a double press can never mint a duplicate.
+The ✦ is one door, so there is no second form to ask through: a remix that fails to build says so in the same thread that asked for it. Follow-up wishes in that thread edit the remix rather than minting another — the seed dedupes per user and per component, so asking twice can never leave two behind.
 
 ### Instant and reviewed
 
@@ -78,9 +78,9 @@ It decides one thing only: where the fork executes.
   </Card>
 
   <Card title="Reviewed" icon="shield-check">
-    `<Remixable review>`. Your original keeps rendering and the user sees "sent for review", never a half-trusted render.
+    `<Remixable review>`. Your original keeps rendering, untouched — never a half-trusted render — and the verdict is reported in the conversation that asked for the remix.
 
-    On approval the fork mounts natively in your page. On rejection the note lands in the panel and the fork survives, so the user can edit and resubmit.
+    On approval the remix mounts natively in your page. On rejection it survives with the reviewer's note, so the user can edit and resubmit.
   </Card>
 </Columns>
 
@@ -150,14 +150,14 @@ Update the component, run `vendo sync`, and the new baseline overwrites the old 
 
 Vendo says so everywhere the fork is opened or edited. `open()` attaches a server-authoritative `seedDrift` to the payload, edit results carry the same field, and the renderer shows an in-surface notice above the fork.
 
-**Reseed** rebuilds the fork from the new baseline by replaying the one instruction the seed recorded.
+**Update** — the ✦ menu's own item, and `client.apps.reseed` underneath it — rebuilds the remix on the new baseline by replaying every wish the seed recorded, oldest first. The remix is the whole list, so replaying only the wish it started from would silently undo everything asked for since.
 
 ```ts focus={1}
 await client.apps.reseed(appId);
 ```
 
 <Warning>
-  Reseed replaces. Anything the person changed after that first instruction is gone, which is exactly why it stays behind an explicit ask and nothing auto-rebases.
+  A wish the new version cannot take is kept, never dropped: it stays on the seed as `unapplied`, and the update names those wishes out loud so the person can ask for them again. If none of them fit, the remix stays on the version it was made from and the warning stands for the retry.
 </Warning>
 
 It fails closed with `conflict` in two cases: an app that was not created from a host component, and a component that has not changed since the app was created.
