@@ -129,6 +129,69 @@ const dropPrototypeKeys = (key: string, value: unknown): unknown =>
 /** QuickJS reports a tripped interrupt handler as exactly this. */
 const isInterrupt = (thrown: Thrown): boolean => thrown.message === "InternalError: interrupted";
 
+/** The locale a screen's formats resolve against when it names none. A default
+ *  has to be SOME locale; what matters is that it is the HOST's and not the
+ *  machine's — a host whose people read another one passes it. */
+const DEFAULT_LOCALE = "en-US";
+
+/** The zone likewise. UTC because a stored instant is stored in UTC, so the day
+ *  a screen prints is the day the data says — and because it is the zone the
+ *  benchmark's browsers are pinned to, which is the only way two contenders'
+ *  dates are comparable at all. */
+const DEFAULT_TIME_ZONE = "UTC";
+
+/** Which of the host's formats one ask wants. A closed set: nothing but
+ *  {@link INTL_SOURCE} can reach the bridge that carries it. */
+type IntlOp =
+  | "number" | "numberParts" | "numberResolved"
+  | "date" | "dateParts" | "dateResolved"
+  /** `Date.prototype`'s three, which differ from `date` only in what each
+   *  defaults to when the screen named no components. */
+  | "day" | "time" | "stamp";
+
+/** One locale-aware format a screen asked for, as it crosses the wall
+ *  (./vm-program.ts `INTL_SOURCE`, which is the only writer of this shape). */
+interface IntlAsk {
+  op: IntlOp;
+  locale?: string | string[];
+  options?: Record<string, unknown>;
+  /** The number or the instant, as its decimal spelling — JSON carries neither
+   *  `NaN` nor `Infinity`, and both are things `Intl` prints. */
+  value?: string;
+}
+
+/**
+ * One ask, answered by the host's real `Intl`: the formatted text, or JSON where
+ * the ask was for structure.
+ *
+ * The locale and the zone a screen did not name are the WALL's; everything it did
+ * name wins, because it wrote it. The three `toLocale*` ops are answered by the
+ * host's own methods rather than by `Intl.DateTimeFormat`, because the only thing
+ * that separates them is which components each defaults to when a screen names
+ * none — and the engine's own answer to that is the answer a browser gives.
+ *
+ * A format the host refuses (`currency: "USDD"`, an unknown zone) throws out of
+ * here, and the bridge turns a host throw into the same `RangeError` the screen
+ * would have seen in a browser.
+ */
+const answerIntl = (ask: IntlAsk, wall: { locale: string; timeZone: string }): string => {
+  const locale = ask.locale ?? wall.locale;
+  const value = Number(ask.value);
+  const counts = ask.options as Intl.NumberFormatOptions | undefined;
+  const dates = { timeZone: wall.timeZone, ...ask.options } as Intl.DateTimeFormatOptions;
+  switch (ask.op) {
+    case "number": return new Intl.NumberFormat(locale, counts).format(value);
+    case "numberParts": return JSON.stringify(new Intl.NumberFormat(locale, counts).formatToParts(value));
+    case "numberResolved": return JSON.stringify(new Intl.NumberFormat(locale, counts).resolvedOptions());
+    case "date": return new Intl.DateTimeFormat(locale, dates).format(value);
+    case "dateParts": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).formatToParts(value));
+    case "dateResolved": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).resolvedOptions());
+    case "day": return new Date(value).toLocaleDateString(locale, dates);
+    case "time": return new Date(value).toLocaleTimeString(locale, dates);
+    case "stamp": return new Date(value).toLocaleString(locale, dates);
+  }
+};
+
 /**
  * Boot one screen. Synchronous, and long-lived: the VM, the component and its
  * hook state stay alive until {@link ScreenInstance.dispose}, because a screen
@@ -291,6 +354,16 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
   });
   context.setProp(context.global, "__vendo_tool", bridge);
   bridge.dispose();
+
+  // The Intl bridge: the VM is built without ICU, so every locale-aware format
+  // inside it is answered out here, against the wall these options pinned. Same
+  // mechanism as the tool bridge and none of its ceremony — a format is
+  // synchronous, and what comes back is a string.
+  const wall = { locale: options.locale ?? DEFAULT_LOCALE, timeZone: options.timeZone ?? DEFAULT_TIME_ZONE };
+  const intl = context.newFunction("__vendo_intl", (askHandle) =>
+    context.newString(answerIntl(JSON.parse(context.getString(askHandle)) as IntlAsk, wall)));
+  context.setProp(context.global, "__vendo_intl", intl);
+  intl.dispose();
 
   try {
     turn("boot", () => {

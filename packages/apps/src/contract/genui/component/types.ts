@@ -156,6 +156,19 @@ export interface BootScreenOptions {
    */
   now?: number;
   /**
+   * The wall a screen's formatting resolves against: the locale and the IANA zone
+   * that `Intl`, `toLocaleString` and `toLocaleDateString`/`toLocaleTimeString`
+   * DEFAULT to in there. Unset is `"en-US"` and `"UTC"`.
+   *
+   * The host's, never the machine's — the VM has no ICU of its own, so every one
+   * of those calls is answered by the host's real `Intl` (./boot.ts) and would
+   * otherwise read whatever zone the process happens to sit in, which is the
+   * frozen clock's problem one field over. A screen that passes its own locale or
+   * `timeZone` gets it: it wrote it.
+   */
+  locale?: string;
+  timeZone?: string;
+  /**
    * What stops a screen that will not stop. Unset is `wallClockBudget()` — a
    * fifth of a second an event, two seconds a boot. A venue whose clock does not
    * advance during a synchronous burn (workerd) passes `opsBudget()` instead.

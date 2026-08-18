@@ -476,7 +476,14 @@ export const screenCatalog = (
 ];
 
 /** `Promise`, and no DOM: a handler awaits a tool call, and `document`/`fetch`
- *  must stay undeclared so reaching for them is an error. */
+ *  must stay undeclared so reaching for them is an error.
+ *
+ *  It is also what declares `Intl` — `NumberFormat`, `formatToParts`, `dateStyle`,
+ *  and the locale-taking `toLocaleString`/`toLocaleDateString` overloads — and
+ *  those declarations are TRUE inside the box: the VM carries no ICU and borrows
+ *  the host's real `Intl` across the wall (`genui/component/vm-program.ts`
+ *  `INTL_SOURCE`). A smaller lib here would refuse the one idiom every model
+ *  writes for money and dates while the VM ran it perfectly well. */
 export const COMPONENT_SCREEN_LIB = ["lib.es2020.d.ts"];
 
 export interface ComponentScreenTypingsInput {

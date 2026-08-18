@@ -36,7 +36,7 @@ import { KIT_SLOT_PROPS } from "../../kit/specs.js";
 import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from "./preact-source.js";
 
 /**
- * The names the VM must NOT carry.
+ * The names the VM must NOT carry — and the two it may hold only from the host.
  *
  * `Date` and `Math.random` are `$expr`'s two deletions, for `$expr`'s reason: a
  * screen that reads them paints differently on two identical renders. Timers
@@ -49,6 +49,11 @@ import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from ".
  * `console.log` is not a capability, and a bare context has no `console`, so
  * without this one a debug line the model forgot to delete is a ReferenceError
  * that takes the whole screen down.
+ *
+ * The frozen clock and {@link INTL_SOURCE} are the other shape of the same rule:
+ * both are things a screen genuinely needs, both would read the machine the VM
+ * happens to run on, so both are answered by the HOST instead — the clock as one
+ * pinned instant, `Intl` across the wall.
  */
 export function sealSource(now: number | undefined): string {
   const clock = now === undefined
@@ -69,8 +74,83 @@ globalThis.setInterval = globalThis.setTimeout;
 globalThis.clearTimeout = function () {};
 globalThis.clearInterval = globalThis.clearTimeout;
 globalThis.console = { log: function () {}, warn: function () {}, error: function () {}, info: function () {}, debug: function () {} };
+${INTL_SOURCE}
 0`;
 }
+
+/**
+ * Real `Intl`, borrowed from the host.
+ *
+ * QuickJS is built without ICU: there is no `Intl` in here at all, and the
+ * `toLocaleString` family it does carry degrades to `toString()`. So the idiom
+ * every model was trained on —
+ * `cents.toLocaleString("en-US", { style: "currency", currency: "USD" })`,
+ * `new Date(row.due).toLocaleDateString("en-US", { month: "short", day: "numeric" })`
+ * — painted `4200` and a full ISO stamp where a browser paints `$4,200.00` and
+ * `Aug 17`. Every name below therefore exists, and every one of them is answered
+ * ACROSS THE WALL by the host's own `Intl` (./boot.ts `answerIntl`) through the
+ * same synchronous host function the tool bridge is built from. Formatted text is
+ * text, so nothing new crosses.
+ *
+ * WHAT IS PINNED. A locale or a `timeZone` the screen NAMES is honoured — it wrote
+ * it. What it leaves out comes from the host's boot options and never from the
+ * machine the VM happens to be running on, so one screen over one set of data
+ * prints the same string on a laptop in Cairo and on a worker in Iowa.
+ *
+ * A VALUE CROSSES AS TEXT. JSON has no `NaN` and no `Infinity`, and `Intl` prints
+ * both ("NaN", "∞"); as JSON they would arrive as `null` and format as zero — a
+ * date in 1970 where a browser throws. So a value rides as its decimal spelling
+ * and the host reads it back with `Number`.
+ */
+const INTL_SOURCE = `(function () {
+  var ask = globalThis.__vendo_intl;
+  delete globalThis.__vendo_intl;
+  // Captured before the screen's own code can reassign either: what the host is
+  // asked is what this file said to ask.
+  var stringify = JSON.stringify, parse = JSON.parse;
+
+  function answer(op, locale, options, value) {
+    return ask(stringify({ op: op, locale: locale, options: options, value: value }));
+  }
+
+  /** Any value as the decimal spelling of a number. A Date reads as its instant,
+   *  which is what \`Intl\` does with one too. */
+  function spell(value) { return String(Number(value)); }
+
+  /** The instant to format: the one passed, or — where a screen passed none — the
+   *  clock, which is the host's frozen instant or, if the host withheld it, the
+   *  same ReferenceError every other clock read gets. */
+  function when(value) { return value === undefined ? String(Date.now()) : spell(value); }
+
+  // Both are callable with \`new\` and without, the way both really are: a
+  // constructor that returns an object returns that object.
+  function NumberFormat(locale, options) {
+    return {
+      format: function (value) { return answer("number", locale, options, spell(value)); },
+      formatToParts: function (value) { return parse(answer("numberParts", locale, options, spell(value))); },
+      resolvedOptions: function () { return parse(answer("numberResolved", locale, options)); },
+    };
+  }
+  function DateTimeFormat(locale, options) {
+    return {
+      format: function (value) { return answer("date", locale, options, when(value)); },
+      formatToParts: function (value) { return parse(answer("dateParts", locale, options, when(value))); },
+      resolvedOptions: function () { return parse(answer("dateResolved", locale, options)); },
+    };
+  }
+  globalThis.Intl = { NumberFormat: NumberFormat, DateTimeFormat: DateTimeFormat };
+
+  Number.prototype.toLocaleString = function (locale, options) {
+    return answer("number", locale, options, spell(this));
+  };
+  // Only where the host gave a clock: withheld, \`Date\` was deleted above and
+  // there is no prototype left to reach.
+  if (typeof Date !== "undefined") {
+    Date.prototype.toLocaleDateString = function (locale, options) { return answer("day", locale, options, spell(this)); };
+    Date.prototype.toLocaleTimeString = function (locale, options) { return answer("time", locale, options, spell(this)); };
+    Date.prototype.toLocaleString = function (locale, options) { return answer("stamp", locale, options, spell(this)); };
+  }
+})();`;
 
 /** How deep the emitter walks into one prop's value before it stops. Deeper
  *  than any real prop and shallow enough that a cycle cannot spin. */
