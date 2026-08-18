@@ -29,7 +29,9 @@ import {
 import {
   ACTION_PROP_DESCRIPTION,
   DISPLAY_TAG_NAMES,
+  ICON_NAME_DESCRIPTION,
   KIT_COMPONENT_NAMES,
+  KIT_ICON_NAMES,
   KIT_PER_ROW_SLOTS,
   KIT_SCREEN_COMPONENT_NAMES,
   SLOT_PROP_DESCRIPTION,
@@ -120,6 +122,29 @@ export const ROW_SLOT_TYPE = "VendoRowSlot";
 const ROW_SLOT_DECLARATION =
   `declare type ${ROW_SLOT_TYPE} = ${SLOT_TYPE} | ((row: any, index: number) => ${SLOT_TYPE});`;
 
+/**
+ * Every glyph the Kit ships, as a closed union of literals.
+ *
+ * `<Icon name="invented-glyph"/>` paints an EMPTY SPAN — the renderer draws a
+ * name it has no path data for as nothing at all (`ui` kit/icon.tsx), on purpose,
+ * because a missing glyph must never be a crash. So the name is a value no gate
+ * downstream can question: the screen compiles, type-checks, paints and validates
+ * with a hole where it said there was an icon.
+ *
+ * Printed closed, the compiler is the one thing that can refuse it, and it
+ * refuses it the way it refuses any wrong literal — naming the prop, and
+ * suggesting the nearest real name it can spell. `KIT_ICON_NAMES` is generated
+ * from the same lucide export the renderer's path data is (icon-names.gen.ts), so
+ * the set this admits is exactly the set that draws. A couple of hundred literals
+ * is nothing to tsc, and it is the whole vocabulary now: the catalog stopped
+ * spending ~575 tokens per generation teaching the list.
+ *
+ * A prop typed this way still takes a BINDING in the wire printer
+ * ({@link BINDING_TYPE}), so a stored screen resolving the name at render time is
+ * untouched.
+ */
+const ICON_NAME_TYPE = KIT_ICON_NAMES.map((name) => JSON.stringify(name)).join(" | ");
+
 /** The Kit's zod vocabulary is closed — it is our own schema file — so a
  *  direct walker beats a converter dependency (see the module note in the PR).
  *  Anything outside the vocabulary degrades to `any`: a prop we cannot type
@@ -131,7 +156,9 @@ export const zodTypeText = (schema: ZodTypeAny | undefined, depth = 0, note?: Ty
   }
   const shape = zodShape(schema);
   switch (shape.kind) {
-    case "string": return "string";
+    // A described string is not just a string: an icon NAME is the closed set the
+    // renderer has path data for ({@link ICON_NAME_TYPE}).
+    case "string": return schema?.description === ICON_NAME_DESCRIPTION ? ICON_NAME_TYPE : "string";
     case "number": return "number";
     case "boolean": return "boolean";
     case "null": return "null";

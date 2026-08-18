@@ -7,6 +7,7 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
+  KIT_ICON_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
@@ -97,6 +98,28 @@ describe("screenTypings", () => {
     expect(dts).toContain("text?: string | number | VendoBinding");
     // An enum slot keeps its literal union — format="huge" is still a type error.
     expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | "code" | VendoBinding');
+  });
+
+  /**
+   * The one string prop whose SET is closed.
+   *
+   * A lucide name the renderer has no path data for paints an EMPTY SPAN (`ui`
+   * kit/icon.tsx) — deliberately, never a crash — so no gate after this one can
+   * question the name, and the catalog stopped teaching the list. Printed as the
+   * closed union, tsc is the refusal. Swept from `KIT_ICON_NAMES` rather than
+   * restated, so a regenerated icon set cannot drift from what the check admits.
+   */
+  it("types an icon name as the closed lucide set, and still admits a binding", () => {
+    const declaration = screenTypings({ catalog: [], queries: [] })
+      .split("\n").find((line) => line.startsWith("declare const Icon:")) ?? "";
+
+    for (const name of KIT_ICON_NAMES) expect(declaration, name).toContain(`"${name}"`);
+    // A required prop, and not a bare `string` — which is what admitted every
+    // invented glyph.
+    expect(declaration).toContain(`name: "${KIT_ICON_NAMES[0]}" |`);
+    expect(declaration).not.toContain("name: string");
+    // A stored screen resolving the name at render time is untouched.
+    expect(declaration).toContain("| VendoBinding;");
   });
 
   it("types host components from their derived JSON Schema", () => {

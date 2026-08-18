@@ -27,12 +27,13 @@ const seriesInput = z.array(z.union([
   z.object({ key: z.string(), label: z.string().optional(), color: z.string().optional() }).passthrough(),
 ]));
 
-/** The two DESCRIPTIONS that mark a schema as something other than what it
+/** The DESCRIPTIONS that mark a schema as something other than what it
  *  parses as. Exported because every reader of a Kit schema — the screen
- *  typings, the catalog's type printer — has to recognise the same two strings,
+ *  typings, the catalog's type printer — has to recognise the same strings,
  *  and a second copy of one is a marker that stops matching. */
 export const SLOT_PROP_DESCRIPTION = "holds Kit elements";
 export const ACTION_PROP_DESCRIPTION = "names a host tool";
+export const ICON_NAME_DESCRIPTION = "lucide icon name in kebab-case";
 
 /**
  * A SLOT — Kit elements written where a value would otherwise go.
@@ -81,6 +82,18 @@ const cardField = z.union([z.string(), z.object({
   cell: slot.optional(),
 })]);
 const action = z.string().describe(ACTION_PROP_DESCRIPTION);
+/**
+ * A lucide icon NAME — any string to zod, the CLOSED set to the compiler.
+ *
+ * It parses as a string because the renderer must stay fail-soft: a name outside
+ * lucide's set paints an empty span (`ui` kit/icon.tsx), never a crash, and a
+ * stored app carrying one still renders. The DESCRIPTION is what the screen
+ * typings print the closed set for ({@link ICON_NAME_DESCRIPTION}), so an
+ * invented glyph is a compile error naming the prop instead of a silent gap — the
+ * only warning there is, now that the catalog no longer spends ~575 tokens
+ * teaching the 200-odd names on every generation.
+ */
+const iconName = z.string().describe(ICON_NAME_DESCRIPTION);
 /** The one tone vocabulary. The two older spellings still parse, because stored
  *  apps carry them; only the five are taught. */
 const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.enum(["default", "info"]));
@@ -343,7 +356,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "One lucide glyph, drawn in the surrounding text's color. Names are lucide's own kebab-case (arrow-up-right, credit-card, alert-triangle); a name outside that set renders nothing, so never invent one.",
     props: {
-      name: config(z.string(), "lucide icon name in kebab-case", { required: true }),
+      name: config(iconName, ICON_NAME_DESCRIPTION, { required: true }),
       size: config(z.number().int().positive(), "edge length in px, default 16"),
       label: copy(z.string(), "screen-reader name; omit for a decorative glyph"),
     },

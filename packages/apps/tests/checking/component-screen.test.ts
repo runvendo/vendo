@@ -695,6 +695,47 @@ export default function S() { return <Text text="x" variant="enormous" />; }
     expect(text).not.toContain('prop "variant" prop "variant"');
   });
 
+  /**
+   * AN INVENTED GLYPH. `<Icon>` paints an empty span for a name outside lucide's
+   * set (`ui` kit/icon.tsx) rather than crashing, and the catalog no longer spends
+   * ~575 tokens teaching the 200-odd names — so nothing warned a model off one and
+   * nothing refused it: a blank where the screen said there was an icon, with every
+   * gate green. The generated typings print the closed set, which makes the
+   * compiler the refusal, with its own did-you-mean where the name is a near miss.
+   */
+  it("refuses an icon name lucide has not got, and takes a real one", async () => {
+    const withIcon = (source: string) => checkComponentScreen({
+      source,
+      hostTools: tools,
+      catalog: [...catalog, "Icon"],
+      runQuery: async () => ROWS,
+    });
+
+    const invented = await withIcon(`import { Icon, Row } from "@vendo/screen";
+export default function S() { return <Row><Icon name="invented-glyph" /></Row>; }
+`);
+    expect(invented.ok).toBe(false);
+    expect(invented.issues.map(({ code }) => code)).toEqual(["types"]);
+    // The PROP is named, so the repair knows what to rewrite.
+    expect(invented.issues[0]?.message).toContain('prop "name" on <Icon>');
+
+    // A near miss gets the compiler's own spelling suggestion — the whole reason
+    // the set is a union of literals rather than a bespoke check.
+    const near = await withIcon(`import { Icon, Row } from "@vendo/screen";
+export default function S() { return <Row><Icon name="trash-3" /></Row>; }
+`);
+    expect(near.ok).toBe(false);
+    expect(near.issues[0]?.message).toContain(`Did you mean '"trash"'?`);
+
+    // …and a real name passes the whole gauntlet, so this narrows the vocabulary
+    // and nothing else.
+    const real = await withIcon(`import { Icon, Row } from "@vendo/screen";
+export default function S() { return <Row><Icon name="credit-card" /></Row>; }
+`);
+    expect(real.issues).toEqual([]);
+    expect(real.ok).toBe(true);
+  });
+
   it("never reads `key` as a prop — a mapped row writes one, and the real fault is the one named", async () => {
     const mapped = (row: string) => checkComponentScreen({
       source: `import { DataTable, Money, TableRow, Text, useQuery } from "@vendo/screen";
