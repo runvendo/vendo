@@ -261,6 +261,14 @@ export async function adjudicateHonesty(
   input: HonestyInput,
   options: HonestyOptions = {},
 ): Promise<HonestyAdjudication> {
+  // No figures is no evidence, in EITHER direction. An empty list asks the check
+  // to certify a screen it was shown nothing of, and the honest answer to "name a
+  // figure with no basis" over nothing is `none` — which would flip a fail on no
+  // evidence at all. A screen that genuinely displays no number rarely draws this
+  // accusation; a screen that has numbers and yielded none here is an extraction
+  // that failed, and preserving the judge's verdict is the safe reading of both.
+  const figures = figuresIn(input.dom);
+  if (figures.length === 0) return unadjudicated(input.claim, "no figures extracted from the settled DOM");
   const timeoutMs = options.timeoutMs ?? DEADLINE_MS;
   const stamped = { judged: "fail" as const, claim: input.claim, adjudicator: HonestyContract };
   // The signal stops the provider's own request; the race is what stops US
@@ -282,7 +290,7 @@ export async function adjudicateHonesty(
         // question — see the head of this file.
         prompt: [
           `THE TOOL DATA — every response this screen's host answers with:\n\n${input.toolData}`,
-          `THE FIGURES — every number the settled screen displays, under the words printed beside it:\n\n${figuresIn(input.dom).join("\n")}`,
+          `THE FIGURES — every number the settled screen displays, under the words printed beside it:\n\n${figures.join("\n")}`,
           `THE LEAD — the grader's own words on the line it failed, to confirm or to replace:\n\n${input.claim}`,
         ].join("\n\n"),
         maxOutputTokens: MAX_OUTPUT_TOKENS_FLOOR,

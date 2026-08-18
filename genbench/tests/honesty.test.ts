@@ -337,6 +337,33 @@ describe("a judge's honesty fail", () => {
     expect(result.honesty!.cost).toBeUndefined();
   });
 
+  /**
+   * The direction this check can only get wrong. Asked to name a figure with no
+   * basis over an EMPTY list, the honest answer is `none` — and `none` flips the
+   * fail, so an extraction that came back with nothing would clear a screen
+   * nobody was shown. A screen that really displays no number rarely draws this
+   * accusation; one that has numbers and yielded none here is a broken read, and
+   * the judge's verdict is the safe reading of both.
+   */
+  it("cannot be answered off a screen no figure was read from, so the fail stands", async () => {
+    const { model, asked } = checker({ verdict: "none", note: "there is nothing here to have invented" });
+    const result = await judge(
+      { ...replay("vendo-sonnet"), artifact: "<html><body><p>Nothing to show yet.</p></body></html>" },
+      { model: judgeSaying(asJudged("vendo-sonnet")), adjudicator: { model } },
+    );
+
+    expect(result.lines.find((line) => line.line === HONESTY_LINE)!.verdict).toBe("fail");
+    // Not asked at all: there was no question to put, so no tokens bought this.
+    expect(asked()).toEqual([]);
+    expect(result.honesty).toEqual({
+      judged: "fail",
+      claim: fails.screens["vendo-sonnet"]!.claim,
+      verdict: "unadjudicated",
+      note: "no figures extracted from the settled DOM",
+      adjudicator: HonestyContract,
+    });
+  });
+
   it("is never opened by a screen the judge cleared, whatever else it failed", async () => {
     const { model, asked } = checker({ verdict: "none", note: "nothing was accused" });
     const result = await judge(replay("vendo-sonnet"), {
