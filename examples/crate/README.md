@@ -10,9 +10,17 @@ should be able to do end to end.
 ## Setup
 
 ```bash
+# from the repo root
+pnpm install && pnpm build
+
 cd examples/crate
 pnpm dev
 ```
+
+The root build is not optional and not a formality: Crate runs the `vendo` CLI
+out of the workspace, and in a fresh clone `packages/vendo/dist/` does not exist
+yet. Skip it and both `pnpm dev` and `pnpm build` die on
+`ERR_MODULE_NOT_FOUND … packages/vendo/dist/cli.js` before Next ever starts.
 
 Open http://localhost:3000. **No environment file is needed.** With nothing
 configured Crate boots into the seeded store and acts as the shop owner, so a
@@ -99,7 +107,23 @@ one copy while `/orders/[id]` kept rendering the other, and the page showed
 ## Vendo
 
 Composed in `src/app/api/vendo/[...vendo]/route.ts`, mounted by the
-`<VendoProvider>` + `<VendoOverlay />` pair in `src/app/layout.tsx`.
+`<VendoProvider>` + `<VendoOverlay />` pair in
+`src/components/vendo/crate-provider.tsx`, which `src/app/layout.tsx` wraps the
+app in.
+
+**The provider has to be its own `"use client"` file.** It carries the host
+component registry, and a registry entry is a component function plus a Zod
+schema — neither survives the Server→Client boundary. Declared inline in the
+Server Component layout, where `vendo init`'s paste lands and where it looks
+right, React refuses to serialize it and Next answers the **root page** with a
+500 while every wire check stays green. `vendo doctor` catches it as
+`E-LIVE-006` and names this exact fix.
+
+`src/vendo/registry.tsx` is that registry, and it is one object read twice:
+`createVendo({ catalog })` reads the descriptions, prop schemas and examples to
+brief the model, and `<VendoProvider components>` reads the component references
+to render. A component the model is told about can therefore never be one the
+page cannot mount.
 
 **The tool surface comes from `openapi.json`.** Without a spec, `vendo init`
 extracts the same 18 routes but every one of them arrives *blind* — no input
