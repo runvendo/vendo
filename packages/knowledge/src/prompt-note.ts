@@ -72,16 +72,30 @@ export interface KnowledgeIndexReaders {
       at reboot, the documented boot posture.
     - A failed status() keeps serving the last good bytes (a sick engine must
       not strip guidance mid-session); with nothing cached yet the block is
-      simply absent and the next turn retries. */
+      simply absent and the next turn retries. A failure that arrived SLOWLY is
+      the exception — see SLOW_FAILURE_MS. */
+/** A refused connection fails in microseconds and is retried on the very next
+    turn (a recovered engine must be picked up at once). An engine that is UP but
+    HANGING is the expensive kind: the wire client aborts at its own 30s timeout,
+    and every turn pays that before the prompt can be built. Past this bound a
+    failure counts as slow and the engine is left alone for the cool-off — which
+    costs only recovery latency, since a turn inside it serves exactly what the
+    failure itself would have returned. */
+const SLOW_FAILURE_MS = 1_000;
+const SLOW_FAILURE_COOL_OFF_MS = 60_000;
+
 export function knowledgeIndexResolver(
   adapter: KnowledgeAdapter,
   readers: KnowledgeIndexReaders,
 ): () => Promise<string | undefined> {
   let cached: { fingerprint: string | undefined; text: string } | undefined;
   let flight: Promise<string | undefined> | undefined;
+  let coolOffUntil = 0;
   return () => {
     const fingerprint = readers.readManifest();
     if (cached !== undefined && cached.fingerprint === fingerprint) return Promise.resolve(cached.text);
+    if (Date.now() < coolOffUntil) return Promise.resolve(cached?.text);
+    const startedAt = Date.now();
     flight ??= adapter.status().then(
       (status) => {
         cached = { fingerprint, text: knowledgeIndexSummary(status, parseKnowledgeConfig(readers.readConfig())) };
@@ -90,6 +104,7 @@ export function knowledgeIndexResolver(
       },
       () => {
         flight = undefined;
+        if (Date.now() - startedAt >= SLOW_FAILURE_MS) coolOffUntil = Date.now() + SLOW_FAILURE_COOL_OFF_MS;
         return cached?.text;
       },
     );
