@@ -612,6 +612,22 @@ export default function S() { return <img><Text text="x" /></img>; }
     expect(text.match(/writes the HTML element/gu)).toHaveLength(1);
   });
 
+  it("refuses a style property the paint allowlist does not name, on a brick and on a Kit component alike", async () => {
+    // The renderer drops these at paint (`safeStyle`, one door for every node).
+    // Legal here, a screen compiled clean and then quietly did not paint what
+    // it wrote — the "valid component, nothing happens" class this floor refuses.
+    for (const element of [
+      `<div style={{ backgroundImage: "url(https://evil/x)" }}><Text text="x" /></div>`,
+      `<Card style={{ filter: "blur(4px)" }}><Text text="x" /></Card>`,
+    ]) {
+      const { codes } = await refusal(`import { Card, Text } from "@vendo/screen";
+export default function S() { return ${element}; }
+`);
+
+      expect(codes).toEqual(["types"]);
+    }
+  });
+
   it("refuses a name that does not exist inside a screen", async () => {
     const { text } = await refusal(`import { Text } from "@vendo/screen";
 export default function S() {

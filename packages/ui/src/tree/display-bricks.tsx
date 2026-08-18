@@ -9,6 +9,7 @@
  * `dangerouslySetInnerHTML` cannot arrive — not because a list refuses them, but
  * because nothing carries them through.
  */
+import { SAFE_STYLE_PROPERTIES } from "@vendoai/apps/contract";
 import type { CSSProperties, ReactNode } from "react";
 
 export interface DisplayBrickProps {
@@ -16,48 +17,10 @@ export interface DisplayBrickProps {
   children?: ReactNode;
 }
 
-/**
- * What a screen may paint with is a DEFAULT-DENY property allowlist and NOTHING
- * ELSE: `safeStyle` keeps a declaration iff its property is named here, whatever
- * its value. No value is ever inspected — so there is no CSS spelling for a model
- * to bypass. The list holds only properties that cannot fetch: a `color` takes a
- * URL nowhere, but `background`, `backgroundImage`, `filter`, `backdropFilter`
- * and `cursor` all can (`url()`, `image-set()`), so they are simply absent and
- * drop by default alongside `maskImage`, `borderImage` and `content`. Themed fills
- * use `backgroundColor`; gradients/blur are not available to a screen (a
- * host-controlled kit token could reintroduce them later, out of scope here).
- * `position` is allowed: `SURFACE_CONTAINMENT` clips even `fixed`/`sticky` to the
- * box, so no value check is needed to hold a screen inside its surface.
- */
-const ALLOWED_STYLE: ReadonlySet<string> = new Set([
-  // layout
-  "display", "flexDirection", "flexWrap", "flex", "flexGrow", "flexShrink", "flexBasis",
-  "alignItems", "alignSelf", "justifyContent", "justifyItems", "justifySelf",
-  "gap", "rowGap", "columnGap", "gridTemplateColumns", "gridTemplateRows",
-  "gridColumn", "gridRow", "gridAutoFlow", "position", "inset", "top", "right", "bottom", "left",
-  "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
-  "overflow", "overflowX", "overflowY", "boxSizing",
-  // spacing
-  "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
-  "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-  // color
-  "color", "backgroundColor", "borderColor", "outlineColor",
-  // typography
-  "fontSize", "fontWeight", "fontStyle", "fontFamily", "lineHeight", "letterSpacing",
-  "textAlign", "textTransform", "textDecoration", "textOverflow", "whiteSpace",
-  "wordBreak", "textWrap", "fontVariantNumeric",
-  // border + shape (borderImage* is deliberately absent — it fetches)
-  "border", "borderWidth", "borderStyle", "borderRadius",
-  "borderTop", "borderRight", "borderBottom", "borderLeft",
-  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-  "borderTopStyle", "borderRightStyle", "borderBottomStyle", "borderLeftStyle",
-  "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor",
-  "borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius",
-  "outline", "outlineWidth", "outlineStyle", "outlineOffset",
-  // effects
-  "opacity", "boxShadow", "transform", "transformOrigin",
-  "transition", "transitionProperty", "transitionDuration", "transitionTimingFunction",
-]);
+/** The paint allowlist itself lives in the contract, beside the display tags,
+ *  because the component screen's typings print the same list as the `style`
+ *  type — one boundary, read from one place (`contract/kit/display.ts`). */
+const ALLOWED_STYLE: ReadonlySet<string> = new Set(SAFE_STYLE_PROPERTIES);
 
 /** The style a node actually paints with: the model's, minus every declaration
  *  whose property is not on the allowlist. A pure key filter — no value is read,
