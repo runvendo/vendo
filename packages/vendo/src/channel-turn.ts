@@ -1,5 +1,6 @@
 /**
- * ONE inbound text → ONE harness turn → ONE text back.
+ * ONE inbound text → ONE harness turn → the texts it writes back, each sent as
+ * it finishes rather than all at once (`streamTexts`).
  *
  * It does NOT go through the away runner: an away run hardcodes
  * `presence: "away"` (agents/src/away.ts), which is exactly wrong here — there
