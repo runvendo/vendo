@@ -72,6 +72,9 @@ export const PREAMBLE = [
   "  the container around it: `<Row><Stack grow>…</Stack><Button .../></Row>`.",
   "  There is no raw `<div style={{flex:1}}>` to reach for — the block that",
   "  stretches says so itself.",
+  "- Every form control takes `disabled`, most take `required`, and a `hint`",
+  "  line under the field; **style** takes inline CSS on any component's root,",
+  "  yours winning over the theme's.",
 ].join("\n");
 
 /**

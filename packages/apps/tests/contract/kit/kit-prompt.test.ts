@@ -39,6 +39,18 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
     }
   });
 
+  // `disabled`, `required`, `hint` and `style` are shared props too — implemented
+  // and typed across the form controls, filtered out of every prop list
+  // (`KIT_PREAMBLE_PROP_NAMES`) — so the model must be taught they exist here,
+  // same as tone/density/grow, or it never writes them.
+  it("teaches disabled, required, hint and style in the preamble", () => {
+    const preamble = kitPrompt();
+    expect(preamble).toContain("`disabled`");
+    expect(preamble).toContain("`required`");
+    expect(preamble).toContain("`hint`");
+    expect(preamble).toContain("**style**");
+  });
+
   it("labels the example block for its count", () => {
     // DateTime carries two examples, Money one; the model reads the label.
     expect(kitPrompt({ only: ["DateTime"] })).toContain("Examples:");
