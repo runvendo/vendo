@@ -167,6 +167,18 @@ describe("the limiter fails CLOSED", () => {
       .resolves.toEqual({ allow: false });
     expect(events.filter((event) => event.code === "limits.callback_error")).toHaveLength(1);
   });
+
+  it("denies on an org the host never asserted — a membership is the only thing that mints one", async () => {
+    const events = logged();
+    const limiter = createLimiter({
+      callback: async ({ count }) => (await count("message", { pool: "org:acme" })) < 5,
+      ops: meter(),
+    });
+
+    await expect(limiter.gate("message", ctxFor({ memberships: [{ org: "maple" }] })))
+      .resolves.toEqual({ allow: false });
+    expect(events.filter((event) => event.code === "limits.callback_error")).toHaveLength(1);
+  });
 });
 
 describe("the meter reader the policy is handed", () => {
@@ -219,6 +231,45 @@ describe("the meter reader the policy is handed", () => {
     expect(pooled).toBe(2);
   });
 
+  it("counts an org the host merely ASSERTED — every membership is already a pool", async () => {
+    const usage = meter();
+    await usage.record({ subject: "raj", action: "message", at: hoursAgo(1), poolKeys: ["org:maple"] });
+
+    let pooled = 0;
+    const limiter = createLimiter({
+      callback: async ({ count }) => { pooled = await count("message", { pool: "org:maple" }); return true; },
+      ops: usage,
+    });
+
+    await limiter.gate("message", ctxFor({ memberships: [{ org: "maple", teams: ["support"] }] }));
+    expect(pooled).toBe(1);
+    // The allow accrued to the derived key too, so the next read sees both…
+    expect(await usage.count({ action: "message", poolKey: "org:maple", since: ALL_TIME })).toBe(2);
+    // …and nothing accrued to the team, which is not a pool.
+    expect(await usage.count({ action: "message", poolKey: "team:maple/support", since: ALL_TIME })).toBe(0);
+  });
+
+  it("lets a host-asserted pool of the same NAME win over the derived one", async () => {
+    const usage = meter();
+    await usage.record({ subject: "raj", action: "message", at: hoursAgo(1), poolKeys: ["org:maple"] });
+    await usage.record({ subject: "raj", action: "message", at: hoursAgo(1), poolKeys: ["ent_maple"] });
+    await usage.record({ subject: "ana", action: "message", at: hoursAgo(1), poolKeys: ["ent_maple"] });
+
+    let pooled = 0;
+    const limiter = createLimiter({
+      callback: async ({ count }) => { pooled = await count("message", { pool: "org:maple" }); return true; },
+      ops: usage,
+    });
+
+    await limiter.gate("message", ctxFor({
+      memberships: [{ org: "maple" }],
+      pools: { "org:maple": "ent_maple" },
+    }));
+    // The host's own key answered, not the derived `org:maple`.
+    expect(pooled).toBe(2);
+    expect(await usage.count({ action: "message", poolKey: "org:maple", since: ALL_TIME })).toBe(1);
+  });
+
   it("stamps every resolved pool key on what an allow records", async () => {
     const usage = meter();
     const limiter = createLimiter({ callback: () => true, ops: usage });
@@ -248,6 +299,27 @@ describe("the user the policy decides about", () => {
       facts: { email: "mia@maple.test", plan: "free" },
       pools: ["workspace"],
     });
+  });
+
+  it("lists the orgs the host asserted, so a policy can NAME the pool it counts", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    // Memberships and nothing else: a `pools` here can only have been derived.
+    await limiter.gate("message", ctxFor({
+      memberships: [{ org: "maple", teams: ["support"] }, { org: "acme" }],
+    }));
+
+    expect(seen?.pools).toEqual(["org:maple", "org:acme"]);
+  });
+
+  it("carries NO pools key when the host asserted neither pools nor memberships", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    await limiter.gate("message", ctxFor());
+
+    expect(seen).toEqual({ kind: "user", subject: "mia" });
   });
 });
 

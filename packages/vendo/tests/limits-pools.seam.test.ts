@@ -17,6 +17,10 @@
  * absent, the policy's `count({ pool: "workspace" })` hits an unknown meter, and
  * the gate fails closed. The `allow: true` below is what makes every hop
  * load-bearing.
+ *
+ * The second case drives the same hops for a user the host asserted NOTHING but
+ * an org: the `org:<id>` pool is derived, not resolved, so a break anywhere from
+ * the `memberships` seam to the limiter's derivation reads as an unknown meter.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -111,5 +115,49 @@ describe("limits — the host's pools reach the policy and the meter", () => {
     // of the shared meter sees both.
     expect(await usage.count({ action: "message", poolKey: "ws_maple", since: ALL_TIME })).toBe(2);
     expect(await usage.count({ action: "message", subject: "host_mia", since: ALL_TIME })).toBe(1);
+  });
+});
+
+describe("limits — an asserted org is a pool with nothing wired for it", () => {
+  it("counts and accrues to `org:<id>` from a membership alone, over the same real hops", async () => {
+    let seen: { user: LimitUser; pooled: number } | undefined;
+
+    const composition = createComposition({
+      store: await realStore(),
+      // Ana has NO `pools` of her own — the org is the only thing asserted about
+      // her, so every pool the policy sees below can only have been derived.
+      auth: jwt({
+        secret: SECRET,
+        user: (subject) => (subject === "host_ana" ? { display: "Ana" } : null),
+        memberships: async () => [{ org: "maple", display: "Maple Bank", teams: ["support"] }],
+      }),
+      limits: async ({ user, count }) => {
+        seen = { user, pooled: await count("message", { pool: "org:maple" }) };
+        return true;
+      },
+    });
+    await composition.ready();
+    const usage = composition.ops!.usage!;
+
+    // A colleague already spent one against the key the DERIVATION mints.
+    await usage.record({
+      subject: "host_raj",
+      action: "message",
+      at: new Date(),
+      poolKeys: ["org:maple"],
+    });
+
+    const ctx = await createContextResolver(wireDepsFor(composition))(
+      await sessionRequest("host_ana"),
+      "chat",
+    );
+
+    await expect(composition.limiter!.gate("message", ctx)).resolves.toEqual({ allow: true });
+
+    expect(seen?.user.pools).toEqual(["org:maple"]);
+    expect(seen?.pooled).toBe(1);
+    expect(await usage.count({ action: "message", poolKey: "org:maple", since: ALL_TIME })).toBe(2);
+    // Her team was asserted too and is deliberately NOT a pool.
+    expect(await usage.count({ action: "message", poolKey: "team:maple/support", since: ALL_TIME })).toBe(0);
   });
 });

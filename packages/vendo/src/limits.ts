@@ -15,6 +15,7 @@
 import {
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
+  encodeGrantPrincipal,
   isVendoError,
   VendoError,
   log,
@@ -47,6 +48,19 @@ const DAY = 24 * HOUR;
 /** `UsageCountQuery.since` is required, so "all time" is the epoch. */
 const ALL_TIME = new Date(0);
 
+/** Every org the host ASSERTS is already a pool, so an org-wide cap costs the
+ *  host nothing to wire. Name and key are both §9.2's principal encoding — the
+ *  one an app grant naming that org spells the same way — so a policy counting
+ *  `org:<orgId>` and a grant addressing it are never two grammars.
+ *
+ *  Teams are deliberately absent: a team is a slice of an org's allowance, not a
+ *  bucket the host asked to meter. */
+const orgPools = (memberships: RunContext["memberships"] = []): Record<string, string> =>
+  Object.fromEntries(memberships.map(({ org }) => {
+    const pool = encodeGrantPrincipal({ kind: "org", org });
+    return [pool, pool];
+  }));
+
 /** The host's policy, bound to the meter it decides on.
  *
  *  `ops` is the usage family and not the whole `StoreOps` because a limiter
@@ -59,11 +73,14 @@ export function createLimiter({ callback, ops }: {
   return {
     async gate(action, ctx) {
       const { subject } = ctx.principal;
-      const pools = ctx.pools ?? {};
+      // Host-asserted LAST: an explicit pool of the same name wins over the
+      // derived one, so a host who meters its orgs by their own key still can.
+      const pools = { ...orgPools(ctx.memberships), ...ctx.pools };
+      const poolNames = Object.keys(pools);
       const user: LimitUser = {
         ...ctx.principal,
         ...(ctx.user === undefined ? {} : { facts: ctx.user }),
-        ...(ctx.pools === undefined ? {} : { pools: Object.keys(pools) }),
+        ...(poolNames.length === 0 ? {} : { pools: poolNames }),
       };
       // Pre-bound to THIS subject: a policy never names one, so it can never
       // read another person's usage by accident.
@@ -80,8 +97,9 @@ export function createLimiter({ callback, ops }: {
           throw new VendoError(
             "validation",
             `The limits policy counted the \`${window.pool}\` pool, which this user is not in `
-            + `(their pools: ${Object.keys(pools).map((name) => `\`${name}\``).join(", ") || "none"}). `
-            + "Pools come from the auth preset's `pools` seam — assert the pool there, or count a pool the user is in.",
+            + `(their pools: ${poolNames.map((name) => `\`${name}\``).join(", ") || "none"}). `
+            + "Pools come from the auth preset's `pools` seam, or an org the host asserted in `memberships` "
+            + "(each one is the pool `org:<orgId>`) — assert the pool there, or count a pool the user is in.",
           );
         }
         return ops.count({ action: counted, since, poolKey });

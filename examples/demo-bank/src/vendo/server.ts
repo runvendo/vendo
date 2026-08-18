@@ -151,6 +151,25 @@ export const vendo = createVendo({
     policy: { file: ".vendo/policy.json" },
     judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
   }),
+  // Vendo counts, Maple decides. Both seeded staff are members of `maple`, so
+  // the `org:maple` pool exists without Maple wiring one: the branch shares one
+  // rolling monthly allowance, and no single person can spend it all.
+  limits: async ({ action, count }) => {
+    if (action !== "message") return true;
+    if (await count("message", { days: 30, pool: "org:maple" }) >= 200) {
+      return {
+        allow: false,
+        message: "Maple Bank has used its 200 shared messages for this month. They free up as the last 30 days roll past.",
+      };
+    }
+    if (await count("message", { days: 1 }) >= 50) {
+      return {
+        allow: false,
+        message: "That's your 50 messages for today. The branch's allowance is shared, so this picks back up tomorrow.",
+      };
+    }
+    return true;
+  },
   mcp: mapleMcpConfig(),
   // Maple's customers can text the assistant: they link their phone from the
   // "Text with Maple" card on /settings (components/settings/text-channel-card.tsx
