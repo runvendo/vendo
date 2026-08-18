@@ -1251,6 +1251,19 @@ export async function assembleScreen(
     const instruction = reviewed || !record.painted
       ? undefined
       : await judgeScreen(surface, input.appId, appPath, input.request, input.viewport);
+    // The words the run ended on: what it said after its last action, or — now that
+    // a save and the sentence about it ride one turn — what it said in the same
+    // breath as that action.
+    const words = (): string => (closing.trim() === "" ? spoken : closing).trim();
+    /** The paint verdict AS IT STANDS — read through a call on purpose. The gate
+     *  above narrowed `record.painted` to "not false" for the rest of this block,
+     *  and the repair round below is the one thing that can still make it false. */
+    const painted = (): boolean | undefined => record.painted;
+    /** What describes the screen the person is looking at, taken BEFORE the repair
+     *  round: the round may write bytes that never reach them, and a receipt is
+     *  about the screen, not about the last thing the model typed. */
+    let say = words();
+    let title = record.title;
     if (instruction !== undefined && !surface.signal.aborted) {
       // The document rides along: a drive starts from the messages it is given, so
       // the repair round has none of the first one's context — and a repair with no
@@ -1266,14 +1279,26 @@ export async function assembleScreen(
             : `${instruction}\n\nThis is the document you saved:\n${saved}`,
         }],
       }], { maxSteps: REPAIR_STEPS });
+      /**
+       * A REPAIR THE FLOOR REFUSED DID NOT HAPPEN — so it does not get to describe
+       * the screen.
+       *
+       * Its bytes landed and nothing painted, which leaves the person looking at
+       * the screen from before the round. The round's own closing words are then
+       * "Fixed the date format." over a date that is still wrong, and its
+       * `record.title` is the name of a screen nobody ever saw. The screen itself
+       * STANDS — taking away a painted screen because a patch on it failed is the
+       * one thing worse than an unrepaired screen — so what changes here is only
+       * what is SAID about it.
+       */
+      if (painted() !== false) {
+        say = words();
+        title = record.title;
+      }
     }
-    // The words the run ended on: what it said after its last action, or — now that
-    // a save and the sentence about it ride one turn — what it said in the same
-    // breath as that action.
-    const say = (closing.trim() === "" ? spoken : closing).trim();
     return {
       kind: "assembled",
-      ...(record.title === undefined ? {} : { title: record.title }),
+      ...(title === undefined ? {} : { title }),
       ...(record.decisions === undefined ? {} : { decisions: record.decisions }),
       // The run's own closing words, or nothing. Never a sentence this file wrote:
       // the front door is the one place that has a fallback, and it is the shipped

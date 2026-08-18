@@ -90,6 +90,11 @@ export default function Spending() {
 }
 `;
 
+/** The same refused document under a DIFFERENT export name — so the title a
+ *  refused save records is visibly not the title of the screen on the person's
+ *  page. */
+const RENAMED_LIE = LYING.replace("function Spending(", "function Overspending(");
+
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 0, text: 0, reasoning: 0 },
@@ -455,5 +460,40 @@ describe("the ask and the host's rules reach the reviewer, and a warn is repaire
     // ── and the warn it reported bought a repair round, which a `block`-only
     //    gate would have thrown away ────────────────────────────────────────────
     expect(walked.model.promptsPerCall[2] ?? "").toContain("never ISO");
+  }, 60_000);
+
+  it("says nothing about a repair the floor refused — those words describe no screen", async () => {
+    // The repair round is the ONE place a save happens after the run has already
+    // decided it has a screen. A patch the floor refuses lands its bytes and paints
+    // nothing, so the person is still looking at the step-1 screen — and the round's
+    // own closing words ("fixed it") and its component's NAME belong to a document
+    // that never reached them.
+    const review = reviewSeat([{ severity: "warn", where: "<Text> heading", message: BREACH }]);
+    const walked = await walk({
+      designRules: RULE,
+      review,
+      turns: [
+        // 1. A screen that paints, and the words that describe it.
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("Your spending is on your screen."),
+        // 2. The repair the reviewer bought: renamed, and refused by the floor for
+        //    naming a tool this host has not got. No paint, no repaired screen.
+        call("save_app", { content: RENAMED_LIE }, "c2"),
+        speak("Fixed the date format."),
+      ],
+    });
+
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    // The painted screen STANDS: a patch that failed is not a reason to take away
+    // the screen the person can already see.
+    expect(receipt.status).toBe("ready");
+    // THE DEFECT: the receipt used to carry the repair round's last words and the
+    // refused document's name, so the person was told a fix landed on a screen that
+    // never changed, under a title they had never seen.
+    expect(receipt.say).toBe("Your spending is on your screen.");
+    expect(receipt.title).toBe("Spending");
+    // …and the refused bytes really did land, which is what makes this the hard
+    // case rather than a save that never happened.
+    expect(walked.model.promptsPerCall[3] ?? "").toContain("nope_notATool");
   }, 60_000);
 });
