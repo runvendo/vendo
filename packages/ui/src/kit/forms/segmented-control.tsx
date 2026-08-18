@@ -31,7 +31,7 @@ export function SegmentedControl({ items, value, disabled, onChange, style, chil
     : { value: text(item), label: text(item), disabled: false });
   const screen = controlledHandler(value !== undefined, onChange);
   // ToggleGroup speaks in arrays; this control is single-choice, so the one
-  // pressed segment is the whole value and un-pressing it selects nothing.
+  // pressed segment is the whole value.
   const selected = value === undefined ? undefined : [value];
   return (
     <ToggleGroup
@@ -39,8 +39,15 @@ export function SegmentedControl({ items, value, disabled, onChange, style, chil
       disabled={disabled}
       {...given(engine)}
       {...(screen === null ? { defaultValue: selected } : { value: selected ?? [] })}
-      onValueChange={(next) => {
-        const one = String(next[0] ?? "");
+      onValueChange={(next, details) => {
+        // Pressing the LIVE segment again un-presses it, and this bar spelled
+        // that empty selection as the value `""` — a value no segment has, which
+        // a screen handed straight to a tool call while its filter switch went
+        // blank. One of these choices is always the answer, so the press is a
+        // no-op, and `cancel` is what keeps an unbound bar from un-pressing
+        // itself too (Base UI ToggleGroup skips its own state write).
+        if (next.length === 0) return details.cancel();
+        const one = String(next[0]);
         return screen === null ? onChange?.(one) : screen({ target: { value: one } });
       }}
       style={{

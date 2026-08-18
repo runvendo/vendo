@@ -178,6 +178,38 @@ describe("SegmentedControl", () => {
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  /**
+   * PRESSING THE ACTIVE SEGMENT AGAIN SAYS NOTHING.
+   *
+   * ToggleGroup un-presses what is already pressed, so a second press on the
+   * live segment reported an EMPTY selection — and this bar spelled that as the
+   * value `""`, a value no segment has. A screen handed it straight to a tool
+   * call, and the filter switch it was reading went blank on the way. A bar of
+   * mutually exclusive choices is single-choice like Tabs: one of them is always
+   * the answer, and re-pressing it is a no-op.
+   */
+  it("says nothing when the segment already pressed is pressed again", () => {
+    const onChange = vi.fn();
+    render(<SegmentedControl items={["Week", "Month"]} onChange={onChange} />);
+    const week = () => screen.getByRole("button", { name: "Week" });
+
+    fireEvent.click(week());
+    expect(onChange).toHaveBeenCalledWith("Week");
+
+    onChange.mockClear();
+    fireEvent.click(week());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(week().getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps a screen-bound bar on its choice through the same second press", () => {
+    render(<Screen initial="Week" render={(value, fire) => (
+      <SegmentedControl items={["Week", "Month"]} value={value} onChange={fire} />
+    )} />);
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+  });
 });
 
 describe("Combobox", () => {
