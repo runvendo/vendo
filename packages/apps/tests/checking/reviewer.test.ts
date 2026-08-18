@@ -78,6 +78,12 @@ const samples = {
 const reported = (findings: unknown): { tool: string; input: unknown } =>
   ({ tool: "report_findings", input: { findings } });
 
+/** The connectives and verbs a remedy shows up as in English, plus the phrase the
+ *  reviewer's prompt AND its tool schema both used to ask for outright ("what is
+ *  wrong AND the real alternative"). Read against both, because they ride in one
+ *  call and a model handed two charters picks one. */
+const ADVISORY = /\binstead\b|\brather\b|\bshould\b|\bought\b|\bsuggest|\brecommend|\bconsider\b|the real alternative/iu;
+
 describe("a finding is a fact, and a fact only", () => {
   /**
    * A FINDING IS AN ORDER, NOT A NOTE. It travels verbatim under "Fix each of
@@ -90,10 +96,6 @@ describe("a finding is a fact, and a fact only", () => {
    * message IS gets read for the words advice arrives in, rather than trusted.
    */
   const FORMAT_HEADING = "Each finding has three fields";
-  /** The connectives and verbs a remedy shows up as in English, plus the phrase
-   *  this prompt used to ask for outright ("what is wrong AND the real
-   *  alternative"). */
-  const ADVISORY = /\binstead\b|\brather\b|\bshould\b|\bought\b|\bsuggest|\brecommend|\bconsider\b|the real alternative/iu;
 
   it("asks the findings format for evidence, and never for a remedy", () => {
     const at = REVIEWER_SYSTEM.indexOf(FORMAT_HEADING);
@@ -275,7 +277,14 @@ describe("the AI reviewer", () => {
       additionalProperties: boolean;
       required: string[];
       properties: {
-        findings: { type: string; items: { additionalProperties: boolean; required: string[]; properties: { severity: { enum: string[] } } } };
+        findings: {
+          type: string;
+          items: {
+            additionalProperties: boolean;
+            required: string[];
+            properties: { severity: { enum: string[] }; message: { description: string } };
+          };
+        };
       };
     };
     expect(schema.additionalProperties).toBe(false);
@@ -284,6 +293,10 @@ describe("the AI reviewer", () => {
     expect(schema.properties.findings.items.additionalProperties).toBe(false);
     expect(schema.properties.findings.items.required).toEqual(["severity", "where", "message"]);
     expect(schema.properties.findings.items.properties.severity.enum).toEqual(["block", "warn"]);
+    // A TOOL DESCRIPTION IS PROMPT, and this one rides in the same call as the
+    // rubric — it asked for "what is wrong AND the real alternative" for a while
+    // after the rubric stopped, so the model was handed both charters at once.
+    expect(schema.properties.findings.items.properties.message.description).not.toMatch(ADVISORY);
 
     const text = call.prompt.map((message) => typeof message.content === "string"
       ? message.content
