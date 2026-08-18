@@ -6,7 +6,7 @@
  * against, so a sentence in it that the harness does not enforce is a rule
  * everyone is measured on and nobody is held to. Two of them were exactly that:
  * "opened with NO network at all" while nothing intercepted a request, and "shot
- * at 480x900, and what a person sees there is all anyone sees" while the shot was
+ * at 1280x900, and what a person sees there is all anyone sees" while the shot was
  * `fullPage`. A contender that reached for a CDN font got it on one laptop and
  * not another, and the judge was shown a screen no person was ever shown.
  *
@@ -87,7 +87,7 @@ describe("the shot is the frame the contract names", () => {
     try {
       const { png } = await visit.shot();
       // PNG's IHDR: width and height are big-endian 32-bit at bytes 16 and 20.
-      expect({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) }).toEqual({ width: 480, height: 900 });
+      expect({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) }).toEqual({ width: 1280, height: 900 });
       // The document really is taller, so a full-page shot would have been 3200.
       const scrolled = await visit.page.evaluate(() => document.body.scrollHeight);
       expect(scrolled).toBeGreaterThan(900);
@@ -97,7 +97,7 @@ describe("the shot is the frame the contract names", () => {
   }, 60_000);
 
   it("says the size it shoots at, and says the settle the harness really applies", () => {
-    expect(HARNESS_CONTRACT).toContain("shot at 480x900");
+    expect(HARNESS_CONTRACT).toContain("shot at 1280x900");
     // The harness sets `__settled` two frames after load on an authored page
     // whatever the page does, so asking a contender to set it was a rule that
     // could not be broken and could not be kept.
@@ -304,7 +304,7 @@ describe("the source the judge is given", () => {
 // ------------------------------------------ what scrolling sideways reveals
 
 /**
- * A table wider than the 480px frame keeps its right-hand columns past the
+ * A table wider than the graded frame keeps its right-hand columns past the
  * horizontal fold — where a person reaches them by scrolling and the judge,
  * grading the viewport shot, could not reach them at all. Three style lines were
  * failed on conventions that were on the screen the whole time.
@@ -313,11 +313,18 @@ describe("the source the judge is given", () => {
  * so these run in a real browser, and the first one goes through the KIT's own
  * table — every column renders at the width its content asks for and the wrapper
  * scrolls (`data-table.tsx`), which is the shape that lost those lines.
+ *
+ * THIRTEEN columns, because the frame is a 1280px desktop panel now (`VIEWPORT`
+ * in `render.ts`) and the six that overflowed a 480px phone column fit inside it
+ * with room to spare. That is the whole point of the widening — most screens stop
+ * needing this picture — but the mechanism still has to work for the screens that
+ * do, so the fixture is sized to overflow the frame it is actually shot in. A
+ * fixture that merely fits would leave these tests green and prove nothing.
  */
 const TABLE_ROWS = [
-  { reference: "INV-2026-0148", client: "Northwind Traders", opened: "2026-08-04", assignee: "Priya Raman", status: "awaiting review", amount: "$12,480.00" },
-  { reference: "INV-2026-0149", client: "Fabrikam Logistics", opened: "2026-08-06", assignee: "Daniel Osei", status: "sent to client", amount: "$3,905.50" },
-  { reference: "INV-2026-0151", client: "Contoso Interiors", opened: "2026-08-09", assignee: "Mariana Silva", status: "overdue", amount: "$18,220.75" },
+  { reference: "INV-2026-0148", client: "Northwind Traders", opened: "2026-08-04", due: "2026-09-03", assignee: "Priya Raman", approver: "Lena Fairbanks", region: "EMEA — Benelux", po: "PO-88421", terms: "net 30", contact: "ada.blum@northwind.example", project: "Q3 fit-out, phase 2", status: "awaiting review", amount: "$12,480.00" },
+  { reference: "INV-2026-0149", client: "Fabrikam Logistics", opened: "2026-08-06", due: "2026-09-20", assignee: "Daniel Osei", approver: "Lena Fairbanks", region: "AMER — Midwest", po: "PO-88437", terms: "net 45", contact: "r.calder@fabrikam.example", project: "Depot relocation", status: "sent to client", amount: "$3,905.50" },
+  { reference: "INV-2026-0151", client: "Contoso Interiors", opened: "2026-08-09", due: "2026-08-24", assignee: "Mariana Silva", approver: "Tomas Weber", region: "APAC — Queensland", po: "PO-88502", terms: "net 15", contact: "j.hale@contoso.example", project: "Showroom refresh", status: "overdue", amount: "$18,220.75" },
 ];
 
 const KIT_WIDE_TABLE: UIPayload = {
@@ -327,7 +334,9 @@ const KIT_WIDE_TABLE: UIPayload = {
     {
       id: "root",
       component: "DataTable",
-      props: { rows: TABLE_ROWS, columns: ["reference", "client", "opened", "assignee", "status", "amount"] },
+      // Every key the rows carry, in their own order: a column list that drifted
+      // from the rows would narrow the table and quietly stop testing the fold.
+      props: { rows: TABLE_ROWS, columns: Object.keys(TABLE_ROWS[0]!) },
     },
   ],
 } as UIPayload;
@@ -385,11 +394,11 @@ describe("a table that scrolls sideways", () => {
 
       // The graded shot is untouched: the frame the contract promises, whatever
       // else was captured beside it.
-      expect({ width: widthOf(png), height: png.readUInt32BE(20) }).toEqual({ width: 480, height: 900 });
+      expect({ width: widthOf(png), height: png.readUInt32BE(20) }).toEqual({ width: 1280, height: 900 });
       // And one extra picture, WIDER than that frame — which it can only be if the
       // columns past the fold are in it.
       expect(tables).toHaveLength(1);
-      expect(widthOf(tables[0]!)).toBeGreaterThan(480);
+      expect(widthOf(tables[0]!)).toBeGreaterThan(1280);
 
       // The probe walks this page next, so the expansion has to be undone: a table
       // left at full width is not the screen the shot above was taken of.
@@ -421,7 +430,7 @@ describe("a table that scrolls sideways", () => {
       const { tables } = await visit.shot();
 
       expect(tables).toHaveLength(3);
-      for (const table of tables) expect(widthOf(table)).toBeGreaterThan(480);
+      for (const table of tables) expect(widthOf(table)).toBeGreaterThan(1280);
     } finally {
       await visit.close();
     }

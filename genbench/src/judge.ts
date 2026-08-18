@@ -114,7 +114,7 @@ Grade only the numbered lines. Anything else you notice about this screen, good 
  *  contender does, or two columns stop being comparable. */
 export const JudgeContract = {
   model: "claude-opus-5",
-  /** 7: a table wider than the 480px frame is shot again at its full scroll width
+  /** 7: a table wider than the graded frame is shot again at its full scroll width
    *  and shown to the judge, which was grading the columns past that fold as
    *  absent — three style lines were failed on conventions a person reaches by
    *  scrolling (`wideTables` in `render.ts`). 6: a fail on the honesty line is now
@@ -461,7 +461,7 @@ async function ask(
                 { type: "image", image: input.screenshot, mediaType: "image/png" },
                 // Right after the screen they belong to, and named by the prompt
                 // rather than by a caption of their own: a table wider than the
-                // 480px frame has columns a person scrolls to, and the judge was
+                // graded frame has columns a person scrolls to, and the judge was
                 // grading them absent.
                 ...(input.tables ?? []).map((table) => ({
                   type: "image" as const,

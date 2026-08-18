@@ -5,9 +5,23 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cannedResponse, type World } from "./world.js";
 
-/** A banking app's column. Every contender is shot at the same size, so the
- *  screenshots stack side by side in the report. */
-const VIEWPORT = { width: 480, height: 900 } as const;
+/**
+ * The frame every screen is graded in: a desktop panel, 1280x900 (2026-08-18).
+ *
+ * Widened from a 480px phone column, and the HEIGHT did not move — one variable,
+ * so a column's score before and after differs by room across and nothing else.
+ * The narrow frame was measuring the wrong thing: a desk product's screen is
+ * opened on a laptop, and a table that had to scroll sideways in a phone column
+ * simply fits here.
+ *
+ * Exported because this number is the frame TWICE — the size the shot is taken at
+ * down in `openBrowser`, and the surface the vendo column hands its own screen
+ * agent (`vendo.ts`, read back by `surfaceNote` in `screen-agent.ts` and measured
+ * against by the reviewer). Two spellings of it would let a column write for one
+ * frame and be graded in another. Every contender is shot at the same size, so the
+ * screenshots stack side by side in the report.
+ */
+export const VIEWPORT = { width: 1280, height: 900 } as const;
 
 /**
  * The mechanical seam every page is scored through, in the ONE wording every
@@ -371,12 +385,13 @@ const WIDE = "data-genbench-wide";
 /**
  * A table that scrolls sideways, shot at its FULL width (2026-08-18).
  *
- * The graded shot is the 480px viewport, and a table wider than that keeps its
+ * The graded shot is the `VIEWPORT`, and a table wider than that keeps its
  * right-hand columns past the fold — where a person reaches them by scrolling and
  * the judge could not reach them at all. Three style lines were failed on
  * conventions that were on the screen the whole time, in the columns nobody
  * scrolled to. So the fold gets its own picture, and the judge is told what it is
- * looking at (`SYSTEM_PROMPT` in `judge.ts`).
+ * looking at (`SYSTEM_PROMPT` in `judge.ts`). Written against the frame rather
+ * than against a width, so widening the frame is one edit up there and none here.
  *
  * The container is found from the TABLE outwards — the nearest ancestor that clips
  * it — so the Kit's scroll wrapper and a hand-written `overflow-x:auto` div are

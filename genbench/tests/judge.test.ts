@@ -767,7 +767,7 @@ describe("JudgeContract", () => {
    * The sentence that says what the extra picture of a wide table IS, quoted
    * byte-exact for the reason the clauses below are.
    *
-   * A table wider than the 480px frame keeps its right-hand columns past the
+   * A table wider than the graded frame keeps its right-hand columns past the
    * horizontal fold, and the judge was grading them as absent — three style lines
    * were failed on conventions a person reaches by scrolling. The picture
    * (`wideTables` in `render.ts`) is only evidence while the judge is told what it

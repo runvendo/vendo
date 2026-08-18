@@ -7,6 +7,7 @@ import { vendoVerbsRegistry } from "@vendoai/vendo";
 import { screenAssembler } from "@vendoai/vendo/server";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { VIEWPORT } from "./render.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
@@ -349,7 +350,13 @@ async function run(request: RunRequest): Promise<RunOutcome> {
         {
           appId,
           request: testCase.prompt,
-          viewport: { width: 480, height: 900 },
+          // The frame the shooter really uses, not a second copy of it: this is
+          // what the screen agent is told it is writing into (`surfaceNote` in
+          // `screen-agent.ts`) and what the product's own reviewer measures the
+          // paint against (`paintedSection` in `component-screen.ts`). Both read
+          // it off this input, so the number only has to be right once — and a
+          // literal here would let this column write for a frame it is not shot in.
+          viewport: { ...VIEWPORT },
           onView: (part) => snapshots.push({ atMs: meter.elapsedMs(), payload: part.payload }),
         },
         ctx,

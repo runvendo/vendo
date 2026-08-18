@@ -270,7 +270,7 @@ describe("the harness contract is the ONLY place either baseline is coached on t
     /role\s*=\s*"?dialog/i,
     /\bdialog\b/i,
     /viewport/i,
-    /480/,
+    /1280/,
     /\bnetwork\b/i,
     /\binline\b/i,
     /\bsum, count\b/i,
@@ -296,7 +296,7 @@ describe("the harness contract is the ONLY place either baseline is coached on t
       expect(brief).toContain(HARNESS_CONTRACT);
       // The contract is not a paraphrase of the seam, it is the seam: the size
       // it names is the size the shooter really uses.
-      expect(HARNESS_CONTRACT).toContain("480x900");
+      expect(HARNESS_CONTRACT).toContain("1280x900");
     }
     // One text, one occurrence each — a second copy would mean two sources.
     for (const brief of briefs) expect(brief.split(HARNESS_CONTRACT)).toHaveLength(2);
