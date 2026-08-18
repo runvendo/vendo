@@ -49,13 +49,18 @@ export interface DataTableColumn {
    *  table layout and ignores a `width` on the `<th>` while the cell can still
    *  grow, so a declared width is written to both. */
   width?: number;
-  /** One line, an ellipsis, and the full text in `title=`; see {@link truncates}
-   *  for when it is on without being asked for. */
+  /** Clip this column's cells to one line with an ellipsis, the whole text in
+   *  `title=`. Opt-in, and it wants a `width` — that is the edge the ellipsis
+   *  bites against. Unasked, a cell is still one line, at the full width its
+   *  content asks for: no column is squeezed to unreadable without a screen
+   *  saying so. */
   truncate?: boolean;
   /** How important this column is when there is not room for all of them: the
-   *  LOWEST gives way first. Inferred from POSITION where it is not declared —
-   *  the first column is the most important — and a declared number competes with
-   *  the inferred ones on that one scale rather than in a league of its own. */
+   *  LOWEST gives way first. Declaring it on ANY column is what turns giving way
+   *  on at all — see {@link DataTableProps.fold}. Inferred from POSITION where it
+   *  is not declared — the first column is the most important — and a declared
+   *  number competes with the inferred ones on that one scale rather than in a
+   *  league of its own. */
   priority?: number;
   /** Kit elements rendered instead of the formatted text. Written as a function
    *  of the row, it arrives as ONE element per row in `rows` order; a stored
@@ -92,11 +97,13 @@ export interface DataTableProps extends KitStyled {
    *  that may be OPERATED because the function that wrote it had a row to act
    *  on. One element per row in `rows` order. */
   rowActions?: ReactNode | readonly ReactNode[];
-  /** A column that did not fit folds its label and its value into the first cell
-   *  as an extra line, instead of being left out. Off by default: every folded
-   *  column is another line in the row, and a row of four lines is the 90-160px
-   *  height a judge measured (three columns folded reads at 132px in Chromium).
-   *  Which columns are worth the width is better said with `priority`. */
+  /** Let the columns that do not fit GIVE WAY, folding each one's label and value
+   *  into the first cell as an extra line. Off by default, and so is giving way
+   *  itself: every folded column is another line in the row, and a row of four
+   *  lines is the 90-160px height a judge measured (three columns folded reads at
+   *  132px in Chromium). Which columns are worth the width is said with
+   *  `priority`, which turns giving way on by itself — and leaves the ones that
+   *  went out of the row entirely. */
   fold?: boolean;
   /** Spacing scale for this table's subtree. */
   density?: KitDensity;
@@ -161,21 +168,15 @@ function dateYear(value: unknown): number | undefined {
 export const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
 /**
- * Whether this column's cells are ONE line with an ellipsis — on by default
- * wherever the cell is plain text.
+ * The right edge of the frame, dissolved, while there is more table past it.
  *
- * THE FAILURE: a judge measured rows 90-160px tall. A wrapping cell hides its
- * overflow in ROW HEIGHT — the auto table layout squeezes the column and the text
- * takes three lines — so the table always "fits" while the reader gets a wall,
- * and the fold below never even triggers because nothing ever overflowed. One
- * line is the honest shape, and `truncate={false}` asks for the wall back.
- *
- * A `cell` slot holds ELEMENTS, not text, so a column that paints its own cells
- * is left alone unless it asks: there is no text to clip and nothing to put in a
- * `title=`.
+ * Nothing gives way any more, so the frame scrolls — and a frame that scrolls
+ * with no sign of it is the same silence one column further out. A scrollbar
+ * cannot carry this on its own: macOS hides it until someone is already
+ * scrolling, which is the one moment the hint is not needed. This is the Kit's
+ * own idiom for content past an edge (`chrome-css.ts` `.fl-msglist`).
  */
-const truncates = (col: DataTableColumn | undefined): boolean =>
-  col?.truncate ?? (col?.key !== undefined && col.cell === undefined);
+const MORE_PAST_THE_EDGE = "linear-gradient(90deg, #000 calc(100% - 28px), transparent)";
 
 /** The line-per-column list a folded column moves into. The cell it rides in
  *  may be a FIGURE, whose nowrap/tabular is inherited: a folded line is prose,
@@ -240,6 +241,21 @@ export function DataTable(props: DataTableProps) {
     () => fieldItems<DataTableColumn>(props.columns ?? Object.keys(rows[0] ?? {})),
     [props.columns, rows],
   );
+
+  /**
+   * Whether ANY column gives way on a frame too narrow for all of them. None
+   * does unless a screen asked — by ranking the columns (`priority`) or by
+   * folding the ones that went into the first cell (`fold`).
+   *
+   * THE FAILURE: the table used to decide this itself, off its own measurement,
+   * on every screen. A column that leaves on its own is one the reader cannot
+   * know to look for, and the reader includes the judge: a table quietly six
+   * columns wide and four columns shown reads as a table that was asked for the
+   * wrong thing. MUI's DataGrid and AntD's Table both keep every column and
+   * scroll the frame sideways instead, and AntD's own hiding is opt-in per
+   * column. So is ours.
+   */
+  const givesWay = fold || columns.some((col) => col.priority !== undefined);
 
   const data = useMemo(
     () => (typeof limit === "number" && limit >= 0 ? rows.slice(0, limit) : rows),
@@ -371,20 +387,23 @@ export function DataTable(props: DataTableProps) {
   const painted = Children.toArray(props.children);
 
   /**
-   * Columns past the width the surface has GIVE WAY, least important first. The
-   * wrapper scrolls horizontally, which on a narrow surface parks the right-hand
-   * columns off-screen with nothing to say they exist — five separate judge
-   * failures. The trigger is the measurement itself: no prop, no invented
-   * breakpoint.
+   * EVERY column renders, at the width its content asks for, and the frame
+   * SCROLLS to reach the ones past its right edge — the behaviour of MUI's
+   * DataGrid and AntD's Table both. `more` says there is table past that edge, so
+   * the scrolling is something a person can see (`MORE_PAST_THE_EDGE`).
    *
-   * The pair with `truncates`: a one-line cell states its column's TRUE width
-   * instead of swallowing the overflow in row height, so this measurement finally
-   * sees the crowding a judge saw as 160px rows — which means MORE columns give
-   * way here than did while every cell wrapped, and that is the trade. A column
-   * that is not shown is honest; a row three lines tall is not. `fold` puts the
-   * ones that went back on the page, under the first cell.
+   * Where a screen asked for it (`givesWay`), columns past the width the surface
+   * has give way instead, least important first, off this same measurement — no
+   * invented breakpoint. `fold` puts the ones that went back on the page, under
+   * the first cell.
+   *
+   * The pair with one-line cells: a cell that cannot wrap states its column's
+   * TRUE width instead of swallowing the overflow in row height, which is what
+   * turns crowding into a scrollbar the person can act on rather than the 160px
+   * rows a judge measured.
    */
   const scroller = useRef<HTMLDivElement | null>(null);
+  const [more, setMore] = useState(false);
   const headRow = useRef<HTMLTableRowElement | null>(null);
   /** Each column's right edge at its NATURAL width, measured while every column
    *  is still shown. Folding changes those widths, so a second measurement would
@@ -411,12 +430,15 @@ export function DataTable(props: DataTableProps) {
    * a floor on every count downstream.
    *
    * With nothing declared the inferred `length - index` makes this
-   * right-to-left, which is the order the table has always dropped in.
+   * right-to-left, which is the order the table has always dropped in. EMPTY
+   * where no screen asked to give way, which zeroes every count taken off it —
+   * one gate, and nothing downstream has to remember there is one.
    */
   const dropOrder = useMemo(() => {
+    if (!givesWay) return [];
     const rank = (i: number) => columns[i]?.priority ?? columns.length - i;
     return columns.map((_col, i) => i).slice(1).sort((a, b) => rank(a) - rank(b) || b - a);
-  }, [columns]);
+  }, [givesWay, columns]);
   const [dropCount, setDropCount] = useState(0);
   /** Which columns went, by index. */
   const dropped = useMemo(() => new Set(dropOrder.slice(0, dropCount)), [dropOrder, dropCount]);
@@ -434,6 +456,10 @@ export function DataTable(props: DataTableProps) {
     // the table behaves exactly as it always did.
     if (node === null || typeof ResizeObserver === "undefined") return;
     const measure = () => {
+      // A frame with the last column already in view has nothing left to point
+      // at, so the edge stops dissolving — the sign never claims a column that
+      // is not out there.
+      setMore(node.scrollWidth - node.clientWidth - node.scrollLeft > 1);
       const headers = headRow.current?.children;
       // Only the data columns are measured — the actions column is a trailing
       // extra that never drops, so it has no edge of its own to keep.
@@ -460,7 +486,11 @@ export function DataTable(props: DataTableProps) {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
-    return () => observer.disconnect();
+    node.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      observer.disconnect();
+      node.removeEventListener("scroll", measure);
+    };
   }, [orderKey, expandedHeaderCount, noRows]);
   /** Whether the columns that went are shown as extra lines under the first cell. */
   const folded = fold && dropped.size > 0;
@@ -541,9 +571,15 @@ export function DataTable(props: DataTableProps) {
           border: hairline,
           borderRadius: t.radiusMedium,
           background: t.surface,
+          ...(more ? { maskImage: MORE_PAST_THE_EDGE, WebkitMaskImage: MORE_PAST_THE_EDGE } : {}),
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        {/* `minWidth`, not `width`: the table fills a frame it does not need all
+            of, and GROWS past one too small for its columns — which is the
+            scroll. A `width` of 100% reads as a ceiling to anyone maintaining
+            this, and the columns it would squeeze are the ones that used to
+            vanish. */}
+        <table style={{ minWidth: "100%", borderCollapse: "collapse" }}>
           {caption ? (
             <caption style={{ ...microLabel, padding: cellPad, textAlign: "left" }}>{caption}</caption>
           ) : null}
@@ -629,14 +665,17 @@ export function DataTable(props: DataTableProps) {
                     // headers however scattered the dropped ones are.
                     if (dropped.has(cellIndex)) return null;
                     const col = columns[cellIndex];
-                    // A slot is elements, not a figure: only formatted text is
-                    // one unbreakable atom ("Mar 14" split across two lines
-                    // reads as two values). Tabular is the table's own default.
-                    const figure = col?.format !== undefined && col.format !== "text" && col.cell === undefined;
-                    const truncate = truncates(col);
+                    // The table's OWN text stays on one line: a wrapping cell
+                    // hides its overflow in row height (the 90-160px rows a judge
+                    // measured) instead of in the scrollbar, and a formatted
+                    // figure split across two lines reads as two values. A `cell`
+                    // slot holds elements, and how they break is the screen's
+                    // business — the documented one is two lines on purpose.
+                    const text = col?.cell === undefined;
+                    const truncate = col?.truncate === true;
                     // The whole text of a cell that shows an ellipsis, so nothing
                     // is only readable by widening the window.
-                    const full = truncate && col?.key !== undefined && col.cell === undefined
+                    const full = truncate && text && col?.key !== undefined
                       ? displayText(row.original, col, compactDateKeys.has(col.key))
                       : "";
                     return (
@@ -647,11 +686,11 @@ export function DataTable(props: DataTableProps) {
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
-                          whiteSpace: truncate || figure ? "nowrap" : undefined,
+                          whiteSpace: text ? "nowrap" : undefined,
                           // The ellipsis needs a definite cap to bite, and a
                           // declared `width` is the only one there is: uncapped,
                           // a one-line column simply asks for its full width and
-                          // the drop above is what keeps the table in its surface.
+                          // the frame scrolls to reach it.
                           ...(truncate ? { overflow: "hidden", textOverflow: "ellipsis", maxWidth: col?.width } : {}),
                         }}
                       >

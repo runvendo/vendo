@@ -244,9 +244,9 @@ describe("DataTable", () => {
   it("never breaks a formatted figure across two lines", () => {
     render(<DataTable rows={rows} columns={columns} />);
     expect(screen.getByText("$2,500.00").closest("td")!.style.whiteSpace).toBe("nowrap");
-    // The prose column is one line too now, because a plain cell truncates by
-    // default. What is particular to a figure is that it stays unbreakable even
-    // where the column asked to WRAP — see the truncate suite below.
+    // The prose column is one line too: every cell the TABLE writes is, and the
+    // frame scrolls to reach the ones that do not fit — see the one-line suite
+    // below.
     expect(screen.getByText("Hartwell").closest("td")!.style.whiteSpace).toBe("nowrap");
   });
 
@@ -256,34 +256,46 @@ describe("DataTable", () => {
     expect(root.style.getPropertyValue("--vendo-density-table-padding")).toBe("7px 10px");
   });
 
-  // A narrow surface used to scroll the right-hand columns out of view with
-  // nothing to say they existed. Only the ones that do not FIT give way — a table
-  // showing one column is a stack of cards, which is not a table and reads as one
-  // field per line.
-  it("keeps the columns that fit and shows only the rest of them nowhere", () => {
-    // Three 200px columns; 420px of room, so two fit and the third gives way.
+  /**
+   * THE DEFAULT, and the ruling behind it: a column NEVER leaves on its own. The
+   * table used to drop the ones it could not fit off its own measurement, on
+   * every screen — and a column that leaves unasked is one the reader cannot know
+   * to look for. MUI's DataGrid and AntD's Table both keep every column and
+   * scroll the frame sideways; AntD's own hiding is opt-in per column. So the
+   * frame scrolls, and the give-way machinery below waits to be asked.
+   */
+  it("keeps every column on a frame too narrow for them, and scrolls to reach them", () => {
+    // Three 200px columns; 420px of room, so the third does not fit — and stays.
     const restore = stubLayout(200, 420);
     try {
       render(<DataTable rows={rows} columns={columns} />);
       const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-      expect(headers).toHaveLength(2);
-      expect(headers[0]).toContain("Client");
-      expect(headers[1]).toContain("Amount");
-      expect(headers.join()).not.toContain("Due");
+      expect(headers).toHaveLength(3);
+      expect(headers.join()).toContain("Due");
 
       const firstRow = screen.getAllByRole("row")[1]!;
-      expect(within(firstRow).getAllByRole("cell")).toHaveLength(2);
-      // Unasked, the column that did not fit leaves no line behind it: folding it
-      // into the first cell is what made rows three lines tall.
+      expect(within(firstRow).getAllByRole("cell")).toHaveLength(3);
+      // The column that did not fit is READ where it always was, not folded into
+      // the first cell as another line of it.
+      expect(firstRow.textContent).toContain("Mar 14");
       expect(firstRow.textContent).not.toContain("Due:");
-      expect(firstRow.textContent).not.toContain("Mar 14");
     } finally {
       restore();
     }
   });
 
-  // …and `fold` is how a screen asks for it back: the column that did not fit
-  // rides in the FIRST cell, labelled, not in every cell.
+  /** The frame is what scrolls, so the table may grow past it — a `width` of 100%
+   *  would read as a ceiling and squeeze the columns instead. */
+  it("lets the table grow past the frame it sits in", () => {
+    const { container } = render(<DataTable rows={rows} columns={columns} />);
+    const table = container.querySelector("table")!;
+    expect(table.style.minWidth).toBe("100%");
+    expect(table.style.width).toBe("");
+    expect(table.parentElement!.style.overflowX).toBe("auto");
+  });
+
+  // …and `fold` is how a screen asks for the give-way: the column that did not
+  // fit rides in the FIRST cell, labelled, not in every cell.
   it("folds the columns that did not fit into the first cell when asked", () => {
     const restore = stubLayout(200, 420);
     try {
@@ -473,7 +485,9 @@ describe("DataTable", () => {
   it("keeps a column that fits the room's own fraction", () => {
     const restore = stubSubpixelLayout({ Client: 328.625, Amount: 397, Due: 298.765625 }, 1_024.390_625);
     try {
-      render(<DataTable rows={rows} columns={columns} />);
+      // `fold`, so the measurement is being asked a question at all: without it
+      // every column renders whatever the arithmetic says, and this proves nothing.
+      render(<DataTable rows={rows} columns={columns} fold />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(3);
     } finally {
       restore();
@@ -584,7 +598,7 @@ describe("DataTable", () => {
     // altogether, and a table narrowed after mount would never fold at all.
     const { resizeTo, restore } = stubMeasuredLayout(WIDTHS, 900);
     try {
-      render(<DataTable rows={rows} columns={columns} rowActions={<span>Pay</span>} />);
+      render(<DataTable rows={rows} columns={columns} rowActions={<span>Pay</span>} fold />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(4);
 
       resizeTo(350);
@@ -607,16 +621,32 @@ describe("DataTable", () => {
  *
  * A wrapping cell hides its overflow in ROW HEIGHT: the auto table layout squeezes
  * the column, the sentence takes three lines, and the table reports that everything
- * fits. So a plain text cell is one line with an ellipsis and the whole text in
- * `title=`, and `truncate={false}` is how a column asks for the wall back.
+ * fits. So every cell the table writes is one line, and the overflow it can no
+ * longer hide goes where a person can act on it — the frame's own scrollbar.
+ *
+ * CLIPPING that line is a separate question, and `truncate` is the column's own
+ * answer to it: a prose column capped with a `width` ellipsizes and keeps the
+ * whole of itself in `title=`. Unasked, a cell is one line at its FULL width —
+ * squeezing a column nobody capped is how a table hides a value without saying so.
  */
 describe("DataTable — a cell on one line", () => {
   const note = "Quarterly reconciliation of the payables ledger against the bank feed";
   const notes = [{ id: 1, client: "Hartwell", note }];
   const cellFor = (text: string) => screen.getByText(text).closest("td")!;
 
-  it("truncates a plain text cell, and keeps the whole text in its title", () => {
+  it("keeps a plain text cell on one line, unclipped and untitled", () => {
     render(<DataTable rows={notes} columns={[{ key: "client" }, { key: "note", label: "Note" }]} />);
+    const cell = cellFor(note);
+    expect(cell.style.whiteSpace).toBe("nowrap");
+    expect(cell.style.textOverflow).toBe("");
+    expect(cell.style.maxWidth).toBe("");
+    expect(cell.title).toBe("");
+  });
+
+  it("clips the column that asked to, and keeps the whole text in its title", () => {
+    render(
+      <DataTable rows={notes} columns={[{ key: "client" }, { key: "note", label: "Note", width: 160, truncate: true }]} />,
+    );
     const cell = cellFor(note);
     expect(cell.style.whiteSpace).toBe("nowrap");
     expect(cell.style.overflow).toBe("hidden");
@@ -625,19 +655,10 @@ describe("DataTable — a cell on one line", () => {
     expect(cell.title).toBe(note);
   });
 
-  it("wraps the cell again for truncate={false}, and titles nothing", () => {
-    render(<DataTable rows={notes} columns={[{ key: "client" }, { key: "note", truncate: false }]} />);
-    const cell = cellFor(note);
-    expect(cell.style.whiteSpace).toBe("");
-    expect(cell.style.textOverflow).toBe("");
-    expect(cell.title).toBe("");
-  });
-
-  // A figure is one unbreakable atom whatever the column asked for — "Mar 14"
-  // split across two lines reads as two values — so wrapping is the one thing
-  // `truncate={false}` cannot buy it.
-  it("keeps a formatted figure on one line even where the column asked to wrap", () => {
-    render(<DataTable rows={rows} columns={[{ key: "amount", format: "money", truncate: false }]} />);
+  // A figure is one unbreakable atom — "Mar 14" split across two lines reads as
+  // two values — and it is one whether or not the column said anything.
+  it("keeps a formatted figure on one line", () => {
+    render(<DataTable rows={rows} columns={[{ key: "amount", format: "money" }]} />);
     const cell = cellFor("$2,500.00");
     expect(cell.style.whiteSpace).toBe("nowrap");
     expect(cell.style.textOverflow).toBe("");
@@ -657,7 +678,9 @@ describe("DataTable — a cell on one line", () => {
    *  cell can still grow, so a declared width is written to both — measured in
    *  Chromium, where the th alone left the table 727px wide inside a 400px box. */
   it("writes a declared width to the header and caps the cell", () => {
-    render(<DataTable rows={notes} columns={[{ key: "client" }, { key: "note", label: "Note", width: 160 }]} />);
+    render(
+      <DataTable rows={notes} columns={[{ key: "client" }, { key: "note", label: "Note", width: 160, truncate: true }]} />,
+    );
     expect(screen.getByRole("columnheader", { name: "Note" }).style.width).toBe("160px");
     expect(cellFor(note).style.maxWidth).toBe("160px");
   });

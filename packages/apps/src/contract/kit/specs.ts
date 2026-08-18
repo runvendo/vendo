@@ -130,8 +130,10 @@ const tableColumn = z.union([z.string(), z.object({
   align: align.optional(),
   /** Px. Also what gives a truncated cell an edge to ellipsize against. */
   width: z.number().int().positive().optional(),
+  /** One line with an ellipsis, opt-in — every cell is one line already. */
   truncate: z.boolean().optional(),
-  /** Which columns survive a narrow frame. */
+  /** Which columns survive a narrow frame — and, declared at all, whether any
+   *  give way rather than the frame scrolling to reach them. */
   priority: z.number().optional(),
   cell: slot.optional(),
 })]);
@@ -458,12 +460,12 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DataTable",
     group: "data",
-    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys and formats each cell — you pass rows and columns. A column's `cell` is a function of the row, so any arithmetic or composition a cell needs belongs there; a per-row CONTROL goes in `rowActions`, which is a function of the row too. Dates in cells are compact (\"Aug 12\"); a cell stays on ONE line, truncating with the full text in its hover title, and on a frame too narrow for every column the least important drop — so cap a long-prose column with a `width` (140-200) instead of letting it crowd the others out. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
+    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys and formats each cell — you pass rows and columns. A column's `cell` is a function of the row, so any arithmetic or composition a cell needs belongs there; a per-row CONTROL goes in `rowActions`, which is a function of the row too. Dates in cells are compact (\"Aug 12\"); a cell stays on ONE line and EVERY column renders, so a frame too narrow for all of them scrolls sideways — no column is ever dropped or squeezed. Cap a long-prose column with a `width` (140-200) and `truncate` and it ellipsizes with the whole text in its hover title, instead of making the table wide. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
     takesChildren: true,
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key takes dot-paths (client.name); label (or header) is the heading; format is a value tier token; width is px; truncate is on by default for plain text; priority keeps a column on a narrow frame, lowest dropping first, and defaults to left-to-right; cell is a (row) => elements slot; key is optional on an action column"),
-      fold: config(z.boolean(), "on a narrow frame, fold the dropped columns into the first cell as extra lines rather than leaving them out"),
+      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key takes dot-paths (client.name); label (or header) is the heading; format is a value tier token; width is px; truncate clips that column to one line with an ellipsis and wants a width to bite against; priority opts the table into dropping columns on a frame too narrow for them, lowest first, and defaults to left-to-right; cell is a (row) => elements slot; key is optional on an action column"),
+      fold: config(z.boolean(), "on a narrow frame, let the columns that do not fit give way and fold each into the first cell as an extra line — off by default, and so is giving way at all: the frame scrolls instead"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),

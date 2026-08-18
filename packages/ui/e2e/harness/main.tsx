@@ -32,6 +32,7 @@ import {
   vendoToast,
   type VendoCommand,
 } from "../../src/chrome/index.js";
+import { DataTable } from "../../src/kit/index.js";
 import { AppFrame, PayloadView, TreeView } from "../../src/tree/index.js";
 import { browserTreeFixture } from "../fixtures/tree.js";
 import {
@@ -1911,6 +1912,44 @@ function SlotHintScenario() {
   );
 }
 
+/**
+ * A six-column table in a 480px frame — a phone.
+ *
+ * THE RULING: no column ever leaves on its own. The table used to drop the ones
+ * it could not fit off its own measurement, so exactly this shape rendered as two
+ * columns and a reader with no way to know it. Every column renders now, at the
+ * width its content asks for, and the FRAME scrolls to reach them (MUI's DataGrid
+ * and AntD's Table both).
+ *
+ * Only a browser can hold this law: jsdom lays nothing out, so every width a unit
+ * test measures is one the test itself wrote. The frame is a fixed 480 rather than
+ * the viewport, so the proof is about the surface the table was handed.
+ */
+const NARROW_INVOICES = [
+  { id: "in_1", client: "Hartwell Logistics", number: "INV-2041", amount: 2_500, dueDate: "2026-03-14", status: "Overdue", owner: "R. Okafor" },
+  { id: "in_2", client: "Acme Interiors", number: "INV-2042", amount: 900, dueDate: "2026-03-21", status: "Sent", owner: "L. Marchetti" },
+  { id: "in_3", client: "Borealis Foods", number: "INV-2043", amount: 1_750, dueDate: "2026-04-02", status: "Paid", owner: "R. Okafor" },
+  { id: "in_4", client: "Kestrel Dental", number: "INV-2044", amount: 420, dueDate: "2026-04-09", status: "Draft", owner: "S. Yun" },
+];
+
+function NarrowTableScenario() {
+  return (
+    <div data-testid="narrow-frame" style={{ width: 480 }}>
+      <DataTable
+        rows={NARROW_INVOICES}
+        columns={[
+          { key: "client", label: "Client" },
+          { key: "number", label: "Invoice" },
+          { key: "amount", label: "Amount", format: "money", align: "end" },
+          { key: "dueDate", label: "Due", format: "date" },
+          { key: "status", label: "Status" },
+          { key: "owner", label: "Owner" },
+        ]}
+      />
+    </div>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
@@ -1944,6 +1983,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-wire": return { title: "vendo-genui/v2 — tree payload + stored render", content: <TreeWireScenario /> };
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
+    case "/kit-table-narrow": return { title: "DataTable — six columns in a 480px frame", content: <NarrowTableScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/limit": return { title: "Usage limit — the host's policy denied the request", content: <LimitScenario />, ownProvider: true };

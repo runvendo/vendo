@@ -167,16 +167,18 @@ describe("DataTable with model-painted rows", () => {
     }
   });
 
-  it("leaves the columns that do not fit out of the row entirely, unasked", () => {
+  // Unasked, nothing gives way at all — the frame scrolls — so a painted row
+  // still paints every cell it was written with, on the narrowest surface there
+  // is. A row that loses its own control is a row that lost the reason it was
+  // painted by hand.
+  it("paints every cell on a frame too narrow for them, unasked", () => {
     const restore = stubLayout(200, 420);
     try {
       render(painted());
       const cells = within(screen.getAllByRole("row")[1]!).getAllByRole("cell");
-      expect(cells).toHaveLength(2);
-      expect(cells[0]!.textContent).toBe("Checking");
-      expect(cells[1]!.textContent).toBe("$1,284.50");
-      // The control that rode in the fold is not anywhere else either.
-      expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+      expect(cells).toHaveLength(3);
+      expect(cells.map((cell) => cell.textContent)).toEqual(["Checking", "$1,284.50", "Cancel"]);
+      expect(screen.getAllByRole("button", { name: "Cancel" })).toHaveLength(3);
     } finally {
       restore();
     }
