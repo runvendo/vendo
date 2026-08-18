@@ -3,12 +3,19 @@ import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import type TS from "typescript";
 import { resolveCompiler } from "./compiler-gate.js";
-import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
+import type { ExtractedTool, PrimitiveToolBinding } from "../formats.js";
 
-// Tool identity lives in the pure ../binding-identity.js module (the judgment
-// layer needs it off the node-only side); re-exported here so sync's own
-// importers keep their one import site.
-export { bindingIdentity, dedupKey } from "../binding-identity.js";
+// Tool identity, route naming and protocol-fact risk live in the pure
+// ../binding-identity.js module (the judgment layer and the OpenAPI connector
+// need them off the node-only side); re-exported here so sync's own importers
+// keep their one import site.
+export {
+  bindingIdentity,
+  dedupKey,
+  extractedRisk,
+  routeToolFullName,
+  unclassifiedToolFullName,
+} from "../binding-identity.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 // Hidden directories are never route sources; alternate Next dist dirs
@@ -388,36 +395,6 @@ function limitToolName(fullName: string): string {
   return fullName.length <= 64 ? fullName : `${fullName.slice(0, 57)}_${sha256Hex(fullName).slice(0, 6)}`;
 }
 
-function routeSegments(urlPath: string): string[] {
-  return urlPath.split("/").filter(Boolean);
-}
-
-function staticNameParts(urlPath: string): string[] {
-  return routeSegments(urlPath)
-    .filter((segment, index) => !(index === 0 && segment.toLowerCase() === "api"))
-    .filter((segment) => !/^\{[^}]+\}$/.test(segment))
-    .flatMap((segment) => segment.match(/[A-Za-z0-9]+/g) ?? [])
-    .map((part) => part.toLowerCase());
-}
-
-export function routeToolFullName(method: HttpMethod, urlPath: string): string {
-  const segments = routeSegments(urlPath);
-  const last = segments.at(-1) ?? "";
-  const endsInParameter = /^\{[^}]+\}$/.test(last);
-  const hasEarlierParameter = segments.slice(0, -1).some((segment) => /^\{[^}]+\}$/.test(segment));
-  const parts = staticNameParts(urlPath);
-  const stem = `host_${parts.length > 0 ? parts.join("_") : "route"}`;
-  if (method === "GET") return `${stem}${endsInParameter ? "_get" : "_list"}`;
-  if (method === "POST") return hasEarlierParameter && !endsInParameter ? stem : `${stem}_create`;
-  if (method === "PUT" || method === "PATCH") return `${stem}_update`;
-  return `${stem}_delete`;
-}
-
-export function unclassifiedToolFullName(urlPath: string): string {
-  const parts = staticNameParts(urlPath);
-  return `host_${parts.length > 0 ? parts.join("_") : "route"}_unclassified`;
-}
-
 export function allocateToolName(preferred: string, fallbackSuffix: string, used: Set<string>): string {
   const first = limitToolName(preferred);
   if (!used.has(first)) {
@@ -465,21 +442,6 @@ function words(value: string): string[] {
     .toLowerCase()
     .split("_")
     .filter(Boolean);
-}
-
-/**
- * Extraction grades from PROTOCOL FACTS ONLY (risk-grading redesign D2). A
- * tool's NAME never decides anything: English is infinite, so a word list is
- * guaranteed to miss (*pay, charge, refund, approve, merge, publish*) and its
- * existence is what stops a host from auditing the labels.
- *
- * `DELETE` is destructive by definition of the method. Nothing else about an
- * HTTP route is: `GET` alone does not earn `read` (GETs that mutate exist) and
- * `POST` does not earn `write` (search endpoints post). Anything not proven is
- * `ungraded`, which the guard asks about until a human or the judge grades it.
- */
-export function extractedRisk(method: HttpMethod): ExtractedTool["risk"] {
-  return method === "DELETE" ? "destructive" : "ungraded";
 }
 
 /** tRPC risk labeling (04 §1, fail-closed): a `mutation` is a DECLARED

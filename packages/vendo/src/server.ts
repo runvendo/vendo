@@ -147,6 +147,16 @@ export { chainSecrets, cloudSecrets, type CloudSecretsOptions } from "./cloud-se
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
 
+// The BYO connectors a host passes to createVendo({ connectors }), named from
+// here so bringing an MCP server or a third-party REST API in is one import
+// from the umbrella — no direct @vendoai/actions dependency.
+export {
+  mcpConnector,
+  openApiConnector,
+  type ConnectorAuthContext,
+  type ConnectorHeadersResolver,
+} from "@vendoai/actions";
+
 // The config resolution seam: per surface, a value passed in code → the local
 // `.vendo/<name>` file → unset. Nothing remote participates.
 export {

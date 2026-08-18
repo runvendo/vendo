@@ -120,6 +120,7 @@
             "pages": [
               "capabilities/api-tools",
               "capabilities/custom-tools",
+              "capabilities/connectors",
               "capabilities/connected-accounts",
               "capabilities/automations"
             ]
