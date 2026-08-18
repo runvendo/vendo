@@ -750,10 +750,10 @@ async function resolveUseCase(input: {
 }
 
 /** "Where does this app run in dev?" — prefilled with the port the host's own
-    `dev` script names, so Enter is the whole interaction, and the answer lands
-    in .env.local as VENDO_BASE_URL. Own-agent-loop tools, backend processes and
-    the MCP door never see a wire request, so without it the first tool call
-    meets "Cannot execute … set VENDO_BASE_URL" instead of working.
+ *  `dev` script names, so Enter is the whole interaction, and the answer lands
+ *  in .env.local as VENDO_BASE_URL. Own-agent-loop tools, backend processes and
+ *  the MCP door never see a wire request, so without it the first tool call
+ *  meets "Cannot execute … set VENDO_BASE_URL" instead of working.
  *
  *  A run that cannot ASK writes NOTHING: the prefill is only an answer when a
  *  person accepts it, and a guessed origin is worse than an absent one — unset
@@ -774,10 +774,9 @@ export async function captureDevBaseUrl(input: {
   // plainText carries plainSelect's guard — a non-TTY input or output returns
   // "" and never prompts — so a piped run stays byte-identical while a NO_COLOR
   // terminal still gets the question. Making this pretty-only would silently
-  // delete the feature for anyone who sets NO_COLOR.
-  // The seam sits INSIDE the interactivity gate, like the auth confirm's: a
-  // stubbed prompt must not make an unattended run ask a question the real one
-  // never reaches.
+  // delete the feature for anyone who sets NO_COLOR. The test seam sits INSIDE
+  // the interactivity gate, like the auth confirm's: a stubbed prompt must not
+  // make an unattended run ask what the real one never reaches.
   const ask = options.baseUrl !== undefined
     ? async () => options.baseUrl!
     : options.yes === true || !interactive
