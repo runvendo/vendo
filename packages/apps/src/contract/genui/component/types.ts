@@ -228,7 +228,21 @@ export type ScreenErrorKind =
  * passed through rather than summarized.
  */
 export class ScreenError extends Error {
-  constructor(readonly kind: ScreenErrorKind, message: string, readonly vmStack?: string) {
+  constructor(
+    readonly kind: ScreenErrorKind,
+    message: string,
+    readonly vmStack?: string,
+    /**
+     * The reads the paint had already NAMED and had no answer to when it threw.
+     *
+     * A first paint that throws while it is still waiting on a read threw
+     * against data it was never given: that is a LOADING paint, not a verdict on
+     * the screen. A caller running the supply loop answers these and paints
+     * again. Empty is the other case — the screen threw with everything it asked
+     * for in hand — and that one IS the verdict.
+     */
+    readonly misses: readonly ScreenQuery[] = [],
+  ) {
     super(message);
     this.name = "ScreenError";
   }

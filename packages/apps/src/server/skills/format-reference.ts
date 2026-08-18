@@ -53,8 +53,12 @@ Those two imports are everything there is. Nothing else can be loaded.
 
 ## Data — \`useQuery(tool_name, input)\`
 
-- Synchronous, and it hands back the tool's result EXACTLY as the tool returns
-  it — read the field names off the tool's own schema.
+- Synchronous, and it hands back the tool's result with the tool's own field
+  names on it — read them off the tool's schema.
+- A read whose input you COMPUTE has no answer on the first paint: its \`data\` is
+  undefined until the host supplies it, and then every \`useQuery\` re-runs with
+  the real thing. So write the screen so an unanswered read draws its empty shell
+  — \`rows.data ?? []\`, an empty state, a panel with nothing in it yet.
 - The input is any value you have: a piece of state, something you computed, a
   field off another query.
 - Read the same tool twice with different inputs where the screen needs two

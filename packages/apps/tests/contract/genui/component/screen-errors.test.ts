@@ -413,6 +413,22 @@ export default function S() { return <Text text={String(useQuery("ghost_tool").d
 
     expect(error.kind).toBe("boot");
     expect(error.message).toContain("cannot read property 'length' of undefined");
+    // And it says WHAT it was waiting on. A first paint that threw while a read
+    // was still outstanding threw against data it was never given, so a caller
+    // running the supply loop answers these and paints again rather than taking
+    // this as the screen's verdict (checking/component-screen.ts's run stage).
+    expect(error.misses).toEqual([{ tool: "ghost_tool", input: undefined }]);
+  });
+
+  it("names nothing outstanding when the screen threw with every answer in hand", () => {
+    // The other half of the same law: this read was ANSWERED, and the screen
+    // still threw. There is nothing to wait for, so the throw is the verdict.
+    const error = failsBoot(`
+import { Text, useQuery } from "@vendo/screen";
+export default function S() { return <Text text={String(useQuery("list_pending").rows.length)} />; }`, { list_pending: { data: [] } });
+
+    expect(error.kind).toBe("boot");
+    expect(error.misses).toEqual([]);
   });
 
   it("lists the modules a screen may import when it reaches for another", () => {

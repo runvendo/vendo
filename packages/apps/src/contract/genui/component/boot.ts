@@ -401,6 +401,19 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     return true;
   };
 
+  /** The reads this VM has named and had no answer to, asked of a VM that may be
+   *  in any state at all — this runs on the way out of a FAILED boot. Best
+   *  effort by design: a failure before the runtime is installed has no
+   *  `__vendo` to ask, and a dead VM cannot be asked anything. */
+  const pendingMisses = (): ScreenQuery[] => {
+    if (dead) return [];
+    try {
+      return JSON.parse(evalString("__vendo.misses()", "render")) as ScreenQuery[];
+    } catch {
+      return [];
+    }
+  };
+
   const turn = <T>(kind: ScreenTurn, body: () => T): T => {
     if (dead) throw new ScreenError("vm", "this screen was disposed");
     limit = budget.limit(kind);
@@ -458,8 +471,12 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
       repaint();
     });
   } catch (error) {
+    // Read the reads BEFORE the VM goes: a boot that threw while it was still
+    // waiting on one threw against data it was never given, and the caller
+    // running the supply loop needs to know which.
+    const asked = pendingMisses();
     teardown();
-    throw bootHint(error, options.compiledSource);
+    throw bootFailure(error, options.compiledSource, asked);
   }
 
   return {
@@ -591,13 +608,15 @@ const literal = (value: unknown): string => {
   return json === undefined ? "null" : json;
 };
 
-/** The one boot failure worth naming: source compiled to the wrong format. The
- *  parser's own complaint about a top-level `import` says nothing useful. */
-const bootHint = (error: unknown, source: string): unknown => {
-  if (!(error instanceof ScreenError) || error.kind !== "boot") return error;
-  if (!/^\s*(?:import|export)\s/mu.test(source)) return error;
-  return new ScreenError(
-    "boot",
-    `${error.message} — this source looks like an ES module, and the screen VM hosts CommonJS: compile it with esbuild's format: "cjs"`,
-  );
+/** A failed boot, as its caller has to read it: the one hint worth naming —
+ *  source compiled to the wrong format, where the parser's own complaint about a
+ *  top-level `import` says nothing useful — and the reads the paint was still
+ *  waiting on, which is what tells a supply loop this was a loading paint rather
+ *  than a verdict. */
+const bootFailure = (error: unknown, source: string, misses: readonly ScreenQuery[]): unknown => {
+  if (!(error instanceof ScreenError)) return error;
+  const hint = error.kind === "boot" && /^\s*(?:import|export)\s/mu.test(source)
+    ? " — this source looks like an ES module, and the screen VM hosts CommonJS: compile it with esbuild's format: \"cjs\""
+    : "";
+  return new ScreenError(error.kind, error.message + hint, error.vmStack, misses);
 };

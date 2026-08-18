@@ -29,6 +29,7 @@ import {
   type ComponentScreenCheck,
 } from "../../src/server/checking/component-screen.js";
 import { screenCatalog } from "../../src/server/checking/screen-typings.js";
+import { nodeToolchain } from "../../src/server/checking/toolchain.js";
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const pendingSchema: JsonSchema = {
@@ -988,13 +989,16 @@ export default function S() {
    * host ever got to answer, so the screen was thrown away for a paint it was
    * never given the data for.
    *
-   * A miss is an OBJECT now (`genui/component/vm-program.ts` `MISS`), so the read
-   * yields `undefined` and the Kit paints its empty state. The crash it does NOT
-   * close is the second half: `undefined` still cannot be called on, so a screen
-   * that writes `.length` on a pending read is still refused — the message just
-   * names the value it has to guard instead of the result object. The type surface
-   * cannot pre-empt that one: `strictNullChecks` is off here on purpose, and
-   * turning it on refuses all four of the manual's own worked screens.
+   * Two laws close it. A miss is an OBJECT now
+   * (`genui/component/vm-program.ts` `MISS`), so `.data` on a pending read yields
+   * `undefined` instead of throwing; and a paint that throws while it is STILL
+   * waiting on a read is a loading paint, so the loop answers what it named and
+   * paints again rather than recording the throw. Together they cover every shape
+   * — `.length`, `.map`, `.find` — because none of them is reached on the paint
+   * that matters.
+   *
+   * What is still a refusal: a throw with nothing outstanding, and a throw on the
+   * last bounded round, where there is no next paint to be judged on.
    */
   const withTable = async (source: string): Promise<ComponentScreenCheck> => checkComponentScreen({
     source,
@@ -1032,13 +1036,78 @@ export default function BuildDetail() {
     ]);
   });
 
-  it("still refuses one that calls a method on a read that has not landed", async () => {
+  it("paints the whole failure-log case — the raw `.data` AND the `.length` on it", async () => {
+    // The artifact's own second half, verbatim in shape: `.length` on a read that
+    // has not landed. The first paint throws on it; the loop answers the read it
+    // named and the second paint has real rows, so the screen the person sees is
+    // the one that works.
     const result = await withTable(PENDING_READ(`<Text text={detail.data.length + " shown"} />`));
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.queryPlan).toEqual([
+      { tool: "search_transfers", input: { status: "pending" } },
+      { tool: "search_transfers", input: { status: "tr_1" } },
+    ]);
+    // And it painted the REAL count, not an empty shell: the loading paint was
+    // thrown away, not shown.
+    const texts = Object.values(result.initialTree?.nodes ?? {}).map((node) => node.props?.text);
+    expect(texts).toContain("2 shown");
+  });
+
+  it("keeps a throw with nothing outstanding a refusal, on the FIRST round", async () => {
+    // Every read this screen makes is in the plan, so the first paint had
+    // everything it asked for — the tool simply answered an envelope with no
+    // `data` in it. Nothing is outstanding, so there is nothing to wait for: the
+    // throw is the screen's own and the loop does not go round again.
+    let asked = 0;
+    const result = await check(GOOD, async () => {
+      asked += 1;
+      return {};
+    });
 
     expect(result.ok).toBe(false);
     expect(result.issues.map(({ code }) => code)).toEqual(["run"]);
-    expect(result.issues[0]?.message).toContain("cannot read property 'length' of undefined");
     expect(result.issues[0]?.message).toContain("guard an undefined or empty result before .map/.reduce");
+    expect(asked).toBe(1);
+  });
+
+  it("stops at the bound — a paint that keeps asking and keeps throwing is refused", async () => {
+    // A loading paint may not be forever: a screen that names a NEW read every
+    // time it throws would loop, so the last round's throw is the verdict. The
+    // paint is faked because no real screen diverges here — a gate round is a
+    // fresh boot, so a real one converges on the second — and what needs pinning
+    // is the loop, not a pathological screen.
+    let asked = 0;
+    let painted = 0;
+    const result = await checkComponentScreen({
+      source: GOOD,
+      hostTools: tools,
+      catalog,
+      runQuery: async () => {
+        asked += 1;
+        return ROWS;
+      },
+      toolchain: {
+        ...nodeToolchain(),
+        paint: async () => {
+          painted += 1;
+          return {
+            ok: false,
+            kind: "render",
+            message: `still waiting, round ${painted}`,
+            misses: [{ tool: "search_transfers", input: { status: String(painted) } }],
+          };
+        },
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["run"]);
+    // The LAST round's message, and three rounds, never a fourth.
+    expect(result.issues[0]?.message).toContain("still waiting, round 3");
+    expect(painted).toBe(3);
+    expect(asked).toBe(3);
   });
 
   it("relays a screen that would not paint, and one that would not stop", async () => {

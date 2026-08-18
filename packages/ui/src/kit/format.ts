@@ -1,11 +1,16 @@
 /**
- * Kit semantics core — Intl-based formatters (W2 §The Kit).
+ * Kit semantics core — the Intl formatters the KIT ITSELF still needs.
  *
- * The whole point of the value tier: amounts/dates/enums arrive CORRECT without the
- * model ever authoring a format string. Every formatter is total — bad data
- * (NaN, Infinity, non-numbers, unparseable dates) returns `null`, never the
- * strings `$NaN` / `Invalid Date`. Components turn `null` into a designed
- * placeholder, so garbage from generation is structurally unrenderable.
+ * The value-formatting tier is gone: a screen formats its own figures with
+ * `Intl`, which the VM bridges (`genui/component/vm-program.ts`), so nothing here
+ * is model-facing any more. What is left serves the two places a displayed value
+ * never passes through the model's code — a chart's axis ticks, computed
+ * host-side off a numeric scale, and the chrome's own rendering of tool
+ * arguments — plus the total text coercion every container uses to turn an
+ * absent field into a designed placeholder.
+ *
+ * Every formatter is still total: bad data (NaN, Infinity, unparseable dates)
+ * returns `null`, never `$NaN` on an axis.
  */
 
 /** A finite, real JS number — the only thing the numeric tier will format. */
@@ -25,10 +30,10 @@ const FALLBACK_INTL: KitIntl = { currency: "USD", locale: "en-US" };
 
 /**
  * Ambient, because the Kit's formatters are PURE FUNCTIONS, not components:
- * `applyFormat` runs inside DataTable/CardList/Stat/every chart, and the mount
- * hands islands a bare `fmt.money`. React context cannot reach those call
- * sites, so a host that bills in rupees would otherwise be stuck with the
- * hardcoded "$" no matter what its tool semantics declare.
+ * `applyFormat` runs inside every chart's axis and the chrome's humanizer. React
+ * context cannot reach those call sites, so a host that bills in rupees would
+ * otherwise be stuck with the hardcoded "$" no matter what its tool semantics
+ * declare.
  *
  * Set once per host (VendoProvider does it from its `intl` prop). One page =
  * one display currency; a per-value currency still wins via the options

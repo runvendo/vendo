@@ -647,9 +647,10 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
 
   // THE SUPPLY LOOP. The plan is only what could be read before the screen ran;
   // a read whose input the screen computes is named by the paint itself. So: run
-  // what is asked for, paint, and if the paint asked for more, go round again.
-  // `queryPlan` grows with what it learns, because the surface re-reads exactly
-  // this list after a write.
+  // what is asked for, paint, and if the paint asked for more, go round again —
+  // whether that paint finished or threw, because a paint that is still waiting
+  // on a read has not been given the data it is judged on. `queryPlan` grows with
+  // what it learns, because the surface re-reads exactly this list after a write.
   const queries: Record<string, unknown> = {};
   const now = Date.now();
   let painted: ScreenPaintResult;
@@ -682,6 +683,17 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
       return refuse([unavailable("engine-unavailable", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
     }
     if (!painted.ok) {
+      // A paint that threw while it was still WAITING on a read is a LOADING
+      // paint, not a verdict: it rendered against data this check had not given
+      // it yet, and the screen the person sees is the one painted a round later
+      // on the real answers. So answer what it named and paint again. Only a
+      // throw with nothing outstanding — or one on the last round, where there is
+      // no next paint to be judged on — is the screen's own.
+      if (painted.misses.length > 0 && round < MAX_SUPPLY_ROUNDS) {
+        asks = painted.misses;
+        queryPlan.push(...asks);
+        continue;
+      }
       return refuse([issue("run", renderMessage(painted.kind, painted.message))], { compiled, queryPlan });
     }
     // A screen still asking after the last round is one that invents a key on

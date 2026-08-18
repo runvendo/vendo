@@ -175,7 +175,9 @@ describe("component runs the ONE gauntlet, and it is the paint gate", () => {
     // codes: an engine that ANSWERED has run this screen, so the failure is the
     // screen's own and the repair round is exactly the right thing to spend.
     const painted = await brokenAt({
-      paint: async () => ({ ok: false, kind: "render", message: "Cannot read properties of undefined" }),
+      // No misses: this screen threw with every read it asked for already in
+      // hand, which is the one throw that IS a verdict.
+      paint: async () => ({ ok: false, kind: "render", message: "Cannot read properties of undefined", misses: [] }),
     });
 
     expect(painted.ok).toBe(false);

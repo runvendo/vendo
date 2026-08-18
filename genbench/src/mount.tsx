@@ -15,8 +15,10 @@ import {
   KIT_COMPONENT_NAMES,
   queryKey,
   resolveTheme,
+  ScreenError,
   themeCssVariables,
   warmScreenEngine,
+  type ScreenInstance,
   type ScreenQuery,
   type VendoTheme,
 } from "@vendoai/apps/contract";
@@ -102,7 +104,7 @@ async function opened(): Promise<UIPayload> {
     return [queryKey(query), outcome.status === "ok" ? outcome.output : undefined];
   }));
   const queries = answer(plan);
-  const screen = bootScreen({
+  const boot = (): ScreenInstance => bootScreen({
     compiledSource: interactive.compiledSource,
     queries,
     // Exactly the renderer's own vocabulary — `StatefulTreeView` boots its VM
@@ -111,6 +113,20 @@ async function opened(): Promise<UIPayload> {
     catalog: KIT_COMPONENT_NAMES,
     now: Date.now(),
   });
+  // A boot that threw while it was still waiting on a read threw against answers
+  // this page had not given it yet — a loading paint, not a broken screen. Answer
+  // what it named and boot again, the same law the save gate keeps.
+  let screen: ScreenInstance;
+  for (let round = 1; ; round += 1) {
+    try {
+      screen = boot();
+      break;
+    } catch (error) {
+      const asks = error instanceof ScreenError ? error.misses : [];
+      if (asks.length === 0 || round === MAX_SUPPLY_ROUNDS) throw error;
+      Object.assign(queries, answer(asks));
+    }
+  }
   try {
     // A read whose input the screen computes is named by the paint, not by the
     // plan, so the open answers what the screen asks for until it stops asking —

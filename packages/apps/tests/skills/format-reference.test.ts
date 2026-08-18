@@ -220,6 +220,20 @@ describe("the reference only teaches what a screen really has", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("Those two imports are everything there is.");
   });
 
+  /** The clause that taught a crash. "Hands back the tool's result EXACTLY as
+   *  the tool returns it" is false of the first paint: a read whose input the
+   *  screen computes has no answer until the host supplies one, and the VM hands
+   *  back `{ data: undefined }` until then (`genui/component/vm-program.ts`
+   *  `MISS`). A model that believed the old sentence wrote `stages.data.length`
+   *  and threw before the host got to answer — `buildlog/failure-log` on the
+   *  bench. The manual owes the truth AND the shape it implies. */
+  it("says a read may have no answer on the first paint, and what to draw then", () => {
+    expect(VENDO_FORMAT_REFERENCE).not.toMatch(/EXACTLY as the tool returns/u);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/has no answer on the first paint/u);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/its `data` is\s+undefined until the host supplies it/u);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/an unanswered read draws its empty shell/u);
+  });
+
   it("forbids the HTML and CSS a screen genuinely does not have", () => {
     // The display bricks are the ONLY HTML in the check's program, and they take
     // children and a style and nothing else — so `className` is still a type

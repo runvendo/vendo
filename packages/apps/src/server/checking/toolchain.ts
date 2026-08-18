@@ -113,7 +113,12 @@ export interface ScreenPaintInput {
  *  instance cannot cross this boundary, so a round is a fresh boot rather than a
  *  `supply` — at gate time there is no hook state to keep. Controls are pressed
  *  only on a paint that missed nothing: a screen still waiting on a read is not
- *  the screen the person is shown, so its buttons are not the ones to judge. */
+ *  the screen the person is shown, so its buttons are not the ones to judge.
+ *
+ *  A FAILED paint carries them too, and that is what makes the loop a loop: a
+ *  paint that threw while it was still waiting on a read threw against data it
+ *  was never given, so the caller answers what it named and paints again. Only a
+ *  throw with nothing outstanding is the screen's own. */
 export type ScreenPaintResult =
   | {
     readonly ok: true;
@@ -121,7 +126,12 @@ export type ScreenPaintResult =
     readonly inert: readonly InertControl[];
     readonly misses: readonly ScreenQuery[];
   }
-  | { readonly ok: false; readonly kind: ScreenErrorKind; readonly message: string };
+  | {
+    readonly ok: false;
+    readonly kind: ScreenErrorKind;
+    readonly message: string;
+    readonly misses: readonly ScreenQuery[];
+  };
 
 export interface ScreenToolchain {
   /** Both forms of the screen. A throw is a screen that does not compile;
@@ -219,8 +229,8 @@ export const nodeToolchain = (): ScreenToolchain => ({
       // where it happened, and — like every kind but `render` and `budget` — it
       // reads back as the screen having thrown.
       return error instanceof ScreenError
-        ? { ok: false, kind: error.kind, message: error.message }
-        : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error) };
+        ? { ok: false, kind: error.kind, message: error.message, misses: error.misses }
+        : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error), misses: [] };
     } finally {
       // A dispose that throws is not the screen's verdict.
       try { instance?.dispose(); } catch { /* ignore */ }

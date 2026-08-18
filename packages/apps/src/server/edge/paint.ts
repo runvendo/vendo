@@ -75,8 +75,8 @@ export const edgePaint = async (
     return { ok: true, tree, misses, inert: misses.length > 0 ? [] : pressControls(tree, () => bootScreen({ ...input, budget })) };
   } catch (error) {
     return error instanceof ScreenError
-      ? { ok: false, kind: error.kind, message: error.message }
-      : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error) };
+      ? { ok: false, kind: error.kind, message: error.message, misses: error.misses }
+      : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error), misses: [] };
   } finally {
     try { instance?.dispose(); } catch { /* ignore */ }
   }
