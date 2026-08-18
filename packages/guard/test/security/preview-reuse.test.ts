@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../../src/guard.js";
 import type { Judge } from "../../src/types.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
@@ -23,6 +23,10 @@ function countingJudge(action: "run" | "ask" | "block" = "run"): Judge & { decis
 }
 
 const write = descriptor("write");
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("the previewed verdict is the one the dispatch runs on", () => {
   it("evaluates the pipeline ONCE for a preview and the dispatch that follows it", async () => {
@@ -137,6 +141,26 @@ describe("what reuse may never move", () => {
       status: "pending-approval",
     });
     expect(tools.executions).toHaveLength(0);
+  });
+
+  it("a verdict older than the reuse window is decided fresh rather than trusted", async () => {
+    const judge = countingJudge("run");
+    const guard = createGuard({ store: createMemoryStore(), judge });
+    const bound = guard.bind(new FixtureTools());
+    const c = call(write.name, { value: 1 }, "call_stale");
+
+    await guard.previewCheck!(c, write, context());
+    expect(judge.decisions).toBe(1);
+
+    // The ONLY thing that changes is the clock — no policy, no grant, no other
+    // call. A preview answers for the dispatch moments behind it, and 30s later
+    // this is not that dispatch: the pipeline must run again. (Well inside the
+    // 60s map sweep, so expiry and not the sweep is what is under test here.)
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 30_000);
+
+    await expect(bound.execute(c, context())).resolves.toMatchObject({ status: "ok" });
+    expect(judge.decisions).toBe(2);
   });
 
   it("a policy that says block is still a block, audited once rather than twice", async () => {

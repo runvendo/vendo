@@ -15,15 +15,27 @@ descriptor, same subject, venue, presence and app, or it is decided fresh.
 
 Nothing the guard refused before gets through. The preview was always the whole
 evaluation — it just never SPENT anything — so the dispatch is what commits, and
-it commits the same things in the same order: the call-rate window and the write
-budget are read live and can still park a previewed "run" that a concurrent call
-has since put over budget; the human's single-use yes is claimed by the pass that
-dispatches, and a claim that loses sends the call back through the full pipeline;
-a standing grant is re-read, so a permission taken back between the two passes
-still stops the call; the kill switch is re-read uncached immediately before
-dispatch, exactly as before; and THE LAW's unattended gate reads the same verdict
-and effective descriptor it always did. An "ask" is never carried forward at all —
-the tap that answers it IS the fresh verdict the dispatch reads.
+a verdict only answers for the dispatch moments behind it: it expires after five
+seconds, and every gate that can still stop the call is re-read before anything
+is spent. The kill switch is read first, so a freeze landing between the two
+passes no longer burns the human's single-use yes on a call it then blocks. The
+call-rate window and the write budget are read live and can still park a
+previewed "run" that a concurrent call has since put over budget. The org-admin
+layer is consulted again, so an admin who tightens the layer while a call sits
+previewed clamps that call. The risk GRADE is re-resolved rather than remembered,
+so a tool that previewed as `read` and re-grades to `destructive` cannot reach an
+away run on the old label — THE LAW's unattended gate never reads a stale grade.
+A standing grant is re-read and the single-use yes is claimed last, after every
+gate above, so a call that does not proceed spends nothing. Any of these voids
+the verdict and the full pipeline decides again. An "ask" is never carried
+forward at all — the tap that answers it IS the fresh verdict the dispatch reads.
+
+The judge is asked once per call, so a run's outstanding previewed verdicts are
+voided the moment a write lands in that run: the judge decides on the audit
+trail, and a step whose tools were all previewed before any of them dispatched
+would otherwise let the second write run on a verdict taken before the first one
+existed. Sequential calls — preview, then dispatch with nothing in between — keep
+the single pass.
 
 Host-API calls also ride the keep-alive connection pool the store already uses.
 Node's stock dispatcher drops an idle socket after ~4s — shorter than the gap
