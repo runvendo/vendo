@@ -114,6 +114,21 @@ export function hostComponentMap(components: HostComponentsInput | undefined): R
   return map;
 }
 
+/** The client half of the generated remix wiring (`vendo sync` writes
+ * `.vendo/generated/remix-wiring.ts`; `holes` binds a name the ported screen
+ * renders to the component itself). Read STRUCTURALLY, so the host hands the
+ * whole generated const over — `tools` and all — exactly as it hands it to
+ * `createVendo({ remixWiring })`. */
+export type RemixWiringInput = Record<string, { holes?: Record<string, ComponentType<never>> }>;
+
+/** Every slot's holes, folded name-keyed — a component name is global here, so
+ * two slots rendering the same hole are one entry rather than a collision. */
+function remixHoles(wiring: RemixWiringInput | undefined): Record<string, ComponentType> {
+  return Object.fromEntries(
+    Object.values(wiring ?? {}).flatMap((slot) => Object.entries(slot.holes ?? {})),
+  ) as Record<string, ComponentType>;
+}
+
 export function VendoProvider(props: {
   client?: VendoClient;
   /** The wire mount, path prefix included ("/maple/api/vendo"). Default
@@ -121,6 +136,13 @@ export function VendoProvider(props: {
       carries its own base. */
   baseUrl?: string;
   components?: HostComponentsInput;
+  /** The same generated const `createVendo({ remixWiring })` takes. Its holes
+      join the components map as its WEAKEST leg — mirroring the server, where a
+      hole is the weakest leg of the catalog (`vendo` compose-surfaces.ts) — so a
+      `components` entry for the same name still wins. Both ends need it: the
+      client screen VM's vocabulary is built from this map too (tree/renderer.tsx),
+      so a hole missing here is a name the port cannot even paint. */
+  remixWiring?: RemixWiringInput;
   theme?: Partial<VendoTheme>;
   /** The host's `.vendo/fonts.css` text — see VendoContextValue.fonts. */
   fonts?: string;
@@ -144,7 +166,7 @@ export function VendoProvider(props: {
   onNavigate?(nav: VendoNavigation): void;
   children: ReactNode;
 }): ReactNode {
-  const { client, baseUrl, components, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
+  const { client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -157,7 +179,7 @@ export function VendoProvider(props: {
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient(baseUrl === undefined ? {} : { baseUrl }),
-      components: hostComponentMap(components),
+      components: { ...remixHoles(remixWiring), ...hostComponentMap(components) },
       theme: resolveTheme(defaultVendoTheme, theme),
       fonts,
       transport,
@@ -172,7 +194,7 @@ export function VendoProvider(props: {
       routes,
       onNavigate,
     }),
-    [client, baseUrl, components, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
+    [client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
