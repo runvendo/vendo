@@ -88,7 +88,9 @@ await vendo.tenantConnectors.list("acme");
 // [{ org: "acme", name: "billing", kind: "mcp", url: "…", registeredAt: "…" }]
 ```
 
-Set `VENDO_STORE_ENCRYPTION_KEY` (base64, 32 bytes) in production. Without it the store refuses to write a secret rather than storing one in the clear.
+The vault belongs to whichever store composes. If Vendo composes it, `VENDO_STORE_ENCRYPTION_KEY` (base64, 32 bytes) is what turns it on. If you pass your own store, you configure it there yourself — `createStore({ url, encryption: { key: ... } })` — because an explicitly passed store owns its own secrets config, and the environment variable never reaches it.
+
+Without one of those two, a registration carrying a token is refused in every environment, not just production. A tokenless registration is unaffected: it stores no secret, so it needs no vault.
 
 ## Checking and removing
 
