@@ -22,6 +22,7 @@ import type { VendoActionsConfig, VendoComposition } from "./compose-context.js"
 import { selectConnectors } from "./compose-selection.js";
 import { selectHostTools } from "./dot-vendo.js";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { limitGenerations } from "./limits.js";
 import {
   DOCTOR_ACT_AS_APP_ID,
@@ -103,7 +104,11 @@ const actionsConfigFor = (
     ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     // Try-surface seam: an explicitly passed fetch always wins (adapter rule).
-    ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
+    // Unset, host-API calls ride the same keep-alive pool the store does: the
+    // gap between two of an agent's tool calls is longer than the ~4s Node's
+    // stock dispatcher holds an idle socket, so every host round trip was
+    // paying a fresh TCP+TLS handshake (keep-alive-fetch.ts).
+    fetch: config.fetch ?? keepAliveFetch,
     ...(urls === undefined
       ? {}
       : { baseUrl: urls.hostApiUrl.href, baseUrlTrusted: true }),

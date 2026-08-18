@@ -429,6 +429,19 @@ function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean 
   return descriptor.risk === "read" && ctx.venue === "app" && ctx.presence === "present";
 }
 
+/** What makes a previewed verdict answer for THIS dispatch and nothing else
+ *  ({@link GuardImplementation.previewCheck}). Everything the verdict was
+ *  computed from that a caller could vary is pinned: another subject, another
+ *  venue/presence/app, other arguments, or a re-graded descriptor all miss and
+ *  are evaluated fresh. */
+function previewKey(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): string {
+  return [
+    call.id, call.tool, exactInputHash(call.args), descriptorHash(descriptor),
+    ctx.principal.subject, ctx.venue, ctx.presence, ctx.appId ?? "",
+    ctx.trigger?.runId ?? ctx.sessionId,
+  ].join("\n");
+}
+
 /** Every write of an approval row derives its refs here, so the index can
  *  never drift from the data. `call` is what keeps the standing-denial lookup
  *  off a subject's whole approval history: chat's random ids simply miss it. */
@@ -502,6 +515,10 @@ class GuardImplementation implements VendoGuard {
   /** In-flight execution per effect key, so concurrent identical calls share one
    *  execution instead of both racing past an empty ledger. */
   readonly #effectsInFlight = new Map<string, Promise<ToolOutcome>>();
+  /** The verdict `previewCheck` computed, held for the ONE dispatch that
+   *  follows it (see {@link #decideForExecution}). Single-use, key-pinned, and
+   *  swept with the breaker maps for a preview no dispatch ever collected. */
+  readonly #previewed = new Map<string, { at: number; completed: CompletedDecision }>();
   readonly #config: CreateGuardConfig;
   readonly #policyConfig: PolicyConfigObject | undefined;
   readonly #policy: PolicyResolver;
@@ -581,7 +598,19 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<GuardDecision> {
-    return (await this.#checkWithMetadata(call, descriptor, ctx, false)).decision;
+    const completed = await this.#checkWithMetadata(call, descriptor, ctx, false);
+    // Handed to the dispatch that follows, so one logical call evaluates rules,
+    // grants, the org layer and the judge ONCE instead of twice (#decideForExecution
+    // spends there what this pass deliberately did not). An "ask" is never handed
+    // on: the caller waits for a person, and the tap that answers them IS the
+    // fresh verdict the dispatch must read.
+    if (completed.decision.action !== "ask") {
+      // Swept where it GROWS: a process that only ever previews (every call
+      // ruled out downstream, never dispatched) reaches no other sweep site.
+      this.#sweepBreakerState(Date.now());
+      this.#previewed.set(previewKey(call, descriptor, ctx), { at: Date.now(), completed });
+    }
+    return completed.decision;
   }
 
   async report(event: AuditEvent): Promise<void> {
@@ -773,7 +802,7 @@ class GuardImplementation implements VendoGuard {
           return outcome;
         }
 
-        const completed = await this.#checkWithMetadata(call, descriptor, ctx);
+        const completed = await this.#decideForExecution(call, descriptor, ctx);
         const { decision } = completed;
         let outcome: ToolOutcome;
 
@@ -1048,6 +1077,77 @@ class GuardImplementation implements VendoGuard {
     if (hasRules) return { posture: "rules" };
     if (hasJudge) return { posture: "judge" };
     return { posture: "unconfigured" };
+  }
+
+  /**
+   * The verdict this dispatch runs on: the one `previewCheck` computed for
+   * exactly this call moments ago, or a fresh evaluation when there is none.
+   *
+   * The preview was the WHOLE evaluation — rules, grants, org layer, judge — it
+   * simply spent nothing, so a second pass answered the same question at the
+   * cost of another judge run and another pair of store reads. What the preview
+   * could not do is commit, and `#commitPreviewed` does that here; when it
+   * cannot (a breaker filled up, or the human's single yes went elsewhere) the
+   * verdict is thrown away and the pipeline decides again from scratch.
+   *
+   * What reuse deliberately does NOT skip: the uncached freeze re-read
+   * immediately below (the kill switch is read per call, after this, always),
+   * THE LAW's unattended gate (it reads the verdict and the EFFECTIVE
+   * descriptor, both carried through), the breakers, and the authority the call
+   * runs on — a grant or an approval is re-read in `#commitPreviewed`, because
+   * a permission taken back between the two passes has to stop the call.
+   */
+  async #decideForExecution(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<CompletedDecision> {
+    const key = previewKey(call, descriptor, ctx);
+    const previewed = this.#previewed.get(key);
+    this.#previewed.delete(key);
+    const committed = previewed === undefined
+      ? undefined
+      : await this.#commitPreviewed(previewed.completed, call, ctx);
+    return committed ?? await this.#checkWithMetadata(call, descriptor, ctx);
+  }
+
+  /** Spend what the preview left unspent, and re-ask only what spending can
+   *  change. `undefined` means this verdict can no longer be committed and the
+   *  caller must decide again. */
+  async #commitPreviewed(
+    completed: CompletedDecision,
+    call: ToolCall,
+    ctx: RunContext,
+  ): Promise<CompletedDecision | undefined> {
+    const { decision, descriptor } = completed;
+    if (decision.action === "run") {
+      const write = descriptor.risk !== "read";
+      const runKey = ctx.trigger?.runId ?? ctx.sessionId;
+      const writes = this.#writeCounts.get(runKey)?.count ?? 0;
+      // Breakers are read live, not remembered: another call can have filled the
+      // budget or the window since the preview, and a previewed "run" may not
+      // outrank the breaker that would have parked it.
+      const tripped = this.#peekCallsTripped(ctx.principal.subject)
+        || (write && writes >= this.#maxWritesPerRun);
+      if (tripped && !neverParkAppRead(descriptor, ctx)) return undefined;
+      // The authority itself is never remembered — it is the one thing reuse may
+      // not skip. A standing grant is re-read, so a permission taken back
+      // between the two passes still bites (grant-filter.test.ts); the human's
+      // single-use yes is CLAIMED here, because the preview only read it
+      // (`#approvedReplay`, claim false) and the claim belongs to the pass that
+      // dispatches. Both sit after the breakers, so a call that ends up parked
+      // anyway never burns the tap. Either way it costs one query rather than
+      // the rules, the org layer and the judge behind it.
+      if (decision.decidedBy === "grant") {
+        const authorized = decision.grantId === undefined
+          ? await this.#approvedReplay(call, descriptor, ctx, true)
+          : (await this.#matchingGrant(call, descriptor, ctx)).grant?.id === decision.grantId;
+        if (!authorized) return undefined;
+      }
+      if (write) this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
+    }
+    this.#recordCall(ctx.principal.subject);
+    return completed;
   }
 
   /**
@@ -1350,9 +1450,9 @@ class GuardImplementation implements VendoGuard {
   }
 
   /**
-   * Bounds the in-memory breaker maps (they would otherwise grow one entry per
-   * subject / run key for process lifetime). Runs at most once per minute,
-   * piggybacked on check traffic. Consequence, documented: a run idle longer
+   * Bounds the in-memory maps (they would otherwise grow one entry per
+   * subject / run key / previewed call for process lifetime). Runs at most once
+   * per minute, piggybacked on check traffic. Consequence, documented: a run idle longer
    * than 60 minutes restarts its write budget — the deterministic backstop
    * favors bounded memory over counting across hour-long gaps.
    */
@@ -1368,6 +1468,12 @@ class GuardImplementation implements VendoGuard {
     const writeCutoff = at - 60 * 60_000;
     for (const [runKey, entry] of this.#writeCounts) {
       if (entry.touchedAt <= writeCutoff) this.#writeCounts.delete(runKey);
+    }
+    // A preview whose dispatch never came (a connect gate ruled the call out, a
+    // harness threw between the two) leaves its verdict behind. Nothing may read
+    // it a minute later, so nothing keeps it.
+    for (const [key, entry] of this.#previewed) {
+      if (entry.at <= windowCutoff) this.#previewed.delete(key);
     }
   }
 
@@ -1385,14 +1491,16 @@ class GuardImplementation implements VendoGuard {
     // after it — and the replay's single-use CAS spend still happens once,
     // because `#approvedReplay` is still called once.
     //
-    // Neither read is shared with the PREVIEW pass that precedes the real one,
-    // and the grant read is the reason: a grant is not a decision input the way
-    // a rule is — it IS the authority the call executes on, so reusing the
-    // preview's answer would leave a window in which a permission the person
-    // just took back still runs the tool. That is the same window the freeze
-    // re-read below `bind().execute` exists to close, and it gets the same
-    // answer: read it again. (The replay is unshared for its own reason — the
-    // single-use CAS spend belongs to the real pass.)
+    // The PREVIEW pass that precedes a dispatch runs this pipeline and the
+    // dispatch reuses its verdict (`#decideForExecution`) — but neither read
+    // here is reused, and both are repeated at commit time instead. The grant
+    // is not a decision input the way a rule is — it IS the authority the call
+    // executes on, so reusing the preview's answer would leave a window in
+    // which a permission the person just took back still runs the tool. That is
+    // the same window the freeze re-read below `bind().execute` exists to
+    // close, and it gets the same answer: read it again. (The replay is
+    // repeated for its own reason — the single-use CAS spend belongs to the
+    // pass that dispatches.)
     const [replayable, matched] = await Promise.all([
       this.#approvedReplay(call, descriptor, ctx, commitRun),
       this.#matchingGrant(call, descriptor, ctx),

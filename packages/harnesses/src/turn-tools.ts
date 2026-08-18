@@ -333,9 +333,10 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         }
 
         // §1.4: PREVIEW first, exactly as the ai-SDK path's needsApproval hook
-        // does. A preview never spends the write-budget/call-rate breakers and
-        // never runs the judge a second time, so an approved call is executed
-        // ONCE below rather than executed-then-re-executed.
+        // does. The preview IS this call's guard evaluation — the dispatch below
+        // runs on the verdict it computed and commits the spends it left
+        // (guard.ts, `#decideForExecution`) — so rules, grants and the judge see
+        // this call once, and it is executed once.
         let approvalId: ApprovalId | undefined;
         const ask = await previewApproval(descriptor, bridge, args, { toolCallId }, (id) => {
           approvalId = id;

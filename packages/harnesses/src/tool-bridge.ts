@@ -356,10 +356,11 @@ export async function guardedCall(
  * wants a human.
  *
  * Exported for the same reason as {@link guardedCall}, and it is exactly why
- * `previewCheck` exists: a caller that will make the REAL dispatching call
- * moments later must not charge the write-budget/call-rate breakers twice, nor
- * run the judge twice. The harness runtime previews here, awaits the tap, then
- * executes ONCE.
+ * `previewCheck` exists: this is the ONE guard evaluation of a call the caller
+ * is about to dispatch. The verdict computed here is what the dispatching call
+ * runs on (guard.ts, `#decideForExecution`), so the write-budget/call-rate
+ * breakers are charged once and the judge is asked once. The harness runtime
+ * previews here, awaits the tap when the answer is "ask", then executes ONCE.
  */
 export async function previewApproval(
   descriptor: ToolDescriptor,
@@ -388,15 +389,14 @@ export async function previewApproval(
     }
   }
   try {
-    // genqa defect 1 (double-count): this is a PREVIEW — when it answers
-    // false, the caller makes the REAL call moments later for the SAME
-    // toolCallId, which re-enters the guard through
-    // `options.registry.execute` (the guard-bound registry; no unguarded
-    // path). `check()` alone would charge the write-budget and call-rate
-    // breakers on BOTH passes for one logical call, halving the effective
-    // budget. `previewCheck` (feature-detected; falls back to `check()` for a
-    // guard that predates it) answers identically but never commits a "run"
-    // verdict's spend — only the real call does.
+    // genqa defect 1 (double-count): when this answers false, the caller makes
+    // the REAL call moments later for the SAME toolCallId, which re-enters the
+    // guard through `options.registry.execute` (the guard-bound registry; no
+    // unguarded path). `check()` alone would evaluate and charge the
+    // write-budget and call-rate breakers on BOTH passes for one logical call,
+    // halving the effective budget. `previewCheck` (feature-detected; falls back
+    // to `check()` for a guard that predates it) commits nothing here and hands
+    // its verdict to the dispatch, which spends for the one call, once.
     const call: ToolCall = { id: toolCallId, tool: descriptor.name, args: input };
     const decision = options.guard.previewCheck !== undefined
       ? await options.guard.previewCheck(call, descriptor, options.ctx)
