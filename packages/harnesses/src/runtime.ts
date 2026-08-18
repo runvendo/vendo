@@ -508,6 +508,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               onCall: mergeToolCallHooks(deps.bridge?.onCall, capabilityMiss?.onCall),
               writer,
               connectCards: new Set<string>(),
+              // The same collector the runtime's own marks go into: the bridge
+              // adds the two only it can see (the guard's evaluation, the tool's
+              // run).
+              timings: deps.timings,
             },
             ...(capabilityMiss === undefined ? {} : { capabilityMiss: capabilityMiss.reporter }),
             // §1 amendment 2026-08-03: the harness's own say over the surface —
