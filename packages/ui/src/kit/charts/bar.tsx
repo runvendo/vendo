@@ -33,8 +33,9 @@ interface BarChartOwnProps extends KitStyled {
   /** Kit elements shown in place of `emptyState` when there is nothing to plot. */
   empty?: ReactNode;
   /** Kit value components composed for the hovered bar, in place of the default
-   *  tooltip; the bar's row rides on `RowContext`. */
-  tooltip?: ReactNode;
+   *  tooltip. Written as a function of the bar's row, it arrives as ONE element
+   *  per row in `data` order. */
+  tooltip?: ReactNode | readonly ReactNode[];
   /** A series key drawn under the chart. */
   legend?: ReactNode;
 }
@@ -97,7 +98,9 @@ export function BarChart({
             )}
             <Tooltip
               formatter={(v) => fmt(v)}
-              content={tooltip === undefined ? undefined : slotTooltip(tooltip)}
+              // `clean` maps 1:1 over `data`, so it is the per-row slot's own
+              // order — and it holds the objects recharts hands back on hover.
+              content={tooltip === undefined ? undefined : slotTooltip(tooltip, clean)}
               contentStyle={tooltipSurface}
               cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }}
             />

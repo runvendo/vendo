@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { useContext } from "react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
-import { RowContext } from "../../src/kit/row.js";
-import { EnumBadge } from "../../src/kit/values.js";
+import { Button } from "../../src/kit/forms/button.js";
+import { EnumBadge, Money, Text } from "../../src/kit/values.js";
 
 // Money in the rows is DOLLARS: a `format:"money"` column pretty-prints the
 // value as it stands, so a host's cents field is divided by 100 upstream.
@@ -249,7 +248,11 @@ describe("DataTable", () => {
           rows={rows}
           columns={[
             ...columns,
-            { key: "status", label: "Status", cell: <EnumBadge field="status" tones={{ overdue: "danger" }} /> },
+            {
+              key: "status",
+              label: "Status",
+              cell: rows.map((row) => <EnumBadge value={row.status} tones={{ overdue: "danger" }} />),
+            },
           ]}
         />,
       );
@@ -494,13 +497,13 @@ describe("DataTable", () => {
 });
 
 /**
- * A column with no `format` and no `semantic` prints what the record holds, and
- * nothing else. The table used to READ an unformatted column — a `*_cents` name
- * was money, an ISO-shaped string was a date, a `*seconds` name was a duration,
- * a hex string was mono — which is a guess about what a field MEANS made from
- * how it is spelled. Right most of the time is a wrong figure the rest of the
- * time, under a header that says nothing happened. The instruction paths below
- * (`format`, `semantic`) are the whole of it.
+ * A column with no `format` prints what the record holds, and nothing else. The
+ * table used to READ an unformatted column — a `*_cents` name was money, an
+ * ISO-shaped string was a date, a `*seconds` name was a duration, a hex string
+ * was mono — which is a guess about what a field MEANS made from how it is
+ * spelled. Right most of the time is a wrong figure the rest of the time, under
+ * a header that says nothing happened. `format` is the whole of the instruction;
+ * arithmetic belongs in the `cell` function, where the row is in scope.
  */
 describe("DataTable — a column the model left unformatted", () => {
   const deploys = [
@@ -548,84 +551,81 @@ describe("DataTable — a column the model left unformatted", () => {
 });
 
 /**
- * What the HOST said the field is — the half no reader could have worked out.
+ * A slot written as a FUNCTION of the row.
  *
- * `compute_cost` is cents and its name never says so; `feat/timeline-brick` is
- * a ref and it is a plain string by every structural test. Both are one line of
- * the tool's own shape card, carried onto the column that shows them.
+ * The VM calls it once per row and hands the table a list, one element per row,
+ * in `rows` order — and the table paints in none of that order: it sorts, it
+ * filters, it paginates. So which element lands on which row is matched by row
+ * IDENTITY, and never by the place the row is painted in.
  */
-describe("DataTable — the format the HOST declared", () => {
-  const builds = [
-    { id: "bld_4192", branch: "feat/timeline-brick", compute_cost: 620, started: "2026-08-15 09:58" },
-    { id: "bld_4191", branch: "main", compute_cost: 1870, started: "2026-08-15 09:41" },
+describe("DataTable — a slot written as a function of the row", () => {
+  const invoices = [
+    { id: "in_1", client: "Hartwell", amount: 2_500 },
+    { id: "in_2", client: "Acme", amount: 900 },
+    { id: "in_3", client: "Borealis", amount: 1_750 },
   ];
+  /** That map, done by hand (apps genui/component/vm-program.ts `emitPerRow`). */
+  const perRow = <T,>(of: (row: (typeof invoices)[number]) => T): T[] => invoices.map(of);
+  const bodyRows = () => screen.getAllByRole("row").slice(1);
+  const cancelButtons = () => bodyRows().map((row) => within(row).getByRole("button").textContent);
 
-  // The whole reason the channel exists: nothing about the NAME or the VALUE of
-  // `compute_cost` says minor units, so 1870 renders as $1,870.00 — a 100×
-  // misread — until the host's own word for it arrives.
-  it("divides a declared minor-unit column whose name says nothing", () => {
-    render(<DataTable rows={builds} columns={[{ key: "compute_cost", semantic: "money.cents" }]} />);
-    expect(screen.getByText("$18.70")).toBeTruthy();
-    expect(screen.queryByText("$1,870.00")).toBeNull();
-  });
-
-  it("sorts a declared minor-unit column by the number, not the printed money", () => {
-    render(<DataTable rows={builds} columns={[{ key: "compute_cost", semantic: "money.cents" }]} sortBy="compute_cost desc" />);
-    expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["$18.70", "$6.20"]);
-  });
-
-  // The declaration is the whole of it, and it reads both ways: a `*_cents`
-  // name means nothing on its own, and a host saying the field is already
-  // dollars gets dollars.
-  it("leaves a cents-NAMED column alone when the host declares it is dollars", () => {
+  it("gives every row its OWN action, closed over that row's data", () => {
+    const cancelled: string[] = [];
     render(
       <DataTable
-        rows={[{ id: 1, cost_cents: 452_900 }]}
-        columns={[{ key: "cost_cents", semantic: "money.dollars" }]}
+        rows={invoices}
+        columns={[{ key: "client", label: "Client" }]}
+        rowActions={perRow((row) => (
+          <Button label={`Cancel ${row.client}`} onClick={() => cancelled.push(row.id)} />
+        ))}
       />,
     );
-    expect(screen.getByText("$452,900.00")).toBeTruthy();
-  });
-
-  it("gives a declared code column the mono face, though it is nothing like a sha", () => {
-    render(<DataTable rows={builds} columns={[{ key: "branch", semantic: "code" }]} />);
-    expect(screen.getByText("feat/timeline-brick").getAttribute("style")).toContain("--vendo-mono-family");
-  });
-
-  it("reads a declared date column as a date, clock and all", () => {
-    render(<DataTable rows={builds} columns={[{ key: "started", semantic: "date.iso" }]} />);
-    expect(screen.queryByText("2026-08-15 09:58")).toBeNull();
-    expect(screen.getByText(/Aug 15.*9:58/)).toBeTruthy();
-  });
-
-  // The format token is the model's own word for how a column PRINTS; the
-  // semantic is the host's for what the field IS. A written format still wins
-  // the printing, and the units stay the host's either way.
-  it("still prints in the format the model wrote, in the units the host declared", () => {
-    render(<DataTable rows={builds} columns={[{ key: "compute_cost", semantic: "money.cents", format: "number" }]} />);
-    expect(screen.getByText("6.2")).toBeTruthy();
+    expect(cancelButtons()).toEqual(["Cancel Hartwell", "Cancel Acme", "Cancel Borealis"]);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Acme" }));
+    expect(cancelled).toEqual(["in_2"]);
   });
 
   /**
-   * The read/write line. A row action prefills a write tool's argument off the
-   * record the row publishes, and that record is the RAW one — a screen that
-   * sent $18.70 where the host wanted 1870 would be the same 100× defect
-   * pointing the other way.
+   * THE REGRESSION the identity match exists for. Sorting reorders
+   * `row.original`, so the row painted first is the list's SECOND element —
+   * matched by position, Acme's row would show and press Hartwell's Cancel.
    */
-  it("never converts the record a row action reads its arguments from", () => {
-    const seen: unknown[] = [];
-    function Probe() {
-      seen.push(useContext(RowContext)?.compute_cost);
-      return null;
-    }
+  it("keeps each row's own action through a sort", () => {
+    const cancelled: string[] = [];
     render(
       <DataTable
-        rows={builds}
-        columns={[{ key: "compute_cost", semantic: "money.cents" }]}
-        rowActions={<Probe />}
+        rows={invoices}
+        columns={[{ key: "client", label: "Client" }, { key: "amount", label: "Amount" }]}
+        sortBy="amount asc"
+        rowActions={perRow((row) => (
+          <Button label={`Cancel ${row.client}`} onClick={() => cancelled.push(row.id)} />
+        ))}
       />,
     );
-    expect(screen.getByText("$18.70")).toBeTruthy();
-    expect(seen).toEqual([620, 1870]);
+    expect(bodyRows().map((row) => within(row).getAllByRole("cell")[0]?.textContent))
+      .toEqual(["Acme", "Borealis", "Hartwell"]);
+    expect(cancelButtons()).toEqual(["Cancel Acme", "Cancel Borealis", "Cancel Hartwell"]);
+
+    fireEvent.click(within(bodyRows()[0]!).getByRole("button"));
+    expect(cancelled).toEqual(["in_2"]);
+  });
+
+  it("paints a per-row cell against its own row, and one plain element on every row", () => {
+    render(
+      <DataTable
+        rows={invoices}
+        columns={[
+          { key: "amount", label: "Amount", cell: perRow((row) => <Money value={row.amount / 100} />) },
+          { key: "client", label: "Flag", cell: <Text text="Open" /> },
+        ]}
+      />,
+    );
+    // The arithmetic ran where the row was in scope — the whole point of the
+    // closure, and the 100x misread it replaces.
+    expect(bodyRows().map((row) => within(row).getAllByRole("cell")[0]?.textContent))
+      .toEqual(["$25.00", "$9.00", "$17.50"]);
+    // A single element still paints on every row: that is what a stored screen
+    // and a wire tree hold.
+    expect(screen.getAllByText("Open")).toHaveLength(3);
   });
 });

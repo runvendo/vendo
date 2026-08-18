@@ -80,7 +80,7 @@ export default function PendingTransfers() {
       <Text text={"note: " + note} />
       {pending.data.map((row) => (
         <Card key={row.id} title={row.recipient}>
-          <Money amount={row.amount_cents / 100} />
+          <Money value={row.amount_cents / 100} />
           <Button label={"Cancel " + row.recipient} onClick={async () => {
             await tools.cancel_transfer({ id: row.id });
             setNote("cancelled " + row.recipient);
@@ -222,7 +222,7 @@ export default function Handover() {
     await waitFor(() => expect(screen.getByText(asEvent("marco"))).toBeTruthy());
   });
 
-  it("routes a handler's tool call through the host pipe, then re-reads and re-boots", async () => {
+  it("routes a handler's tool call through the host pipe, then re-reads and SUPPLIES", async () => {
     let rows = [...ROWS];
     const host = hostPipe((call) => {
       if (call.action !== "cancel_transfer") return ok({ data: rows });
@@ -241,15 +241,17 @@ export default function Handover() {
     ]));
 
     // A successful mutation makes the screen's own data stale, so the served query
-    // plan re-runs and the screen re-boots on the answer. That is the whole
-    // refresh story: no generated handler hand-patches a list it did not fetch.
+    // plan re-runs and the answers are SUPPLIED to the screen that is standing.
+    // That is the whole refresh story: no generated handler hand-patches a list it
+    // did not fetch.
     await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy());
     expect(host.of("list_pending")).toHaveLength(1);
     expect(screen.queryByText("Ada")).toBeNull();
     expect(screen.getByText("Bob")).toBeTruthy();
-    // The re-boot starts from the source's own initial state — the accepted cost
-    // of never showing a row that is no longer there.
-    expect(noteText()).toBe("note: ");
+    // And the screen's own state is STILL THERE. A supply re-renders the running
+    // component; it does not boot a new one, so what the handler set survives the
+    // refresh that follows it — as does anything the person had typed.
+    expect(noteText()).toBe("note: cancelled Ada");
   });
 
   it("drops the second click while the first is in flight, and disables the control", async () => {
@@ -327,10 +329,8 @@ export default function Handover() {
     expect(host.of("list_pending")).toHaveLength(2);
   });
 
-  it("keeps the old screen alive when the re-boot after a refresh cannot paint", async () => {
+  it("keeps the rows it had when the re-read after a refresh fails", async () => {
     const host = hostPipe((call) => call.action === "list_pending"
-      // The read failed, so that query's key is absent and this screen — which
-      // maps over `pending.data` — cannot render the answer at all.
       ? { status: "error", error: { code: "ledger", message: "the ledger is down" } }
       : ok({ cancelled: true }));
     transfersView(host, [{ tool: "list_pending" }]);
@@ -338,14 +338,78 @@ export default function Handover() {
     fireEvent.click(screen.getByRole("button", { name: "Cancel Ada" }));
     await waitFor(() => expect(host.of("list_pending")).toHaveLength(1));
 
-    // Boot BEFORE dispose: the screen the re-boot would have replaced is still
-    // there, still interactive, showing the tree it already had.
-    // The engine's own sentence about the screen it could not boot — the read
-    // failed, so that query's key is simply absent from the fresh answer.
-    await waitFor(() => expect(screen.getByText(/this screen declared no such query/u)).toBeTruthy());
+    // A read that failed supplies NOTHING for its key, so the answer the screen
+    // already had stands — a failed read is not news that the data is gone. The
+    // failure itself is on the node that fired, through the renderer's own pipe.
+    await waitFor(() => expect(noteText()).toBe("note: cancelled Ada"));
+    expect(screen.getByText(/the ledger is down/u)).toBeTruthy();
     expect(screen.getByText("Pending: 2")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Note"), { target: { value: "still live" } });
     await waitFor(() => expect(noteText()).toBe("note: still live"));
+  });
+
+  /**
+   * A READ THE SCREEN ASKS FOR WHILE IT RENDERS.
+   *
+   * `useQuery("x", { client: chosen })` cannot be resolved before the screen runs
+   * — the input is state. So the paint NAMES what it wanted, this bridge runs it
+   * through the same host pipe every other call takes, and supplies the answer to
+   * the screen that is already standing.
+   */
+  it("answers a read the paint asked for, then the NEW one a click asks for", async () => {
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Invoices() {
+  const [client, setClient] = useState("ada");
+  const rows = useQuery("list_for_client", { client });
+  return (
+    <Stack>
+      <Text text={rows === undefined ? "loading" : "rows: " + rows.join(",")} />
+      <Button label="Bob" onClick={() => setClient("bob")} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe((call) => ok([`${(call.payload as { client: string }).client}-1`]));
+    render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
+
+    // The served paint has no answer for it — nothing could have.
+    expect(screen.getByText("loading")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("rows: ada-1")).toBeTruthy());
+    expect(host.of("list_for_client")).toEqual([
+      { nodeId: "root", action: "list_for_client", payload: { client: "ada" } },
+    ]);
+
+    // A click moves the input, so the next paint asks for a key nobody has
+    // answered — and the state that moved it survives, because a supply
+    // re-renders the screen rather than booting a new one.
+    fireEvent.click(screen.getByRole("button", { name: "Bob" }));
+    await waitFor(() => expect(screen.getByText("rows: bob-1")).toBeTruthy());
+    expect(host.of("list_for_client")).toHaveLength(2);
+  });
+
+  /** A screen that mints a new key on EVERY render would read forever. The loop
+   *  is bounded, so it reads three times and paints whatever it has. */
+  it("stops answering a screen that asks for a new read on every render", async () => {
+    const compiled = compile(`
+import { useRef } from "react";
+import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Runaway() {
+  const seen = useRef(0);
+  seen.current += 1;
+  const rows = useQuery("list_for_client", { client: String(seen.current) });
+  return <Stack><Text text={"asked " + seen.current} /><Text text={rows === undefined ? "loading" : "got"} /></Stack>;
+}`);
+    const host = hostPipe(() => ok(["x"]));
+    render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
+
+    await waitFor(() => expect(host.of("list_for_client")).toHaveLength(3));
+    // …and it stays at three: the screen is still asking, and nobody is answering.
+    await act(async () => { await Promise.resolve(); });
+    expect(host.of("list_for_client")).toHaveLength(3);
+    expect(screen.getByText(/^asked /u)).toBeTruthy();
   });
 
   it("does not re-read when the tool refused, and re-arms the control", async () => {

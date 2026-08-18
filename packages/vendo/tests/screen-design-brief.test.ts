@@ -6,8 +6,8 @@
  * is measured is the text an assembly actually thinks with — never a helper
  * called by hand.
  *
- * Two halves, and they arrive by different routes on purpose. The design LAW is
- * shipped inside `buildingAppsSkill`, so both writers read the same words; the
+ * Two halves, and they arrive by different routes on purpose. The JOB DESCRIPTION
+ * is shipped inside `buildingAppsSkill`, so both writers read the same words; the
  * host's own theme, rules, product brief and components are CONFIGURATION
  * composition holds, and they arrive as one briefing pack the box rung is handed
  * byte for byte (`briefing-pack.test.ts` proves that half).
@@ -77,19 +77,23 @@ function harness(pack?: BriefingPack) {
 }
 
 describe("the writers' design brief", () => {
-  it("carries the shipped design law — the same words both writers read", async () => {
+  it("carries the shipped job description — the same words both writers read", async () => {
     const screen = harness();
     await screen.assemble();
     const brief = screen.model.systemPrompts[0] ?? "";
 
-    // The law: hierarchy, density, chart choice by data shape, the honest hole,
-    // and the one styling rule — a screen styles freely, but off the host's own
-    // CSS variables, because a hard-coded color is not the product's.
-    expect(brief).toContain("What a good screen looks like");
-    expect(brief).toContain("Lead with the answer.");
-    expect(brief).toContain("Never chart two data points");
-    expect(brief).toContain("A hole is a `<Disclaimer>`.");
-    expect(brief).toContain("`var(--vendo-color-accent)`");
+    // The job, and the two references it sends the writer to. The design law used
+    // to be inlined here; it moved into `references/format.md`
+    // (`VENDO_FORMAT_REFERENCE`, whose words are pinned in `@vendoai/apps`'s own
+    // format-reference.test.ts), so what this seam has to prove is that the
+    // POINTER travels — a reference nobody is told to open is a reference nobody
+    // reads.
+    expect(brief).toContain("# Building an app");
+    expect(brief).toContain("host/skills/building-apps/references/format.md");
+    expect(brief).toContain("host/components/");
+    // The one thing the body must never stop saying: the hands are the mechanism,
+    // so a writer does not go hunting for a build tool it has not got.
+    expect(brief).toContain("Your hands are how an app gets built.");
   });
 
   it("carries the WHOLE briefing pack when composition has one", async () => {

@@ -189,6 +189,26 @@ describe("blindness", () => {
     );
   });
 
+  /** A locked control the probe filled with the sentinel before pressing it must
+   *  say so, or the judge reads a sentinel-carrying call as the screen inventing
+   *  its own data. */
+  it("renders a filled field before the press outcome", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Confirm",
+        changed: false,
+        calls: [{ name: "submit_category", args: { category: "probe input" } }],
+        filled: [{ field: "Which category?", value: "probe input" }],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `the harness filled "Which category?" with "probe input", then pressed "Confirm" — called submit_category({"category":"probe input"})`,
+    );
+  });
+
   /** A press can do both, and then the judge is owed both: dropping the call
    *  would fail a "pressing it calls X" line on a screen that really does call X
    *  and then ask. */

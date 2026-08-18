@@ -7,8 +7,7 @@
  * bricks and not at 55, and it teaches the Kit and the host's own components in
  * two different places and two different shapes. This renders both as ONE list:
  * what the component is, its props by class WITH THEIR TYPES, its slots, one
- * example — and the icon vocabulary once at the end, which no prompt has ever
- * carried, so the model stops inventing glyph names.
+ * example.
  *
  * The compression is the per-prop docs and the second example. What a prop takes
  * is not compressible: a name alone says nothing about whether `mode` wants a
@@ -17,12 +16,11 @@
  * walked off its own zod schema ({@link typeText}), and the one example shows
  * the shape filled in. Both are derived, so neither can drift from the specs.
  *
- * The preamble is `kitPrompt`'s, unchanged — the two laws do not depend on the
- * layout.
+ * The preamble is `kitPrompt`'s, unchanged — the data law does not depend on
+ * the layout.
  */
 import type { ZodTypeAny } from "zod";
 import { zodShape } from "./zod-shape.js";
-import { KIT_ICON_NAMES } from "./icon-names.gen.js";
 import { PREAMBLE, promptExamples } from "./kit-prompt.js";
 import {
   ACTION_PROP_DESCRIPTION,
@@ -38,7 +36,7 @@ export interface CatalogPromptOptions {
   only?: string[];
   /** This host's own components, from the briefing pack's one-line reduction. */
   host?: readonly CatalogSummaryEntry[];
-  /** Omit the header preamble (the two laws) — default false. */
+  /** Omit the header preamble (the data law) — default false. */
   omitPreamble?: boolean;
 }
 
@@ -129,8 +127,6 @@ function catalogLine(spec: KitComponentSpec): string {
 
 const hostLine = (entry: CatalogSummaryEntry): string => `<${entry.name}> [host] ${entry.description}`;
 
-const ICONS = `Icon names — \`<Icon name>\` and every \`icon\` prop take one of these and nothing else:\n${KIT_ICON_NAMES.join(" ")}`;
-
 /** Render the whole catalog — Kit then host — from the schemas. */
 export function catalogPrompt(options: CatalogPromptOptions = {}): string {
   const wanted = (name: string): boolean => options.only === undefined || options.only.includes(name);
@@ -139,6 +135,6 @@ export function catalogPrompt(options: CatalogPromptOptions = {}): string {
     ...(options.host ?? []).filter((entry) => wanted(entry.name)).map(hostLine),
   ];
   const sections = options.omitPreamble === true ? [] : [PREAMBLE + LEGEND];
-  sections.push(lines.join("\n"), ICONS);
+  sections.push(lines.join("\n"));
   return sections.join("\n\n");
 }

@@ -36,6 +36,7 @@ export { flattenTree } from "./flatten.js";
 export { pressControls } from "./press.js";
 export {
   isHandlerRef,
+  queryKey,
   SCREEN_FILE,
   SCREEN_TEXT_NODE,
   ScreenError,
@@ -49,5 +50,6 @@ export {
   type NestedNode,
   type ScreenErrorKind,
   type ScreenInstance,
+  type ScreenQuery,
 } from "./types.js";
 export { PREACT_VERSION } from "./preact-source.js";

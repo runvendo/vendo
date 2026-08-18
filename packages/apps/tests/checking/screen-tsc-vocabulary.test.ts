@@ -93,7 +93,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
     <DataTable rows={cashflow.data} columns={[{ key: "label", label: "Period" }, { key: "in", label: "In", align: "end" }]}>
-      <TableRow><Text text="Period"/><Money amount={42}/></TableRow>
+      <TableRow><Text text="Period"/><Money value={42}/></TableRow>
     </DataTable>
     <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In", format: "money" }]} columns={2}/>
     <Calendar items={cashflow.data} month="2026-01" dateField="label" titleField="label" amountField="in" statusField="label" tones={{ Jan: "success" }}/>
@@ -101,8 +101,8 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Timeline entries={cashflow.data} titleField="label" emptyState="No history"/>
     <Avatar name="Ada Lovelace" size="sm"/>
     <CodeBlock language="json" code="const rate = 0.42;"/>
-    <Money amount={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} currency="USD"/>
-    <Percent value={0.42} fractionDigits={1}/>
+    <Money value={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} currency="USD"/>
+    <Percent value={42.5} fractionDigits={1}/>
     <Num value={12} notation="compact"/>
     <DateTime value="2026-01-01" mode="date"/>
     <EnumBadge value="past_due" tones={{ past_due: "danger" }}/>

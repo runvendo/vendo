@@ -46,6 +46,7 @@ import {
   type NestedNode,
   type ScreenErrorKind,
   type ScreenInstance,
+  type ScreenQuery,
 } from "./types.js";
 
 /** The VM's heap. A screen that tries to build a gigabyte of rows dies with an
@@ -365,6 +366,23 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
         }
         const changed = repaint();
         return changed || intents.length > 0 ? { tree: currentTree(), intents } : null;
+      });
+    },
+
+    misses(): ScreenQuery[] {
+      return turn("op", () => JSON.parse(evalString("__vendo.misses()", "render")) as ScreenQuery[]);
+    },
+
+    supply(results: Record<string, unknown>): NestedNode {
+      // A boot's turn, because a supply repaints the WHOLE screen against real
+      // data for the first time — the same work the first paint did, not an
+      // event's fifth of a second.
+      return turn("boot", () => {
+        evalVoid(`__vendo.supply(${JSON.stringify(literal(results))})`, "render");
+        drain();
+        checkFailure();
+        repaint();
+        return currentTree();
       });
     },
 

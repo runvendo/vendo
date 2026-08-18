@@ -1,11 +1,10 @@
 /**
  * TableRow — one DataTable row the model painted itself.
  *
- * A `field` binding has nowhere to put arithmetic: `<Money field="balance_cents"/>`
- * reads cents and prints them as dollars, and no prop on the column can divide
- * by 100. A row written as CHILDREN can, because the math runs in the screen VM
- * before the element is ever serialized — `<Money amount={a.balance_cents/100}/>`
- * — and for the same reason a cell may hold a control with a row to act on.
+ * A whole row written by hand, where a `cell` function per column would be three
+ * functions saying the same thing: the math runs in the screen VM before the
+ * element is ever serialized — `<Money value={a.balance_cents / 100}/>` — and a
+ * cell may hold a control with that row to act on.
  *
  * A row's children ARE its cells, one per column, exactly as a tab's child is
  * its panel (feedback/tabs.tsx) and a menu's child is one item (feedback/menu.tsx).

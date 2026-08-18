@@ -24,18 +24,26 @@ export interface ScreenQuery {
   input?: unknown;
 }
 
+/** The name one read's answer is filed under. The engine's own `queryKey`
+ *  (`apps/contract/genui/component/types.ts`) and the VM's `keyOf`
+ *  (`vm-program.ts`) are the same law — this is the copy `@vendoai/ui` may hold,
+ *  since the engine itself only ever arrives by deferred import. */
+export const queryKey = ({ tool, input }: ScreenQuery): string =>
+  input === undefined ? tool : `${tool} ${JSON.stringify(input)}`;
+
 /** The interactive half of a component-screen payload. */
 export interface ScreenInteractive {
   /** The screen's compiled source — the program the VM runs. */
   compiledSource: string;
-  /** Resolved query results, keyed by the tool that produced them, as of the
-   *  served paint. The refetch rebuilds this record with the same keys. */
+  /** Resolved query results, keyed by {@link queryKey}, as of the served paint.
+   *  The refetch rebuilds this record with the same keys. */
   queries: Record<string, unknown>;
   /**
    * How to read that data again. A mutation the screen fires makes the served
    * numbers stale — the cancelled transfer is still in the list — so the whole
-   * plan re-runs after one succeeds and the screen re-boots on the answer. That
-   * is why no generated handler has to hand-patch its own state.
+   * plan re-runs after one succeeds and the answers are SUPPLIED to the screen
+   * that is already standing. That is why no generated handler has to hand-patch
+   * its own state, and why nothing the person typed is lost when it happens.
    */
   queryPlan?: readonly ScreenQuery[];
 }
@@ -63,6 +71,13 @@ export interface ScreenInstance {
   fire(handlerId: string, event?: unknown): ScreenStep;
   /** `null` when the result moved nothing the screen renders. */
   settle(intentId: string, result: unknown): ScreenStep | null;
+  /** Reads the paints so far asked for and had no answer to — a query whose input
+   *  the screen computed, which nothing could resolve before it rendered. Taken:
+   *  asking twice does not name the same read twice. */
+  misses(): ScreenQuery[];
+  /** Answers, keyed by {@link queryKey}, merged in and RE-RENDERED — not
+   *  rebooted, so everything `useState` holds survives. */
+  supply(results: Record<string, unknown>): NestedNode;
   dispose(): void;
 }
 

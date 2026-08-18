@@ -17,11 +17,16 @@
  *
  * A tool call that SUCCEEDED also makes the screen's own data stale — the
  * cancelled transfer is still in the list it was painted from — so the served
- * `queryPlan` re-runs down the same pipe and the screen re-boots on the answer.
- * That is the whole refresh story: no generated handler hand-patches a list it
- * did not fetch. It costs the screen's in-VM state (a fresh boot starts the
- * source's own initial state), which is the accepted trade for never showing a
- * row that is no longer there.
+ * `queryPlan` re-runs down the same pipe and the answers are SUPPLIED to the
+ * screen that is already standing. That is the whole refresh story: no generated
+ * handler hand-patches a list it did not fetch, and nothing the person typed is
+ * lost, because a supply re-renders the same component rather than booting a new
+ * one.
+ *
+ * The same door answers the other half of a read. A `useQuery` whose input the
+ * screen COMPUTES cannot be resolved before the screen renders, so the paint
+ * NAMES what it wanted (`misses()`) and this file answers it — boot, ask, read,
+ * supply, ask again, bounded at {@link MAX_SUPPLY_ROUNDS}.
  *
  * Four rules the shape encodes:
  *
@@ -33,7 +38,7 @@
  *     the render that may not have happened yet.
  *  3. One refresh at a time. A second mutation that settles mid-refetch queues
  *     ONE more cycle rather than racing a second set of reads against the first.
- *  4. The VM boots once per screen. The identity is the compiled source string,
+ *  4. The VM boots ONCE per screen — never again. The identity is the compiled source string,
  *     not the payload object, because callers legitimately rebuild the payload
  *     object every render — an object dep would re-boot the screen (and discard
  *     everything the user typed) on every parent re-render.
@@ -44,11 +49,13 @@ import { convertNode } from "./convert-payload.js";
 import type { WalkTree } from "./renderer.js";
 import {
   loadScreenEngine,
+  queryKey,
   type Intent,
   type NestedNode,
   type ScreenEngine,
   type ScreenInstance,
   type ScreenInteractive,
+  type ScreenQuery,
 } from "./screen-engine.js";
 
 export interface ScreenBridge {
@@ -57,11 +64,19 @@ export interface ScreenBridge {
   /** Handler ids with an intent in flight — their control renders disabled. */
   inFlight: ReadonlySet<string>;
   fire(nodeId: string, handlerId: string, event?: unknown): void;
-  /** Re-read the plan and re-boot on the answer — the same cycle a changed
-   *  action runs. Public for the one change that arrives from OUTSIDE a press:
-   *  an approval decided elsewhere, whose resumed call already moved the data
-   *  this screen is painted from (parked-approvals.ts). */
-  refresh(nodeId: string): Promise<void>;
+  /**
+   * Re-read the plan and supply the answers to the standing screen — the same
+   * cycle a changed action runs. Public for the one change that arrives from
+   * OUTSIDE a press: an approval decided elsewhere, whose resumed call already
+   * moved the data this screen is painted from (parked-approvals.ts).
+   *
+   * `fresh` boots a NEW screen on those answers instead of supplying them, which
+   * discards everything the screen's own `useState` holds. Exactly one caller
+   * wants that, and wants it for the state rather than the data: an approval that
+   * was declined or that expired moved nothing, and the screen's latched
+   * "Sending…" has no other way back.
+   */
+  refresh(nodeId: string, fresh?: boolean): Promise<void>;
 }
 
 export interface ScreenBridgeInput {
@@ -78,6 +93,12 @@ export interface ScreenBridgeInput {
 
 const NO_HANDLERS: ReadonlySet<string> = new Set();
 
+/** Times the screen may ask for another read before this stops answering. One
+ *  round is a parameterized read; two is one whose input came from the first
+ *  one's answer. A bound is what keeps a screen that mints a key on every render
+ *  from reading forever. */
+const MAX_SUPPLY_ROUNDS = 3;
+
 const reason = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 export function useScreen(input: ScreenBridgeInput): ScreenBridge {
@@ -86,13 +107,24 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
   const held = useRef<Parameters<ScreenBridge["fire"]> | null>(null);
   const rereading = useRef(false);
   const rereadAgain = useRef(false);
+  /** Every read this screen's data is made of, by the key it is filed under: the
+   *  plan the payload came with, plus whatever the paints asked for since. What a
+   *  refresh re-runs. */
+  const asked = useRef(new Map<string, ScreenQuery>());
   const inFlightIds = useRef(new Set<string>());
   const [inFlight, setInFlight] = useState(NO_HANDLERS);
   const [tree, setTree] = useState<WalkTree | null>(null);
   // Boot reads these ONCE, from whatever the newest render holds — they are not
   // boot's identity, so a caller that rebuilds its `components` map (and with it
   // the catalog) every render must not re-boot the VM underneath the user.
-  const latest = useRef({ interactive, base, catalog, onFailure, fire: undefined as ScreenBridge["fire"] | undefined });
+  const latest = useRef({
+    interactive,
+    base,
+    catalog,
+    onFailure,
+    fire: undefined as ScreenBridge["fire"] | undefined,
+    feed: undefined as ((nodeId: string, asks: readonly ScreenQuery[]) => Promise<void>) | undefined,
+  });
 
   const source = interactive?.compiledSource;
   useEffect(() => {
@@ -104,15 +136,17 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
         const engine = await loadScreenEngine();
         if (!live) return;
         const now = latest.current;
-        booted.current = {
-          engine,
-          screen: engine.bootScreen({
-            compiledSource: source,
-            queries: now.interactive?.queries ?? {},
-            catalog: now.catalog,
-            now: Date.now(),
-          }),
-        };
+        const screen = engine.bootScreen({
+          compiledSource: source,
+          queries: now.interactive?.queries ?? {},
+          catalog: now.catalog,
+          now: Date.now(),
+        });
+        booted.current = { engine, screen };
+        asked.current = new Map((now.interactive?.queryPlan ?? []).map((query) => [queryKey(query), query]));
+        // Whatever this boot asked for that the served answers did not carry —
+        // empty for every screen the gate already settled, which is nearly all.
+        void now.feed?.(now.base.root, screen.misses());
       } catch (error) {
         // A screen that cannot boot cannot move: the served tree stays exactly as
         // it painted, and the root says why rather than the surface quietly
@@ -158,30 +192,77 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
     }
   };
 
-  /** Read the plan again and re-boot the screen on the answer. */
-  const reread = async (nodeId: string): Promise<void> => {
-    const plan = interactive?.queryPlan ?? [];
-    if (source === undefined || plan.length === 0) return;
-    const read = await Promise.all(plan.map(async (query) => {
+  /**
+   * Answer reads and hand them to the screen, until it stops asking.
+   *
+   * The screen is never rebooted: `supply` merges the answers and re-renders the
+   * component that is already running, so a dialog stays open, a draft stays
+   * typed, and a selection stays selected across a refresh.
+   */
+  const feed = async (nodeId: string, first: readonly ScreenQuery[]): Promise<void> => {
+    let asks = first;
+    for (let round = 0; asks.length > 0 && round < MAX_SUPPLY_ROUNDS; round += 1) {
+      const read = await Promise.all(asks.map(async (query) => {
+        const outcome = await runAction(nodeId, query.tool, query.input as Json);
+        // A read that failed leaves its key absent — the screen renders that query
+        // empty, and the failure is already on the node through `runAction`.
+        return [queryKey(query), outcome.status === "ok" ? outcome.output : undefined] as const;
+      }));
+      for (const query of asks) asked.current.set(queryKey(query), query);
+      const instance = booted.current;
+      // The surface may have unmounted (and the VM been disposed) while the reads
+      // were out.
+      if (instance === null) return;
+      const next = contained(nodeId, () => {
+        paint(instance.engine, instance.screen.supply(Object.fromEntries(read)));
+        return instance.screen.misses();
+      });
+      if (next === undefined) return;
+      asks = next;
+    }
+  };
+
+  /** Read everything this screen's data is made of, again. */
+  const reread = (nodeId: string): Promise<void> => feed(nodeId, [...asked.current.values()]);
+
+  /**
+   * Read everything again and boot a FRESH screen on the answers.
+   *
+   * The one path that still reboots, and the reason is the screen's own state
+   * rather than its data. A generated handler latches "Sending…" before it awaits;
+   * an approval that was DECLINED or that expired moved nothing and resolved
+   * nothing, so the latch has no other way back — a supply re-renders the same
+   * hooks still holding the same flag, and the person is left looking at a
+   * disabled button forever. A fresh boot clears it, and somebody who declined
+   * loses nothing worth keeping. Every other path supplies, and keeps what they
+   * typed.
+   */
+  const reboot = async (nodeId: string): Promise<void> => {
+    if (source === undefined) return;
+    const read = await Promise.all([...asked.current.values()].map(async (query) => {
       const outcome = await runAction(nodeId, query.tool, query.input as Json);
-      // A read that failed leaves its key absent — the screen renders that query
-      // empty, and the failure is already on the node through `runAction`.
-      return [query.tool, outcome.status === "ok" ? outcome.output : undefined] as const;
+      return [queryKey(query), outcome.status === "ok" ? outcome.output : undefined] as const;
     }));
     const instance = booted.current;
     if (instance === null) return;
-    const queries = Object.fromEntries(read);
-    contained(nodeId, () => {
+    const asks = contained(nodeId, () => {
       // Boot BEFORE disposing: a boot that throws leaves the screen it replaces
       // alive and still interactive, showing the tree it already had.
-      const next = instance.engine.bootScreen({ compiledSource: source, queries, catalog, now: Date.now() });
+      const next = instance.engine.bootScreen({
+        compiledSource: source,
+        queries: Object.fromEntries(read),
+        catalog,
+        now: Date.now(),
+      });
       instance.screen.dispose();
       booted.current = { engine: instance.engine, screen: next };
       paint(instance.engine, next.tree());
+      return next.misses();
     });
+    if (asks !== undefined) await feed(nodeId, asks);
   };
 
-  const refresh = async (nodeId: string): Promise<void> => {
+  const refresh = async (nodeId: string, fresh = false): Promise<void> => {
     if (rereading.current) {
       rereadAgain.current = true;
       return;
@@ -190,7 +271,7 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
     try {
       do {
         rereadAgain.current = false;
-        await reread(nodeId);
+        await (fresh ? reboot(nodeId) : reread(nodeId));
       } while (rereadAgain.current);
     } finally {
       rereading.current = false;
@@ -198,9 +279,7 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
   };
 
   /** Run a batch of intents and everything settling them asks for. Answers
-   *  whether any of them CHANGED something, which is what the refresh waits on —
-   *  the refresh replaces the whole VM, so it may not run while a sibling intent
-   *  of the same firing is still out looking for the instance that fired it. */
+   *  whether any of them CHANGED something, which is what the refresh waits on. */
   const pump = async (nodeId: string, intents: readonly Intent[]): Promise<boolean> => {
     const changed = await Promise.all(intents.map(async (intent) => {
       const outcome = await runAction(nodeId, intent.tool, intent.args as Json);
@@ -229,6 +308,11 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
     const step = contained(nodeId, () => {
       const next = instance.screen.fire(handlerId, event);
       paint(instance.engine, next.tree);
+      // The press may have moved the input of a read — picking a client asks for
+      // THAT client's invoices — so the paint it caused names a key nobody has
+      // answered. Every paint the person can cause has to be answered, not only
+      // the boot's.
+      void feed(nodeId, instance.screen.misses());
       return next;
     });
     if (step === undefined || step.intents.length === 0) return;
@@ -244,7 +328,7 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
   // Every closure above belongs to THIS render (as `invoke` does in the renderer);
   // boot's continuation is the one caller that outlives its own render, so it
   // reaches the newest one through here.
-  latest.current = { interactive, base, catalog, onFailure, fire };
+  latest.current = { interactive, base, catalog, onFailure, fire, feed };
 
   return { tree, inFlight, fire, refresh };
 }

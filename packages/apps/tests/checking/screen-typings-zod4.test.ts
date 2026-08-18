@@ -72,7 +72,7 @@ describe("the Kit's own types survive the zod the host installed", () => {
 
     const money = catalogPrompt({ only: ["Money"], omitPreamble: true }).split("\n")[0] ?? "";
 
-    expect(money).toContain("amount: number");
+    expect(money).toContain("value: number");
     expect(money).toContain("currency: string");
   });
 });

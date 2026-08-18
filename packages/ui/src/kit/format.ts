@@ -130,25 +130,37 @@ export function formatMoney(amount: number | undefined, options: MoneyOptions = 
 }
 
 export interface PercentOptions {
-  /** Digits after the decimal point; defaults to 0. */
+  /** Digits after the decimal point; pins both ends when given. */
   fractionDigits?: number;
-  /** When true, the input is already a whole percentage (42, not 0.42). */
-  whole?: boolean;
   locale?: string;
 }
 
 /**
- * Format a ratio (`0.42` → `"42%"`). Pass `whole: true` when the value is already
- * a whole percentage. Returns `null` for non-finite input.
+ * Print a percentage AS GIVEN: `46.1` → `"46.1%"`, `7.25` → `"7.25%"`.
+ *
+ * Formatters never convert, and this one is where that law was being broken.
+ * `Intl`'s own `style: "percent"` multiplies by 100, so the tier took a RATIO and
+ * every host field named `*_pct` — already on a 0-100 scale, which is how hosts
+ * store one — printed as "4,610%". The ×100 convention that was supposed to
+ * prevent it just moved the same error into the screen, where a model had to
+ * remember it. So: no multiply anywhere, and a 0..1 ratio is `* 100` where the
+ * data is PREPARED, exactly as a cents field is `/ 100` there.
+ *
+ * The suffix is appended rather than left to `Intl` for that reason alone —
+ * `style: "percent"` cannot be asked not to scale. `formatNum` appends its unit
+ * the same way, and for a related reason: the short word a host uses is not
+ * always one `Intl` has.
+ *
+ * And the tier never rounds a figure it was not asked to round: decimals show
+ * only where the number has them, up to two, so 7.25% cannot print as "7%".
+ * `fractionDigits` pins them. Returns `null` for non-finite input.
  */
 export function formatPercent(value: number | undefined, options: PercentOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
-  const ratio = options.whole ? value / 100 : value;
-  return new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
-    style: "percent",
+  return `${new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
     minimumFractionDigits: options.fractionDigits ?? 0,
-    maximumFractionDigits: options.fractionDigits ?? 0,
-  }).format(ratio);
+    maximumFractionDigits: options.fractionDigits ?? 2,
+  }).format(value)}%`;
 }
 
 export interface NumOptions {
@@ -275,15 +287,13 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
  *  `code` is text with a FACE: an identifier (a sha, a branch, an id) reads in
  *  the host's mono, so there is nothing here to format and the face is applied
  *  where the cell is painted. */
-export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text" | "code";
+export type ValueFormat = "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | "code";
 
 /** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
 export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
   switch (format) {
     case "money":
       return typeof value === "number" ? formatMoney(value) : null;
-    case "percent":
-      return typeof value === "number" ? formatPercent(value) : null;
     case "number":
       return typeof value === "number" ? formatNum(value) : null;
     case "duration":

@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
 import { MAX_OUTPUT_TOKENS_FLOOR, usdFor, type UsageTotals } from "./meter.js";
-import type { Path, Probed } from "./probe.js";
+import type { Filled, Path, Probed } from "./probe.js";
 
 /**
  * The non-mechanical half of the score: one verdict per rubric line — the case's
@@ -189,6 +189,15 @@ const insideText = (paths: readonly Path[]): string => {
   return paths.length === 1 ? `it has ONE pressable control, so it is judged by that control alone — ${each}` : each;
 };
 
+/** A control the probe found locked was pressed anyway, with a sentinel typed
+ *  into its empty text boxes first — said before the press outcome, or a
+ *  sentinel-carrying call reads to the judge as the screen inventing data. */
+const filledText = (filled: readonly Filled[] | undefined): string => {
+  if (filled === undefined || filled.length === 0) return "";
+  const each = filled.map((fill) => `"${fill.field}" with "${fill.value}"`).join(" and ");
+  return `the harness filled ${each}, then `;
+};
+
 /** The probe's record as prose, because that is what a judge reads best. */
 function traceText(trace: readonly Probed[]): string {
   if (trace.length === 0) return "Nothing on this screen could be pressed.";
@@ -214,7 +223,7 @@ function traceText(trace: readonly Probed[]): string {
               ? "called nothing, and changed the screen"
               : "called nothing, and changed nothing";
       const within = probed.inside === undefined ? "" : `\n  inside the confirmation, ${insideText(probed.inside)}`;
-      return `pressed "${probed.label}" — ${did}${within}`;
+      return `${filledText(probed.filled)}pressed "${probed.label}" — ${did}${within}`;
     })
     .join("\n");
 }

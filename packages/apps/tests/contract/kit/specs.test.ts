@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateProps } from "../../../src/contract/kit/schema.js";
 import {
   KIT_CHILDLESS_NAMES,
+  KIT_PER_ROW_SLOTS,
   KIT_SHARED_PROP_NAMES,
   KIT_SLOT_CONTENT_NAMES,
   KIT_SPECS,
@@ -21,19 +22,26 @@ import {
  *  validates and the renderer drops it, which is the silent failure the whole
  *  prop-name gate exists to turn into a blocking error. */
 const READERS: Record<string, readonly string[]> = {
-  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
+  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
   density: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
-  field: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress"],
+  // The controls that IMPLEMENT each one, and none of the ones that do not —
+  // these three shipped for months as props the Kit painted and no spec admitted.
+  disabled: ["Input", "Textarea", "Select", "Combobox", "DatePicker", "DateRange", "Checkbox", "Switch", "Radio", "Slider", "SegmentedControl", "Button", "Form"],
+  required: ["Input", "Textarea", "Select", "DatePicker"],
+  hint: ["Input", "Textarea", "Select", "Combobox", "DatePicker", "DateRange", "Checkbox", "Switch", "Radio", "Slider"],
 };
 
+/** `hint` is words a person READS, so it is copy where the rest are config. */
+const CLASSES: Record<string, string> = { hint: "copy" };
+
 describe("the Kit specs", () => {
-  it("carries each shared adjective on the components that read it, as config, and on no others", () => {
+  it("carries each shared adjective on the components that read it, in its own class, and on no others", () => {
     expect(Object.keys(READERS)).toEqual([...KIT_SHARED_PROP_NAMES]);
     for (const spec of KIT_SPECS) {
       for (const [name, readers] of Object.entries(READERS)) {
         const reads = readers.includes(spec.name);
         expect(spec.props[name] !== undefined, `${spec.name}.${name}`).toBe(reads);
-        if (reads) expect(kitPropClasses(spec.name)?.[name]).toBe("config");
+        if (reads) expect(kitPropClasses(spec.name)?.[name]).toBe(CLASSES[name] ?? "config");
       }
     }
   });
@@ -46,7 +54,7 @@ describe("the Kit specs", () => {
     // end to end in tests/checking/floor.test.ts).
     expect(kitPropClasses("DataTable")?.tone).toBeUndefined();
     expect(kitPropClasses("Divider")?.density).toBeUndefined();
-    expect(kitPropClasses("LineChart")?.field).toBeUndefined();
+    expect(kitPropClasses("Checkbox")?.required).toBeUndefined();
   });
 
   it("admits the whole tone vocabulary, and the two spellings stored apps carry", () => {
@@ -68,7 +76,7 @@ describe("the Kit specs", () => {
   // may carry one at all, and that the rest of the column stays typed.
   it("lets a table column and a card field carry a cell slot", () => {
     const table = kitSpec("DataTable")!;
-    const cell = { $element: true, component: "EnumBadge", props: { field: "status" } };
+    const cell = { $element: true, component: "EnumBadge", props: { value: "open" } };
     expect(validateProps(table, { rows: [], columns: [{ key: "status", cell }] }).success).toBe(true);
     expect(validateProps(table, { rows: [], columns: [{ key: 1 }] }).success).toBe(false);
     const cards = kitSpec("CardList")!;
@@ -102,22 +110,31 @@ describe("the Kit specs", () => {
   });
 
   /**
-   * The host's own word for a field, carried onto the thing that shows it.
-   * `compute_cost` is minor units and its name never says so; the card the
-   * writer reads prints `money.cents` beside it, and this is the prop that
-   * carries that token across. A token the card can print and a field refuses
-   * would be a dead end for whoever copied it, so the vocabulary is core's own.
+   * A per-row slot is a FUNCTION of the row now, so the units a field is stored
+   * in are the screen's to divide where it reads them — which is where the
+   * `semantic` token used to do it, invisibly, off a word the host copied across.
+   * `<Money value={row.compute_cost / 100}/>` says the same thing in the file,
+   * where a reader can see it.
    */
-  it("takes the host's semantic token on a column and on a field, and only a token core prints", () => {
-    const table = kitSpec("DataTable")!;
-    expect(validateProps(table, { rows: [], columns: [{ key: "compute_cost", semantic: "money.cents" }] }).success).toBe(true);
-    expect(validateProps(table, { rows: [], columns: [{ key: "branch", semantic: "code" }] }).success).toBe(true);
-    expect(validateProps(table, { rows: [], columns: [{ key: "compute_cost", semantic: "cents" }] }).success).toBe(false);
-    const cards = kitSpec("CardList")!;
-    expect(validateProps(cards, { items: [], fields: [{ key: "compute_cost", semantic: "money.cents" }] }).success).toBe(true);
-    const detail = kitSpec("KeyValue")!;
-    expect(validateProps(detail, { record: {}, items: [{ key: "branch", semantic: "code" }] }).success).toBe(true);
+  it("names which slots the screen may write as a function of the row, and what they map over", () => {
+    expect(KIT_PER_ROW_SLOTS).toEqual({
+      DataTable: { columns: { rows: "rows", field: "cell" }, rowActions: { rows: "rows" } },
+      CardList: { fields: { rows: "items", field: "cell" } },
+      KeyValue: { items: { rows: "record", field: "cell" } },
+      Timeline: { cell: { rows: "entries" } },
+      LineChart: { tooltip: { rows: "data" } },
+      BarChart: { tooltip: { rows: "data" } },
+      DonutChart: { tooltip: { rows: "data" } },
+    });
+    // Every rows prop it names is a prop that component really has — a slot that
+    // maps over a prop nobody passes maps over nothing.
+    for (const [component, slots] of Object.entries(KIT_PER_ROW_SLOTS)) {
+      for (const { rows } of Object.values(slots)) {
+        expect(kitSpec(component)?.props[rows], `${component}.${rows}`).toBeDefined();
+      }
+    }
   });
+
 
   // Naming no fields is "show me the record", not an error: a detail screen
   // that names none is asking for all of them.

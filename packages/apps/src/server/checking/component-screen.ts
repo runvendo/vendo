@@ -1,7 +1,7 @@
 /**
  * The save-time gauntlet for a COMPONENT screen — the new artifact: one plain
  * `.tsx` file, one default-exported React component, data through
- * `useQuery("tool_name", {literal input}?)`, actions through
+ * `useQuery("tool_name", input?)`, actions through
  * `tools.tool_name(args)` inside handlers, and nothing imported but `react` and
  * `@vendo/screen`.
  *
@@ -16,14 +16,15 @@
  *                module form the scan reads).
  *   2. SCAN      the two rules a compiler cannot state: the import surface is
  *                exactly two modules, and every query names a read tool with a
- *                literal name and a literal input. Plus the `tools` discipline —
- *                literal member access, called from a handler, never mid-render.
+ *                literal name. Plus the `tools` discipline — literal member
+ *                access, called from a handler, never mid-render.
  *   3. TYPECHECK the real compiler, against declarations derived from the Kit's
  *                zod specs and the host tools' own schemas, with NO DOM lib —
  *                so `document`, `fetch` and `<div>` are errors because they
  *                genuinely do not exist here.
- *   4. RUN ONCE  execute the query plan for real, boot the screen on the answers,
- *                take its tree, and PRESS every control it drew.
+ *   4. RUN       execute the query plan for real, boot the screen on the answers,
+ *                answer whatever reads the paint itself asks for, take its tree,
+ *                and PRESS every control it drew.
  *   5. TREE      the tree validators the wire artifact already ships.
  *   6. CONTROLS  the presses stage 4 took: a control that asked for no tool and
  *                painted nothing new is a dead button, and it is refused.
@@ -54,6 +55,7 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import {
+  queryKey,
   SCREEN_TEXT_NODE,
   type FlatNode,
   type FlatTree,
@@ -97,7 +99,8 @@ export interface ComponentScreenIssue {
   environment?: true;
 }
 
-/** One `useQuery` call, as the check will execute it. */
+/** One `useQuery` call, as the check will execute it. Structurally the engine's
+ *  own `ScreenQuery`, because a plan entry and a miss are the same ask. */
 export interface QueryPlanEntry {
   tool: string;
   input?: unknown;
@@ -108,9 +111,11 @@ export type ComponentScreenCheck = {
   issues: ComponentScreenIssue[];
   /** post-esbuild JS — what the engine evaluates. */
   compiled?: string;
+  /** Every read the screen makes: the ones a literal input made plannable, plus
+   *  the ones its own paint asked for. The surface re-reads exactly this list. */
   queryPlan?: QueryPlanEntry[];
   initialTree?: FlatTree;
-  /** What each query REALLY returned, keyed by tool — the answers stage 4 booted
+  /** What each query REALLY returned, keyed by `queryKey` — the answers stage 4 booted
    *  the screen on. Handed back because the two things that need them cannot get
    *  them anywhere else: the paint carries them so the renderer boots the same
    *  screen this check rendered, and the AI reviewer judges the numbers on screen
@@ -513,31 +518,34 @@ const scanQuery = (
     return;
   }
   if (extra.length > 0) {
-    context.issues.push(issue("query-input", `calls ${QUERY_HOOK}("${literal}", …) with ${call.arguments.length} arguments — it takes the tool name and, at most, one literal input object.`));
+    context.issues.push(issue("query-input", `calls ${QUERY_HOOK}("${literal}", …) with ${call.arguments.length} arguments — it takes the tool name and, at most, one input object.`));
     return;
   }
-  let value: unknown;
+  let entry: QueryPlanEntry = { tool: literal };
   if (input !== undefined) {
     const parsed = literalValue(input);
-    if (!parsed.ok) {
-      context.issues.push(issue("query-input", `passes a computed input to ${QUERY_HOOK}("${literal}", …) — a query input must be LITERAL JSON the tool can execute directly: the queries run before the component renders, so no prop, state, hook value or other query's result can reach one. Write the literal (${QUERY_HOOK}("${literal}", { status: "pending" })), and derive what you needed from the result where you DISPLAY it.`));
-      return;
-    }
-    value = parsed.value;
+    // A LITERAL input is resolved before the screen ever renders, so the first
+    // paint has its answer. A COMPUTED one is whatever this render worked out, so
+    // nothing can resolve it that early: it is left out of the plan, the screen
+    // paints `undefined` there and NAMES the read it wanted, and the loop below
+    // answers it (`ScreenInstance.misses`).
+    if (!parsed.ok) return;
+    entry = { tool: literal, input: parsed.value };
   }
-  const entry: QueryPlanEntry = input === undefined ? { tool: literal } : { tool: literal, input: value };
-  const already = context.queryPlan.find((planned) => planned.tool === entry.tool);
-  if (already === undefined) {
-    context.queryPlan.push(entry);
-    return;
-  }
-  // The engine resolves a screen's data as one result PER TOOL, so two reads of
-  // the same tool with different inputs cannot both be served — the second would
-  // silently paint the first one's rows.
-  if (JSON.stringify(already.input) !== JSON.stringify(entry.input)) {
-    context.issues.push(issue("query-input", `reads "${literal}" twice with DIFFERENT inputs — a screen resolves one result per tool, so both calls would receive the same rows. Read it once with the wider input and narrow it where you display it (rows.filter(…)), or read a tool that takes the narrower ask.`));
-  }
+  const key = queryKey(entry);
+  if (!context.queryPlan.some((planned) => queryKey(planned) === key)) context.queryPlan.push(entry);
 };
+
+/**
+ * How many times one screen is painted while it asks for reads.
+ *
+ * A parameterized read costs one round: the paint names it, the answer arrives,
+ * the screen paints again. A read whose input comes from the FIRST one's answer
+ * costs a second. Three is one more than any screen anybody writes needs, and a
+ * bound is what keeps a screen that invents a new key on every render from
+ * painting forever.
+ */
+const MAX_SUPPLY_ROUNDS = 3;
 
 // ---- stage 3: typecheck ---------------------------------------------------
 
@@ -630,31 +638,44 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   }
   if (typed.issues.length > 0) return refuse([...typed.issues], { compiled, queryPlan });
 
-  // The engine keys its results by TOOL, one entry each — which is why the scan
-  // refuses a screen that reads one tool with two different inputs.
+  // THE SUPPLY LOOP. The plan is only what could be read before the screen ran;
+  // a read whose input the screen computes is named by the paint itself. So: run
+  // what is asked for, paint, and if the paint asked for more, go round again.
+  // `queryPlan` grows with what it learns, because the surface re-reads exactly
+  // this list after a write.
   const queries: Record<string, unknown> = {};
-  for (const entry of queryPlan) {
-    try {
-      queries[entry.tool] = await opts.runQuery(entry.tool, entry.input);
-    } catch (error) {
-      return refuse([issue("run", `the query ${QUERY_HOOK}("${entry.tool}"${entry.input === undefined ? "" : `, ${JSON.stringify(entry.input)}`}) failed when this check ran it: ${error instanceof Error ? error.message : String(error)} — a screen may only read a tool that answers; check the input against the tool's own schema.`)], { compiled, queryPlan });
-    }
-  }
-
+  const now = Date.now();
   let painted: ScreenPaintResult;
-  try {
-    // A clock IS given: the surface renders with one, and a gate that is
-    // stricter than production blocks screens that work.
-    painted = await toolchain.paint({ compiledSource: compiled, queries, catalog: names, now: Date.now() });
-  } catch (error) {
-    // A paint answers a screen that failed with a verdict, so a THROW is the
-    // engine itself never starting — this deployment's third machine missing,
-    // not a screen to repair. Its own code for the same reason: `run` is the
-    // class for a screen that RAN, and these two must never read alike.
-    return refuse([unavailable("engine-unavailable", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
-  }
-  if (!painted.ok) {
-    return refuse([issue("run", renderMessage(painted.kind, painted.message))], { compiled, queryPlan });
+  let asks: readonly QueryPlanEntry[] = queryPlan;
+  for (let round = 1; ; round += 1) {
+    for (const entry of asks) {
+      try {
+        queries[queryKey(entry)] = await opts.runQuery(entry.tool, entry.input);
+      } catch (error) {
+        return refuse([issue("run", `the query ${QUERY_HOOK}("${entry.tool}"${entry.input === undefined ? "" : `, ${JSON.stringify(entry.input)}`}) failed when this check ran it: ${error instanceof Error ? error.message : String(error)} — a screen may only read a tool that answers; check the input against the tool's own schema.`)], { compiled, queryPlan });
+      }
+    }
+    try {
+      // A clock IS given: the surface renders with one, and a gate that is
+      // stricter than production blocks screens that work. The same instant every
+      // round, so the rounds are one paint and not three different days.
+      painted = await toolchain.paint({ compiledSource: compiled, queries, catalog: names, now });
+    } catch (error) {
+      // A paint answers a screen that failed with a verdict, so a THROW is the
+      // engine itself never starting — this deployment's third machine missing,
+      // not a screen to repair. Its own code for the same reason: `run` is the
+      // class for a screen that RAN, and these two must never read alike.
+      return refuse([unavailable("engine-unavailable", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
+    }
+    if (!painted.ok) {
+      return refuse([issue("run", renderMessage(painted.kind, painted.message))], { compiled, queryPlan });
+    }
+    // A screen still asking after the last round is one that invents a key on
+    // every render. Its paint stands, and `inert` is empty — an unsettled screen
+    // is not the one whose buttons this gate judges.
+    if (painted.misses.length === 0 || round === MAX_SUPPLY_ROUNDS) break;
+    asks = painted.misses;
+    queryPlan.push(...asks);
   }
 
   const initialTree = painted.tree;

@@ -15,10 +15,9 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import type { SemanticToken } from "@vendoai/core";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat, formatDateTime, type ValueFormat } from "../format.js";
-import { fieldItems, readField, readValue, RowContext, semanticFormat } from "../row.js";
+import { fieldItems, readField, rowSlot } from "../row.js";
 import { densityVars, font, hairline, microLabel, mono, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
@@ -31,15 +30,12 @@ export interface DataTableColumn {
   label?: string;
   /** Value-tier format applied to every cell. */
   format?: ValueFormat;
-  /** What the HOST says this field is, copied off its tool's shape card
-   *  (`money.cents`, `date.iso`, `code`). It is the only thing besides `format`
-   *  that decides how the column reads and in what units. */
-  semantic?: SemanticToken;
   align?: "start" | "center" | "end";
-  /** Kit elements rendered instead of the formatted text — once per row, with
-   *  that row published on `RowContext` so the components inside can name their
-   *  field. `key` still drives sorting, filtering and searching. */
-  cell?: ReactNode;
+  /** Kit elements rendered instead of the formatted text. Written as a function
+   *  of the row, it arrives as ONE element per row in `rows` order; a stored
+   *  screen holds a single element for every row. `key` still drives sorting,
+   *  filtering and searching. */
+  cell?: ReactNode | readonly ReactNode[];
 }
 
 export interface DataTableProps extends KitStyled {
@@ -66,10 +62,10 @@ export interface DataTableProps extends KitStyled {
   caption?: string;
   /** Kit elements in the controls row, beside the search box and the filters. */
   toolbar?: ReactNode;
-  /** Kit controls in a trailing column, rendered once per row with that row
-   *  published on `RowContext` — the cell contract, for the half of it that may
-   *  be OPERATED because it has a row of its own to act on. */
-  rowActions?: ReactNode;
+  /** Kit controls in a trailing column — the cell contract, for the half of it
+   *  that may be OPERATED because the function that wrote it had a row to act
+   *  on. One element per row in `rows` order. */
+  rowActions?: ReactNode | readonly ReactNode[];
   /** Spacing scale for this table's subtree. */
   density?: KitDensity;
   /** One <TableRow> per record, in `rows` order — the model paints the cells
@@ -108,7 +104,7 @@ function cellText(value: unknown, format: ValueFormat, compact: boolean): string
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn, compact: boolean): string {
   if (column.key === undefined) return "";
-  return cellText(readValue(row, { ...column, key: column.key }), column.format ?? "text", compact) ?? "";
+  return cellText(readField(row, column.key), column.format ?? "text", compact) ?? "";
 }
 
 /** The calendar year a date value lands in, read the way the cell shows it: a
@@ -183,7 +179,7 @@ export function DataTable(props: DataTableProps) {
 
   // A column written as a bare key is the description it stands for, which is
   // also the shape the inferred columns have always had.
-  const declared = useMemo<DataTableColumn[]>(
+  const columns = useMemo<DataTableColumn[]>(
     () => fieldItems<DataTableColumn>(props.columns ?? Object.keys(rows[0] ?? {})),
     [props.columns, rows],
   );
@@ -193,21 +189,24 @@ export function DataTable(props: DataTableProps) {
     [rows, limit],
   );
 
-  /** Every column, with the format the model left off filled in from the HOST's
-   *  declaration — the only thing that may fill it. Everything below reads
-   *  columns from HERE, so a declared format sorts, filters and folds exactly
-   *  like a written one. A column with its own `cell` is left alone: its slot
-   *  already decided how it reads. A column with neither prints its values as
-   *  they stand. */
-  const columns = useMemo<DataTableColumn[]>(
-    () =>
-      declared.map((col) =>
-        col.format === undefined && col.cell === undefined
-          ? { ...col, format: semanticFormat(col.semantic) }
-          : col,
-      ),
-    [declared],
-  );
+  /**
+   * THIS row's element out of a per-row slot, matched by row IDENTITY.
+   *
+   * The list arrives in `rows` order and this table paints in none of it:
+   * sorting, filtering and pagination all reorder `row.original`, so the place a
+   * row is painted in is not the place the VM emitted for it. Matching by
+   * position instead shows row 3's Cancel button on row 1.
+   */
+  const forRow = useMemo(() => {
+    const place = new WeakMap<object, number>();
+    // A row that is not an object indexes nothing — and a WeakMap key that is
+    // not one THROWS, which would take the whole table down over one bad row.
+    rows.forEach((row, index) => {
+      if (row !== null && typeof row === "object") place.set(row, index);
+    });
+    return (slot: ReactNode | readonly ReactNode[], row: Record<string, unknown>): ReactNode =>
+      rowSlot(slot, place.get(row) ?? -1);
+  }, [rows]);
 
   const initialSorting = useMemo<SortingState>(() => {
     if (!sortBy) return [];
@@ -245,13 +244,10 @@ export function DataTable(props: DataTableProps) {
           // construction, and its contents stay out of the search.
           ...(col.key === undefined
             ? {}
-            : { accessorFn: (row: Record<string, unknown>) => readValue(row, { ...col, key: col.key! }) }),
+            : { accessorFn: (row: Record<string, unknown>) => readField(row, col.key!) }),
           header: headerText(col),
-          // A slot holds an ELEMENT, never a function (a function prop serializes
-          // as a `$handler` door). The row it belongs to arrives on RowContext,
-          // published once per row below.
           cell: (ctx) => {
-            if (col.cell !== undefined) return col.cell;
+            if (col.cell !== undefined) return forRow(col.cell, ctx.row.original);
             const formatted = cellText(ctx.getValue(), col.format ?? "text", compact);
             if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
             // The face rides on the VALUE, not the cell: a folded row's extra
@@ -264,7 +260,7 @@ export function DataTable(props: DataTableProps) {
           filterFn: (row, _columnId, value) => displayText(row.original, col, compact) === String(value),
         };
       }),
-    [columns, compactDateKeys],
+    [columns, compactDateKeys, forRow],
   );
 
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
@@ -509,75 +505,72 @@ export function DataTable(props: DataTableProps) {
               <TableContext.Provider value={{ columns, visible: visibleCount }}>
                 {bodyRows.map((row, rowIndex) => (
                   <tr key={row.id} style={{ borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline }}>
-                    <RowContext.Provider value={row.original}>
-                      {painted[row.index] ?? null}
-                      {/* The actions column is the table's, not the row's: a painted
-                          row paints one cell per DATA column, so without this the
-                          body row is one cell short of its own header. */}
-                      {rowActions === undefined ? null : (
-                        <td style={{ padding: cellPad, textAlign: "right", whiteSpace: "nowrap" }}>{rowActions}</td>
-                      )}
-                    </RowContext.Provider>
+                    {painted[row.index] ?? null}
+                    {/* The actions column is the table's, not the row's: a painted
+                        row paints one cell per DATA column, so without this the
+                        body row is one cell short of its own header. */}
+                    {rowActions === undefined ? null : (
+                      <td style={{ padding: cellPad, textAlign: "right", whiteSpace: "nowrap" }}>
+                        {forRow(rowActions, row.original)}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </TableContext.Provider>
             ) : (
               bodyRows.map((row, rowIndex) => (
                 <tr key={row.id}>
-                  {/* One provider per row — a slot's components read their field
-                      off it. A provider paints no element, so this is still tr > td. */}
-                  <RowContext.Provider value={row.original}>
-                    {shown(row.getVisibleCells()).map((cell, cellIndex) => {
-                      const col = columns[cellIndex];
-                      // A slot is elements, not a figure: only formatted text is
-                      // one unbreakable atom ("Mar 14" split across two lines
-                      // reads as two values). Tabular is the table's own default.
-                      const figure = col?.format !== undefined && col.format !== "text" && col.cell === undefined;
-                      return (
-                        <td
-                          key={cell.id}
-                          style={{
-                            borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
-                            padding: cellPad,
-                            textAlign: alignCss(col?.align),
-                            whiteSpace: figure ? "nowrap" : undefined,
-                          }}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          {folded && cellIndex === 0 ? (
-                            <div style={foldStyle}>
-                              {columns.slice(visibleCount).flatMap((other, j) => {
-                                // A folded column keeps its SLOT — a status
-                                // column reads as its pill here too, not as the
-                                // bare word the slot exists to kill.
-                                const value =
-                                  other.cell ?? displayText(row.original, other, other.key !== undefined && compactDateKeys.has(other.key));
-                                return value === ""
-                                  ? []
-                                  : [
-                                      <span key={j}>
-                                        {headerText(other)}: {value}
-                                      </span>,
-                                    ];
-                              })}
-                            </div>
-                          ) : null}
-                        </td>
-                      );
-                    })}
-                    {rowActions === undefined ? null : (
+                  {shown(row.getVisibleCells()).map((cell, cellIndex) => {
+                    const col = columns[cellIndex];
+                    // A slot is elements, not a figure: only formatted text is
+                    // one unbreakable atom ("Mar 14" split across two lines
+                    // reads as two values). Tabular is the table's own default.
+                    const figure = col?.format !== undefined && col.format !== "text" && col.cell === undefined;
+                    return (
                       <td
+                        key={cell.id}
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
                           padding: cellPad,
-                          textAlign: "right",
-                          whiteSpace: "nowrap",
+                          textAlign: alignCss(col?.align),
+                          whiteSpace: figure ? "nowrap" : undefined,
                         }}
                       >
-                        {rowActions}
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {folded && cellIndex === 0 ? (
+                          <div style={foldStyle}>
+                            {columns.slice(visibleCount).flatMap((other, j) => {
+                              // A folded column keeps its SLOT — a status
+                              // column reads as its pill here too, not as the
+                              // bare word the slot exists to kill.
+                              const value =
+                                forRow(other.cell, row.original)
+                                ?? displayText(row.original, other, other.key !== undefined && compactDateKeys.has(other.key));
+                              return value === ""
+                                ? []
+                                : [
+                                    <span key={j}>
+                                      {headerText(other)}: {value}
+                                    </span>,
+                                  ];
+                            })}
+                          </div>
+                        ) : null}
                       </td>
-                    )}
-                  </RowContext.Provider>
+                    );
+                  })}
+                  {rowActions === undefined ? null : (
+                    <td
+                      style={{
+                        borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
+                        padding: cellPad,
+                        textAlign: "right",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {forRow(rowActions, row.original)}
+                    </td>
+                  )}
                 </tr>
               ))
             )}

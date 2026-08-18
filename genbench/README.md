@@ -474,16 +474,22 @@ case — while a screen of always-enabled buttons that call nothing recorded a
 press each and scored better for being button-shaped.
 
 A control the screen has **locked** gets one precondition satisfied. If it is
-disabled and the screen carries a `<select>`, every select is set to its first
-real option — one pass, document order, skipping the placeholder whose value is
-empty — and the control is given a second look, bounded by a second. "Pick an
-agent, then press Assign" is a correctly built screen, and it was the other
-failing shape. Only a `<select>`, and only to an option the screen itself offers:
-a value the harness typed would be data no screen claimed, riding into a tool
-call the judge then grades as the screen's own. Nothing hunts for the combination
-that unlocks a screen, and a control still locked after that one pass goes
-**unpressed and ungraded** — a screen being careful is not a screen with a dead
-control.
+disabled, one pass over the screen in document order sets every `<select>` to its
+first real option — skipping the placeholder whose value is empty — and fills
+every empty text box (`input[type=text]`, an `input` with no type, `textarea`)
+with the harness's own sentinel, `probe input` (2026-08-18); then it is given a
+second look, bounded by a second. "Pick an agent, then press Assign" and "type a
+reason, then press Deny" are correctly built screens, and both were failing
+shapes. A value the harness invents is data no screen claimed, which is why the
+probe used to type nothing at all; the sentinel is what resolves that. The fill
+goes on the trace beside the press it bought (`filled` in `Probed`), and a tool
+call carrying `probe input` is unmistakably the harness's, so a wire that carried
+it into the arguments is **proof** the field is bound to the tool. Nothing hunts
+for the combination that unlocks a screen, and a control still locked after that
+one pass goes **unpressed and ungraded** — a screen being careful is not a screen
+with a dead control. A form the screen never locked is pressed **as it stands**,
+empty boxes and all: that is what a hasty person can do, and what the call
+carries is the screen's own doing.
 
 What a press DID is read the same way for every species, with one number added to
 the two that were already there: how many of the screen's controls are switched
@@ -734,20 +740,27 @@ show a path that acts and a path that declines, so a dead confirmation that used
 to pass fails and a screen whose whole write lives behind a working dialog is
 proven where it could not be before. Both directions again, and again no earlier
 run compares — a trace recorded before it carries no in-dialog paths at all, and
-absent evidence is not a pass.
+absent evidence is not a pass. Filling the text a locked control is waiting for
+(2026-08-18) is a fourth, and the same kind: a screen whose submit is gated on a
+typed reason used to record `pressed: 0` and fail the action case it correctly
+implements, and now it is pressed and graded — while a screen whose field is
+decoration is now pressed and can fail. Both directions, so no run recorded
+before it compares with one after it.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads, and a locked control costs one pass over the screen's selects
-on top of its reload. A dialog costs one full walk back to it per control inside
-it, on top of that. The probe satisfies exactly one kind of precondition — a
-choice a `<select>` is asking for — so a control guarded behind a typed amount, a
-ticked box or an earlier step stays unpressed and ungraded, inside a dialog as
-well as outside one. Multi-step flows are followed exactly one dialog deep: a
-confirmation that opens a second confirmation is recorded as a press that changed
-the screen, and nothing inside the second one is pressed. A control that navigates
-off the screen — a link with an `href` — is recorded as having gone somewhere and
-called nothing, which is the only thing that can be read once `window.vendo` has
-left with the page.
+and empty text boxes on top of its reload. A dialog costs one full walk back to
+it per control inside it, on top of that. That pass is the only precondition the
+probe satisfies — a choice a `<select>` is asking for, and text a box is empty of
+— so a control guarded behind a ticked box, a typed *amount* the sentinel is not,
+or an earlier step stays unpressed and ungraded. It runs before the press that
+opens a dialog and never inside one, so a control locked behind a field in the
+dialog itself is still recorded as unproven. Multi-step flows are followed
+exactly one dialog deep: a confirmation that opens a second confirmation is
+recorded as a press that changed the screen, and nothing inside the second one is
+pressed. A control that navigates off the screen — a link with an `href` — is
+recorded as having gone somewhere and called nothing, which is the only thing that
+can be read once `window.vendo` has left with the page.
 
 Liveness asks about the **seam** specifically: a screen that carries its own copy
 of the rows — in its markup, in a recorder it defined itself, or in data compiled

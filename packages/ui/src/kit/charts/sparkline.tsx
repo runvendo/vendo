@@ -1,7 +1,6 @@
 /** Sparkline — a compact inline trend, recharts Area internals (W2 §The Kit). */
 import type { ComponentProps } from "react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
-import { useFieldValue } from "../row.js";
 import { font, resolveTone, seriesColor, t, toneColor, type KitStyled, type KitTone, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { sanitizeNumbers } from "./sanitize.js";
 
@@ -15,8 +14,6 @@ interface SparklineOwnProps extends KitStyled {
   emptyState?: string;
   /** Paints the line — a trend that is bad news is `danger`. */
   tone?: KitTone;
-  /** Inside a cell slot: the row field holding this trend's points. */
-  field?: string;
 }
 
 /** Plus any recharts `<Area>` prop, handed straight to the curve. It arrives
@@ -24,10 +21,9 @@ interface SparklineOwnProps extends KitStyled {
  *  the component owns — an overridden one would plot a field that is not there. */
 export type SparklineProps = SparklineOwnProps & KitEngine<ComponentProps<typeof Area>, SparklineOwnProps, "dataKey">;
 
-export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", tone, field, style, children, pending, ...engine }: SparklineProps & KitRendered) {
-  const input = useFieldValue(field, data);
+export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—", tone, style, children, pending, ...engine }: SparklineProps & KitRendered) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
-  const raw = (Array.isArray(input) ? input : []).map((d) =>
+  const raw = (Array.isArray(data) ? data : []).map((d) =>
     typeof d === "number" ? d : (d as Record<string, unknown> | null)?.[valueKey] as number,
   );
   const clean = sanitizeNumbers(raw);

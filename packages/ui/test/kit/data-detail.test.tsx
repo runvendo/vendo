@@ -34,8 +34,8 @@ describe("KeyValue", () => {
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByText("Maple")).toBeTruthy();
     // `format:"money"` says how the figure PRINTS, never what unit it is in.
-    // A row divides only where the host declared `money.cents`; a name that
-    // ends in "Cents" is not a declaration, so 250000 is 250000 dollars.
+    // Nothing here divides: a name that ends in "Cents" is not an instruction,
+    // so 250000 is 250000 dollars. The ÷100 belongs in a `cell` function.
     expect(screen.getByText("$250,000.00")).toBeTruthy();
   });
 
@@ -44,19 +44,20 @@ describe("KeyValue", () => {
     expect(screen.getByText("past_due").getAttribute("style")).toContain("--vendo-mono-family");
   });
 
-  it("renders a slot's components against the record, not against a prop", () => {
-    // The seam the cell slot exists for: the component names its FIELD and the
-    // value arrives off RowContext, published by KeyValue.
+  it("renders a cell slot in place of the row's own text", () => {
+    // KeyValue's rows prop is ONE record, so a `cell` function is called once
+    // and the slot holds a single element — there is no list to match. The ÷100
+    // ran where the record was in scope.
     render(
       <KeyValue
         record={invoice}
         items={[
-          { key: "amountCents", cell: <Money field="amountCents" /> },
-          { key: "status", cell: <EnumBadge field="status" /> },
+          { key: "amountCents", cell: <Money value={invoice.amountCents / 100} /> },
+          { key: "status", cell: <EnumBadge value={invoice.status} /> },
         ]}
       />,
     );
-    expect(screen.getByText("$250,000.00")).toBeTruthy();
+    expect(screen.getByText("$2,500.00")).toBeTruthy();
     expect(screen.getByText("Past due")).toBeTruthy();
   });
 
@@ -90,29 +91,6 @@ describe("KeyValue", () => {
   });
 });
 
-/** The host's own word for a field, on the shape a detail screen is made of.
- *  A build's `$12.10` lives in exactly one place — a labelled field — and
- *  `compute_cost` is 1210 with nothing in its name to say so. */
-describe("KeyValue — the format the HOST declared", () => {
-  const build = { branch: "feat/steps-brick", compute_cost: 1210, started: "2026-08-15 07:55" };
-
-  it("reads a declared minor-unit row in dollars", () => {
-    render(<KeyValue record={build} items={[{ key: "compute_cost", label: "Cost", semantic: "money.cents" }]} />);
-    expect(screen.getByText("$12.10")).toBeTruthy();
-    expect(screen.queryByText("1210")).toBeNull();
-  });
-
-  it("gives a declared code row the mono face, though it is nothing like a sha", () => {
-    render(<KeyValue record={build} items={[{ key: "branch", semantic: "code" }]} />);
-    expect(screen.getByText("feat/steps-brick").getAttribute("style")).toContain("--vendo-mono-family");
-  });
-
-  it("reads a declared date row as a date", () => {
-    render(<KeyValue record={build} items={[{ key: "started", semantic: "date.iso" }]} />);
-    expect(screen.getByText(/Aug 15, 2026/)).toBeTruthy();
-  });
-});
-
 const events = [
   { id: "a", what: "Invoice issued", at: "2026-03-01T10:00:00Z" },
   { id: "b", what: "Reminder sent", at: "2026-03-08T10:00:00Z" },
@@ -131,10 +109,17 @@ describe("Timeline", () => {
     expect(screen.getByText("Aug 1, 2026")).toBeTruthy();
   });
 
-  it("renders the cell slot once per entry, each reading its OWN record", () => {
-    // One element, two entries, two different values — the whole reason a slot
-    // binds by field name instead of by prop.
-    render(<Timeline entries={events} cell={<EnumBadge field="what" />} timeField="at" />);
+  it("renders the cell slot once per entry, each against its OWN entry", () => {
+    // The VM called the slot function once per entry, in `entries` order, and a
+    // timeline paints in that same order — so the match is positional, unlike a
+    // DataTable's, which sorts.
+    render(
+      <Timeline
+        entries={events}
+        cell={events.map((entry) => <EnumBadge value={String(entry.what)} />)}
+        timeField="at"
+      />,
+    );
     expect(screen.getByText("Invoice issued")).toBeTruthy();
     expect(screen.getByText("Reminder sent")).toBeTruthy();
   });

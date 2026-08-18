@@ -1,9 +1,8 @@
-/** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
-import type { SemanticToken } from "@vendoai/core";
+/** CardList — one branded card per record, formatted by its fields (W2 §The Kit). */
 import type { ReactNode } from "react";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { fieldItems, readField, readValue, RowContext, semanticFormat } from "../row.js";
+import { fieldItems, readField, rowSlot } from "../row.js";
 import { densityVars, font, hairline, mono, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
@@ -11,13 +10,9 @@ export interface CardField {
   key: string;
   label?: string;
   format?: ValueFormat;
-  /** What the HOST says this field is, copied off its tool's shape card
-   *  (`money.cents`, `date.iso`, `code`) — it decides the format and the units
-   *  this row reads in. */
-  semantic?: SemanticToken;
-  /** Kit elements rendered as this field's VALUE for THIS item (the label
-   *  stays); the components inside name their field. */
-  cell?: ReactNode;
+  /** Kit elements rendered as this field's VALUE (the label stays). Written as a
+   *  function of the item, it arrives as ONE element per item in `items` order. */
+  cell?: ReactNode | readonly ReactNode[];
 }
 
 export interface CardListProps extends KitStyled {
@@ -83,50 +78,48 @@ export function CardList({ items: rawItems, titleField, badgeField, fields: rawF
       {items.map((item, index) => {
         const badge = badgeField ? readField(item, badgeField) : undefined;
         return (
-          // One provider per card — a field slot's components read their field
-          // off it, exactly as a table cell's do.
-          <RowContext.Provider key={String(readField(item, "id") ?? index)} value={item}>
-            <article
-              style={{
-                ...font,
-                display: "flex",
-                flexDirection: "column",
-                gap: "var(--vendo-density-field-gap, 6px)",
-                border: hairline,
-                borderRadius: t.radiusLarge,
-                background: t.surface,
-                padding: "var(--vendo-density-card-padding, 16px)",
-              }}
-            >
-              {(titleField || badge !== undefined) && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  {titleField ? (
-                    <span style={{ fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, lineHeight: t.lineHeightHeading }}>
-                      {String(readField(item, titleField) ?? "—")}
+          <article
+            key={String(readField(item, "id") ?? index)}
+            style={{
+              ...font,
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--vendo-density-field-gap, 6px)",
+              border: hairline,
+              borderRadius: t.radiusLarge,
+              background: t.surface,
+              padding: "var(--vendo-density-card-padding, 16px)",
+            }}
+          >
+            {(titleField || badge !== undefined) && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                {titleField ? (
+                  <span style={{ fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, lineHeight: t.lineHeightHeading }}>
+                    {String(readField(item, titleField) ?? "—")}
+                  </span>
+                ) : <span />}
+                {badge !== undefined && badge !== null && badge !== "" ? (
+                  <EnumBadge value={String(badge)} />
+                ) : null}
+              </div>
+            )}
+            {fields.map((f) => {
+              const format = f.format ?? "text";
+              return (
+                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
+                  <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
+                  {/* By POSITION, and that is right here: the cards paint in
+                      `items` order and nothing reorders them — unlike a
+                      DataTable, which sorts, so it matches by identity. */}
+                  {rowSlot(f.cell, index) ?? (
+                    <span style={{ ...numeric, ...(format === "code" ? mono : {}) }}>
+                      {applyFormat(readField(item, f.key), format) ?? "—"}
                     </span>
-                  ) : <span />}
-                  {badge !== undefined && badge !== null && badge !== "" ? (
-                    <EnumBadge value={String(badge)} />
-                  ) : null}
+                  )}
                 </div>
-              )}
-              {fields.map((f) => {
-                // The host's declaration fills the format the model left off,
-                // and `readValue` reads the field in the units it declared.
-                const format = f.format ?? semanticFormat(f.semantic) ?? "text";
-                return (
-                  <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
-                    <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                    {f.cell ?? (
-                      <span style={{ ...numeric, ...(format === "code" ? mono : {}) }}>
-                        {applyFormat(readValue(item, { ...f, format }), format) ?? "—"}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </article>
-          </RowContext.Provider>
+              );
+            })}
+          </article>
         );
       })}
     </div>

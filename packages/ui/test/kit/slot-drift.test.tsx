@@ -70,9 +70,19 @@ const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<st
   DonutChart: { props: { data: [{ k: "A", v: 1 }], categoryKey: "k", valueKey: "v" } },
   "DonutChart.empty": { props: { data: [], categoryKey: "k", valueKey: "v" } },
   Progress: { props: { value: 0.5 } },
+  // `hint` is a SHARED slot now, so it lands on every control that takes one
+  // rather than the three that used to be listed here — and each of them needs a
+  // world of its own only where a required prop says so.
   Input: { props: {} },
-  DatePicker: { props: {} },
   Textarea: { props: {} },
+  Select: { props: { options: ["One"] } },
+  Combobox: { props: { options: ["One"] } },
+  Radio: { props: { options: ["One"] } },
+  DatePicker: { props: {} },
+  DateRange: { props: {} },
+  Checkbox: { props: {} },
+  Switch: { props: {} },
+  Slider: { props: {} },
   Form: { props: {} },
   Tabs: { props: {}, item: { label: "One" } },
   Accordion: { props: { defaultOpen: [0] }, item: { label: "One" } },

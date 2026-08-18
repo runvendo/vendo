@@ -35,7 +35,7 @@ export {
   type PercentOptions,
   type ValueFormat,
 } from "./format.js";
-export { RowContext, readField, useFieldValue, type KitRow } from "./row.js";
+export { readField, type KitRow } from "./row.js";
 export { useKeyedState, type KeyedState } from "./state.js";
 export {
   chartSeries,

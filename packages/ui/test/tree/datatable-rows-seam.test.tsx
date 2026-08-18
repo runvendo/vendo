@@ -10,9 +10,10 @@
  * host's `onAction`, which is the host's half by definition.
  *
  * The failure it exists to catch is the one the 2026-08-16 benchmark found in
- * every model: a cents field bound to `<Money field="…"/>`, printed 100x too
- * large, past every gate. The ÷100 has to run in the VM, and the number it
- * produces has to arrive in the right column of the right row.
+ * every model: a cents field bound by NAME, printed 100x too large, past every
+ * gate. The ÷100 has to run in the VM, and the number it produces has to arrive
+ * in the right column of the right row — whether the row was painted by hand as
+ * a `<TableRow>` or written once as a function of the row.
  */
 import { beforeAll, afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -54,7 +55,7 @@ export default function Balances() {
       {accounts.data.map((a) => (
         <TableRow key={a.id}>
           <Text text={a.name} />
-          <Money amount={a.balance_cents / 100} />
+          <Money value={a.balance_cents / 100} />
           <Button label={"Cancel " + a.name} onClick={() => tools.cancel_transfer({ id: a.id })} />
         </TableRow>
       ))}
@@ -122,7 +123,7 @@ describe("a model-built table row, VM to paint", () => {
     expect(first.children).toEqual([
       { component: "Text", props: { text: "Checking" }, children: [] },
       // The arithmetic RAN, inside the VM, and a number stayed a number.
-      { component: "Money", props: { amount: 1284.5 }, children: [] },
+      { component: "Money", props: { value: 1284.5 }, children: [] },
       {
         component: "Button",
         props: { label: "Cancel Checking", onClick: { $handler: "h1" } },
@@ -161,6 +162,60 @@ describe("a model-built table row, VM to paint", () => {
     const { calls } = paint(BALANCES);
     // The first row on screen is Savings — the sort moved it there, and its
     // button must still be Savings' button.
+    fireEvent.click(within(screen.getAllByRole("row")[1]!).getByRole("button"));
+    await waitFor(() => expect(calls.filter((call) => call.action === "cancel_transfer").map((call) => call.payload))
+      .toEqual([{ id: "a2" }]));
+  });
+});
+
+/**
+ * The other half of the same crossing: the slot written ONCE, as a function of
+ * the row.
+ *
+ * The VM calls it per row and emits a LIST of sigilled elements, each with its
+ * own handler id; `flattenTree` carries the list in the prop; the renderer
+ * reifies every entry; and the Kit picks this row's own out of it. Every hand is
+ * the real one — a list that arrived in `rows` order and a table that paints in
+ * sorted order is exactly where an index match shows the wrong row's button.
+ */
+const PER_ROW = `
+import { Button, DataTable, Money, tools, useQuery } from "@vendo/screen";
+
+export default function Balances() {
+  const accounts = useQuery("list_accounts");
+  return (
+    <DataTable
+      rows={accounts.data}
+      columns={[{ key: "name", label: "Account" },
+                { key: "balance_cents", label: "Balance", align: "end",
+                  cell: (a) => <Money value={a.balance_cents / 100} /> }]}
+      sortBy="balance_cents desc"
+      rowActions={(a) => <Button label={"Cancel " + a.name} onClick={() => tools.cancel_transfer({ id: a.id })} />}
+    />
+  );
+}
+`;
+
+describe("a per-row slot, VM to paint", () => {
+  it("emits one element per row, each carrying its own handler", () => {
+    const { tree } = served(PER_ROW);
+    const columns = tree.props.columns as Array<{ cell?: unknown }>;
+    const cells = columns[1]!.cell as Array<{ props: Record<string, unknown> }>;
+    expect(cells.map((cell) => cell.props.value)).toEqual([1284.5, 9001.25]);
+    const actions = tree.props.rowActions as Array<{ props: Record<string, unknown> }>;
+    expect(actions.map((action) => action.props.label)).toEqual(["Cancel Checking", "Cancel Savings"]);
+    // Two rows, two handler ids — one for both was the defect: every Cancel
+    // button cancelling the first row.
+    const ids = actions.map((action) => (action.props.onClick as { $handler: string }).$handler);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("paints each row's own cell and action, sorted, and fires the row it shows", async () => {
+    const { calls } = paint(PER_ROW);
+    expect(grid()).toEqual([
+      ["Savings", "$9,001.25", "Cancel Savings"],
+      ["Checking", "$1,284.50", "Cancel Checking"],
+    ]);
     fireEvent.click(within(screen.getAllByRole("row")[1]!).getByRole("button"));
     await waitFor(() => expect(calls.filter((call) => call.action === "cancel_transfer").map((call) => call.payload))
       .toEqual([{ id: "a2" }]));

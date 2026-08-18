@@ -11,15 +11,13 @@ import { KIT_SPECS } from "../../../src/contract/kit/specs.js";
  * the package that owns it — these tests pin it here.
  */
 describe("kitPrompt() — the generated model-facing Kit section", () => {
-  it("leads with the two laws, and drops them on request", () => {
+  it("leads with the data law, and drops it on request", () => {
     expect(kitPrompt()).toContain("# The Kit");
     expect(kitPrompt({ omitPreamble: true })).not.toContain("# The Kit");
   });
 
-  // Money's `amount` used to be the required one here. It is optional now: a
-  // value component in a cell slot takes its value from `field`, so demanding
-  // `amount` would make the slot unwritable. DataTable's `rows` is the example
-  // instead — a table with no rows is nothing at all.
+  // DataTable's `rows` is the example rather than a value component's own value:
+  // a table with no rows is nothing at all.
   it("renders a prop as `name` [class] (required) — doc, and omits the marker when optional", () => {
     const prompt = kitPrompt({ only: ["DataTable"] });
     expect(prompt).toContain("- `rows` [data] (required) — rows from a tool call");
@@ -81,18 +79,30 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
   });
 
   /**
-   * Where a field's units are settled: the two INSTRUCTIONS a writer can give —
-   * divide at the read site, or declare what the host says the field is. The
-   * preamble also taught the reader's old name rule ("a `*_cents` key is money
-   * in minor units, an ISO stamp is a date, a sha is mono"); the reader no
-   * longer has one, so teaching it would promise a conversion nothing performs.
+   * Where a field's units are settled: ONE instruction, at the read site. The
+   * `semantic:` token that used to divide for you is gone with the dialect, and so
+   * is the reader's old name rule ("a `*_cents` key is money in minor units") —
+   * either would promise a conversion no component performs.
    */
-  it("teaches the two instruction paths for money, and no name-shaped rule", () => {
+  it("teaches the one money rule, and no conversion anything performs for you", () => {
     const prompt = kitPrompt();
     expect(prompt).toContain("value={invoice.amount_cents / 100}");
-    expect(prompt).toContain('semantic:"money.cents"');
+    expect(prompt).toContain("converts nothing");
+    expect(prompt).not.toContain('semantic:"money.cents"');
     expect(prompt).not.toContain("`*_cents` key is money in minor units");
-    expect(prompt).not.toContain("a sha is mono");
+  });
+
+  /**
+   * The idiom the whole rewrite turns on: a per-row slot is a FUNCTION of the row,
+   * so the example writes `row.…` arithmetic where a `field=` binding used to
+   * stand. Pinned over every example the prompt shows, because one left behind
+   * teaches a screen the checks reject.
+   */
+  it("shows per-row slots as functions, and no `field=` binding anywhere", () => {
+    const prompt = kitPrompt();
+    expect(prompt).toContain("cell:(row) => <Money value={row.amount_cents / 100}/>");
+    expect(prompt).toContain("rowActions={(row) =>");
+    expect(prompt).not.toContain("field=");
   });
 
   // A prop the preamble forbade and the spec now declares is a prop taught two

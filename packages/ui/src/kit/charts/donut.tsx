@@ -23,8 +23,9 @@ interface DonutChartOwnProps extends KitStyled {
   /** Kit elements shown in place of `emptyState` when there is nothing to plot. */
   empty?: ReactNode;
   /** Kit value components composed for the hovered slice, in place of the
-   *  default tooltip; the slice's row rides on `RowContext`. */
-  tooltip?: ReactNode;
+   *  default tooltip. Written as a function of the slice's row, it arrives as ONE
+   *  element per row in `data` order. */
+  tooltip?: ReactNode | readonly ReactNode[];
 }
 
 /** Plus any recharts `<Pie>` prop, handed straight to the ring. It arrives AFTER
@@ -50,13 +51,18 @@ export function DonutChart({
   // W3 — fail SOFT on missing data (a failed query resolves to undefined),
   // the same guard the other Kit charts get via sanitizeSeries.
   // The whole row rides along under the slice's own two keys, so a `tooltip`
-  // slot reads the same fields here as it does on a line or a bar.
+  // slot reads the same fields here as it does on a line or a bar. `at` is the
+  // row's place in `data`, kept because zero and invalid slices are DROPPED: a
+  // slice's place on the ring is not its row's, so a per-row tooltip list has to
+  // be re-laid against the slices that survived or every hover past a dropped
+  // one reads a row off.
   const slices = (Array.isArray(data) ? data : [])
-    .map((row) => ({ ...row, name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
-    .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
+    .map((row, at) => ({ ...row, at, name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
+    .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ at: number; name: string; value: number }>;
   if (slices.length === 0) {
     return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
+  const hovered = Array.isArray(tooltip) ? slices.map((slice) => tooltip[slice.at]) : tooltip;
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
     <div
@@ -84,7 +90,7 @@ export function DonutChart({
             </Pie>
             <Tooltip
               formatter={(v) => fmt(v)}
-              content={tooltip === undefined ? undefined : slotTooltip(tooltip)}
+              content={tooltip === undefined ? undefined : slotTooltip(hovered, slices)}
               contentStyle={tooltipSurface}
             />
           </RPieChart>

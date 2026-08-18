@@ -319,19 +319,18 @@ const typeIssue = (
   // A slot handed something that is not an element, which in practice is a
   // FUNCTION: the VM serializes a function prop as a `$handler` door
   // (`genui/component/vm-program.ts` `emitValue`), so the slot receives a
-  // callback the renderer cannot paint and the cell renders BLANK with every
-  // gate green — how a generated screen shipped a column of empty cells.
+  // callback the renderer cannot paint and the slot renders BLANK with every gate
+  // green — how a generated screen shipped a column of empty cells.
+  //
+  // This is the slot painted ONCE, which has no row to be a function OF. A
+  // per-row slot is typed `VendoRowSlot` and takes the function, so it never
+  // reaches here (screen-typings.ts).
   const slot = SLOT_REFUSED.test(sentence) ? slotLocus(ts, file, node) : undefined;
   if (slot !== undefined) {
     return at(`writes ${/^Type '([^']+)'/u.exec(sentence)?.[1] ?? "a value that is not an element"} in the "${slot.name}" slot`
       + `${slot.key === undefined ? "" : ` of ${slot.key}`}`
-      + " — a slot holds ELEMENTS, and a function prop serializes as a callback the renderer cannot paint, so the slot renders blank."
-      + (slot.key === undefined
-        ? " Write the element itself."
-        // `Text` reads any field, so the example is right whatever the column
-        // holds; a value component (Money, EnumBadge) is the better answer where
-        // the field's type is one it formats.
-        : ` Write the element itself; the components inside a slot name their own row's field: ${slot.name}={<Text field=${slot.key}/>}.`));
+      + " — this slot is painted once, so it holds ELEMENTS and a function prop serializes as a callback the renderer cannot paint."
+      + " Write the element itself.");
   }
 
   if (MISSING_PROPERTY.has(diagnostic.code) || BAD_CALL.has(diagnostic.code) || diagnostic.code === 2322) {

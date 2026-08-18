@@ -59,11 +59,11 @@ describe("diffPaints", () => {
   it("gives a Kit numeric leaf a tick that renders its own in-between figures", () => {
     const before = paint(
       { id: "root", component: "Stack", children: ["root.Money:total"] },
-      { id: "root.Money:total", component: "Money", props: { amount: 100, currency: "USD", locale: "en-US" } },
+      { id: "root.Money:total", component: "Money", props: { value: 100, currency: "USD", locale: "en-US" } },
     );
     const after = paint(
       { id: "root", component: "Stack", children: ["root.Money:total"] },
-      { id: "root.Money:total", component: "Money", props: { amount: 250, currency: "USD", locale: "en-US" } },
+      { id: "root.Money:total", component: "Money", props: { value: 250, currency: "USD", locale: "en-US" } },
     );
     const mark = diffPaints(before, after).marks.get("root.Money:total");
     expect(mark?.kind).toBe("pulse");

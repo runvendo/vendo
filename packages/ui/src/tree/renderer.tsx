@@ -907,13 +907,15 @@ function StatefulTreeView({
   const parked = useMemo(() => new Map(Object.entries(outcomes).flatMap(([nodeId, outcome]) =>
     outcome?.status === "pending-approval" ? [[nodeId, outcome.approvalId] as [string, string]] : [])), [outcomes]);
   // The approval's answer lands in the SAME per-node slot the press itself
-  // fills, and EVERY terminal answer re-reads the screen. Not just the happy
-  // one: the re-read is also the only thing that RE-BOOTS the screen, and a
-  // screen's own `useState` (the "Sending…" flag a generated handler sets
-  // before it awaits) has no other way back — a declined press used to leave
-  // its own controls locked forever over data that never changed. A tree with
-  // no query plan (a plain action tree) has nothing to re-read; its notice
-  // still settles.
+  // fills, and EVERY terminal answer re-reads the screen — but the two kinds of
+  // answer want different things from that re-read. An EXECUTED call moved the
+  // data, and the screen keeps its own state: a supply re-renders what is already
+  // standing, so a draft, a dialog and a selection all survive. A REFUSAL —
+  // declined, or expired unanswered — moved nothing, and the only thing that
+  // needs undoing is the screen's own `useState`: the "Sending…" flag a generated
+  // handler sets before it awaits, which used to leave a declined press locked
+  // forever. That one boots fresh. A tree with no query plan (a plain action tree)
+  // has nothing to re-read; its notice still settles.
   useParkedApprovals(parked, (nodeId, resolution) => {
     const settled: ToolOutcome = resolution.state === "executed" ? resolution.outcome : {
       status: "blocked",
@@ -925,7 +927,7 @@ function StatefulTreeView({
     // the repaint, because the re-read's reads run through `runAction` and an
     // ok read clears this very slot.
     setOutcomes((current) => ({ ...current, [nodeId]: undefined }));
-    void screen.refresh(nodeId).then(() => {
+    void screen.refresh(nodeId, resolution.state !== "executed").then(() => {
       if (settled.status !== "ok") setOutcomes((current) => ({ ...current, [nodeId]: settled }));
     });
   });

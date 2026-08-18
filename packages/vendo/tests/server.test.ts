@@ -2014,7 +2014,7 @@ export default function Ledger() {
   return (
     <Stack gap={12}>
       <Text text="Ledger" variant="heading" />
-      <Money amount={ledger.amount / 100} />
+      <Money value={ledger.amount / 100} />
     </Stack>
   );
 }

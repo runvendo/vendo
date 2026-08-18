@@ -50,7 +50,7 @@ const series = { data: points, xKey: "m", series: ["v"] };
 const PROPS: Readonly<Record<string, Record<string, unknown>>> = {
   Icon: { name: "check" },
   // The value tier paints a placeholder, or nothing at all, with no value to show.
-  Money: { amount: 42 },
+  Money: { value: 42 },
   DateTime: { value: "2026-01-01" },
   Percent: { value: 0.42 },
   Num: { value: 7 },

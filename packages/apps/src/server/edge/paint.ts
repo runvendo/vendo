@@ -71,7 +71,8 @@ export const edgePaint = async (
   try {
     instance = bootScreen({ ...input, budget });
     const tree = flattenTree(instance.tree());
-    return { ok: true, tree, inert: pressControls(tree, () => bootScreen({ ...input, budget })) };
+    const misses = instance.misses();
+    return { ok: true, tree, misses, inert: misses.length > 0 ? [] : pressControls(tree, () => bootScreen({ ...input, budget })) };
   } catch (error) {
     return error instanceof ScreenError
       ? { ok: false, kind: error.kind, message: error.message }

@@ -64,6 +64,26 @@ export interface InertControl {
   prop: string;
 }
 
+/** One read a screen makes: the tool, and the input it asked with. */
+export interface ScreenQuery {
+  tool: string;
+  input?: unknown;
+}
+
+/**
+ * The name one read's answer is filed under.
+ *
+ * A screen reads one tool as many times as it has questions — a detail panel
+ * beside a list is two reads of the same tool — so the answer cannot be keyed by
+ * the tool alone. The VM keys its own store the same way (`keyOf` in
+ * ./vm-program.ts): the two copies are one law and must agree.
+ *
+ * A read with no input keys as the bare tool name, so the common screen's data
+ * reads the way it always did.
+ */
+export const queryKey = ({ tool, input }: ScreenQuery): string =>
+  input === undefined ? tool : `${tool} ${JSON.stringify(input)}`;
+
 /** A tool call an event handler asked for, awaiting the host's answer. */
 export interface Intent {
   id: string;
@@ -100,6 +120,22 @@ export interface ScreenInstance {
    * `null` means nothing moved — no repaint, no new intents, nothing to do.
    */
   settle(intentId: string, result: unknown): FireResult | null;
+  /**
+   * The reads the paints so far asked for and had no answer to.
+   *
+   * A query input may be computed — `useQuery("invoices", { client: chosen })` —
+   * so it cannot be known before the screen renders. The screen paints with
+   * `undefined` there and NAMES what it wanted; the host runs those reads and
+   * hands them back through {@link supply}. Taken, not copied: a read the host
+   * could not answer is asked once per round rather than forever.
+   */
+  misses(): ScreenQuery[];
+  /**
+   * Answers to {@link misses}, keyed by {@link queryKey}, merged into the
+   * screen's data — which RE-RENDERS the component rather than rebooting it, so
+   * everything `useState` holds is still there.
+   */
+  supply(results: Record<string, unknown>): NestedNode;
   /** Tear the VM down. Idempotent. */
   dispose(): void;
 }
@@ -107,7 +143,9 @@ export interface ScreenInstance {
 export interface BootScreenOptions {
   /** The component, compiled to plain CommonJS JavaScript — not TSX. */
   compiledSource: string;
-  /** Query results, keyed by tool name, resolved BEFORE the screen boots. */
+  /** Query results, keyed by {@link queryKey}, resolved BEFORE the screen boots.
+   *  A read whose input the screen computes is not in here — it arrives through
+   *  {@link ScreenInstance.supply} after the first paint names it. */
   queries: Record<string, unknown>;
   /** The component names the screen may name. */
   catalog: readonly string[];

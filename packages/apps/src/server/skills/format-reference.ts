@@ -42,21 +42,21 @@ export default function Overview() { … }
 
 Those two imports are everything there is. Nothing else can be loaded.
 
-## Data — \`useQuery("tool_name")\`
+## Data — \`useQuery(tool_name, input)\`
 
 - Synchronous, and it hands back the tool's result EXACTLY as the tool returns
   it — read the field names off the tool's own schema.
-- Money in tool data is usually CENTS: \`amount_cents: 2850\` means $28.50. Every
-  money component takes DOLLARS and never converts — divide by 100 where you
-  read it (\`amount_cents / 100\`), or the screen shows $2,850.00.
+- The input is any value you have: a piece of state, something you computed, a
+  field off another query. Read the same tool twice with different inputs where
+  the screen needs two answers.
 
 ## Actions — \`tools.<tool_name>(args)\`
 
 - Inside an event handler only, never during render. \`await\` it when you need
   the result; the host runs the tool and answers.
 - When an awaited call succeeds, every \`useQuery\` on the screen re-runs and the
-  screen re-renders with fresh data on its own — never patch state to mirror
-  what the refresh will bring back.
+  screen re-renders with fresh data, keeping the state it had — never patch state
+  to mirror what the refresh will bring back.
 - Destructive and money-moving calls are confirmed by the product OUTSIDE your
   screen — the guard asks the person before the call runs — so never build a
   confirm step of your own: no "are you sure" panel, no second button, no
@@ -71,9 +71,8 @@ Those two imports are everything there is. Nothing else can be loaded.
 
 ## Components and plain HTML
 
-- Prefer the catalog: a component already carries this product's theme and
-  formatting, and its props are checked — a \`<Money>\` is never mis-grouped, a
-  \`<DateTime>\` never prints "Invalid Date".
+- Prefer the catalog: its components carry this product's theme and formatting,
+  and their props are checked.
 - Beside it you have plain display HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` — used the way you'd use
   it anywhere: headings, prose, lists, and any structure the catalog doesn't
   offer.
@@ -91,7 +90,6 @@ Those two imports are everything there is. Nothing else can be loaded.
 
 - No network, no storage, no timers, no clock: no \`fetch\`, no \`localStorage\`,
   no \`setTimeout\`, no \`new Date()\`. A style that fetches (\`url(…)\`) is dropped.
-- Dates go to the date component as the ISO string you were given.
 - \`key={…}\` on every row you \`.map\`.
 
 ## State — \`useState\`
@@ -100,8 +98,6 @@ Those two imports are everything there is. Nothing else can be loaded.
 - A handler receives a plain \`{ target: { value } }\` — a checkbox,
   \`{ target: { checked } }\`.
 - There is no \`preventDefault\` to call: \`<Form>\` submits itself.
-
-Save errors tell you exactly what to fix. Fix and save again.
 
 ---
 
@@ -126,7 +122,7 @@ export default function PendingTransfers() {
           <Card key={transfer.id} title={transfer.recipient}>
             <Row justify="between" align="center">
               <Stack gap={4}>
-                <Money amount={transfer.amount_cents / 100} />
+                <Money value={transfer.amount_cents / 100} />
                 <DateTime value={transfer.scheduled_for} mode="date" />
               </Stack>
               <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
@@ -139,22 +135,7 @@ export default function PendingTransfers() {
 }
 \`\`\`
 
-Nothing on that screen is typed in: every value is read off the query, every
-number and date is formatted by the component showing it, the empty list says so
-in one honest line, and the one thing that changes the product files its call
-straight from the press — the product does the asking.
-
 ---
-
-## Components
-
-Host components come first when one fits: they are this product's own, already
-branded. Every one of them is named in this product's own brief; open
-\`host/components/<Name>.md\`, relative to the directory you are working in, for
-its full props schema and examples.
-
-Everything below ships with the format and is available in every screen. The prop
-names and types are exact — an unknown prop fails the checks.
 
 `;
 

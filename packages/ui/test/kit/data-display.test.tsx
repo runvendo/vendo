@@ -5,6 +5,7 @@ import { Badge } from "../../src/kit/data/badge.js";
 import { Calendar, type CalendarProps } from "../../src/kit/data/calendar.js";
 import { CardList } from "../../src/kit/data/card-list.js";
 import { Stat } from "../../src/kit/data/stat.js";
+import { Money } from "../../src/kit/values.js";
 
 describe("Stat", () => {
   it("formats a dollar value as money and shows a trend", () => {
@@ -149,20 +150,26 @@ describe("CardList", () => {
     expect(screen.queryByText("status")).toBeNull();
   });
 
-  /** The host's own word for a field, on a card. */
-  it("reads a declared minor-unit field in dollars, and a declared code field in mono", () => {
+  /** A field's `cell` written as a function of the item: the VM called it once
+   *  per item, in `items` order, and the cards paint in that same order — so the
+   *  match is positional, unlike a DataTable's, which sorts. */
+  it("renders a field's cell slot once per item, against that item", () => {
     render(
       <CardList
-        items={[{ id: 1, name: "4192", branch: "feat/timeline-brick", compute_cost: 620 }]}
+        items={items}
         titleField="name"
-        fields={[
-          { key: "compute_cost", label: "Cost", semantic: "money.cents" },
-          { key: "branch", label: "Branch", semantic: "code" },
-        ]}
+        fields={[{
+          key: "balance",
+          label: "Balance",
+          // The ÷100 ran where the item was in scope — what the retired
+          // field-name binding had nowhere to put.
+          cell: items.map((item) => <Money value={item.balance / 100} />),
+        }]}
       />,
     );
-    expect(screen.getByText("$6.20")).toBeTruthy();
-    expect(screen.getByText("feat/timeline-brick").getAttribute("style")).toContain("--vendo-mono-family");
+    expect(screen.getAllByText("Balance")).toHaveLength(2);
+    expect(screen.getByText("$25.00")).toBeTruthy();
+    expect(screen.getByText("$9.00")).toBeTruthy();
   });
 });
 

@@ -179,6 +179,38 @@ const GUARDED = guarded(`document.getElementById("category").addEventListener("c
 const LOCKED = guarded("");
 
 /**
+ * The same shape one turn further: a button correctly locked until a reason is
+ * TYPED.
+ *
+ * `disabled={!reason.trim()}` is the other half of the post-mortem's failing
+ * screens — nothing about it is wrong, and a probe that never typed recorded
+ * `pressed: 0` and failed the action case the screen correctly implements. What
+ * the harness types is its own, obviously, and it rides into the arguments: a
+ * passing trace here says the field is wired to the tool, not decoration.
+ */
+const REQUIRED_TEXT = screen(
+  `<textarea id="category" placeholder="Which category?"></textarea>
+  <button id="go" disabled>Save cap</button>`,
+  `document.getElementById("category").addEventListener("input", function () {
+    document.getElementById("go").disabled = this.value.trim() === "";
+  });
+  document.getElementById("go").addEventListener("click", function () {
+    window.vendo.callTool("set_budget", { category: document.getElementById("category").value, limit_cents: 5000 });
+  });`,
+);
+
+/** The same form with nothing locked. The probe does NOT type here: a screen that
+ *  asks for nothing before it acts is pressed exactly as a hasty person would
+ *  press it, and what an empty box sent is the screen's own doing. */
+const OPEN_FORM = screen(
+  `<textarea id="category" placeholder="Which category?"></textarea>
+  <button id="go">Save cap</button>`,
+  `document.getElementById("go").addEventListener("click", function () {
+    window.vendo.callTool("set_budget", { category: document.getElementById("category").value, limit_cents: 5000 });
+  });`,
+);
+
+/**
  * The whole confirmation chain: the press opens a `[role=dialog]` with a message
  * and whichever controls the case is about, a beat after the click.
  *
@@ -343,17 +375,18 @@ describe("the click probe grades what a browser actually does", () => {
   });
 
   /**
-   * Every species of control, and the choice one of them is guarded behind
-   * (2026-08-17).
+   * Every species of control, and what one of them is guarded behind — a choice
+   * to make (2026-08-17) or a reason to type (2026-08-18).
    *
    * The probe pressed buttons, so it was grading reachability-by-probe rather
    * than wiring: a switch bound to a tool and a button disabled until a select
    * has a value both recorded `pressed: 0`, while the dead always-enabled button
    * above — which calls nothing at all — recorded a press and a verdict. The
-   * screens below are the three shapes that costs, and the one it must NOT buy:
-   * a control that stays locked is still never pressed.
+   * screens below are the shapes that costs, and the two it must NOT buy: a
+   * control that stays locked is still never pressed, and a form the screen never
+   * locked is still pressed as it stands.
    */
-  describe("presses every species, and satisfies the choice one is guarded behind", () => {
+  describe("presses every species, and gives a locked one what it asks for", () => {
     it("presses a switch, grades it by the tool it called, and counts it once", async () => {
       const trace = await traceOf(WIRED_SWITCH);
 
@@ -402,6 +435,35 @@ describe("the click probe grades what a browser actually does", () => {
         },
       ]);
       expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
+    });
+
+    it("types into the field a locked control is waiting for, then presses it", async () => {
+      const trace = await traceOf(REQUIRED_TEXT);
+
+      // The harness's own value, on the trace beside the press it bought and in
+      // the arguments that press sent: whoever reads this cannot mistake it for
+      // data the screen had, and a call carrying it is the wire, proven.
+      expect(trace).toEqual([
+        {
+          label: "Save cap",
+          changed: false,
+          filled: [{ field: "Which category?", value: "probe input" }],
+          calls: [{ name: "set_budget", args: { category: "probe input", limit_cents: 5000 } }],
+        },
+      ]);
+      expect(wiredActions(trace, world, ["action"]).pass).toBe(true);
+    });
+
+    it("types nothing at a form that is not locked, and presses it as it stands", async () => {
+      const trace = await traceOf(OPEN_FORM);
+
+      // Pressed empty, and the empty value is what reached the tool. That is the
+      // honest reading of a screen that guards nothing — the judge grades the
+      // call it really makes — and the trace records no fill because none happened.
+      expect(trace).toEqual([
+        { label: "Save cap", changed: false, calls: [{ name: "set_budget", args: { category: "", limit_cents: 5000 } }] },
+      ]);
+      expect(trace[0]).not.toHaveProperty("filled");
     });
 
     it("leaves a control that stays locked unpressed, rather than failing a careful screen", async () => {

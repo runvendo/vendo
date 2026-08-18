@@ -41,8 +41,9 @@ interface LineChartOwnProps extends KitStyled {
   /** Kit elements shown in place of `emptyState` when there is nothing to plot. */
   empty?: ReactNode;
   /** Kit value components composed for the hovered point, in place of the
-   *  default tooltip; the point rides on `RowContext`. */
-  tooltip?: ReactNode;
+   *  default tooltip. Written as a function of the point, it arrives as ONE
+   *  element per point in `data` order. */
+  tooltip?: ReactNode | readonly ReactNode[];
   /** A series key drawn under the chart. */
   legend?: ReactNode;
 }
@@ -79,7 +80,9 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
             <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
             <Tooltip
               formatter={(v) => fmt(v)}
-              content={tooltip === undefined ? undefined : slotTooltip(tooltip)}
+              // `clean` maps 1:1 over `data`, so it is the per-point slot's own
+              // order — and it holds the objects recharts hands back on hover.
+              content={tooltip === undefined ? undefined : slotTooltip(tooltip, clean)}
               contentStyle={tooltipSurface}
             />
             {cols.map(({ key, label, color, ...seriesEngine }, i) => (

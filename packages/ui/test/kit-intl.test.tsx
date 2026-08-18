@@ -105,7 +105,7 @@ describe("ambient Kit intl", () => {
 
 describe("VendoProvider intl", () => {
   it("installs the host currency before children render", () => {
-    const text = renderInProvider({ currency: "PKR" }, <Money amount={107.68} />);
+    const text = renderInProvider({ currency: "PKR" }, <Money value={107.68} />);
     expect(text).toContain("107.68");
     expect(text).not.toContain("$");
   });
@@ -128,6 +128,6 @@ describe("VendoProvider intl", () => {
   });
 
   it("falls back to USD when the host declares nothing", () => {
-    expect(renderInProvider(undefined, <Money amount={1234.56} />)).toContain("$1,234.56");
+    expect(renderInProvider(undefined, <Money value={1234.56} />)).toContain("$1,234.56");
   });
 });

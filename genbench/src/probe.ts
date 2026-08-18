@@ -53,17 +53,35 @@ const ACTIONABLE = SPECIES.map((species) => `${species}${SHOWN}:not([disabled]):
 const CONTROLS = SPECIES.map((species) => `${species}${SHOWN}`).join(", ");
 
 /**
- * The one precondition the probe satisfies: a choice the screen is ASKING for.
+ * The preconditions the probe satisfies: what the screen is ASKING for before it
+ * will take a press — a choice, and an answer.
  *
  * "Pick an agent, then press Assign" is a correctly built screen, and it was
  * failing — the probe never touched the chooser, so the button stayed disabled,
  * nothing was pressed, and a case that asked the screen to DO something scored
- * zero wired controls. So the chooser gets set. Only a `<select>`, and only to an
- * option the screen itself offers: a value the harness typed would be data no
- * screen claimed, riding into a tool call the judge then grades as the screen's
- * own.
+ * zero wired controls. So the chooser gets set, only to an option the screen
+ * itself offers.
  */
 const CHOICE = "select:not([disabled])";
+
+/**
+ * The same shape one turn further: "type a reason, then press Deny".
+ *
+ * The probe used to type nothing at all, because a value the harness invented is
+ * data no screen claimed, riding into a tool call the judge then grades as the
+ * screen's own. `TYPED` is what resolves that — it is obviously the harness's, it
+ * goes on the trace beside the press it enabled, and a tool call carrying it is
+ * proof the field is wired to the tool rather than decoration. A field the screen
+ * disabled or froze is not a field it is asking for, exactly as with a chooser.
+ */
+const ENTRY = ["input[type=text]", "input:not([type])", "textarea"]
+  .map((field) => `${field}:not([disabled]):not([readonly])`)
+  .join(", ");
+
+/** One fixed string, never a random or a clock-shaped one: two runs of the same
+ *  screen must type the same thing, and what the harness typed has to be
+ *  recognisable as the harness's wherever the trace is read. */
+const TYPED = "probe input";
 
 /** What "switched on" looks like whoever drew the control — `aria-checked` where
  *  the page paints its own toggle, `:checked` where it uses the browser's. */
@@ -101,6 +119,12 @@ export interface Fired {
   readonly args: unknown;
 }
 
+/** One field the HARNESS answered for the screen, and what it put there. */
+export interface Filled {
+  readonly field: string;
+  readonly value: string;
+}
+
 /**
  * One way out of a confirmation, pressed on its own fresh page.
  *
@@ -132,6 +156,11 @@ export interface Probed {
    *  Present exactly when `dialog` is; empty when the dialog had nothing
    *  pressable in it, which is itself the verdict on that dialog. */
   readonly inside?: readonly Path[];
+  /** The fields the harness filled to get this press, and with what. Present
+   *  exactly when it filled any: the screen did not have this data, so every
+   *  reader of the trace — the judge included — is told where it came from before
+   *  it grades a call that carries it. */
+  readonly filled?: readonly Filled[];
   /** The press visibly moved the screen — a dialog opened, a tab switched, a row
    *  was dismissed, a toggle flipped. What tells a control that only changes local
    *  state apart from one that is dead, since neither asks the host for anything. */
@@ -197,15 +226,19 @@ const settle = async (page: Page, before: Look): Promise<void> => {
 };
 
 /**
- * Every chooser on the screen set to its first REAL option, once, in document
- * order.
+ * Everything the screen is asking for, given once, in document order: every
+ * chooser set to its first REAL option, then every empty field answered.
  *
  * Option zero is usually the placeholder — "Assign to…", value `""` — which is
  * the exact state the control was guarded against, so it is skipped. One pass and
  * no second guess: nothing here hunts for the combination that unlocks a screen,
  * because a probe that hunts returns a verdict that depends on how long it hunted.
+ *
+ * What it TYPED comes back, to go on the press it enabled. Only an empty field:
+ * a value already in the box is the screen's own, and typing over it would take
+ * away a default the press should have carried.
  */
-const choose = async (page: Page): Promise<void> => {
+const supply = async (page: Page): Promise<Filled[]> => {
   const choosers = page.locator(CHOICE);
   const many = await choosers.count();
   for (let index = 0; index < many; index += 1) {
@@ -215,13 +248,32 @@ const choose = async (page: Page): Promise<void> => {
       .catch(() => undefined);
     if (option !== undefined) await chooser.selectOption(option, { timeout: CLICK_MS }).catch(() => undefined);
   }
+  // Visible only: a field the screen is not showing is not one it is asking for,
+  // and waiting out the bound on each of them would spend the case's budget.
+  const fields = page.locator(ENTRY).filter({ visible: true });
+  const asked = await fields.count();
+  const filled: Filled[] = [];
+  for (let index = 0; index < asked; index += 1) {
+    const field = fields.nth(index);
+    if ((await field.inputValue().catch(() => TYPED)) !== "") continue;
+    // Filled, then LEFT: `input` is what a keystroke fires and `change` is what
+    // leaving the box fires, and a screen may gate on either one.
+    await field
+      .fill(TYPED, { timeout: CLICK_MS })
+      .then(() => field.blur())
+      .catch(() => undefined);
+    filled.push({ field: await nameOf(field, index), value: TYPED });
+  }
+  return filled;
 };
 
-/** What a control is called, in the words a person reads off it. */
+/** What a control is called, in the words a person reads off it — or, for a box
+ *  with no words of its own, the hint written inside it. */
 const nameOf = async (element: Locator, index: number): Promise<string> => {
   const text = await element.innerText().catch(() => "");
   const aria = await element.getAttribute("aria-label").catch(() => null);
-  return (text || aria || "").trim() || `control ${index + 1}`;
+  const hint = await element.getAttribute("placeholder").catch(() => null);
+  return (text || aria || hint || "").trim() || `control ${index + 1}`;
 };
 
 /**
@@ -302,10 +354,10 @@ export async function probe(visit: Visit): Promise<Probed[]> {
   const trace: Probed[] = [];
   const controls = visit.page.locator(CONTROLS);
   const candidates = await controls.count();
-  // Read once, on the page nobody has touched: with no chooser on the screen there
-  // is no precondition to satisfy, so a locked control is passed over where it
-  // stands instead of costing a reload to learn the same thing.
-  const asks = (await visit.page.locator(CHOICE).count()) > 0;
+  // Read once, on the page nobody has touched: with nothing on the screen to set
+  // or to fill there is no precondition to satisfy, so a locked control is passed
+  // over where it stands instead of costing a reload to learn the same thing.
+  const asks = (await visit.page.locator(`${CHOICE}, ${ENTRY}`).count()) > 0;
   // The shot was taken on a page nobody had touched yet, so the first candidate
   // already has its fresh screen — and a candidate that was passed over left the
   // screen exactly as it found it, so it does not owe the next one a reload.
@@ -318,12 +370,15 @@ export async function probe(visit: Visit): Promise<Probed[]> {
     const live = element.and(visit.page.locator(ACTIONABLE));
     // Whether the screen had to be given what it asked for before this control
     // would take a press — which is half of the walk back to a dialog it opens.
-    let chose = false;
+    let gave = false;
+    // And what of that the harness TYPED, which belongs on this press: it is the
+    // one part of the precondition the screen did not supply itself.
+    let typed: readonly Filled[] = [];
     if ((await live.count()) === 0) {
       if (!asks) continue;
       touched = true;
-      await choose(visit.page);
-      chose = true;
+      typed = await supply(visit.page);
+      gave = true;
       // Still locked after the screen got what it asked for: it is guarding
       // something else, and a screen being careful is not a screen with a dead
       // control. It goes unpressed and ungraded, exactly as it did before.
@@ -335,18 +390,18 @@ export async function probe(visit: Visit): Promise<Probed[]> {
     }
     touched = true;
     const label = await nameOf(element, index);
-    const pressed = await press(visit, element, label);
+    const pressed = { ...(await press(visit, element, label)), ...(typed.length === 0 ? {} : { filled: typed }) };
     if (pressed.dialog === undefined) {
       trace.push(pressed);
       continue;
     }
     // The same walk again, for the next path inside the dialog: the screen from
-    // scratch, the choice it asked for where this control needed one, then this
-    // control. Its result is thrown away — it is how the dialog gets back on the
-    // screen, not a second reading of the press that opened it.
+    // scratch, what it asked for where this control needed it, then this control.
+    // Its result is thrown away — it is how the dialog gets back on the screen,
+    // not a second reading of the press that opened it.
     const reopen = async (): Promise<void> => {
       await visit.reset();
-      if (chose) await choose(visit.page);
+      if (gave) await supply(visit.page);
       await press(visit, element, label);
     };
     trace.push({ ...pressed, inside: await insideDialog(visit, reopen) });

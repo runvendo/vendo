@@ -32,6 +32,7 @@
  * same trick.
  */
 import { TREE_MAX_NODES } from "@vendoai/core";
+import { KIT_PER_ROW_SLOTS } from "../../kit/specs.js";
 import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from "./preact-source.js";
 
 /**
@@ -171,7 +172,9 @@ const ENGINE = `(function () {
   // ── the emitter ───────────────────────────────────────────────────────────
   // One handler id per (structural path, prop name), minted once and kept
   // forever: a re-render that moves a row does not renumber the rows above it,
-  // and a keyed row keeps its handlers even when a row is inserted over it.
+  // and a keyed row keeps its handlers even when a row is inserted over it. A
+  // per-row slot puts the row's index IN that path, which is the whole of how one
+  // slot written once becomes one handler per row (see emitPerRow below).
   var slots = {}, minted = 0, drawer = {};
 
   // A key that would mean the prototype chain rather than data once the host
@@ -212,14 +215,61 @@ const ENGINE = `(function () {
     return out;
   }
 
-  function emitProps(props, slot, depth) {
+  // The Kit's per-row slot law as data (contract/kit/specs.ts KIT_PER_ROW_SLOTS),
+  // onto a bare object so a component NAME can never answer off Object.prototype.
+  var ROW_SLOTS = Object.assign(create(null), ${JSON.stringify(KIT_PER_ROW_SLOTS)});
+
+  // A slot the Kit paints once per row, written as a function of the row: called
+  // HERE, once per row, each call under its OWN slot path — and distinct paths
+  // mint distinct handler ids, which is the whole of what makes a closure over one
+  // row a real closure. What comes out is a list the component matches to its rows.
+  function emitPerRow(fn, rows, slot, depth) {
+    if (!isArray(rows)) return emitValue(fn(rows, 0), slot, depth);
+    var out = [];
+    for (var i = 0; i < rows.length; i++) out.push(emitValue(fn(rows[i], i), slot + "[" + i + "]", depth));
+    return out;
+  }
+
+  // One prop that carries a per-row slot: the slot itself (\`rowActions\`), or a
+  // list of field descriptions each of which may carry one (\`columns[].cell\`).
+  // An ELEMENT written in either place still emits as the element it is.
+  function emitRowProp(value, rows, field, slot, depth) {
+    if (field === undefined) {
+      return typeof value === "function" ? emitPerRow(value, rows, slot, depth) : emitValue(value, slot, depth);
+    }
+    if (!isArray(value)) return emitValue(value, slot, depth);
+    var out = [];
+    for (var i = 0; i < value.length; i++) {
+      var entry = value[i], path = slot + "." + i;
+      if (entry === null || typeof entry !== "object" || typeof entry[field] !== "function") {
+        out.push(emitValue(entry, path, depth + 1));
+        continue;
+      }
+      var described = create(null), fields = keys(entry);
+      for (var at = 0; at < fields.length; at++) {
+        var name = fields[at];
+        if (unsafe(name)) continue;
+        described[name] = name === field
+          ? emitPerRow(entry[name], rows, path + "." + name, depth + 1)
+          : emitValue(entry[name], path + "." + name, depth + 1);
+      }
+      out.push(described);
+    }
+    return out;
+  }
+
+  function emitProps(props, type, slot, depth) {
     var out = create(null);
     if (props === null || typeof props !== "object") return out;
-    var names = keys(props);
+    var rowSlots = ROW_SLOTS[type], names = keys(props);
     for (var at = 0; at < names.length; at++) {
       var key = names[at];
       if (key === "children" || key === "key" || key === "ref" || unsafe(key)) continue;
-      var value = emitValue(props[key], slot + "#" + key, depth);
+      var row = rowSlots === undefined ? undefined : rowSlots[key];
+      var path = slot + "#" + key;
+      var value = row === undefined
+        ? emitValue(props[key], path, depth)
+        : emitRowProp(props[key], props[row.rows], row.field, path, depth);
       if (value !== undefined) out[key] = value;
     }
     return out;
@@ -240,7 +290,7 @@ const ENGINE = `(function () {
     }
     var children = [];
     collect(childrenOf(vnode), children, slot, depth);
-    var node = { component: type, props: emitProps(vnode.props, slot, depth + 1), children: children };
+    var node = { component: type, props: emitProps(vnode.props, type, slot, depth + 1), children: children };
     if (vnode.key != null) node.key = String(vnode.key);
     return node;
   }
@@ -280,6 +330,26 @@ const ENGINE = `(function () {
     }
     if (typeof node === "string") return;
     for (var i = 0; i < node.children.length; i++) measure(node.children[i], depth + 1);
+  }
+
+  // ── the screen's data ─────────────────────────────────────────────────────
+  // Keyed by the tool AND the input, because a screen reads one tool as many
+  // times as it has questions — a detail panel beside a list is two reads of the
+  // same tool. A key nobody has answered yet is a MISS: \`useQuery\` returns
+  // undefined for it, the host runs the read and hands the answer to \`supply\`,
+  // which re-renders THIS root, so the hooks the first paint set up survive.
+  //
+  // The host keys its half the same way — \`queryKey\` in ./types.ts. The two
+  // copies are one law and must agree.
+  var data = create(null), missing = create(null);
+
+  function keyOf(tool, input) { return input === undefined ? tool : tool + " " + stringify(input); }
+
+  function useQuery(tool, input) {
+    var key = keyOf(tool, input);
+    if (key in data) return data[key];
+    missing[key] = { tool: tool, input: input };
+    return undefined;
   }
 
   // ── the driver ────────────────────────────────────────────────────────────
@@ -329,11 +399,31 @@ const ENGINE = `(function () {
       });
     })([]),
 
+    useQuery: useQuery,
+
     mount: function (loaded) {
       component = loaded;
       root = new Node("#root");
       eventPhase = false;
       preact.render(preact.createElement(component, null), root);
+    },
+
+    /** The reads this screen asked for and had no answer to, as JSON. TAKEN, not
+     *  copied: the host answers them and asks again, and a key the host could not
+     *  answer is asked once per round rather than forever. */
+    misses: function () {
+      var out = [], taken = missing;
+      missing = create(null);
+      for (var key in taken) out.push(taken[key]);
+      return stringify(out);
+    },
+
+    /** Answers, keyed the way \`useQuery\` keys its reads, merged in and painted
+     *  into the SAME root — a re-render, never a re-boot, so useState survives. */
+    supply: function (json) {
+      var got = JSON.parse(json);
+      for (var key in got) data[key] = got[key];
+      if (root !== null) preact.render(preact.createElement(component, null), root);
     },
 
     fire: function (id, event) {
@@ -477,17 +567,9 @@ export interface InstallInput {
  */
 export function installSource(input: InstallInput): string {
   return `(function () {
-  var queries = JSON.parse(${JSON.stringify(JSON.stringify(input.queries))});
   var names = JSON.parse(${JSON.stringify(JSON.stringify(input.catalog))});
-  var screen = {
-    useQuery: function (tool) {
-      if (!Object.prototype.hasOwnProperty.call(queries, tool)) {
-        throw new Error('useQuery("' + tool + '") — this screen declared no such query; it has ' + (Object.keys(queries).join(", ") || "none"));
-      }
-      return queries[tool];
-    },
-    tools: __vendo.tools,
-  };
+  __vendo.supply(${JSON.stringify(JSON.stringify(input.queries))});
+  var screen = { useQuery: __vendo.useQuery, tools: __vendo.tools };
   for (var i = 0; i < names.length; i++) screen[names[i]] = names[i];
   // The last module the space will ever hold. Frozen, and named nowhere the
   // screen's own code can reach, before that code runs.
@@ -504,7 +586,7 @@ ${input.compiledSource}
   if (typeof loaded !== "function") {
     throw new Error("this screen exports no component — a screen is one default-exported React component");
   }
-  __vendo.mount(loaded, queries);
+  __vendo.mount(loaded);
 })();
 0`;
 }

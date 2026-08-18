@@ -63,12 +63,12 @@ describe("screenTypings", () => {
     // test below. `amount` is optional since the cell slots landed: a value
     // component inside a cell takes its value from `field`, so a required
     // `amount` would make the slot the catalog teaches unwritable.
-    expect(dts).toContain("declare const Money: (props: { amount?: number | VendoBinding; currency?: string | VendoBinding;");
+    expect(dts).toContain("declare const Money: (props: { value?: number | VendoBinding; currency?: string | VendoBinding;");
     // Required is still required where it is load-bearing — a table with no rows
     // is nothing at all, and that is what pins the marker itself.
     expect(dts).toContain("declare const DataTable: (props: { rows: Array<Record<string, any>> | VendoBinding;");
     // Stat.format is an enum — the literal union is what makes format=\"huge\" a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text"');
+    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text"');
     // A cell slot holds an ELEMENT, which no schema describes. A STORED
     // document's is a serialized one, so the wire's slot stays permissive — the
     // alias, not a shape — and without that the catalog's own DataTable example
@@ -96,7 +96,7 @@ describe("screenTypings", () => {
     // since the cell slots landed, where `field` supplies it instead).
     expect(dts).toContain("text?: string | number | VendoBinding");
     // An enum slot keeps its literal union — format="huge" is still a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text" | "code" | VendoBinding');
+    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | "code" | VendoBinding');
   });
 
   it("types host components from their derived JSON Schema", () => {

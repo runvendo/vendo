@@ -2,7 +2,6 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { RowContext } from "../../src/kit/row.js";
 import { sanitizeSeries, sanitizeNumbers } from "../../src/kit/charts/sanitize.js";
 import { BarChart } from "../../src/kit/charts/bar.js";
 import { LineChart } from "../../src/kit/charts/line.js";
@@ -189,29 +188,6 @@ describe("Sparkline tone", () => {
     } finally {
       restore();
     }
-  });
-});
-
-describe("charts in a cell slot", () => {
-  it("Sparkline plots the row's series instead of its own prop", () => {
-    const { container } = render(
-      <RowContext.Provider value={{ history: [1, 5, 3] }}>
-        <Sparkline data={[]} field="history" emptyState="nothing" />
-      </RowContext.Provider>,
-    );
-    expect(container.querySelector('div[data-kit="Sparkline"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("nothing");
-  });
-
-  it("Progress reads the row's value, and its own outside a row", () => {
-    render(
-      <RowContext.Provider value={{ used: 0.25 }}>
-        <Progress value={0.9} field="used" showValue />
-      </RowContext.Provider>,
-    );
-    expect(screen.getByText("25%")).toBeTruthy();
-    render(<Progress value={0.9} field="used" showValue />);
-    expect(screen.getByText("90%")).toBeTruthy();
   });
 });
 

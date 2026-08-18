@@ -55,9 +55,13 @@ export interface KitSlotSpec {
   /** Component names the slot may hold; absent means the read-only value tier
    *  (`KIT_SLOT_CONTENT_NAMES`). */
   content?: readonly string[];
-  /** Painted once per row/entry rather than once for the component — so what
-   *  is written in it has no row of its own to act on. */
+  /** Painted once per row/entry rather than once for the component — so it may
+   *  be written as a FUNCTION of the row, and the screen VM calls it once per
+   *  row (`KIT_PER_ROW_SLOTS`). */
   perRow?: boolean;
+  /** The prop holding the rows a `perRow` slot is painted once for. Required on
+   *  one — it is what the VM maps the slot's function over. */
+  rows?: string;
   /** The PROP whose description objects carry this slot as a field, so the slot
    *  lives at `<at>[].<name>` (`columns[].cell`). Absent means the slot is a
    *  prop of its own (`marker`).

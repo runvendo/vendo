@@ -9,13 +9,12 @@
  * `@vendoai/ui`'s `KIT_COMPONENTS`, keyed by these names (a ui drift test
  * pins the two in step).
  */
-import { SEMANTIC_TOKENS } from "@vendoai/core";
 import { z } from "zod";
 import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropClass, type PropSpec } from "./schema.js";
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
-const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "duration", "text", "code"]);
+const valueFormat = z.enum(["money", "date", "datetime", "time", "number", "duration", "text", "code"]);
 const align = z.enum(["start", "center", "end"]);
 /** A series descriptor stays OPEN: what is written beside `key`, `label` and
  *  `color` is passed to that one series' engine element, so per-line colors are a
@@ -36,7 +35,7 @@ export const SLOT_PROP_DESCRIPTION = "holds Kit elements";
 export const ACTION_PROP_DESCRIPTION = "names a host tool";
 
 /**
- * A CELL SLOT — Kit value components composed for one record.
+ * A SLOT — Kit elements written where a value would otherwise go.
  *
  * `z.unknown()` for the same reason `Accordion.items[].content` is: a slot
  * holds an ELEMENT, and no schema describes one. A slot is written in a screen's
@@ -44,16 +43,15 @@ export const ACTION_PROP_DESCRIPTION = "names a host tool";
  * exactly like it, being optional is what keeps its component teachable at all
  * (`KIT_NON_SCREEN_NAMES`).
  *
- * NOT a function. `(row) => <EnumBadge/>` looks like the React answer and is the
- * one thing that cannot work: the screen VM serializes a function prop as a
- * `$handler` callback (`genui/component/vm-program.ts` `emitValue`), so the
- * table would be handed an async door, not something it may call while it
- * paints. An element serializes; a closure does not.
+ * A slot the Kit paints once PER ROW may also be written as a FUNCTION of the
+ * row — `cell: (row) => <Money value={row.amount / 100}/>` — which is the
+ * natural React form and now the recommended one: the screen VM calls it once
+ * for each row and hands the Kit that row's own element, with that row's own
+ * handlers ({@link KIT_PER_ROW_SLOTS}).
  *
  * The DESCRIPTION is the marker a slot is known by: `z.unknown()` prints as
- * `any` and `any` admitted exactly that function, so the component screen's
- * typings print a described slot as an element type instead and the compiler
- * refuses the closure ({@link SLOT_PROP_DESCRIPTION}).
+ * `any`, which types nothing at all, so the component screen's typings print a
+ * described slot as an element type instead ({@link SLOT_PROP_DESCRIPTION}).
  */
 const slot = z.unknown().describe(SLOT_PROP_DESCRIPTION);
 /**
@@ -66,18 +64,6 @@ const slot = z.unknown().describe(SLOT_PROP_DESCRIPTION);
  * be wrong about, and the components normalize it at their own boundary
  * (`ui` kit/row.ts `fieldItems`).
  */
-/**
- * What the HOST says a field IS, in the host's own words: the token its tool's
- * shape card prints beside the field (`compute_cost: number:money.cents`).
- *
- * Copied across, never derived. The two cases that matter are the two nothing
- * else can reach: `compute_cost` is minor units though its name never says so,
- * and `feat/timeline-brick` is a ref though it is a plain string by every
- * structural test. The vocabulary is core's own (`SEMANTIC_TOKENS`), printed by
- * the same function that writes the card, so what a writer is shown is exactly
- * what a field accepts.
- */
-const semantic = z.enum(SEMANTIC_TOKENS);
 const tableColumn = z.union([z.string(), z.object({
   /** Optional, because an ACTION column has no field: giving it a fake key
    *  makes its header click-to-sort and its values globally searchable, on data
@@ -85,7 +71,6 @@ const tableColumn = z.union([z.string(), z.object({
   key: z.string().optional(),
   label: z.string().optional(),
   format: valueFormat.optional(),
-  semantic: semantic.optional(),
   align: align.optional(),
   cell: slot.optional(),
 })]);
@@ -93,7 +78,6 @@ const cardField = z.union([z.string(), z.object({
   key: z.string(),
   label: z.string().optional(),
   format: valueFormat.optional(),
-  semantic: semantic.optional(),
   cell: slot.optional(),
 })]);
 const action = z.string().describe(ACTION_PROP_DESCRIPTION);
@@ -102,19 +86,44 @@ const action = z.string().describe(ACTION_PROP_DESCRIPTION);
 const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.enum(["default", "info"]));
 const density = z.enum(["comfortable", "compact"]);
 
+/** One glyph, pill or word beside something else — what a MARK slot may hold. */
+const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"];
+
+/** The help line under a form control. A shared adjective AND a slot, because it
+ *  takes either a word or Kit marks. */
+const hint: KitSlotSpec = { doc: "the help line under the field, as elements instead of text", content: mark };
+
+/** Every form control that takes a label, so the three field adjectives below
+ *  land on all of them at once rather than on the four somebody remembered. */
+const CONTROLS: readonly string[] = [
+  "Input", "Textarea", "Select", "Combobox", "DatePicker", "DateRange",
+  "Checkbox", "Switch", "Radio", "Slider", "SegmentedControl",
+];
+
 /**
  * THE ADJECTIVES — the props many components share, taught once in the prompt's
  * preamble rather than restated 31 times. Each carries the components that
  * actually READ it: on any other, the prop would validate and then be dropped
  * at render — the "valid component, nothing happens" class this floor refuses.
- * They resolve to theme tokens (`tone` the palette, `density` the host's own
- * spacing ladder) or, for `field`, to the row a cell slot is painted for.
+ *
+ * The three field adjectives are here for the mirror of that reason. Every
+ * control below IMPLEMENTS `disabled`, and most of them `hint`, and none of them
+ * declared it — so a screen that greyed out a control while its tool was in
+ * flight wrote a prop no spec admitted and no prompt taught. A prop the Kit
+ * paints and the specs hide is the same silent breakage read backwards.
  */
-const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly string[] }> = [
+const SHARED_PROPS: ReadonlyArray<{
+  name: string;
+  spec: PropSpec;
+  on: readonly string[];
+  /** Set where the shared prop holds ELEMENTS, so it lands in the slot table of
+   *  every component that takes it rather than the three somebody listed. */
+  slot?: KitSlotSpec;
+}> = [
   {
     name: "tone",
     spec: config(tone, "emphasis — neutral | accent | success | warning | danger"),
-    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
   },
   {
     name: "density",
@@ -122,9 +131,20 @@ const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly s
     on: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
   },
   {
-    name: "field",
-    spec: config(z.string(), "inside a cell slot: the row field this component reads"),
-    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress"],
+    name: "disabled",
+    spec: config(z.boolean(), "greys the control out and stops it answering — how a control says 'not yet' instead of failing silently"),
+    on: [...CONTROLS, "Button", "Form"],
+  },
+  {
+    name: "required",
+    spec: config(z.boolean(), "the form will not submit without it"),
+    on: ["Input", "Textarea", "Select", "DatePicker"],
+  },
+  {
+    name: "hint",
+    spec: copy(slot, "the help line under the field — a word, or Kit marks"),
+    on: CONTROLS.filter((name) => name !== "SegmentedControl"),
+    slot: hint,
   },
 ];
 
@@ -181,6 +201,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       gap: config(z.number(), "pixels between children"),
       align: config(z.enum(["start", "center", "end", "stretch"]), "cross-axis alignment"),
       justify: config(z.enum(["start", "center", "end", "between"]), "main-axis distribution"),
+      wrap: config(z.boolean(), "false keeps the row on ONE line, whatever it costs in width"),
     },
     examples: ["<Row justify=\"between\"><Text .../><Button .../></Row>"],
   },
@@ -260,10 +281,10 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "An amount shown as currency. It expects DOLLARS and never converts — tool data is usually cents, so divide where you read it: `amount_cents / 100`. Hand it 2850 un-divided and the screen shows $2,850.00, not $28.50.",
     props: {
-      amount: data(z.number(), "the amount in dollars (major units)"),
+      value: data(z.number(), "the amount in dollars (major units)"),
       currency: config(z.string(), "ISO 4217 code, default USD"),
     },
-    examples: ["<Money amount={invoices.total({}).amountCents / 100}/>"],
+    examples: ["<Money value={invoices.total({}).amountCents / 100}/>"],
   },
   {
     name: "DateTime",
@@ -276,6 +297,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       // A clock has none to drop and `relative` counts from now, so on `time`
       // and `relative` it is inert rather than wrong.
       compact: config(z.boolean(), 'drop the year: "Aug 7" instead of "Aug 7, 2026" (date and datetime)'),
+      timeZone: config(z.string(), 'an IANA zone the stamp is read in — "America/New_York"; default is wherever the person is'),
     },
     examples: [
       '<DateTime value={invoice.dueDate} mode="date"/>',
@@ -286,13 +308,12 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Percent",
     group: "values",
-    summary: "A percentage from a ratio (0.42 → 42%). Pass whole=true for an already-whole percent.",
+    summary: "A percentage. It renders the number it is given and converts NOTHING — 46.1 is \"46.1%\", which is what a host `*_pct` field already holds. A 0..1 ratio is `* 100` where you prepare the data. Decimals show only where the number has them, up to two; `fractionDigits` pins them.",
     props: {
-      value: data(z.number(), "a ratio 0..1"),
-      fractionDigits: config(z.number().int().nonnegative(), "decimal places"),
-      whole: config(z.boolean(), "value is already a whole percent"),
+      value: data(z.number(), "the percentage itself, on a 0-100 scale — never a 0..1 ratio"),
+      fractionDigits: config(z.number().int().nonnegative(), "decimal places — pin them, rather than letting the figure choose"),
     },
-    examples: ["<Percent value={goal.progressRatio}/>"],
+    examples: ["<Percent value={goal.progress_pct}/>", "<Percent value={goal.progressRatio * 100}/>"],
   },
   {
     name: "Num",
@@ -339,11 +360,11 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DataTable",
     group: "data",
-    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys, and formats each cell — you only pass rows and columns. A column's `cell` slot renders Kit value components against that row instead of plain text. Or paint the rows yourself: pass one <TableRow> per record as CHILDREN, in `rows` order, and its children are that row's cells. Do that whenever a cell needs arithmetic a field binding cannot do — a cents column is `<Money amount={row.amount_cents / 100}/>` — or a per-row control. `rows` and `columns` are still required either way: they drive the headers, the sorting, the filtering and the search. Dates in cells are compact (\"Aug 12\"), and columns past the width the screen has FOLD into the first cell rather than scrolling out of sight — prefer few, richer columns. A column's header text is `label`; there is no `header` prop. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
+    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys and formats each cell — you pass rows and columns. A column's `cell` is a function of the row, so any arithmetic or composition a cell needs belongs there; a per-row CONTROL goes in `rowActions`, which is a function of the row too. Dates in cells are compact (\"Aug 12\"), and columns past the screen's width FOLD into the first cell rather than scrolling out of sight — prefer few, rich columns. A column's header text is `label`, not `header`. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
     takesChildren: true,
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key supports dot-paths like client.name; format is a value tier token; semantic is the host's own token for the field; cell is a slot; key is optional on an action column"),
+      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key supports dot-paths like client.name; format is a value tier token; cell is a (row) => elements slot; key is optional on an action column"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
@@ -356,17 +377,17 @@ const BASE_SPECS: KitComponentSpec[] = [
       rowActions: config(slot, "the controls at the end of every row"),
     },
     examples: [
-      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:(row) => <Stack gap={2}><Text text={row.client.name}/><Text text={row.number} variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger",paid:"success"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>} emptyState="No overdue invoices"/>',
     ],
   },
   {
     name: "TableRow",
     group: "data",
-    summary: "ONE <DataTable> row you paint yourself. Only valid as a child of <DataTable>, one per record in `rows` order. Its children ARE its cells, one per column, in column order — several components in one cell go in a <Stack>. This is the row that can do arithmetic and hold a control, which a `cell` slot cannot.",
+    summary: "ONE <DataTable> row you paint yourself. Only valid as a child of <DataTable>, one per record in `rows` order. Its children ARE its cells, one per column, in column order — several components in one cell go in a <Stack>. Reach for it when a whole row is bespoke; one column that is, is a `cell` function.",
     takesChildren: true,
     props: {},
     examples: [
-      '<TableRow key={a.id}><Text text={a.name}/><Money amount={a.balance_cents / 100}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>',
+      '<TableRow key={a.id}><Text text={a.name}/><Money value={a.balance_cents / 100}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>',
     ],
   },
   {
@@ -434,7 +455,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       dividers: config(z.boolean(), "hairline rule between rows"),
     },
     examples: [
-      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"},{key:"status",cell:<EnumBadge field="status"/>}]} dividers/>',
+      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"},{key:"status",cell:(record) => <EnumBadge value={record.status}/>}]} dividers/>',
     ],
   },
   {
@@ -464,7 +485,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       size: config(z.enum(["sm", "md", "lg"]), "disc size, default md"),
     },
     examples: [
-      '<Row gap={6} align="center"><Avatar name={client.name}/><Text field="name"/></Row>',
+      '<Row gap={6} align="center"><Avatar name={client.name}/><Text text={client.name}/></Row>',
     ],
   },
   {
@@ -541,6 +562,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       data: data(z.array(z.union([z.number(), z.record(z.string(), z.unknown())])), "numbers or rows"),
       valueKey: config(z.string(), "field to read when data holds objects"),
       height: config(z.number().int().positive(), "height in px"),
+      emptyState: copy(z.string(), "text when there are fewer than two points to draw; default is a dash"),
     },
     examples: ["<Sparkline data={account.balanceHistory}/>"],
   },
@@ -567,7 +589,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: config(z.string(), "the current value (controlled)"),
       placeholder: copy(z.string(), "placeholder text"),
       type: config(z.enum(["text", "email", "number", "password", "search", "tel", "url"]), "input type"),
-      hint: copy(slot, "the help line under the field"),
+      error: copy(z.string(), "what is wrong with what was typed — the border turns danger and this replaces the hint"),
       prefix: config(slot, "a unit or glyph inside the field, before the text"),
       suffix: config(slot, "a unit or glyph inside the field, after the text"),
       onChange: config(action, "called on change"),
@@ -603,7 +625,6 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: config(z.string(), "the current ISO date (controlled)"),
       min: config(z.string(), "earliest date"),
       max: config(z.string(), "latest date"),
-      hint: copy(slot, "the help line under the field"),
       onChange: config(action, "called on change"),
     },
     examples: ['<DatePicker label="Due date"/>'],
@@ -617,7 +638,6 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: config(z.string(), "the current value (controlled)"),
       placeholder: copy(z.string(), "placeholder text"),
       rows: config(z.number().int().positive(), "visible rows"),
-      hint: copy(slot, "the help line under the field"),
       footer: config(slot, "a row under the box — a counter, a hint action"),
       onChange: config(action, "called on change"),
     },
@@ -730,7 +750,6 @@ const BASE_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "button text", { required: true }),
       onClick: config(action, "called on click; call a tool in it"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
-      disabled: config(z.boolean(), "disabled state"),
     },
     examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
   },
@@ -758,7 +777,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       actions: config(slot, "buttons beside the submit"),
       footer: config(slot, "fine print under the actions"),
     },
-    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
+    examples: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client"><Input label="Name" value={name} onChange={(e) => setName(e.target.value)}/></Form>'],
   },
   {
     name: "Disclaimer",
@@ -817,6 +836,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       items: config(z.array(z.object({ label: z.string(), content: slot })), "sections", { required: true }),
       multiple: config(z.boolean(), "allow several open at once"),
+      defaultOpen: config(z.array(z.number().int().nonnegative()), "which sections start open, by position"),
     },
     examples: ["<Accordion items={[{label:\"Terms\",content:<Text .../>}]}/>"],
   },
@@ -898,7 +918,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       header: config(slot, "elements beside the title"),
       footer: config(slot, "the buttons under the content"),
     },
-    examples: ['<Modal open={$state.confirming} onClose="ui.cancel" title="Send reminders?" description="Three clients will be emailed."><Button label="Send" onClick="invoices.sendReminders"/></Modal>'],
+    examples: ['<Modal open={confirming} onClose={() => setConfirming(false)} title="Send reminders?" description="Three clients will be emailed."><Button label="Send" onClick={() => tools.send_reminders({})}/></Modal>'],
   },
   {
     name: "Sheet",
@@ -916,7 +936,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       header: config(slot, "elements beside the title"),
       footer: config(slot, "the buttons under the content"),
     },
-    examples: ['<Sheet open={$state.viewing} onClose="ui.closeDetail" title="Invoice INV-204" side="right"><KeyValue pairs={invoices.get({id:$state.viewing}).data}/></Sheet>'],
+    examples: ['<Sheet open={viewing !== null} onClose={() => setViewing(null)} title="Invoice INV-204" side="right"><KeyValue record={invoice}/></Sheet>'],
   },
   {
     name: "Toast",
@@ -928,7 +948,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       message: copy(z.string(), "the one line to show", { required: true }),
       duration: config(z.number().int().positive(), "ms on screen before it leaves, default 5000"),
     },
-    examples: ['<Toast open={$state.sent} onClose="ui.clearSent" message="Reminders sent." tone="success"/>'],
+    examples: ['<Toast open={sent} onClose={() => setSent(false)} message="Reminders sent." tone="success"/>'],
   },
 ];
 
@@ -950,13 +970,11 @@ const BASE_SPECS: KitComponentSpec[] = [
  * move together at every merge.
  *
  * Vocabulary: no `content` means the read-only value tier
- * (`KIT_SLOT_CONTENT_NAMES`) — right for a slot painted per row, which is
- * written ONCE for every row and so has no row of its own to act on. A REGION
- * is a place, and holds whatever the Kit holds; a MARK is one glyph, pill or
- * word beside something else.
+ * (`KIT_SLOT_CONTENT_NAMES`) — right for a slot that SHOWS its row rather than
+ * acting on it. A REGION is a place, and holds whatever the Kit holds; a MARK is
+ * one glyph, pill or word beside something else.
  */
 const region: readonly string[] = BASE_SPECS.map((spec) => spec.name);
-const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"];
 
 /** The two a container draws, written once: every one of them sits beside a
  *  title and under the content, so restating the pair six times would be six
@@ -966,11 +984,9 @@ const footer: KitSlotSpec = { doc: "the buttons under the content", content: reg
 /** What a container paints in place of its `emptyState` TEXT — an EmptyState
  *  with the action that fixes it, where a sentence used to be. */
 const empty = (nothing: string): KitSlotSpec => ({ doc: `what to show in place of emptyState when there are no ${nothing}`, content: region });
-/** A chart's hovered point, on the cell contract: written ONCE and painted for
- *  whichever point is under the pointer, which is why it takes the read tier. */
-const tooltip: KitSlotSpec = { doc: "Kit value components composed for the hovered point, in place of the default tooltip", perRow: true };
-/** The help line under a form control. */
-const hint: KitSlotSpec = { doc: "the help line under the field, as elements instead of text", content: mark };
+/** A chart's hovered point, on the cell contract: written once PER POINT and
+ *  painted for whichever one is under the pointer. */
+const tooltip: KitSlotSpec = { doc: "Kit value components composed for the hovered point, in place of the default tooltip — write it as (point) => elements", perRow: true, rows: "data" };
 
 const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   // No `at` on any of these pairs: a container reads its header and footer as
@@ -979,21 +995,21 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   Card: { header, footer },
   Divider: { label: { doc: "a word centred in the rule", content: mark } },
   DataTable: {
-    cell: { doc: "Kit value components composed for ONE row, in place of the column's plain text", perRow: true, at: "columns" },
-    // The one per-row slot that may be OPERATED: it is written for the row it
-    // sits on, so it has a row to act on — the thing a `cell` has not got.
-    rowActions: { doc: "the controls at the end of EVERY row, acting on that row", perRow: true, content: ["Button", "Icon", "Row"] },
+    cell: { doc: "ONE row's cell, in place of the column's plain text — write it as (row) => elements", perRow: true, rows: "rows", at: "columns" },
+    // Per-row and OPERABLE: written as a function of the row, so what it paints
+    // has that row to act on and each row's control is its own.
+    rowActions: { doc: "the controls at the end of EVERY row, acting on that row — write it as (row) => elements", perRow: true, rows: "rows", content: ["Button", "Icon", "Row"] },
     toolbar: { doc: "elements in the controls row, beside the search and the filters", content: region },
     empty: empty("rows"),
   },
   CardList: {
-    cell: { doc: "Kit value components composed for ONE item, in place of the field's plain text", perRow: true, at: "fields" },
+    cell: { doc: "ONE item's value, in place of the field's plain text — write it as (item) => elements", perRow: true, rows: "items", at: "fields" },
     actions: { doc: "the buttons above the cards", content: region },
     empty: empty("items"),
   },
-  KeyValue: { cell: { doc: "Kit value components composed for the record, in place of the field's plain text", perRow: true, at: "items" } },
+  KeyValue: { cell: { doc: "one field's value, in place of its plain text — write it as (record) => elements", perRow: true, rows: "record", at: "items" } },
   Timeline: {
-    cell: { doc: "Kit components rendered as ONE entry's body", perRow: true },
+    cell: { doc: "ONE entry's body — write it as (entry) => elements", perRow: true, rows: "entries" },
     marker: { doc: "a glyph drawn in place of the entry's dot", content: mark },
     empty: empty("entries"),
   },
@@ -1002,13 +1018,13 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   BarChart: { tooltip, legend: { doc: "a series key drawn under the chart", content: region }, empty: empty("bars to plot") },
   DonutChart: { tooltip, legend: { doc: "false hides the built-in key under the ring; an element replaces it", content: region }, empty: empty("slices to plot") },
   Progress: { label: { doc: "the caption over the bar, as elements instead of text", content: mark } },
+  // No `hint` on any of these: it is a shared adjective now, so it lands on every
+  // control that takes one (`SHARED_PROPS`) rather than the three listed here.
   Input: {
-    hint,
     prefix: { doc: "a unit or glyph inside the field, before the text", content: mark },
     suffix: { doc: "a unit or glyph inside the field, after the text", content: mark },
   },
-  DatePicker: { hint },
-  Textarea: { hint, footer: { doc: "a row under the box — a counter, a hint action", content: region } },
+  Textarea: { footer: { doc: "a row under the box — a counter, a hint action", content: region } },
   Form: {
     header: { doc: "elements above the fields", content: region },
     actions: { doc: "buttons beside the submit — a cancel, a secondary", content: region },
@@ -1040,18 +1056,54 @@ export const kitSlotPath = (name: string, slot: KitSlotSpec): string =>
  *  it — so validation, the wire's allowed-prop set and the screen typings admit
  *  it exactly where it lands, and refuse it where it would be dropped — and its
  *  slots, which the same consumers read. */
-export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => ({
-  ...spec,
-  engine: ENGINES[spec.name],
-  slots: SLOTS[spec.name],
-  props: {
-    ...spec.props,
-    [STYLE_PROP]: style,
-    ...Object.fromEntries(SHARED_PROPS
-      .filter(({ on }) => on.includes(spec.name))
-      .map(({ name, spec: prop }) => [name, prop])),
-  },
-}));
+export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => {
+  const shared = SHARED_PROPS.filter(({ on }) => on.includes(spec.name));
+  const slots = { ...SLOTS[spec.name] };
+  for (const adjective of shared) if (adjective.slot !== undefined) slots[adjective.name] = adjective.slot;
+  return {
+    ...spec,
+    engine: ENGINES[spec.name],
+    ...(Object.keys(slots).length === 0 ? {} : { slots }),
+    props: {
+      ...spec.props,
+      [STYLE_PROP]: style,
+      ...Object.fromEntries(shared.map(({ name, spec: prop }) => [name, prop])),
+    },
+  };
+});
+
+/**
+ * WHERE A SLOT MAY BE WRITTEN AS A FUNCTION OF THE ROW — the screen VM's copy of
+ * the `perRow` law, keyed by the prop that ARRIVES.
+ *
+ * `cell={(row) => <Money value={row.amount / 100}/>}` is the natural React form,
+ * and the one the Kit could not paint: a function prop crosses the VM boundary as
+ * a `$handler` door, so the column came out blank. Now the VM calls it once per
+ * row and hands over a LIST of elements — which is why the rows have to be
+ * reachable from the same props object, and why each entry says which prop holds
+ * them.
+ *
+ * Two shapes, because a slot is either a prop of its own (`rowActions`) or a
+ * field of the description objects one prop holds (`columns[].cell`) — the same
+ * distinction `at` draws, read from the arriving prop's end.
+ */
+export interface KitRowSlot {
+  /** The prop holding the rows the slot is painted once for. */
+  rows: string;
+  /** The field of each description object that IS the slot, when the arriving
+   *  prop is a list of descriptions rather than the slot itself. */
+  field?: string;
+}
+
+export const KIT_PER_ROW_SLOTS: Readonly<Record<string, Readonly<Record<string, KitRowSlot>>>> =
+  Object.fromEntries(Object.entries(SLOTS).flatMap(([component, slots]) => {
+    const found: Array<[string, KitRowSlot]> = [];
+    for (const [name, spec] of Object.entries(slots)) {
+      if (spec.perRow !== true || spec.rows === undefined) continue;
+      found.push(spec.at === undefined ? [name, { rows: spec.rows }] : [spec.at, { rows: spec.rows, field: name }]);
+    }
+    return found.length === 0 ? [] : [[component, Object.fromEntries(found)]];
+  }));
 
 /**
  * THE component vocabulary — one list, derived from the specs, and the single
@@ -1074,9 +1126,9 @@ export const KIT_CHILDLESS_NAMES: readonly string[] = KIT_SPECS
   .map((spec) => spec.name);
 
 /** What a slot that declares no vocabulary of its own may hold: the value tier,
- *  plus the two arrangers. It is the tier every PER-ROW slot keeps — a cell is
- *  read, never operated, and an interactive control in one has no row to act on
- *  and no room to be pressed. */
+ *  plus the two arrangers. It is the tier a per-row CELL keeps: a cell shows its
+ *  row, and a control in one has no room to be pressed — `rowActions` is the
+ *  per-row slot that operates, and it declares its own narrower vocabulary. */
 export const KIT_SLOT_CONTENT_NAMES: readonly string[] = [
   "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress",
   "Stack", "Row",

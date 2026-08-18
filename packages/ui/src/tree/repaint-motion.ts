@@ -73,7 +73,6 @@ const NUMERIC_LEAVES: Record<string, (props: Record<string, Json>) => NumericTic
   }),
   Percent: (props) => (value) => formatPercent(value, {
     ...(typeof props.fractionDigits === "number" ? { fractionDigits: props.fractionDigits } : {}),
-    ...(props.whole === true ? { whole: true } : {}),
   }),
   Stat: (props) => (value) => applyFormat(value, (props.format ?? "text") as ValueFormat),
 };
@@ -81,7 +80,7 @@ const NUMERIC_LEAVES: Record<string, (props: Record<string, Json>) => NumericTic
 /** The numeric prop of a Kit numeric leaf, when it holds a finite number. */
 const numericValue = (node: TreeNode): number | undefined => {
   if (!(node.component in NUMERIC_LEAVES)) return undefined;
-  const raw = node.component === "Money" ? node.props?.amount : node.props?.value;
+  const raw = node.props?.value;
   return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
 };
 

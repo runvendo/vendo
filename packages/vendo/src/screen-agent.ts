@@ -61,6 +61,7 @@ import {
   UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
 import {
+  queryKey,
   renderBriefingPack,
   type BriefingPack,
   type Finding,
@@ -417,120 +418,6 @@ const editPlan = (
 };
 
 /**
- * The one refusal this gate repairs itself, and the sentence it reads to do it.
- *
- * A function written into an element slot (`cell: (row) => <Money …/>`) is the
- * class this loop hits most, and the checker has already computed the exact line
- * that fixes it off the AST — `cell={<Text field="amount"/>}`
- * (`screen-typecheck.ts`'s slot branch). Handing that back as prose bought a
- * whole rewrite of a screen the person was already looking at, twice in a row for
- * the same error, so the gate writes it instead of asking for it. Only this class:
- * the element is the checker's own bytes, and anything it did not spell out is a
- * repair this file would be inventing.
- */
-const SLOT_FUNCTION = /^line (\d+): .*: (\w+)=\{(<Text field="[^"]+"\/>)\}\.$/u;
-
-/** Where the value starting at `from` ends: the first comma or unmatched closer
- *  outside any bracket. A brace inside a string literal defeats this scan — which
- *  is exactly why the fixed bytes go back through the gauntlet rather than being
- *  trusted. */
-const valueEnd = (line: string, from: number): number => {
-  let depth = 0;
-  for (let at = from; at < line.length; at += 1) {
-    const char = line[at] as string;
-    if ("([{".includes(char)) depth += 1;
-    else if (")]}".includes(char)) {
-      if (depth === 0) return at;
-      depth -= 1;
-    } else if (char === "," && depth === 0) return at;
-  }
-  return line.length;
-};
-
-/** The screen module's import list, which the element the fix writes has to be in. */
-const SCREEN_IMPORT = /import\s*\{([^}]*)\}\s*from\s*"@vendo\/screen"/u;
-
-/**
- * The document with every flagged slot function replaced by the element the
- * checker printed for it, and the sentences that say what changed.
- *
- * Nothing, unless EVERY refusal is one this gate can spell: a partial repair buys
- * a second run of the whole gauntlet only to be refused again. The syntax around
- * the element is this file's, because the slot is an object property (`cell: …`)
- * while the checker's sentence is written in attribute form — the ELEMENT is
- * verbatim, and it is the only part a wrong guess could invent.
- */
-const slotFunctionFixes = (
-  document: string,
-  blocking: readonly string[],
-): { content: string; changed: string[] } | undefined => {
-  if (blocking.length === 0) return undefined;
-  const lines = document.split("\n");
-  const changed: string[] = [];
-  for (const refusal of blocking) {
-    const found = SLOT_FUNCTION.exec(refusal);
-    if (found === null) return undefined;
-    const at = Number(found[1]) - 1;
-    const line = lines[at];
-    const slot = found[2] as string;
-    const opens = line?.indexOf(`${slot}:`) ?? -1;
-    if (line === undefined || opens < 0) return undefined;
-    const from = opens + slot.length + 1;
-    const end = valueEnd(line, from);
-    lines[at] = `${line.slice(0, from)} ${found[3]}${line.slice(end)}`;
-    changed.push(`line ${found[1]}: \`${slot}:${line.slice(from, end)}\` is now \`${slot}: ${found[3]}\``);
-  }
-  const content = lines.join("\n");
-  const imported = SCREEN_IMPORT.exec(content);
-  // The element the checker named has to be imported, or the repair trades one
-  // refusal for another: a document that wrote `<Money/>` into the cell has no
-  // reason to have imported `<Text/>`.
-  if (imported === null || /\bText\b/u.test(imported[1] as string)) return { content, changed };
-  return {
-    content: content.slice(0, imported.index)
-      + `import { ${(imported[1] as string).trim()}, Text } from "@vendo/screen"`
-      + content.slice(imported.index + imported[0].length),
-    changed,
-  };
-};
-
-/**
- * The second refusal this gate repairs itself: a change handler written as the
- * value's own setter (`onChange={setStatus}`), which the checker has already
- * printed as the whole attribute (`screen-typecheck.ts`'s change-handler
- * branch). Same bar as {@link SLOT_FUNCTION} — the handler is the checker's
- * bytes, and only the setter form is printed this way, because only there is
- * there nothing else in the attribute to preserve.
- */
-const CHANGE_HANDLER = /^line (\d+): .*: (\w+)=\{(\(e\) => \w+\(e\.target\.(?:value|checked)\))\}\.$/u;
-
-/** The document with every flagged change handler replaced by the one the
- *  checker printed. Nothing unless EVERY refusal is one, for the reason
- *  {@link slotFunctionFixes} gives up on a partial batch. */
-const changeHandlerFixes = (
-  document: string,
-  blocking: readonly string[],
-): { content: string; changed: string[] } | undefined => {
-  if (blocking.length === 0) return undefined;
-  const lines = document.split("\n");
-  const changed: string[] = [];
-  for (const refusal of blocking) {
-    const found = CHANGE_HANDLER.exec(refusal);
-    if (found === null) return undefined;
-    const at = Number(found[1]) - 1;
-    const line = lines[at];
-    const prop = found[2] as string;
-    const opens = line?.indexOf(`${prop}={`) ?? -1;
-    if (line === undefined || opens < 0) return undefined;
-    const from = opens + prop.length + 2;
-    const end = valueEnd(line, from);
-    lines[at] = `${line.slice(0, from)}${found[3]}${line.slice(end)}`;
-    changed.push(`line ${found[1]}: \`${prop}={${line.slice(from, end)}}\` is now \`${prop}={${found[3]}}\``);
-  }
-  return { content: lines.join("\n"), changed };
-};
-
-/**
  * How a refused save is fixed: the flagged lines, and nothing else.
  *
  * This loop has a hand for exactly that, so every refusal it relays says which
@@ -585,19 +472,22 @@ const rowsIn = (output: Json): number | undefined => {
  */
 export const paintedQueries = (payload: UIPayload): readonly QueryOutcome[] => {
   /** A COMPONENT screen's queries live on the paint's interactive half instead: the
-   *  query plan names them and the answers the screen rendered on ride beside it. Every
-   *  one of them delivered by construction — the gauntlet refuses a screen whose
-   *  query would not answer, so a painted screen never has a failed one — which is
-   *  why this reports rows and never a failure. */
+   *  query plan names them and the answers the screen rendered on ride beside it,
+   *  keyed by {@link queryKey} — the tool AND the input it asked with, because one
+   *  tool read twice with different questions is two reads, and the reader has to
+   *  know WHICH. Every one of them delivered by construction — the gauntlet refuses
+   *  a screen whose query would not answer, so a painted screen never has a failed
+   *  one — which is why this reports rows and never a failure. */
   const interactive = payload["interactive"] as {
     queries?: Record<string, Json>;
-    queryPlan?: readonly { tool: string }[];
+    queryPlan?: readonly { tool: string; input?: unknown }[];
   } | undefined;
   if (interactive !== undefined) {
-    return (interactive.queryPlan ?? []).map(({ tool }) => {
-      const output = interactive.queries?.[tool];
+    return (interactive.queryPlan ?? []).map((entry) => {
+      const name = queryKey(entry);
+      const output = interactive.queries?.[name];
       const rows = output === undefined ? undefined : rowsIn(output);
-      return { name: tool, delivered: true, ...(rows === undefined ? {} : { rows }) };
+      return { name, delivered: true, ...(rows === undefined ? {} : { rows }) };
     });
   }
   const queries = (payload["queries"] as readonly { name: string }[] | undefined) ?? [];
@@ -730,12 +620,6 @@ standard Kit the manual documents. There is nothing else to import.${surfaceNote
 
 A value the ask names must be READABLE AS TEXT on the screen — not implied by a
 chart, not behind a click.
-
-A slot holds an ELEMENT, never a function — \`cell: <Text field="amount"/>\`, never
-\`cell: (row) => <Money amount={row.amount}/>\`. A function there is serialized as a
-callback the renderer cannot paint, so that column comes out blank. The component
-inside a slot names its own row's field; every slot is the same rule (\`cell\`,
-\`content\`, \`rowActions\`).
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole file. Every save that parses
   repaints the person's screen, so save as you go — a save is cheap and silence is
@@ -950,12 +834,6 @@ export async function assembleScreen(
     turn: Turn<unknown>,
     content: string,
     decisions?: string,
-    /** What this gate already fixed in these bytes before landing them, when the
-     *  document that arrived was refused for something it could spell (see
-     *  {@link slotFunctionFixes}). Set on the second pass only, so a fix is never
-     *  attempted on a fix, and reported either way — the model's copy of the
-     *  document has to stay true whichever verdict the fixed bytes earn. */
-    fixed?: readonly string[],
   ): Promise<Json> => {
     const committed = await save(turn, APP_FILE, content);
     if (committed.status !== "ok") {
@@ -1005,17 +883,6 @@ export async function assembleScreen(
         stop.abort();
         return { saved: true, painted: false, note: record.blocked };
       }
-      // THE GATE FIXES WHAT IT CAN ALREADY SPELL, rather than spending a turn
-      // asking for it. The fixed bytes go back through this same path, so the
-      // gauntlet — not this file — is what says the repair was right; if it
-      // refuses them too, the refusal below is the one the model reads, with the
-      // fix named in it so its copy of the document stays true. Ahead of
-      // `record.refused` on purpose: a fix that paints leaves the run no refusal
-      // to answer with, and one that does not lands back here and sets it.
-      const fix = fixed === undefined
-        ? slotFunctionFixes(content, blocking) ?? changeHandlerFixes(content, blocking)
-        : undefined;
-      if (fix !== undefined) return await landApp(turn, fix.content, decisions, fix.changed);
       // The same sentences are also the RUN's answer if this save turns out to be
       // its last one. A repair round may still fix it — that is what the
       // instruction below is for — but nothing that comes after can make an
@@ -1034,7 +901,6 @@ export async function assembleScreen(
       return {
         saved: true,
         painted: false,
-        ...(fixed === undefined ? {} : { alreadyFixed: [...fixed] }),
         note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler screen.",
       };
     }
@@ -1047,11 +913,7 @@ export async function assembleScreen(
       ...(record.painted === undefined ? {} : { painted: record.painted }),
       ...(queries.length === 0 ? {} : { data: queries.map(queryNote) }),
     };
-    const note = fixed === undefined
-      ? "That save landed."
-      : `That save landed — but it put a function in an element slot, which was fixed for you on the way `
-        + `to the screen: ${fixed.join("; ")}. Nothing else changed, so quote the file that way when you `
-        + `edit those lines.`;
+    const note = "That save landed.";
     /**
      * THE CLOSING SAVE IS WHERE THE REVIEWER ANSWERS — into this very tool result.
      *

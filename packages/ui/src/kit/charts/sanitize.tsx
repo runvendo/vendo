@@ -7,7 +7,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { TooltipContentProps } from "recharts";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { isRenderableNumber } from "../format.js";
-import { RowContext } from "../row.js";
+import { rowSlot } from "../row.js";
 import { font, hairline, t, type KitStyled } from "../tokens.js";
 
 /** Replace non-finite values in the given series keys with `null`. */
@@ -111,13 +111,15 @@ export const tooltipSurface: CSSProperties = {
  * warns about, one line apiece. The function is called with the same props and
  * hands back the slot untouched.
  *
- * The hovered point rides on `RowContext`, so the value components inside name
- * their field exactly as a table cell's do — the same contract, per point
- * instead of per row.
+ * A per-point slot arrives as one element PER POINT, and the only thing recharts
+ * hands over about WHICH point is the hovered payload itself — `activeIndex` is
+ * typed `string | null` and means a different thing per chart family. So the
+ * point is matched by IDENTITY, as a DataTable row is, against `plotted`: the
+ * very array the engine was given, laid in the same order as `tooltip`.
  */
-export const slotTooltip = (tooltip: ReactNode) =>
+export const slotTooltip = (tooltip: ReactNode | readonly ReactNode[], plotted: readonly unknown[]) =>
   ({ payload }: Pick<TooltipContentProps<number, string>, "payload">) => (
-    <RowContext.Provider value={payload?.[0]?.payload ?? {}}>
-      <div style={{ ...font, ...tooltipSurface, padding: "6px 9px" }}>{tooltip}</div>
-    </RowContext.Provider>
+    <div style={{ ...font, ...tooltipSurface, padding: "6px 9px" }}>
+      {rowSlot(tooltip, plotted.indexOf(payload?.[0]?.payload))}
+    </div>
   );

@@ -52,14 +52,26 @@ describe("formatMoney (takes major units)", () => {
   });
 });
 
-describe("formatPercent (takes a ratio 0..1 by default)", () => {
-  it("renders a ratio as a percentage", () => {
-    expect(formatPercent(0.42)).toBe("42%");
-    expect(formatPercent(0.1234, { fractionDigits: 1 })).toBe("12.3%");
+describe("formatPercent (prints the number it is given)", () => {
+  it("prints a percentage as given, and converts NOTHING", () => {
+    // The defect this closes: `Intl`'s own `style: "percent"` multiplies by 100,
+    // so a host field already on a 0-100 scale — which is how a `*_pct` field is
+    // stored — printed as "4,610%".
+    expect(formatPercent(46.1)).toBe("46.1%");
+    expect(formatPercent(42)).toBe("42%");
+    expect(formatPercent(0.42)).toBe("0.42%");
   });
 
-  it("can take an already-whole percentage", () => {
-    expect(formatPercent(42, { whole: true })).toBe("42%");
+  it("never rounds a figure it was not asked to round — 7.25% is not 7%", () => {
+    expect(formatPercent(7.25)).toBe("7.25%");
+    // Up to two decimals, and only where the number has them.
+    expect(formatPercent(12.34)).toBe("12.34%");
+    expect(formatPercent(42, { fractionDigits: 1 })).toBe("42.0%");
+    expect(formatPercent(12.34, { fractionDigits: 1 })).toBe("12.3%");
+  });
+
+  it("groups a figure large enough to need it", () => {
+    expect(formatPercent(1234.5)).toBe("1,234.5%");
   });
 
   it("returns null for non-finite input", () => {

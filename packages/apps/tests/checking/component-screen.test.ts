@@ -166,7 +166,7 @@ export default function PendingTransfers() {
         <Card key={transfer.id} title={transfer.recipient}>
           <Row justify="between" align="center">
             <Stack gap={4}>
-              <Money amount={transfer.amount_cents / 100} />
+              <Money value={transfer.amount_cents / 100} />
               <DateTime value={transfer.scheduled_for} mode="date" />
             </Stack>
             <Button label="Cancel" variant="secondary" onClick={() => setConfirming(transfer.id)} />
@@ -432,51 +432,81 @@ export default function S() { return <Text text={String(useQuery("cancel_transfe
     expect(text).toContain("Call it from a handler as tools.cancel_transfer({ … })");
   });
 
-  it("refuses a computed query input, and says where the derivation belongs", async () => {
-    const { codes, text } = await refusal(`import { useState } from "react";
+  it("ADMITS a computed query input, and answers it from the paint that asked", async () => {
+    // Nothing can resolve this before the component runs — the input is whatever
+    // that render worked out. So the plan cannot hold it: the screen paints
+    // `undefined` there, NAMES the read it wanted, and the gate runs it and paints
+    // again.
+    const ran: Ran[] = [];
+    const result = await check(`import { useState } from "react";
 import { Text, useQuery } from "@vendo/screen";
 export default function S() {
   const [status] = useState("pending");
   const rows = useQuery("list_pending_transfers", { status });
-  return <Text text={String(rows.data.length)} />;
+  return <Text text={rows === undefined ? "loading" : String(rows.data.length)} />;
 }
-`);
+`, async (tool, input) => {
+      ran.push(input === undefined ? { tool } : { tool, input });
+      return ROWS;
+    });
 
-    expect(codes).toEqual(["query-input"]);
-    expect(text).toContain("passes a computed input to useQuery");
-    expect(text).toContain("must be LITERAL JSON the tool can execute directly");
-    expect(text).toContain("derive what you needed from the result where you DISPLAY it");
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(ran).toEqual([{ tool: "list_pending_transfers", input: { status: "pending" } }]);
+    // The read the paint asked for is in the plan the surface re-reads, keyed the
+    // way the engine keys its data.
+    expect(result.queryPlan).toEqual([{ tool: "list_pending_transfers", input: { status: "pending" } }]);
+    expect(Object.keys(result.queries ?? {})).toEqual(['list_pending_transfers {"status":"pending"}']);
   });
 
-  it("refuses an input that only LOOKS literal", async () => {
-    // A spread and a computed key are both computed: the queries run before the
-    // component renders, so whatever they would read does not exist yet.
+  it("admits an input that only LOOKS literal, the same way", async () => {
+    // A spread and a computed key are both computed, and none of the three is a
+    // shape the scan can pre-run — so each is asked for by the paint instead.
     for (const input of ['{ ...defaults }', '{ [field]: "pending" }', '{ tags: ["a", , "b"] }']) {
-      const { codes, text } = await refusal(`import { Stack, Text, useQuery } from "@vendo/screen";
+      const result = await check(`import { Stack, Text, useQuery } from "@vendo/screen";
 const defaults = { status: "pending" };
 const field = "status";
 export default function S() {
   const found = useQuery("search_transfers", ${input});
-  return <Stack><Text text={String(found.data.length)} /></Stack>;
+  return <Stack><Text text={String(found === undefined ? 0 : found.data.length)} /></Stack>;
 }
 `);
-      expect(codes).toEqual(["query-input"]);
-      expect(text).toContain("passes a computed input to useQuery");
+      expect(result.issues).toEqual([]);
+      expect(result.queryPlan?.map(({ tool }) => tool)).toEqual(["search_transfers"]);
     }
   });
 
-  it("refuses the same tool read with two DIFFERENT inputs", async () => {
-    const { codes, text } = await refusal(`import { Stack, Text, useQuery } from "@vendo/screen";
+  it("ADMITS the same tool read with two DIFFERENT inputs — one result per ASK, not per tool", async () => {
+    const result = await check(`import { Stack, Text, useQuery } from "@vendo/screen";
 export default function S() {
   const pending = useQuery("list_pending_transfers", { status: "pending" });
   const sent = useQuery("list_pending_transfers", { status: "sent" });
   return <Stack><Text text={String(pending.data.length)} /><Text text={String(sent.data.length)} /></Stack>;
 }
-`);
+`, async (_tool, input) => ({ data: [{ id: (input as { status: string }).status }] }));
 
-    expect(codes).toEqual(["query-input"]);
-    expect(text).toContain('reads "list_pending_transfers" twice with DIFFERENT inputs');
-    expect(text).toContain("a screen resolves one result per tool");
+    expect(result.issues).toEqual([]);
+    expect(result.queries).toEqual({
+      'list_pending_transfers {"status":"pending"}': { data: [{ id: "pending" }] },
+      'list_pending_transfers {"status":"sent"}': { data: [{ id: "sent" }] },
+    });
+  });
+
+  it("reads one ask ONCE, however many times the screen writes it", async () => {
+    const ran: Ran[] = [];
+    const result = await check(`import { Stack, Text, useQuery } from "@vendo/screen";
+export default function S() {
+  const a = useQuery("list_pending_transfers", { status: "pending" });
+  const b = useQuery("list_pending_transfers", { status: "pending" });
+  return <Stack><Text text={String(a.data.length + b.data.length)} /></Stack>;
+}
+`, async (tool, input) => {
+      ran.push({ tool, input });
+      return ROWS;
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(ran).toHaveLength(1);
   });
 
   it("refuses more arguments than useQuery takes", async () => {
@@ -487,7 +517,7 @@ export default function S() {
 }
 `);
 
-    expect(text).toContain("with 3 arguments — it takes the tool name and, at most, one literal input object");
+    expect(text).toContain("with 3 arguments — it takes the tool name and, at most, one input object");
   });
 
   it("refuses a tool call that names no tool", async () => {
@@ -688,7 +718,7 @@ export default function S() {
     });
 
     // The pattern the Kit prompt teaches, `key` and all.
-    expect(await mapped("<Money amount={transfer.amount_cents / 100} />")).toMatchObject({ ok: true, issues: [] });
+    expect(await mapped("<Money value={transfer.amount_cents / 100} />")).toMatchObject({ ok: true, issues: [] });
 
     // …and where the KEYED element is broken, `key` must not be what the repair
     // is told about: it rides along in every element-level props error, and the
@@ -697,8 +727,8 @@ export default function S() {
     const sentences = async (cell: string): Promise<string> =>
       (await mapped(cell)).issues.map(({ message }) => message).join("\n");
     for (const [broken, fault] of [
-      ['<Money amount={1} sparkle={true} />', 'sets unknown prop "sparkle"'],
-      ["<Money amount={transfer.recipient} />", 'prop "amount" on <Money> takes number'],
+      ['<Money value={1} sparkle={true} />', 'sets unknown prop "sparkle"'],
+      ["<Money value={transfer.recipient} />", 'prop "value" on <Money> takes number'],
     ] as const) {
       const keyed = await sentences(broken.replace("<Money ", "<Money key={transfer.id} "));
       expect(keyed).toContain(fault);
@@ -1002,36 +1032,36 @@ export default function Ledger() {
     const message = result.issues[0]?.message ?? "";
     // The locus is the column the control sits in, not just the table.
     expect(message).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
-    expect(message).toContain("a cell is read, never operated");
+    expect(message).toContain("a cell shows its row, it does not act on it");
     expect(message).toContain("A cell may hold: Text, Money, DateTime, Percent, Num, EnumBadge, Badge, Sparkline, Progress, Stack, Row");
+    expect(message).toContain("A per-row CONTROL goes in rowActions");
   });
 
   /**
-   * The BLANK CELL class, and the whole reason a slot is typed rather than left
-   * `any`: a function in a cell serializes as a `$handler` door (vm-program.ts
-   * `emitValue`), so the table is handed a callback it cannot paint and the
-   * column renders empty. A generated screen shipped exactly this past compile,
-   * types, paint and tree with every gate green.
+   * A PER-ROW slot written as a function of the row — the natural React form, and
+   * for a year the one thing that could not work: a function prop serialized as a
+   * single `$handler` door, so the table was handed a callback where an element
+   * belongs and the column painted blank. The VM calls it now, once per row
+   * (vm-program.ts `emitPerRow`), so the compiler admits it and the paint proves
+   * it: two rows, two amounts, each computed from its own row.
    */
-  it("refuses a function in a cell slot, and names the column it sits in", async () => {
+  it("admits a per-row cell written as a function of the row", async () => {
     const result = await painted(`import { DataTable, Money } from "@vendo/screen";
 
 export default function Ledger() {
   return (
     <DataTable
-      rows={[{ id: "tr_1", amount: 4200 }]}
-      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
+      rows={[{ id: "tr_1", amount: 4200 }, { id: "tr_2", amount: 900 }]}
+      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money value={row.amount / 100} /> }]}
     />
   );
 }
 `);
 
-    expect(result.issues.map(({ code }) => code)).toEqual(["types"]);
-    const message = result.issues[0]?.message ?? "";
-    expect(message).toContain('in the "cell" slot of "amount"');
-    expect(message).toContain("a slot holds ELEMENTS");
-    // …and the repair is the element, with the column's own key in it.
-    expect(message).toContain('cell={<Text field="amount"/>}');
+    expect(result.issues).toEqual([]);
+    const table = Object.values(result.initialTree?.nodes ?? {}).find(({ component }) => component === "DataTable");
+    const cells = (table?.props.columns as Array<{ cell: Array<{ props: { value: number } }> }>)[0]!.cell;
+    expect(cells.map(({ props }) => props.value)).toEqual([42, 9]);
   });
 
   /** Every slot, not just a cell: `Tabs.tabs[].content`, `Accordion.items[].content`
@@ -1054,21 +1084,9 @@ export default function Panels() {
     expect(result.issues.map(({ code }) => code)).toEqual(["types", "types", "types"]);
     for (const { message } of result.issues) {
       expect(message).toContain('in the "content" slot');
-      expect(message).toContain("a slot holds ELEMENTS");
+      expect(message).toContain("this slot is painted once, so it holds ELEMENTS");
     }
   });
-
-  /**
-   * The exact-fix line the gate rewrites a slot function with
-   * (`packages/vendo` screen-agent.ts `SLOT_FUNCTION`). Copied rather than
-   * imported — apps may not depend on vendo (`scripts/dependency-guard.mjs`) —
-   * because the two tests below are about the BOUNDARY it draws: one class of
-   * refusal carries a repair this pattern can apply, and every other class must
-   * fall outside it. `slotFunctionFixes` gives up on the whole batch when one
-   * refusal does not match, so a message that lands here by accident costs the
-   * screen every repair in the same pass.
-   */
-  const SLOT_FUNCTION = /^line (\d+): .*: (\w+)=\{(<Text field="[^"]+"\/>)\}\.$/u;
 
   /**
    * A KEY the item has not got is not a value in a slot.
@@ -1093,7 +1111,7 @@ export default function Receipt() {
       record={transfer}
       items={[
         { label: "Recipient", field: <Text text={transfer.recipient} /> },
-        { label: "Amount", field: <Money amount={transfer.amount_cents / 100} /> },
+        { label: "Amount", field: <Money value={transfer.amount_cents / 100} /> },
       ]}
     />
   );
@@ -1109,12 +1127,9 @@ export default function Receipt() {
     // The key it wrote, where it wrote it, and the keys that would have worked —
     // the same shape a misspelled tool payload key gets.
     expect(message).toContain('writes the key "field", which items on <KeyValue> does not accept');
-    expect(message).toContain("Its keys are: key, label, format, semantic, cell (required: key)");
+    expect(message).toContain("Its keys are: key, label, format, cell (required: key)");
     // …and NOT the slot sentence, which named no key at all.
-    expect(message).not.toContain("a slot holds ELEMENTS");
-    // The auto-fixer must not reach for this: it can only write the element the
-    // checker computed, and there is none here — the repair is the key.
-    for (const { message: refused } of result.issues) expect(SLOT_FUNCTION.test(refused)).toBe(false);
+    expect(message).not.toContain("this slot is painted once");
   });
 
   /** The same misreading one step further out: a list written as a single
@@ -1138,35 +1153,13 @@ export default function Receipt() {
 
     const [{ code, message }] = result.issues as [{ code: string; message: string }];
     expect(code).toBe("types");
-    expect(message).not.toContain("a slot holds ELEMENTS");
-    expect(SLOT_FUNCTION.test(message)).toBe(false);
-  });
-
-  /** The other side of the same boundary: the class that DOES carry a repair
-   *  still carries it, in the exact form the gate applies. */
-  it("keeps the exact-fix line on a real slot function, so the gate can still write it", async () => {
-    const result = await painted(`import { DataTable, Money } from "@vendo/screen";
-
-export default function Ledger() {
-  return (
-    <DataTable
-      rows={[{ id: "tr_1", amount: 4200 }]}
-      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
-    />
-  );
-}
-`);
-
-    const found = SLOT_FUNCTION.exec(result.issues[0]?.message ?? "");
-    expect(found?.[2]).toBe("cell");
-    expect(found?.[3]).toBe('<Text field="amount"/>');
+    expect(message).not.toContain("this slot is painted once");
   });
 
   /**
-   * The CHANGE HANDLER class, and the second line the gate applies itself
-   * (`packages/vendo` screen-agent.ts `CHANGE_HANDLER`). Copied here for the same
-   * reason `SLOT_FUNCTION` is — apps may not depend on vendo — and for the same
-   * purpose: these tests are about the BOUNDARY it draws.
+   * The CHANGE HANDLER class: the one refusal that computes the exact attribute a
+   * screen was owed. Pinned as a shape rather than as prose because a repair a
+   * reader can paste is the whole difference between one round and five.
    */
   const CHANGE_HANDLER = /^line (\d+): .*: (\w+)=\{(\(e\) => \w+\(e\.target\.(?:value|checked)\))\}\.$/u;
 
@@ -1359,14 +1352,14 @@ export default function Ledger() {
   return (
     <DataTable
       rows={[{ id: "tr_1", status: "paid" }]}
-      columns={[{ key: "status", cell: <Stack><Text field="status" /><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: "tr_1" })} /></Stack> }]}
+      columns={[{ key: "status", cell: (row) => <Stack><Text text={row.status} /><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: row.id })} /></Stack> }]}
     />
   );
 }
 `);
 
     expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
-    expect(result.issues[0]?.message).toContain('prop "columns[0].cell.children[1]" holds <Button> in a cell slot');
+    expect(result.issues[0]?.message).toContain('prop "columns[0].cell[0].children[1]" holds <Button> in a cell slot');
   });
 
   /** A slot's vocabulary gates BEHAVIOR — what may sort, submit or call a tool
@@ -1381,7 +1374,7 @@ export default function Invoices() {
   return (
     <DataTable
       rows={[{ id: "r1", status: "past_due" }]}
-      columns={[{ key: "status", cell: <div style={{ display: "flex" }}><Text field="status" /></div> }]}
+      columns={[{ key: "status", cell: (row) => <div style={{ display: "flex" }}><Text text={row.status} /></div> }]}
     />
   );
 }
@@ -1472,7 +1465,7 @@ export default function Ledger() {
       </Stat>
       <DataTable
         rows={[{ id: "tr_1", status: "paid" }]}
-        columns={[{ key: "status", cell: <EnumBadge field="status" /> }]}
+        columns={[{ key: "status", cell: (row) => <EnumBadge value={row.status} /> }]}
       />
     </Stack>
   );

@@ -3,14 +3,13 @@
  * Rendered entirely from `KIT_SPECS`; hand-written component lists are dead.
  * W3 wires this into the engine's wire contract (engine.ts).
  */
-import { DISPLAY_TAG_NAMES } from "./display.js";
 import { KIT_PREAMBLE_PROP_NAMES, KIT_SPECS, kitSlotPath } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 
 export interface KitPromptOptions {
   /** Restrict output to these component names (e.g. an outline's section). */
   only?: string[];
-  /** Omit the header preamble (the two laws) — default false. */
+  /** Omit the header preamble (the data law) — default false. */
   omitPreamble?: boolean;
 }
 
@@ -18,28 +17,20 @@ export const PREAMBLE = [
   "# The Kit",
   "",
   "Build the app from these components — you only fill props; they sort, filter,",
-  "paginate, and format themselves. Two laws:",
-  "1. Every `data` prop must trace to a tool call — a `useQuery` result. Hand-typed",
-  "   business data is illegal; if no tool backs the ask, `<Disclaimer>` is the",
-  "   legal move.",
-  "2. An `on*` prop takes a FUNCTION, and calling a tool inside one is the only way",
-  "   the UI changes anything: `onClick={() => tools.cancel_transfer({ id })}`.",
-  "   Inputs are controlled: `value={x}` with `onChange={(e) => setX(e.target.value)}`.",
+  "paginate, and format themselves. Every `data` prop must trace to a tool call —",
+  "a `useQuery` result. Hand-typed business data is illegal; if no tool backs the",
+  "ask, `<Disclaimer>` is the legal move.",
   "",
   "Prop classes: **config** tunes behavior · **copy** is text you may write ·",
-  "**data** must come from a tool. Dates take ISO or epoch; percent takes a ratio",
-  "(0.42 → 42%). Invalid numbers/dates never render.",
+  "**data** must come from a tool. Dates take ISO or epoch. Invalid numbers and",
+  "dates never render.",
   "",
-  "Money. `<Money>`, `format=\"money\"` and a `format:\"money\"` column all take",
-  "DOLLARS, and none of them converts. Tool data is usually cents",
-  "(`amount_cents: 2850` is $28.50), so divide by 100 where you read it:",
-  "`value={invoice.amount_cents / 100}`. Forget, and the screen is wrong by 100×.",
-  "A DataTable column, a CardList field and a KeyValue row divide for you once",
-  "TOLD what the field is — the tool shapes annotate what the host declared, and",
-  "each takes that token: `{key:\"compute_cost\", semantic:\"money.cents\"}`,",
-  "`{key:\"branch\", semantic:\"code\"}`. It says what a name cannot. Nothing is",
-  "guessed: a column with no `format` and no `semantic` prints the field exactly as",
-  "the tool returned it.",
+  "Every component FORMATS what you hand it and converts nothing. `<Money>` and",
+  "`format=\"money\"` take DOLLARS, so divide a `_cents` field by 100 where you",
+  "prepare the data: `value={invoice.amount_cents / 100}`. Forget, and the screen",
+  "is wrong by 100×. `<Percent>` prints the number it is given — `42.5` is",
+  "\"42.5%\" — so a ratio is `* 100` where you read it, and nothing is rounded that",
+  "you did not round.",
   "",
   "Identifiers are mono: a sha, branch, id or code is `<Text variant=\"code\"/>` or",
   "a `format:\"code\"` column or field.",
@@ -56,73 +47,49 @@ export const PREAMBLE = [
   "(comfortable | compact) on containers and data blocks tightens everything",
   "inside; an operations screen is `compact`.",
   "",
-  "Leaving the theme. The theme is the DEFAULT and costs no props: set none and",
-  "the app is brand-native. When the person asks for a particular look, every",
-  "component takes `style` — inline CSS merged onto its root, your values winning",
-  "— and a component that renders an engine (each one says which) takes that",
-  "engine's own props too: `<Sparkline stroke=\"#FF3B30\"/>`, a recharts prop on one",
-  "entry of a chart's `series`, a Base UI attribute on a control. An engine prop is the",
-  "engine's, so it is passed through unchecked, must be a JSON value (a function",
-  "there never arrives), and carries no compatibility promise — an engine upgrade",
-  "may rename one, and an app that used it paints wrong until it is regenerated.",
-  "So reach for the theme first and for these when the ask is specific.",
-  "",
-  "Cells are not sealed. A DataTable column and a CardList field each take a",
-  "`cell` — Kit value components composed for ONE record — and a Stat takes them",
-  "as children. Inside a cell a component names its field instead of taking a",
-  'value: `cell:<EnumBadge field="status" tones={{overdue:"danger"}}/>`. A',
-  "status-like enum column is an EnumBadge, never a bare word; an id or code rides",
-  "under its name as a `Text variant=\"code\"` instead of costing a column. Only",
-  "the value tier and Stack/Row go in a cell, and only containers take children —",
-  "a Button in a cell, or anything nested in a chart, is REFUSED, not quietly dropped.",
-  "When a cell needs arithmetic a field binding cannot do — a cents amount, a",
-  "computed figure — or a per-row control, paint the rows yourself instead: one",
-  "`<TableRow>` per record as DataTable children.",
-  "Where a field needs nothing said about it, write the bare KEY:",
-  '`columns={["client.name","amount"]}` is the same list of descriptions, and the',
-  "label comes from the key — the shorthand `Select.options` already takes.",
+  "A per-row slot takes a FUNCTION of the row, and inside it you write that row's",
+  "own values: `cell: (row) => <Money value={row.amount_cents / 100}/>`,",
+  "`rowActions={(row) => <Button label=\"Cancel\" onClick={() => tools.cancel_transfer({ id: row.id })}/>}`.",
+  "A status-like enum column is an EnumBadge, never a bare word. Where a field",
+  'needs nothing said about it, write the bare KEY: `columns={["client.name","amount"]}`',
+  "is the same list of descriptions, and the label comes from the key — the",
+  "shorthand `Select.options` already takes.",
   "",
   "Side by side stays side by side. Row and Grid WRAP as the frame narrows, so a",
   "list beside the record it opens is a `<SplitPane>` — two panes, never wrapped,",
   "each scrolling its own content.",
-  "",
-  `Beside the Kit you have display-only HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` —`,
-  "taking children and an inline `style` and nothing else (no className, no id, no",
-  "handlers). Arrange and typeset freely with them, off the host's own CSS",
-  "variables (`var(--vendo-color-accent)`, `var(--vendo-density-content-gap)`) so",
-  "the screen stays branded; a hard-coded color is yours, not the product's. There",
-  "is no network here, so a style that fetches (`url(…)`) is dropped. Anything with",
-  "BEHAVIOR — a table, a number, a date, a control — is still a Kit component.",
 ].join("\n");
 
 /**
  * The prompt's own examples, for the components whose canonical spec example is
- * written in the RETIRED attribute style — a quoted tool name for a handler, an
- * inline tool call for data — plus the few that spent characters restating a shape
- * the props above them already give.
+ * written in an idiom the screen no longer has — a value component naming a
+ * `field`, a slot holding an element, `<Money amount>` — plus the few that spent
+ * characters restating a shape the props above them already give.
  *
- * A screen is a React component now, so those examples taught a shape nothing
- * compiles. The props are still rendered from `KIT_SPECS`, which is the half that
- * must never drift; an example is teaching prose, and a component absent from this
- * map renders its spec example unchanged — so a component added to the specs
- * arrives with its own example the day it is created.
+ * The props are still rendered from `KIT_SPECS`, which is the half that must never
+ * drift; an example is teaching prose, and a component absent from this map
+ * renders its spec example unchanged — so a component added to the specs arrives
+ * with its own example the day it is created.
  *
  * These belong in `specs.ts` beside the props they document, and go back the
  * moment its other consumers can take the new idiom; until then this map is the
  * one place to read what the model is actually shown.
  */
 const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
-  // Data off a `useQuery` result, never an inline call.
-  Money: ["<Money amount={invoice.amount_cents / 100}/>"],
+  // Data off a `useQuery` result, never an inline call. The value the component
+  // shows is already in the units it formats.
+  Money: ["<Money value={invoice.amount_cents / 100}/>"],
+  Percent: ["<Percent value={(goal.saved / goal.target) * 100}/>"],
   Stat: ['<Stat label="Total overdue" value={overdue.total_cents / 100} format="money" tone="danger"><Sparkline data={overdue.trend}/></Stat>'],
-  DataTable: [
-    '<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
-    '<DataTable rows={accounts.data} sortBy="balance_cents desc" columns={[{key:"name",label:"Account"},{key:"balance_cents",label:"Balance",align:"end"},{label:"",align:"end"}]}>{accounts.data.map((a) => (<TableRow key={a.id}><Text text={a.name}/><Money amount={a.balance_cents / 100}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>))}</DataTable>',
-  ],
-  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"},{key:"plan",cell:<EnumBadge field="plan"/>}]}/>'],
+  Avatar: ['<Row gap={6} align="center"><Avatar name={client.name}/><Text text={client.name}/></Row>'],
+  // A per-row slot is a function of the row — the arithmetic and the control that
+  // a field binding could not hold.
+  DataTable: ['<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",align:"end",cell:(row) => <Money value={row.amount_cents / 100}/>},{key:"status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>}/>'],
+  TableRow: ['<TableRow key={row.id}><Text text={row.name}/><Money value={row.balance_cents / 100}/></TableRow>'],
+  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance_cents",label:"Balance",cell:(item) => <Money value={item.balance_cents / 100}/>},{key:"plan"}]}/>'],
+  KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",cell:(record) => <Money value={record.amount_cents / 100}/>}]} dividers/>'],
   LineChart: ['<LineChart data={revenue.data} xKey="month" series={["amount"]} format="money"/>'],
   DonutChart: ['<DonutChart data={spend.data} categoryKey="category" valueKey="amount" format="money"/>'],
-  KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"},{key:"status",cell:<EnumBadge field="status"/>}]} dividers/>'],
   Timeline: ['<Timeline entries={payments.data} titleField="description" timeField="paidAt" timeAlign="end"/>'],
   CodeBlock: ['<CodeBlock language="json" code={webhook.data.payload}/>'],
   // Handlers are functions; every field is controlled.
@@ -132,13 +99,13 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   Checkbox: ['<Checkbox label="Include paid" checked={paid} onChange={(e) => setPaid(e.target.checked)}/>'],
   DatePicker: ['<DatePicker label="Due date" value={due} onChange={(e) => setDue(e.target.value)}/>'],
   Select: ['<Select label="Client" options={clients.data} labelField="name" valueField="id" value={clientId} onChange={(e) => setClientId(e.target.value)}/>'],
-  Form: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client"><Input .../></Form>'],
+  Form: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client" disabled={!name.trim()}><Input .../></Form>'],
   EmptyState: ['<EmptyState icon="inbox" title="No invoices yet" description="They show up here the moment one is issued."><Button label="New invoice" onClick={() => tools.create_invoice({})}/></EmptyState>'],
   // The overlays: `open` is state the screen holds, and `onClose` is the setter
-  // that takes it down — the pair a quoted tool name could never express. The
-  // Modal puts its action LAST in `footer`, which is where the chapter sends it.
+  // that takes it down. The Modal puts its action LAST in `footer`, which is where
+  // the chapter sends it.
   Modal: ['<Modal open={confirming} onClose={() => setConfirming(false)} title="Send reminders?" description="Three clients will be emailed." footer={<Button label="Send" onClick={() => tools.send_reminders({})}/>}/>'],
-  Sheet: ['<Sheet open={viewing} onClose={() => setViewing(false)} title="Invoice INV-204" side="right"><KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"}]}/></Sheet>'],
+  Sheet: ['<Sheet open={viewing} onClose={() => setViewing(false)} title="Invoice INV-204" side="right"><KeyValue record={invoice.data} items={["client.name","status"]}/></Sheet>'],
   Toast: ['<Toast open={sent} onClose={() => setSent(false)} message="Reminders sent." tone="success"/>'],
   // Containers: the child shape is the teaching, not the child's own props.
   Card: ['<Card title="Overdue" description="Worst first"><DataTable .../></Card>'],

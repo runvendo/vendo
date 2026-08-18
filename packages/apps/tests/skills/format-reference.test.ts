@@ -149,11 +149,10 @@ describe("the reference only teaches what a screen really has", () => {
 
   /** The checks are automatic on both legs — every save is checked on its way to
    *  the screen — and the screen agent's loadout carries no `validate` verb at
-   *  all. So the chapter says the errors come back and never tells a reader to
-   *  call anything: the reference is copied to a harness verbatim, so a call it
-   *  teaches is a tool one reader cannot find. */
-  it("says the save's own errors teach the repair, without naming a verb to call", () => {
-    expect(VENDO_FORMAT_REFERENCE).toContain("Save errors tell you exactly what to fix. Fix and save again.");
+   *  all. The skill body is where the errors-come-back teaching lives now; what
+   *  this file owes is naming no verb to call, because the reference is copied to
+   *  a harness verbatim and a call it teaches is a tool one reader cannot find. */
+  it("names no verb to call", () => {
     expect(VENDO_FORMAT_REFERENCE).not.toContain("`validate`");
   });
 
@@ -192,14 +191,25 @@ describe("the reference only teaches what a screen really has", () => {
   });
 
   it("carries the whole catalog, one line per component, generated from the specs", () => {
-    // The host catalog is on the host/components mount; everything that ships
-    // with the format has to be IN here, or its props are unknowable.
+    // Everything that ships with the format has to be IN here, or its props are
+    // unknowable. The host's own components are pointed at from the skill body,
+    // which is the one place that names their directory.
     expect(VENDO_FORMAT_REFERENCE).toContain("# The Kit");
     expect(VENDO_FORMAT_REFERENCE).toMatch(/^<DataTable> .* · data: rows!/m);
-    // Workspace-RELATIVE: the mount lands under the machine's root
-    // (`/workspace/host/...` in a box), which is the session's cwd, so a leading
-    // slash would point at a directory that does not exist on either leg.
-    expect(VENDO_FORMAT_REFERENCE).toContain("`host/components/<Name>.md`");
-    expect(VENDO_FORMAT_REFERENCE).not.toContain("/host/components/");
+    expect(VENDO_FORMAT_REFERENCE).not.toContain("host/components");
+  });
+
+  /** `/user|orgs/…/apps/app_<id>/app.tsx` — an id that does not start with
+   *  `app_` paints nothing (render-seam.ts), and this chapter is the ONE place
+   *  the directory shape is stated now. */
+  it("names the app directory shape the render seam actually watches", () => {
+    expect(VENDO_FORMAT_REFERENCE).toContain("user/apps/app_");
+  });
+
+  /** No icon vocabulary: 227 names cost ~575 tokens on every generation, and the
+   *  checker refuses an invented one loudly — `<Icon>`'s own summary carries the
+   *  kebab-case rule and three real names, which is what a model needs. */
+  it("never spends the catalog on the icon vocabulary", () => {
+    expect(VENDO_FORMAT_REFERENCE).not.toContain("Icon names —");
   });
 });

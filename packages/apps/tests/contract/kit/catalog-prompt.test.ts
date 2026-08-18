@@ -13,7 +13,7 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
   // a summary reworded in specs.ts is not a regression here, a changed shape is.
   it("renders a component as name, summary, then typed props by class", () => {
     expect(body({ only: ["Money"] })[0]).toBe(
-      `<Money> ${kitSpec("Money")!.summary} · data: amount: number · config: currency: string`,
+      `<Money> ${kitSpec("Money")!.summary} · data: value: number · config: currency: string`,
     );
   });
 
@@ -46,7 +46,10 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
    *  example shows what goes in them), a handler is a function rather than the
    *  string its wire-era schema still parses, and a slot holds elements. */
   it("prints objects, handlers and slots compactly", () => {
-    expect(body({ only: ["DataTable"] })[0]).toContain("columns: {key?, label?, format?, align?, cell?}[]");
+    // The union is part of the shape: a column may be the bare KEY the preamble
+    // teaches, or the described object — printing only one half would send the
+    // model writing the other into a prop it thinks is illegal.
+    expect(body({ only: ["DataTable"] })[0]).toContain("columns: (string|{key?, label?, format?, align?, cell?})[]");
     expect(body({ only: ["Button"] })[0]).toContain("onClick: fn");
     expect(body({ only: ["Surface"] })[0]).toContain("header: element");
   });
@@ -105,41 +108,42 @@ describe("catalogPrompt() — the whole catalog, one line per component", () => 
     );
   });
 
-  it("lists the icon vocabulary once, so the model stops inventing glyph names", () => {
+  /** The vocabulary is NOT here: 227 names cost ~575 tokens on every generation,
+   *  and an invented name fails the checks loudly rather than painting wrong, so
+   *  `<Icon>`'s own summary — kebab-case, three real names, never invent one — is
+   *  the whole teaching a model needs. */
+  it("never spends the catalog on the icon vocabulary", () => {
     const prompt = catalogPrompt();
-    expect(prompt).toContain("Icon names — `<Icon name>`");
-    for (const name of ["credit-card", "alert-triangle", "arrow-up-right"]) {
-      expect(prompt, name).toContain(name);
-    }
+    expect(prompt).not.toContain("Icon names —");
+    expect(prompt).not.toContain(KIT_ICON_NAMES.join(" "));
+    // …and the closed set is still enforced, which is why the list can go.
     expect(KIT_ICON_NAMES.length).toBeGreaterThan(180);
   });
 
-  it("leads with the two laws and the legend, and drops them on request", () => {
+  it("leads with the data law and the legend, and drops them on request", () => {
     expect(catalogPrompt()).toContain("# The Kit");
     expect(catalogPrompt()).toContain("`!` marks a required one");
     expect(catalogPrompt({ omitPreamble: true })).not.toContain("# The Kit");
   });
 
   /**
-   * THE BUDGET, re-measured 2026-08-17 when types and one worked example apiece
-   * went back into the line: 53 bricks, 227 icon names and 53 examples cost
-   * 29,214 characters (~8.1k tokens), against the 20,396 the same 53 bricks cost
-   * as bare prop NAMES. That growth is the change — a name alone never said what
-   * may be written beside it — and it is bought against `kitPrompt`'s
-   * section-per-brick catalog, which costs 36,291 for the same bricks with no
-   * icon names at all.
+   * THE BUDGET, re-measured 2026-08-18 when the Kit's private dialect came out:
+   * 54 bricks and 54 examples cost 26,693 characters (~6.7k tokens), against
+   * `kitPrompt`'s 36,183 for the same bricks as a section apiece.
    *
-   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 440
-   * characters a brick — its line AND its example — the 55-brick kit lands near
-   * 30,600 and still fits, while a brick that grew past 440 would break that
-   * promise long before the total noticed. Both numbers move DELIBERATELY, in a
-   * commit that says why.
+   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 460
+   * characters a brick — its line AND its example — the 55-brick kit still fits
+   * (25,300), while a brick that grew past 460 would break that promise long
+   * before the total noticed. Both numbers move DELIBERATELY, in a commit that
+   * says why, and this one is the dialect: an example that writes a real closure
+   * (`onSubmit={() => tools.create_client({ name })}`) is longer than one that
+   * wrote a tool's name in a string, and the natural form is the point.
    */
   it("stays under the section-per-brick catalog, with room for the 55-brick kit", () => {
     const prompt = catalogPrompt();
     expect(prompt.length).toBeLessThanOrEqual(32_000);
     expect(prompt.length).toBeLessThan(kitPrompt().length);
     const lines = body().filter((line) => line.startsWith("<") || line.startsWith("  "));
-    expect(lines.join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(440);
+    expect(lines.join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(460);
   });
 });

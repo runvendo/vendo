@@ -401,14 +401,17 @@ export function Screen() { return <Text text="x" />; }`);
     expect(error.message).toContain("this screen exports no component");
   });
 
-  it("lists the queries a screen really has when it reads one it never declared", () => {
+  it("reports a read nobody has answered as the screen's own crash on undefined", () => {
+    // An unanswered read is not a boot failure — the engine records it as a MISS
+    // and resolves `undefined`, because a query input the screen computes can only
+    // be known once it has rendered. What fails is a screen that reads through
+    // that undefined, and the message it earns is the one it would earn anywhere.
     const error = failsBoot(`
 import { Text, useQuery } from "@vendo/screen";
 export default function S() { return <Text text={String(useQuery("ghost_tool").length)} />; }`, { list_pending: { data: [] } });
 
     expect(error.kind).toBe("boot");
-    expect(error.message).toContain('useQuery("ghost_tool") — this screen declared no such query');
-    expect(error.message).toContain("it has list_pending");
+    expect(error.message).toContain("cannot read property 'length' of undefined");
   });
 
   it("lists the modules a screen may import when it reaches for another", () => {

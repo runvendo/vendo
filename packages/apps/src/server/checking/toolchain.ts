@@ -29,6 +29,7 @@ import {
   type InertControl,
   type ScreenErrorKind,
   type ScreenInstance,
+  type ScreenQuery,
 } from "../../contract/genui/component/index.js";
 import { screenTypecheckIssues } from "./screen-typecheck.js";
 import { screenProgram } from "./screen-tsc.js";
@@ -98,9 +99,22 @@ export interface ScreenPaintInput {
  *  boundary, so the presses happen HERE and what comes back is which controls
  *  did nothing — node and prop, no sentence. Required rather than optional, so
  *  a toolchain that does not press has to say so out loud instead of passing a
- *  dead button by omission. */
+ *  dead button by omission.
+ *
+ *  `misses` is why one screen can be painted more than once. A read whose input
+ *  the screen COMPUTES cannot be resolved before the component renders, so the
+ *  paint names what it wanted and the caller paints again with the answers. An
+ *  instance cannot cross this boundary, so a round is a fresh boot rather than a
+ *  `supply` — at gate time there is no hook state to keep. Controls are pressed
+ *  only on a paint that missed nothing: a screen still waiting on a read is not
+ *  the screen the person is shown, so its buttons are not the ones to judge. */
 export type ScreenPaintResult =
-  | { readonly ok: true; readonly tree: FlatTree; readonly inert: readonly InertControl[] }
+  | {
+    readonly ok: true;
+    readonly tree: FlatTree;
+    readonly inert: readonly InertControl[];
+    readonly misses: readonly ScreenQuery[];
+  }
   | { readonly ok: false; readonly kind: ScreenErrorKind; readonly message: string };
 
 export interface ScreenToolchain {
@@ -190,9 +204,10 @@ export const nodeToolchain = (): ScreenToolchain => ({
     try {
       instance = bootScreen(input);
       const tree = flattenTree(instance.tree());
+      const misses = instance.misses();
       // Every press gets its own screen, booted from the same input — see
       // press.ts for why, and for why a pressed write never happens.
-      return { ok: true, tree, inert: pressControls(tree, () => bootScreen(input)) };
+      return { ok: true, tree, misses, inert: misses.length > 0 ? [] : pressControls(tree, () => bootScreen(input)) };
     } catch (error) {
       // A throw that is not a `ScreenError` has no kind of its own. `boot` is
       // where it happened, and — like every kind but `render` and `budget` — it

@@ -256,12 +256,19 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
    *  (`contract/kit/display.ts`), so it can no more break the per-row rule than a
    *  word can. */
   const checkSlot = (nodeId: string, path: string, name: string, slot: KitSlotSpec, value: unknown, sigil = true, parent?: string): void => {
+    // A per-row slot written as a function of the row emits one element PER ROW,
+    // so the LIST is where the elements are (`vm-program.ts` `emitPerRow`) — and
+    // each of them is measured, because the vocabulary is the same for all.
+    if (slot.perRow === true && Array.isArray(value)) {
+      value.forEach((row, index) => checkSlot(nodeId, `${path}[${index}]`, name, slot, row, sigil, parent));
+      return;
+    }
     const element = asElement(value, sigil);
     if (element === undefined) return;
     const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
     if (!allowed.includes(element.component) && !DISPLAY_TAG_NAMES.includes(element.component)) {
       const why = slot.perRow === true && slot.content === undefined
-        ? `a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${allowed.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`
+        ? `a cell shows its row, it does not act on it. A cell may hold: ${allowed.join(", ")}. A per-row CONTROL goes in rowActions, which is the slot written for the row it sits on; anything else belongs beside the table, not in it.`
         : `this slot may hold: ${allowed.join(", ")}.`;
       issues.push(atProp(nodeId, path, `holds <${element.component}> in a ${name} slot — ${why}`));
     }

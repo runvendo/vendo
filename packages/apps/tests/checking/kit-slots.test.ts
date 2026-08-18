@@ -127,7 +127,7 @@ describe("the Kit's slots", () => {
   });
 
   it("says so when the component takes no element at all", () => {
-    expect(issuesFor("Money", { amount: element("Text") })[0])
+    expect(issuesFor("Money", { value: element("Text") })[0])
       .toContain("<Money> takes no element in its props");
   });
 
@@ -137,11 +137,12 @@ describe("the Kit's slots", () => {
     const [cell] = issuesFor("DataTable", { columns: [{ key: "status", cell: element("Button") }] });
 
     expect(cell).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
-    expect(cell).toContain("a cell is read, never operated");
+    expect(cell).toContain("a cell shows its row, it does not act on it");
+    expect(cell).toContain("A per-row CONTROL goes in rowActions");
     expect(cell).toContain(`A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")}`);
     // …the entry body a Timeline paints per entry takes that same tier…
     expect(issuesFor("Timeline", { cell: element("Button") })[0])
-      .toContain("a cell is read, never operated");
+      .toContain("a cell shows its row, it does not act on it");
     // …and the marker beside it takes the narrower one it declares.
     expect(issuesFor("Timeline", { marker: element("Button") })[0])
       .toContain("this slot may hold: Icon, Avatar, Badge, EnumBadge, Text");

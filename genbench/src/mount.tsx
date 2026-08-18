@@ -13,9 +13,11 @@ import {
   defaultVendoTheme,
   flattenTree,
   KIT_COMPONENT_NAMES,
+  queryKey,
   resolveTheme,
   themeCssVariables,
   warmScreenEngine,
+  type ScreenQuery,
   type VendoTheme,
 } from "@vendoai/apps/contract";
 import { VendoProvider } from "@vendoai/ui";
@@ -57,6 +59,10 @@ interface Interactive {
 
 const interactive = (served as { interactive?: Interactive }).interactive;
 
+/** Times the screen may ask for another read before the open stops answering —
+ *  the same bound the save gate and the renderer keep. */
+const MAX_SUPPLY_ROUNDS = 3;
+
 /**
  * The payload as an OPEN produces it: the screen RUN — here, now — against the
  * answers this host gives this page.
@@ -88,13 +94,14 @@ async function opened(): Promise<UIPayload> {
   await warmScreenEngine();
   const plan = interactive.queryPlan ?? [];
   if (plan.length === 0) return served;
-  const queries = Object.fromEntries(plan.map((query) => {
-    const outcome = window.vendo.callTool(query.tool, query.input ?? {});
+  const answer = (asks: readonly ScreenQuery[]): Record<string, unknown> => Object.fromEntries(asks.map((query) => {
+    const outcome = window.vendo.callTool(query.tool, (query.input ?? {}) as Json);
     // A read that failed leaves its key absent, which is what the renderer's own
-    // re-read does with one (`ui/src/tree/use-screen.ts:169`) — the screen
-    // renders that query empty rather than the page rendering nothing.
-    return [query.tool, outcome.status === "ok" ? outcome.output : undefined];
+    // re-read does with one (`ui/src/tree/use-screen.ts`) — the screen renders
+    // that query empty rather than the page rendering nothing.
+    return [queryKey(query), outcome.status === "ok" ? outcome.output : undefined];
   }));
+  const queries = answer(plan);
   const screen = bootScreen({
     compiledSource: interactive.compiledSource,
     queries,
@@ -105,6 +112,15 @@ async function opened(): Promise<UIPayload> {
     now: Date.now(),
   });
   try {
+    // A read whose input the screen computes is named by the paint, not by the
+    // plan, so the open answers what the screen asks for until it stops asking —
+    // the same loop the save gate and the renderer run.
+    for (let round = 0; round < MAX_SUPPLY_ROUNDS; round += 1) {
+      const misses = screen.misses();
+      if (misses.length === 0) break;
+      Object.assign(queries, answer(misses));
+      screen.supply(queries);
+    }
     const flat = flattenTree(screen.tree());
     // The fresh answers travel with the tree: the VM `PayloadView` boots for the
     // screen's HANDLERS reads `interactive.queries`, and a handler working off

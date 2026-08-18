@@ -1,19 +1,17 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { formatDateTime } from "../../src/kit/format.js";
-import { RowContext } from "../../src/kit/row.js";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
 
 describe("Money", () => {
   it("formats a dollar amount as currency", () => {
-    render(<Money amount={1234.56} />);
+    render(<Money value={1234.56} />);
     expect(screen.getByText("$1,234.56")).toBeTruthy();
   });
 
   it("renders a placeholder for NaN — never $NaN", () => {
-    const { container } = render(<Money amount={Number.NaN} />);
+    const { container } = render(<Money value={Number.NaN} />);
     expect(container.textContent).toBe("—");
     expect(container.textContent).not.toContain("NaN");
   });
@@ -47,9 +45,22 @@ describe("DateTime", () => {
 });
 
 describe("Percent + Num", () => {
-  it("formats a ratio as a percentage", () => {
-    render(<Percent value={0.42} />);
+  it("prints the percentage it is given, with no trailing zeros to show", () => {
+    render(<Percent value={42} />);
     expect(screen.getByText("42%")).toBeTruthy();
+  });
+
+  // Rounding a figure nobody asked to round is a lie: an APR of 7.25% printed as
+  // "7%" is a different rate.
+  it("keeps the decimals the figure actually has", () => {
+    expect(render(<Percent value={7.25} />).container.textContent).toBe("7.25%");
+    expect(render(<Percent value={42} fractionDigits={1} />).container.textContent).toBe("42.0%");
+  });
+
+  // A host stores a rate as `apr_pct: 46.1`, and the ×100 convention turned that
+  // into "4,610%" on screen. Nothing multiplies now.
+  it("does not multiply a host's own 0-100 figure", () => {
+    expect(render(<Percent value={46.1} />).container.textContent).toBe("46.1%");
   });
 
   it("groups a large number", () => {
@@ -102,44 +113,17 @@ describe("Text", () => {
     render(<Text text="9f2c1ab" variant="code" />);
     expect(screen.getByText("9f2c1ab").getAttribute("style")).toContain("--vendo-mono-family");
   });
-});
 
-describe("the cell slot — a value bound to the row it is standing in", () => {
-  const inRow = (row: Record<string, unknown>, node: ReactNode) =>
-    render(<RowContext.Provider value={row}>{node}</RowContext.Provider>);
-
-  it("takes its primary value from the row's field, not its own prop", () => {
-    expect(inRow({ amount: 12.5 }, <Money amount={0} field="amount" />).container.textContent).toBe("$12.50");
-    expect(inRow({ due: "2026-03-14" }, <DateTime value="" field="due" mode="date" />).container.textContent).toBe(
-      "Mar 14, 2026",
-    );
-    expect(inRow({ share: 0.42 }, <Percent value={0} field="share" />).container.textContent).toBe("42%");
-    expect(inRow({ n: 1234567 }, <Num value={0} field="n" />).container.textContent).toBe("1,234,567");
-    expect(inRow({ status: "past_due" }, <EnumBadge value={null} field="status" />).container.textContent).toBe(
-      "Past due",
-    );
-    expect(inRow({ client: { name: "Maple" } }, <Text text="" field="client.name" />).container.textContent).toBe(
-      "Maple",
-    );
-  });
-
-  it("falls back to the explicit prop outside a row — the same component reads the same either way", () => {
-    expect(render(<Money amount={7} field="amount" />).container.textContent).toBe("$7.00");
-    expect(render(<Text text="Maple" field="client.name" />).container.textContent).toBe("Maple");
-  });
-
-  // `active`, `isPaid`, `archived` — a boolean is one of the commonest fields
+  // `active`, `isPaid`, `archived` — a boolean is one of the commonest values
   // there is, and React renders one as literally nothing.
-  it("shows a boolean field instead of swallowing it", () => {
-    expect(inRow({ active: false }, <Text field="active" />).container.textContent).toBe("false");
-    expect(inRow({ active: true }, <Text field="active" />).container.textContent).toBe("true");
+  it("shows a boolean instead of swallowing it", () => {
+    expect(render(<Text text={false} />).container.textContent).toBe("false");
+    expect(render(<Text text={true} />).container.textContent).toBe("true");
   });
 
-  it("a field holding the wrong type lands on the placeholder, never a crash", () => {
-    // Money needs a number and Text needs a node; a column bound to the wrong
-    // field must not take the screen down with it.
-    expect(inRow({ amount: "lots" }, <Money amount={1} field="amount" />).container.textContent).toBe("—");
-    expect(inRow({ client: { name: "Maple" } }, <Text text="" field="client" />).container.textContent).toBe("—");
-    expect(inRow({ status: "  " }, <EnumBadge value="paid" field="status" />).container.textContent).toBe("");
+  it("lands an object on the placeholder rather than throwing or spelling it out", () => {
+    // `text={row.client}` where `client` is a record: as a React child that
+    // throws, and through a formatter it reads "[object Object]".
+    expect(render(<Text text={{ name: "Maple" } as never} />).container.textContent).toBe("—");
   });
 });

@@ -86,39 +86,6 @@ export default function Spending() {
 }
 `;
 
-/** The BLANK CELL class: a function written into an element slot. The gauntlet
- *  refuses it, and its refusal already carries the corrected line — which is what
- *  the gate applies rather than spending a turn asking for it. */
-const SLOT_FUNCTION_APP = `import { DataTable, Money } from "@vendo/screen";
-
-export default function Ledger() {
-  return (
-    <DataTable
-      rows={[{ id: "tr_1", amount: 4200 }]}
-      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
-    />
-  );
-}
-`;
-
-/** The OTHER class the gate can spell: a change handler written as the value's
- *  own setter. A Kit control calls it with the event, so this screen stores
- *  `{ target: { value } }` in `month` — and the checker prints the handler that
- *  reads the value instead. */
-const CHANGE_HANDLER_APP = `import { useState } from "react";
-import { Select, Stack, Text } from "@vendo/screen";
-
-export default function Months() {
-  const [month, setMonth] = useState("jan");
-  return (
-    <Stack gap={8}>
-      <Select label="Month" options={["jan", "feb"]} onChange={setMonth} />
-      <Text text={month} />
-    </Stack>
-  );
-}
-`;
-
 /** A host read tool that DECLARES its result shape. It is EQUIPPED, so that shape
  *  reaches the model as the tool's own JSON Schema and the brief must not restate
  *  it — the field name is a probe for exactly that (below). */
@@ -492,55 +459,10 @@ describe("assembly writes through the real path and the seam paints it", () => {
     expect(note).not.toContain("That save landed.");
   });
 
-  /**
-   * The refusal spiral, closed at its most common turn: a function in an element
-   * slot is refused with the corrected line already computed off the AST
-   * (`screen-typecheck.ts`), and handing that back as prose cost a whole rewrite
-   * of a screen the person was already looking at — 13 seconds, then 8 more on the
-   * same error. The gate writes the line itself and lets the REAL gauntlet judge
-   * the result: nothing here is fixed that the checker did not already spell out.
-   */
-  it("writes the fix the checker already printed, and the screen paints on the same save", async () => {
-    const screen = harness({ turns: [saveApp(SLOT_FUNCTION_APP), textTurn("done")] });
-    const result = await screen.assemble("show me my ledger");
-
-    // The refusal never reached the model: one save_app call, one painted screen.
-    expect(result.kind).toBe("assembled");
-    expect(screen.emitted.map((part) => part.payload.streaming)).toEqual([false]);
-    expect(screen.deliveredCalls).toEqual([{ appId: APP, name: "Ledger" }]);
-    // The bytes in the workspace are the fixed ones — the element the checker
-    // named, and the import it needs, which the refused document never had.
-    const saved = await screen.workspace.readFile(`/user/apps/${APP}/${SCREEN_FILE}`);
-    expect(saved).toContain('cell: <Text field="amount"/>');
-    expect(saved).toContain('import { DataTable, Money, Text } from "@vendo/screen"');
-    // …and the model is TOLD, or its copy of the document is a lie the next
-    // `edit_app` quote would be written against.
-    const answer = JSON.stringify(screen.model.prompts[1] ?? "");
-    expect(answer).toContain("which was fixed for you");
-    expect(answer).toContain("cell: <Text field=");
-  });
-
-  /** The same door, for the change-handler class: the checker printed the whole
-   *  attribute, so the gate writes it rather than spending a turn asking for a
-   *  line it was already handed. */
-  it("writes the change handler the checker printed, on the same save", async () => {
-    const screen = harness({ turns: [saveApp(CHANGE_HANDLER_APP), textTurn("done")] });
-    const result = await screen.assemble("let me pick a month");
-
-    expect(result.kind).toBe("assembled");
-    expect(screen.deliveredCalls).toEqual([{ appId: APP, name: "Months" }]);
-    const saved = await screen.workspace.readFile(`/user/apps/${APP}/${SCREEN_FILE}`);
-    expect(saved).toContain("onChange={(e) => setMonth(e.target.value)}");
-    expect(saved).not.toContain("onChange={setMonth}");
-    const answer = JSON.stringify(screen.model.prompts[1] ?? "");
-    expect(answer).toContain("which was fixed for you");
-    expect(answer).toContain("onChange={(e) => setMonth(e.target.value)}");
-  });
-
-  it("falls back to a PATCH-ONLY refusal when its own fix does not paint either", async () => {
-    // Nothing here is of the one class the gate can spell, so the floor's own
-    // sentences travel — the FINDINGS, with the hand that fixes them named under
-    // them, and no word of the builder gate's own header. "Fix each of these, then
+  it("refuses a save that did not paint with the floor's findings and a PATCH-ONLY hand", async () => {
+    // The floor's own sentences travel — the FINDINGS, with the hand that fixes
+    // them named under them, and no word of the builder gate's own header.
+    // "Fix each of these, then
     // write the file again" (`repairInstruction`) sat directly above the line that
     // forbids exactly that, and the model obeyed the sentence it read first: a whole
     // document re-emitted per refusal, which is what the 174-second tails were made

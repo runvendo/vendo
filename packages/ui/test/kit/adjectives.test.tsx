@@ -12,7 +12,6 @@ import { Progress } from "../../src/kit/charts/progress.js";
 import { Badge } from "../../src/kit/data/badge.js";
 import { Callout } from "../../src/kit/feedback/callout.js";
 import { Card, Grid, Row, Stack, Surface } from "../../src/kit/layout.js";
-import { RowContext } from "../../src/kit/row.js";
 import { toneColor } from "../../src/kit/tokens.js";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
 
@@ -77,13 +76,13 @@ describe("tone is a theme token, never a literal color", () => {
   });
 
   // The catalog teaches "the figure that is bad news is `danger`", i.e. exactly
-  // `<Money field="amount" tone="danger"/>` — which painted nothing at all while
+  // `<Money value={2500} tone="danger"/>` — which painted nothing at all while
   // only Text and the pills read the adjective.
   it("every figure in the value tier paints from the palette", () => {
     const figures: Array<[string, ReactElement]> = [
-      ["Money", <Money amount={2500} tone="danger" />],
+      ["Money", <Money value={2500} tone="danger" />],
       ["DateTime", <DateTime value="2026-03-14" tone="danger" />],
-      ["Percent", <Percent value={0.42} tone="danger" />],
+      ["Percent", <Percent value={42} tone="danger" />],
       ["Num", <Num value={1234} tone="danger" />],
     ];
     for (const [name, node] of figures) {
@@ -92,9 +91,9 @@ describe("tone is a theme token, never a literal color", () => {
   });
 
   it("an untoned figure is untouched, and neutral is not a color of its own", () => {
-    const plain = kit(render(<Money amount={2500} />).container, "Money").style.color;
+    const plain = kit(render(<Money value={2500} />).container, "Money").style.color;
     expect(plain).toContain("var(--vendo-color-text");
-    expect(kit(render(<Money amount={2500} tone="neutral" />).container, "Money").style.color).toBe(plain);
+    expect(kit(render(<Money value={2500} tone="neutral" />).container, "Money").style.color).toBe(plain);
   });
 
   // The pill palette's own docblock promises every entry is a token or a mix of
@@ -207,19 +206,5 @@ describe("Grid minChildWidth", () => {
   it("keeps the fixed count when no floor is given", () => {
     const { container } = render(<Grid columns={3} />);
     expect(kit(container, "Grid").style.gridTemplateColumns).toBe("repeat(3, minmax(0, 1fr))");
-  });
-});
-
-// Badge's own suite lives in another file; its two new adjectives are here.
-describe("Badge", () => {
-  it("reads the row's field in a cell slot, and its own label outside one", () => {
-    render(
-      <RowContext.Provider value={{ plan: "Pro" }}>
-        <Badge label="Beta" field="plan" />
-      </RowContext.Provider>,
-    );
-    expect(screen.getByText("Pro")).toBeTruthy();
-    render(<Badge label="Beta" field="plan" />);
-    expect(screen.getByText("Beta")).toBeTruthy();
   });
 });

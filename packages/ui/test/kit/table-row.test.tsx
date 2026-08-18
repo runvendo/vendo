@@ -2,13 +2,12 @@
 /**
  * DataTable, with the rows painted by the model.
  *
- * A `field` binding has nowhere to put the ÷100, so a cents column rendered as
- * dollars — a 100x lie, and the dominant data-honesty failure across every
- * model in the 2026-08-16 benchmark. A row written as CHILDREN can do the math
- * where it reads the field, so these tests are about the two things that has to
- * survive: the cells must land under the headers they belong to, and everything
- * the table already does — sorting, search, the fold — must keep running on
- * `rows` and still address the right painted row.
+ * A whole row written by hand, where a `cell` function per column would be three
+ * functions saying the same thing. The math runs where the record is in scope, so
+ * these tests are about the two things that has to survive: the cells must land
+ * under the headers they belong to, and everything the table already does —
+ * sorting, search, the fold — must keep running on `rows` and still address the
+ * right painted row.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -35,7 +34,7 @@ const painted = (props: Partial<React.ComponentProps<typeof DataTable>> = {}, on
     {accounts.map((a) => (
       <TableRow key={a.id}>
         <Text text={a.name} />
-        <Money amount={a.balance_cents / 100} />
+        <Money value={a.balance_cents / 100} />
         <Button label="Cancel" onClick={() => onCancel(a.id)} />
       </TableRow>
     ))}
@@ -182,21 +181,24 @@ describe("DataTable with model-painted rows", () => {
   it("appends the actions cell to a painted row, against that row", () => {
     const pressed: string[] = [];
     render(painted({
-      rowActions: (
+      sortBy: "balance_cents desc",
+      // One element per record, in `rows` order — the shape a `(row) => elements`
+      // slot arrives in. Sorted, the list's order is nobody's screen order, so
+      // the trailing cell has to find its row by identity like every other cell.
+      rowActions: accounts.map((a) => (
         <>
-          <Text field="name" />
-          <Button label="Pay" onClick={() => pressed.push("pay")} />
+          <Text text={a.name} />
+          <Button label="Pay" onClick={() => pressed.push(a.id)} />
         </>
-      ),
+      )),
     }));
     const headers = screen.getAllByRole("columnheader");
     expect(headers).toHaveLength(4);
     for (const row of grid()) expect(row).toHaveLength(headers.length);
-    // Published on RowContext, so the control names THIS row's field.
-    expect(grid().map((row) => row[3])).toEqual(["CheckingPay", "SavingsPay", "TravelPay"]);
+    expect(grid().map((row) => row[3])).toEqual(["SavingsPay", "CheckingPay", "TravelPay"]);
 
     fireEvent.click(within(screen.getAllByRole("row")[1]!).getByRole("button", { name: "Pay" }));
-    expect(pressed).toEqual(["pay"]);
+    expect(pressed).toEqual(["a2"]);
   });
 
   it("still renders the field-binding table when it is handed no children", () => {
