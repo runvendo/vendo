@@ -302,21 +302,33 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       let carried: string | undefined;
       try {
         before = await deps.transcript.list(input.ctx.principal, input.threadId);
-        // A client-sourced history is not trusted history. The shipped rule
-        // (`validateUpsert`) is the one that decides what a caller may change:
-        // fresh USER messages, and answering a pending approval. Anything else —
-        // an assistant message the client authored, a rewritten past turn — is a
-        // history-forging attempt and must not reach the model or the store.
-        const persisted = [...before];
-        for (const message of input.messages) {
-          validateUpsert(persisted, message);
-          const at = persisted.findIndex((candidate) => candidate.id === message.id);
-          if (at === -1) persisted.push(message);
-          else persisted[at] = message;
+        // The composed path RE-STATES its own transcript: `harness-turn.ts`
+        // answers `list` with the very array it passes as `messages`, having
+        // already applied the upsert rule to the one message the client
+        // contributed. One array cannot differ from itself, so both passes below
+        // are decided before they start — every upsert matches and the history is
+        // an append — and running them spends an O(n) double stringify per turn
+        // proving a tautology. Identity is the whole condition, which is what
+        // keeps the skip provable: any caller whose stored history is a
+        // different array still takes both checks in full.
+        const restated = before === input.messages;
+        if (!restated) {
+          // A client-sourced history is not trusted history. The shipped rule
+          // (`validateUpsert`) is the one that decides what a caller may change:
+          // fresh USER messages, and answering a pending approval. Anything else —
+          // an assistant message the client authored, a rewritten past turn — is a
+          // history-forging attempt and must not reach the model or the store.
+          const persisted = [...before];
+          for (const message of input.messages) {
+            validateUpsert(persisted, message);
+            const at = persisted.findIndex((candidate) => candidate.id === message.id);
+            if (at === -1) persisted.push(message);
+            else persisted[at] = message;
+          }
         }
         // Classified BEFORE our own flip below, or the runtime's housekeeping
         // would read as the user rewriting history and clear the session.
-        if (classifyHistory(before, input.messages) !== "arbitrary-edit") {
+        if (restated || classifyHistory(before, input.messages) !== "arbitrary-edit") {
           carried = await harnessState.get(input.threadId, input.harness.name);
         } else {
           // §1.3: the harness's session no longer describes our conversation.

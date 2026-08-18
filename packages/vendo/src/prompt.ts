@@ -188,7 +188,19 @@ export async function assembleSystemPrompt(
   const user = userPromptBlock(ctx.user);
   if (user !== undefined) sections.push(user);
 
-  const directions = (await guard.directions(ctx))
+  // The assembler's two waits, started TOGETHER: the guard's directions and the
+  // knowledge index ask different questions of different backends and neither
+  // reads the other, so awaiting them in turn made a turn pay the sum. `Promise.all`
+  // rather than two loose promises because the first rejection must not leave the
+  // other one unhandled — `directions` fails closed, and a host's own resolver may
+  // reject too. The BYTES cannot move: the section order is the `push` order below,
+  // not the order these settle in.
+  const [directionsRead, knowledgeRead] = await Promise.all([
+    guard.directions(ctx),
+    typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge,
+  ]);
+
+  const directions = directionsRead
     .map((direction) => direction.trim())
     .filter(Boolean);
   if (directions.length > 0) {
@@ -204,7 +216,7 @@ export async function assembleSystemPrompt(
   // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
   // venues whose turns go through this assembler with a knowledge-capable
   // surface (chat + app); automation and MCP rely on the tool descriptor.
-  const knowledge = (await (typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge))?.trim();
+  const knowledge = knowledgeRead?.trim();
   if (knowledge && TREE_VENUES.has(ctx.venue)) sections.push(knowledge);
 
   const instructions = system?.instructions?.trim();

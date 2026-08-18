@@ -406,6 +406,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // costs no read, no write and no model call.
       const verdict = await config.limiter?.gate("message", input.ctx);
       if (verdict?.allow === false) return limitResponse(verdict);
+      // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
+      // directions live in here, which is why it is composition's job and not the
+      // harness's. Which discovery section it may promise is decided by what is
+      // actually on the listing: a curated surface has `find_tools`, an uncurated one
+      // has the connector pair (and only with connectors configured), or neither.
+      //
+      // STARTED HERE and awaited after the store phase. It needs only the
+      // request's ctx and the rail this harness carries — neither of which the
+      // store below can change — so assembling it after the reads meant the turn
+      // paid the store's wait and the guard's `directions` wait end to end.
+      // Started after the limiter gate, not before: a refused message must still
+      // cost nothing.
+      const rail = config.harness.toolSurface?.curated !== false
+        ? "find-tools" as const
+        : config.connectorDiscovery === true ? "connectors" as const : false;
+      const systemRead = config.system(input.ctx, { discovery: rail });
+      // A rejection is delivered where the prompt is awaited below; this only
+      // keeps a store-phase throw from turning it into an unhandled one.
+      void systemRead.catch(() => {});
       // The turn's opening reads, in ONE call where the store serves it: the
       // thread row, the workspace index, and the harness slot. Each part is
       // exactly what its own op answers, so the doors below decide on the same
@@ -592,7 +611,14 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           ...transcript,
           list: async (principal, threadId) =>
             threadId === thread.id && principal.subject === thread.subject
-              ? structuredClone(thread.messages)
+              // The ARRAY the turn is running, not a copy of it. The runtime
+              // takes its own deep copies of both the canonical transcript and
+              // the pristine one it diffs persistence against, so it never
+              // writes through this — and handing it the same array is what
+              // lets it SEE that its stored history and its incoming history
+              // are one thing, and skip re-validating the transcript against
+              // itself (runtime.ts).
+              ? thread.messages
               : transcript.list(principal, threadId),
         },
         harnessState: {
@@ -667,16 +693,14 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         }),
       });
 
-      // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
-      // directions live in here, which is why it is composition's job and not the
-      // harness's. Which discovery section it may promise is decided by what is
-      // actually on the listing: a curated surface has `find_tools`, an uncurated one
-      // has the connector pair (and only with connectors configured), or neither.
+      // What the prompt still COSTS the turn, now that it was assembled beside
+      // the store phase: the wait left over once the reads are done. The phase
+      // split has to keep summing to the wall clock (`modelMs` is the
+      // remainder), so an overlapped span must be billed once, to whichever
+      // phase was still waiting — and a prompt that finished first is honestly
+      // worth ~0ms to this turn.
       const promptAt = Date.now();
-      const rail = config.harness.toolSurface?.curated !== false
-        ? "find-tools" as const
-        : config.connectorDiscovery === true ? "connectors" as const : false;
-      const system = await config.system(input.ctx, { discovery: rail });
+      const system = await systemRead;
       // Spec 2026-08-05 §2, relocated (sub-1s shipment): the screen snapshot is
       // delivered BESIDE the stable prompt, not inside it — it changes every
       // message, and volatile bytes ahead of stable ones are what kept the
