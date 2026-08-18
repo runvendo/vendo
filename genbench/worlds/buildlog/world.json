@@ -51,7 +51,7 @@
       }
     },
     "get_build_stages": {
-      "does": "The stages of one pipeline run, in the order they run. The rows are the `data` array and are build 4188's stages. `status` is one of passed, failed, running, skipped.",
+      "does": "The stages of one pipeline run, in the order they run. This fixture does not vary by build_id — the rows are always build 4188's stages, so only ask about build 4188. `status` is one of passed, failed, running, skipped.",
       "takes": { "build_id": "string" },
       "data": {
         "data": [
@@ -64,7 +64,7 @@
       }
     },
     "get_build_log": {
-      "does": "The raw output of one stage of one run, line by line. The rows are the `data` array and are build 4188's test stage. `stream` is stdout or stderr.",
+      "does": "The raw output of one stage of one run, line by line. This fixture does not vary by build_id or stage — the rows are always build 4188's test stage, so only ask about build 4188's test stage. `stream` is stdout or stderr.",
       "takes": { "build_id": "string", "stage": "string" },
       "data": {
         "data": [
