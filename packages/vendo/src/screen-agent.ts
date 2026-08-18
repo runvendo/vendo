@@ -37,6 +37,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  VENDO_SLOTS_LIST_TOOL,
   isVendoError,
   log,
   mintTurnId,
@@ -167,26 +168,37 @@ export const SAVE_APP_TOOL = "save_app";
 export const EDIT_APP_TOOL = "edit_app";
 
 /**
+ * The two verbs that read an app which ALREADY EXISTS — on an EDIT and nowhere
+ * else, because the loadout follows the task.
+ *
+ * A fresh build's app is the file the run is about to write, so opening it or
+ * listing its saved records can only answer `not-found`: two entries on a
+ * ten-step menu whose one possible use is a step spent learning that. An edit
+ * starts the other way round — the document already on the person's screen is the
+ * thing being changed, so reading it is the first move. Withheld from the brief's
+ * button half too on a fresh build (`withheld` below): a screen cannot offer to
+ * open an app nobody has made yet.
+ */
+const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_data_list"];
+
+/**
  * The assembly verbs, by NAME rather than by risk.
  *
  * Names, because a grade is not this file's to lean on: host read tools come in
  * by risk below; these come in by name, and stay.
  *
  * `validate` comes OFF by name, for the mirror reason: it is graded `read` too, so
- * the risk half re-equips it unless something says not to (`callable` below).
+ * the risk half re-equips it unless something says not to (`NEVER_WIRED` below).
  * Every save is already gated by the floor on its way to the screen and told what
  * it says (`save_app` below), and every finished screen faces the mandatory check
  * at the end whether or not anybody asked. A model-facing verb on top of those two
  * buys nothing but steps off a ten-step budget.
  */
-const ASSEMBLY_TOOLS: readonly string[] = [
-  "vendo_apps_data_list",
-  "vendo_apps_open",
-  "ask_user",
-];
+const ASSEMBLY_TOOLS: readonly string[] = ["ask_user", ...EDIT_TOOLS];
 
 /**
- * Vendo's own machinery, which is never a button.
+ * Vendo's own machinery, which is never a button — and never a step here either
+ * (`withheld` below).
  *
  * The brief's tool section is the loadout's complement, so whatever this loop
  * cannot call is offered to it as something a screen may WIRE. That reading is
@@ -195,10 +207,15 @@ const ASSEMBLY_TOOLS: readonly string[] = [
  * grade is no protection — it can move, and the complement would silently take
  * them back. Named here so the answer does not depend on it.
  *
- * The `vendo_apps_*` verbs are deliberately NOT here: opening or pinning an app is
- * a real thing a person can want a button for.
+ * `vendo_slots_list` is the same trap one rung earlier: WHERE a view goes is the
+ * caller's question and never the writer's, and its `read` grade is the whole
+ * reason it kept being equipped as though it were.
+ *
+ * The `vendo_apps_*` verbs are deliberately NOT here: pinning an app, or opening
+ * one that exists, is a real thing a person can want a button for — the two READS
+ * are withheld on a fresh build by `EDIT_TOOLS`, which is a different claim.
  */
-const NEVER_WIRED: readonly string[] = ["validate", "schedule"];
+const NEVER_WIRED: readonly string[] = [VALIDATE_TOOL, "schedule", VENDO_SLOTS_LIST_TOOL];
 
 /**
  * What the lean loop needs, and nothing else.
@@ -1049,25 +1066,30 @@ export async function assembleScreen(
   // risk filter passed downward: the closed list stays a list, and the one place
   // that can decide "is this an assembly tool" is the one holding the listing.
   const offered = listings.filter((listing) => listing.name !== VENDO_MAKE_TOOL);
-  // `validate` is refused by name before the grade is ever consulted: the registry
-  // grades it `read` (`vendo-verbs.ts`'s `DESCRIPTORS`), so the risk half below is
-  // exactly how it kept coming back. See `ASSEMBLY_TOOLS` for why this loop does
-  // not carry it.
+  /** Is this run EDITING? There is no mode flag and none is wanted: the app to
+   *  open is the document at this app's own path, and its presence is the whole
+   *  distinction — read here exactly as the edit hand reads it above. */
+  const editing = await surface.workspace.readFile(`${directory}/${APP_FILE}`).then(() => true, () => false);
+  // Withheld from BOTH halves, by NAME before any grade is consulted: the registry
+  // grades every one of these `read` (`vendo-verbs.ts`'s `DESCRIPTORS`), so the
+  // risk filter below is exactly how they kept coming back, and the complement
+  // beneath it is where they would come back a second time as a button. See
+  // `ASSEMBLY_TOOLS` for why this loop carries no `validate`, and `NEVER_WIRED`
+  // for the rest.
+  const withheld = editing ? NEVER_WIRED : [...NEVER_WIRED, ...EDIT_TOOLS];
   const callable = (listing: ToolListing): boolean =>
-    listing.name !== VALIDATE_TOOL
+    !withheld.includes(listing.name)
     && (ASSEMBLY_TOOLS.includes(listing.name) || listing.risk === "read");
   const loadout: Array<string | HarnessHand> = offered.filter(callable).map((listing) => listing.name);
   // The other half of the same split, and the whole of the brief's tool section:
   // what a button may name and this loop may not call. Split ONCE, from one
   // predicate, so a tool can never be both equipped and described as un-callable —
   // the equipped ones arrive with their own schemas (`equipClosedLoadout`), and
-  // saying them again in prose is the same tool twice. `NEVER_WIRED` comes off
-  // this half only, and it is what catches `validate` on the way through: refusing
-  // to equip a verb drops it into the complement, and "this loop cannot call it" is
-  // not the same claim as "hand the person a button for it".
-  const wireable = offered
-    .filter((listing) => !callable(listing))
-    .filter((listing) => !NEVER_WIRED.includes(listing.name));
+  // saying them again in prose is the same tool twice. `withheld` comes off this
+  // half as well, and that is what catches the machinery on the way through:
+  // refusing to equip a verb drops it into the complement, and "this loop cannot
+  // call it" is not the same claim as "hand the person a button for it".
+  const wireable = offered.filter((listing) => !callable(listing) && !withheld.includes(listing.name));
 
   /** Every hand takes the words with it, exactly as a host call does below. */
   const acting = (hand: HarnessHand): HarnessHand => ({

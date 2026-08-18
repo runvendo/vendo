@@ -364,8 +364,13 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // The loadout is resolved where the listings are, so the real composed
     // registry — not the unit fixture's — is what has to produce these names.
     const walked = await walk({ turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")] });
-    expect(walked.model.toolNamesPerCall[0] ?? []).toContain("vendo_apps_open");
     expect(walked.model.toolNamesPerCall[0] ?? []).toContain("save_app");
+    // …and what it must NOT produce, on the real registry that serves them: this
+    // is a `vendo_make` with a freshly minted id, so there is no app to open and
+    // no records to list. The verbs are graded `read`, so only the composed
+    // registry can prove the withholding is not the fixture's doing.
+    expect(walked.model.toolNamesPerCall[0] ?? []).not.toContain("vendo_apps_open");
+    expect(walked.model.toolNamesPerCall[0] ?? []).not.toContain("vendo_slots_list");
   }, 60_000);
 
   it("fails honestly when assembly produces nothing that renders — no second engine behind it", async () => {

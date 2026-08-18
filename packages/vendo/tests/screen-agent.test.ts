@@ -145,6 +145,16 @@ const askUser: ToolDescriptor = { ...readTool("ask_user", "write") };
  *  tool that called this loop. */
 const vendoMake: ToolDescriptor = { ...readTool("vendo_make") };
 
+/** The two verbs that read an app that already exists, graded `read` exactly as
+ *  the registry grades them — which is how they rode onto a FRESH build's loadout,
+ *  where the app is the file the run has not written yet. */
+const appsOpen: ToolDescriptor = { ...readTool("vendo_apps_open") };
+const appsDataList: ToolDescriptor = { ...readTool("vendo_apps_data_list") };
+
+/** Machinery on the same `read` grade: WHERE a view goes is the caller's question,
+ *  and a writer handed the verb is a writer handed the workshop. */
+const slotsList: ToolDescriptor = { ...readTool("vendo_slots_list") };
+
 interface Harness {
   assemble(request: string): Promise<{ kind: string; why?: string; say?: string }>;
   emitted: VendoViewPart[];
@@ -176,9 +186,14 @@ function harness(options: {
   answers?: Record<string, Json>;
   /** The runtime's memory door, for the tests about what a REFUSING one costs. */
   remember?: (appId: AppId, decisions: string, ctx: RunContext) => Promise<void>;
+  /** The document this app ALREADY has, which is what makes a run an edit rather
+   *  than a fresh build — no mode flag exists, and the file's presence is the
+   *  distinction the loop reads. */
+  existing?: string;
 }): Harness {
   const guard = testGuard(options.guardPolicy);
-  const descriptors = options.tools ?? [spendSummary, sendMoney, validate, askUser, vendoMake];
+  const descriptors = options.tools
+    ?? [spendSummary, sendMoney, validate, askUser, vendoMake, appsOpen, appsDataList, slotsList];
   const toolArgs: Record<string, Json[]> = {};
   const registry = boundRegistry(
     Object.fromEntries(descriptors.map((descriptor) => [
@@ -193,7 +208,9 @@ function harness(options: {
     ])),
     guard,
   );
-  const workspace = testWorkspace();
+  const workspace = testWorkspace(
+    options.existing === undefined ? {} : { [`/user/apps/${APP}/${SCREEN_FILE}`]: options.existing },
+  );
   const emitted: VendoViewPart[] = [];
   const model = scriptedModel(options.turns);
   const deliveredCalls: Array<{ appId: AppId; name: string }> = [];
@@ -285,11 +302,60 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
     await screen.assemble("show me my spending");
 
-    // EXACTLY these four, hands included — the two that must never be there are a
-    // mutating host tool (`maple_pay`) and the front door that called this loop
-    // (`vendo_make`), and a closed list is a claim about what is absent.
+    // EXACTLY these four, hands included — a mutating host tool (`maple_pay`), the
+    // front door that called this loop (`vendo_make`) and every `read`-graded
+    // platform verb are all absent, and a closed list is a claim about what is
+    // absent. This is a FRESH build, which is the whole of what it may carry.
     expect(new Set(screen.model.toolNamesPerCall[0] ?? []))
       .toEqual(new Set(["ask_user", "maple_spend_summary", SAVE_APP_TOOL, EDIT_APP_TOOL]));
+  });
+
+  it("a FRESH build has no app to open, and is offered neither verb nor button for one", async () => {
+    // The loadout follows the task: this run's app is the file it has not written
+    // yet, so opening it or listing its saved records can only answer `not-found` —
+    // a step off a ten-step budget. Both are graded `read`, which is exactly how
+    // they rode in.
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+
+    const offered = screen.model.toolNamesPerCall[0] ?? [];
+    expect(offered).not.toContain("vendo_apps_open");
+    expect(offered).not.toContain("vendo_apps_data_list");
+    // …and they do not come back as a BUTTON. Refusing to equip a verb drops it
+    // into the brief's complement, so a withholding that covered one half would
+    // teach the model to wire the very tool it was not given.
+    expect(screen.model.systemPrompts[0] ?? "").not.toContain("vendo_apps_");
+  });
+
+  it("an EDIT gets both back — the document already at this app's path is the distinction", async () => {
+    // No mode flag exists and none is wanted: the app to open is the file the loop
+    // is about to rewrite, and its presence is what the run reads.
+    const screen = harness({
+      existing: TWO_TEXT_APP,
+      turns: [sayAndEdit("Renamed it.", [{ find: '"Last month"', replace: '"July"' }])],
+    });
+    const result = await screen.assemble("call it July");
+
+    expect(result.kind).toBe("assembled");
+    const offered = screen.model.toolNamesPerCall[0] ?? [];
+    expect(offered).toContain("vendo_apps_open");
+    expect(offered).toContain("vendo_apps_data_list");
+  });
+
+  it("offers no `vendo_slots_list` in either mode — where a view GOES is the caller's question", async () => {
+    // Machinery riding in on a `read` grade, exactly as `validate` did: a writer
+    // handed the slot registry is a writer handed the workshop.
+    for (const existing of [undefined, TWO_TEXT_APP]) {
+      const screen = harness({
+        turns: [saveApp(GOOD_APP), textTurn("done")],
+        ...(existing === undefined ? {} : { existing }),
+      });
+      await screen.assemble("show me my spending");
+      expect(screen.model.toolNamesPerCall[0] ?? []).not.toContain("vendo_slots_list");
+      // …and not a button either (`NEVER_WIRED`), for the same reason `validate` is
+      // not one.
+      expect(screen.model.systemPrompts[0] ?? "").not.toContain("vendo_slots_list");
+    }
   });
 
   it("carries no door out — no `escalate` hand, and the environment note names none", async () => {
