@@ -4,6 +4,22 @@ sidebarTitle: "Changelog"
 description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
+<Update label="August 17, 2026" description="Week of August 17 – August 23">
+
+## Breaking changes
+
+**`vendo_make` no longer escalates to the builder.** The screen agent's loadout no longer carries an `escalate` tool, and its environment note no longer teaches one. `vendo_make` is now bounded to a single screen assembled from your product's own components.
+
+An ask bigger than a screen answers with a failed receipt naming what assembly could not do. Nothing is painted, and no sandbox is provisioned, even on deployments that have one configured.
+
+Reach the builder explicitly from your own backend by calling `vendo.apps.create({ prompt, why })`. `prompt` is the person's ask verbatim; `why` is one plain sentence naming what assembly cannot serve. `vendo.apps.edit` takes no `why` and does not reach the builder.
+
+Update any system prompt or host code that told an agent to expect `vendo_make` to fall through to a build. The `ScreenOutcome` `kind: "escalate"` and every downstream `@vendoai/apps` consumer of it are unchanged and still work when a host calls `apps.create` directly.
+
+See [How the door works](/outside-agents/how-the-door-works#what-comes-back) and [Existing agent quickstart](/existing-agent/quickstart#teach-your-model-when-to-build-ui).
+
+</Update>
+
 <Update label="July 17, 2026" description="Week of July 14 – July 20">
 
 ## New features

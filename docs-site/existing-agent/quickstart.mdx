@@ -85,7 +85,7 @@ Every tool lands under a `vendo_` prefix, so nothing collides with a tool of you
 | Tool | What your model gets |
 | --- | --- |
 | `vendo_<your action>` | one per registered host action, guard-wrapped per call |
-| `vendo_make` | a live view, returned as an app ref right away while the build streams |
+| `vendo_make` | a live view, returned as an app ref right away while the build streams. Bounded to one screen assembled from your product's components; a bigger ask comes back as a failed receipt. |
 | `vendo_delegate` | a whole task handed to Vendo's own agent, back as `{ status, summary, refs }` |
 
 Pass `include` or `exclude` to trim the pack by final tool name, exact match.
@@ -277,13 +277,21 @@ are not on. So:
   buttons, and never tell them what to click.
 - Never paste a link or an id unless they asked.
 - status "failed": try once more on the same `app`, narrower, then stop and say
-  so plainly.
+  so plainly. `vendo_make` only assembles a single screen out of the product's
+  own components — an ask that needs real code, its own server, an uploaded
+  file, or a scheduled job comes back as "failed" with nothing painted. Do not
+  try the same big ask a second way through this tool.
 - status "building": honest, not an error. Say the line and move on.
 - status "partial": the screen is on their page, the server-side part of it is
   not. Say the line and offer to try that part again. Never rebuild it.
 ```
 
 Those slot ids are yours to publish. A `<VendoSlot id="…">` from `@vendoai/vendo/react` is a place in one of your own pages a generated view can occupy — without one, every screen lands in the person's own list of views. [Mount the surface](/product/mount-the-surface) has the component.
+
+<Note>
+`vendo_make` is the screen assembler, and it has no door out to a bigger build. To reach the builder from your own backend — for real code, an app that runs its own server, or work that must happen while nobody is watching — call `vendo.apps.create({ prompt, why })` directly. `prompt` is the person's ask verbatim and `why` is one plain sentence naming what assembly could not do. `vendo.apps.edit` has no `why` and does not reach the builder, so an existing app cannot be promoted through it.
+</Note>
+
 
 The same guidance ships to Claude Code as a skill,
 [`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).
