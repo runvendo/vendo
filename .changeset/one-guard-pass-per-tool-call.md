@@ -30,12 +30,14 @@ gate above, so a call that does not proceed spends nothing. Any of these voids
 the verdict and the full pipeline decides again. An "ask" is never carried
 forward at all — the tap that answers it IS the fresh verdict the dispatch reads.
 
-The judge is asked once per call, so a run's outstanding previewed verdicts are
-voided the moment a write lands in that run: the judge decides on the audit
-trail, and a step whose tools were all previewed before any of them dispatched
-would otherwise let the second write run on a verdict taken before the first one
-existed. Sequential calls — preview, then dispatch with nothing in between — keep
-the single pass.
+The judge is asked once per call, so a subject's outstanding previewed verdicts
+are voided the moment ANY call for that subject lands — at any risk grade, in any
+run or session. The judge decides on the audit trail, and that trail is the
+subject's, not the run's: a step whose tools were all previewed before any of them
+dispatched would otherwise let the second call run on a verdict taken before the
+first one existed, and a landed read or a landed connector call is exactly the
+shape a judge most wants to weigh. Sequential calls — preview, then dispatch with
+nothing in between — have no outstanding verdict to void and keep the single pass.
 
 Host-API calls also ride the keep-alive connection pool the store already uses.
 Node's stock dispatcher drops an idle socket after ~4s — shorter than the gap

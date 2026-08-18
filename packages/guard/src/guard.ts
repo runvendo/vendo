@@ -528,7 +528,7 @@ class GuardImplementation implements VendoGuard {
    *  swept with the breaker maps for a preview no dispatch ever collected. */
   readonly #previewed = new Map<
     string,
-    { at: number; runKey: string; completed: CompletedDecision }
+    { at: number; subject: string; completed: CompletedDecision }
   >();
   readonly #config: CreateGuardConfig;
   readonly #policyConfig: PolicyConfigObject | undefined;
@@ -621,7 +621,7 @@ class GuardImplementation implements VendoGuard {
       this.#sweepBreakerState(Date.now());
       this.#previewed.set(previewKey(call, descriptor, ctx), {
         at: Date.now(),
-        runKey: ctx.trigger?.runId ?? ctx.sessionId,
+        subject: ctx.principal.subject,
         completed,
       });
     }
@@ -1783,17 +1783,17 @@ class GuardImplementation implements VendoGuard {
     } finally {
       if (key !== undefined) this.#effectsInFlight.delete(key);
     }
-    // A write just landed in this run, and the judge decides on the audit trail
-    // — so every verdict still previewed for this run was decided by a judge
-    // that could not see this call. Void them: the next dispatch re-decides
-    // against a trail that includes it. The AI-SDK brain previews a whole step's
-    // tools before it dispatches any of them, so without this the second write
-    // of a parallel pair runs on a verdict taken before the first one existed.
-    if (mutating) {
-      const runKey = ctx.trigger?.runId ?? ctx.sessionId;
-      for (const [previewedKey, entry] of this.#previewed) {
-        if (entry.runKey === runKey) this.#previewed.delete(previewedKey);
-      }
+    // A call just landed, and the judge decides on the audit trail — so every
+    // verdict still previewed for this SUBJECT was decided by a judge that
+    // could not see it. Void them: the next dispatch re-decides against a trail
+    // that includes it. The AI-SDK brain previews a whole step's tools before it
+    // dispatches any of them, so without this the second call of a parallel pair
+    // runs on a verdict taken before the first one existed. The scope is the
+    // subject at ANY grade because that is `#queryAudit`'s scope in
+    // `#checkWithMetadata`: a narrower void leaves the judge blind to a landed
+    // read, a landed ungraded connector call, or the person's other session.
+    for (const [previewedKey, entry] of this.#previewed) {
+      if (entry.subject === ctx.principal.subject) this.#previewed.delete(previewedKey);
     }
     // Only a SUCCESS is ledgered. A failed mutation may not have landed
     // at all, so recording it would turn a transient upstream error into
