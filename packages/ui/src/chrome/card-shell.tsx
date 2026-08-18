@@ -44,6 +44,20 @@ export const CARD_EYEBROWS = {
   waiting: "Waiting on you",
 } as const;
 
+/** What separates the facts on the sentence family's one quiet line
+    (`ul.fl-approval-sub` — the ask, the press modal, the connect row). It leads
+    every item but the first, as REAL text inside the `<li>`, where a CSS
+    `content` rule used to draw it between them.
+    Generated content is not invisible to a screen reader — Chromium puts it in
+    the accessibility tree, and the item reads "· Permanent: Yes" either way. It
+    is invisible to the CLIPBOARD: copying the line gave back "This makes a
+    change you can’t undo, as you.asked in an app", every fact run into the
+    next. Inside the item is the only place that fixes the copy and keeps the
+    list a list — a separator BETWEEN the items is a text node whose parent is
+    the `<ul>`, which axe fails as WCAG 1.3.1 ("<ul> and <ol> must only directly
+    contain <li>"). */
+export const NOTE_SEPARATOR = " · ";
+
 /* Law 3's fallback used to live here as `runsAsYouLine(title)` — "Vendo will
    run Send money as you.", the tool's label read back at the user. It is now
    `consentClassLine(name, risk)` in build-beat.tsx, which says what an approval

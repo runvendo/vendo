@@ -2007,11 +2007,13 @@ html[data-vendo-dock] {
 .fl-approval-sub { margin: 4px 0 0; font: 400 12px/1.5 var(--vendo-font);
   color: var(--vendo-fg-muted); overflow-wrap: anywhere; white-space: pre-line; }
 /* The ask's notes are a LIST (each remaining input, what approving does, who
-   asked) that reads as one line: the items run inline and the " · " between
-   them is drawn here, as punctuation a screen reader never announces. */
+   asked) that reads as one line: the items run inline, and the " · " leading
+   each one after the first is REAL text in the markup (NOTE_SEPARATOR), not a
+   \`content\` rule here. Generated content was never hidden from a screen
+   reader — Chromium hands it to the accessibility tree — but it is hidden from
+   the CLIPBOARD, so the copied line read "…as you.asked in an app". */
 ul.fl-approval-sub { padding: 0; list-style: none; }
 .fl-approval-sub li { display: inline; }
-.fl-approval-sub li + li::before { content: " · "; }
 /* A settled receipt that FAILED keeps the thread's error register — the same
    danger ✕ its beat wears. Colour is never the only carrier (the glyph is). */
 .fl-approval-sub--failed { color: var(--vendo-danger); }

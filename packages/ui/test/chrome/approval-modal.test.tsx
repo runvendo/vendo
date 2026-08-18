@@ -102,7 +102,10 @@ describe("the screen-initiated approval modal", () => {
       // The honesty law: what the question did not name is on the surface,
       // never behind a fold — and the raw 4750 never reaches a person.
       expect(rows()).toEqual(["Memo: July water bill"]);
-      expect(notes()).toEqual(["Sends now, as you", "Can’t be undone"]);
+      // ⚠️ TEST EDIT (clipboard separator): the " · " leads every item but the
+      // first as real text now — a CSS-drawn one never reached the clipboard —
+      // so the items ARE what a person copies out of the modal.
+      expect(notes()).toEqual(["Sends now, as you", " · Can’t be undone"]);
       expect(screen.getByRole("dialog").textContent).not.toContain("4750");
     });
 

@@ -4,7 +4,7 @@ import { useVendoProvider } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
-import { CardShell, LINK_GLYPH, TICK_GLYPH, ToolkitLogo } from "./card-shell.js";
+import { CardShell, LINK_GLYPH, NOTE_SEPARATOR, TICK_GLYPH, ToolkitLogo } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { completeConnection, connectRefusalCopy, openConnectPopup } from "./connect-dock.js";
 import { developmentMode } from "./dev-mode.js";
@@ -234,14 +234,17 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
           <div className="fl-connect-copy">
             <div className="fl-connect-name">{displayName}</div>
             {/* Law 3's line, drawn the way the approval card draws its notes:
-                ONE line to the eye, a LIST to a screen reader, with the " · "
-                between items in CSS so it is never announced. Named for what it
-                holds: the ask's terms before, the account's receipt after. */}
+                ONE line to the eye, a LIST to a screen reader, joined by the
+                same real `NOTE_SEPARATOR` (a CSS-drawn one never reached the
+                clipboard). Named for what it holds: the ask's terms before, the
+                account's receipt after. */}
             <ul
               className="fl-card-line fl-approval-sub"
               aria-label={connected ? `What ${displayName} can now do` : `What connecting ${displayName} does`}
             >
-              {notes.map((item, index) => <li key={index}>{item}</li>)}
+              {notes.map((item, index) => (
+                <li key={index}>{index > 0 ? NOTE_SEPARATOR : null}{item}</li>
+              ))}
             </ul>
           </div>
           <div className="fl-connect-act">
