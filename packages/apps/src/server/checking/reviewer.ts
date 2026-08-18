@@ -60,7 +60,7 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
           },
           message: {
             type: "string",
-            description: "One sentence: what is wrong AND the real alternative.",
+            description: "One sentence: what the screen does, and the evidence for it.",
           },
         },
       },
