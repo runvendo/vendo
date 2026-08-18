@@ -239,9 +239,10 @@ function jsonMutationRequired(request: Request, path: string): boolean {
   // no ambient credentials, curl-able from any language inside the box — so
   // the CSRF json gate doesn't apply; JSON-bodied box routes validate their
   // own content-type like the webhook surface does.
-  // `/files` carries the dropped file's own bytes under its own media type, for
-  // the same reason `/apps/import` does — and buys the same CSRF answer: a real
-  // file's media type is not CORS-safelisted, so a cross-origin post preflights.
+  // `/files` carries the dropped file's own bytes under its own media type, so
+  // it cannot be JSON either. It does NOT get the media-type toll `/apps/import`
+  // pays — an upload's Content-Type is the file's own, and `text/plain` is
+  // CORS-safelisted — so it requires the UPLOAD_HEADER instead (wire/files.ts).
   if (path === "/apps/import" || path === "/files" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
   return true;
 }

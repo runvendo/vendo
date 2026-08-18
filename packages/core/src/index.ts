@@ -19,6 +19,7 @@ export * from "./define-tool.js";
 export * from "./deployment-identity.js";
 export * from "./descriptor-hash.js";
 export * from "./errors.js";
+export * from "./files-wire.js";
 export * from "./formats.js";
 export * from "./box-ports.js";
 export * from "./grants.js";

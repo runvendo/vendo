@@ -611,7 +611,7 @@ describe("09 §3 public wire", () => {
     expect(await listAfter.json()).toHaveLength(1);
   });
 
-  it("enforces JSON CSRF on mutations with only the three contracted exceptions", async () => {
+  it("enforces JSON CSRF on mutations with only the five contracted exceptions", async () => {
     const { vendo, resolver } = await setup();
     stubRouteBlocks(vendo);
     for (const [method, path] of [["POST", "/threads"], ["POST", "/apps"], ["DELETE", "/apps/app_wire"]]) {

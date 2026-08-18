@@ -9,7 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { genericJwtPreset } from "@vendoai/actions/presets";
-import type { FilesAdapter, PermissionGrant, Principal } from "@vendoai/core";
+import { UPLOAD_HEADER, type FilesAdapter, type PermissionGrant, type Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -112,7 +112,7 @@ const upload = (
 ): Promise<Response> =>
   vendo.handler(new Request(`https://host.test/api/vendo/files?name=${encodeURIComponent(name)}`, {
     method: "POST",
-    headers: { "content-type": contentType, ...headers },
+    headers: { "content-type": contentType, [UPLOAD_HEADER]: "1", ...headers },
     body: body as BodyInit,
   }));
 
@@ -160,6 +160,52 @@ describe("the user's file drawer — real doors, real workspace", () => {
     const put = await vendo.putUserFile({ principal, name: "export.bin", content: big });
     expect(put.bytes).toBe(big.byteLength);
     expect((await readBack(vendo, "/user/files/export.bin")).length).toBe(big.byteLength);
+  });
+
+  it("refuses an otherwise valid upload that carries no upload header", async () => {
+    const { vendo } = await compose();
+    // Everything else is right: signed-in caller, good name, tiny body, and a
+    // CORS-SAFELISTED media type — the exact shape a hostile page could post
+    // cross-origin with the user's ambient cookie. The header is the only thing
+    // a browser cannot forge without a preflight, so it is the only thing
+    // standing between that page and the user's drawer.
+    const response = await vendo.handler(new Request("https://host.test/api/vendo/files?name=evil.txt", {
+      method: "POST",
+      headers: { "content-type": "text/plain", ...(await bearer()) },
+      body: bytes("owned") as BodyInit,
+    }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("validation");
+    await expect(readBack(vendo, "/user/files/evil.txt")).rejects.toThrow();
+  });
+
+  it("takes a text/plain upload that DOES carry the header", async () => {
+    const { vendo } = await compose();
+    // The same safelisted media type, now same-origin: the toll is the header,
+    // never the content type, so ordinary .txt uploads still work.
+    const response = await upload(vendo, "notes.txt", bytes("hello"), await bearer(), "text/plain");
+
+    expect(response.status).toBe(200);
+    expect(await readBack(vendo, "/user/files/notes.txt")).toBe("hello");
+  });
+
+  it("refuses an over-cap upload on its DECLARED length, before reading it", async () => {
+    const { vendo } = await compose();
+    // No body at all — only the header claiming one. A door that measured after
+    // buffering could not answer this at all; this one refuses on the claim.
+    const response = await vendo.handler(new Request("https://host.test/api/vendo/files?name=huge.csv", {
+      method: "POST",
+      headers: {
+        "content-type": "text/csv",
+        "content-length": String(UPLOAD_MAX_BYTES + 1),
+        [UPLOAD_HEADER]: "1",
+        ...(await bearer()),
+      },
+    }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.message).toContain(String(UPLOAD_MAX_BYTES + 1));
   });
 
   it("refuses an over-cap upload with 400, and writes nothing", async () => {
