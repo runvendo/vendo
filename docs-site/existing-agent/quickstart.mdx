@@ -34,9 +34,9 @@ Pin the majors. Vendo peers `ai` at 6, and a bare `ai` installs 7 today — npm 
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
 
-Move init's `createVendo` call into `lib/vendo.ts` and export the caller resolver beside it. Your chat route, your wire route, and the pack all need the same instance.
+Init put that `createVendo` call in `lib/vendo.ts` already (`src/lib/vendo.ts` when your app lives under `src/`), with the wire route a thin handler over it. Export the caller resolver beside it — your chat route, your wire route, and the pack all need the same instance.
 
-```ts lib/vendo.ts
+```ts lib/vendo.ts focus={5}
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo } from "@vendoai/vendo/server";
 
