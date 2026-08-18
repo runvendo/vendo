@@ -59,12 +59,15 @@ const DESCRIPTOR: ToolDescriptor = {
   risk: "write",
 };
 
-/** No phone, no text — and the fix is a link, not an apology. The invite is
- *  minted rather than described because the code expires (LINK_CODE_TTL_MS) and a
- *  stale one reads as a broken product. */
-const notLinked = (url: string) =>
-  "No phone is linked to this account, so there is nothing to text. Tell them so plainly and offer them this "
-  + `link to connect one — it opens a prefilled first message: ${url}`;
+/** No phone this can reach — either nobody linked one, or the link is minutes
+ *  old and the router has not carried a real message on it yet (a one-text link
+ *  relays no conversation of its own). ONE sentence covers both, because the fix
+ *  is the same: the person texts once. The invite is minted rather than described
+ *  because a code expires (LINK_CODE_TTL_MS) and a stale one reads as a broken
+ *  product. */
+const noReachablePhone = (url: string) =>
+  "There is no phone this can reach for this account yet — a phone becomes reachable once its owner has texted "
+  + `here at least once. Tell them so plainly, and offer them this link, which opens a prefilled first message: ${url}`;
 
 /** The router had the conversation and could not deliver on it (a lapsed
  *  iMessage assignment answers 404). Never a fabricated success: the model is
@@ -98,7 +101,7 @@ export function textMeRegistry(deps: TextMeDeps): ToolRegistry {
       const link = await deps.links.bySubject(ctx.principal.subject);
       if (link?.conversationId === undefined) {
         const invite = await deps.invite(ctx.principal);
-        return { status: "error", error: { code: "not-linked", message: notLinked(invite.url) } };
+        return { status: "error", error: { code: "not-linked", message: noReachablePhone(invite.url) } };
       }
       try {
         await deps.channel.send({ conversationId: link.conversationId, text });
