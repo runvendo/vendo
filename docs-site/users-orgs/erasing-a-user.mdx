@@ -20,6 +20,10 @@ const report = await erase.bySubject(subjectId);
 with a real bucket erases every row and quietly keeps the objects. Pass the same
 adapter you wired as `files`, or `storeFiles(store)` when blobs ride the store.
 
+That is the call for a local or BYO Postgres store. On Vendo Cloud the hosted store
+answers through its own door instead — see [On Vendo Cloud](#on-vendo-cloud) — and
+handing `eraseStore` a hosted handle throws `Unknown VendoStore handle`.
+
 The report is per-table deleted counts — every table present, zeroes included — plus
 `workspace_content_objects`, a count of workspace content objects removed rather than
 bytes. Log it or assert on it.
