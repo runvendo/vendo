@@ -15,6 +15,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer, judgmentRules } from "../../src/server/checking/layer.js";
 import { reviewerCheck } from "../../src/server/checking/reviewer.js";
+import { REVIEWER_SYSTEM } from "../../src/server/checking/reviewer-prompt.js";
 import { inlineSourceFile } from "../../src/server/persistence/app-source.js";
 import type { Check, CheckInput } from "../../src/server/checking/types.js";
 import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
@@ -76,6 +77,45 @@ const samples = {
 
 const reported = (findings: unknown): { tool: string; input: unknown } =>
   ({ tool: "report_findings", input: { findings } });
+
+describe("a finding is a fact, and a fact only", () => {
+  /**
+   * A FINDING IS AN ORDER, NOT A NOTE. It travels verbatim under "Fix each of
+   * these, then write the file again" (`generation/validate-gate.ts`
+   * `repairInstruction`) to a builder that cannot see the reviewer's reasoning, so
+   * a word of advice in it is a word that gets carried out. Run
+   * 2026-08-18T15-25-05, case team-permissions: the reviewer advised "answer
+   * honestly rather than substituted" and the repair deleted a wired
+   * `update_team_role` select. So the section that tells the reviewer what a
+   * message IS gets read for the words advice arrives in, rather than trusted.
+   */
+  const FORMAT_HEADING = "Each finding has three fields";
+  /** The connectives and verbs a remedy shows up as in English, plus the phrase
+   *  this prompt used to ask for outright ("what is wrong AND the real
+   *  alternative"). */
+  const ADVISORY = /\binstead\b|\brather\b|\bshould\b|\bought\b|\bsuggest|\brecommend|\bconsider\b|the real alternative/iu;
+
+  it("asks the findings format for evidence, and never for a remedy", () => {
+    const at = REVIEWER_SYSTEM.indexOf(FORMAT_HEADING);
+    expect(at, `the reviewer's prompt no longer has a "${FORMAT_HEADING}" section`).toBeGreaterThan(-1);
+    const format = REVIEWER_SYSTEM.slice(at);
+
+    // The charter itself, so this can never pass by the section going missing.
+    expect(format).toContain("every word of it checkable");
+    expect(format).toContain("no remedy, no redesign");
+    expect(format).not.toMatch(ADVISORY);
+  });
+
+  it("keeps the checks it talked itself out of off the list", () => {
+    // In that same run, 31% of blocks and 16% of warns were the reviewer flagging
+    // something, checking its own arithmetic, concluding there was no issue — and
+    // reporting it anyway; another 18% of warns asked the reader to "verify" or
+    // "confirm". Both reach the repair round as an order to change a screen that
+    // was right, so the prompt names them and this pins that it does.
+    expect(REVIEWER_SYSTEM).toContain("EMIT ONLY WHAT YOU VERIFIED");
+    expect(REVIEWER_SYSTEM).toMatch(/talks itself back out[\s\S]*?hedges/u);
+  });
+});
 
 describe("host and pack judgment rules reach the reviewer (F2)", () => {
   const CITE_TOTALS = "Every total on screen has to say which report it came from.";
@@ -192,7 +232,7 @@ describe("the AI reviewer", () => {
       {
         severity: "block",
         where: '<Text> labeled "Total: $12,480"',
-        message: "the total is hand-typed; the invoices query returns amountCents — sum that instead",
+        message: "the figure $12,480 is typed into the screen and appears in no tool response",
       },
       {
         severity: "warn",
@@ -207,7 +247,7 @@ describe("the AI reviewer", () => {
       {
         severity: "block",
         where: '<Text> labeled "Total: $12,480"',
-        message: "the total is hand-typed; the invoices query returns amountCents — sum that instead",
+        message: "the figure $12,480 is typed into the screen and appears in no tool response",
       },
       {
         severity: "warn",
@@ -291,7 +331,7 @@ describe("the AI reviewer", () => {
     const model = scriptedLanguageModel(() => reported([{
       severity: "block",
       where: '<Button> labeled "Remind client"',
-      message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
+      message: 'the button is labelled "Remind client" and calls host_listInvoices, whose description is "Open invoices"',
     }]));
     const layer = createCheckingLayer({ checks: [reviewerCheck(deps(model), samples)] });
 
@@ -305,7 +345,7 @@ describe("the AI reviewer", () => {
     expect(findings).toContainEqual({
       severity: "block",
       where: '<Button> labeled "Remind client"',
-      message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
+      message: 'the button is labelled "Remind client" and calls host_listInvoices, whose description is "Open invoices"',
       check: "reviewer",
     });
     expect(findings.some(({ check, message }) =>

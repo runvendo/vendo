@@ -63,7 +63,7 @@ const INVENTED_DATA: Finding = {
 const DEAD_CONTROL: Finding = {
   severity: "warn",
   where: '<Button> labeled "Remind client"',
-  message: "the button calls a tool that only reads invoices — it sends no reminder; drop it or say so honestly.",
+  message: "pressing the button calls a tool that only reads invoices; nothing on this screen sends a reminder.",
 };
 
 /** A screen that paints a status as a BARE WORD — which is the one thing the host
@@ -81,11 +81,12 @@ export default function Invoices() {
 `;
 
 /** What the reviewer answers when it applies that rule: a `warn`, because the
- *  person can see it too, quoting the rule it applied. */
+ *  person can see it too — the two halves of a fact, the screen's own text and
+ *  the rule it is read against, and no word about what to do instead. */
 const BROKEN_CONVENTION: Finding = {
   severity: "warn",
   where: '<Text> reading "past_due"',
-  message: 'the status is a bare word, and this product\'s rule is "A status is a pill (EnumBadge), never a bare word" — render it as <EnumBadge value={invoice.status}/>.',
+  message: 'the status renders as the bare word past_due, and this product\'s rule is "A status is a pill (EnumBadge), never a bare word".',
 };
 
 /** A host's own JUDGMENT RULE, plugged in through a pack. It is not code: it is
@@ -365,6 +366,10 @@ describe("the host's own design rules are rubric lines, not just brief text", ()
     // …the instruction to judge the screen by it, at the severity that buys a fix…
     expect(rubric).toContain("READ THE SCREEN AGAINST THIS PRODUCT'S OWN CONVENTIONS");
     expect(rubric).toMatch(/visibly breaks[\s\S]*?"warn"/u);
+    // …and in FACT form: the two halves are what the screen renders and what the
+    // rule says, never what to render in its place. A finding reaches the repair
+    // round as an order, so a remedy here is a remedy carried out.
+    expect(rubric).toContain("what the screen renders, and what the rule says");
     // …and the screen that breaks it, in the same call.
     expect(userPrompts[0] ?? "").toContain('text="past_due"');
     // The finding comes back out of the door and does NOT kill the screen: `ok`
