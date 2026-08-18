@@ -37,7 +37,7 @@ import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
-import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
+import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeProps } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
 import { deriveFormShape, FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
@@ -286,7 +286,7 @@ function reifyElement(node: ElementBinding, bind: (value: unknown) => unknown): 
   const children = node.children?.map((child, index) => typeof child === "string"
     ? child
     : <Fragment key={index}>{isElementNode(child) ? reifyElement(child, bind) : null}</Fragment>);
-  return <Implementation {...bind(node.props ?? {}) as Record<string, unknown>}>{children}</Implementation>;
+  return <Implementation {...safeProps(bind(node.props ?? {}) as Record<string, unknown>)}>{children}</Implementation>;
 }
 
 /** The node's own handler dispatch, node-scoped by NodeRenderer. */
@@ -360,7 +360,9 @@ function bindValue(
 }
 
 /** Binds a node's props, reporting the first reshape mismatch with its prop
- *  name: the region shows one contained notice, not a broken component. */
+ *  name: the region shows one contained notice, not a broken component. The
+ *  bound props leave through {@link safeProps}, the one style door every node
+ *  passes (display-bricks.tsx). */
 function bindProps(
   props: Record<string, Json> | undefined,
   data: Record<string, Json>,
@@ -378,7 +380,7 @@ function bindProps(
     currentProp = key;
     return [key, bindValue(child, data, state, action, handle, onMismatch)];
   }));
-  return { bound, mismatch };
+  return { bound: safeProps(bound), mismatch };
 }
 
 /** Single-flight: while one of this node's handlers has an intent in flight the

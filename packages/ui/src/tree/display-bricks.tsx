@@ -24,7 +24,7 @@ export interface DisplayBrickProps {
  * URL nowhere, but `background`, `backgroundImage`, `filter`, `backdropFilter`
  * and `cursor` all can (`url()`, `image-set()`), so they are simply absent and
  * drop by default alongside `maskImage`, `borderImage` and `content`. Themed fills
- * use `backgroundColor`; gradients/blur are not available to a raw brick (a
+ * use `backgroundColor`; gradients/blur are not available to a screen (a
  * host-controlled kit token could reintroduce them later, out of scope here).
  * `position` is allowed: `SURFACE_CONTAINMENT` clips even `fixed`/`sticky` to the
  * box, so no value check is needed to hold a screen inside its surface.
@@ -59,38 +59,50 @@ const ALLOWED_STYLE: ReadonlySet<string> = new Set([
   "transition", "transitionProperty", "transitionDuration", "transitionTimingFunction",
 ]);
 
-/** The style a brick actually paints with: the model's, minus every declaration
+/** The style a node actually paints with: the model's, minus every declaration
  *  whose property is not on the allowlist. A pure key filter — no value is read,
  *  so there is no CSS parser and nothing to bypass. */
-export function safeStyle(style: CSSProperties | undefined): CSSProperties | undefined {
-  if (style === undefined) return undefined;
+export function safeStyle(style: CSSProperties | null | undefined): CSSProperties | undefined {
+  if (style === undefined || style === null) return undefined;
   return Object.fromEntries(
     Object.entries(style).filter(([property]) => ALLOWED_STYLE.has(property)),
   );
 }
 
+/**
+ * THE DOOR — a node's bound props as it may paint with them. The renderer calls
+ * this wherever model-written props become a component's props, so ONE list
+ * covers every node: a brick, a Kit component and a host component alike. It has
+ * to be here rather than inside each implementation, because a Kit root MERGES
+ * `style` onto its own (`<article style={{ ...theme, ...style }}>`) — filtered
+ * only in the bricks, `Card` painted the `backgroundImage` a `<div>` may not.
+ */
+export function safeProps(props: Record<string, unknown>): Record<string, unknown> {
+  return "style" in props ? { ...props, style: safeStyle(props.style as CSSProperties) } : props;
+}
+
 export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactNode> = {
-  div: ({ style, children }) => <div style={safeStyle(style)}>{children}</div>,
-  span: ({ style, children }) => <span style={safeStyle(style)}>{children}</span>,
-  section: ({ style, children }) => <section style={safeStyle(style)}>{children}</section>,
-  header: ({ style, children }) => <header style={safeStyle(style)}>{children}</header>,
-  footer: ({ style, children }) => <footer style={safeStyle(style)}>{children}</footer>,
-  aside: ({ style, children }) => <aside style={safeStyle(style)}>{children}</aside>,
-  h1: ({ style, children }) => <h1 style={safeStyle(style)}>{children}</h1>,
-  h2: ({ style, children }) => <h2 style={safeStyle(style)}>{children}</h2>,
-  h3: ({ style, children }) => <h3 style={safeStyle(style)}>{children}</h3>,
-  h4: ({ style, children }) => <h4 style={safeStyle(style)}>{children}</h4>,
-  h5: ({ style, children }) => <h5 style={safeStyle(style)}>{children}</h5>,
-  h6: ({ style, children }) => <h6 style={safeStyle(style)}>{children}</h6>,
-  p: ({ style, children }) => <p style={safeStyle(style)}>{children}</p>,
-  strong: ({ style, children }) => <strong style={safeStyle(style)}>{children}</strong>,
-  em: ({ style, children }) => <em style={safeStyle(style)}>{children}</em>,
-  small: ({ style, children }) => <small style={safeStyle(style)}>{children}</small>,
-  code: ({ style, children }) => <code style={safeStyle(style)}>{children}</code>,
-  blockquote: ({ style, children }) => <blockquote style={safeStyle(style)}>{children}</blockquote>,
-  ul: ({ style, children }) => <ul style={safeStyle(style)}>{children}</ul>,
-  ol: ({ style, children }) => <ol style={safeStyle(style)}>{children}</ol>,
-  li: ({ style, children }) => <li style={safeStyle(style)}>{children}</li>,
+  div: ({ style, children }) => <div style={style}>{children}</div>,
+  span: ({ style, children }) => <span style={style}>{children}</span>,
+  section: ({ style, children }) => <section style={style}>{children}</section>,
+  header: ({ style, children }) => <header style={style}>{children}</header>,
+  footer: ({ style, children }) => <footer style={style}>{children}</footer>,
+  aside: ({ style, children }) => <aside style={style}>{children}</aside>,
+  h1: ({ style, children }) => <h1 style={style}>{children}</h1>,
+  h2: ({ style, children }) => <h2 style={style}>{children}</h2>,
+  h3: ({ style, children }) => <h3 style={style}>{children}</h3>,
+  h4: ({ style, children }) => <h4 style={style}>{children}</h4>,
+  h5: ({ style, children }) => <h5 style={style}>{children}</h5>,
+  h6: ({ style, children }) => <h6 style={style}>{children}</h6>,
+  p: ({ style, children }) => <p style={style}>{children}</p>,
+  strong: ({ style, children }) => <strong style={style}>{children}</strong>,
+  em: ({ style, children }) => <em style={style}>{children}</em>,
+  small: ({ style, children }) => <small style={style}>{children}</small>,
+  code: ({ style, children }) => <code style={style}>{children}</code>,
+  blockquote: ({ style, children }) => <blockquote style={style}>{children}</blockquote>,
+  ul: ({ style, children }) => <ul style={style}>{children}</ul>,
+  ol: ({ style, children }) => <ol style={style}>{children}</ol>,
+  li: ({ style, children }) => <li style={style}>{children}</li>,
 };
 
 /**
