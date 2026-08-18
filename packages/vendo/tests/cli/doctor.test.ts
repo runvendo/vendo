@@ -1430,6 +1430,19 @@ describe("vendo doctor error codes + fix_refs", () => {
       await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo.ts"), composition);
       return root;
     }
+    /** The shape init writes TODAY: the composition in its own module, with the
+        wire route a thin handler over it. */
+    async function libHost(composition: string, base = ""): Promise<string> {
+      const root = await healthy();
+      await mkdir(join(root, base, "lib"), { recursive: true });
+      await writeFile(join(root, base, "lib", "vendo.ts"), composition);
+      // The `@/` specifier init writes wherever the host maps the alias — and
+      // the one shape of it that is not an escaping relative path spelled
+      // inline, which the dependency guard reads as a real import.
+      await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+        'import { nextVendoHandler } from "@vendoai/vendo/server";\nimport { vendo } from "@/lib/vendo";\n\nexport const { GET, POST } = nextVendoHandler(vendo);\n');
+      return root;
+    }
     const wired = 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: true });\n';
 
     it("fails, and exits 1", async () => {
@@ -1449,6 +1462,28 @@ describe("vendo doctor error codes + fix_refs", () => {
       });
       expect(report.checks.find((entry) => entry.id === "mcp/base-url")).toMatchObject({ status: "ok" });
     });
+
+    /** The composition moved into `lib/vendo.ts` and this check's path list did
+        not follow, so the door it was written to catch became invisible: an
+        init-scaffolded MCP host with no base URL graded SILENT — no failure, no
+        check, nothing to notice — while the legacy shapes kept failing. Both
+        layouts, because the module follows the app directory under `src/`. */
+    it.each([["root", ""], ["src", "src"]] as const)(
+      "fires on the composition module init writes (%s layout), and passes once the variable is set",
+      async (_label, base) => {
+        const { exit, report } = await jsonChecks({ targetDir: await libHost(wired, base) });
+        expect(exit).toBe(1);
+        const check = report.checks.find((entry) => entry.id === "mcp/base-url");
+        expect(check).toMatchObject({ status: "broken", error_code: "E-MCP-009" });
+        expect(check?.message).toContain("VENDO_BASE_URL is not set");
+
+        const { report: set } = await jsonChecks({
+          targetDir: await libHost(wired, base),
+          env: { VENDO_BASE_URL: "http://localhost:3000" },
+        });
+        expect(set.checks.find((entry) => entry.id === "mcp/base-url")).toMatchObject({ status: "ok" });
+      },
+    );
 
     // Host config beats the environment default, so a composition that names
     // its own public origin needs no variable.

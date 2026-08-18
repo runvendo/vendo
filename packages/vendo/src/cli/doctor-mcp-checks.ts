@@ -3,12 +3,19 @@ import type { DoctorRun } from "./doctor-report.js";
 import { validateRegistryServer } from "./mcp/registry.js";
 import { readOptional } from "./shared.js";
 
-/** Where a Vendo composition lives: the two shapes init writes (the MCP path's
-    split `vendo.ts`, the ordinary inline route) and the runtime-neutral /
-    Express module, under both root layouts. A host that opened the door
-    somewhere else entirely is not named here on purpose — E-MCP-009 is a hard
-    FAIL, so it fires on evidence, never on a guess. */
+/** Where a Vendo composition lives: the composition module init writes today
+    (`lib/vendo.ts`, under `src/` when the app directory is), the two earlier
+    shapes still in the field (the MCP path's split `vendo.ts` beside the route,
+    the ordinary inline route) and the runtime-neutral / Express module, under
+    both root layouts. The current shape leads and every legacy one stays, the
+    same order `compositionOf` reads them in (doctor-wiring-checks.ts) — a list
+    that knows only the old locations goes SILENT on a correctly wired host,
+    which is exactly what this check exists to catch. A host that opened the
+    door somewhere else entirely is not named here on purpose — E-MCP-009 is a
+    hard FAIL, so it fires on evidence, never on a guess. */
 const COMPOSITION_PATHS: readonly string[][] = [
+  ["lib", "vendo.ts"],
+  ["src", "lib", "vendo.ts"],
   ["app", "api", "vendo", "[...vendo]", "vendo.ts"],
   ["src", "app", "api", "vendo", "[...vendo]", "vendo.ts"],
   ["app", "api", "vendo", "[...vendo]", "route.ts"],

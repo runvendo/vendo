@@ -6,12 +6,12 @@ import type { RunContext, ToolDescriptor } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { runDoctor } from "../../src/cli/doctor.js";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
 import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE } from "../../src/cli/framework.js";
 import { firstSentence, prettyThemeReview, runInit, type InitReceipt } from "../../src/cli/init.js";
 import type { InitQuestions } from "../../src/cli/init-questions.js";
 import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
-import { readEnvFiles } from "../../src/cli/sync-flow.js";
 
 const cleanup: string[] = [];
 
@@ -2742,13 +2742,13 @@ describe("the five questions", () => {
     expect(await readFile(join(answered, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:5173");
   });
 
-  /** The MCP arm's own question, answered from the same prompt — and then read
-      back through the OTHER side of the seam: `readEnvFiles` is the CLI's one
-      env reader, the same call doctor makes before grading E-MCP-009, so the
-      file init writes is the file doctor sees. Nothing is stubbed on either end.
-      Local posture in dev is the point: the door's client URL and its discovery
-      both want the origin the developer is looking at. */
-  it("MCP: the dev answer opens the door locally, and the CLI's env reader sees it", async () => {
+  /** The MCP arm's own question, answered from the same prompt — and then graded
+      by the OTHER side of the seam: a REAL `vendo doctor` run over the repo init
+      just wrote, with no env override, so E-MCP-009 reads the same .env.local
+      init produced. Nothing is stubbed on either end. Local posture in dev is
+      the point: the door's client URL and its discovery both want the origin the
+      developer is looking at. */
+  it("MCP: the dev answer opens the door locally, and a real doctor run greens E-MCP-009", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-dev-url-"));
     cleanup.push(root);
     await mkdir(join(root, "app"), { recursive: true });
@@ -2776,9 +2776,19 @@ describe("the five questions", () => {
     // The client URL a user pastes into Claude is the dev origin, not a guess.
     expect(sink.logs.join("\n")).toContain("Point any MCP client at `http://localhost:4300/api/vendo/mcp`");
 
-    // The read-back, through the reader doctor itself uses — no env override,
-    // no stub: whatever this returns is what E-MCP-009 grades.
-    expect((await readEnvFiles(root))["VENDO_BASE_URL"]).toBe("http://localhost:4300");
+    // The read-back: doctor over the repo init just wrote. No env override, so
+    // it loads .env.local itself — the file this run produced. (Only this check
+    // is this test's business; the fixture owes other things doctor grades.)
+    const doctorLogs: string[] = [];
+    await runDoctor({
+      targetDir: root,
+      json: true,
+      output: { log: (message) => doctorLogs.push(message), error: () => {} },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    const report = JSON.parse(doctorLogs[0]!) as { checks: Array<{ id: string; status: string; message: string }> };
+    expect(report.checks.find((check) => check.id === "mcp/base-url"))
+      .toMatchObject({ status: "ok", message: expect.stringContaining("VENDO_BASE_URL is set") });
   });
 
   it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {
