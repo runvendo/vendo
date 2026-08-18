@@ -79,7 +79,11 @@ export interface AutomationsSeam {
   create: CreateAutomation;
   /** `automations.enable` — the 07 §3 grant-capture flow. `missing` is what the
    *  owner still has to allow before an away run can complete unattended. */
-  enable(id: AutomationId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  enable(
+    id: AutomationId,
+    ctx: RunContext,
+    options?: { armedBy?: ToolCall },
+  ): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
   /** The kill switch (`automations.disable`). */
   disable(id: AutomationId, ctx: RunContext): Promise<void>;
   /** The records these ids still name, dead ids dropped. */

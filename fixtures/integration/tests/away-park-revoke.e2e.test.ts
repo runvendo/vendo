@@ -203,10 +203,21 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
     const automationId = await automationFor("j5.revoke", [
       { id: "send", tool: SEND, args: { id: "event.id" } },
     ]);
-    const missing = await enableMissing(automationId);
-    expect((await decideApprovals(stack, missing.map((request) => request.id), { approve: true }, ADA)).status).toBe(200);
+    // Arming captures NOTHING for a destructive tool: a standing grant could
+    // never authorize `host_invoices_send` away (THE LAW refuses it per fire),
+    // so a card promising one would promise what no run honours. The way this
+    // record comes to HOLD the grant this leg revokes is therefore the run's
+    // own ask — the first fire meets a permission nobody granted, fails loud,
+    // and the person answers THAT. Same standing, automation-bound,
+    // automation-source grant leg 1 above pins; a different door to it.
+    expect(await enableMissing(automationId)).toEqual([]);
+    const [primingRun] = await stack.vendo.emit("j5.revoke", { id: "inv_0003" }, ADA);
+    expect((await readRun(primingRun!)).error?.code).toBe("needs-permission");
+    const sendAsk = await pendingAway(SEND);
+    expect(sendAsk).toBeDefined();
+    expect((await decideApprovals(stack, [sendAsk!.id], { approve: true }, ADA)).status).toBe(200);
 
-    // First run: the standing grant does NOT authorize the away send. THE LAW
+    // The next run: the standing grant does NOT authorize the away send. THE LAW
     // (§12) "refuses a standing grant, rule, judge, or default authorizing an
     // irreversible action with nobody watching" — and `host_invoices_send` is
     // declared destructive (the dev's label is final; two-vote grading removed).
@@ -292,27 +303,16 @@ describe("J5: away capture, fail-loud, re-run, revoke through the composed wire"
       [DELETE],
     )).toEqual([{ source: "chat", app_id: null, duration: "standing" }]);
 
-    // --- The automation references the same tool; deny its capture --------
+    // --- The automation references the same tool, and arming grants it nothing --
+    // `host_invoices_delete` is destructive, so arming captures nothing for it:
+    // a standing grant could never authorize it away, and a card promising one
+    // would promise what no firing honours. The record therefore arms holding
+    // no automation authority at all — which is exactly the state this leg
+    // needs, and it arrives without anyone having to refuse anything.
     const automationId = await automationFor("j5.chatgrant", [
       { id: "delete", tool: DELETE, args: { id: "event.id" } },
     ]);
-    const missing = await enableMissing(automationId);
-    expect((await decideApprovals(stack, missing.map((request) => request.id), { approve: false }, ADA)).status).toBe(200);
-
-    // Grant sets (demo-live-readiness): a consent moment refused WHOLESALE
-    // (every capture denied, nothing granted) disarms the automation in the
-    // same decision — the row must not sit enabled-but-ungranted. GET /automations
-    // is a FLAT list of records now, and `armed` is the field that says so.
-    const listed = (await (await stack.wireFetch("/automations", {}, ADA)).json()) as Array<{
-      id: string;
-      armed: boolean;
-    }>;
-    expect(listed.find((entry) => entry.id === automationId)?.armed).toBe(false);
-
-    // Re-arm; the re-minted capture ask stays UNDECIDED — an open ask leaves
-    // the automation armed and the ungranted step fails loud at fire time, the
-    // moment this leg actually exercises.
-    await enableMissing(automationId);
+    expect(await enableMissing(automationId)).toEqual([]);
 
     // --- Fire: the away run fails loud; the chat grant does not carry across --
     expect(await invoice("inv_0002")).toBeDefined(); // exists before

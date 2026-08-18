@@ -166,7 +166,20 @@ function approvalText(request: ApprovalRequest): string {
       return `- ${argLabel(key, request.descriptor.inputSchema)}: ${shown}`;
     })
     : [];
-  const detail = lines.length > 0 ? lines : [request.inputPreview.trim()].filter(Boolean);
+  // What this yes hands over BEYOND the call itself, when the ask is one that
+  // authorizes future unattended work — arming an automation (07 §3). It reads as
+  // one more labelled line because that is what it is: another fact about what is
+  // being allowed, in the same voice as the arguments above it, human titles only.
+  //
+  // The set is computed at park time and rides on the approval, so this renders
+  // what it is given and decides nothing. That is the whole design: the powers are
+  // not a property of texting, and the web card reads the same field when it
+  // learns to.
+  const powers = request.powers ?? [];
+  const detail = [
+    ...(lines.length > 0 ? lines : [request.inputPreview.trim()].filter(Boolean)),
+    ...(powers.length === 0 ? [] : [`- Powers it will hold: ${powers.join(", ")}`]),
+  ];
   return [
     // "approval", never "OK" — the decider matches only YES/NO, and a header
     // that says OK teaches the one reply that will NOT decide it. The em dash

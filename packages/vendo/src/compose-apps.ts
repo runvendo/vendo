@@ -284,7 +284,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
           }
           return create(input, createCtx);
         },
-        enable: async (id, ctx) => composition.automations.enable(id, ctx),
+        enable: async (id, ctx, options) => composition.automations.enable(id, ctx, options),
         disable: async (id, ctx) => composition.automations.disable(id, ctx),
         // A list of NAMES, not foreign keys: an id nothing answers for is dropped
         // rather than raised, so deleting an automation is one fewer entry the

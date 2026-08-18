@@ -24,6 +24,7 @@ import type {
   RunId,
   StoreAdapter,
   StoreOps,
+  ToolCall,
   ToolOutcome,
   ToolRegistry,
   TriggerSource,
@@ -43,7 +44,7 @@ export type { ReconcileAutomations } from "./create-surface.js";
  *  channel names automations at someone too (`channel-turn.ts`), and design §3's
  *  voice law only holds if every surface says the same name — a second spelling
  *  is how one of them starts printing a tool identifier. */
-export { automationName } from "./messages.js";
+export { automationName, powerTitles, READ_ONLY_POWER } from "./messages.js";
 export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 
 /** 07 §1 — createAutomations config. */
@@ -141,11 +142,28 @@ export interface AutomationsEngine {
   /** The kill switch. `enable` runs grant capture; `missing` is what the owner
    *  still has to allow, and `grantSetId` names the ONE set so a single decision
    *  settles them all. `disable` stamps `disarmedBy: "user"`, which is what makes
-   *  it survive every redeploy. */
+   *  it survive every redeploy.
+   *
+   *  `armedBy` is the authoring TOOL CALL, when an agent's call is what armed
+   *  this: 07 §3 names the standing powers on that call's own approval ask, so a
+   *  call the host's policy asked about arrives here already consented and its
+   *  powers are minted on the spot rather than asked for a second time. Omit it —
+   *  as the wire's own turn-it-on route does — and every power is captured as a
+   *  pending ask exactly as before. */
   enable(
     id: AutomationId,
     ctx: RunContext,
+    options?: { armedBy?: ToolCall },
   ): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }>;
+  /** 07 §3 — the human titles of the standing powers arming a GOAL automation in
+   *  this ctx would hold: the tools whose fire-time policy outcome needs a person.
+   *
+   *  Exists for the ONE surface that has to name them before there is a record to
+   *  read: the arming ask parks while `vendo_automate` is still deciding whether to
+   *  run, so the composition asks this and rides the answer on the approval
+   *  (`ApprovalRequest.powers`). Every surface then renders the same set from the
+   *  same computation. */
+  armingPowers(ctx: RunContext): Promise<string[]>;
   disable(id: AutomationId, ctx: RunContext): Promise<void>;
 
   /** INVARIANT: idempotent. Due-ness comes from the engine's own schedule

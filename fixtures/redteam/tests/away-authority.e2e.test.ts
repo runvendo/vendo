@@ -329,9 +329,22 @@ describe("away runs reach a connector only through a granted service action", ()
         [{ id: "send", slug: "GMAIL_SEND_EMAIL" }],
         ctx,
       );
-      const asks = await enableAndApprove(stack, automation.id, ctx);
+      // Arming captures nothing here: the resolver grades GMAIL_SEND_EMAIL
+      // destructive, and a standing grant could never authorize a destructive
+      // call away — so a card offering one would offer what no firing honours.
+      // The door that IS left to such a grant is the run's own ask: the first
+      // firing meets a permission nobody granted, fails loud, and answering
+      // that ask mints the standing per-slug grant. Which is exactly the grant
+      // this test needs to exist, so it can be beaten.
+      expect(await enableAndApprove(stack, automation.id, ctx)).toEqual([]);
+      const [priming] = await stack.automations.emit("service.away.destructive", {}, ADA);
+      await waitForRun(stack, priming!, ctx, "error");
+      const ask = (await stack.guard.approvals.pending(ADA)).find(
+        (entry) => entry.ctx.presence === "away" && entry.ctx.trigger?.automationId === automation.id,
+      );
       // The grant is real, standing, automation-bound, and for this exact slug…
-      expect(asks[0]?.descriptor.risk).toBe("destructive");
+      expect(ask?.descriptor.risk).toBe("destructive");
+      await approve(stack, [ask!]);
       expect((await stack.guard.grants.list(ADA)).map((grant) => grant.scope)).toEqual([
         { kind: "service-tool", slug: "GMAIL_SEND_EMAIL" },
       ]);

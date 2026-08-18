@@ -137,7 +137,13 @@ export const runAutomateTool = async (
   // Grant capture, the same flow every other authoring door runs: what the owner
   // still has to allow is said HERE, in the line the model reads out, rather
   // than discovered by the first away run failing.
-  const armed = await seam.enable(record.id, ctx);
+  //
+  // THIS call rides along (07 §3): its own approval ask is where the powers this
+  // automation will hold were named, so under a policy that asks about arming,
+  // the yes already given mints them and there is no second per-tool ceremony.
+  // Under a policy that runs arming unasked, nobody saw a powers line and the
+  // engine captures each one as a pending ask exactly as before.
+  const armed = await seam.enable(record.id, ctx, { armedBy: call });
   const next = nextRunAt(record.when, record.timezone ?? "UTC");
   const ref: VendoAutomationRef = {
     kind: VENDO_AUTOMATION_REF_KIND,

@@ -1422,31 +1422,8 @@ class GuardImplementation implements VendoGuard {
     const withInvalidated = (metadata: DecisionMetadata): DecisionMetadata =>
       invalidated.length === 0 ? metadata : { ...metadata, invalidatedGrants: invalidated };
 
-    const rules = await this.#policy.rules();
-    for (const rule of rules) {
-      if (!ruleMatches(rule, call.tool, descriptor.risk, ctx.venue, ctx.presence)) continue;
-      if (rule.action === "block") {
-        return withInvalidated({
-          decision: { action: "block", reason: rule.note ?? "blocked by policy rule", decidedBy: "rule" },
-        });
-      }
-      return withInvalidated({ decision: { action: rule.action, decidedBy: "rule" } });
-    }
-
-    const code = this.#policyConfig?.code;
-    if (code !== undefined) {
-      try {
-        const decision = code(call, descriptor, ctx);
-        if (decision !== undefined) {
-          return withInvalidated({ decision: normalizeCodeDecision(decision) });
-        }
-      } catch (error) {
-        return withInvalidated({
-          decision: { action: "ask", decidedBy: "rule" },
-          rationale: errorMessage(error),
-        });
-      }
-    }
+    const spoken = await this.#policySays(call, descriptor, ctx);
+    if (spoken !== undefined) return withInvalidated(spoken);
 
     if (this.#config.judge !== undefined) {
       const directions = await this.#policy.directions();
@@ -1493,10 +1470,73 @@ class GuardImplementation implements VendoGuard {
     // list is the point: §12 refuses them where there is nobody to ask, and this
     // asks where there is — the halves cannot drift apart into a default that
     // silently ran what the unattended law refuses.
-    if (withheldFromUnattended(descriptor)) {
-      return withInvalidated({ decision: { action: "ask", decidedBy: "default" } });
+    return withInvalidated({ decision: this.#defaultPosture(descriptor) });
+  }
+
+  /**
+   * The POLICY tier of `#pipeline`, on its own: the host's ordered rules, then
+   * `policy.code`. `undefined` means policy did not speak, and the caller falls
+   * through to whatever comes next (the judge, then the default posture).
+   *
+   * Extracted so `policyOutcome` below evaluates the SAME rules by the SAME
+   * precedence rather than a second copy of them — a second copy is how an arming
+   * card starts naming tools the firing would have run, and vice versa.
+   */
+  async #policySays(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<DecisionMetadata | undefined> {
+    for (const rule of await this.#policy.rules()) {
+      if (!ruleMatches(rule, call.tool, descriptor.risk, ctx.venue, ctx.presence)) continue;
+      if (rule.action === "block") {
+        return { decision: { action: "block", reason: rule.note ?? "blocked by policy rule", decidedBy: "rule" } };
+      }
+      return { decision: { action: rule.action, decidedBy: "rule" } };
     }
-    return withInvalidated({ decision: { action: "run", decidedBy: "default" } });
+    const code = this.#policyConfig?.code;
+    if (code === undefined) return undefined;
+    try {
+      const decision = code(call, descriptor, ctx);
+      return decision === undefined ? undefined : { decision: normalizeCodeDecision(decision) };
+    } catch (error) {
+      return { decision: { action: "ask", decidedBy: "rule" }, rationale: errorMessage(error) };
+    }
+  }
+
+  /**
+   * Nothing spoke. `ungraded` is a tool nobody has graded — no human, no judge,
+   * no protocol fact — and `destructive` is one whose effect cannot be taken
+   * back; both need a PERSON, so neither is hidden behind a run here.
+   * Guard-level on purpose, so a hand-wired server with no policy config at all
+   * gets it too. A host that consciously wants these to run says so in writing,
+   * with a matching `risk` rule.
+   *
+   * `withheldFromUnattended` is the same two grades, and reading them off ONE
+   * list is the point: §12 refuses them where there is nobody to ask, and this
+   * asks where there is — the halves cannot drift apart into a default that
+   * silently ran what the unattended law refuses.
+   */
+  #defaultPosture(descriptor: ToolDescriptor): DraftDecision {
+    return withheldFromUnattended(descriptor)
+      ? { action: "ask", decidedBy: "default" }
+      : { action: "run", decidedBy: "default" };
+  }
+
+  /** 07 §3's arm-time probe — see `Guard.policyOutcome` in core for the contract
+   *  and for why `previewCheck` cannot answer this question. Pure: it reads the
+   *  policy and nothing else, writes nothing, and parks nothing. */
+  async policyOutcome(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<GuardDecision["action"]> {
+    // `confirmEach` outranks rules in `#pipeline` and no grant can suppress it,
+    // so it outranks them here too: a tool that needs a person EVERY time is one
+    // a standing power could never satisfy.
+    if (descriptor.confirmEach === true) return "ask";
+    const spoken = await this.#policySays(call, descriptor, ctx);
+    return (spoken?.decision ?? this.#defaultPosture(descriptor)).action;
   }
 
   async #judgeWithTimeout(
@@ -1957,11 +1997,23 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
     invalidatedGrant?: PermissionGrant,
   ): Promise<ApprovalRequest> {
+    // What ONE yes to this ask mints beyond the call in hand. Composition
+    // answers, because arming an automation is the only ask whose yes authorizes
+    // calls nobody has made yet and the guard cannot know which those are. A
+    // failure here is swallowed on purpose: an ask a person needs to see must
+    // never fail to park because a label could not be computed.
+    let powers: readonly string[] | undefined;
+    try {
+      powers = await this.#config.describePowers?.(call, ctx);
+    } catch {
+      powers = undefined;
+    }
     const request: ApprovalRequest = {
       id: makeId("apr_") as ApprovalId,
       call: cloneJson(call),
       descriptor: cloneJson(descriptor),
       inputPreview: inputPreview(call),
+      ...(powers === undefined || powers.length === 0 ? {} : { powers: [...powers] }),
       ...(invalidatedGrant === undefined
         ? {}
         : {
