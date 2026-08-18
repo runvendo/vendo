@@ -186,7 +186,11 @@ describe("the worked screens teach the shapes a screen is graded on", () => {
   });
 
   it("opens the detail pane on the first row, never on nothing", () => {
-    expect(VENDO_FORMAT_REFERENCE).toContain("useState(rows[0].id)");
+    // Optional-chained on purpose: every world has an empty-state case, and a
+    // screen copied verbatim from here must not throw on zero rows. The lesson is
+    // that the selection comes from the DATA — `useState(null)` is what leaves the
+    // pane blank on the paint a person is first shown.
+    expect(VENDO_FORMAT_REFERENCE).toContain("useState(rows[0]?.id)");
     expect(VENDO_FORMAT_REFERENCE).not.toContain("useState(null)");
   });
 

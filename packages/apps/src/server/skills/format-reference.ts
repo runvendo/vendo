@@ -215,7 +215,7 @@ import { Button, DataTable, KeyValue, Row, Select, SplitPane, Stack, Tooltip, to
 export default function Tickets() {
   const tickets = useQuery("list_tickets");
   const rows = tickets.data;
-  const [openId, setOpenId] = useState(rows[0].id);
+  const [openId, setOpenId] = useState(rows[0]?.id);
   const [category, setCategory] = useState("");
   const shown = category === "" ? rows : rows.filter((row) => row.category === category);
 
