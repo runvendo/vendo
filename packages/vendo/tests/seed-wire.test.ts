@@ -63,7 +63,7 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
     expect(app.seed).toEqual({
       component,
       baseline: "sha256:seed-wire-baseline",
-      instruction: "rank them by amount",
+      wishes: ["rank them by amount"],
       slot: "dashboard",
     });
     // Nothing copies the captured host source into the remix.
