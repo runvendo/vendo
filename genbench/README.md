@@ -366,8 +366,8 @@ second failure.
 ### Time and money, in orders of magnitude
 
 One case is roughly **1-4 minutes and $0.30-$0.50** of contender spend, plus the
-judge. A world is **ten or fifteen cases**, so one world's
-run is roughly 10-15x that; `--world all` is **199 cases**, and nobody runs that
+judge. A world is **ten to fifteen cases**, so one world's
+run is roughly 10-15x that; `--world all` is **196 cases**, and nobody runs that
 casually. `--models` multiplies the whole thing again by the number of models,
 because the matrix is every harness in every model.
 
@@ -415,8 +415,9 @@ A world is a **folder**, `worlds/<name>/`:
 
 There are **fourteen worlds** — `maple` (consumer banking) plus thirteen more,
 from build logs to trades accounting — carrying **fifteen cases** each, except
-`buildlog` and `fieldops` at ten and `trades-accounting` at fourteen, so the
-whole corpus is **199 cases**. A tool
+`buildlog` and `fieldops` at ten and `logistics`, `observability`,
+`product-analytics` and `trades-accounting` at fourteen, so the
+whole corpus is **196 cases**. A tool
 that declares `data` returns rows and is graded
 `read`; one that only declares `takes` mutates and is graded `write`. Input
 schemas are derived from `takes` (a name → type map), output schemas from the
@@ -1096,6 +1097,34 @@ convention they were keeping the whole time, are evidence rather than absence. T
 viewport shot is still the primary one and the floor is untouched, but the rubric
 gained the sentence that names those pictures, so `rubricVersion` is **7** and no
 verdict recorded under an earlier one compares with one after it.
+
+The **worlds** were then audited against their own tools, and that batch moves
+stamps rather than code. Three cases asked for a picture nothing here can draw —
+`logistics/driver-map`, `product-analytics/active-users-map` and
+`observability/service-map`, each graded on a map or a node graph while its own
+pass lines banned the buildable alternative — and are gone, so the corpus is
+**196 cases**. Twelve more pass lines demanded a figure the prompt never asked
+for (a week's on-time rate, a per-terminal revenue column, a month total) or
+graded a wizard step the same case tells the screen not to show yet, and are cut;
+thirty-two are reworded to grade what a screen can actually do — a row's own
+control rather than a click on the row, a region table rather than a map,
+indented nesting rather than a drawn tree — and one is split in two so a layout
+and a sum stop failing together. Eleven style rubrics moved with them: the
+`trades-accounting` money line is three lines now, the three confirmation worlds
+name the actions that genuinely cannot be undone and say the host's own approval
+step counts as the confirmation, and the two dense-operator worlds stopped
+forbidding the headline figure their own wall-board case asks for. Two worlds'
+tools moved too — `property-management`'s showings carry a full
+`2026-08-13T17:00` stamp instead of a date beside a bare time, and
+`product-analytics`'s daily-activity tool now says plainly that it answers with
+the same fourteen days whatever `days` asks for. Every edited case's `caseHash`
+moves and every edited world's `world` hash moves, which is what those two stamps
+are for: the 38 surviving cases that were edited do not compare across this line,
+and the other 158 still compare with each other.
+
+The frame those pictures are taken in widened from **480px to 1280px** in the
+same batch. That moves the screenshots the judge reads for every column at once,
+so no verdict shot at 480 compares with one shot at 1280.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of

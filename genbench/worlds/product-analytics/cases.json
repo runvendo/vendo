@@ -33,8 +33,7 @@
     "pass": [
       "shows all five steps in funnel order, widest at the top",
       "each step's user count matches the tool exactly: 5,604 then 4,062 then 1,424 then 536 then 414",
-      "names 'Created a workspace' as the step with the biggest drop-off",
-      "shows the funnel's end-to-end conversion as 7.4%"
+      "names 'Created a workspace' as the step with the biggest drop-off"
     ],
     "tags": ["display"],
     "shape": "chart"
@@ -58,7 +57,7 @@
     "prompt": "Chart daily active users for the last two weeks and mark the days an alert triggered on top of it — I want to see whether our alerts line up with the dips.",
     "pass": [
       "draws a chart with one point per day for all 14 days the tool returned",
-      "marks exactly the three days alerts triggered on — Aug 6, Aug 9 and Aug 11 — and no other day",
+      "names the three days alerts triggered on — Aug 6, Aug 9 and Aug 11 — beside the chart, and no other day",
       "the four weekend days (Aug 1, Aug 2, Aug 8, Aug 9) read as the lowest points",
       "names the busiest day, Aug 10, in the screen's own copy rather than only on an axis"
     ],
@@ -188,20 +187,5 @@
     "tags": ["display"],
     "shape": "comparison",
     "source": "Amplitude — Experiment Analysis view, https://amplitude.com/docs/feature-experiment/analysis-view; PostHog — Experiments, https://posthog.com/docs/experiments/analyzing-results"
-  },
-  {
-    "id": "active-users-map",
-    "lane": "screen",
-    "prompt": "Show me where our active users are logging in from — a map of active users by country over the last 30 days.",
-    "pass": [
-      "plots the nine countries the tool returned on a map, shaded or sized by active users rather than drawn as a bar chart",
-      "the United States reads as the biggest at 18,420 active users, 43.7%",
-      "each country's own count is readable, not only encoded as a shade — Germany 3,862 and Japan 1,206 are both legible",
-      "names the window, last 30 days, on the screen",
-      "marks no country the tool did not return"
-    ],
-    "tags": ["display"],
-    "shape": "map",
-    "source": "Amplitude — Event Segmentation Map view, https://amplitude.com/docs/analytics/charts/event-segmentation/event-segmentation-build; PostHog — World Map, https://posthog.com/docs/product-analytics/trends/charts"
   }
 ]

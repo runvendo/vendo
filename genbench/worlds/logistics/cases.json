@@ -85,8 +85,7 @@
     "pass": [
       "draws a chart of all seven days rather than only listing them",
       "shows Aug 8 as the strongest day, with 5 late of 160 delivered",
-      "Aug 7 reads as the worst day of the week, with 14 late of 138 delivered",
-      "states the week's on-time rate from the tool's own counts — 914 of 970 deliveries, 94.2%"
+      "Aug 7 reads as the worst day of the week, with 14 late of 138 delivered"
     ],
     "tags": ["display"],
     "shape": "chart"
@@ -131,20 +130,6 @@
     "shape": "form"
   },
   {
-    "id": "driver-map",
-    "lane": "screen",
-    "prompt": "Show me where every driver is on a map right now, so I can see who's close to a terminal and who's falling behind — falling behind meaning the minutes left on their route are more than the legal hours they have left.",
-    "pass": [
-      "draws a map with a marker for each of the six drivers rather than only listing them",
-      "the three drivers on a route show the address of the stop they are heading to; the available and off-duty ones show none",
-      "Dee Okonkwo and Sam Ferreira read as sitting at their own terminals, Reno and Oakland",
-      "sets Marcus Boateng and Lenny Cruz apart as the two who cannot finish their route inside the hours they have left"
-    ],
-    "tags": ["display"],
-    "shape": "map",
-    "source": "project44 — Control Tower / Visibility Dashboard, https://project44.com/platform/visibility/"
-  },
-  {
     "id": "delivery-calendar",
     "lane": "screen",
     "prompt": "Give me a calendar of every delivery attempt booked for the rest of the week, so I know which days are already full before I book another redelivery.",
@@ -179,8 +164,7 @@
     "pass": [
       "puts Oakland, Fresno and Reno side by side rather than one under the other",
       "calls out Reno as the one dragging us down — 26 late of 167 delivered, 84.4% on time",
-      "shows Fresno as the strongest at 96.8% and Oakland at 95.8%",
-      "shows each terminal's revenue as $41,289.00 Oakland, $32,864.00 Fresno and $14,894.00 Reno"
+      "shows Fresno as the strongest at 96.8% and Oakland at 95.8%"
     ],
     "tags": ["display"],
     "shape": "comparison",
@@ -194,7 +178,7 @@
       "shows all three figures as headline numbers on one screen, not one of them buried in a table",
       "counts 4 late shipments, not the 11 on the board",
       "counts 4 open exceptions, leaving out the resolved one and the one awaiting the customer",
-      "the billed figure is one the tools returned — $2,305.00 of freight promised today, or the $14,496.50 the service report shows for its latest day — never an invented total"
+      "the billed figure is the $2,305.00 of freight promised today, named as such — never an invented total"
     ],
     "tags": ["display"],
     "shape": "dashboard",

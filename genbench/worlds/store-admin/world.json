@@ -19,7 +19,7 @@
   "style": [
     "uses the theme exactly: cream page, mulberry accent, Lora serif, near-square 3-4px corners — no invented colors or fonts",
     "money always shows 2 decimals with a $ symbol",
-    "a list of more than three records is a dense table with hairline row rules, never a grid of cards — a theme gallery and a region map are not record lists",
+    "a list of more than three records is a dense table with hairline row rules, never a grid of cards — a theme gallery is not a record list",
     "every status is a small badge, never bare colored text",
     "anything that moves money or stock — a refund, a bulk fulfilment, a restock — asks for confirmation first",
     "dates read as 'Aug 5' style, never ISO"

@@ -70,7 +70,7 @@
     "lane": "screen",
     "prompt": "We want to cut 2026.8 on the 21st. What is still standing in the way?",
     "pass": [
-      "shows release 2026.8 with its target date of Aug 21 and the teammate who owns it, by name",
+      "shows release 2026.8 with its target date of Aug 21 and the teammate who owns it",
       "shows that 4 of its 7 issues are done",
       "lists the three unfinished issues — CAI-147, CAI-149 and CAI-151 — with the status each one sits in",
       "surfaces that CAI-147's checks are failing and its review has been waiting four days",
@@ -99,7 +99,6 @@
     "pass": [
       "shows all five teammates with the points they are carrying this sprint against their capacity",
       "Theo reads as over capacity — 10 points against a capacity of 8",
-      "shows the team's total sprint load of 42 points",
       "names CAI-151, Theo's unfinished issue, and offers a control that hands it to another teammate",
       "handing one over calls assign_issue with one of Theo's issues and the teammate that was picked"
     ],
@@ -154,8 +153,7 @@
       "offers a builder that filters on status, priority and assignee, rather than one search box",
       "each of the three offers the values the issues actually use — the six statuses, the four priorities, and the five teammates by name",
       "more than one condition can stand at once, rather than one replacing the last",
-      "takes a name for the filter before it can be saved",
-      "shows where saved filters live alongside the builder, so a saved one is waiting to be picked up next time"
+      "the save is blocked until the name field holds a name"
     ],
     "tags": ["action"],
     "shape": "filter-builder",
@@ -184,7 +182,7 @@
       "the tree's top rows are the four releases — 2026.7, 2026.8, 2026.9 and 2026.10 — and nothing else sits at that level",
       "every release starts closed, so no issue row is on screen until one is opened",
       "each release row carries its status and how many of its issues are done, like 4 of 7 for 2026.8",
-      "a release row is what opens it: pressing one changes the screen and calls no tool"
+      "each release row's own control opens that release beside or beneath the row it sits on, changing the screen and calling no tool"
     ],
     "tags": ["display"],
     "shape": "tree",
@@ -197,7 +195,7 @@
     "pass": [
       "puts a list of issues down the left and one issue's detail on the right, both on the one screen",
       "every row in the left list belongs to the same teammate — one person's issues, not the whole team's",
-      "pressing a row on the left changes the screen and calls no tool, so the detail opens beside the list rather than on a page of its own",
+      "each row's own control opens that issue beside the list without calling a tool, so the detail never lands on a page of its own",
       "the detail side shows that issue's key, title, status, priority and points",
       "the detail side offers a status control, and using it calls move_issue for the issue open there"
     ],

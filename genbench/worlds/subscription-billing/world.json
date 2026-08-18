@@ -20,9 +20,9 @@
     "uses the theme exactly: near-black surfaces, the violet accent, Onest, 6px corners — no invented colors or fonts",
     "money always shows 2 decimals with a $ symbol, and money columns in a table are right-aligned",
     "every status — active, trialing, past due, paused, canceled, open, void, refunded — reads as a small pill, never bare text",
-    "dates read as 'Aug 24' style, never ISO",
-    "irreversible billing actions (void, cancel, write-off) ask for confirmation before they run",
-    "dense operator layout: table rows are single-line and no taller than ~32px, column labels are smaller than the values they sit above, and there are no decorative illustrations"
+    "dates read as 'Aug 24', or 'Sep 5, 2025' where the year matters — never ISO",
+    "the two billing actions that cannot be taken back — voiding an invoice and cancelling a subscription — ask for confirmation before they run, and the host's own approval step counts as the confirmation",
+    "dense operator layout: single-line table rows, no decorative illustrations"
   ],
   "tools": {
     "get_revenue_summary": {

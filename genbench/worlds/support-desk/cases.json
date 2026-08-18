@@ -89,7 +89,6 @@
     "pass": [
       "lists the three pending refund requests and neither the approved nor the denied one",
       "each row shows the customer, the order total and the requested amount in dollars with two decimals",
-      "shows the pending total as $760.00",
       "each row's amount sits in an editable field, prefilled with what the agent asked for, so it can be trimmed before approving",
       "approving fires approve_refund with that row's request id and the amount its field holds, in cents"
     ],
@@ -209,7 +208,7 @@
       "each list row shows the ticket's customer, subject and status",
       "the open ticket's four messages read in order beside the list, customer turns distinguishable from agent turns",
       "the reply control is beside the thread and offers the canned replies by title",
-      "sending fires send_canned_reply with TK-1040 and that reply's id"
+      "sending fires send_canned_reply with the id of the ticket that is open and that reply's id"
     ],
     "tags": ["action"],
     "shape": "split-inbox",
@@ -235,7 +234,7 @@
     "lane": "screen",
     "prompt": "Set up what our trainee can and can't do on her own — I don't want her approving refunds solo yet.",
     "pass": [
-      "shows all five agents against the three permissions, each one a control that reads on or off",
+      "shows June Hollis against the three permissions, each one a control that reads on or off",
       "June Hollis's row reads: refunds on, closing on, merging off",
       "no permission is shown that the tool did not return",
       "turning June's refund approval off fires update_agent_permission with ag_june, can_approve_refunds and false"

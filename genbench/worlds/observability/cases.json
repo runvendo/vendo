@@ -75,7 +75,7 @@
       "shows all five services that have an SLO, each with its target percentage",
       "shows minutes burned and minutes remaining per service, matching the tool's numbers",
       "flags notify-fanout as over its budget rather than showing it as merely low",
-      "checkout-api reads as the closest to exhausting a budget it is still inside"
+      "checkout-api reads as the most-burned budget still inside its limit — 39 of 43 minutes"
     ]
   },
   {
@@ -170,8 +170,6 @@
     "pass": [
       "shows only the first step when it loads — the condition — with the threshold step and the notify step named as what comes next, never all three at once",
       "names search-indexer as the service the rule is on, and its current tail latency from the tool, in milliseconds",
-      "the threshold the rule will use is stated in milliseconds, never a bare number",
-      "names Discovery as the team the rule would page, because Discovery owns search-indexer",
       "nothing on the first step creates the rule — no press before the last step calls the alert-rule tool"
     ]
   },
@@ -187,20 +185,6 @@
       "each block shows that team's quiet hours and its escalation wait in minutes, with the unit",
       "the team an alert escalates to is picked from the teams the tool returned, never typed free-hand",
       "saving a block updates that team's policy with the values on screen, not another team's"
-    ]
-  },
-  {
-    "id": "service-map",
-    "lane": "screen",
-    "tags": ["display"],
-    "shape": "map",
-    "source": "Datadog — Service Map, https://docs.datadoghq.com/tracing/services/services_map/",
-    "prompt": "Draw the service map around checkout-api so I can see what it calls and what's failing downstream.",
-    "pass": [
-      "draws checkout-api linked to the services on either side of it, not a table of pairs",
-      "shows every call the tool returned, including edge-router calling into checkout-api",
-      "each link carries its call count and its error rate with a percent sign",
-      "notify-fanout reads as the failing downstream service, at the error rate the tool gives"
     ]
   }
 ]

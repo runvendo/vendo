@@ -22,7 +22,7 @@
       "lists the three open requests and neither approved nor denied one",
       "each request shows its order number, customer, reason and amount",
       "every listed request offers both an approve and a deny control",
-      "the approve control calls approve_refund with the id of the request it sits on"
+      "the approve control ends in approve_refund being called with the id of the request it sits on — a confirmation step in between is expected"
     ]
   },
   {
@@ -114,7 +114,7 @@
       "groups the lines by supplier",
       "each line's units to order is that SKU's target level minus its units on hand",
       "each line's cost is that quantity times that SKU's unit cost",
-      "each line's button calls reorder_stock with that SKU and that quantity"
+      "each line's button ends in reorder_stock being called with that SKU and that quantity — a confirmation step in between is expected"
     ]
   },
   {
@@ -155,7 +155,7 @@
       "shows for every person whether they can open orders, inventory, discounts and payouts",
       "Rosa Delgado's four areas all read as off to start",
       "each of Rosa's four areas ticks on its own, so orders and inventory can be opened without touching discounts or payouts",
-      "ticking Rosa's orders on fires set_staff_permission with stf_rosa, orders and true"
+      "opening Rosa's orders fires set_staff_permission with stf_rosa, orders and true — on the tick itself or on a save control after it, and the screen says which"
     ],
     "source": "Shopify — Settings > Users > Roles, https://help.shopify.com/en/manual/your-account/users/roles/manage-roles"
   },
@@ -164,9 +164,9 @@
     "lane": "screen",
     "prompt": "Show me which regions my orders are actually shipping to right now, and let me flag a new one I want to start selling into.",
     "tags": ["action"],
-    "shape": "map",
+    "shape": "table",
     "pass": [
-      "plots all seven regions as markers on a map, not only as a list",
+      "lists all seven regions as a table, one row each",
       "each selling region shows its order count and its sales, the United States highest at 25 orders",
       "the three regions with no orders read as not sold into yet, distinct from the four active ones",
       "flagging one of those three calls activate_region with that region"
@@ -181,7 +181,7 @@
     "shape": "split-inbox",
     "pass": [
       "lists all five conversations down one side, with the three unread ones marked",
-      "clicking a conversation opens it beside the list, with the list still on screen",
+      "each row's own control opens that conversation beside the list without calling a tool, with the list still on screen",
       "the opened conversation shows every message in it in order, saying who sent each",
       "a reply box and its send control sit with the open conversation, so replying never leaves the list"
     ],

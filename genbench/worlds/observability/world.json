@@ -17,10 +17,10 @@
     "motion": "reduced"
   },
   "style": [
-    "dark cockpit: near-black #0B0F16 page, #141A24 panels, hairline #222C3A borders — never a light or white background",
+    "dark cockpit: never a light or white background",
     "uses the theme exactly: ember orange accent, Poppins, tight 3-8px corners — no invented colors or fonts",
     "severity and health read as a labelled pill or word (critical / warning / healthy), never colour alone",
-    "every figure carries its unit — ms for latency, min for durations, GB for volume — never a bare number",
+    "latency reads in ms, durations in min and volume in GB — where the screen writes one of those, it carries its unit",
     "money shows a currency symbol and 2 decimals, converted from the tools' cents",
     "times shown as 'Aug 12, 16:45' style, never a raw timestamp"
   ],

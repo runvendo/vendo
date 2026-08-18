@@ -110,7 +110,7 @@
     "tags": ["display"],
     "shape": "calendar",
     "pass": [
-      "lays the absences out on a two-week calendar or timeline whose every day is labelled with its month and day, like 'Aug 17', rather than a plain list",
+      "gives each absence its own row naming the dates it covers, like 'Aug 19 – Aug 21', rather than an undated list",
       "shows Yara Haddad out across the whole window on parental leave, and blocks Rosa Delgado across Aug 19 to Aug 21",
       "includes the three pending requests that fall in the window and leaves out Wren Chen's September request",
       "marks which absences are approved and which are still pending",
@@ -139,7 +139,7 @@
     "shape": "tree",
     "source": "Gusto — Team directory / org chart, https://support.gusto.com/article/240401180648063/view-your-team-and-company-org-chart-as-a-us-employee-manager-or-contractor",
     "pass": [
-      "draws the roster as a hierarchy of connected levels rather than a flat list",
+      "shows the roster as indented nesting, each person set in under their manager, rather than a flat list",
       "puts Rosa Delgado alone at the top, with Nadia Kwan, Marcus Odell, Wren Chen and Sena Nakamura directly under her",
       "nests Priya Raghunathan, Daniel Okafor and Elin Lindqvist under Nadia Kwan, Yara Haddad, Tomas Bello and Luz Arriaga under Marcus Odell, and Theo Brandt under Wren Chen",
       "shows each person's title and places all twelve employees, inventing nobody"

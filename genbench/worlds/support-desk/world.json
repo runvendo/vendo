@@ -18,7 +18,7 @@
   },
   "style": [
     "uses the theme exactly: the indigo accent, Onest, near-square 3-5px corners on a grey canvas with white cards — no invented colors or fonts",
-    "dense by default: compact rows, small type, no oversized hero headings — an agent stares at this all day",
+    "dense by default: compact rows and small type — an agent stares at this all day; a wall-board's headline figures may be set large, and nothing decorative is",
     "ticket status and priority read as small labelled chips, never as bare words in a cell",
     "red is reserved for SLA trouble — overdue and breached only; nothing else on the screen is red",
     "money always shows 2 decimals with a currency symbol",

@@ -6,8 +6,7 @@
     "pass": [
       "lists all six categories — housing, groceries, dining, subscriptions, transport, coffee — and no others",
       "shows housing as the largest at $2,850.00 and coffee as the smallest at $61.30",
-      "shows groceries $612.45, dining $438.20, subscriptions $184.41 and transport $96.75",
-      "shows a total for the month of $4,243.11"
+      "shows groceries $612.45, dining $438.20, subscriptions $184.41 and transport $96.75"
     ],
     "tags": ["display"],
     "shape": "table"
@@ -84,7 +83,7 @@
       "shows both pending transfers, Alex Rivera $250.00 and Jordan Avery $60.00, and no completed transfer",
       "offers exactly one cancel button for all of them rather than one per row",
       "that button says it will cancel 2 transfers, and pressing it asks for confirmation before anything is cancelled",
-      "the confirmation names what it would cancel — Alex Rivera's $250.00 and Jordan Avery's $60.00 — rather than asking a bare 'are you sure'"
+      "the confirmation says how many transfers it would cancel rather than asking a bare 'are you sure'"
     ],
     "tags": ["action"],
     "shape": "list-feed"

@@ -152,7 +152,7 @@
       "shows Dr. Sven Lindqvist's own settings, not every provider's",
       "offers a control for whether he takes new patients, reading as accepting when the screen loads",
       "offers a control for his default visit length, starting at the tool's 30 minutes",
-      "saving calls the settings tool with Lindqvist and the values on screen, never another provider's"
+      "the settings tool fires with Lindqvist and the values on screen, never another provider's — as each control is changed or on a save control after them, and the screen says which"
     ],
     "tags": ["action"],
     "shape": "settings",
@@ -180,7 +180,7 @@
       "puts the threads in a list down one side and the open conversation beside it, on one screen",
       "lists all five threads, each with its patient's name and the last message",
       "marks exactly the three unread threads as still needing an answer",
-      "clicking a thread opens it beside the list without leaving the screen",
+      "each row's own control opens that thread beside the list without calling a tool",
       "a reply box and its send control sit with the open thread, so answering a patient never leaves the screen"
     ],
     "tags": ["action"],
