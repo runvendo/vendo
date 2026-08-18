@@ -71,6 +71,6 @@ describe("the composer saves a file and sends the reference", () => {
     expect(uploads()).toHaveLength(0);
     const file = partsOf(turns()[0]!).find(part => part.type === "file")!;
     expect(file.filename).toBe("chart.png");
-    expect(file.url.startsWith("data:image/png;base64,")).toBe(true);
+    expect(file.url?.startsWith("data:image/png;base64,")).toBe(true);
   });
 });

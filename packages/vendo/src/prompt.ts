@@ -91,6 +91,29 @@ const PRESENTATION_PROMPT = `Presentation
 - Do not narrate surface mechanics ("the chart is loading above", "see the table below").
 - Match the product's voice. No emoji unless the user or the host's directions use them.`;
 
+// The user's own files. Venue-gated with the theme and the presentation rules:
+// dropping a file is a CHAT gesture, and an app venue turn can be asked about
+// one — an away automation run and the MCP door get neither.
+//
+// The three things the model cannot work out from the tool descriptors alone:
+// that the drawer OUTLIVES the conversation (so a reference to "the file I sent
+// you" is a listing away, not a dead end); that an app gets a COPY rather than a
+// live link (nothing re-reads the drawer on the app's behalf, so an app built
+// from stale bytes stays stale until someone acts); and that closing that gap is
+// the AGENT's job, on the turn the newer file arrives. There is deliberately no
+// automatic sync anywhere in this design, which is exactly why the refresh has
+// to be taught as behavior.
+//
+// It teaches only what the agent can actually do. Copying a table into an app's
+// saved items is a tool it has; putting a PDF into an app is not, and a prompt
+// that implied otherwise would buy an invented answer on the first attempt.
+const USER_FILES_PROMPT = `Files the user shares
+- A file the user sends is saved for them and stays available in EVERY later conversation, not only the one it arrived in. When they mention something they gave you and you cannot see it here, list their files and read it rather than asking them to send it again.
+- Read a file before answering questions about it. Never describe, summarise, or total up a file you have not read.
+- A long file arrives a window at a time — keep reading from the offset it hands back until you have the part you need. A file that is not text comes back as its type and size alone: say what it is, and never guess at what is inside it.
+- Building something from a file COPIES what it needs: rows from a table become the app's own saved items. The app does not read their files afterwards, so the copy is a snapshot, not a live link.
+- When they send a newer version of a file you have already built something from, say so plainly, then update what you built from the new contents. Nothing refreshes on its own — if you do not do it, it does not happen.`;
+
 // The connect etiquette, shared verbatim by both discovery sections below: it is
 // load-bearing on every surface that can reach a connector, and one copy is what
 // keeps the two from drifting apart.
@@ -167,7 +190,7 @@ export async function assembleSystemPrompt(
   discovery: "find-tools" | "connectors" | false = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT, HOW_YOU_WORK_PROMPT];
-  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
+  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT, USER_FILES_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
   if (discovery !== false) {
     sections.push(discovery === "connectors" ? CONNECTORS_PROMPT : DISCOVERY_BUDGET_PROMPT);

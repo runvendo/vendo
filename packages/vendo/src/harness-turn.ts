@@ -74,6 +74,7 @@ import {
 } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
+import { isUserFilePath, userFilePath } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
@@ -162,31 +163,6 @@ export interface HarnessTurnsConfig {
 export interface UploadedFile {
   path: string;
   bytes: number;
-}
-
-/** The user's own file drawer — §3.1's frozen `/user/files`, per subject and
- *  outliving every conversation. */
-const USER_FILES = "/user/files";
-
-/** Does this part address the drawer rather than carry bytes? */
-export const isUserFilePath = (path: string): boolean => path.startsWith(`${USER_FILES}/`);
-
-/** The ONE name check both doors share, so a drop from chat and a host's
- *  `putUserFile` land the same file at the same address. A name is a FILE name,
- *  never a path: a segment that could climb out of the drawer is refused rather
- *  than quietly rewritten, because a caller who meant a subdirectory should hear
- *  that it does not get one. */
-export function userFilePath(name: string): string {
-  const bad = name.length === 0 || name.length > 200
-    || /[/\\]/.test(name) || name === "." || name === ".."
-    || [...name].some((char) => char < " ");
-  if (bad) {
-    throw new VendoError(
-      "validation",
-      `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most 200 characters — and it lands in the user's files as exactly that.`,
-    );
-  }
-  return `${USER_FILES}/${name}`;
 }
 
 /**

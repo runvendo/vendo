@@ -1,20 +1,21 @@
 ---
 title: "User data"
 sidebarTitle: "User data"
-description: "Give each user a place to keep their own files: a drop in chat and one SDK call both write the same private drawer, and what lands there outlives the conversation."
+description: "Give each user a place to keep their own files: drop one in chat and the agent can read it, build on it, and pick it up again in next week's conversation."
 ---
 
-Your users' own files, kept where the agent works.
+Drop a file. Build on it.
 
 ## The picture
 
 Attachments used to ride one message and end with it. A file dropped in chat is
 now **saved** — into that user's own files, private to them, still there in next
-week's conversation.
+week's conversation. The agent reads it and answers from it, and can build an
+app on top of it.
 
-The message that follows carries only a reference to it. That is what keeps a
-transcript light: a spreadsheet lands once, and the conversation about it stays
-a conversation, not a copy of the file repeated on every turn.
+The message that follows carries only a reference to the file. That is what
+keeps a transcript light: a spreadsheet lands once, and the conversation about
+it stays a conversation, not a copy of the file repeated on every turn.
 
 Images are the deliberate exception. They still ride the message itself, because
 that is how a model sees a picture at all.
@@ -83,6 +84,52 @@ await vendo.putUserFile({
 It writes exactly what the chat door writes, so nothing downstream can tell the
 two apart. It **delivers nothing and starts no turn** — the file is simply there,
 and the user reaches it the next time they chat.
+
+## What the agent does with it
+
+Two tools come with every deployment — no adapter, no key, no configuration:
+
+| Tool | What it does |
+| --- | --- |
+| `vendo_user_files_list` | What this user has shared, with each file's size and type |
+| `vendo_user_files_read` | Reads one of them, by name |
+
+Both are `read` risk and run through the same guard, audit trail and approval
+rules as every other tool. Neither takes a path — only a **file name** — so
+nothing they are asked for can address anything outside that one user's files.
+
+A long file is read a window at a time (200 lines per call), so a spreadsheet
+gets walked rather than truncated. Files that are not text answer with their
+type and size and no content: the agent will tell your user it received a PDF
+rather than guess at what is inside it.
+
+Because the tools are on the ordinary registry, the listing is also how the
+agent finds a file in a **later** conversation. Nothing about last month's
+upload is in this conversation's history — the agent looks, finds it, and reads
+it.
+
+## Building on a file
+
+Ask for a dashboard of a spreadsheet and the agent builds an app, copying what
+it needs — the rows of a table become the app's own saved items.
+
+That copy is a **snapshot, not a live link**. The app does not read the user's
+files afterwards, and nothing re-reads them on its behalf.
+
+<Note>
+  **Refresh is the agent's job, never a background sync.** Send a newer
+  `sales-2026.csv` and the agent recognises it, says the file was replaced, and
+  updates what it built from the new contents — on that turn, because the person
+  asked. There is no watcher, no polling, and no automatic rebuild anywhere in
+  this design. A file sitting in the drawer changes nothing until someone talks
+  to the agent about it.
+</Note>
+
+<Warning>
+  In this release a PDF or an image **lands in the drawer and can be read about,
+  but does not reach an app**. Only tabular data is copied into an app. Putting a
+  document into an app's own file storage is a follow-up.
+</Warning>
 
 ## Size
 
