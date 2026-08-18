@@ -11,6 +11,7 @@
 import { automationName, type AutomationsEngine } from "@vendoai/automations";
 import {
   AGENT_CONTEXT_MARK,
+  log,
   type ApprovalRequest,
   type AutomationId,
   type Membership,
@@ -59,6 +60,12 @@ export const PLAIN_TEXT_RULE =
   "Write like a text: one short paragraph, plain sentences, no markdown, no headings, no bullet lists, "
   + "no links unless asked.";
 
+/** FROZEN: the cut point between two model-authored texts is a line whose only
+ *  content is this. Both halves of the contract read it here — the sentence that
+ *  teaches it (TEXT_STYLE) and the reader that acts on it (`streamTexts`) — so
+ *  the instruction and the parser can never drift apart. */
+const DIVIDER = "---";
+
 /** The house style for this channel, delivered the way every other hidden
  *  grounding is (01-core's AGENT_CONTEXT_MARK): a text part the model reads and
  *  the person never sees. There is no host-facing knob for it — a text is a
@@ -80,6 +87,13 @@ const TEXT_STYLE = [
   "To text the user later, set up an automation for it — the Text me action is how an automation reaches this "
   + "phone, and its grant is part of arming. You cannot otherwise send scheduled, recurring or unprompted texts. "
   + "That is this channel's only limit: anything else your tools can do, you can do right here in this conversation.",
+  // The model decides where one text ends and the next begins, because only it
+  // knows what it is about to say. A divider line is the cut point and is
+  // stripped, never delivered (`streamTexts`), and each text goes out the moment
+  // its divider passes rather than waiting for the turn to finish. There is no
+  // structural fallback: a reply with no divider in it is simply one text.
+  `Separate distinct texts with a line containing only ${DIVIDER}. Each one is sent as its own message the `
+  + "moment you finish it, so split anything a person would send as two texts instead of writing one long one.",
 ].join(" ");
 
 /** What a turn says when it produced no words at all — a failure that never
@@ -91,7 +105,10 @@ const YES = /^y(es)?$/i;
 const NO = /^n(o)?$/i;
 
 export interface ChannelTurnDeps {
-  harness: Pick<HarnessTurns, "stream">;
+  /** `warm` is optional for the same reason the web's warm door is
+   *  (`wire/threads.ts`): an engine assembled through `createAgent` has none,
+   *  and an unwarmed turn is slower, never broken. */
+  harness: Pick<HarnessTurns, "stream"> & Partial<Pick<HarnessTurns, "warm">>;
   guard: VendoGuard;
   channel: ChannelsService;
   links: ChannelLinkRepository;
@@ -298,19 +315,71 @@ async function offerGrantSet(
   }
 }
 
-/** The assistant's words for the turn, read back off the SSE the harness door
- *  answers with. Keepalives are comment frames and never match `data: `. */
-async function assistantText(response: Response): Promise<string> {
-  const body = await response.text();
-  let text = "";
-  for (const frame of body.split("\n\n")) {
-    if (!frame.startsWith("data: ")) continue;
-    const payload = frame.slice("data: ".length);
-    if (payload === "[DONE]") continue;
-    const chunk = JSON.parse(payload) as { type?: string; delta?: string };
-    if (chunk.type === "text-delta" && typeof chunk.delta === "string") text += chunk.delta;
+/** One SSE frame's contribution to the assistant's words. Keepalives are comment
+ *  frames and never match `data: `. */
+function frameText(frame: string): string {
+  if (!frame.startsWith("data: ")) return "";
+  const payload = frame.slice("data: ".length);
+  if (payload === "[DONE]") return "";
+  const chunk = JSON.parse(payload) as { type?: string; delta?: string };
+  return chunk.type === "text-delta" && typeof chunk.delta === "string" ? chunk.delta : "";
+}
+
+/**
+ * The assistant's words, delivered as they finish instead of all at once.
+ *
+ * This used to buffer the entire turn and send one message at the end, which is
+ * why a texted reply arrived as a wall well after the model had written its
+ * first sentence. Now the stream is read as it arrives and every completed
+ * segment is sent immediately, so a two-part answer lands the way a person
+ * texts: "on it", then the answer.
+ *
+ * A divider is recognized only once its newline has arrived — deltas split
+ * lines anywhere, and a `---` that is still being typed might yet turn into
+ * `----`. Answers how many texts went out, so the caller can tell a silent turn
+ * from a delivered one.
+ */
+async function streamTexts(response: Response, send: (text: string) => Promise<void>): Promise<number> {
+  if (response.body === null) return 0;
+  let segment = "";
+  let line = "";
+  let sent = 0;
+  const flush = async (): Promise<void> => {
+    const text = segment.trim();
+    segment = "";
+    if (text === "") return;
+    sent += 1;
+    await send(text);
+  };
+  const feed = async (delta: string): Promise<void> => {
+    line += delta;
+    for (let cut = line.indexOf("\n"); cut !== -1; cut = line.indexOf("\n")) {
+      const complete = line.slice(0, cut);
+      line = line.slice(cut + 1);
+      if (complete.trim() === DIVIDER) await flush();
+      else segment += `${complete}\n`;
+    }
+  };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    for (let cut = buffer.indexOf("\n\n"); cut !== -1; cut = buffer.indexOf("\n\n")) {
+      await feed(frameText(buffer.slice(0, cut)));
+      buffer = buffer.slice(cut + 2);
+    }
   }
-  return text.trim();
+  await feed(frameText(buffer));
+  // The stream can stop mid-line, and that last line is a line like any other —
+  // a reply signed off with a divider and no newline after it must still cut
+  // rather than deliver `---` as a text.
+  await feed("\n");
+  await flush();
+  return sent;
 }
 
 /** The thread this text belongs to: the conversation's OWN thread while it is
@@ -324,11 +393,40 @@ function rollingThread(link: ChannelLink): string | undefined {
 }
 
 /**
- * Run one inbound text as the linked user.
- *
  * A bare YES/NO answering a card THIS conversation raised is not a turn at all:
  * it is the answer to that card, decided on the SAME approval record the
  * waiting turn is blocked on — so that turn resumes and delivers its own reply.
+ *
+ * It is decided BEFORE the per-conversation queue (compose-channels.ts), and
+ * that ordering is load-bearing rather than tidy: the turn this answer releases
+ * is the one holding the queue, so queueing the answer behind it would deadlock
+ * the pair for the full ten-minute approval wait and approve-by-text would
+ * simply stop working.
+ *
+ * Answers whether the text was consumed as an answer. A YES that matches no
+ * card this conversation raised is NOT one — it falls through and runs as an
+ * ordinary turn.
+ */
+export async function answerPendingCard(
+  deps: Pick<ChannelTurnDeps, "guard" | "asks">,
+  input: { event: InboundTextEvent; link: ChannelLink },
+): Promise<boolean> {
+  const answer = input.event.text.trim();
+  if (!YES.test(answer) && !NO.test(answer)) return false;
+  const principal: Principal = { kind: "user", subject: input.link.subject };
+  const asked = await deps.asks.ids(input.event.conversationId);
+  const mine = (await deps.guard.approvals.pending(principal))
+    .filter((request) => asked.includes(request.id))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1);
+  if (mine === undefined) return false;
+  await deps.guard.approvals.decide(mine.id, { approve: YES.test(answer) }, principal);
+  await deps.asks.consume(mine.id);
+  return true;
+}
+
+/**
+ * Run one inbound text as the linked user.
  */
 export async function runChannelTurn(
   deps: ChannelTurnDeps,
@@ -359,21 +457,14 @@ export async function runChannelTurn(
 
   const answer = event.text.trim();
   if (YES.test(answer) || NO.test(answer)) {
+    // No card to answer — `answerPendingCard` ran ahead of the queue and would
+    // have consumed this text if there were one — but a grant set can be the open
+    // question instead. Cards still come first: a card is a turn blocked right
+    // now, and one is never sent while a set ask is outstanding, so whichever of
+    // the two exists is the last thing this person was shown. This half stays
+    // inside the turn rather than jumping the queue with the cards, because a set
+    // ask has no parked turn behind it and so nothing to deadlock against.
     const pending = await deps.guard.approvals.pending(principal);
-    const asked = await deps.asks.ids(event.conversationId);
-    const mine = pending
-      .filter((request) => asked.includes(request.id))
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .at(-1);
-    if (mine !== undefined) {
-      await deps.guard.approvals.decide(mine.id, { approve: YES.test(answer) }, principal);
-      await deps.asks.consume(mine.id);
-      return;
-    }
-    // No card to answer, but a grant set can be the open question instead. Cards
-    // come first on purpose: a card is a turn blocked right now, and one is never
-    // sent while a set ask is outstanding, so whichever of the two exists is the
-    // last thing this person was shown.
     const set = await outstandingSet(deps, event.conversationId, pending);
     if (set !== null) {
       const approve = YES.test(answer);
@@ -425,8 +516,26 @@ export async function runChannelTurn(
     // a turn stamps the same header.
     const effective = response.headers.get(THREAD_ID_HEADER);
     if (effective !== null) await deps.links.rememberTurn(link, effective, event.conversationId);
-    const text = await assistantText(response);
-    await send(text === "" ? NOTHING_TO_SAY : text);
+    try {
+      if (await streamTexts(response, send) === 0) await send(NOTHING_TO_SAY);
+    } catch (error) {
+      // The adapter already retried this (channels.ts). Past that the reply is
+      // gone for good, and the delivery claim is deliberately NOT released:
+      // replaying the turn would re-run the tool calls it already made, so a
+      // lost sentence would cost a second payment. Loud, because a person is
+      // holding a phone that will never answer and only an operator can see it.
+      log({
+        code: "vendo.channel-reply-lost",
+        level: "error",
+        message: `[vendo] a text reply was lost on conversation ${event.conversationId}; the turn already ran and is `
+          + `not replayed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+    // The next text in this conversation usually arrives inside the provider's
+    // cache TTL, so the prefix is warmed once the person already has their
+    // reply — never something they wait behind, and a failure costs nothing but
+    // the warmth (the same bargain wire/threads.ts makes for the web).
+    void deps.harness.warm?.({ ctx }).catch(() => undefined);
     // AFTER the turn's own words, and only then: the standing-permission asks
     // arming raises are approval rows, not stream parts, so nothing inside the
     // turn could have offered them. The pending feed is the source of truth here
