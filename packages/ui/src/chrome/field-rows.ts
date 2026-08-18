@@ -13,9 +13,10 @@ import { argProperties, argValue, humanizeToolName, type ToolMeta } from "./huma
 import { truncateHead } from "./truncate.js";
 
 export interface CardFieldRow {
-  /** WHICH argument this row is — the top-level input key, verbatim ("Input"
-      for a non-object arg). Identity, never display: `humanizeToolName` is
-      many-to-one (`recipient_name`, `recipientName` and `RecipientName` all
+  /** WHICH argument this row is — the top-level input key, verbatim ("Input",
+      or "Result" on the way back, for a value with no name of its own).
+      Identity, never display: `humanizeToolName` is many-to-one
+      (`recipient_name`, `recipientName` and `RecipientName` all
       read "Recipient name"), so anything matching a row against something else
       — the consent question's `questionKeys`, say — matches on this. */
   key: string;
@@ -96,15 +97,30 @@ function display(key: string, value: unknown, schema: JsonSchema | undefined, me
 
 /** The one body, for any args a tool call can carry. */
 export function fieldRows(args: unknown, inputSchema?: JsonSchema, meta?: ToolMeta): CardFieldRow[] {
+  return valueRows(args, "Input", inputSchema, meta);
+}
+
+/** The same one body for what the call RETURNED — one word different, and the
+    word is the DIRECTION. A value with no name of its own (a bare value, or a
+    list) is the whole thing, and the arg-side name for that row labelled a
+    settled receipt's returned todo list "Input", as if the list were what the
+    person had approved sending. */
+export function resultRows(output: unknown): CardFieldRow[] {
+  return valueRows(output, "Result");
+}
+
+/** `unnamed` is what a value with no name of its own is called on this side of
+    the call — the only difference between the two bodies above. */
+function valueRows(input: unknown, unnamed: string, inputSchema?: JsonSchema, meta?: ToolMeta): CardFieldRow[] {
   const row = (key: string, label: string, value: string, raw: string, numeric: boolean): CardFieldRow =>
     ({ key, label, value: bound(value), raw: bound(raw), numeric });
-  if (args === undefined || args === null) return [];
-  if (typeof args !== "object") {
-    return [row("Input", "Input", display("Input", args, inputSchema, meta), leaf(args), typeof args === "number")];
+  if (input === undefined || input === null) return [];
+  if (typeof input !== "object") {
+    return [row(unnamed, unnamed, display(unnamed, input, inputSchema, meta), leaf(input), typeof input === "number")];
   }
-  if (Array.isArray(args)) return [row("Input", "Input", display("Input", args, inputSchema, meta), leaf(args), false)];
+  if (Array.isArray(input)) return [row(unnamed, unnamed, display(unnamed, input, inputSchema, meta), leaf(input), false)];
   const properties = argProperties(inputSchema);
-  return Object.entries(args as Record<string, unknown>).map(([key, value]) => row(
+  return Object.entries(input as Record<string, unknown>).map(([key, value]) => row(
     key,
     humanizeToolName(key),
     display(key, value, properties?.[key], meta),
