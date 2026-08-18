@@ -30,8 +30,15 @@ export function isForbiddenError(reason: unknown): boolean {
 
 export interface IdentityState {
   forbidden(): boolean;
-  /** Record a failed wire read; only a forbidden refusal moves the latch. */
-  note(reason: unknown): void;
+  /** The current open-signal generation — bumped by every `clear()` and every
+   *  identity event. Capture it when a request BEGINS and pass it to `note`:
+   *  a refusal from before the latest open signal is stale evidence (greptile
+   *  on #1445: an in-flight warm's 403 landing after sign-in re-closed the
+   *  latch and took the composer away from a signed-in visitor). */
+  epoch(): number;
+  /** Record a failed wire read; only a forbidden refusal moves the latch, and
+   *  only when `since` (the epoch at request start) is still current. */
+  note(reason: unknown, since?: number): void;
   /** A successful wire read (or the page signal) — the latch opens. */
   clear(): void;
   subscribe(listener: () => void): () => void;
@@ -58,23 +65,33 @@ export function useSignedOut(client: object): boolean {
 
 function createState(): IdentityState {
   let forbidden = false;
+  let epoch = 0;
   const listeners = new Set<() => void>();
   const set = (next: boolean): void => {
     if (forbidden === next) return;
     forbidden = next;
     for (const listener of [...listeners]) listener();
   };
+  // Every open signal — a success or the page event — starts a new epoch,
+  // whether or not the latch was closed: it invalidates the refusals of every
+  // request already in flight when it fired.
+  const open = (): void => {
+    epoch += 1;
+    set(false);
+  };
   // One listener per state, alive as long as the client is — page-scoped, like
   // the client itself. Guarded for SSR.
   if (typeof window !== "undefined") {
-    window.addEventListener(IDENTITY_CHANGED_EVENT, () => set(false));
+    window.addEventListener(IDENTITY_CHANGED_EVENT, open);
   }
   return {
     forbidden: () => forbidden,
-    note: (reason) => {
+    epoch: () => epoch,
+    note: (reason, since) => {
+      if (since !== undefined && since !== epoch) return;
       if (isForbiddenError(reason)) set(true);
     },
-    clear: () => set(false),
+    clear: open,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

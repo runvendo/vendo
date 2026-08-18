@@ -80,7 +80,7 @@ const NO_BEATS: readonly VendoBeat[] = [];
 /** Clients whose provider prompt-cache this page already primed — the warm
  *  call is per-deployment-per-user, so once per client instance is the
  *  whole job (and strict-mode double effects must not pay it twice). */
-const warmedClients = new WeakSet<object>();
+const warmedClients = new WeakMap<object, number>();
 
 function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | undefined {
   if (part.type !== "data-vendo-approval") return undefined;
@@ -194,20 +194,17 @@ export function useVendoThread(threadId?: string) {
   // the provider entry outlives any single mount, and strict-mode double
   // effects must not buy the cache write twice. Best-effort by design.
   useEffect(() => {
-    if (warmedClients.has(client)) return;
-    warmedClients.add(client);
-    // Still best-effort, but a forbidden refusal feeds the page-wide latch
-    // (H2-E): the warm call is often the overlay's FIRST wire contact, so it
-    // is what tells the signed-out panel to render without waiting for a poll.
-    // A refused warm also FORGETS its mark (greptile on #1445): it primed
-    // nothing, and the conversation that remounts after sign-in deserves the
-    // warm cache the mark would have denied it. Ordinary failures keep the
-    // mark — once per page life stays the rule for everything but a refusal.
-    client.threads.warm().catch((reason: unknown) => {
-      const identity = identityState(client);
-      identity.note(reason);
-      if (identity.forbidden()) warmedClients.delete(client);
-    });
+    // The mark is EPOCH-KEYED (greptile on #1445, twice): a refused warm at
+    // epoch N primed nothing, and the conversation remounting after sign-in
+    // (epoch N+1) deserves the warm-up the plain once-per-client mark denied
+    // it — no delete-vs-remount ordering to race. And the refusal is stamped
+    // with the epoch its request BEGAN in, so a stale 403 landing after the
+    // sign-in cannot re-close the latch and un-render the composer.
+    const identity = identityState(client);
+    const at = identity.epoch();
+    if (warmedClients.get(client) === at) return;
+    warmedClients.set(client, at);
+    client.threads.warm().catch((reason: unknown) => identity.note(reason, at));
   }, [client]);
   // Beats belong to the RUNNING turn: clearing on the settle (rather than on the
   // next turn's start) is one rule that answers both halves of §3.4's ephemeral

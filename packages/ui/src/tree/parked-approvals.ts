@@ -53,9 +53,12 @@ export function useParkedApprovals(
         // finds neither a pending ask nor an outcome yet. The next pass asks
         // again and the pending notice stands meanwhile — today's behavior.
         // The one exception is a forbidden refusal, which feeds the page-wide
-        // latch (H2-E) so this backstop goes quiet with everything else.
+        // latch (H2-E) so this backstop goes quiet with everything else —
+        // stamped with the epoch its request began in, so a stale refusal
+        // landing after a sign-in cannot re-close the latch.
+        const at = identity.epoch();
         const resolution = await client.approvals.get(approvalId).catch((reason: unknown) => {
-          identity.note(reason);
+          identity.note(reason, at);
           return undefined;
         });
         if (!live) return;
