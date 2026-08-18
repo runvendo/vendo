@@ -120,7 +120,8 @@
             "pages": [
               "capabilities/api-tools",
               "capabilities/connected-accounts",
-              "capabilities/automations"
+              "capabilities/automations",
+              "capabilities/text-messaging"
             ]
           },
           {

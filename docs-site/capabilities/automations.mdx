@@ -206,6 +206,21 @@ and one hook carries all of it into a panel you build:
 const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutomations();
 ```
 
+## Reaching the user
+
+An away firing has to speak somewhere. With the [text channel](/capabilities/text-messaging)
+composed, the `vendo_text_me` action is auto-registered on every agent: one
+text to the person the run is for, from any surface. Ask the agent for it in
+plain English —
+
+```text
+"Check my checking balance every 15 minutes and text me if it goes under $100."
+```
+
+— and the arming set includes the Text me permission alongside the tools it will
+call. The owner allows the set once, from the same phone that armed it, and
+every firing after that texts them with no further ask.
+
 ## Where to go next
 
 <CardGroup cols={3}>
@@ -214,10 +229,10 @@ const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutoma
 
     .on() →
   </Card>
-  <Card title="API tools" href="/capabilities/api-tools">
-    Your own routes, extracted into a guarded tool set.
+  <Card title="Text messaging" href="/capabilities/text-messaging">
+    Link a phone, take texts, and text the user first from an automation.
 
-    API tools →
+    Text messaging →
   </Card>
   <Card title="Guard" href="/how-vendo-works">
     Risk grade, approval, and an audit line on every call.
