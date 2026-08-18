@@ -229,7 +229,8 @@ export default function Tickets() {
           <Row gap={6}>
             <Button label="Open" disabled={row.id === openId} onClick={() => setOpenId(row.id)} />
             <Tooltip label={row.status === "closed" ? "Already closed" : "Close this ticket"}>
-              <Button label="Close" tone="danger" disabled={row.status === "closed"} onClick={() => tools.close_ticket({ id: row.id })} />
+              {/* openId is sibling state to this press — read it with prev, never the render's copy. */}
+              <Button label="Close" tone="danger" disabled={row.status === "closed"} onClick={() => { tools.close_ticket({ id: row.id }); setOpenId((prev) => (prev === row.id ? rows.find((other) => other.id !== row.id)?.id : prev)); }} />
             </Tooltip>
           </Row>
         )} />

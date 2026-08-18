@@ -202,6 +202,12 @@ describe("the worked screens teach the shapes a screen is graded on", () => {
   it("reads a filter's choices off the data instead of typing them out", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain("options={[...new Set(rows.map((row) => row.category))]}");
   });
+
+  it("updates state a sibling press can affect with the updater form, never the render's copy", () => {
+    expect(VENDO_FORMAT_REFERENCE).toContain(
+      "setOpenId((prev) => (prev === row.id ? rows.find((other) => other.id !== row.id)?.id : prev))",
+    );
+  });
 });
 
 describe("the reference only teaches what a screen really has", () => {
