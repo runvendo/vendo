@@ -22,6 +22,7 @@ import {
 } from "./channels.js";
 import { cloudKeyOptions } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
+import { textMeRegistry } from "./text-me.js";
 import type { CreateVendoConfig } from "./types.js";
 
 /** The conversation ref a link delivery is logged under. Link events carry no
@@ -167,6 +168,18 @@ export const composeChannels = (composition: VendoComposition): Pick<VendoCompos
       );
     },
   };
+
+  // "No adapter, no tool" (compose-tools.ts, knowledge and the connector pair):
+  // a deployment that never opted into texts must not be offered a tool whose
+  // every call could only refuse. Registered on the SAME registry as everything
+  // else, so the guard, the audit trail and `find_tools` see it like a host tool.
+  if (channels.posture !== false) {
+    composition.actions.add(textMeRegistry({
+      channel: channels,
+      links,
+      invite: (principal) => door.invite(principal),
+    }));
+  }
 
   return { channels, channelDoor: door, channelInboundSecret };
 };

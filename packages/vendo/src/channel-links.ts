@@ -67,6 +67,13 @@ export interface ChannelLink {
    *  and persist the texting style into every later web turn on it. */
   threadId?: string;
   lastTurnAt?: IsoDateTime;
+  /** The router conversation this phone last texted on — the ONLY address the
+   *  channel can send to (`ChannelsService.send` takes a conversation, never a
+   *  number, because the deployment never learns the router's addressing). It is
+   *  what lets `vendo_text_me` reach this person from a web turn or an away
+   *  firing. Absent until they have sent at least one real message: a one-text
+   *  link carries no conversation of its own (`InboundLinkEvent`). */
+  conversationId?: string;
 }
 
 function mintLinkId(): string {
@@ -172,9 +179,10 @@ export class ChannelLinkRepository {
   }
 
   /** Remember which thread this conversation is running in, and when it last
-   *  ran — the two facts `runChannelTurn` rolls the thread on. */
-  async rememberTurn(link: ChannelLink, threadId: string): Promise<void> {
-    const updated: ChannelLink = { ...link, threadId, lastTurnAt: new Date().toISOString() };
+   *  ran — the two facts `runChannelTurn` rolls the thread on — plus the
+   *  conversation itself, which is the address `vendo_text_me` sends to. */
+  async rememberTurn(link: ChannelLink, threadId: string, conversationId: string): Promise<void> {
+    const updated: ChannelLink = { ...link, threadId, lastTurnAt: new Date().toISOString(), conversationId };
     await this.records().put({
       id: link.id,
       data: updated,

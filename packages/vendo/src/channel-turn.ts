@@ -44,18 +44,34 @@ export const CHANNEL_APPROVAL_WAIT_MS = 600_000;
  *  in the host app's history like any web chat. */
 const THREAD_IDLE_MS = 24 * 60 * 60_000;
 
+/** How a text READS, stated once. Shared with the Text me tool's descriptor
+ *  (text-me.ts): a text the agent sends from a web turn or an away firing is
+ *  still a text, and two copies of this sentence would drift. */
+export const PLAIN_TEXT_RULE =
+  "Write like a text: one short paragraph, plain sentences, no markdown, no headings, no bullet lists, "
+  + "no links unless asked.";
+
 /** The house style for this channel, delivered the way every other hidden
  *  grounding is (01-core's AGENT_CONTEXT_MARK): a text part the model reads and
  *  the person never sees. There is no host-facing knob for it — a text is a
  *  text. */
 const TEXT_STYLE = [
   `${AGENT_CONTEXT_MARK} This conversation is happening over text message.`,
-  "Write like a text: one short paragraph, plain sentences, no markdown, no headings, no bullet lists, no links unless asked.",
+  PLAIN_TEXT_RULE,
   "Never mention that you are texting. If you need a yes or no, ask for it in one line.",
-  // Delivery does not exist yet: nothing can send a text on a schedule or of its
-  // own accord. So the channel must not OFFER it either — an agent that promises
-  // Friday's text has already broken a promise the product cannot keep.
-  "You cannot send scheduled, recurring or unprompted texts, and you cannot set any of that up from here — say so plainly if asked, point to the app, and say it is coming soon.",
+  // Live incident 2026-08-18. This sentence rides as hidden context on EVERY
+  // inbound text, so next to "send $25 to Dana" the old wording — "you cannot
+  // send … from here, point to the app" — read as a channel-wide restriction:
+  // the model refused four transfer asks verbatim ("do that directly in the
+  // Maple app") without ever searching its tool catalog, on a prompt carrying
+  // three copies of the search-first instruction. The web surface, which has no
+  // such note, sends money fine — the note itself taught the refusal. It was
+  // also false about automations, which a texted user CAN set up. So the limit
+  // is stated as the ONE thing it actually is, and the escape hatch is named:
+  // `vendo_text_me` (text-me.ts) is how a later text gets sent.
+  "To text the user later, set up an automation for it — the Text me action is how an automation reaches this "
+  + "phone, and its grant is part of arming. You cannot otherwise send scheduled, recurring or unprompted texts. "
+  + "That is this channel's only limit: anything else your tools can do, you can do right here in this conversation.",
 ].join(" ");
 
 /** What a turn says when it produced no words at all — a failure that never
@@ -188,7 +204,7 @@ export async function runChannelTurn(
     // The effective thread, reopened or freshly minted — every door that serves
     // a turn stamps the same header.
     const effective = response.headers.get(THREAD_ID_HEADER);
-    if (effective !== null) await deps.links.rememberTurn(link, effective);
+    if (effective !== null) await deps.links.rememberTurn(link, effective, event.conversationId);
     const text = await assistantText(response);
     await send(text === "" ? NOTHING_TO_SAY : text);
   } finally {
