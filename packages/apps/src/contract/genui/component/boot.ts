@@ -145,6 +145,8 @@ const DEFAULT_TIME_ZONE = "UTC";
 type IntlOp =
   | "number" | "numberParts" | "numberResolved"
   | "date" | "dateParts" | "dateResolved"
+  | "relative" | "relativeParts" | "relativeResolved"
+  | "plural" | "pluralResolved"
   /** `Date.prototype`'s three, which differ from `date` only in what each
    *  defaults to when the screen named no components. */
   | "day" | "time" | "stamp";
@@ -158,6 +160,9 @@ interface IntlAsk {
   /** The number or the instant, as its decimal spelling — JSON carries neither
    *  `NaN` nor `Infinity`, and both are things `Intl` prints. */
   value?: string;
+  /** What the count counts, for the one format whose `format` takes two
+   *  arguments: `"hour"` in `format(-2, "hour")` → "2 hours ago". */
+  unit?: string;
 }
 
 /**
@@ -179,10 +184,18 @@ const answerIntl = (ask: IntlAsk, wall: { locale: string; timeZone: string }): s
   const value = Number(ask.value);
   const counts = ask.options as Intl.NumberFormatOptions | undefined;
   const dates = { timeZone: wall.timeZone, ...ask.options } as Intl.DateTimeFormatOptions;
+  const words = ask.options as Intl.RelativeTimeFormatOptions | undefined;
+  const forms = ask.options as Intl.PluralRulesOptions | undefined;
+  const unit = ask.unit as Intl.RelativeTimeFormatUnit;
   switch (ask.op) {
     case "number": return new Intl.NumberFormat(locale, counts).format(value);
     case "numberParts": return JSON.stringify(new Intl.NumberFormat(locale, counts).formatToParts(value));
     case "numberResolved": return JSON.stringify(new Intl.NumberFormat(locale, counts).resolvedOptions());
+    case "relative": return new Intl.RelativeTimeFormat(locale, words).format(value, unit);
+    case "relativeParts": return JSON.stringify(new Intl.RelativeTimeFormat(locale, words).formatToParts(value, unit));
+    case "relativeResolved": return JSON.stringify(new Intl.RelativeTimeFormat(locale, words).resolvedOptions());
+    case "plural": return new Intl.PluralRules(locale, forms).select(value);
+    case "pluralResolved": return JSON.stringify(new Intl.PluralRules(locale, forms).resolvedOptions());
     case "date": return new Intl.DateTimeFormat(locale, dates).format(value);
     case "dateParts": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).formatToParts(value));
     case "dateResolved": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).resolvedOptions());

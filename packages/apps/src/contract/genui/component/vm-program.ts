@@ -109,8 +109,10 @@ const INTL_SOURCE = `(function () {
   // asked is what this file said to ask.
   var stringify = JSON.stringify, parse = JSON.parse;
 
-  function answer(op, locale, options, value) {
-    return ask(stringify({ op: op, locale: locale, options: options, value: value }));
+  // \`unit\` is \`RelativeTimeFormat\`'s alone; \`stringify\` drops it where it is
+  // undefined, so every other ask crosses the wall the shape it always did.
+  function answer(op, locale, options, value, unit) {
+    return ask(stringify({ op: op, locale: locale, options: options, value: value, unit: unit }));
   }
 
   /** Any value as the decimal spelling of a number. A Date reads as its instant,
@@ -122,8 +124,9 @@ const INTL_SOURCE = `(function () {
    *  same ReferenceError every other clock read gets. */
   function when(value) { return value === undefined ? String(Date.now()) : spell(value); }
 
-  // Both are callable with \`new\` and without, the way both really are: a
-  // constructor that returns an object returns that object.
+  // All four are callable with \`new\` and without, the way \`Intl\`'s own
+  // declarations describe them: a constructor that returns an object returns that
+  // object.
   function NumberFormat(locale, options) {
     return {
       format: function (value) { return answer("number", locale, options, spell(value)); },
@@ -138,7 +141,31 @@ const INTL_SOURCE = `(function () {
       resolvedOptions: function () { return parse(answer("dateResolved", locale, options)); },
     };
   }
-  globalThis.Intl = { NumberFormat: NumberFormat, DateTimeFormat: DateTimeFormat };
+  // "2 hours ago", "in 3 days" — the phrasing a screen writes for a timestamp,
+  // and one nobody hand-rolls correctly. The unit rides beside the count because
+  // it is the only ask whose format takes two arguments.
+  function RelativeTimeFormat(locale, options) {
+    return {
+      format: function (value, unit) { return answer("relative", locale, options, spell(value), unit); },
+      formatToParts: function (value, unit) { return parse(answer("relativeParts", locale, options, spell(value), unit)); },
+      resolvedOptions: function () { return parse(answer("relativeResolved", locale, options)); },
+    };
+  }
+  // Which plural form a count takes ("one", "other", and the four more some
+  // locales have) — the half of "1 item / 2 items" that an \`=== 1\` gets wrong
+  // everywhere but English.
+  function PluralRules(locale, options) {
+    return {
+      select: function (value) { return answer("plural", locale, options, spell(value)); },
+      resolvedOptions: function () { return parse(answer("pluralResolved", locale, options)); },
+    };
+  }
+  globalThis.Intl = {
+    NumberFormat: NumberFormat,
+    DateTimeFormat: DateTimeFormat,
+    RelativeTimeFormat: RelativeTimeFormat,
+    PluralRules: PluralRules,
+  };
 
   Number.prototype.toLocaleString = function (locale, options) {
     return answer("number", locale, options, spell(this));

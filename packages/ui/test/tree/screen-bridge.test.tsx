@@ -722,4 +722,44 @@ export default function Ledger() {
     expect(screen.getByText("Pending: 2")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel Ada" })).toBeTruthy();
   });
+
+  it("boots the live screen on the WALL this surface passed, not the engine's default", async () => {
+    // The engine has no ICU: every `toLocaleDateString` in the box is answered by
+    // the host's real `Intl` against the locale and zone the boot pinned, and
+    // unset that is UTC — a server's wall, not the viewer's. 01:30Z is the 17th in
+    // UTC and the 16th in New York, so one screen over one instant paints two
+    // different strings and which one is on the page says which wall the box got.
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack, Text } from "@vendo/screen";
+
+export default function Due() {
+  const [seen, setSeen] = useState(0);
+  return (
+    <Stack>
+      <Text text={"due " + new Date(${Date.UTC(2026, 7, 17, 1, 30)}).toLocaleDateString("en-US")} />
+      <Button label={"Look " + seen} onClick={() => setSeen(seen + 1)} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, {})}
+        components={{}}
+        onAction={host.onAction}
+        timeZone="America/New_York"
+      />,
+    );
+
+    // The SERVED paint, standing while the VM boots behind it — built with no wall
+    // at all, so it is the default's answer.
+    expect(screen.getByText("due 8/17/2026")).toBeTruthy();
+
+    // One press, and what replaces it is the live screen's own paint.
+    fireEvent.click(screen.getByRole("button", { name: "Look 0" }));
+
+    await waitFor(() => expect(screen.getByText("due 8/16/2026")).toBeTruthy());
+    expect(screen.queryByText("due 8/17/2026")).toBeNull();
+  });
 });

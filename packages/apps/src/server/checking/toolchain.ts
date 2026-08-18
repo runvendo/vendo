@@ -88,6 +88,12 @@ export interface ScreenPaintInput {
   readonly queries: Record<string, unknown>;
   readonly catalog: readonly string[];
   readonly now?: number;
+  /** The wall the screen's formats resolve against, as `bootScreen` takes it —
+   *  carried through because the gate has to paint on the SAME wall the surface
+   *  renders on, or a date it judged is not the date the person is shown. Unset
+   *  is `"en-US"` and `"UTC"`, wherever the paint runs. */
+  readonly locale?: string;
+  readonly timeZone?: string;
 }
 
 /** A failed paint is DATA, not a throw: `ScreenError`'s two fields are what the

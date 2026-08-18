@@ -85,6 +85,10 @@ export interface ScreenBridgeInput {
   /** The served tree: the swap keeps its queries, data and payload extras. */
   base: WalkTree;
   catalog: readonly string[];
+  /** The viewer's wall, as `ScreenBoot` takes it (screen-engine.ts). Unset is
+   *  `"en-US"` in `"UTC"` — the engine's default, which is a server's wall. */
+  locale?: string;
+  timeZone?: string;
   /** The renderer's own action pipe — never a second call path. */
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
   /** Report a screen failure into a node's outcome slot. */
@@ -102,7 +106,7 @@ const MAX_SUPPLY_ROUNDS = 3;
 const reason = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 export function useScreen(input: ScreenBridgeInput): ScreenBridge {
-  const { interactive, base, catalog, runAction, onFailure } = input;
+  const { interactive, base, catalog, locale, timeZone, runAction, onFailure } = input;
   const booted = useRef<{ engine: ScreenEngine; screen: ScreenInstance } | null>(null);
   const held = useRef<Parameters<ScreenBridge["fire"]> | null>(null);
   const rereading = useRef(false);
@@ -121,6 +125,8 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
     interactive,
     base,
     catalog,
+    locale,
+    timeZone,
     onFailure,
     fire: undefined as ScreenBridge["fire"] | undefined,
     feed: undefined as ((nodeId: string, asks: readonly ScreenQuery[]) => Promise<void>) | undefined,
@@ -141,6 +147,8 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
           queries: now.interactive?.queries ?? {},
           catalog: now.catalog,
           now: Date.now(),
+          locale: now.locale,
+          timeZone: now.timeZone,
         });
         booted.current = { engine, screen };
         asked.current = new Map((now.interactive?.queryPlan ?? []).map((query) => [queryKey(query), query]));
@@ -253,6 +261,8 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
         queries: Object.fromEntries(read),
         catalog,
         now: Date.now(),
+        locale,
+        timeZone,
       });
       instance.screen.dispose();
       booted.current = { engine: instance.engine, screen: next };
@@ -328,7 +338,7 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
   // Every closure above belongs to THIS render (as `invoke` does in the renderer);
   // boot's continuation is the one caller that outlives its own render, so it
   // reaches the newest one through here.
-  latest.current = { interactive, base, catalog, onFailure, fire, feed };
+  latest.current = { interactive, base, catalog, locale, timeZone, onFailure, fire, feed };
 
   return { tree, inFlight, fire, refresh };
 }

@@ -16,7 +16,7 @@
  * PAINT the same gate hands the renderer.
  */
 import { describe, expect, it } from "vitest";
-import { checkComponentScreen } from "../../src/server/checking/component-screen.js";
+import { checkComponentScreen, type ComponentScreenCheck } from "../../src/server/checking/component-screen.js";
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const tools: readonly HostToolInfo[] = [
@@ -62,6 +62,8 @@ export default function Invoices() {
   return (
     <Stack gap={12}>
       <Text text={total.toLocaleString("en-US", { style: "currency", currency: "USD" })} variant="heading" />
+      <Text text={invoices.data.length + " " + (new Intl.PluralRules("en-US").select(invoices.data.length) === "one" ? "invoice" : "invoices")} />
+      <Text text={"read " + new Intl.RelativeTimeFormat("en-US").format(-2, "hour")} />
       {invoices.data.map((row) => (
         <Card key={row.id} title={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(row.amount_cents / 100)}>
           <Text text={"due " + new Date(row.due).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
@@ -71,6 +73,12 @@ export default function Invoices() {
   );
 }
 `;
+
+/** Every string in the paint this gate hands the renderer — so nothing here is
+ *  asking the compiler what the VM did. */
+const paintedStrings = (result: ComponentScreenCheck): string[] =>
+  Object.values(result.initialTree?.nodes ?? {}).flatMap((node) =>
+    Object.values(node.props).filter((value): value is string => typeof value === "string"));
 
 describe("the formatting idiom", () => {
   it("type-checks, runs, and paints the strings a browser would paint", async () => {
@@ -83,13 +91,35 @@ describe("the formatting idiom", () => {
 
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);
-    // Read off the paint the gate hands the renderer, so nothing here is asking
-    // the compiler what the VM did.
-    const painted = Object.values(result.initialTree?.nodes ?? {}).flatMap((node) =>
-      Object.values(node.props).filter((value): value is string => typeof value === "string"));
-    // The total, computed in the box; one row's own amount; one row's own date.
-    expect(painted).toContain("$4,755.55");
-    expect(painted).toContain("$555.55");
-    expect(painted).toContain("due Aug 17");
+    // The total, computed in the box; one row's own amount; one row's own date —
+    // the last of which is the DEFAULT wall's answer, UTC.
+    expect(paintedStrings(result)).toContain("$4,755.55");
+    expect(paintedStrings(result)).toContain("$555.55");
+    expect(paintedStrings(result)).toContain("due Aug 17");
+    // The two formats that only became reachable in the box after the bridge grew
+    // them: the compiler has always admitted both, so before they crossed the wall
+    // this pair was a green check over a screen that could not run.
+    expect(paintedStrings(result)).toContain("2 invoices");
+    expect(paintedStrings(result)).toContain("read 2 hours ago");
+  });
+});
+
+describe("the wall the gate paints on", () => {
+  it("paints in the zone the HOST passed, not the server's own", async () => {
+    // The row is due at 01:30Z — the 17th in UTC and the 16th in New York. The
+    // check above painted this screen over this row on the default wall and read
+    // "due Aug 17", so the zone is the whole difference between the two, and it
+    // only reaches the box if the gauntlet forwards it to the paint. A gate that
+    // dropped it would judge a date the person is never shown.
+    const result = await checkComponentScreen({
+      source: SCREEN,
+      hostTools: tools,
+      catalog,
+      runQuery: async () => ROWS,
+      timeZone: "America/New_York",
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(paintedStrings(result)).toContain("due Aug 16");
   });
 });

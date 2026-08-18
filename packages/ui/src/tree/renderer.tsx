@@ -89,6 +89,15 @@ export interface TreeViewProps {
    * payload before component screens — nothing boots and nothing changes.
    */
   interactive?: ScreenInteractive;
+  /**
+   * The wall a live screen's dates and money resolve against: a locale, and an
+   * IANA zone. The screen engine carries no ICU, so both are answered by the
+   * host's real `Intl` against these two — and unset they are `"en-US"` and
+   * `"UTC"`, which is a server's wall. A surface that wants the VIEWER's says so:
+   * `timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}`.
+   */
+  locale?: string;
+  timeZone?: string;
 }
 
 export interface PayloadRendererProps {
@@ -101,6 +110,9 @@ export interface PayloadRendererProps {
   /** As {@link TreeViewProps.onParked}. */
   onParked?: (parked: ParkedPress) => void;
   onStateChange?(state: Record<string, Json>): void;
+  /** As {@link TreeViewProps.locale} and {@link TreeViewProps.timeZone}. */
+  locale?: string;
+  timeZone?: string;
 }
 
 /**
@@ -846,6 +858,8 @@ function StatefulTreeView({
   onParked,
   onStateChange,
   interactive,
+  locale,
+  timeZone,
 }: TreeViewProps) {
   // The surface is its own theme boundary. A host mounts one wherever it likes
   // — demo-bank's Apps page is a bare AppFrame on a host page, outside any
@@ -900,7 +914,7 @@ function StatefulTreeView({
   }, []);
   // What the screen may render: the Kit plus whatever this host registered.
   const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(components)], [components]);
-  const screen = useScreen({ interactive, base: painted, catalog, runAction, onFailure: failNode });
+  const screen = useScreen({ interactive, base: painted, catalog, locale, timeZone, runAction, onFailure: failNode });
   // Every press still waiting on an approval, read straight off the outcome
   // slots that hold its notice — resolving one clears the slot, which is also
   // what stops the watch.

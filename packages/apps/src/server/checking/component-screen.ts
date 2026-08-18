@@ -138,6 +138,13 @@ export interface ComponentScreenOptions {
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
+  /** The wall stage 4 paints on — the locale and the IANA zone the screen's
+   *  `Intl` and `toLocale*` calls DEFAULT to. Unset is `"en-US"` and `"UTC"`,
+   *  the same as the surface's. A host whose people read another one passes it
+   *  here as well as to the surface, so the dates this gate judged are the dates
+   *  the person is shown. */
+  locale?: string;
+  timeZone?: string;
   /** What compiles, type-checks and paints the screen — the one thing in this
    *  gauntlet that cannot run in every venue. Unset, this process's own
    *  ({@link defaultToolchain}); the floor names it one layer up. */
@@ -659,7 +666,14 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
       // A clock IS given: the surface renders with one, and a gate that is
       // stricter than production blocks screens that work. The same instant every
       // round, so the rounds are one paint and not three different days.
-      painted = await toolchain.paint({ compiledSource: compiled, queries, catalog: names, now });
+      painted = await toolchain.paint({
+        compiledSource: compiled,
+        queries,
+        catalog: names,
+        now,
+        locale: opts.locale,
+        timeZone: opts.timeZone,
+      });
     } catch (error) {
       // A paint answers a screen that failed with a verdict, so a THROW is the
       // engine itself never starting — this deployment's third machine missing,

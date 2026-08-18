@@ -93,6 +93,15 @@ export interface ScreenBoot {
   catalog: readonly string[];
   /** The screen's clock at boot; the VM has no `Date` of its own. */
   now?: number;
+  /**
+   * The wall the screen's `Intl` and `toLocale*` calls resolve against when they
+   * name none: a locale, and an IANA zone. The VM has no ICU of its own either —
+   * every one of those calls is answered by the host's real `Intl` against these
+   * two — so a surface that leaves them unset paints `"en-US"` in `"UTC"`, which
+   * is a server's wall and not the viewer's.
+   */
+  locale?: string;
+  timeZone?: string;
 }
 
 export interface ScreenEngine {

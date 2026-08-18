@@ -166,6 +166,70 @@ export default function S() {
   });
 });
 
+describe("elapsed time", () => {
+  it("phrases an interval the way a browser phrases it", () => {
+    expect(says(`const answer = new Intl.RelativeTimeFormat("en-US").format(-2, "hour");`)).toBe("2 hours ago");
+    expect(says(`const answer = new Intl.RelativeTimeFormat("en-US").format(3, "day");`)).toBe("in 3 days");
+    expect(says(`const answer = new Intl.RelativeTimeFormat("en-US").format(-1, "minute");`)).toBe("1 minute ago");
+    // Written without `new`, which is how half of them are written.
+    expect(says(`const answer = Intl.RelativeTimeFormat("en-US").format(-30, "second");`)).toBe("30 seconds ago");
+  });
+
+  it("counts back from the FROZEN clock — the phrasing a screen really writes", () => {
+    // What a timestamp column is: subtract the row's instant from now, hand the
+    // difference to `RelativeTimeFormat`. Both halves are the host's, and the
+    // clock is the one this boot pinned, so "2 hours ago" is the same two hours
+    // on every machine.
+    expect(says(`
+  const hours = Math.round((Date.parse("2026-08-16T23:30:00Z") - Date.now()) / 3600000);
+  const answer = new Intl.RelativeTimeFormat("en-US").format(hours, "hour");`)).toBe("2 hours ago");
+  });
+
+  it("takes the option that turns a count into a word", () => {
+    expect(says(`const answer = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" }).format(-1, "day");`))
+      .toBe("yesterday");
+    expect(says(`const answer = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" }).format(1, "week");`))
+      .toBe("next week");
+  });
+
+  it("hands back the parts and the resolved options", () => {
+    // Against the host's own answer rather than a literal: where the number sits
+    // inside the phrase is the host's business, and what is asserted is that the
+    // host answered at all.
+    expect(says(`const answer = JSON.stringify(
+      new Intl.RelativeTimeFormat("en-US").formatToParts(-2, "hour")
+        .map(function (part) { return part.type + ":" + part.value; }),
+    );`)).toBe(JSON.stringify(new Intl.RelativeTimeFormat("en-US").formatToParts(-2, "hour")
+      .map((part) => `${part.type}:${part.value}`)));
+    expect(says(`const answer = new Intl.RelativeTimeFormat("en-US").resolvedOptions().numeric;`)).toBe("always");
+  });
+});
+
+describe("plurals", () => {
+  it("names the category a count takes, in the locale's own rules", () => {
+    expect(says(`const answer = new Intl.PluralRules("en-US").select(1);`)).toBe("one");
+    expect(says(`const answer = new Intl.PluralRules("en-US").select(0);`)).toBe("other");
+    expect(says(`const answer = new Intl.PluralRules("en-US").select(2);`)).toBe("other");
+    // Polish has a category English does not, which is the whole reason
+    // `count === 1 ? "item" : "items"` is not the answer.
+    expect(says(`const answer = new Intl.PluralRules("pl-PL").select(2);`)).toBe("few");
+  });
+
+  it("selects an ordinal when the screen asks for one", () => {
+    expect(says(`const answer = new Intl.PluralRules("en-US", { type: "ordinal" }).select(2);`)).toBe("two");
+    expect(says(`const answer = new Intl.PluralRules("en-US", { type: "ordinal" }).select(3);`)).toBe("few");
+    expect(says(`const answer = new Intl.PluralRules("en-US").resolvedOptions().type;`)).toBe("cardinal");
+  });
+
+  it("is the half of '1 item / 2 items' a screen cannot get wrong", () => {
+    const label = (count: number) => says(`
+  const count = ${count};
+  const answer = count + " " + (new Intl.PluralRules("en-US").select(count) === "one" ? "invoice" : "invoices");`);
+    expect(label(1)).toBe("1 invoice");
+    expect(label(2)).toBe("2 invoices");
+  });
+});
+
 describe("the wall", () => {
   it("defaults to the HOST's zone, never the machine the VM runs on", () => {
     // 01:30Z is the 16th everywhere in the Americas, so this string is the
@@ -181,6 +245,18 @@ describe("the wall", () => {
       .toBe((1234.5).toLocaleString("de-DE"));
     expect(says(`const answer = new Intl.DateTimeFormat().resolvedOptions().timeZone;`, { timeZone: "Asia/Tokyo" }))
       .toBe("Asia/Tokyo");
+  });
+
+  it("carries the elapsed-time and plural formats too, and prints the same twice", () => {
+    expect(says(`const answer = new Intl.RelativeTimeFormat().format(-2, "hour");`, { locale: "de-DE" }))
+      .toBe(new Intl.RelativeTimeFormat("de-DE").format(-2, "hour"));
+    expect(says(`const answer = new Intl.PluralRules().select(2);`, { locale: "pl-PL" })).toBe("few");
+    // Two boots, one string: neither format reads a clock or a zone of its own,
+    // and both are answered out here whatever machine the VM sits on.
+    const phrase = `const answer = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" }).format(-1, "day")
+      + " / " + new Intl.PluralRules("en-US").select(1);`;
+    expect(says(phrase)).toBe(says(phrase));
+    expect(says(phrase)).toBe("yesterday / one");
   });
 
   it("honours what the SCREEN names over what the host pinned — it wrote it", () => {
