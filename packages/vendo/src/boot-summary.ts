@@ -260,6 +260,13 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
   const ephemeral = ephemeralStoreWarning(store);
   if (ephemeral !== undefined) warnings.push(ephemeral);
 
+  // What bounds the users' file drawer. Only when the host actually filled the
+  // seam: unset, the store's own blobs back it and the store row above already
+  // names where those live, so a second row would say the same thing twice.
+  if (config.files !== undefined) {
+    rows.push({ label: "files", venue: "byo", detail: "createVendo({ files })" });
+  }
+
   if (inference.agent.venue === "custom") {
     rows.push({ label: "models", venue: "custom", detail: "createVendo({ models })" });
   } else {

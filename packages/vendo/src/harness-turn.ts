@@ -156,6 +156,62 @@ export interface HarnessTurnsConfig {
   limiter?: Limiter;
 }
 
+/** Where a file the user shared landed, and how big it was. The path is the
+ *  whole handle: the drawer is the workspace, so anything that can open the
+ *  workspace can reach the bytes again. */
+export interface UploadedFile {
+  path: string;
+  bytes: number;
+}
+
+/** The user's own file drawer — §3.1's frozen `/user/files`, per subject and
+ *  outliving every conversation. */
+const USER_FILES = "/user/files";
+
+/** Does this part address the drawer rather than carry bytes? */
+export const isUserFilePath = (path: string): boolean => path.startsWith(`${USER_FILES}/`);
+
+/** The ONE name check both doors share, so a drop from chat and a host's
+ *  `putUserFile` land the same file at the same address. A name is a FILE name,
+ *  never a path: a segment that could climb out of the drawer is refused rather
+ *  than quietly rewritten, because a caller who meant a subdirectory should hear
+ *  that it does not get one. */
+export function userFilePath(name: string): string {
+  const bad = name.length === 0 || name.length > 200
+    || /[/\\]/.test(name) || name === "." || name === ".."
+    || [...name].some((char) => char < " ");
+  if (bad) {
+    throw new VendoError(
+      "validation",
+      `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most 200 characters — and it lands in the user's files as exactly that.`,
+    );
+  }
+  return `${USER_FILES}/${name}`;
+}
+
+/**
+ * What the MODEL is handed for a file the user shared.
+ *
+ * A drawer part carries a PATH, not bytes — that is what keeps the transcript
+ * light — and a provider handed a path where it expects file data reads it as
+ * base64 and thinks about garbage. So a saved file reaches the model as a line
+ * of text naming it and where it landed. Images are left exactly as they are:
+ * they ride inline, because that is how vision works.
+ *
+ * The STORED transcript is untouched. This maps the copy the runtime thinks
+ * with, and the runtime writes back only the messages its own turn changed, so
+ * the part the surface draws its pill from stays the part that was persisted.
+ */
+const withFileReferences = (messages: readonly UIMessage[]): UIMessage[] =>
+  messages.map((message) => ({
+    ...message,
+    parts: message.parts.map((part) => (
+      part.type === "file" && !part.mediaType.startsWith("image/") && isUserFilePath(part.url)
+        ? { type: "text" as const, text: `The user shared ${part.filename ?? "a file"}, saved at ${part.url}` }
+        : part
+    )),
+  })) as UIMessage[];
+
 export interface HarnessTurns {
   /** One turn. Mirrors `VendoAgent.stream`'s signature so the wire route reads
    *  the same either way — including the `x-vendo-thread-id` response header. */
@@ -197,6 +253,24 @@ export interface HarnessTurns {
     list(ctx: RunContext): Promise<ThreadSummary[]>;
     delete(id: ThreadId, ctx: RunContext): Promise<void>;
   };
+  /** Put a file in one user's drawer — THE server-side write, shared by the
+   *  upload door (`POST /files`) and by `vendo.putUserFile`, so a file pushed
+   *  from host code is indistinguishable from one the user dropped in chat.
+   *
+   *  Same name as an existing file REPLACES it: `/user` is last-write-wins
+   *  (build contract §3.2), which is what makes "here is the newer export" work
+   *  without the user naming files v2, v3, v4.
+   *
+   *  The door's 5 MiB cap is the DOOR's, not this write's — a trusted caller is
+   *  bounded by whatever backs the `files:` adapter (unset: the store's blobs,
+   *  up to FILES_STORE_MAX_BYTES). `contentType` is advisory: the drawer stores
+   *  bytes, and what the file IS travels with its name's extension. */
+  putUserFile(input: {
+    principal: Principal;
+    name: string;
+    content: Uint8Array | string;
+    contentType?: string;
+  }): Promise<UploadedFile>;
   /** D6 — drop every thread a subject owns. */
   evictSubject(subject: string): Promise<void>;
 }
@@ -396,6 +470,19 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       });
     },
 
+    async putUserFile(input) {
+      const path = userFilePath(input.name);
+      const bytes = typeof input.content === "string"
+        ? new TextEncoder().encode(input.content)
+        : input.content;
+      // The user's OWN mount and nothing else: no host projection to build and
+      // no org mounts to assert, because a drawer write addresses one subject.
+      const workspace = await sqlDoors().workspaces.open(input.principal);
+      await workspace.writeFile(path, bytes);
+      await workspace.commit();
+      return { path, bytes: bytes.byteLength };
+    },
+
     async stream(input) {
       // The turn's clock, started at the top: `durationMs` used to begin after
       // the opening reads, which is why a slow store was invisible in it.
@@ -591,6 +678,23 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           errorCode,
         });
       };
+      // ONE array, handed to the runtime as BOTH its history and its messages.
+      //
+      // Two things depend on that being one object rather than two equal ones.
+      // The runtime skips re-validating the transcript against itself only when
+      // the two are identical (`before === input.messages`, runtime.ts) — a
+      // copy, however equal, spends an O(n) double stringify proving a
+      // tautology. And a saved file must reach the model as a reference in BOTH
+      // of them: rewrite only one and the runtime's history-forgery guard sees
+      // two renderings of one message and reads it as the client rewriting a
+      // message nobody rewrote.
+      //
+      // Nothing here is written through: the runtime deep-copies both the
+      // canonical transcript and the pristine snapshot it diffs persistence
+      // against. And because it then writes back only what the turn CHANGED,
+      // the stored file part — the one the surface draws its pill from — is
+      // never replaced by the reference text the model read.
+      const modelMessages = withFileReferences(thread.messages);
       const bridge = config.bridge?.(input.ctx, thread.id) as ToolBridgeOptions | undefined;
       const runtime = createHarnessRuntime({
         tools: config.tools,
@@ -609,16 +713,15 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // and every other verb, falls through to the live doors unchanged.
         transcript: {
           ...transcript,
+          // The ARRAY the turn is running, not a copy of it. The runtime takes
+          // its own deep copies of both the canonical transcript and the
+          // pristine one it diffs persistence against, so it never writes
+          // through this — and handing it the same array is what lets it SEE
+          // that its stored history and its incoming history are one thing, and
+          // skip re-validating the transcript against itself (runtime.ts).
           list: async (principal, threadId) =>
             threadId === thread.id && principal.subject === thread.subject
-              // The ARRAY the turn is running, not a copy of it. The runtime
-              // takes its own deep copies of both the canonical transcript and
-              // the pristine one it diffs persistence against, so it never
-              // writes through this — and handing it the same array is what
-              // lets it SEE that its stored history and its incoming history
-              // are one thing, and skip re-validating the transcript against
-              // itself (runtime.ts).
-              ? thread.messages
+              ? modelMessages
               : transcript.list(principal, threadId),
         },
         harnessState: {
@@ -711,7 +814,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       const response = await runtime.run<never>({
         harness: config.harness,
         threadId: thread.id,
-        messages: thread.messages,
+        messages: modelMessages,
         ctx: input.ctx,
         workspace,
         models: config.models,

@@ -271,6 +271,10 @@ const harnessDoorFor = (composition: VendoComposition): HarnessTurns => {
       await ready();
       return harnessTurns.workspace(principal, opts);
     },
+    putUserFile: async (input) => {
+      await ready();
+      return harnessTurns.putUserFile(input);
+    },
     threads: {
       get: async (id, ctx) => {
         await ready();

@@ -40,6 +40,7 @@ import type {
   SlotEntry,
   Thread,
   ThreadSummary,
+  UploadedFile,
   VendoStatus,
   VersionEntry,
 } from "./wire-types.js";
@@ -64,6 +65,15 @@ export interface VendoClient {
      *  real message reads a warm prefix. Best-effort; fire when the chat
      *  surface opens and ignore failures. */
     warm(): Promise<void>;
+  };
+
+  /** The signed-in user's own files. A file put here outlives the conversation
+   *  it was shared in, so the message that follows carries only the reference. */
+  files: {
+    /** POST /files — the file's raw bytes under its own media type, never
+     *  multipart. Fetch-only, and deliberately without a progress callback: the
+     *  door caps an upload at 5 MiB, which is not long enough to be news. */
+    upload(file: File): Promise<UploadedFile>;
   };
 
   approvals: {

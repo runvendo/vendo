@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { useContext, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useVendoProvider } from "../../context.js";
 import { ConnectDockButton, ConnectTray } from "../connect-dock.js";
 import { PrefillScopeContext, registerPrefillConsumer } from "../overlay-registry.js";
 import { fileExt, fileToPart, formatBytes } from "./attachments.js";
@@ -37,6 +38,9 @@ export function useComposer({ busy, sendMessage, steer }: {
       Absent for surfaces whose transport cannot steer (a scripted replay). */
   steer?: (text: string) => Promise<boolean>;
 }) {
+  // The upload door. Read from the provider rather than passed in: every
+  // surface that mounts a composer already sits inside one.
+  const { client } = useVendoProvider();
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -117,8 +121,11 @@ export function useComposer({ busy, sendMessage, steer }: {
       }
       return next.size === prev.size && files.every(f => prev.has(f)) ? prev : next;
     });
+    // Images only: their bytes ride the turn inline, so reading them early is
+    // what makes send instant. Everything else is uploaded at send instead, and
+    // reading it here would be a base64 pass whose result is thrown away.
     for (const file of files) {
-      if (!readsRef.current.has(file)) startRead(file);
+      if (file.type.startsWith("image/") && !readsRef.current.has(file)) startRead(file);
     }
     // startRead closes over stable setters only; files is the real trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,9 +155,22 @@ export function useComposer({ busy, sendMessage, steer }: {
     void (async () => {
       let parts: Awaited<ReturnType<typeof fileToPart>>[];
       try {
-        parts = await Promise.all(pending.map(file => {
+        parts = await Promise.all(pending.map(async file => {
+          // Images ride INLINE, as they always did: that is how the model sees
+          // a picture at all. Everything else is SAVED first and the turn
+          // carries only where it landed, so the file is still the user's next
+          // conversation and the transcript never holds its bytes.
+          if (!file.type.startsWith("image/")) {
+            const { path } = await client.files.upload(file);
+            return {
+              type: "file" as const,
+              mediaType: file.type || "application/octet-stream",
+              filename: file.name,
+              url: path,
+            };
+          }
           const cached = readsRef.current.get(file);
-          return cached?.status === "ready" && cached.part ? Promise.resolve(cached.part) : fileToPart(file);
+          return cached?.status === "ready" && cached.part ? cached.part : await fileToPart(file);
         }));
       } catch {
         // A file read failed. The message is restored so it never vanishes

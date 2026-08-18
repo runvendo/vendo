@@ -189,6 +189,16 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
         });
       },
     },
+    files: {
+      // The File IS the body — a browser sets no boundary to parse and the
+      // server reads bytes, so the name has to travel out of band.
+      upload: file =>
+        readJson(`/files?name=${encodeURIComponent(file.name)}`, {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        }),
+    },
     approvals: {
       pending: () => readJson("/approvals"),
       decide: async (ids, decision, options) => {

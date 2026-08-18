@@ -46,12 +46,27 @@ import type { HostOAuthAdapter } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
 import type { HostAuthPreset } from "./auth-presets/index.js";
 import type { ConnectionsService } from "./connections.js";
-import type { HarnessTurns } from "./harness-turn.js";
+import type { HarnessTurns, UploadedFile } from "./harness-turn.js";
 import type { ModelsConfig } from "./models-config.js";
 
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
+  /** Push a file into one user's own drawer from host code — the programmatic
+      half of the chat drop, through the SAME server-side write, so the agent
+      cannot tell the two apart. It reaches the user the next time they chat;
+      nothing is delivered and no turn is started.
+
+      Same name replaces the file that was there (`/user` is last-write-wins),
+      which is how "here is this month's export" works without the caller
+      inventing version suffixes. The upload door's 5 MiB cap is the DOOR's:
+      this is a trusted caller, bounded by the `files:` adapter instead. */
+  putUserFile(input: {
+    principal: Principal;
+    name: string;
+    content: Uint8Array | string;
+    contentType?: string;
+  }): Promise<UploadedFile>;
   guard: VendoGuard;
   /** Existing-agents — the guard-bound registry with BYO approval parking:
       the registry the `vendo_*` tool pack executes through. Same binding

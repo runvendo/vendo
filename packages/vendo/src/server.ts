@@ -44,6 +44,7 @@ import {
   type WireDeps,
 } from "./wire/shared.js";
 import { slotRoutes } from "./wire/slots.js";
+import { fileRoutes } from "./wire/files.js";
 import { threadRoutes } from "./wire/threads.js";
 
 // 09-vendo §2 — the composition's own type surface, re-exported from the entry
@@ -238,7 +239,10 @@ function jsonMutationRequired(request: Request, path: string): boolean {
   // no ambient credentials, curl-able from any language inside the box — so
   // the CSRF json gate doesn't apply; JSON-bodied box routes validate their
   // own content-type like the webhook surface does.
-  if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
+  // `/files` carries the dropped file's own bytes under its own media type, for
+  // the same reason `/apps/import` does — and buys the same CSRF answer: a real
+  // file's media type is not CORS-safelisted, so a cross-origin post preflights.
+  if (path === "/apps/import" || path === "/files" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
   return true;
 }
 
@@ -278,6 +282,9 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   // /apps/:id/fn/:name resolves here, not through the grouped fall-through.
   ...boxRoutes,
   ...threadRoutes,
+  // The drop door sits beside the turns it feeds: a file is saved first, and
+  // the message that follows carries only where it landed.
+  ...fileRoutes,
   ...approvalRoutes,
   ...connectionRoutes,
   // The text channel: the link surface a person opens, Vendo Cloud's inbound

@@ -112,7 +112,8 @@
               "customize/theming",
               "customize/instructions",
               "customize/context",
-              "customize/knowledge"
+              "customize/knowledge",
+              "customize/user-data"
             ]
           },
           {

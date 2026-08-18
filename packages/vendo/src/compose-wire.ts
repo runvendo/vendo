@@ -160,6 +160,9 @@ export const vendoInstance = (
       await ready();
       return automations.emit(event, payload, principal);
     },
+    // The drop door's write, on the root handle: the SAME door the wire's
+    // `POST /files` calls, already `ready()`-latched by `harnessDoorFor`.
+    putUserFile: harnessDoor.putUserFile,
     guard,
     // The BYO seam (ai-sdk.ts / mastra.ts tool packs) reaches the store
     // without ever touching handler/emit, so its execute leg arms the same

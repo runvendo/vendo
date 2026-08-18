@@ -5,6 +5,9 @@ export type * from "@vendoai/core";
 export type * from "@vendoai/apps/contract";
 export type { VendoStore } from "@vendoai/store";
 export type { Thread, ThreadSummary } from "./threads.js";
+// What `vendo.putUserFile` answers, and what the ui client's `files.upload`
+// mirrors: where the file landed and how big it was.
+export type { UploadedFile } from "./harness-turn.js";
 export type {
   ActionsRegistry,
   // Task 15a — the actions-file shapes a host names when composing the

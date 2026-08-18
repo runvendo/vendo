@@ -165,6 +165,14 @@ export interface ThreadSummary {
   updatedAt: IsoDateTime;
 }
 
+/** What `POST /files` answers: where the file landed in the user's own files,
+    and how big it was. The path is what the message then carries, so the
+    transcript holds a reference and never the bytes. */
+export interface UploadedFile {
+  path: string;
+  bytes: number;
+}
+
 /** 05-guard §1 `status()` / 09-vendo §3 — what `GET /status` returns. */
 export type GuardPosture = "unconfigured" | "rules" | "judge" | "rules+judge";
 
