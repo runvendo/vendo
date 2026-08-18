@@ -73,7 +73,10 @@ const descriptors = [
       type: "object",
       properties: {
         when: {
-          description: "A 5-field cron string, or one of {every}, {at}, {event}, {webhook}.",
+          // The first sentence is the human LABEL consent surfaces show for this
+          // argument (they cut at the first period) — the format teaching stays
+          // in the second sentence and in the tool description above.
+          description: "When it runs. A 5-field cron string, or one of {every}, {at}, {event}, {webhook}.",
           oneOf: [
             { type: "string", minLength: 1 },
             {

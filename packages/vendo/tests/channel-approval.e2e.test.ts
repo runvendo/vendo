@@ -195,7 +195,7 @@ describe.sequential("consent over text", () => {
     // rendered as `host_transferMoney {"amount":2500…}` for a $25.00 send).
     // "approval", not "OK": the decider only matches YES/NO, so the header
     // must never advertise a reply word that would not decide it.
-    expect(ask.text).toContain("Pay a bill needs your approval:");
+    expect(ask.text).toContain("Pay a bill — needs your approval:");
     expect(ask.text).not.toMatch(/\bOK\b/);
     expect(ask.text).toContain("- billId: bill_9");
     expect(ask.text).toContain("- Amount in cents: 4200");

@@ -1,7 +1,26 @@
 import type { RunContext } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import type { ChannelLink } from "../src/channel-links.js";
-import { runChannelTurn } from "../src/channel-turn.js";
+import { cronProse, runChannelTurn } from "../src/channel-turn.js";
+
+describe("cronProse", () => {
+  it("words the shapes an agent actually mints, beside the raw value", () => {
+    expect(cronProse("*/15 * * * *")).toBe("every 15 minutes");
+    expect(cronProse("* * * * *")).toBe("every minute");
+    expect(cronProse("0 * * * *")).toBe("every hour");
+    expect(cronProse("30 * * * *")).toBe("every hour at :30");
+    expect(cronProse("0 */6 * * *")).toBe("every 6 hours");
+    expect(cronProse("30 9 * * *")).toBe("daily at 9:30");
+    expect(cronProse("0 8 * * 1")).toBe("every Monday at 8:00");
+  });
+  it("stays silent on anything it cannot word honestly", () => {
+    expect(cronProse("0 9 1 * *")).toBeUndefined(); // monthly — not covered
+    expect(cronProse("0 9 * 2 *")).toBeUndefined(); // month-bound
+    expect(cronProse("1,31 * * * *")).toBeUndefined(); // lists
+    expect(cronProse("not a cron")).toBeUndefined();
+    expect(cronProse("check my balance")).toBeUndefined();
+  });
+});
 
 /**
  * WHAT A TEXTED TURN TELLS THE REST OF THE SYSTEM ABOUT ITSELF.

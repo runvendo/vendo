@@ -103,8 +103,36 @@ function argLabel(key: string, schema: ApprovalRequest["descriptor"]["inputSchem
   const description = typeof property === "object" && property !== null
     && typeof (property as Record<string, unknown>)["description"] === "string"
     ? (property as Record<string, unknown>)["description"] as string : undefined;
-  const label = description?.split(/[.(]|, e\.g\./)[0]?.trim();
+  const label = description?.split(/[.(,]/)[0]?.trim();
   return label && label.length <= 60 ? label : key.replace(/[_-]+/g, " ");
+}
+
+/** The common cron shapes an agent actually mints, in words — anything else
+ *  stays raw. Used beside the raw expression, never instead of it: the ask is
+ *  the consent boundary, so the verbatim value always shows. */
+export function cronProse(cron: string): string | undefined {
+  const fields = cron.trim().split(/\s+/);
+  if (fields.length !== 5) return undefined;
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields as [string, string, string, string, string];
+  if (dayOfMonth !== "*" || month !== "*") return undefined;
+  const at = (h: string, m: string) => `${h}:${m.padStart(2, "0")}`;
+  if (dayOfWeek !== "*") {
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return /^[0-6]$/.test(dayOfWeek) && /^\d+$/.test(minute) && /^\d+$/.test(hour)
+      ? `every ${days[Number(dayOfWeek)]} at ${at(hour, minute)}` : undefined;
+  }
+  const everyN = (field: string) => /^\*\/\d+$/.test(field) ? field.slice(2) : undefined;
+  if (hour === "*") {
+    if (minute === "*") return "every minute";
+    const n = everyN(minute);
+    if (n !== undefined) return `every ${n} minutes`;
+    if (/^\d+$/.test(minute)) return minute === "0" ? "every hour" : `every hour at :${minute.padStart(2, "0")}`;
+    return undefined;
+  }
+  if (!/^\d+$/.test(minute)) return undefined;
+  const nHours = everyN(hour);
+  if (nHours !== undefined) return `every ${nHours} hours`;
+  return /^\d+$/.test(hour) ? `daily at ${at(hour, minute)}` : undefined;
 }
 
 const ARG_VALUE_CAP = 200;
@@ -122,15 +150,19 @@ function approvalText(request: ApprovalRequest): string {
   const lines = input && typeof input === "object" && !Array.isArray(input)
     ? Object.entries(input).map(([key, value]) => {
       const raw = typeof value === "string" ? value : JSON.stringify(value);
-      const shown = raw.length > ARG_VALUE_CAP ? `${raw.slice(0, ARG_VALUE_CAP)}… (truncated)` : raw;
+      const prose = typeof value === "string" ? cronProse(value) : undefined;
+      const shown = prose !== undefined ? `${prose} (${raw})`
+        : raw.length > ARG_VALUE_CAP ? `${raw.slice(0, ARG_VALUE_CAP)}… (truncated)` : raw;
       return `- ${argLabel(key, request.descriptor.inputSchema)}: ${shown}`;
     })
     : [];
   const detail = lines.length > 0 ? lines : [request.inputPreview.trim()].filter(Boolean);
   return [
     // "approval", never "OK" — the decider matches only YES/NO, and a header
-    // that says OK teaches the one reply that will NOT decide it.
-    `${what} needs your approval${detail.length === 0 ? "" : ":"}`,
+    // that says OK teaches the one reply that will NOT decide it. The em dash
+    // keeps verb-phrase titles from reading as a sentence collision ("Set this
+    // to run on its own needs your approval").
+    `${what} — needs your approval${detail.length === 0 ? "" : ":"}`,
     ...detail,
     "Reply YES to approve, or NO to cancel.",
   ].join("\n");
