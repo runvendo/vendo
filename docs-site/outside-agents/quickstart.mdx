@@ -10,8 +10,11 @@ A door, a token, and your agent. `npx vendo init` writes the door, and the
 console holds the key.
 
 Haven't run init? It is the setup command from the [quickstart](/): it reads
-your repo, asks how people will use your agent, and writes everything this
-page walks through. Run it first, answer **From outside AI apps over MCP**.
+your repo, then asks. Its first question is **How will people use your agent?** —
+answer **From outside agents over MCP**, and it writes everything this page walks
+through. Picking that answer is also what unlocks the two questions below it: who
+runs the OAuth plumbing (the posture), and whether your own backend needs a
+service key.
 
 <Steps>
 
@@ -97,8 +100,10 @@ A subject your product has never heard of is not rejected here. It dies at the
 first real tool call, the same kill switch every other grant answers to.
 
 Your own agent, or a stack the broker posture does not fit? Run
-`npx vendo init --posture local --service-key` instead and the exchange stays on
-your origin — no broker, no browser.
+`npx vendo init --use-case mcp --posture local --service-key` instead and the
+exchange stays on your origin — no broker, no browser. Both flags are answers to
+questions init only asks on the MCP use case, so `--use-case mcp` has to ride
+along; without it init stops and says so.
 
 ```ts src/vendo/server.ts focus={3}
 export const vendo = createVendo({
