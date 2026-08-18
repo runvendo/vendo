@@ -26,6 +26,7 @@ import { mcpConnector, type Connector } from "@vendoai/actions";
 import {
   VendoError,
   isVendoError,
+  tenantConnectorSecret,
   type Json,
   type RunContext,
   type StoreAdapter,
@@ -83,8 +84,9 @@ const COLLECTION = "vendo_tenant_connectors";
 const rowId = (org: string, name: string): string =>
   `${encodeURIComponent(org)}:${encodeURIComponent(name)}`;
 
-/** The tenant-scoped name the token is vaulted under. */
-const secretName = (org: string, name: string): string => `tenant-connector:${rowId(org, name)}`;
+/** The tenant-scoped vault name comes from core's ONE builder, because the erase
+ *  cascade matches its org prefix to sweep the token (store/erase.ts). */
+const secretName = tenantConnectorSecret;
 
 /** What one row holds — everything but the credential. */
 interface Registration {

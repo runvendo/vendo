@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, type VendoWiring } from "./framework.js";
+import { detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { compositionModulePath, importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { readUseCase } from "./install-record.js";
@@ -225,6 +225,35 @@ async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
   }
 }
 
+/** A tenant's pasted token is vaulted in the store's encrypted secrets, and the
+ *  store keeps a secret encrypted or not at all: in production a keyless write
+ *  is REFUSED (store/secrets.ts's `keyFor`), and in development it lands in the
+ *  clear. So a host that registers tenant connectors with no key ships a feature
+ *  whose every credentialed registration fails the moment it is deployed.
+ *
+ *  Static, like everything else doctor does: a source marker and two env names.
+ *  It never opens the store and never dials a tenant's server — the registration
+ *  rows live in a database doctor deliberately cannot reach (the CLI must not
+ *  pull the store's engine module, checkStorePersistence's note), and connecting
+ *  is `vendo.tenantConnectors.test`'s job, at runtime, where it belongs.
+ *
+ *  Cloud's hosted store holds the key server-side, so a keyed deployment is
+ *  already satisfied and says so rather than warning about a key it does not need. */
+async function checkTenantConnectorVault(run: DoctorRun): Promise<void> {
+  if (!await wiresTenantConnectors(run.root)) return;
+  // Deliberately the LOOSER `environment()` predicate composition uses, not the
+  // trimmed one — doctor and runtime must agree on what counts as set.
+  if ((run.env.VENDO_STORE_ENCRYPTION_KEY ?? "") !== "" || (run.env.VENDO_API_KEY ?? "") !== "") {
+    run.pass("wiring/tenant-connector-vault", "tenant connector tokens have an encrypted vault to live in");
+    return;
+  }
+  run.warn("wiring/tenant-connector-vault", "E-TENANT-001",
+    "vendo.tenantConnectors is wired, but no store encryption key is set — a tenant's pasted token is stored in the "
+    + "clear in development and REFUSED outright in production, so every registration carrying one fails on deploy. "
+    + "Set VENDO_STORE_ENCRYPTION_KEY to a base64 32-byte key (openssl rand -base64 32), or use Vendo Cloud's hosted "
+    + "store (VENDO_API_KEY), which holds the key server-side.");
+}
+
 /** The static half of doctor: is this host wired at all, does anything visible
  *  reach the agent, and is the dependency declared. No network. */
 export async function checkWiring(run: DoctorRun): Promise<void> {
@@ -259,6 +288,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   // when a missing base URL is still cheap to fix.
   await checkMcpBaseUrl(run);
   await checkSupabasePresetEnv(run);
+  await checkTenantConnectorVault(run);
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else run.fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");

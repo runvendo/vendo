@@ -59,6 +59,7 @@ describe("doctor error-code registry", () => {
         "E-MODEL-001": "no model credential resolves (the wire is wired, but the agent cannot answer a single turn)",
         "E-SCHED-001": "RETIRED — doctor no longer reads machines and schedules off a running app",
         "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
+        "E-TENANT-001": "tenant connectors are wired but the store has no encryption key, so a tenant's pasted token has nowhere safe to live",
         "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
         "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
         "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",

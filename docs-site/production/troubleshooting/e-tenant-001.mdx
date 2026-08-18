@@ -1,0 +1,63 @@
+---
+title: "E-TENANT-001"
+sidebarTitle: "E-TENANT-001"
+description: "Tenant connectors are wired but the store has no encryption key, so a tenant's pasted token has nowhere safe to live."
+---
+
+```text wiring/tenant-connector-vault
+warning: vendo.tenantConnectors is wired, but no store encryption key is set
+— a tenant's pasted token is stored in the clear in development and REFUSED
+outright in production, so every registration carrying one fails on deploy.
+Set VENDO_STORE_ENCRYPTION_KEY to a base64 32-byte key (openssl rand -base64
+32), or use Vendo Cloud's hosted store (VENDO_API_KEY), which holds the key
+server-side.
+```
+
+`check: wiring/tenant-connector-vault` · `error_code: E-TENANT-001` · `doctor exits: 0`
+
+## What you're seeing
+
+A warning: your source reaches `vendo.tenantConnectors`, and neither
+`VENDO_STORE_ENCRYPTION_KEY` nor `VENDO_API_KEY` is set.
+
+## Why
+
+[Tenant connectors](/capabilities/tenant-connectors) vault the token a customer
+pastes in the store's encrypted secrets. The store keeps a secret encrypted or
+not at all: without a key, a development write lands in the clear (with its own
+loud warning), and a production write is refused outright.
+
+So this is a deploy-shaped failure, not a local one. Every registration you make
+on your laptop works, and the first one you make in production comes back an
+error the moment it carries a token.
+
+## The fix
+
+Set one of two names.
+
+```bash
+# your own store — 32 bytes, base64
+VENDO_STORE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+```
+
+Or use Vendo Cloud's hosted store, which holds the key server-side:
+
+```bash
+VENDO_API_KEY=vk_...
+```
+
+A warning, not a failure: production-only env kept outside the files doctor can
+read is legitimate. If that is your setup, verify with a real
+`vendo.tenantConnectors.register` call in the environment where the key exists.
+
+## What this check does not do
+
+Doctor reads what is on disk. It never opens your store, so it does not read
+your registration rows, and it never dials a tenant's server. Checking that one
+tenant's connector still answers is `vendo.tenantConnectors.test(org, name)`, at
+runtime, where a live handshake belongs.
+
+## Related errors
+
+- [E-STORE-001](/production/troubleshooting/e-store-001) — the other way a store loses data an operator assumed was kept
+- [E-CLOUD-001](/production/troubleshooting/e-cloud-001) — a `VENDO_API_KEY` that is set but not usable

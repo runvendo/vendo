@@ -160,19 +160,32 @@ export const SUPABASE_PRESET_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/auth\/su
     /server) is WIRED, and reading it as bare misdiagnosed it E-WIRE-001/007. */
 const SERVER_ENTRY_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/server["']/;
 
-/** Whether any host source imports the Supabase auth preset. Import marker
-    only, comments stripped: outside a known Vendo composition file a bare
-    `supabase(` call is the host's OWN Supabase client, not the preset
-    (expense.fyi defines exactly such a helper). Same bounded walk as
-    `detectVendoWiring`, so a host too big to scan is judged consistently. */
-export async function wiresSupabaseAuth(root: string): Promise<boolean> {
+/** Whether any host source matches `marker`, comments stripped, over the SAME
+    bounded walk `detectVendoWiring` takes — so a host too big to scan is judged
+    consistently whichever marker asked. */
+async function hostSourceMatches(root: string, marker: RegExp): Promise<boolean> {
   const files = await walk(root, (relativePath) => SOURCE_FILE.test(relativePath), SOURCE_SCAN_MAX_FILES);
   for (const file of files) {
     const source = await readFile(file, "utf8").catch(() => "");
     const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    if (SUPABASE_PRESET_IMPORT.test(code)) return true;
+    if (marker.test(code)) return true;
   }
   return false;
+}
+
+/** Whether any host source imports the Supabase auth preset. Import marker
+    only: outside a known Vendo composition file a bare `supabase(` call is the
+    host's OWN Supabase client, not the preset (expense.fyi defines exactly such
+    a helper). */
+export async function wiresSupabaseAuth(root: string): Promise<boolean> {
+  return hostSourceMatches(root, SUPABASE_PRESET_IMPORT);
+}
+
+/** Whether any host source reaches the tenant-connector API. A property read on
+    the Vendo handle is unambiguous evidence — the name exists nowhere else — so
+    unlike the Supabase marker this needs no composition-file narrowing. */
+export async function wiresTenantConnectors(root: string): Promise<boolean> {
+  return hostSourceMatches(root, /\.tenantConnectors\b/);
 }
 
 /** Bounded source scan shared by init and doctor so their wiring verdicts

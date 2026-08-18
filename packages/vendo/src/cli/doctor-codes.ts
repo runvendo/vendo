@@ -38,6 +38,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
   "E-CFG-004": "the Next host's next.config does not keep @vendoai/apps out of the server bundle (serverExternalPackages)",
   "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
+  "E-TENANT-001": "tenant connectors are wired but the store has no encryption key, so a tenant's pasted token has nowhere safe to live",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "RETIRED — doctor no longer reads a running wire's version",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",

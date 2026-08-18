@@ -24,8 +24,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
-import type { Principal, RunContext } from "@vendoai/core";
-import { createStore, eraseStore, storeFiles, storeSecrets, type VendoStore } from "@vendoai/store";
+import { tenantConnectorSecret, type Principal, type RunContext } from "@vendoai/core";
+import { createStore, eraseStore, secretStore, storeFiles, storeSecrets, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { bootSummaryFor } from "../src/boot-summary.js";
 import { createComposition } from "../src/compose-context.js";
@@ -215,8 +215,7 @@ describe("a tenant registers its own MCP server", () => {
     });
 
     // Read back through the store's own secrets door — the value is there…
-    const name = `tenant-connector:${encodeURIComponent("acme")}:${encodeURIComponent("billing")}`;
-    expect(await storeSecrets(store).get(name)).toBe("tok_acme_live");
+    expect(await storeSecrets(store).get(tenantConnectorSecret("acme", "billing"))).toBe("tok_acme_live");
     // …and the row it came out of is ciphertext, not the token.
     const rows = (await (store.raw() as { query: (sql: string) => Promise<{ rows: Array<Record<string, unknown>> }> })
       .query("SELECT ciphertext FROM vendo_secrets")).rows;
@@ -264,20 +263,48 @@ describe("a tenant registers its own MCP server", () => {
     expect(await vendo.tenantConnectors.list("acme")).toEqual([]);
   });
 
-  it("goes with the org when the existing erase cascade sweeps it", async () => {
+  it("goes with the org when the erase cascade sweeps it — rows AND live token", async () => {
     const { vendo, store } = await deployment();
     const acme = await startMcpServer("lookup_invoice");
-    await vendo.tenantConnectors.register({ org: "acme", name: "billing", kind: "mcp", url: acme.url });
-    await vendo.tenantConnectors.register({ org: "globex", name: "logistics", kind: "mcp", url: acme.url });
+    await vendo.tenantConnectors.register({
+      org: "acme", name: "billing", kind: "mcp", url: acme.url, token: "tok_acme_live",
+    });
+    await vendo.tenantConnectors.register({
+      org: "globex", name: "logistics", kind: "mcp", url: acme.url, token: "tok_globex_live",
+    });
+    // The credential really is in the vault before the sweep, or the assertion
+    // after it proves nothing.
+    expect(await storeSecrets(store).get(tenantConnectorSecret("acme", "billing"))).toBe("tok_acme_live");
 
-    // The store's own cascade, untouched by this feature: an org id IS a row
-    // subject, so the registrations are reached by the stamp they were written
-    // with and nothing new had to teach the sweep about them.
+    // The store's own cascade: an org id IS a row subject, so the registrations
+    // are reached by the stamp they were written with, and the token by the org
+    // its vault name carries.
     const report = await eraseStore(store, { files: storeFiles(store) }).bySubject("acme");
 
     expect(report.vendo_records).toBeGreaterThanOrEqual(1);
+    expect(report.vendo_secrets).toBe(1);
     expect(await vendo.tenantConnectors.list("acme")).toEqual([]);
+    expect(await storeSecrets(store).get(tenantConnectorSecret("acme", "billing"))).toBeUndefined();
+  });
+
+  it("leaves the other tenant's token exactly where it was", async () => {
+    const { vendo, store } = await deployment();
+    const acme = await startMcpServer("lookup_invoice");
+    await vendo.tenantConnectors.register({
+      org: "acme", name: "billing", kind: "mcp", url: acme.url, token: "tok_acme_live",
+    });
+    await vendo.tenantConnectors.register({
+      org: "globex", name: "logistics", kind: "mcp", url: acme.url, token: "tok_globex_live",
+    });
+    // A host secret of the deployment's own, which belongs to nobody and must
+    // survive every erasure.
+    await secretStore(store).set("API_TOKEN", "host_owned");
+
+    await eraseStore(store, { files: storeFiles(store) }).bySubject("acme");
+
     expect(await vendo.tenantConnectors.list("globex")).toHaveLength(1);
+    expect(await storeSecrets(store).get(tenantConnectorSecret("globex", "logistics"))).toBe("tok_globex_live");
+    expect(await storeSecrets(store).get("API_TOKEN")).toBe("host_owned");
   });
 });
 
