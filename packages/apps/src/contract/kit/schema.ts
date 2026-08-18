@@ -52,9 +52,6 @@ export function data(schema: ZodTypeAny, doc: string, options?: PropOptions): Pr
 export interface KitSlotSpec {
   /** 1-line "what goes here". */
   doc: string;
-  /** Component names the slot may hold; absent means the read-only value tier
-   *  (`KIT_SLOT_CONTENT_NAMES`). */
-  content?: readonly string[];
   /** Painted once per row/entry rather than once for the component — so it may
    *  be written as a FUNCTION of the row, and the screen VM calls it once per
    *  row (`KIT_PER_ROW_SLOTS`). */

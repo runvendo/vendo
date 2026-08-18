@@ -86,12 +86,9 @@ const action = z.string().describe(ACTION_PROP_DESCRIPTION);
 const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.enum(["default", "info"]));
 const density = z.enum(["comfortable", "compact"]);
 
-/** One glyph, pill or word beside something else — what a MARK slot may hold. */
-const mark: readonly string[] = ["Icon", "Avatar", "Badge", "EnumBadge", "Text"];
-
 /** The help line under a form control. A shared adjective AND a slot, because it
  *  takes either a word or Kit marks. */
-const hint: KitSlotSpec = { doc: "the help line under the field, as elements instead of text", content: mark };
+const hint: KitSlotSpec = { doc: "the help line under the field, as elements instead of text" };
 
 /** Every form control that takes a label, so the three field adjectives below
  *  land on all of them at once rather than on the four somebody remembered. */
@@ -969,21 +966,19 @@ const BASE_SPECS: KitComponentSpec[] = [
  * every slot declared here and fails unless it finds it in the DOM, so the two
  * move together at every merge.
  *
- * Vocabulary: no `content` means the read-only value tier
- * (`KIT_SLOT_CONTENT_NAMES`) — right for a slot that SHOWS its row rather than
- * acting on it. A REGION is a place, and holds whatever the Kit holds; a MARK is
- * one glyph, pill or word beside something else.
+ * WHAT a slot holds is not declared: any Kit element may sit in any slot, the
+ * way it may in normal React. Where each one BELONGS is the model's design
+ * judgement, and the judge's to grade.
  */
-const region: readonly string[] = BASE_SPECS.map((spec) => spec.name);
 
 /** The two a container draws, written once: every one of them sits beside a
  *  title and under the content, so restating the pair six times would be six
  *  chances for them to drift apart in the prompt. */
-const header: KitSlotSpec = { doc: "elements along the top edge, beside the title", content: region };
-const footer: KitSlotSpec = { doc: "the buttons under the content", content: region };
+const header: KitSlotSpec = { doc: "elements along the top edge, beside the title" };
+const footer: KitSlotSpec = { doc: "the buttons under the content" };
 /** What a container paints in place of its `emptyState` TEXT — an EmptyState
  *  with the action that fixes it, where a sentence used to be. */
-const empty = (nothing: string): KitSlotSpec => ({ doc: `what to show in place of emptyState when there are no ${nothing}`, content: region });
+const empty = (nothing: string): KitSlotSpec => ({ doc: `what to show in place of emptyState when there are no ${nothing}` });
 /** A chart's hovered point, on the cell contract: written once PER POINT and
  *  painted for whichever one is under the pointer. */
 const tooltip: KitSlotSpec = { doc: "Kit value components composed for the hovered point, in place of the default tooltip — write it as (point) => elements", perRow: true, rows: "data" };
@@ -993,54 +988,52 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   // props of its own, the way Timeline reads `marker`.
   Surface: { header, footer },
   Card: { header, footer },
-  Divider: { label: { doc: "a word centred in the rule", content: mark } },
+  Divider: { label: { doc: "a word centred in the rule" } },
   DataTable: {
     cell: { doc: "ONE row's cell, in place of the column's plain text — write it as (row) => elements", perRow: true, rows: "rows", at: "columns" },
     // Per-row and OPERABLE: written as a function of the row, so what it paints
     // has that row to act on and each row's control is its own.
-    rowActions: { doc: "the controls at the end of EVERY row, acting on that row — write it as (row) => elements", perRow: true, rows: "rows", content: ["Button", "Icon", "Row"] },
-    toolbar: { doc: "elements in the controls row, beside the search and the filters", content: region },
+    rowActions: { doc: "the controls at the end of EVERY row, acting on that row — write it as (row) => elements", perRow: true, rows: "rows" },
+    toolbar: { doc: "elements in the controls row, beside the search and the filters" },
     empty: empty("rows"),
   },
   CardList: {
     cell: { doc: "ONE item's value, in place of the field's plain text — write it as (item) => elements", perRow: true, rows: "items", at: "fields" },
-    actions: { doc: "the buttons above the cards", content: region },
+    actions: { doc: "the buttons above the cards" },
     empty: empty("items"),
   },
   KeyValue: { cell: { doc: "one field's value, in place of its plain text — write it as (record) => elements", perRow: true, rows: "record", at: "items" } },
   Timeline: {
     cell: { doc: "ONE entry's body — write it as (entry) => elements", perRow: true, rows: "entries" },
-    marker: { doc: "a glyph drawn in place of the entry's dot", content: mark },
+    marker: { doc: "a glyph drawn in place of the entry's dot" },
     empty: empty("entries"),
   },
-  Stat: { icon: { doc: "a glyph beside the metric name", content: mark } },
-  LineChart: { tooltip, legend: { doc: "a series key drawn under the chart", content: region }, empty: empty("points to plot") },
-  BarChart: { tooltip, legend: { doc: "a series key drawn under the chart", content: region }, empty: empty("bars to plot") },
-  DonutChart: { tooltip, legend: { doc: "false hides the built-in key under the ring; an element replaces it", content: region }, empty: empty("slices to plot") },
-  Progress: { label: { doc: "the caption over the bar, as elements instead of text", content: mark } },
+  Stat: { icon: { doc: "a glyph beside the metric name" } },
+  LineChart: { tooltip, legend: { doc: "a series key drawn under the chart" }, empty: empty("points to plot") },
+  BarChart: { tooltip, legend: { doc: "a series key drawn under the chart" }, empty: empty("bars to plot") },
+  DonutChart: { tooltip, legend: { doc: "false hides the built-in key under the ring; an element replaces it" }, empty: empty("slices to plot") },
+  Progress: { label: { doc: "the caption over the bar, as elements instead of text" } },
   // No `hint` on any of these: it is a shared adjective now, so it lands on every
   // control that takes one (`SHARED_PROPS`) rather than the three listed here.
   Input: {
-    prefix: { doc: "a unit or glyph inside the field, before the text", content: mark },
-    suffix: { doc: "a unit or glyph inside the field, after the text", content: mark },
+    prefix: { doc: "a unit or glyph inside the field, before the text" },
+    suffix: { doc: "a unit or glyph inside the field, after the text" },
   },
-  Textarea: { footer: { doc: "a row under the box — a counter, a hint action", content: region } },
+  Textarea: { footer: { doc: "a row under the box — a counter, a hint action" } },
   Form: {
-    header: { doc: "elements above the fields", content: region },
-    actions: { doc: "buttons beside the submit — a cancel, a secondary", content: region },
-    footer: { doc: "fine print under the actions", content: region },
+    header: { doc: "elements above the fields" },
+    actions: { doc: "buttons beside the submit — a cancel, a secondary" },
+    footer: { doc: "fine print under the actions" },
   },
   Tabs: {
-    content: { doc: "ONE tab's panel, written inline instead of as a child", content: region, at: "tabs" },
-    actions: { doc: "elements at the end of the tab row", content: region },
+    content: { doc: "ONE tab's panel, written inline instead of as a child", at: "tabs" },
+    actions: { doc: "elements at the end of the tab row" },
   },
-  Accordion: { content: { doc: "ONE section's body", content: region, at: "items" } },
-  // The read tier, and no `at`: the hint is a prop of its own, and a hover
-  // popup is READ — nothing in one can be reliably operated, so a control there
-  // would be the same trap `rowActions` exists to keep out of a cell.
+  Accordion: { content: { doc: "ONE section's body", at: "items" } },
+  // No `at`: the hint is a prop of its own, not a field of one the Tooltip holds.
   Tooltip: { content: { doc: "Kit elements rendered as the hint instead of the label" } },
-  EmptyState: { icon: { doc: "a Kit mark drawn in the disc instead of a lucide name", content: mark } },
-  Steps: { marker: { doc: "a glyph drawn in place of the step's numbered disc", content: mark } },
+  EmptyState: { icon: { doc: "a Kit mark drawn in the disc instead of a lucide name" } },
+  Steps: { marker: { doc: "a glyph drawn in place of the step's numbered disc" } },
   Modal: { header, footer },
   Sheet: { header, footer },
 };
@@ -1113,26 +1106,17 @@ export const KIT_PER_ROW_SLOTS: Readonly<Record<string, Readonly<Record<string, 
 export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => spec.name);
 
 /**
- * What may be nested where — the two rules the renderer cannot state.
+ * What may be nested where — the one rule the renderer cannot state.
  *
  * The tree renderer hands `children` to EVERY node it renders
  * (`packages/ui/src/tree/renderer.tsx` `builtinContent`), so a chart handed a
- * child, or a Button dropped into a cell, has always rendered as nothing at
- * all: the model wrote a control, the person got a blank, and no stage said a
- * word. These two lists are what the checks floor refuses on.
+ * child has always rendered as nothing at all: the model wrote content, the
+ * person got a blank, and no stage said a word. This list is what the checks
+ * floor refuses on.
  */
 export const KIT_CHILDLESS_NAMES: readonly string[] = KIT_SPECS
   .filter((spec) => spec.takesChildren !== true)
   .map((spec) => spec.name);
-
-/** What a slot that declares no vocabulary of its own may hold: the value tier,
- *  plus the two arrangers. It is the tier a per-row CELL keeps: a cell shows its
- *  row, and a control in one has no room to be pressed — `rowActions` is the
- *  per-row slot that operates, and it declares its own narrower vocabulary. */
-export const KIT_SLOT_CONTENT_NAMES: readonly string[] = [
-  "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress",
-  "Stack", "Row",
-];
 
 /** The same list, as the mutable array `@vendoai/ui`'s registry wants. */
 export function kitComponentNames(): string[] {

@@ -19,7 +19,6 @@ import {
 import {
   DISPLAY_TAG_NAMES,
   KIT_CHILDLESS_NAMES,
-  KIT_SLOT_CONTENT_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   kitSlotPath,
   kitSpec,
@@ -218,11 +217,14 @@ const asElement = (value: unknown, sigil: boolean): { component: string; props?:
     : undefined;
 
 /**
- * What may be nested where — the rule the RENDERER cannot state. The tree
+ * Where an element may be WRITTEN — the rule the RENDERER cannot state. The tree
  * renderer hands `children` to every node it renders (`packages/ui`
- * renderer.tsx `builtinContent`), so a chart handed a child, or a Button
- * dropped into a table cell, has always painted as nothing at all: the model
- * wrote a control, the person got a blank, and no stage said a word.
+ * renderer.tsx `builtinContent`), and reads an element only at the props a
+ * component actually paints, so a chart handed a child, or an element written at
+ * a key that is no slot, has always painted as nothing at all: the model wrote
+ * content, the person got a blank, and no stage said a word. WHAT goes in a slot
+ * is not measured here — any Kit element may sit in any slot, the way it may in
+ * normal React, and whether it belongs there is the judge's to grade.
  *
  * One function, both artifacts: a wire tree and the tree a `.tsx` screen paints
  * are the same tree and reach the same renderer, so this is a check in the wire
@@ -245,41 +247,31 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   const parents = new Map(tree.nodes.flatMap((node) =>
     (node.children ?? []).map((id) => [id, node.component] as const)));
 
-  /** One slot: the element it holds, and every element nested in that one. A
-   *  slot with no declared vocabulary takes the read-only value tier, and a
-   *  per-row one says WHY that tier is the one it takes.
-   *
-   *  A DISPLAY BRICK passes every slot, and is stated here rather than added to
-   *  each vocabulary: these lists gate BEHAVIOR — what may sort, submit or call a
-   *  tool where there is no row to act on — and a brick has none to gate. It is
-   *  arrangement and typography, `style` and children and nothing else
-   *  (`contract/kit/display.ts`), so it can no more break the per-row rule than a
-   *  word can. */
-  const checkSlot = (nodeId: string, path: string, name: string, slot: KitSlotSpec, value: unknown, sigil = true, parent?: string): void => {
+  /** One slot: the element it holds, and every element nested in that one. WHAT
+   *  it holds is not gated — any Kit element may sit in any slot, the way it may
+   *  in normal React — but what sits there is a component in its own right, with
+   *  its own slots and its own childless contract. Unmeasured, `<Stack
+   *  header={<Text/>}/>` and a `<DataTable>` handed children both passed while
+   *  the renderer dropped the descendant. */
+  const checkSlot = (nodeId: string, path: string, slot: KitSlotSpec, value: unknown, sigil = true, parent?: string): void => {
     // A per-row slot written as a function of the row emits one element PER ROW,
-    // so the LIST is where the elements are (`vm-program.ts` `emitPerRow`) — and
-    // each of them is measured, because the vocabulary is the same for all.
+    // so the LIST is where the elements are (`vm-program.ts` `emitPerRow`).
     if (slot.perRow === true && Array.isArray(value)) {
-      value.forEach((row, index) => checkSlot(nodeId, `${path}[${index}]`, name, slot, row, sigil, parent));
+      value.forEach((row, index) => checkSlot(nodeId, `${path}[${index}]`, slot, row, sigil, parent));
       return;
     }
     const element = asElement(value, sigil);
     if (element === undefined) return;
-    const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
-    if (!allowed.includes(element.component) && !DISPLAY_TAG_NAMES.includes(element.component)) {
-      const why = slot.perRow === true && slot.content === undefined
-        ? `a cell shows its row, it does not act on it. A cell may hold: ${allowed.join(", ")}. A per-row CONTROL goes in rowActions, which is the slot written for the row it sits on; anything else belongs beside the table, not in it.`
-        : `this slot may hold: ${allowed.join(", ")}.`;
-      issues.push(atProp(nodeId, path, `holds <${element.component}> in a ${name} slot — ${why}`));
+    // A NAME, not a vocabulary: the renderer resolves a slot's element from the
+    // Kit and the display bricks and paints nothing for a name in neither
+    // (`packages/ui` renderer.tsx `reifyElement`), so an unresolvable one is
+    // refused here instead of arriving as a blank.
+    if (kitSpec(element.component) === undefined && !DISPLAY_TAG_NAMES.includes(element.component)) {
+      issues.push(atProp(nodeId, path, `holds <${element.component}>, and no Kit component or display tag has that name — the renderer paints nothing for a name it cannot resolve.`));
     }
-    // What sits in a slot is a component in its own right, with its own slots
-    // and its own childless contract. Measuring it only against the OUTER
-    // slot's vocabulary passes `<Stack header={<Text/>}/>` and a `<DataTable>`
-    // handed children — both dropped by the renderer, which is the whole class
-    // this check exists to refuse.
     checkKitElement(nodeId, path, element.component, element.props, element.children, parent);
     if (Array.isArray(element.children)) {
-      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, name, slot, child, false, element.component));
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, slot, child, false, element.component));
     }
   };
 
@@ -292,14 +284,14 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   const findSlots = (
     nodeId: string,
     component: string,
-    slots: ReadonlyMap<string, readonly [string, KitSlotSpec]>,
+    slots: ReadonlyMap<string, KitSlotSpec>,
     path: string,
     shape: string,
     value: unknown,
   ): void => {
     const slot = slots.get(shape);
     if (slot !== undefined) {
-      checkSlot(nodeId, path, slot[0], slot[1], value);
+      checkSlot(nodeId, path, slot, value);
       return;
     }
     const stray = asElement(value, true);
@@ -368,7 +360,7 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
     // A Map, not the record: a prop key is model-written, and `slots["toString"]`
     // on a plain object answers with Object's own.
     const slots = new Map(Object.entries(spec.slots ?? {})
-      .map(([name, slot]) => [kitSlotPath(name, slot), [name, slot] as const]));
+      .map(([name, slot]) => [kitSlotPath(name, slot), slot] as const));
     for (const [prop, value] of Object.entries(props)) {
       findSlots(nodeId, component, slots, at === "" ? prop : `${at}.${prop}`, prop, value);
     }

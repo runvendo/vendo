@@ -1014,7 +1014,10 @@ export default function Label() {
     expect(result.issues[0]?.message).toContain("nests 1 node inside <Badge>");
   });
 
-  it("refuses a control in a cell slot, and names what a cell may hold", async () => {
+  /** A control in a cell was refused by a per-slot vocabulary for as long as the
+   *  slots existed. It renders, so the gauntlet takes it: where a control belongs
+   *  is design, graded by the judge, not bookkeeping enforced by a list. */
+  it("admits a control in a cell slot", async () => {
     const result = await painted(`import { Button, DataTable, tools } from "@vendo/screen";
 
 export default function Ledger() {
@@ -1027,14 +1030,8 @@ export default function Ledger() {
 }
 `);
 
-    expect(result.ok).toBe(false);
-    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
-    const message = result.issues[0]?.message ?? "";
-    // The locus is the column the control sits in, not just the table.
-    expect(message).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
-    expect(message).toContain("a cell shows its row, it does not act on it");
-    expect(message).toContain("A cell may hold: Text, Money, DateTime, Percent, Num, EnumBadge, Badge, Sparkline, Progress, Stack, Row");
-    expect(message).toContain("A per-row CONTROL goes in rowActions");
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 
   /**
@@ -1345,29 +1342,31 @@ export default function Hint() {
     expect(result.ok).toBe(true);
   });
 
-  it("follows a control nested INSIDE a legal slot component", async () => {
-    const result = await painted(`import { Button, DataTable, Stack, Text, tools } from "@vendo/screen";
+  /** The walk goes all the way DOWN a slot: what a cell holds has children of its
+   *  own, and a component that renders none of them drops them just as silently
+   *  there as at the top of the tree. */
+  it("follows a childless component nested INSIDE a slot", async () => {
+    const result = await painted(`import { DataTable, LineChart, Stack, Text } from "@vendo/screen";
 
 export default function Ledger() {
   return (
     <DataTable
       rows={[{ id: "tr_1", status: "paid" }]}
-      columns={[{ key: "status", cell: (row) => <Stack><Text text={row.status} /><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: row.id })} /></Stack> }]}
+      columns={[{ key: "status", cell: (row) => <Stack><LineChart data={[{ m: "Jan", v: 1 }]} xKey="m" series={["v"]}><Text text={row.status} /></LineChart></Stack> }]}
     />
   );
 }
 `);
 
     expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
-    expect(result.issues[0]?.message).toContain('prop "columns[0].cell[0].children[1]" holds <Button> in a cell slot');
+    expect(result.issues[0]?.message).toContain('prop "columns[0].cell[0].children[0]" nests 1 node inside <LineChart>');
   });
 
-  /** A slot's vocabulary gates BEHAVIOR — what may sort, submit or call a tool
-   *  where there is no row to act on. A display brick has none to gate: it is
-   *  `style` and children and nothing else, so it passes the same per-row cell
-   *  that refuses a Button, and the renderer builds it back
-   *  (`packages/ui` renderer.tsx `reifyElement`). Whole gauntlet, real compiler. */
-  it("passes a display brick in a per-row cell — arrangement is not behavior", async () => {
+  /** A display brick is not a Kit component, and the renderer resolves a slot's
+   *  element from both registries (`packages/ui` renderer.tsx `reifyElement`), so
+   *  a brick in a cell renders and the floor takes it. Whole gauntlet, real
+   *  compiler. */
+  it("passes a display brick in a per-row cell", async () => {
     const result = await painted(`import { DataTable, Text } from "@vendo/screen";
 
 export default function Invoices() {

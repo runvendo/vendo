@@ -4,7 +4,6 @@ import {
   KIT_CHILDLESS_NAMES,
   KIT_PER_ROW_SLOTS,
   KIT_SHARED_PROP_NAMES,
-  KIT_SLOT_CONTENT_NAMES,
   KIT_SPECS,
   kitPropClasses,
   kitSpec,
@@ -151,7 +150,7 @@ describe("the Kit specs", () => {
     expect(kitPropClasses("Select")?.value).toBe("config");
   });
 
-  it("names the childless components and what a cell may hold", () => {
+  it("names the childless components", () => {
     // The renderer hands children to every node it renders, so "renders no
     // children" is a fact only the spec can state.
     expect(KIT_CHILDLESS_NAMES).toContain("LineChart");
@@ -160,9 +159,5 @@ describe("the Kit specs", () => {
     for (const container of ["Stack", "Row", "Grid", "Surface", "Card", "Tabs", "Callout", "Form", "Stat", "DataTable", "TableRow"]) {
       expect(KIT_CHILDLESS_NAMES, container).not.toContain(container);
     }
-    // A cell is read, never operated.
-    expect(KIT_SLOT_CONTENT_NAMES).toContain("EnumBadge");
-    expect(KIT_SLOT_CONTENT_NAMES).not.toContain("Button");
-    expect(KIT_SLOT_CONTENT_NAMES).not.toContain("DataTable");
   });
 });

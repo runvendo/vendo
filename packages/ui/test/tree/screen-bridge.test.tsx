@@ -42,7 +42,7 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Select", "Callout", "Accordion", "EnumBadge"];
+const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Select", "Callout", "Accordion", "Badge", "DataTable", "EnumBadge"];
 
 /** The payload the server serves: the screen's FIRST paint, flattened, plus the
  *  interactive half that can produce the next one — built by the engine itself,
@@ -644,6 +644,52 @@ export default function Invoice() {
     const brick = document.querySelector("blockquote");
     expect(brick?.style.paddingLeft).toBe("8px");
     expect(brick?.querySelector('[data-kit="EnumBadge"]')?.textContent).toBe("Past due");
+    expect(document.body.innerHTML).not.toContain("$element");
+  });
+
+  /**
+   * A SLOT HOLDS WHATEVER THE KIT HOLDS — proven where it counts, on the page.
+   *
+   * A Badge in `rowActions` was refused by name for as long as the per-slot
+   * vocabularies existed (Button|Icon|Row), on the theory that the renderer drops
+   * anything else. It does not — and dropping the refusal without proving that
+   * would have traded a loud failure for a silent blank. Nothing here is stubbed:
+   * real TSX, the real VM serializing both elements, the server's own flatten,
+   * and the real Kit painting them.
+   */
+  it("paints a Badge in a table's rowActions and an EnumBadge in a Card's footer", async () => {
+    const compiled = compile(`
+import { Badge, Card, DataTable, EnumBadge, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const invoices = useQuery("list_invoices");
+  return (
+    <Card title="Invoices" footer={<EnumBadge value="past_due" tone="danger" />}>
+      <DataTable
+        rows={invoices.data}
+        columns={[{ key: "id", label: "Invoice" }]}
+        rowActions={(row) => <Badge label={"flag " + row.id} />}
+      />
+    </Card>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, { list_invoices: { data: [{ id: "inv_1" }, { id: "inv_2" }] } })}
+        components={{}}
+        onAction={host.onAction}
+      />,
+    );
+
+    // One Badge per row, each closing over its own row, inside the table — a
+    // dropped slot would leave the text nowhere at all.
+    expect(screen.getByText("flag inv_1").closest("table")).toBeTruthy();
+    expect(screen.getByText("flag inv_2").closest("table")).toBeTruthy();
+    // …and the Card's own footer, reified through the same path, outside the table.
+    const footer = screen.getByText("Past due");
+    expect(footer.getAttribute("data-kit")).toBe("EnumBadge");
+    expect(footer.closest("table")).toBeNull();
     expect(document.body.innerHTML).not.toContain("$element");
   });
 
