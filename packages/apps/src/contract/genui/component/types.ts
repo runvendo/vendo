@@ -125,9 +125,11 @@ export interface ScreenInstance {
    *
    * A query input may be computed — `useQuery("invoices", { client: chosen })` —
    * so it cannot be known before the screen renders. The screen paints with
-   * `undefined` there and NAMES what it wanted; the host runs those reads and
-   * hands them back through {@link supply}. Taken, not copied: a read the host
-   * could not answer is asked once per round rather than forever.
+   * `{ data: undefined }` there — react-query's shape, so reading a field off a
+   * pending read is a read and not a throw — and NAMES what it wanted; the host
+   * runs those reads and hands them back through {@link supply}. Taken, not
+   * copied: a read the host could not answer is asked once per round rather than
+   * forever.
    */
   misses(): ScreenQuery[];
   /**

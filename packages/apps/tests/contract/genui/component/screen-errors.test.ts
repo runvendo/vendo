@@ -403,12 +403,13 @@ export function Screen() { return <Text text="x" />; }`);
 
   it("reports a read nobody has answered as the screen's own crash on undefined", () => {
     // An unanswered read is not a boot failure — the engine records it as a MISS
-    // and resolves `undefined`, because a query input the screen computes can only
-    // be known once it has rendered. What fails is a screen that reads through
-    // that undefined, and the message it earns is the one it would earn anywhere.
+    // and resolves `{ data: undefined }`, because a query input the screen computes
+    // can only be known once it has rendered. What fails is a screen that reads
+    // THROUGH that undefined, and the message it earns is the one it would earn
+    // anywhere.
     const error = failsBoot(`
 import { Text, useQuery } from "@vendo/screen";
-export default function S() { return <Text text={String(useQuery("ghost_tool").length)} />; }`, { list_pending: { data: [] } });
+export default function S() { return <Text text={String(useQuery("ghost_tool").data.length)} />; }`, { list_pending: { data: [] } });
 
     expect(error.kind).toBe("boot");
     expect(error.message).toContain("cannot read property 'length' of undefined");

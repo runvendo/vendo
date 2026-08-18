@@ -366,12 +366,12 @@ export default function Invoices() {
   const rows = useQuery("list_for_client", { client });
   return (
     <Stack>
-      <Text text={rows === undefined ? "loading" : "rows: " + rows.join(",")} />
+      <Text text={rows.data === undefined ? "loading" : "rows: " + rows.data.join(",")} />
       <Button label="Bob" onClick={() => setClient("bob")} />
     </Stack>
   );
 }`);
-    const host = hostPipe((call) => ok([`${(call.payload as { client: string }).client}-1`]));
+    const host = hostPipe((call) => ok({ data: [`${(call.payload as { client: string }).client}-1`] }));
     render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
 
     // The served paint has no answer for it — nothing could have.
@@ -400,7 +400,7 @@ export default function Runaway() {
   const seen = useRef(0);
   seen.current += 1;
   const rows = useQuery("list_for_client", { client: String(seen.current) });
-  return <Stack><Text text={"asked " + seen.current} /><Text text={rows === undefined ? "loading" : "got"} /></Stack>;
+  return <Stack><Text text={"asked " + seen.current} /><Text text={rows.data === undefined ? "loading" : "got"} /></Stack>;
 }`);
     const host = hostPipe(() => ok(["x"]));
     render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);

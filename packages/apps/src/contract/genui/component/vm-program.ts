@@ -554,13 +554,25 @@ const ENGINE = `(function () {
   // ── the screen's data ─────────────────────────────────────────────────────
   // Keyed by the tool AND the input, because a screen reads one tool as many
   // times as it has questions — a detail panel beside a list is two reads of the
-  // same tool. A key nobody has answered yet is a MISS: \`useQuery\` returns
-  // undefined for it, the host runs the read and hands the answer to \`supply\`,
-  // which re-renders THIS root, so the hooks the first paint set up survive.
+  // same tool. A key nobody has answered yet is a MISS: the host runs the read
+  // and hands the answer to \`supply\`, which re-renders THIS root, so the hooks
+  // the first paint set up survive.
   //
   // The host keys its half the same way — \`queryKey\` in ./types.ts. The two
   // copies are one law and must agree.
   var data = create(null), missing = create(null);
+
+  // What a MISS hands back. An OBJECT, never \`undefined\`: react-query's shape is
+  // the one trained code knows, and there \`useQuery\` always returns an object
+  // whose \`data\` is simply absent until the answer lands. So the first paint's
+  // \`rows.data\` is a read that yields undefined rather than a throw on
+  // undefined, and \`rows.data ?? []\` and \`rows?.data\` keep meaning what they
+  // say. \`undefined\` and not \`[]\`: a screen may not be handed an empty result it
+  // would then assert — "no rows yet" is not "no rows".
+  //
+  // ONE value for every miss, so it is the same object on every render and a
+  // \`useMemo\`/\`useEffect\` dependency on a pending read does not churn.
+  var MISS = { data: undefined };
 
   function keyOf(tool, input) { return input === undefined ? tool : tool + " " + stringify(input); }
 
@@ -568,7 +580,7 @@ const ENGINE = `(function () {
     var key = keyOf(tool, input);
     if (key in data) return data[key];
     missing[key] = { tool: tool, input: input };
-    return undefined;
+    return MISS;
   }
 
   // ── the driver ────────────────────────────────────────────────────────────

@@ -435,15 +435,15 @@ export default function S() { return <Text text={String(useQuery("cancel_transfe
   it("ADMITS a computed query input, and answers it from the paint that asked", async () => {
     // Nothing can resolve this before the component runs — the input is whatever
     // that render worked out. So the plan cannot hold it: the screen paints
-    // `undefined` there, NAMES the read it wanted, and the gate runs it and paints
-    // again.
+    // `{ data: undefined }` there, NAMES the read it wanted, and the gate runs it
+    // and paints again.
     const ran: Ran[] = [];
     const result = await check(`import { useState } from "react";
 import { Text, useQuery } from "@vendo/screen";
 export default function S() {
   const [status] = useState("pending");
   const rows = useQuery("list_pending_transfers", { status });
-  return <Text text={rows === undefined ? "loading" : String(rows.data.length)} />;
+  return <Text text={rows.data === undefined ? "loading" : String(rows.data.length)} />;
 }
 `, async (tool, input) => {
       ran.push(input === undefined ? { tool } : { tool, input });
@@ -468,7 +468,7 @@ const defaults = { status: "pending" };
 const field = "status";
 export default function S() {
   const found = useQuery("search_transfers", ${input});
-  return <Stack><Text text={String(found === undefined ? 0 : found.data.length)} /></Stack>;
+  return <Stack><Text text={String(found.data === undefined ? 0 : found.data.length)} /></Stack>;
 }
 `);
       expect(result.issues).toEqual([]);
@@ -976,6 +976,69 @@ export default function S() {
     expect(codes).toEqual(["run"]);
     expect(text).toContain("the screen threw while rendering against the data its queries really returned");
     expect(text).toContain("guard an undefined or empty result before .map/.reduce and render an empty state instead");
+  });
+
+  /**
+   * The bench's `buildlog/failure-log`, replayed.
+   *
+   * A screen read one query with a LITERAL input and a second with an input it
+   * computed off the first, then wrote `stages.data` raw. The computed read has no
+   * answer on the first paint — that is what the supply loop is for — and reading
+   * a field off it threw `cannot read property 'data' of undefined` before the
+   * host ever got to answer, so the screen was thrown away for a paint it was
+   * never given the data for.
+   *
+   * A miss is an OBJECT now (`genui/component/vm-program.ts` `MISS`), so the read
+   * yields `undefined` and the Kit paints its empty state. The crash it does NOT
+   * close is the second half: `undefined` still cannot be called on, so a screen
+   * that writes `.length` on a pending read is still refused — the message just
+   * names the value it has to guard instead of the result object. The type surface
+   * cannot pre-empt that one: `strictNullChecks` is off here on purpose, and
+   * turning it on refuses all four of the manual's own worked screens.
+   */
+  const withTable = async (source: string): Promise<ComponentScreenCheck> => checkComponentScreen({
+    source,
+    hostTools: tools,
+    catalog: [...catalog, "DataTable"],
+    runQuery: async () => ROWS,
+  });
+
+  const PENDING_READ = (shown: string): string => `import { useState } from "react";
+import { DataTable, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function BuildDetail() {
+  const all = useQuery("search_transfers", { status: "pending" });
+  const rows = all.data;
+  const [chosen, setChosen] = useState(rows[0]?.id);
+  const detail = useQuery("search_transfers", { status: chosen });
+  return (
+    <Stack gap={8}>
+      <DataTable rows={rows} columns={["recipient"]} rowActions={(row) => <Text text={String(setChosen)} />} />
+      ${shown}
+    </Stack>
+  );
+}
+`;
+
+  it("paints a read whose answer has not arrived yet, and hands its data to the Kit", async () => {
+    const result = await withTable(PENDING_READ(`<DataTable rows={detail.data} columns={["recipient"]} />`));
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    // The loop answered the computed read and painted again, so the plan grew.
+    expect(result.queryPlan).toEqual([
+      { tool: "search_transfers", input: { status: "pending" } },
+      { tool: "search_transfers", input: { status: "tr_1" } },
+    ]);
+  });
+
+  it("still refuses one that calls a method on a read that has not landed", async () => {
+    const result = await withTable(PENDING_READ(`<Text text={detail.data.length + " shown"} />`));
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["run"]);
+    expect(result.issues[0]?.message).toContain("cannot read property 'length' of undefined");
+    expect(result.issues[0]?.message).toContain("guard an undefined or empty result before .map/.reduce");
   });
 
   it("relays a screen that would not paint, and one that would not stop", async () => {

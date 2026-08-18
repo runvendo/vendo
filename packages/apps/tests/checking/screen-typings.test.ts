@@ -12,7 +12,8 @@ import {
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { screenTypings, zodTypeText } from "../../src/server/checking/screen-typings.js";
+import { componentScreenTypings, screenTypings, zodTypeText } from "../../src/server/checking/screen-typings.js";
+import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const netWorthSchema: JsonSchema = {
   type: "object",
@@ -302,5 +303,31 @@ describe("a schema the printer cannot read is typed as any, and says so", () => 
     const notes: string[] = [];
     zodTypeText({ _def: { type: "promise" } } as never, 0, (reason) => notes.push(reason));
     expect(notes.join(" ")).toContain("promise");
+  });
+});
+
+describe("componentScreenTypings", () => {
+  const reader = (name: string, outputSchema?: JsonSchema): HostToolInfo =>
+    ({ name, description: name, risk: "read", ...(outputSchema === undefined ? {} : { outputSchema }) });
+
+  const overloads = (...tools: HostToolInfo[]): string[] =>
+    componentScreenTypings({ catalog: [], tools })
+      .split("\n").filter((line) => line.includes("export function useQuery"));
+
+  it("declares a query result as PARTIAL, because the first paint may not have it", () => {
+    // A read whose input the screen computes has no answer until the host supplies
+    // one, and the VM hands back `{ data: undefined }` until then
+    // (`genui/component/vm-program.ts` `MISS`). A declaration that promised `data`
+    // on every render would be a green check over the one paint that has none.
+    expect(overloads(reader("list_invoices", invoicesSchema))).toEqual([
+      '  export function useQuery(tool: "list_invoices", input?: any): '
+      + "Partial<{ data: Array<{ id: string; amount_cents: number }>; total: number }>;",
+    ]);
+  });
+
+  it("leaves a tool that declared no output schema permissive", () => {
+    expect(overloads(reader("list_invoices"))).toEqual([
+      '  export function useQuery(tool: "list_invoices", input?: any): any;',
+    ]);
   });
 });

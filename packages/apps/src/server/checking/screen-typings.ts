@@ -653,9 +653,14 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
 
   const overloads = input.tools.filter((tool) => !isMutatingTool(tool)).map((tool) => {
     const { text, required } = toolInputText(tool, at(note, `useQuery("${tool.name}") input`));
+    // `Partial`, because a read whose input the screen COMPUTES has no answer on
+    // the first paint: the VM hands back `{ data: undefined }` there and the host
+    // supplies the real result a paint later (`genui/component/vm-program.ts`
+    // `MISS`). Declaring the fields as always-present would be a green check over
+    // a screen whose every field is undefined for one render.
     const result = tool.outputSchema === undefined
       ? "any"
-      : jsonSchemaTypeText(tool.outputSchema, "result", 0, at(note, `useQuery("${tool.name}") result`));
+      : `Partial<${jsonSchemaTypeText(tool.outputSchema, "result", 0, at(note, `useQuery("${tool.name}") result`))}>`;
     return `  export function useQuery(tool: ${JSON.stringify(tool.name)}, input${required ? "" : "?"}: ${text}): ${result};`;
   });
   // No read tools at all: the surface still exports `useQuery`, so a screen that
