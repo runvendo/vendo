@@ -23,6 +23,12 @@ export type {
 } from "@vendoai/actions";
 export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
 export type {
+  TenantConnectorInput,
+  TenantConnectorResult,
+  TenantConnectorSummary,
+  TenantConnectors,
+} from "./tenant-connectors.js";
+export type {
   ChannelsService,
   InboundEvent,
   InboundLinkEvent,

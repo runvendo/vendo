@@ -24,6 +24,7 @@ import { selectHostTools } from "./dot-vendo.js";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { limitGenerations } from "./limits.js";
+import { createTenantConnectors, withTenantOverlay } from "./tenant-connectors.js";
 import {
   DOCTOR_ACT_AS_APP_ID,
   DOCTOR_ACT_AS_PRINCIPAL,
@@ -161,8 +162,8 @@ const doctorProbes = (actionsConfig: VendoActionsConfig): VendoComposition["doct
 export const composeActions = (composition: VendoComposition): Pick<VendoComposition,
   "configuredBaseUrl" | "urls" | "isDevelopmentEnv" | "connectorToolkits" | "resolvedConnectors"
   | "actionsConfig" | "actions" | "doctor" | "connectGate" | "boundTools" | "byoApprovals"
-  | "parkedCallTtlMs"> => {
-  const { config, guard, ops, limiter } = composition;
+  | "parkedCallTtlMs" | "tenantConnectors"> => {
+  const { config, guard, ops, limiter, store } = composition;
   const posture = baseUrlPosture();
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
@@ -195,12 +196,31 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   // here — the one place the deployment's whole registry is assembled — and it
   // fires the instant the descriptor set first resolves, which is the earliest
   // this is knowable (createVendo is synchronous; descriptors are not).
-  const guardedTools = withUniqueToolTitles(connectGate.bind(guard.bind(actions)));
-  // The generation choke (limits.ts): ONE wrap on THE registry, so every door
-  // that can build — chat, the MCP door, automations — rides the same check.
-  // Only a deployment that set `limits` wraps at all; the rest execute the
-  // registry they always executed.
-  const boundTools = limiter === undefined ? guardedTools : limitGenerations(guardedTools, limiter);
+  //
+  // The generation choke (limits.ts) rides the same binding: ONE wrap on THE
+  // registry, so every door that can build — chat, the MCP door, automations —
+  // takes the same check. Only a deployment that set `limits` wraps at all.
+  //
+  // Named, because a per-tenant registry takes the SAME binding
+  // (tenant-connectors.ts): one org's connectors are guarded, gated and choked
+  // exactly like the shared ones, and isolation is structural because that
+  // registry is built per org rather than filtered out of a shared one.
+  const bind = (registry: typeof actions): typeof composition.boundTools => {
+    const guarded = withUniqueToolTitles(connectGate.bind(guard.bind(registry)));
+    return limiter === undefined ? guarded : limitGenerations(guarded, limiter);
+  };
+  const tenantConnectors = createTenantConnectors({
+    store,
+    ops,
+    // ONLY the tenant's connectors — the same isolation the doctor probes take:
+    // the shared surface is merged in by the overlay, so the host's files and
+    // in-memory profile pieces are never read a second time here.
+    bind: (tenant) => bind(createActions({ ...actionsConfig, dir: undefined, overrides: undefined, tools: [], connectors: tenant })),
+  });
+  // The overlay is selected per REQUEST IDENTITY: a run whose asserted
+  // memberships name an org with registrations is served that org's registry;
+  // everyone else is served the shared one.
+  const boundTools = withTenantOverlay(bind(actions), tenantConnectors.overlay);
   // 04 §6: compound steps route through the guard binding — grants, approvals,
   // breakers, and audit see every real call; there is no second
   // execution path. createActions reads invokeTool at execution time (same
@@ -228,5 +248,6 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
     boundTools,
     byoApprovals,
     parkedCallTtlMs,
+    tenantConnectors: tenantConnectors.api,
   };
 };

@@ -74,6 +74,7 @@ import type { ChannelDoor, ChannelsService } from "./channels.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns } from "./harness-turn.js";
 import type { resolveModels } from "./models-config.js";
+import type { TenantConnectors } from "./tenant-connectors.js";
 import type { AppsOptions, CreateVendoConfig } from "./types.js";
 import type { resolveVendoUrls } from "./urls.js";
 import type { WireDeps } from "./wire/shared.js";
@@ -188,6 +189,9 @@ export interface VendoComposition {
   boundTools: ToolRegistry;
   byoApprovals: ReturnType<typeof createByoApprovals>;
   parkedCallTtlMs: number;
+  /** The dev-side per-org connector registry (tenant-connectors.ts). The
+   *  overlay it selects from is composition-private; only this handle is public. */
+  tenantConnectors: TenantConnectors;
 
   // ── compose-surfaces.ts ────────────────────────────────────────────────────
   theme: VendoTheme | undefined;

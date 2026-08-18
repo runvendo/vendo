@@ -123,6 +123,7 @@
               "capabilities/custom-tools",
               "capabilities/connectors",
               "capabilities/connected-accounts",
+              "capabilities/tenant-connectors",
               "capabilities/automations"
             ]
           },

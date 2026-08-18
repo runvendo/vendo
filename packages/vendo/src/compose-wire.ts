@@ -130,6 +130,7 @@ export const vendoInstance = (
 ): Vendo => {
   const { automationsMounted, ready, automations, guard, byoApprovals } = composition;
   const { apps, actions, selectedConnections, store, harnessDoor, channelDoor, ops } = composition;
+  const { tenantConnectors } = composition;
   return {
     handler,
     async usage(query) {
@@ -187,6 +188,27 @@ export const vendoInstance = (
     // adapter is handed back untouched. The cache-invalidating wrapper is an
     // internal composition detail (see selectedConnections above).
     connections: selectedConnections,
+    // Registrations are rows and vaulted secrets, so every leg latches `ready()`
+    // for the reason `emit` and the channel legs do: the schema has to be there
+    // first. `list`/`test` latch too — they read the same rows.
+    tenantConnectors: {
+      register: async (input) => {
+        await ready();
+        return tenantConnectors.register(input);
+      },
+      list: async (org) => {
+        await ready();
+        return tenantConnectors.list(org);
+      },
+      remove: async (org, name) => {
+        await ready();
+        return tenantConnectors.remove(org, name);
+      },
+      test: async (org, name) => {
+        await ready();
+        return tenantConnectors.test(org, name);
+      },
+    },
     // The named channel surface, over the same door the wire routes call: the
     // host mints a link from its own server code exactly as the anchor does.
     // Each leg latches `ready()` for the same reason `emit` does — every one of

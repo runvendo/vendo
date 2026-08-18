@@ -48,6 +48,7 @@ import type { HostAuthPreset } from "./auth-presets/index.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns, UploadedFile } from "./harness-turn.js";
 import type { ModelsConfig } from "./models-config.js";
+import type { TenantConnectors } from "./tenant-connectors.js";
 
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
@@ -85,6 +86,12 @@ export interface Vendo {
   agent?: ComposedAgent;
   actions: ActionsRegistry;
   connections: ConnectionsService;
+  /** ONE tenant's own MCP server or OpenAPI spec, registered at runtime with no
+      redeploy: `register` saves and tests in one call, and the org's users then
+      see the discovered tools — nobody else's do, because each org is served its
+      OWN registry rather than a filtered copy of a shared one. The pasted token
+      is vaulted in the store's encrypted secrets and is never readable back. */
+  tenantConnectors: TenantConnectors;
   /** Where this deployment's users reach the agent besides the web
       (`createVendo({ channels: { text: true } })`). The surface is always
       here; with no channel configured every call refuses by naming the fix. */

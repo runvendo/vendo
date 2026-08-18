@@ -224,6 +224,7 @@ function modelRow(): BootRow | undefined {
 export function bootSummaryFor(composition: VendoComposition): BootSummary {
   const { config, composed, sandbox, inference, connections, guard, hostedStoreComposed, store }
     = composition;
+  const { membershipsSeam } = composition;
   const rows: BootRow[] = [];
   const warnings: BootWarning[] = [];
 
@@ -305,6 +306,14 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
     rows.push({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
   } else {
     rows.push({ label: "auth", venue: "custom", detail: "createVendo({ principal })" });
+  }
+
+  // Tenant connectors are per-ORG, and an org only ever reaches a request
+  // through the memberships seam (build contract §9.1). Without one, no run can
+  // ever assert an org and no overlay can ever be selected — the seam is not
+  // serving, so it says nothing, like every other unfilled seam above.
+  if (membershipsSeam !== undefined) {
+    rows.push({ label: "tenants", venue: "store", detail: "vendo.tenantConnectors" });
   }
 
   const posture = guard.status().posture;
