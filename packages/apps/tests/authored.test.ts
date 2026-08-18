@@ -104,7 +104,7 @@ const stand = (options: {
   /** What `vendo sync` captured for this deployment's remixable slots. */
   seedBaselines?: readonly SeedBaseline[];
   /** The edit door's builder, with the model it refuses to run without. A
-   *  `reseed` replays its recorded instruction BEFORE it rebases, so the
+   *  `reseed` replays its recorded wishes BEFORE it rebases, so the
    *  persistEdit window the two tests below race is only reachable through a
    *  replay that lands. */
   screen?: ScreenAssembler;
@@ -462,7 +462,7 @@ describe("a refused write at the history cap", () => {
     // box or an armed automation.
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:host-old", instruction: "make it mine" },
+      seed: { component: slot, baseline: "sha256:host-old", wishes: ["make it mine"] },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
     const stored = (await rowOf(store))!.doc!;
@@ -594,7 +594,7 @@ describe("a save computed over a row that changed under it", () => {
     await save(SPEND);
     await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
-      seed: { component: slot, baseline: "sha256:host-old", instruction: "make it mine" },
+      seed: { component: slot, baseline: "sha256:host-old", wishes: ["make it mine"] },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
     const stored = (await rowOf(store))!.doc!;

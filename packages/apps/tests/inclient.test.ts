@@ -196,7 +196,7 @@ export default function ${name}() {
   };
 
   const seeded = async (store: ReturnType<typeof memoryStore>, subject = "user_ada") => {
-    const app = doc({ seed: { component: "hero-card", baseline: "sha256:hero-base", instruction: "make it mine" } });
+    const app = doc({ seed: { component: "hero-card", baseline: "sha256:hero-base", wishes: ["make it mine"] } });
     await seedAppRow(engineOverAdapter(store), app, subject);
     return app;
   };
@@ -218,7 +218,7 @@ export default function ${name}() {
     // A remix as it really is: its own screen, standing in for the host
     // component the seed names.
     const app = doc({
-      seed: { component: "hero-card", baseline: "sha256:hero-base", instruction: "make it mine" },
+      seed: { component: "hero-card", baseline: "sha256:hero-base", wishes: ["make it mine"] },
       source: { [SCREEN_FILE]: inlineSourceFile("export default function Hero() { return <b>fork</b>; }") },
     });
     await seedAppRow(engineOverAdapter(store), app, "user_ada");

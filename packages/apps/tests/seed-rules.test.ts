@@ -43,12 +43,12 @@ describe("seedDrift — one seed, one verdict", () => {
   });
 
   // Drift is a verdict about the BASELINE, so these cases say nothing about the
-  // recorded instruction — every seed carries one, and it is filled in here.
-  const app = (seed?: Omit<NonNullable<AppDocument["seed"]>, "instruction">): AppDocument => ({
+  // wish list — every seed carries one, and it is filled in here.
+  const app = (seed?: Omit<NonNullable<AppDocument["seed"]>, "wishes">): AppDocument => ({
     format: "vendo/app@1",
     id: "app_drift",
     name: "Drift check",
-    ...(seed === undefined ? {} : { seed: { ...seed, instruction: "make it mine" } }),
+    ...(seed === undefined ? {} : { seed: { ...seed, wishes: ["make it mine"] } }),
   });
 
   it("is silent on an unseeded app and on one still at its baseline", () => {

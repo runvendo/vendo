@@ -31,7 +31,7 @@ const invoiceChaser = () => ({
   automations: ["atm_chase"],
   egress: ["api.stripe.com", "api.resend.com"],
   secrets: ["RESEND_API_KEY"],
-  seed: { component: "invoice-card", baseline: "sha256:abc123", instruction: "chase the late ones" },
+  seed: { component: "invoice-card", baseline: "sha256:abc123", wishes: ["chase the late ones"] },
   forkedFrom: "app_invoice_template",
   futureCapability: { version: 2, retained: true },
 });
@@ -58,14 +58,21 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
   });
 
-  it("loads a pre-instruction seeded document, defaulting the instruction to empty", () => {
-    // Apps seeded before the ✦ gesture collected an instruction verbatim stored
-    // a seed without one. They must still load, or every app remixed before the
-    // field existed fails the read-side integrity check and never opens again.
-    const legacy = { ...minimal(), seed: { component: "invoice-card", baseline: "sha256:abc123" } };
-    const expected = { ...legacy, seed: { ...legacy.seed, instruction: "" } };
-    expect(appDocumentSchema.parse(legacy)).toEqual(expected);
-    expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
+  it("lifts a pre-wish-list seed's single instruction into the wish list", () => {
+    // Apps seeded before the wish list stored one `instruction`, and the oldest
+    // stored none at all. Both must still load, or every app remixed before the
+    // field existed fails the read-side integrity check and never opens again —
+    // and the one with an instruction must keep it, because that ask is the
+    // whole of what its re-seed has to replay.
+    for (const [stored, wishes] of [
+      [{ component: "invoice-card", baseline: "sha256:abc123" }, []],
+      [{ component: "invoice-card", baseline: "sha256:abc123", instruction: "chase the late ones" }, ["chase the late ones"]],
+    ] as const) {
+      const legacy = { ...minimal(), seed: stored };
+      const expected = { ...legacy, seed: { component: stored.component, baseline: stored.baseline, wishes } };
+      expect(appDocumentSchema.parse(legacy)).toEqual(expected);
+      expect(validateAppDocument(legacy)).toEqual({ ok: true, app: expected });
+    }
   });
 
   it("classifies wrong or absent app format as version", () => {
@@ -84,7 +91,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
   });
 
   it("rejects bad pin bases and host refs", () => {
-    expectValidation({ ...minimal(), seed: { component: "card", baseline: "md5:abc", instruction: "make it mine" } });
+    expectValidation({ ...minimal(), seed: { component: "card", baseline: "md5:abc", wishes: ["make it mine"] } });
     expectValidation({
       ...minimal(),
       storage: { invoices: { about: "Invoices", refs: { invoice: "stripe.invoice" } } },
@@ -94,7 +101,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
   it("rejects empty names, storage descriptions, and pin slots", () => {
     expectValidation({ ...minimal(), name: "" });
     expectValidation({ ...minimal(), storage: { invoices: { about: "" } } });
-    expectValidation({ ...minimal(), seed: { component: "", baseline: "sha256:abc", instruction: "make it mine" } });
+    expectValidation({ ...minimal(), seed: { component: "", baseline: "sha256:abc", wishes: ["make it mine"] } });
   });
 
   it("enforces the pinned component limits", () => {

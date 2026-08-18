@@ -32,7 +32,7 @@ const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   id: "app_ship_diff",
   name: "Ship diff",
   ui: "tree",
-  seed: { component: "net-worth-card", baseline: "sha256:baseline", instruction: "say remixed" },
+  seed: { component: "net-worth-card", baseline: "sha256:baseline", wishes: ["say remixed"] },
   source: { [SCREEN_FILE]: inlineSourceFile(SCREEN) },
   ...overrides,
 });

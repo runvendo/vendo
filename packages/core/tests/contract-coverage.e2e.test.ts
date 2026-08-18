@@ -323,7 +323,14 @@ describe("§9 — app document plane values and sub-schemas", () => {
   it("storageDecl defaults kind to records and pin base must be a hash ref", () => {
     expect(storageDeclSchema.safeParse({ about: "x" }).success).toBe(true);
     expect(storageDeclSchema.safeParse({ about: "x", kind: "blobs" }).success).toBe(false);
-    expect(appSeedSchema.safeParse({ component: "card", baseline: "sha256:abc", instruction: "make it blue" }).success).toBe(true);
+    expect(appSeedSchema.parse({ component: "card", baseline: "sha256:abc", wishes: ["make it blue"] }))
+      .toEqual({ component: "card", baseline: "sha256:abc", wishes: ["make it blue"] });
+    // A seed written before the wish list carries one `instruction`; it reads as
+    // the first wish, so every remix already on disk keeps the ask it was made
+    // with instead of re-seeding against an empty list.
+    expect(appSeedSchema.parse({ component: "card", baseline: "sha256:abc", instruction: "make it blue" }))
+      .toEqual({ component: "card", baseline: "sha256:abc", wishes: ["make it blue"] });
+    expect(appSeedSchema.parse({ component: "card", baseline: "sha256:abc" }).wishes).toEqual([]);
   });
 });
 

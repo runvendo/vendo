@@ -11,7 +11,7 @@
  * INSTRUCTION first, and fork plus first edit are ONE operation whose output is a
  * REGULAR SCREEN (`app.tsx`, through the ordinary edit door). The captured
  * baseline is provenance: what the remix started from, and what a re-seed
- * replays the recorded instruction against.
+ * replays the recorded wishes against.
  */
 import {
   VendoError,
@@ -82,7 +82,7 @@ const seedFrom = async (
     seed: {
       component: baseline.slot,
       baseline: baseline.hash,
-      instruction: input.instruction,
+      wishes: [input.instruction],
       ...(input.slot === undefined ? {} : { slot: input.slot }),
       ...(baseline.review === undefined ? {} : { review: baseline.review }),
     },
@@ -147,11 +147,13 @@ const seedFrom = async (
 };
 
 /**
- * The re-seed: the host shipped a new version of the component, so run the
- * RECORDED INSTRUCTION against it.
+ * The re-seed: the host shipped a new version of the component, so run EVERY
+ * recorded wish against it, oldest first.
  *
- * This REBUILDS the remix, so anything the person changed after the first edit
- * is gone. That is the trade the drift warning has to state out loud.
+ * The whole list, because the remix is the whole list — replaying only the ask
+ * it was forked with would silently undo every edit made since. A wish the new
+ * version cannot take is kept and reported (`seed.unapplied`, which the re-seed
+ * tool says out loud), never dropped.
  */
 const reseed = async (
   deps: SeedSurfaceDeps,
@@ -159,29 +161,42 @@ const reseed = async (
   ctx: RunContext,
 ): Promise<AppDocument> => {
   const app = await deps.requireOwned(input.appId, ctx);
-  if (app.seed === undefined) {
+  const seed = app.seed;
+  if (seed === undefined) {
     throw new VendoError("conflict", `app ${input.appId} was not created from a host component`);
   }
-  const baseline = baselineFor(deps, app.seed.component);
-  if (baseline.hash === app.seed.baseline) {
-    throw new VendoError("conflict", `${app.seed.component} has not changed since this app was created`);
+  const baseline = baselineFor(deps, seed.component);
+  if (baseline.hash === seed.baseline) {
+    throw new VendoError("conflict", `${seed.component} has not changed since this app was created`);
   }
-  // The replay goes FIRST and the provenance moves only once it has landed:
-  // `edit()` reports the common failure in `failure` rather than throwing, so
-  // rebasing ahead of it left the OLD screen claiming the host's current
-  // version — no drift warning, and every retry refused as a conflict above.
-  const replayed = await deps.runtime().edit(app.id, app.seed.instruction, ctx);
-  if (replayed.failure !== undefined) return replayed.app;
-  const rebased = { ...replayed.app, seed: { ...app.seed, baseline: baseline.hash } };
+  // The replay goes FIRST and the provenance moves only once something has
+  // landed: `edit()` reports the common failure in `failure` rather than
+  // throwing, so rebasing ahead of it left the OLD screen claiming the host's
+  // current version — no drift warning, and every retry refused as a conflict
+  // above.
+  const unapplied: string[] = [];
+  let replayed = app;
+  for (const wish of seed.wishes) {
+    const edited = await deps.runtime().edit(app.id, wish, ctx);
+    if (edited.failure === undefined) replayed = edited.app;
+    else unapplied.push(wish);
+  }
+  if (unapplied.length === seed.wishes.length) return replayed;
+  // The report REPLACES the previous run's rather than adding to it: a wish that
+  // lands this time has stopped being one to report.
+  const rebased = {
+    ...replayed,
+    seed: { ...seed, baseline: baseline.hash, unapplied: unapplied.length === 0 ? undefined : unapplied },
+  };
   const version: VersionEntry = {
     at: new Date().toISOString(),
-    intent: `Update ${app.seed.component} to the host's current version`,
+    intent: `Update ${seed.component} to the host's current version`,
     rung: deps.rungFor(rebased),
   };
-  const landed = await deps.persistEdit(replayed.app, rebased, version, ctx.principal.subject, { origin: "seed" });
+  const landed = await deps.persistEdit(replayed, rebased, version, ctx.principal.subject, { origin: "seed" });
   await deps.reportLifecycle("reseed", app.id, ctx, {
-    component: app.seed.component,
-    fromBaseline: app.seed.baseline,
+    component: seed.component,
+    fromBaseline: seed.baseline,
     toBaseline: baseline.hash,
   });
   return landed;

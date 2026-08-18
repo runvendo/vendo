@@ -73,6 +73,18 @@ const askedScreen = (runtime: () => AppsRuntime, seen: string[] = []) =>
     return `export default function Screen() {\n  return <b>${request.request}</b>;\n}\n`;
   });
 
+/** The wish the host's NEW version has nothing to change, so its replay refuses. */
+const REFUSED = "paint the total purple";
+
+/** The same builder, except that one wish no longer applies. */
+const refusingScreen = (runtime: () => AppsRuntime) =>
+  scriptedScreenAssembler(runtime, (request) =>
+    // The edit door leads its brief with the app's memory, so the wish being
+    // replayed is the last line of the request.
+    request.request.endsWith(REFUSED)
+      ? { kind: "unavailable", why: "the new version has no total to paint" }
+      : `export default function Screen() {\n  return <b>replayed</b>;\n}\n`);
+
 const runtimeWith = (store: ReturnType<typeof memoryStore>, overrides: Partial<AppsConfig> = {}) => createApps({
   store,
   guard: guardFixture(),
@@ -104,12 +116,12 @@ describe("seed.from — the ✦ gesture is a create that starts from something",
 
     const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
 
-    // Provenance is ONE record on the document, not a row set — and it now names
-    // the instruction, because a re-seed replays it.
+    // Provenance is ONE record on the document, not a row set — and it opens the
+    // wish list, because a re-seed replays every entry of it.
     expect(app.seed).toEqual({
       component: SLOT,
       baseline: "sha256:maple-base",
-      instruction: "add a sparkline",
+      wishes: ["add a sparkline"],
     });
     // The remix IS its screen: the ordinary artifact, through the ordinary door.
     expect(app.source?.[SCREEN_FILE]?.text).toContain("add a sparkline");
@@ -180,7 +192,7 @@ describe("seed drift — a warning, never an action", () => {
       id: "app_seeded",
       name: "Seeded",
       ui: "tree",
-      seed: { component: SLOT, baseline: "sha256:gone", instruction: "add a sparkline" },
+      seed: { component: SLOT, baseline: "sha256:gone", wishes: ["add a sparkline"] },
     };
     expect(seedDrift(doc, [])).toMatchObject({ reason: "baseline-missing" });
     expect(seedDrift(doc, [])?.current).toBeUndefined();
@@ -207,11 +219,11 @@ describe("seed.reseed — the recorded instruction, replayed on the new baseline
 
     const reseeded = await resynced.seed.reseed({ appId: app.id }, owner);
 
-    // The provenance moved, the instruction did not, and the builder ran it.
+    // The provenance moved, the wish list did not, and the builder ran it.
     expect(reseeded.seed).toEqual({
       component: SLOT,
       baseline: "sha256:maple-NEW",
-      instruction: "add a sparkline",
+      wishes: ["add a sparkline"],
     });
     expect(asked).toEqual(["add a sparkline"]);
     // The warning is gone because the app is now AT the current baseline.
@@ -266,6 +278,80 @@ describe("seed.reseed — the recorded instruction, replayed on the new baseline
     await seedAppRow(engineOverAdapter(store), plain, owner.principal.subject);
     await expect(runtime.seed.reseed({ appId: plain.id }, owner))
       .rejects.toThrow(/was not created from a host component/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE SEAM: the seed carries the WHOLE wish list, so an update replays all of
+// it. Every leg below is the shipped path — the ✦ door writes the first wish,
+// the agent tool chat calls writes the rest, the store holds them, and the
+// re-seed reads them back. Nothing on either side stands in for the other.
+// ---------------------------------------------------------------------------
+
+describe("the seed keeps EVERY wish, and a re-seed replays all of them in order", () => {
+  it("appends each chat edit's wish and replays the whole list on the new baseline", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+
+    // 1. WRITE, leg one — the ✦ gesture, through the real seed door.
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    // 2. WRITE, leg two — two more edits, through the real `vendo_make` tool the
+    //    chat calls, on the real registry.
+    const tools = runtime.agentTools();
+    for (const request of ["make the number bigger", "put last month beside it"]) {
+      expect(await tools.execute({ id: `call_${request}`, tool: "vendo_make", args: { app: app.id, request } }, owner))
+        .toMatchObject({ status: "ok" });
+    }
+    // 3. READ — the stored row, through the ordinary read door.
+    const WISHES = ["add a sparkline", "make the number bigger", "put last month beside it"];
+    expect((await runtime.get(app.id, owner))?.seed?.wishes).toEqual(WISHES);
+
+    // 4. The host ships a new version. The update replays ALL of them, oldest
+    //    first — the remix is the whole list, never just the ask it started on.
+    const { runtime: resynced, asked: replayed } = buildingRuntime(store, {
+      seedBaselines: [baseline("sha256:maple-NEW")],
+    });
+    const reseeded = await resynced.seed.reseed({ appId: app.id }, owner);
+
+    // The edit door leads each brief with the app's memory, so the wish itself
+    // is the request's last line.
+    expect(replayed.map((request) => request.split("\n").at(-1))).toEqual(WISHES);
+    expect(reseeded.seed).toEqual({ component: SLOT, baseline: "sha256:maple-NEW", wishes: WISHES });
+    expect((await resynced.get(app.id, owner))?.seed?.wishes).toEqual(WISHES);
+  });
+
+  it("surfaces a wish the new version cannot take instead of dropping it", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    expect(await runtime.agentTools().execute(
+      { id: "call_colour", tool: "vendo_make", args: { app: app.id, request: REFUSED } },
+      owner,
+    )).toMatchObject({ status: "ok" });
+
+    // The host's new version has nothing for the second wish to change.
+    let resynced: AppsRuntime;
+    resynced = runtimeWith(store, {
+      model: basicLanguageModel(),
+      seedBaselines: [baseline("sha256:maple-NEW")],
+      screen: refusingScreen(() => resynced),
+    });
+
+    const outcome = await resynced.agentTools().execute(
+      { id: "call_reseed", tool: "vendo_apps_reseed", args: { appId: app.id } },
+      owner,
+    );
+
+    // SAID, in the chat that asked for the update — not swallowed. The `say` is
+    // the sentence the agent utters verbatim, so the wish has to be IN it, not
+    // merely somewhere in the document beside it.
+    expect(outcome).toMatchObject({ status: "ok", output: { say: expect.stringContaining(REFUSED) } });
+    // And KEPT: it is still a wish, so the next re-seed tries it again.
+    const stored = await resynced.get(app.id, owner);
+    expect(stored?.seed?.wishes).toEqual(["add a sparkline", REFUSED]);
+    expect(stored?.seed?.unapplied).toEqual([REFUSED]);
+    // The wish that DID land moved the app onto the host's new version.
+    expect(stored?.seed?.baseline).toBe("sha256:maple-NEW");
   });
 });
 

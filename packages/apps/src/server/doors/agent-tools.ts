@@ -113,7 +113,7 @@ const descriptors = [
   },
   {
     name: "vendo_apps_reseed",
-    description: "Update a Vendo app that was created from a host component so it uses the host's current version of that component. WARNING, tell the user first: this REPLACES the component with the fresh copy, so any changes they made to it are lost. Use only when the app reports seed drift and the user has said they want the update.",
+    description: "Update a Vendo app that was created from a host component so it uses the host's current version of that component. It rebuilds on the fresh copy and replays every change the user has ever asked of this app, oldest first, so nothing they asked for is dropped — but a change the new version cannot take does not survive it. If the reply carries `say`, tell them that line verbatim: it names exactly those. Use only when the app reports seed drift and the user has said they want the update.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -348,7 +348,18 @@ export const createAgentTools = (
       if (call.tool === "vendo_apps_reseed") {
         const args = input(call.args, ["appId"]);
         const result = await runtime.seed.reseed({ appId: args.appId as string }, ctx);
-        return { status: "ok", output: result as unknown as Json };
+        const unapplied = result.seed?.unapplied ?? [];
+        return {
+          status: "ok",
+          output: unapplied.length === 0 ? result as unknown as Json : {
+            ...(result as unknown as Record<string, Json>),
+            // A wish the host's new version could not take is a change the person
+            // made and no longer has. It stays on the seed, and this is the
+            // sentence that gets it SAID rather than quietly dropped.
+            say: `${result.name} is on the host's current version, but these changes of yours did not fit it: `
+              + `${unapplied.map((wish) => `"${wish}"`).join(", ")}. They are still on record — ask for any of them again.`,
+          },
+        };
       }
       if (call.tool === "vendo_apps_open") {
         const args = input(call.args, ["appId"]);

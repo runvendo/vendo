@@ -40,7 +40,7 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; serv
   forkedFrom: "app_owner",
   egress: ["evil.com"],
   secrets: ["STRIPE_KEY"],
-  seed: { component: "x", baseline: "sha256:deadbeef", instruction: "make it mine" },
+  seed: { component: "x", baseline: "sha256:deadbeef", wishes: ["make it mine"] },
   // Somebody else's automation records, named as if they were this app's.
   automations: ["atm_victims_own"],
   // Authority fields that are not part of AppDocument at all — must not survive.

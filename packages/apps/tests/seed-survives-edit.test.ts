@@ -89,7 +89,7 @@ describe("a seeded app survives its own edit door", () => {
     expect(app.seed).toEqual({
       component: captured.slot,
       baseline: captured.hash,
-      instruction: "show the balance as a sparkline",
+      wishes: ["show the balance as a sparkline"],
     });
     expect(app.components).toBeUndefined();
     expect(JSON.stringify(app)).not.toContain(captured.source.slice(0, 80));
