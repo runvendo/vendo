@@ -92,14 +92,47 @@ export interface ChannelTurnDeps {
   asks: ChannelAskRepository;
 }
 
+/** A schema property description cut down to a label: everything before the
+ *  first example or parenthetical ("Amount to send in cents (positive whole
+ *  number), e.g. …" → "Amount to send in cents"). Falls back to the key name
+ *  spaced out of its snake_case. */
+function argLabel(key: string, schema: ApprovalRequest["descriptor"]["inputSchema"]): string {
+  const properties = schema["properties"];
+  const property = typeof properties === "object" && properties !== null
+    ? (properties as Record<string, unknown>)[key] : undefined;
+  const description = typeof property === "object" && property !== null
+    && typeof (property as Record<string, unknown>)["description"] === "string"
+    ? (property as Record<string, unknown>)["description"] as string : undefined;
+  const label = description?.split(/[.(]|, e\.g\./)[0]?.trim();
+  return label && label.length <= 60 ? label : key.replace(/[_-]+/g, " ");
+}
+
+const ARG_VALUE_CAP = 200;
+
 /** What the person is told when a call parks: the exact action and its exact
- *  arguments, because a yes over text is consent given without a screen. */
+ *  arguments, because a yes over text is consent given without a screen. One
+ *  plain line per argument, labelled from the host's own schema — never the
+ *  tool identifier and never a JSON blob, which is what this used to read as
+ *  ("host_transferMoney {\"amount\":2500…}" for a $25.00 send, live
+ *  2026-08-18). Values stay verbatim — the ask is the safety boundary, so no
+ *  model paraphrase — capped only so one huge argument cannot flood a text. */
 function approvalText(request: ApprovalRequest): string {
   const what = request.descriptor.title ?? request.descriptor.name;
-  const detail = request.inputPreview.trim();
+  const input = request.call.args;
+  const lines = input && typeof input === "object" && !Array.isArray(input)
+    ? Object.entries(input).map(([key, value]) => {
+      const raw = typeof value === "string" ? value : JSON.stringify(value);
+      const shown = raw.length > ARG_VALUE_CAP ? `${raw.slice(0, ARG_VALUE_CAP)}… (truncated)` : raw;
+      return `- ${argLabel(key, request.descriptor.inputSchema)}: ${shown}`;
+    })
+    : [];
+  const detail = lines.length > 0 ? lines : [request.inputPreview.trim()].filter(Boolean);
   return [
-    `${what} needs your OK${detail === "" ? "" : `: ${detail}`}`,
-    "Reply YES to go ahead, or NO to cancel.",
+    // "approval", never "OK" — the decider matches only YES/NO, and a header
+    // that says OK teaches the one reply that will NOT decide it.
+    `${what} needs your approval${detail.length === 0 ? "" : ":"}`,
+    ...detail,
+    "Reply YES to approve, or NO to cancel.",
   ].join("\n");
 }
 

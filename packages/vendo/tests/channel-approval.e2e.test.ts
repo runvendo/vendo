@@ -96,7 +96,10 @@ function payingHost(): { tools: ToolRegistry; paid: Array<{ billId: string; amou
     description: "Pay one of the customer's bills",
     inputSchema: {
       type: "object",
-      properties: { billId: { type: "string" }, amount: { type: "number" } },
+      properties: {
+        billId: { type: "string" },
+        amount: { type: "number", description: "Amount in cents (whole number), e.g. 4200 = $42.00" },
+      },
       required: ["billId", "amount"],
     },
     risk: "write",
@@ -186,9 +189,18 @@ describe.sequential("consent over text", () => {
     expect(ask.conversationId).toBe("conv_approval");
     // The exact action and the exact arguments — a yes given over text is
     // consent given without a screen, so the text has to carry what a card would.
-    expect(ask.text).toContain("Pay a bill");
-    expect(ask.text).toContain("bill_9");
-    expect(ask.text).toContain("4200");
+    // And it reads like a text, never like machinery: one labelled line per
+    // argument (label from the schema's own description when it has one), and
+    // the tool identifier never reaches the person (live 2026-08-18: the ask
+    // rendered as `host_transferMoney {"amount":2500…}` for a $25.00 send).
+    // "approval", not "OK": the decider only matches YES/NO, so the header
+    // must never advertise a reply word that would not decide it.
+    expect(ask.text).toContain("Pay a bill needs your approval:");
+    expect(ask.text).not.toMatch(/\bOK\b/);
+    expect(ask.text).toContain("- billId: bill_9");
+    expect(ask.text).toContain("- Amount in cents: 4200");
+    expect(ask.text).not.toContain(PAY_TOOL);
+    expect(ask.text).not.toContain("{");
     expect(ask.text).toContain("Reply YES");
     // Nothing has happened yet: the gate is holding the write.
     expect(host.paid).toEqual([]);
