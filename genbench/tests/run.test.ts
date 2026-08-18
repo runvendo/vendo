@@ -521,9 +521,9 @@ describe("the door a column answers at", () => {
     });
   });
 
-  /** The CLI is billed by OpenAI's platform at OpenAI's own rate — half as much
-   *  again as the router charges for the same model — so the two columns cannot
-   *  share an id without one of them being priced at the other's door. */
+  /** The CLI is billed by OpenAI's platform directly rather than through the
+   *  router, so the two columns cannot share an id even though both now price at
+   *  the same list rate. */
   it("leaves the codex column on OpenAI's own id, which is what prices its session", () => {
     expect(door({ harness: "codex", model: "terra", slug: "codex-terra" }).modelId).toBe("gpt-5.6-terra");
   });
@@ -538,12 +538,13 @@ describe("the door a column answers at", () => {
     expect(door({ harness: "thesys", model: "c1", slug: "thesys-c1" }).at).toBe("thesys");
   });
 
-  /** A column priced through a table that has no row for its id throws rather
-   *  than reporting $0.0000, which is what a free run looks like in the report. */
-  it("prices the borrowed column at the router's rate", () => {
+  /** Both doors are priced at Terra's list rate on purpose — not the router's
+   *  temporary discount on its OpenAI endpoint — so the two columns compare on
+   *  the same dollar and a coupon that can expire any day flatters neither. */
+  it("prices both terra doors the same, at the list rate", () => {
     const usage = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 };
 
-    expect(usdFor(usage, door({ harness: "vendo", model: "terra", slug: "vendo-terra" }).modelId)).toBe(1);
+    expect(usdFor(usage, door({ harness: "vendo", model: "terra", slug: "vendo-terra" }).modelId)).toBe(2);
     expect(usdFor(usage, door({ harness: "codex", model: "terra", slug: "codex-terra" }).modelId)).toBe(2);
   });
 });

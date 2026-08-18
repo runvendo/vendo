@@ -105,14 +105,15 @@ const PRICING: Readonly<Record<string, ModelPrice>> = {
   // Identical to Anthropic's first-party Sonnet 5 rate above, introductory
   // period and all.
   "anthropic/claude-sonnet-5": { inputPerMTok: 2, outputPerMTok: 10 },
-  // HALF of the $2/$12 Terra really lists at: the router's OpenAI endpoint
-  // carries `discount: 0.5` today, while its Azure and Bedrock endpoints for the
-  // same model quote the undiscounted rate, and so does OpenAI's own page (the
-  // `gpt-5.6-terra` row below). Like Sonnet 5's introductory rate this is a
-  // number with an expiry date on it: when the promotion ends the row goes back
-  // up and two runs' dollars stop comparing. The ≤272k-context tier either way —
-  // a genbench prompt is 10-20k tokens, so the tier above it is unreachable.
-  "openai/gpt-5.6-terra": { inputPerMTok: 1, outputPerMTok: 6 },
+  // List rate, not the router's temporary 50% discount: the router's OpenAI
+  // endpoint carries `discount: 0.5` today, but its Azure and Bedrock endpoints
+  // for the same model quote this undiscounted rate, and so does OpenAI's own
+  // page (matches the `gpt-5.6-terra` row below). A coupon that can expire any
+  // day shouldn't flatter one column over the others it's compared against —
+  // the actual bill may be lower while the discount lasts. The ≤272k-context
+  // tier either way — a genbench prompt is 10-20k tokens, so the tier above it
+  // is unreachable.
+  "openai/gpt-5.6-terra": { inputPerMTok: 2, outputPerMTok: 12 },
   // The ≤200k tier; Google still labels the model preview.
   "google/gemini-3.1-pro-preview": { inputPerMTok: 2, outputPerMTok: 12 },
   // OpenAI's own list rate (developers.openai.com/api/docs/pricing, read

@@ -54,8 +54,9 @@ describe("one price band", () => {
 
   /** Sonnet 5 at $2/$10 and Gemini 3.1 Pro at $2/$12 are their vendors' rates as
    *  the router quotes them. Terra lists at $2/$12 too — the codex row is that
-   *  rate — but the router is running it at half today, which is a real bill and
-   *  a temporary one, exactly as Sonnet 5's introductory rate is. */
+   *  rate, and the router row is priced at the same list rate on purpose, not
+   *  the router's temporary 50% discount, so a coupon that can expire any day
+   *  can't flatter one column over the others it's compared against. */
   it("prices every alias in it, within a dollar of each other on input", () => {
     for (const id of [...Object.values(OPENROUTER_MODEL_IDS), ...Object.values(CODEX_MODEL_IDS)]) {
       expect(usdFor(perMTok, id)).toBeGreaterThan(0);
@@ -63,7 +64,7 @@ describe("one price band", () => {
     expect(usdFor(perMTok, MODEL_IDS.claude)).toBeCloseTo(2 + 10, 6);
     expect(usdFor(perMTok, MODEL_IDS.gemini)).toBeCloseTo(2 + 12, 6);
     expect(usdFor(perMTok, MODEL_IDS.terra)).toBeCloseTo(2 + 12, 6);
-    expect(usdFor(perMTok, MODEL_IDS.gpt)).toBeCloseTo(1 + 6, 6);
+    expect(usdFor(perMTok, MODEL_IDS.gpt)).toBeCloseTo(2 + 12, 6);
   });
 });
 

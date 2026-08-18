@@ -328,8 +328,8 @@ const runs = (harness: HarnessId, model: ModelAlias): boolean =>
  * account at OpenAI's list rate, and no provider built here can reach that id at
  * all: the first-party endpoint refuses the `max_tokens` every OpenAI-compatible
  * client sends. So a harness that builds its own provider goes through the
- * router, where the same model is `openai/gpt-5.6-terra` at half the price —
- * a different id at a different rate, and `PRICING` already carries both rows.
+ * router, where the same model is `openai/gpt-5.6-terra` — a different id, the
+ * same list rate, and `PRICING` already carries both rows.
  *
  * A column that spawns its own engine (`claude-code`, `codex`) never calls what
  * this answers with; the model is built and left unused, and only the id
