@@ -39,7 +39,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    add Vendo's tool pack. Never assume the full install in a repo that
    already has an agent.
 
-   **If they choose the tool pack, take the walkthrough first.** Fetch exactly ONE
+   **If they choose the tool pack, one walkthrough is your page.** Fetch exactly ONE
    framework walkthrough and follow it end to end — do not read both:
    - AI SDK loop → `https://docs.vendo.run/existing-agent/ai-sdk.md`
    - Mastra loop → `https://docs.vendo.run/existing-agent/mastra.md`
@@ -55,10 +55,17 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    when the walkthrough imports from it; it is the one exception to the
    one-page rule, not an invitation to browse.
 
+   **Steps 2 to 5 still apply on that path, and they come first.** Detect the
+   stack, install the package, run init — with `--use-case agent-loop`, the
+   answer that records this shape and tells doctor not to look for a
+   `<VendoProvider>` or a visible Vendo surface — and hand-wire whatever the
+   agent tail names. The walkthrough is the code that goes INTO your human's
+   loop; it is not a substitute for the install underneath it.
+
    Then come back for steps 6 and 7. The walkthrough wires your human's chat.
    It never asks where their users keep the screens they build, and that
-   question is here. Steps 2 to 10 in order are the FULL-install path, for the
-   human who chose Vendo's agent.
+   question is here. Taken straight through, steps 2 to 10 are the FULL-install
+   path, for the human who chose Vendo's agent.
 
 2. **Detect the stack.** Read `package.json`. A `next` dependency means
    Next.js; an `express` dependency means Express. Anything else — Cloudflare
@@ -68,21 +75,27 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    env)`, which your runtime mounts in one line
    ([Edge runtimes](/production/edge-runtimes)).
 
-   **Workspace repos: pick the app package first.** A root `package.json`
-   with a `workspaces` field (or a `pnpm-workspace.yaml`) means the framework
-   dependency lives in an app package (`apps/web`, `packages/app`, …), not at
-   the root — and detection reads the `package.json` of the directory init
-   targets. Run at the root of a workspace repo and detection finds no
-   framework: init errors non-interactively, or lands on the runtime-neutral
-   custom scaffold a Next or Express app should not get. Choose the app
-   package now; the install in step 3 targets it, and every later command
-   runs in (or is pointed at) that directory.
+   **Workspace repos: pick the app package first.** A root `package.json` with
+   a `workspaces` field — or a `pnpm-workspace.yaml` that declares a
+   `packages:` list — means the framework dependency lives in an app package
+   (`apps/web`, `packages/app`, …), not at the root — and detection reads the
+   `package.json` of the directory init targets. Run at the root of a workspace
+   repo and detection finds no framework: init errors non-interactively, or
+   lands on the runtime-neutral custom scaffold a Next or Express app should
+   not get. Choose the app package now; the install in step 3 targets it, and
+   every later command runs in (or is pointed at) that directory.
+
+   Read that file before you believe it. Under pnpm 10 `pnpm-workspace.yaml` is
+   also where plain settings live — `onlyBuiltDependencies`,
+   `minimumReleaseAge`, the exclude list in step 3 — so a copy with no
+   `packages:` key is an ordinary single-app repo, and treating it as a
+   monorepo sends you hunting for an app package that does not exist.
 
 3. **Install the package, then verify what actually resolved.**
 
    ```bash
-   npm install vendoai @vendoai/vendo
-   npx vendo --version   # must be >= 0.4.0
+   npm install @vendoai/vendo
+   npx vendo --version   # must be >= 0.28.0
    ```
 
    In a workspace repo, install into the app package with the host's own
@@ -90,17 +103,22 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    lockfile:
 
    ```bash
-   npm install vendoai @vendoai/vendo --workspace apps/web   # npm workspaces
-   yarn workspace <app-package-name> add vendoai @vendoai/vendo
-   pnpm --filter <app-package-name> add vendoai @vendoai/vendo
+   npm install @vendoai/vendo --workspace apps/web   # npm workspaces
+   yarn workspace <app-package-name> add @vendoai/vendo
+   pnpm --filter <app-package-name> add @vendoai/vendo
    ```
 
    Then run the version check — and every `npx vendo …` step below — from
    that same app directory.
 
-   `vendoai` is a thin alias of `@vendoai/vendo`, and every file init writes
-   imports `@vendoai/vendo/*` — so install BOTH: with the alias alone, pnpm's
-   strict `node_modules` cannot resolve those imports and every route 500s with
+   ONE package, and it is the umbrella. `@vendoai/vendo` carries every
+   `@vendoai/vendo/*` subpath the files init writes import, and it carries the
+   `vendo` binary into `node_modules/.bin` — which is what the version check
+   above and the `predev`/`prebuild` hooks init adds to `package.json` run.
+   `vendoai` is a thin ALIAS of it, for `npx vendoai@latest …` before anything
+   is installed; as a dependency it adds nothing, and installing it INSTEAD of
+   the umbrella is the shape that breaks — pnpm's strict `node_modules` cannot
+   resolve `@vendoai/vendo/*` through an alias, so every route 500s with
    `Module not found: Can't resolve '@vendoai/vendo/server'`. The version
    check is not optional: stale placeholder versions (0.1.x) exist on npm, and package
    managers with a release-age cooldown (pnpm 11 holds new releases for a
@@ -463,9 +481,13 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
   nothing more is required.
 - **Run `vendo init` before touching `.vendo/`.** Init writes the whole
   `.vendo/` contract (`tools.json`, `overrides.json`, `policy.json`,
-  `brief.md`, `theme.json`) itself. Don't author or edit any of those files
+  `brief.md`, `theme.json`) itself, and the AI grading pass writes
+  `judgments.json` beside them. Don't author or edit any of those files
   before the first init run; re-run `npx vendo init` instead of hand-writing
   scaffold files (the route, the registry skeleton, `.vendo/` contents).
+  `judgments.json` is a LAYER, never a copy: each entry is keyed by tool name
+  and applied on top of that tool's `tools.json` entry (description, title,
+  risk, and the rest), with `overrides.json` — the human layer — winning last.
 - **The star ask acts only on an explicit yes.** Your prompt ends by asking
   your human whether to star the repo. If they say yes and the GitHub CLI is
   authenticated, run `gh api --method PUT /user/starred/runvendo/vendo`;
@@ -488,6 +510,7 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
 | --- | --- |
 | `https://vendo.run/agents.md` | This playbook as raw Markdown (append `.md` to any docs page) |
 | `https://docs.vendo.run/existing-agent/quickstart.md` | The tool-pack path for hosts that already have an agent |
+| `https://docs.vendo.run/backend/quickstart.md` | The backend path: `agent()`, `respond()`, `run()`, and no Vendo UI to mount |
 | `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |

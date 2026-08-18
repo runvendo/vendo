@@ -9,14 +9,38 @@ sidebarTitle: "Quickstart"
 A door, a token, and your agent. `npx vendo init` writes the door, and the
 console holds the key.
 
-Haven't run init? It is the setup command from the [quickstart](/): it reads
-your repo, then asks. Its first question is **How will people use your agent?** —
-answer **From outside agents over MCP**, and it writes everything this page walks
-through. Picking that answer is also what unlocks the two questions below it: who
-runs the OAuth plumbing (the posture), and whether your own backend needs a
-service key.
-
 <Steps>
+
+<Step title="Install and run init">
+
+One package, then the setup command from the [quickstart](/): it reads your
+repo, then asks.
+
+<CodeGroup>
+
+```bash npm
+npm install @vendoai/vendo
+npx vendo init
+```
+
+```bash pnpm
+pnpm add @vendoai/vendo
+pnpm exec vendo init
+```
+
+</CodeGroup>
+
+Its first question is **How will people use your agent?** — answer **From
+outside agents over MCP**, and it writes everything this page walks through.
+
+That answer is also what adds init's MCP-only questions. There is always one:
+whether your own backend will call these tools machine to machine, which is the
+service key. The posture question — who runs the OAuth plumbing — joins it only
+when a Vendo Cloud key is already in hand, because a keyless run cannot reach a
+broker, so init settles on the local posture and asks about the service key
+alone.
+
+</Step>
 
 <Step title="Open the door">
 
@@ -24,7 +48,20 @@ service key.
 the **broker** posture: keys managed in the console, a stable tenant URL, and
 the OAuth surface off your domain.
 
-Take it. The door then trusts that broker.
+Is the agent your own, driven from your own backend with no browser in the loop
+— or is your stack one the broker posture does not fit? Take the **local**
+posture instead:
+
+```bash
+npx vendo init --use-case mcp --posture local --service-key
+```
+
+Everything then stays on your origin — no broker, no console, no browser — and
+the token exchange in the next step is served by your own app. Both flags answer
+questions init asks only on the MCP use case, so `--use-case mcp` has to ride
+along; without it init stops and says so.
+
+Otherwise, take the broker. The door then trusts that broker.
 
 ```ts src/vendo/server.ts focus={3}
 export const vendo = createVendo({
@@ -60,7 +97,7 @@ Two routes come with it, both written by `init`.
 | `/.well-known/oauth-*` | discovery, at your origin root, naming your broker |
 
 A broker-fronted door serves no token endpoint of its own. The exchange lives
-in the broker, in step 2.
+in the broker, in the next step.
 
 </Step>
 
@@ -99,11 +136,32 @@ guard, policy, and audit your own UI answers to.
 A subject your product has never heard of is not rejected here. It dies at the
 first real tool call, the same kill switch every other grant answers to.
 
-Your own agent, or a stack the broker posture does not fit? Run
-`npx vendo init --use-case mcp --posture local --service-key` instead and the
-exchange stays on your origin — no broker, no browser. Both flags are answers to
-questions init only asks on the MCP use case, so `--use-case mcp` has to ride
-along; without it init stops and says so.
+<Warning>
+  **On Auth.js v5, `session.user.id` is `undefined` until you add a callback.**
+  The subject the door resolves for an Auth.js session is the session token's
+  `sub`, but a v5 session hands your own code only `name`, `email`, and `image`.
+  A backend that reads `session.user.id` for `subject_token` therefore posts
+  `undefined`, the exchange mints a token happily, and the first tool call
+  401s. Copy `sub` across once, in the `NextAuth({ … })` config your
+  `auth.ts` exports:
+
+  ```ts auth.ts
+  callbacks: {
+    session({ session, token }) {
+      session.user.id = token.sub!;
+      return session;
+    },
+  },
+  ```
+
+  That is the JWT session strategy, which is the default without a database
+  adapter. With an adapter the session callback gets `user` instead, and
+  `user.id` is already the subject.
+</Warning>
+
+On the **local** posture — the branch in the step above — none of this lives in
+the console. Init writes the key into your own composition, and the door serves
+the exchange itself:
 
 ```ts src/vendo/server.ts focus={3}
 export const vendo = createVendo({

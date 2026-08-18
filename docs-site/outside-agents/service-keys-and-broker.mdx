@@ -42,6 +42,12 @@ broker, so the broker is where your backend spends it.
 The door never sees the key. It only ever sees the short-lived token the broker
 minted from it.
 
+That is the broker posture. A **local** door has no console in the path: the key
+is any opaque string you generate, it lives in your own environment as
+`VENDO_SERVICE_KEY`, the composition lists it under
+`mcp: { serviceAuth: { keys: [...] } }`, and `vendo init --service-key` writes
+one for you.
+
 ## The exchange
 
 One form post, RFC 8693, at your tenant's `/token`.
@@ -55,6 +61,21 @@ curl -s https://maple.mcp.vendo.run/token \
   -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
 ```
 
+That URL is the broker's. On a local door the same body goes to your own origin,
+where the door serves the endpoint itself:
+
+```bash focus={1}
+curl -s https://app.maple.com/api/vendo/mcp/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d client_id=vendo-service \
+  -d client_secret="$VENDO_SERVICE_KEY" \
+  -d subject_token=user_1904 \
+  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
+```
+
+The URL is the only difference. Every field below, the answer, the ten-minute
+life, and the `svc:` attribution are the same on both postures.
+
 | Field | Value |
 | --- | --- |
 | `grant_type` | `urn:ietf:params:oauth:grant-type:token-exchange` |
@@ -63,6 +84,12 @@ curl -s https://maple.mcp.vendo.run/token \
 | `subject_token` | one of *your* user ids |
 | `subject_token_type` | `urn:vendo:params:oauth:token-type:user-id` |
 | `resource` | optional, and must identify this MCP server if sent |
+
+Which value is *your* user id is whatever your own `principal()` resolves for
+that person. On Auth.js v5 that is the session token's `sub`, and
+`session.user.id` is `undefined` until you copy it across — the three-line
+callback, and the 401 it saves you, are in the token-minting step of the
+[quickstart](/outside-agents/quickstart).
 
 The answer is an ordinary OAuth token response.
 

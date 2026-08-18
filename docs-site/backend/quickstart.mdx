@@ -20,24 +20,36 @@ required.
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/agents ai@^6
+npm install @vendoai/agents @vendoai/vendo ai@^6
 npx vendoai@latest login
 npx vendoai@latest init
 ```
 
 ```bash pnpm
-pnpm add @vendoai/agents ai@^6
+pnpm add @vendoai/agents @vendoai/vendo ai@^6
 pnpm dlx vendoai@latest login
 pnpm dlx vendoai@latest init
 ```
 
 </CodeGroup>
 
+`@vendoai/vendo` carries none of the code on this page. It is there because
+every file init writes imports `@vendoai/vendo/*`, and the `predev` and
+`prebuild` hooks init adds to your `package.json` run the `vendo` binary that
+package installs.
+
 `vendo login` mints a `VENDO_API_KEY` into `.env.local` and never prints it.
+Already have one in `.env.local`? Skip that line — init merges the key into its
+own run, uses it as it is, and never asks.
 `vendo init` writes `.vendo/tools.json`, your API read into tool definitions
 with a schema and a dispatch binding on each one. Extraction grades only what
 the protocol proves; `vendo sync` grades the rest, and until it runs an
 ungraded tool asks before every call.
+
+Answer the first question with **Through my own agent loop (AI SDK / Mastra)**.
+A backend agent is your own loop, and that answer is what tells `vendo doctor`
+to skip the mounted-UI checks — a `<VendoProvider>` and a visible surface —
+that a backend with no UI of Vendo's has nothing to satisfy.
 
 ```ts lib/agent.ts focus={3-7}
 import { agent, api } from "@vendoai/agents";
@@ -93,8 +105,8 @@ its own.
 </CardGroup>
 
 <Note>
-  No umbrella and no client here. The composed agent has exactly two verbs, and
-  steps 2 and 3 are both of them.
+  No umbrella call and no client in your code. The composed agent has exactly
+  two verbs, and steps 2 and 3 are both of them.
 </Note>
 
 </Step>
