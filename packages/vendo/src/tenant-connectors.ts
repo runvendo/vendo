@@ -95,6 +95,12 @@ interface Registration {
   url?: string;
   spec?: string | Record<string, unknown>;
   registeredAt: string;
+  /** Whether this registration put a token in the vault. The row has to say so,
+   *  because ASKING is not free: a store with no encryption key refuses the read
+   *  itself (store/secrets.ts's `keyFor`) before it ever looks for a row, so one
+   *  tokenless registration would throw on every turn for every member of the
+   *  org. A connector that needs no credential must cost no vault read. */
+  vaulted?: true;
 }
 
 const summaryOf = (row: Registration): TenantConnectorSummary => ({
@@ -160,8 +166,10 @@ export function createTenantConnectors(deps: {
   const rowsFor = async (org: string): Promise<Registration[]> =>
     (await records().list({ refs: { subject: org } })).records.map((record) => record.data as unknown as Registration);
 
-  const readToken = async (org: string, name: string): Promise<string | undefined> =>
-    deps.ops === undefined ? undefined : (await deps.ops.secrets.get(secretName(org, name))) ?? undefined;
+  const readToken = async (row: Registration): Promise<string | undefined> =>
+    row.vaulted === true && deps.ops !== undefined
+      ? (await deps.ops.secrets.get(secretName(row.org, row.name))) ?? undefined
+      : undefined;
 
   /** ONE registry per ORG, keyed by the org id itself — never one per membership
    *  COMBINATION. Two orgs' connectors sharing a registration name compose the
@@ -184,6 +192,7 @@ export function createTenantConnectors(deps: {
           ...(input.url === undefined ? {} : { url: input.url }),
           ...(input.spec === undefined ? {} : { spec: input.spec }),
           registeredAt: new Date().toISOString(),
+          ...(input.token === undefined ? {} : { vaulted: true as const }),
         };
         // Validate by CONNECTING: the discovered tools are the proof, and they
         // are what the caller gets back.
@@ -235,7 +244,7 @@ export function createTenantConnectors(deps: {
         if (row === undefined) {
           throw new VendoError("not-found", `no tenant connector "${name}" registered for org "${org}"`);
         }
-        return { status: "ok", tools: await connectorFor(row, await readToken(org, name)).descriptors() };
+        return { status: "ok", tools: await connectorFor(row, await readToken(row)).descriptors() };
       } catch (error) {
         return failed(error);
       }
@@ -243,7 +252,7 @@ export function createTenantConnectors(deps: {
   };
 
   const connectorsFor = async (org: string): Promise<Connector[]> =>
-    await Promise.all((await rowsFor(org)).map(async (row) => connectorFor(row, await readToken(row.org, row.name))));
+    await Promise.all((await rowsFor(org)).map(async (row) => connectorFor(row, await readToken(row))));
 
   const registryFor = (org: string): Promise<ToolRegistry | undefined> => {
     let built = cache.get(org);
@@ -312,7 +321,10 @@ export function withTenantOverlay(
       const tenants = await overlay(ctx);
       if (tenants.length === 0) return base.execute(call, ctx);
       for (const registry of [base, ...tenants]) {
-        if ((await registry.descriptors()).some(({ name }) => name === call.tool)) {
+        // The run's OWN ctx, never an unprojected read: who owns a name is a
+        // question about this caller, and the base answers it differently for
+        // an unattended run than for an attended one.
+        if ((await registry.descriptors(ctx)).some(({ name }) => name === call.tool)) {
           return registry.execute(call, ctx);
         }
       }

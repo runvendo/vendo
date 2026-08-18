@@ -188,6 +188,15 @@ export async function wiresTenantConnectors(root: string): Promise<boolean> {
   return hostSourceMatches(root, /\.tenantConnectors\b/);
 }
 
+/** Whether the host builds its OWN store. Load-bearing for anything that reads
+    a key as evidence of a Cloud seam: an explicitly passed store always wins
+    over VENDO_API_KEY (the adapter rule, compose-store.ts's `selectStore`), so
+    a host that calls this has a local store no matter what its environment
+    says. */
+export async function composesOwnStore(root: string): Promise<boolean> {
+  return hostSourceMatches(root, /\bcreateStore\s*\(/);
+}
+
 /** Bounded source scan shared by init and doctor so their wiring verdicts
     agree. */
 export async function detectVendoWiring(root: string): Promise<VendoWiring> {

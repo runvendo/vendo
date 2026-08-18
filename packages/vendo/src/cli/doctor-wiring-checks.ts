@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
+import { composesOwnStore, detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { compositionModulePath, importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { readUseCase } from "./install-record.js";
@@ -238,20 +238,31 @@ async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
  *  is `vendo.tenantConnectors.test`'s job, at runtime, where it belongs.
  *
  *  Cloud's hosted store holds the key server-side, so a keyed deployment is
- *  already satisfied and says so rather than warning about a key it does not need. */
+ *  satisfied by the key alone — but ONLY when Cloud is really the store. An
+ *  explicitly passed `createStore()` wins over VENDO_API_KEY (the adapter rule,
+ *  compose-store.ts's `selectStore`), so reading the key as proof of a vault
+ *  greened a deployment whose very next registration was refused. A check that
+ *  passes a broken deployment is worse than no check, so the key only counts
+ *  where nothing else claimed the seam. */
 async function checkTenantConnectorVault(run: DoctorRun): Promise<void> {
-  if (!await wiresTenantConnectors(run.root)) return;
+  const { root, env } = run;
+  if (!await wiresTenantConnectors(root)) return;
   // Deliberately the LOOSER `environment()` predicate composition uses, not the
   // trimmed one — doctor and runtime must agree on what counts as set.
-  if ((run.env.VENDO_STORE_ENCRYPTION_KEY ?? "") !== "" || (run.env.VENDO_API_KEY ?? "") !== "") {
-    run.pass("wiring/tenant-connector-vault", "tenant connector tokens have an encrypted vault to live in");
+  const ownKey = (env.VENDO_STORE_ENCRYPTION_KEY ?? "") !== "";
+  const cloudStore = (env.VENDO_API_KEY ?? "") !== "" && !await composesOwnStore(root);
+  if (ownKey || cloudStore) {
+    run.pass("wiring/tenant-connector-vault",
+      `tenant connector tokens have an encrypted vault to live in (${ownKey ? "VENDO_STORE_ENCRYPTION_KEY" : "the Cloud store"})`);
     return;
   }
   run.warn("wiring/tenant-connector-vault", "E-TENANT-001",
     "vendo.tenantConnectors is wired, but no store encryption key is set — a tenant's pasted token is stored in the "
     + "clear in development and REFUSED outright in production, so every registration carrying one fails on deploy. "
-    + "Set VENDO_STORE_ENCRYPTION_KEY to a base64 32-byte key (openssl rand -base64 32), or use Vendo Cloud's hosted "
-    + "store (VENDO_API_KEY), which holds the key server-side.");
+    + "Set VENDO_STORE_ENCRYPTION_KEY to a base64 32-byte key (openssl rand -base64 32)."
+    + ((env.VENDO_API_KEY ?? "") === ""
+      ? " Vendo Cloud's hosted store (VENDO_API_KEY) holds the key server-side instead."
+      : " VENDO_API_KEY does not cover it here: this host passes its own createStore(), and an explicitly passed store wins."));
 }
 
 /** The static half of doctor: is this host wired at all, does anything visible

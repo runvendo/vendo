@@ -23,7 +23,7 @@ import { selectConfigSurface } from "./config-surface.js";
 export const composePrompt = (composition: VendoComposition): Pick<VendoComposition,
   "system" | "capabilityMiss" | "toolSearch"> => {
   const { config, composed, readSurfaceFile } = composition;
-  const { theme, knowledgeIndex, missSurface, missCapture, actions } = composition;
+  const { theme, knowledgeIndex, missSurface, missCapture } = composition;
   // AGENT-1/2 — 03 §3: ONE prose story. `instructions` and the
   // `.vendo/brief.md` surface behind it are the deployment's own words about
   // what this product is and how to speak about it; prompt.ts places them as the
@@ -57,14 +57,22 @@ export const composePrompt = (composition: VendoComposition): Pick<VendoComposit
   };
   // ENG-252, de-brained: `vendo()` starts with a bounded loadout and discovers
   // the rest through its own `find_tools` hand — this is the strategy config
-  // composition hands it (compose-harness.ts / the adapter slot). The search
-  // seam is the registry's own scorer; a match only becomes CALLABLE through
-  // the projected, menu-bound listing (`withAgentMenu` on the harness door's
-  // registry handle), so search has no path back to an off-menu or withheld
-  // tool. No connect-required annotation any more (deliberate cut): the
-  // connect card at call time is the flow that actually converts.
+  // composition hands it (compose-harness.ts / the adapter slot). No
+  // connect-required annotation any more (deliberate cut): the connect card at
+  // call time is the flow that actually converts.
+  //
+  // NO `search` seam: the hand falls back to scoring THE TURN'S OWN LISTING,
+  // which is the only set that is true for the caller. The seam used to be
+  // `actions.search`, the SHARED registry's scorer — and a registry has no
+  // caller, so it could not see a tenant's connectors (tenant-connectors.ts
+  // overlays those per request). Org A registered tools, the registry served
+  // them, and the agent still answered "no tools" because the one discovery
+  // hand it has was searching a different set: registry-correct and chat-blind
+  // at once. The listing is also the set THE LAW has already projected and the
+  // `surfaces.agent` menu has already curated, so search can no longer name a
+  // withheld tool either. `searchListings` is the newer scorer of the two
+  // (a token-coverage gate the registry's substring scorer lacks).
   const toolSearch: VendoToolSearchConfig = {
-    search: async (query, options) => actions.search(query, options),
     ...(config.maxInitialTools === undefined ? {} : { maxInitialTools: config.maxInitialTools }),
     ...(config.loadout === undefined ? {} : { loadout: [...config.loadout] }),
   };

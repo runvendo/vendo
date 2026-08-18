@@ -33,6 +33,12 @@ import {
 } from "@vendoai/core";
 import { createStore, eraseStore, secretStore, storeFiles, storeSecrets, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  scriptedModel,
+  textTurn,
+  toolCallTurn,
+  type ScriptedModel,
+} from "../src/agent-doubles.test-util.js";
 import { bootSummaryFor } from "../src/boot-summary.js";
 import { createComposition } from "../src/compose-context.js";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -324,6 +330,36 @@ describe("a tenant registers its own MCP server", () => {
     expect(moved.authorizations).toEqual([]);
   });
 
+  it("serves a tokenless registration on a store with no vault at all", async () => {
+    // No encryption key: this store REFUSES to read a secret before it even
+    // looks for a row (store/secrets.ts). A connector that needs no credential
+    // must therefore never ask, or one tokenless registration takes down every
+    // turn for every member of the org.
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-novault-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => {
+      await store.close();
+      await rm(dataDir, { recursive: true, force: true });
+    });
+    await store.ensureSchema();
+    const vendo = createVendo({
+      models: { default: {} as LanguageModel },
+      principal: async () => ADA,
+      store,
+      profileDir: dataDir,
+    });
+    const server = await startMcpServer("lookup_invoice");
+
+    const result = await vendo.tenantConnectors.register({
+      org: "acme", name: "billing", kind: "mcp", url: server.url,
+    });
+    expect(result.status).toBe("ok");
+
+    // The listing a turn is served, on a store that cannot vault anything.
+    expect(await toolNames(vendo, "acme")).toContain("mcp_billing_lookup_invoice");
+    expect(await vendo.tenantConnectors.test("acme", "billing")).toMatchObject({ status: "ok" });
+  });
+
   it("answers a typed error when the tenant's server is down", async () => {
     const { vendo } = await deployment();
     const acme = await startMcpServer("lookup_invoice");
@@ -546,6 +582,107 @@ describe("a tenant registers its own OpenAPI spec", () => {
 
     expect(result).toMatchObject({ status: "error", error: { code: "validation" } });
     expect(await vendo.tenantConnectors.list("acme")).toEqual([]);
+  });
+});
+
+/**
+ * THE CHAT SEAM — the half a correct registry cannot prove.
+ *
+ * `vendo.guardedTools` resolving a tenant's tools says nothing about whether the
+ * AGENT can reach them, and for one release it could not: the discovery hand
+ * searched the shared registry, which has no caller and therefore no tenant, so
+ * org A's turn answered exactly like org B's while the registry was right the
+ * whole time. These drive a REAL turn through `vendo.handler` with a scripted
+ * model, and read what the model was actually offered on its second step.
+ */
+describe("the agent can reach a tenant's tools in a real turn", () => {
+  async function chatting(turns: Parameters<typeof scriptedModel>[0]): Promise<{
+    vendo: Vendo;
+    model: ScriptedModel;
+    chat: (as: string, text: string) => Promise<Response>;
+  }> {
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-chat-"));
+    const store = createStore({ dataDir, encryption: { key: randomBytes(32).toString("base64") } });
+    cleanups.push(async () => {
+      await store.close();
+      await rm(dataDir, { recursive: true, force: true });
+    });
+    await store.ensureSchema();
+    const model = scriptedModel(turns);
+    const vendo = createVendo({
+      models: { default: model as unknown as LanguageModel },
+      // A real memberships seam: the wire resolves the caller's org per request,
+      // which is the only thing that selects an overlay.
+      auth: {
+        principal: async (req: Request) => ({
+          kind: "user" as const,
+          subject: req.headers.get("x-user") ?? "user_globex",
+        }),
+        memberships: async (principal: Principal) => [
+          { org: principal.subject === "user_acme" ? "acme" : "globex" },
+        ],
+      },
+      store,
+      profileDir: dataDir,
+      guard: { policy: "autopilot" },
+      // A hard cap, so the tenant tool is genuinely PAST the belt and the only
+      // way to it is the discovery hand. Without this the deployment's surface
+      // fits under the default cap, every tool starts active, and the test would
+      // pass without `find_tools` ever mattering.
+      maxInitialTools: 1,
+    });
+    const chat = async (as: string, text: string): Promise<Response> => {
+      const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user": as },
+        body: JSON.stringify({
+          message: { id: `m_${globalThis.crypto.randomUUID()}`, role: "user", parts: [{ type: "text", text }] },
+        }),
+      }));
+      await response.text();
+      return response;
+    };
+    return { vendo, model, chat };
+  }
+
+  it("finds one through find_tools and calls it on the very next step", async () => {
+    const server = await startMcpServer("lookup_invoice");
+    const { vendo, model, chat } = await chatting([
+      toolCallTurn("find_tools", { query: "lookup invoice" }),
+      toolCallTurn("mcp_billing_lookup_invoice", {}, "c2"),
+      textTurn("You have one open invoice."),
+    ]);
+    await vendo.tenantConnectors.register({ org: "acme", name: "billing", kind: "mcp", url: server.url });
+    server.calls.length = 0;
+
+    const turn = await chat("user_acme", "look up my invoice");
+    expect(turn.status).toBe(200);
+
+    // Step one could not call it — it is past the belt, so the only way to it is
+    // the hand...
+    expect(model.toolNamesPerCall[0]).not.toContain("mcp_billing_lookup_invoice");
+    expect(model.toolNamesPerCall[0]).toContain("find_tools");
+    // ...step two has it, because `find_tools` searched the set THIS caller is
+    // served and loaded what it found...
+    expect(model.toolNamesPerCall[1]).toContain("mcp_billing_lookup_invoice");
+    // ...and the tenant's own server really ran the call.
+    expect(server.calls).toContain("tools/call");
+  });
+
+  it("hides it from a member of another org, who searches and finds nothing", async () => {
+    const server = await startMcpServer("lookup_invoice");
+    const { vendo, model, chat } = await chatting([
+      toolCallTurn("find_tools", { query: "lookup invoice" }),
+      textTurn("I don't have a tool for that."),
+    ]);
+    await vendo.tenantConnectors.register({ org: "acme", name: "billing", kind: "mcp", url: server.url });
+    server.calls.length = 0;
+
+    await chat("user_globex", "look up my invoice");
+
+    expect(model.toolNamesPerCall[1]).not.toContain("mcp_billing_lookup_invoice");
+    // The other tenant's server was never even spoken to.
+    expect(server.calls).toEqual([]);
   });
 });
 

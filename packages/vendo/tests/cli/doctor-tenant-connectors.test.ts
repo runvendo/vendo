@@ -21,8 +21,9 @@ afterEach(async () => {
 /** A pinned model credential, so the fixtures below are about THIS check. */
 const MODEL_PINNED = { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-test" };
 
-/** A minimal wired host; `reachesApi` decides whether its source names the API. */
-async function host(reachesApi: boolean): Promise<string> {
+/** A minimal wired host; `reachesApi` decides whether its source names the API,
+ *  and `ownStore` whether it builds its own store instead of taking Cloud's. */
+async function host(reachesApi: boolean, ownStore = false): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-doctor-tenant-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const write = async (relative: string, body: string): Promise<void> => {
@@ -31,7 +32,9 @@ async function host(reachesApi: boolean): Promise<string> {
     await writeFile(path, body);
   };
   await write("package.json", JSON.stringify({ dependencies: { "@vendoai/vendo": "0.3.0" } }));
-  await write("src/server.ts", 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ principal });\n');
+  await write("src/server.ts", ownStore
+    ? 'import { createStore, createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ principal, store: createStore({ url }) });\n'
+    : 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ principal });\n');
   await write("src/client.tsx", "export const App = () => <VendoProvider><VendoOverlay /></VendoProvider>;\n");
   if (reachesApi) {
     await write("src/admin.ts", 'export const add = (input) => vendo.tenantConnectors.register(input);\n');
@@ -45,10 +48,11 @@ async function host(reachesApi: boolean): Promise<string> {
 async function vaultCheck(
   reachesApi: boolean,
   env: Record<string, string> = {},
+  ownStore = false,
 ): Promise<DoctorCheck | undefined> {
   const lines: string[] = [];
   await runDoctor({
-    targetDir: await host(reachesApi),
+    targetDir: await host(reachesApi, ownStore),
     json: true,
     env: { ...MODEL_PINNED, ...env },
     output: { log: (line) => lines.push(line), error: () => undefined },
@@ -81,6 +85,18 @@ describe("the tenant-connector vault check", () => {
     for (const env of vaults) {
       expect(await vaultCheck(true, env)).toMatchObject({ status: "ok" });
     }
+  });
+
+  it("does not let a Cloud key green a host that passes its own store", async () => {
+    // An explicitly passed store WINS over VENDO_API_KEY (the adapter rule), so
+    // Cloud never composes and there is no vault — the shape the live proof
+    // caught printing "ok" one line before the registration was refused.
+    const check = await vaultCheck(true, { VENDO_API_KEY: "vk_test" }, true);
+    expect(check).toMatchObject({ status: "warning", error_code: "E-TENANT-001" });
+    expect(check?.message).toContain("this host passes its own createStore()");
+    // Its own key still satisfies it, own store or not.
+    expect(await vaultCheck(true, { VENDO_API_KEY: "vk_test", VENDO_STORE_ENCRYPTION_KEY: "Zm9vYmFy" }, true))
+      .toMatchObject({ status: "ok" });
   });
 
   it("keeps doctor green — which vault a host uses is its own call", async () => {
