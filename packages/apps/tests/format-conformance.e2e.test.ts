@@ -109,6 +109,17 @@ describe("the component vocabulary is ONE list", () => {
       KIT_COMPONENT_NAMES.filter((name) => !KIT_NON_SCREEN_NAMES.includes(name)),
     );
   });
+
+  // Accordion was the one name withheld, for an `items[].content` slot holding an
+  // ELEMENT — a thing no wire tree could express. A screen writes JSX, so it can,
+  // and the check has admitted it all along (`screenCatalog` takes the WHOLE
+  // Kit). What was left was a catalog filter hiding a component that renders:
+  // the model was never offered the collapsible sections a long app asks for.
+  it("withholds nothing from a screen — a JSX screen fills an element slot", () => {
+    expect(KIT_SCREEN_COMPONENT_NAMES).toContain("Accordion");
+    expect(catalogPrompt({ only: [...KIT_SCREEN_COMPONENT_NAMES], omitPreamble: true }))
+      .toContain("### <Accordion>");
+  });
 });
 
 /**

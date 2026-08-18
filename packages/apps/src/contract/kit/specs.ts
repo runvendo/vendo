@@ -1236,11 +1236,16 @@ export function kitSpec(name: string): KitComponentSpec | undefined {
   return KIT_SPECS.find((s) => s.name === name);
 }
 
-/** Kit components a SCREEN's prompt must not teach as a plain prewired name:
- *  their props are element-valued `content` slots, which only hand-written JSX
- *  can fill. They stay renderable and usable inside islands. Tabs is NOT one of
- *  them: it takes its panels as CHILDREN. */
-export const KIT_NON_SCREEN_NAMES: readonly string[] = ["Accordion"];
+/** Kit components a SCREEN's prompt must not teach — EMPTY, and the subtraction
+ *  below is what keeps it derivable rather than listed by hand.
+ *
+ *  `Accordion` was the one name here, for an `items[].content` slot holding an
+ *  ELEMENT, which only hand-written JSX can fill. Hand-written JSX is what a
+ *  screen IS now, and the type check has admitted the whole Kit all along
+ *  (`checking/screen-typings.ts` `screenCatalog`) — so the filter was hiding a
+ *  component that renders, and the model was never offered the collapsible
+ *  sections a long app asks for. */
+export const KIT_NON_SCREEN_NAMES: readonly string[] = [];
 
 /**
  * The Kit names a generated SCREEN may use. These are taught by `kitPrompt`,

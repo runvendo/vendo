@@ -109,6 +109,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <DonutChart data={cashflow.data} categoryKey="label" valueKey="in" format="money" donut={true}/>
     <Sparkline data={[1, 2, 3]} height={24}/>
     <Callout tone="info" title="Note">Numbers are integer cents.</Callout>
+    <Accordion items={[{ label: "Terms", content: <Text text="Net 30."/> }]} multiple={false} defaultOpen={[0]}/>
     <Surface title="Detail"><Text text="Nested"/></Surface>
     <Select label="Period" options={cashflow.data} labelField="label" valueField="label" multiple={false}/>
     <Input label="Search" type="search" onChange="host_search"/>
