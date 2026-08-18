@@ -26,7 +26,12 @@ import {
 } from "./init-auth.js";
 import { aiBelowPeerFloor, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
 import {
+  baseUrlLine,
+  compositionModulePath,
+  compositionModuleSource,
+  compositionSpecifier,
   customServerSource,
+  devPort,
   disabledTools,
   expressServerSource,
   importsGeneratedMap,
@@ -36,9 +41,10 @@ import {
   routeSource,
   serverActionsModuleSource,
   serverActionsWiring,
-  VENDO_ENV_EXAMPLE,
+  vendoEnvExample,
   type ScaffoldModel,
 } from "./init-scaffolds.js";
+import { INIT_USE_CASES, readUseCase, writeUseCase, type InitUseCase } from "./install-record.js";
 import { createPrettyOutput, plainSecret, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
 import { themeFontFamilies } from "./theme/embed-fonts.js";
@@ -71,8 +77,8 @@ import {
  * `vendo init` (install-dx v1, re-derived 2026-07-18): one command, zero
  * questions on the happy path, no ceremony.
  *
- *   scan → wire (the server surface — the catch-all handler holding the
- *   composition; init never writes a client file;
+ *   scan → wire (the server surface — the composition module `lib/vendo.ts`
+ *   and the catch-all handler over it; init never writes a client file;
  *   a detected auth preset gets one consent-style confirm in interactive runs,
  *   --yes/non-interactive accept it silently — plus package.json hooks)
  *   → key (env stated, else the cloud starter offer) → done summary (files
@@ -119,12 +125,7 @@ export interface ManualEdit {
   why: string;
 }
 
-/** How the host's people will reach the agent — the run's FIRST question. It
-    decides what gets scaffolded and how the run ends; the wired route is the
-    same in all three, so picking wrong costs nothing. */
-export type InitUseCase = "embedded" | "agent-loop" | "mcp";
-
-export const INIT_USE_CASES: readonly InitUseCase[] = ["embedded", "agent-loop", "mcp"];
+export { INIT_USE_CASES, type InitUseCase };
 
 /** What the run settled before it writes anything. Everything else buildPlan
     resolves — the changes, the pastes, the auth facts — rides beside it on that
@@ -578,7 +579,7 @@ function riskRecommendations(tools: ExtractedTool[]): RiskRecommendation[] {
       return [{ tool: tool.name, risk: tool.risk, recommendation: "already marked confirmEach in .vendo/overrides.json; policy asks before running it" }];
     }
     if (tool.risk === "ungraded") {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "nobody has graded this yet, so it asks on every call; run `vendo sync` with a model key, or grade it in .vendo/overrides.json" }];
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "nobody has graded this yet, so it asks on every call; run `vendo sync --ai` with a model key, or grade it in .vendo/overrides.json" }];
     }
     if (tool.risk === "destructive") {
       return [{ tool: tool.name, risk: tool.risk, recommendation: "irreversible; mark it confirmEach in .vendo/overrides.json so policy asks first" }];
@@ -728,22 +729,22 @@ const USE_CASE_OPTIONS: SelectOption[] = [
 
 /** The run's FIRST question. Every path shares the same wired route, so a
     wrong pick costs nothing; the right one saves a docs round trip. --yes and
-    non-interactive runs take "embedded" — today's behaviour, so no existing
-    script changes shape. */
+    non-interactive runs take the answer this install already recorded, else
+    "embedded" — a re-run must not silently re-answer a question the project
+    settled, because doctor now grades against it. */
 async function resolveUseCase(input: {
+  root: string;
   options: InitOptions;
   pretty: PrettyOutput | null;
   interactive: boolean;
 }): Promise<InitUseCase> {
-  const { options, pretty, interactive } = input;
+  const { root, options, pretty, interactive } = input;
   if (options.useCase !== undefined) return options.useCase;
-  if (options.yes === true || !interactive) return "embedded";
+  if (options.yes === true || !interactive) return await readUseCase(root) ?? "embedded";
   const select = options.selectUseCase ?? (pretty === null ? plainSelect : pretty.select);
   const picked = await select("How will people use your agent?", USE_CASE_OPTIONS);
   return (INIT_USE_CASES as readonly string[]).includes(picked) ? picked as InitUseCase : "embedded";
 }
-
-const BASE_URL_PLACEHOLDER = "VENDO_BASE_URL=http://localhost:3000";
 
 /** "Where will this deploy?" — one Enter to decline, and the answer replaces
     init's OWN placeholder in .env.example. Nowhere else: a production URL in
@@ -771,8 +772,9 @@ export async function captureBaseUrl(input: {
   if (url === "") return null;
   const path = join(root, ".env.example");
   const current = await readOptional(path);
-  if (current === null || !current.includes(BASE_URL_PLACEHOLDER)) return url;
-  await writeText(path, current.replace(BASE_URL_PLACEHOLDER, `VENDO_BASE_URL=${url}`));
+  const placeholder = baseUrlLine(await devPort(root));
+  if (current === null || !current.includes(placeholder)) return url;
+  await writeText(path, current.replace(placeholder, `VENDO_BASE_URL=${url}`));
   output.log("written to .env.example — set it in your deploy platform's env");
   return url;
 }
@@ -811,12 +813,18 @@ async function agentLoopSteps(root: string): Promise<ManualEdit[]> {
   } catch {
     // No readable manifest — neither snippet is honest, so print neither.
   }
+  // The `vendo` these snippets call is the SAME instance the wire route serves
+  // — the composition module init wrote. A second createVendo in the loop would
+  // share none of its state, so the import is part of the paste, not an
+  // exercise for the reader.
+  const agents = join("src", "mastra", "agents");
   if (Object.hasOwn(dependencies, "@mastra/core")) {
     return [
       {
-        file: join("src", "mastra", "agents", "<your-agent>.ts"),
+        file: join(agents, "<your-agent>.ts"),
         lines: [
           `import { vendoMastraTools } from "@vendoai/vendo/mastra";`,
+          `import { vendo } from ${JSON.stringify(await compositionSpecifier(root, join(root, agents)))};`,
           `… then spread the pack: tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) })`,
         ],
         why: "Your loop, your model — Vendo adds guarded vendo_* tools, vendo_make (inline micro-apps) and vendo_delegate. https://docs.vendo.run/existing-agents/mastra",
@@ -832,10 +840,12 @@ async function agentLoopSteps(root: string): Promise<ManualEdit[]> {
     ];
   }
   if (Object.hasOwn(dependencies, "ai")) {
+    const chat = join("app", "api", "chat");
     return [{
-      file: join("app", "api", "chat", "route.ts"),
+      file: join(chat, "route.ts"),
       lines: [
         `import { vendoTools } from "@vendoai/vendo/ai-sdk";`,
+        `import { vendo } from ${JSON.stringify(await compositionSpecifier(root, join(root, chat)))};`,
         `… then inside streamText: tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) }`,
       ],
       why: "Your loop, your model — Vendo adds guarded vendo_* tools, vendo_make (inline micro-apps) and vendo_delegate. https://docs.vendo.run/existing-agents/ai-sdk",
@@ -888,18 +898,21 @@ async function planMcpScaffold(input: {
     serviceKey = await confirm("Will your own backend call these tools machine-to-machine?", false);
   }
 
+  const composition = await compositionModulePath(root);
+  const appDir = await appDirectory(root);
   const mcp = planMcp({
     root,
-    appDir: await appDirectory(root),
+    appDir,
+    composition,
+    compositionSpecifier: await compositionSpecifier(root, join(appDir, ".well-known", "[...vendo]")),
     framework,
     authWired,
     serverActions: (await requiredServerActions(root)).length > 0,
     cloudKey,
     posture,
     serviceKey,
-    // The composition moves into ./vendo on this path, so the models line the
-    // route scaffold planned moves with it — resolved the same way, written in
-    // exactly one of the two files.
+    // Resolved again here rather than reused: the `--byo` paste lands in
+    // .env.local during the cloud step, which runs after the plan was built.
     models: scaffoldModel(root, options),
     // Not optional: a null base URL is an ANSWER the plan reads, and it is
     // what makes steps[] lead with the recoverable version of E-MCP-009's
@@ -912,19 +925,19 @@ async function planMcpScaffold(input: {
     output.error(`warning: ${mcp.blocked}`);
     return null;
   }
-  // The route init is already CREATING becomes the MCP one — same file, the
-  // thin body over the composition module. The planner cannot know whether
-  // that file exists, so it hands back the source and the caller pushes it
-  // with the `before` it already read; a route init did not write this run
-  // has no planned change here and is left alone, as always.
-  const route = changes.find((change) => change.before === null && change.path.endsWith(`${sep}route.ts`));
-  if (route !== undefined && mcp.routeSource !== null) {
-    route.after = mcp.routeSource;
-    route.diff = diff(route.path, null, mcp.routeSource);
+  // The composition init is already CREATING gains the door — same file, one
+  // more option inside the same createVendo call. The planner cannot know
+  // whether that file exists, so it hands back the source and the caller
+  // pushes it into the change it already planned; a composition init did not
+  // write this run is left alone, as always.
+  const planned = changes.find((change) => change.absolute === composition && change.before === null);
+  if (planned !== undefined && mcp.compositionSource !== null) {
+    planned.after = mcp.compositionSource;
+    planned.diff = diff(planned.path, null, mcp.compositionSource);
   }
-  // The composition module and the origin-root discovery route are both new.
+  // The origin-root discovery route is new.
   for (const change of mcp.changes) {
-    if (changes.some((planned) => planned.absolute === change.absolute)) continue;
+    if (changes.some((existing) => existing.absolute === change.absolute)) continue;
     changes.push({
       absolute: change.absolute,
       path: change.path,
@@ -938,7 +951,10 @@ async function planMcpScaffold(input: {
     output.log(`Generated VENDO_SERVICE_KEY → .env.local (…${mcp.serviceKeyValue.slice(-4)})`);
     await ensureEnvLocalIgnored(root, output);
   }
-  return mcp;
+  // …and the models line only counts where the composition was actually
+  // written: a re-run against an existing one must not claim a line it left
+  // untouched, in a file it did not open.
+  return planned === undefined ? { ...mcp, modelWritten: null } : mcp;
 }
 
 /** The install check — `vendo doctor`, reading what init just wrote. It only
@@ -1129,29 +1145,44 @@ async function planNextComposition(
   const scaffold = emptyScaffold({ kind: "manual" });
   const app = await appDirectory(root);
   const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
-  const actionsModule = join(app, "api", "vendo", "[...vendo]", "vendo-actions.ts");
+  const libModule = await compositionModulePath(root);
   const routeBefore = await readOptional(route);
+  const libBefore = await readOptional(libModule);
+  // WHICH file holds this host's createVendo: the module init writes — creating
+  // it now, or from an earlier run — else the route of an older install, which
+  // still holds it inline and which init never rewrites.
+  const composition = routeBefore === null || libBefore !== null ? libModule : route;
+  const compositionBefore = composition === libModule ? libBefore : routeBefore;
+  // The map lives NEXT TO the composition that imports it (`./vendo-actions`),
+  // wherever that turns out to be.
+  const actionsModule = join(dirname(composition), "vendo-actions.ts");
   const actionsBefore = await readOptional(actionsModule);
   const registrations = await requiredServerActions(root);
-  // …and the map exists only for a route that will CONSUME it: the one being
-  // created now, one that already imports ./vendo-actions, or one init is
-  // about to hand the import paste to. A route composing its own map never
+  // …and the map exists only for a composition that will CONSUME it: the one
+  // being created now, one that already imports ./vendo-actions, or one init is
+  // about to hand the import paste to. A composition building its own map never
   // grows an orphan — the same rule the registry above follows, and the same
   // shape doctor stays silent about.
-  const mapConsumed = routeBefore === null
-    || importsGeneratedMap(routeBefore)
-    || serverActionsWiring(routeBefore) === "unwired";
+  const mapConsumed = compositionBefore === null
+    || importsGeneratedMap(compositionBefore)
+    || serverActionsWiring(compositionBefore) === "unwired";
   if (registrations.length > 0 && mapConsumed) {
     planServerActionsMap(scaffold, root, actionsModule, actionsBefore, registrations);
   }
   if (routeBefore === null) {
-    const path = relative(root, route);
+    const routePath = relative(root, route);
+    const routeAfter = routeSource(await compositionSpecifier(root, dirname(route)));
+    scaffold.changes.push({ absolute: route, path: routePath, before: null, after: routeAfter, diff: diff(routePath, null, routeAfter) });
+  }
+  if (compositionBefore === null) {
+    const path = relative(root, composition);
     // Detect + confirm happens only on fresh composition creation.
     const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
     const models = scaffoldModel(root, options);
-    const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models });
-    const routeChange = { absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) };
-    scaffold.changes.push(routeChange);
+    const render = (model: ScaffoldModel | null): string =>
+      compositionModuleSource({ serverActions: registrations.length > 0, auth: auth.wired, models: model });
+    const change = { absolute: composition, path, before: null, after: render(models), diff: diff(path, null, render(models)) };
+    scaffold.changes.push(change);
     scaffold.authAdvice = auth.advice;
     scaffold.authWired = auth.wired;
     scaffold.compositionPath = path;
@@ -1159,16 +1190,15 @@ async function planNextComposition(
     // Same renderer, same arguments, one late model — never a second way to
     // write this line. The change object is still unwritten at this point.
     scaffold.rewriteModels = (model) => {
-      const rewritten = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models: model });
-      routeChange.after = rewritten;
-      routeChange.diff = diff(path, routeBefore, rewritten);
+      change.after = render(model);
+      change.diff = diff(path, null, change.after);
       return { provider: model.provider, path };
     };
   } else if (registrations.length > 0) {
-    // The route already exists but server actions appeared since it was
+    // The composition already exists but server actions appeared since it was
     // generated: name the wiring the existing createVendo is missing, so
     // server-action execution stops failing closed (ENG-248).
-    const edit = routeServerActionsEdit(routeBefore, relative(root, route));
+    const edit = routeServerActionsEdit(compositionBefore, relative(root, composition));
     if (edit !== null) scaffold.edits.push(edit);
   }
 
@@ -1271,6 +1301,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   }
   const writes = [
     ".env.example",
+    ".vendo/install.json",
     ".vendo/tools.json",
     ".vendo/overrides.json",
     ".vendo/policy.json",
@@ -1308,13 +1339,17 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
 async function ensureVendoEnvExample(root: string): Promise<void> {
   const path = join(root, ".env.example");
   const current = await readOptional(path);
+  // The host's OWN dev port, off its `dev` script: a placeholder naming :3000
+  // to an app served on :4000 is a base URL the developer copies into
+  // .env.local and then debugs for an hour.
+  const example = vendoEnvExample(await devPort(root));
   if (current === null) {
-    await writeText(path, VENDO_ENV_EXAMPLE);
+    await writeText(path, example);
     return;
   }
   if (/^\s*VENDO_BASE_URL\s*=/m.test(current)) return;
   const separator = current.length === 0 ? "" : current.endsWith("\n") ? "\n" : "\n\n";
-  await writeText(path, `${current}${separator}${VENDO_ENV_EXAMPLE}`);
+  await writeText(path, `${current}${separator}${example}`);
 }
 
 /** root rides in as the client's cwd: projectIdHash/packageManager and the
@@ -1632,8 +1667,9 @@ async function wireAndScaffold(input: {
   root: string;
   changes: PlannedChange[];
   force: boolean;
+  useCase: InitUseCase;
 }): Promise<number> {
-  const { root, changes, force } = input;
+  const { root, changes, force, useCase } = input;
   const wiringStarted = Date.now();
   for (const change of changes) {
     await writeText(change.absolute, change.after);
@@ -1641,6 +1677,9 @@ async function wireAndScaffold(input: {
 
   await ensureVendoEnvExample(root);
   await mkdir(join(root, ".vendo"), { recursive: true });
+  // Not writeIfMissing: this is THE answer this run resolved, and doctor reads
+  // it to know which checks a mounted-UI-less install can never pass.
+  await writeUseCase(root, useCase);
   await writeIfMissing(
     join(root, ".vendo", "overrides.json"),
     `${JSON.stringify({
@@ -1982,7 +2021,7 @@ const explainedPlanFailure = (error: unknown): boolean => {
     }));
     await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
   }
-  const useCase = await resolveUseCase({ options, pretty, interactive });
+  const useCase = await resolveUseCase({ root, options, pretty, interactive });
 
   // (No stdin-TTY guard on these defaults: an unshown auth confirm resolving
   // its default just wires the detected preset — the very accept the
@@ -2048,7 +2087,7 @@ const explainedPlanFailure = (error: unknown): boolean => {
     }
 
     pretty?.spin("Wiring your app…");
-    const wiringMs = await wireAndScaffold({ root, changes, force: options.force === true });
+    const wiringMs = await wireAndScaffold({ root, changes, force: options.force === true, useCase });
     pretty?.stopSpin();
 
     // Summary — what changed. What was LEARNED is the shared flow's report,
@@ -2090,7 +2129,10 @@ const explainedPlanFailure = (error: unknown): boolean => {
     // Judgment state, one line: a pass that ran already narrated itself (it
     // owns the judged/queued/rejected counts); otherwise say so honestly.
     if (!flow.judged.ran) {
-      output.log("judgment: structural-only — only protocol facts are graded, so every ungraded tool asks on each call (add a model key and run `vendo sync` to grade the catalog)");
+      // `--ai` and not the bare command: this line is read by the runs that
+      // cannot answer a consent prompt (agents, CI), where a bare `vendo sync`
+      // skips the judgment pass again and the advice never lands.
+      output.log("judgment: structural-only — only protocol facts are graded, so every ungraded tool asks on each call (add a model key and run `vendo sync --ai` to grade the catalog)");
     }
 
     // Project-shape enrichment (posthog-analytics §3): bools, closed enums,
@@ -2123,10 +2165,9 @@ const explainedPlanFailure = (error: unknown): boolean => {
     // install has to cover the import this run authored — not only what the
     // runtime credential would load.
     //
-    // It only ever names the file that actually holds the line. The MCP arm
-    // REPLACES the route this planned for with the thin handler over ./vendo (a
-    // route module may export only handlers), so the line lives in that plan's
-    // composition module and `planMcp` reports which file that is.
+    // It only ever names the file that actually holds the line — the same
+    // composition module on every path; the MCP arm only re-renders it, and
+    // does so after the cloud step, so its answer wins where it has one.
     const modelLanded = mcp === null ? (modelWritten ?? pastedModel) : mcp.modelWritten;
 
     await ensureHostDeps({

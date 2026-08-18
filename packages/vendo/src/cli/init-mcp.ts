@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import { MCP_MOUNT } from "../door-paths.js";
 import type { AuthMatch } from "./init-auth.js";
-import { compositionModuleSource, routeSource, type ScaffoldModel } from "./init-scaffolds.js";
+import { compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
 
 /** Which authorization server fronts the door. DECLARED by the operator and
     nothing else (10-mcp §3.1) — init prints environment lines, it never
@@ -30,6 +30,13 @@ export interface McpPlanInput {
   root: string;
   /** The host's app directory (`app` or `src/app`), already resolved. */
   appDir: string;
+  /** The composition module the wire route already imports (`lib/vendo.ts`),
+      absolute — this path CHANGES what it holds rather than gaining a second
+      composition next to the route, and the discovery route imports the same
+      one. Resolved by the caller: this module stays fs-free. */
+  composition: string;
+  /** How the discovery route reaches it (`compositionSpecifier`). */
+  compositionSpecifier: string;
   framework: "next" | "express" | "custom";
   /**
    * The preset the fresh composition wired, or null. `mcp: true` is written
@@ -71,14 +78,13 @@ export interface McpChange {
 }
 
 export interface McpPlan {
-  /** The files the MCP path adds ALONGSIDE the route the caller already plans:
-      the composition module and the origin-root discovery route. */
+  /** The one file the MCP path ADDS: the origin-root discovery route. */
   changes: McpChange[];
-  /** The thin `route.ts` body. Separate from `changes` because the route is the
-      one file the caller may already have on disk, and a pure planner cannot
-      know that — the caller pushes it with the `before` it already read. Null
-      when the plan is `blocked`. */
-  routeSource: string | null;
+  /** The composition module's body, with the door opened. Separate from
+      `changes` because the composition is a file the caller may already have on
+      disk, and a pure planner cannot know that — the caller pushes it with the
+      `before` it already read. Null when the plan is `blocked`. */
+  compositionSource: string | null;
   /**
    * The generated service key, for the caller to write to `.env.local`.
    * Present on local posture with a yes, and NOWHERE else. `serviceAuth` is
@@ -152,13 +158,6 @@ export function wellKnownRouteSource(specifier: string): string {
     `export const { GET, POST } = wellKnownVendoHandler(vendo);\n`;
 }
 
-/** An import specifier from one generated directory to another, posix-style and
-    always explicitly relative. */
-function specifierBetween(fromDir: string, target: string): string {
-  const path = relative(fromDir, target).split(sep).join("/");
-  return path.startsWith(".") ? path : `./${path}`;
-}
-
 /** The keyless sign-in pointer — today's two lines of prose, kept exactly where
     they are useful. A run with no Cloud key is never shown the posture select,
     so this is the whole story it gets. */
@@ -168,9 +167,9 @@ const KEYLESS_SIGN_IN =
   + "same client URL either way.";
 
 export function planMcp(input: McpPlanInput): McpPlan {
-  const { root, appDir, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
+  const { root, appDir, composition, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
   const models = input.models ?? null;
-  const refuse = (why: string): McpPlan => ({ changes: [], routeSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
+  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
 
   if (framework !== "next") {
     return refuse(
@@ -188,9 +187,7 @@ export function planMcp(input: McpPlanInput): McpPlan {
     );
   }
 
-  const wiringDir = join(appDir, "api", "vendo", "[...vendo]");
   const wellKnownDir = join(appDir, ".well-known", "[...vendo]");
-  const composition = join(wiringDir, "vendo.ts");
   const change = (absolute: string, after: string): McpChange => ({
     absolute,
     path: relative(root, absolute).split(sep).join("/"),
@@ -199,16 +196,7 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   // `serviceAuth` is wired only under local posture: see McpPlan.serviceKeyValue.
   const serviceAuth = posture === "local" && serviceKey;
-  // The one file on this path that composes, so the one that may carry the
-  // models line — named here because the closing summary points at it.
-  const compositionChange = change(composition, compositionModuleSource({ serverActions, auth: authWired, serviceAuth, models }));
-  const changes: McpChange[] = [
-    compositionChange,
-    change(
-      join(wellKnownDir, "route.ts"),
-      wellKnownRouteSource(specifierBetween(wellKnownDir, join(wiringDir, "vendo"))),
-    ),
-  ];
+  const changes: McpChange[] = [change(join(wellKnownDir, "route.ts"), wellKnownRouteSource(input.compositionSpecifier))];
 
   // The client-facing URL is derived from the base URL and NEVER from the broker
   // URL, so it is the same in both postures — switching posture later invalidates
@@ -232,10 +220,9 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   return {
     changes,
-    // No `models` on this arm, and never one: the thin route composes nothing.
-    routeSource: routeSource({ serverActions, auth: authWired, mcp: { serviceAuth } }),
+    compositionSource: compositionModuleSource({ serverActions, auth: authWired, models, mcp: { serviceAuth } }),
     ...(serviceAuth ? { serviceKeyValue: generateServiceKey() } : {}),
-    modelWritten: models === null ? null : { provider: models.provider, path: compositionChange.path },
+    modelWritten: models === null ? null : { provider: models.provider, path: relative(root, composition).split(sep).join("/") },
     steps,
     envLines: posture === "broker"
       ? [

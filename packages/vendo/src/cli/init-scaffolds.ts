@@ -1,4 +1,4 @@
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { applyJudgment, disabledReason, judgmentsFileSchema, overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import {
   extractServerActions,
@@ -9,7 +9,7 @@ import {
 // condition would resolve the browser-safe half here.
 import type { EnvKeyProvider } from "../dev-creds/resolve.js";
 import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
-import { readOptional } from "./shared.js";
+import { appDirectory, readOptional } from "./shared.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays
     honest about how the preset got here: detection cites the found
@@ -79,90 +79,105 @@ function modelImportLine(model: ScaffoldModel | null): string {
 }
 
 /** The `models` line inside a `createVendo({ … })` call. Emitted by exactly
-    ONE scaffold per host: the MCP path's route composes nothing (it imports
-    `./vendo`), so its models line lives in the composition module and nowhere
-    else. */
+    ONE scaffold per host: on Next that is the composition module, since the
+    route composes nothing at all. */
 function modelConfigLine(model: ScaffoldModel | null): string {
   if (model === null) return "";
   const { model: id } = MODEL_PROVIDERS[model.provider];
   return `  models: { default: ${model.provider}(${JSON.stringify(id)}) }, // ${model.envVar} supplies the key\n`;
 }
 
-export function routeSource(options: {
-  serverActions: boolean;
-  auth: AuthMatch | null;
-  /** The provider key init found, written as the explicit `models` selection.
-      Ignored on the MCP arm below — that route composes nothing. */
-  models?: ScaffoldModel | null;
-  /** The MCP path (10-mcp): the composition moves to its own module and this
-      file becomes the thin handler over it. A Next.js route module may not
-      export anything but route handlers, and the origin-root discovery route
-      has to import the SAME instance — so `vendo` cannot live here. */
-  mcp?: { serviceAuth: boolean };
-}): string {
-  if (options.mcp !== undefined) {
-    return `// Next.js route modules may export only route handlers, so the composition\n` +
-      `// lives next door in ./vendo — import it from anywhere that needs the SAME\n` +
-      `// instance (app/.well-known/[...vendo]/route.ts does).\n` +
-      `import { nextVendoHandler } from "@vendoai/vendo/server";\n` +
-      `import { vendo } from "./vendo";\n\n` +
-      `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
-  }
-  const model = options.models ?? null;
-  return modelImportLine(model) +
-    authImportLine(options.auth) +
-    `import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n` +
-    (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
-    `\nconst vendo = createVendo({\n` +
-    // The Next route is always TypeScript (app/api/vendo/[...vendo]/route.ts).
-    (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
-    modelConfigLine(model) +
-    (options.serverActions ? `  serverActions,\n` : "") +
-    `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
-    `});\n\n` +
+/** The Next.js wire route: a THIN handler over the composition module. A route
+    module may export only route handlers, so `createVendo` cannot live here —
+    and everything that needs the SAME instance (the host's own agent loop, the
+    origin-root discovery route) imports the one module instead of composing a
+    second wire that shares none of the first one's state. */
+export function routeSource(composition: string): string {
+  return `// Next.js route modules may export only route handlers, so the composition\n` +
+    `// lives in ${composition} — import it from anywhere that needs the SAME\n` +
+    `// instance (your own agent loop, the origin-root discovery route).\n` +
+    `import { nextVendoHandler } from "@vendoai/vendo/server";\n` +
+    `import { vendo } from ${JSON.stringify(composition)};\n\n` +
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
 
 /**
- * The MCP path's composition module (`app/api/vendo/[...vendo]/vendo.ts`) — the
- * file the thin route and the origin-root discovery route BOTH import, so the
- * two share one instance.
+ * The Next composition module (`lib/vendo.ts`, or `src/lib/vendo.ts`) — the one
+ * file that calls `createVendo`, exporting the instance the thin route, the
+ * origin-root discovery route and the host's own agent loop all import.
  *
- * `auth` is non-null by construction: the door mints its own principals through
- * the preset's oauth half and composition throws without one, so `planMcp`
- * blocks before it ever reaches this function (10-mcp §3).
+ * On the MCP arm `auth` is non-null by construction: the door mints its own
+ * principals through the preset's oauth half and composition throws without
+ * one, so `planMcp` blocks before it ever reaches this function (10-mcp §3).
  */
 export function compositionModuleSource(options: {
   serverActions: boolean;
-  auth: AuthMatch;
-  /** Wire first-party service auth off the environment (local posture only). */
-  serviceAuth: boolean;
-  /** The provider key init found. This module is the MCP path's ONLY
-      composition, so it is the only place the models line may appear there —
-      the thin route it feeds composes nothing. */
+  auth: AuthMatch | null;
+  /** The provider key init found, written as the explicit `models` selection. */
   models?: ScaffoldModel | null;
+  /** The MCP door (10-mcp), and whether first-party service auth is wired off
+      the environment with it (local posture only). */
+  mcp?: { serviceAuth: boolean };
 }): string {
+  const serviceAuth = options.mcp?.serviceAuth === true;
   return modelImportLine(options.models ?? null) +
     authImportLine(options.auth) +
     `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
-    (options.serviceAuth
+    (serviceAuth
       ? `\n// Machine-to-machine: your backend exchanges this key plus a user id at\n` +
         `// /api/vendo/mcp/token (RFC 8693) for a 10-minute token acting as that named\n` +
         `// user — svc: attribution in the audit. The key stays in the environment.\n` +
         `const serviceKey = process.env.VENDO_SERVICE_KEY ?? "";\n`
       : "") +
     `\nexport const vendo = createVendo({\n` +
-    authConfigLines(options.auth) +
+    // The composition module is always TypeScript (it feeds a Next route).
+    (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
     modelConfigLine(options.models ?? null) +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
-    `  // The door outside agents reach, through the SAME guard-bound path your own\n` +
-    `  // surface uses. Discovery derives from VENDO_BASE_URL — set it where you deploy.\n` +
-    (options.serviceAuth
-      ? `  mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },\n`
-      : `  mcp: true,\n`) +
+    (options.mcp === undefined
+      ? ""
+      : `  // The door outside agents reach, through the SAME guard-bound path your own\n` +
+        `  // surface uses. Discovery derives from VENDO_BASE_URL — set it where you deploy.\n` +
+        (serviceAuth
+          ? `  mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },\n`
+          : `  mcp: true,\n`)) +
     `});\n`;
+}
+
+/** Where a Next host's composition lives: `lib/vendo.ts`, under `src/` exactly
+    when the app directory is (`appDirectory`'s own rule, so the two can never
+    land on different bases). */
+export async function compositionModulePath(root: string): Promise<string> {
+  return join(dirname(await appDirectory(root)), "lib", "vendo.ts");
+}
+
+/** Does the host map `@/*` onto the base that holds `lib/`? create-next-app
+    writes exactly that, and it is the specifier every doc page uses — but the
+    generated route has to COMPILE, and an alias the host never configured does
+    not resolve, so the relative path is the fallback. */
+async function mapsRootAlias(root: string, target: string): Promise<boolean> {
+  for (const file of ["tsconfig.json", "jsconfig.json"]) {
+    const raw = await readOptional(join(root, file));
+    if (raw === null) continue;
+    try {
+      const options = (JSON.parse(raw) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } }).compilerOptions;
+      const mapped = options?.paths?.["@/*"]?.[0];
+      if (mapped !== undefined && resolve(root, options?.baseUrl ?? ".", mapped.replace("*", "lib/vendo")) === target) return true;
+    } catch {
+      // Malformed (or comment-carrying) config — the relative specifier always resolves.
+    }
+  }
+  return false;
+}
+
+/** How a file in `fromDir` imports the composition module. */
+export async function compositionSpecifier(root: string, fromDir: string): Promise<string> {
+  const target = (await compositionModulePath(root)).replace(/\.ts$/, "");
+  if (await mapsRootAlias(root, target)) return "@/lib/vendo";
+  const path = relative(fromDir, target).split(sep).join("/");
+  return path.startsWith(".") ? path : `./${path}`;
 }
 
 /**
@@ -242,13 +257,14 @@ export function serverActionsWiring(source: string): ServerActionsWiring {
   return /(^|[\s{,])serverActions\b/.test(source.slice(source.indexOf(call[0]))) ? "wired" : "unwired";
 }
 
-/** Is this a THIN route over the split composition — the shape the MCP path
-    writes, where `createVendo` lives in `./vendo` because a Next.js route
-    module may export only handlers? The composition, not the route, is the file
-    to grade for server-action wiring; without this a thin route reads as an
-    unrecognized composition and doctor goes quiet on a host that is wired. */
+/** Is this a THIN route over the composition module — the shape init writes,
+    where `createVendo` lives in `lib/vendo` because a Next.js route module may
+    export only handlers? The composition, not the route, is the file to grade
+    for server-action wiring; without this a thin route reads as an unrecognized
+    composition and doctor goes quiet on a host that is wired. `./vendo` stays
+    matched: it is what earlier MCP installs wrote next to the route. */
 export function importsSplitComposition(source: string): boolean {
-  return /from\s+["']\.\/vendo["']/.test(source);
+  return /from\s+["'](?:\.\/vendo|[^"']*\blib\/vendo)["']/.test(source);
 }
 
 /** Does this route source the GENERATED map? A route that composes its own
@@ -547,13 +563,37 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `}\n`;
 }
 
-export const VENDO_ENV_EXAMPLE =
+/** The port the host's own dev server listens on, read off its `dev` script:
+    `-p`/`--port` in either spelling, or a leading `PORT=`. 3000 is the answer
+    when the script says nothing — a placeholder naming a port the host does not
+    serve on is worse than no placeholder, because it looks answered. */
+export function devScriptPort(script: string | undefined): number {
+  const flag = /(?:^|\s)(?:-p|--port)(?:[=\s]+)(\d{2,5})\b/.exec(script ?? "")?.[1];
+  const env = /(?:^|\s)PORT=(\d{2,5})\b/.exec(script ?? "")?.[1];
+  return Number(flag ?? env ?? 3000);
+}
+
+export async function devPort(root: string): Promise<number> {
+  try {
+    const manifest = JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as { scripts?: Record<string, string> };
+    return devScriptPort(manifest.scripts?.dev);
+  } catch {
+    return 3000;
+  }
+}
+
+/** The line `vendo init` writes and `captureBaseUrl` later replaces with the
+    deployed URL — one spelling, so the replacement can never miss. */
+export const baseUrlLine = (port: number): string => `VENDO_BASE_URL=http://localhost:${port}`;
+
+export const vendoEnvExample = (port: number): string =>
   "# This deployment's FULL public URL — path prefix included. Nothing strips its\n" +
   "# path: every URL Vendo builds (host tool calls, login redirects, box callbacks)\n" +
-  "# hangs off it. Dev trusts the request's own origin automatically; production\n" +
-  "# fails loud without this set (a credential-forwarding call errors instead of\n" +
-  "# silently running unauthenticated).\n" +
-  "VENDO_BASE_URL=http://localhost:3000\n" +
+  "# hangs off it. Dev trusts the request's own origin automatically, EXCEPT for\n" +
+  "# your own agent loop and any backend process — they never see a wire request,\n" +
+  "# so they need this set even in dev; production fails loud without it (a\n" +
+  "# credential-forwarding call errors instead of silently running unauthenticated).\n" +
+  `${baseUrlLine(port)}\n` +
   "# Optional — the host API on another origin (default: the public URL above).\n" +
   "# VENDO_HOST_API_URL=\n" +
   "# Optional — the login page (default: {public URL}/login). May be absolute,\n" +
