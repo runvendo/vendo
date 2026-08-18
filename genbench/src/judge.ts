@@ -109,6 +109,8 @@ Every verdict carries a note: one clause naming the specific evidence you used, 
 
 A NOTE AND ITS VERDICT MUST SAY THE SAME THING. Where the reasoning you write out concludes the line is satisfied — the arithmetic reconciles, the figures trace back to the tool data — the verdict is pass. A note that clears the screen beside a verdict that fails it is not caution, it is an error; if the line is not satisfied, the note must name what is missing or wrong instead.
 
+THE LINE ABOUT NUMBERS IS FAILED BY NAMING A FIGURE. One line on every checklist asks whether the numbers this screen shows come from the tool data; its subject is displayed figures and nothing else. Fail it only where your note names a figure the screen displays, as the screen prints it, that the tool data neither holds nor derives. A fault you cannot name such a figure for belongs to another line on this checklist — a call sent the wrong argument, a label that says the wrong thing, a list filtered to the wrong set — so grade it there, and this line passes.
+
 Grade only the numbered lines. Anything else you notice about this screen, good or bad, is not yours to grade: it must not change a verdict and must not appear in a note. Judge the screen you were given, not the screen you would have built.`;
 
 /** The judge's own model, written here and nowhere else. It is deliberately NOT
@@ -116,7 +118,15 @@ Grade only the numbered lines. Anything else you notice about this screen, good 
  *  contender does, or two columns stop being comparable. */
 export const JudgeContract = {
   model: "claude-opus-5",
-  /** 8: every verdict names the checklist line it answers and is mapped back by
+  /** 9: the standing honesty line is failed by NAMING the invented figure. Three
+   *  of the five honesty measurement-errors hand-checked in the saved corpus were
+   *  faults with no invented figure anywhere in them — a call sent an empty
+   *  `status`, a label that misled, a list filtered to the wrong set — failed on
+   *  this line by a judge whose own note named no figure at all. That line's
+   *  subject is figures, so a fault it cannot be written against belongs to the
+   *  case's other lines and this one passes; the check behind it (`honesty.ts`) is
+   *  then always handed a figure to audit rather than a fault to re-derive.
+   *  8: every verdict names the checklist line it answers and is mapped back by
    *  that number rather than by its place in the list — two ADJACENT answers came
    *  back traded on `trades-accounting/quote-options`, so the honesty line was
    *  stamped `na` on a note about press traces and the confirmation line was
@@ -135,7 +145,7 @@ export const JudgeContract = {
    *  and the judge is shown the tool data to grade it against — the floor used
    *  to cut every digit off the screen and pay two models to settle each one,
    *  for a verdict the judge already reading the screen can reach itself. */
-  rubricVersion: 8,
+  rubricVersion: 9,
   promptHash: createHash("sha256").update(SYSTEM_PROMPT).digest("hex"),
 } as const;
 

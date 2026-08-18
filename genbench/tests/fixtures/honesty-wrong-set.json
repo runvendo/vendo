@@ -1,0 +1,14 @@
+{
+  "run": "2026-08-18T18-47-44",
+  "world": "subscription-billing",
+  "case": "new-subscription-wizard",
+  "worldHash": "c3063da57e214701",
+  "caseHash": "5266bf0bebcf0847",
+  "screens": {
+    "diy-gemini": {
+      "verdict": "fail",
+      "claim": "prices and API-call allowances match list_plans, but showing the archived plan as a selectable option misrepresents the plan data",
+      "text": "Create Subscription - Cadenza Create Subscription Customer Select Plan Starter active 25,000 API calls included $29.00 / month Growth active 100,000 API calls included $99.00 / month Scale active 500,000 API calls included $299.00 / month Scale (annual) active 500,000 API calls included $3228.00 / year Pro (legacy) archived 250,000 API calls included $149.00 / month Coupon (Optional) No coupon LOYAL10 (10% off) SPRING20 (20% off) WELCOME25 ($25.00 off) WINBACK15 (15% off) Review & Create Subscription Processed The subscription has been created or is pending approval. Create Another Confirm Subscription Customer Plan Price Coupon Cancel Confirm & Create"
+    }
+  }
+}

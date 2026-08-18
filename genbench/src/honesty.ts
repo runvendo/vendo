@@ -42,6 +42,17 @@ import { MAX_OUTPUT_TOKENS_FLOOR, MODEL_IDS, usdFor, type UsageTotals } from "./
  * replaced; every figure carries the words printed beside it, because a bare
  * `285,000.00` is nearly the datum itself; and the answer has a field for the
  * arithmetic, written before the verdict is reached rather than after.
+ *
+ * From rubricVersion 9 the lead is always a FIGURE: the judge is told to fail that
+ * line only by naming one, because three of five hand-checked measurement-errors
+ * were faults with no figure in them at all — a call sent an empty `status`, a
+ * misleading label, a wrongly filtered set. This check is not where that shape can
+ * be stopped, and it should not be asked to be: asked to name a figure with no
+ * basis, it answered with `subscription-billing/portal-self-serve`'s two permission
+ * toggles, which are states and not figures, on a screen displaying no figure at
+ * all. What it can do is clear a screen whose figures really do reconcile, which is
+ * what it does with a lead of that shape — the fail simply has to stop being
+ * written.
  */
 
 /** The two answers the check may return. `unadjudicated` is the third, which the

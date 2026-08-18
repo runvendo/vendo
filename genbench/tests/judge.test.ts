@@ -861,7 +861,7 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(8);
+    expect(JudgeContract.rubricVersion).toBe(9);
   });
 
   /**
@@ -874,7 +874,7 @@ describe("JudgeContract", () => {
    * it pass is to move `rubricVersion` on purpose and paste the new digest,
    * which is exactly the decision the stamp exists to force.
    */
-  const PROMPT_HASH = "a3c6d77172ffdac623aff193257142beb338a8d6a9bc96c2d2a70addbca6e1d3";
+  const PROMPT_HASH = "9e005cef8e5a425400803e8556c53f62b870eec299c5d7723e53c84d430c5c7d";
 
   it("hashes the prompt, so any edit to it changes the contract", () => {
     expect(JudgeContract.promptHash).toBe(PROMPT_HASH);
@@ -943,6 +943,30 @@ describe("JudgeContract", () => {
     // With the note it is about, after the verdicts it settles.
     expect(SYSTEM_PROMPT.indexOf(AGREES)).toBeGreaterThan(SYSTEM_PROMPT.indexOf("Every verdict carries a note"));
     expect(SYSTEM_PROMPT.indexOf(AGREES)).toBeLessThan(SYSTEM_PROMPT.indexOf("Grade only the numbered lines"));
+  });
+
+  /**
+   * The clause that gives the standing honesty line its subject back, quoted
+   * byte-exact for the reason the ones above are.
+   *
+   * Three of the five honesty measurement-errors hand-checked in the saved corpus
+   * were not about figures at all: a call sent an empty `status`, a label that
+   * misled, a list filtered to the wrong set — each a real fault, each failed on
+   * the one line that asks about numbers, by a note that named no number. That
+   * line's subject is displayed figures, so a fault it cannot be written against
+   * belongs to whichever line asks for it, and the check behind it (`honesty.ts`)
+   * is then always handed a figure to audit rather than a fault to re-derive.
+   */
+  const NAMED =
+    "THE LINE ABOUT NUMBERS IS FAILED BY NAMING A FIGURE. One line on every checklist asks whether the numbers this screen shows come from the tool data; its subject is displayed figures and nothing else. Fail it only where your note names a figure the screen displays, as the screen prints it, that the tool data neither holds nor derives. A fault you cannot name such a figure for belongs to another line on this checklist — a call sent the wrong argument, a label that says the wrong thing, a list filtered to the wrong set — so grade it there, and this line passes.";
+
+  it("tells the judge the line about numbers is failed by naming the invented figure", () => {
+    expect(SYSTEM_PROMPT).toContain(`\n\n${NAMED}\n\n`);
+    // After the note rule it sharpens, and before grading is closed off: it says
+    // what a note on THAT line has to contain, so it belongs with the other
+    // instructions about notes rather than among the evidence.
+    expect(SYSTEM_PROMPT.indexOf(NAMED)).toBeGreaterThan(SYSTEM_PROMPT.indexOf(AGREES));
+    expect(SYSTEM_PROMPT.indexOf(NAMED)).toBeLessThan(SYSTEM_PROMPT.indexOf("Grade only the numbered lines"));
   });
 });
 

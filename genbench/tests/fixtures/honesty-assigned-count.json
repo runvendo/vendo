@@ -1,0 +1,14 @@
+{
+  "run": "2026-08-18T18-47-44",
+  "world": "project-tracker",
+  "case": "my-issues-inbox",
+  "worldHash": "8ccdea439e18ad77",
+  "caseHash": "a7c3978edca1bca0",
+  "screens": {
+    "diy-gpt": {
+      "verdict": "fail",
+      "claim": "header says '11 assigned in this window' while list_issues returns 12 issues with an assignee_id",
+      "text": "Cairn · Assigned issues C Cairn Issues / Assigned Project tracker My work Assigned issues 11 assigned in this window CAI-138 done Ship the sprint burndown widget Devraj Iyer 8 pts CAI-140 done Retire the legacy sprints endpoint Theo Bennett 5 pts CAI-142 done Fix flaky OAuth callback on Safari Maya Okafor 3 pts CAI-145 done Rewrite the invite email copy Lena Marsh 2 pts CAI-146 blocked SSO login loops for Okta workspaces Priya Raman 5 pts CAI-147 in review Slack notifications double-fire on reassign Devraj Iyer 3 pts CAI-149 in review Bulk edit for backlog rows Maya Okafor 8 pts CAI-151 in progress Board drag-and-drop drops on the wrong column Theo Bennett 5 pts CAI-153 todo Keyboard shortcuts for issue triage Lena Marsh 3 pts CAI-157 todo Roll points up to the release Devraj Iyer 5 pts CAI-158 todo Import a backlog from CSV Maya Okafor 3 pts CAI-138 done Updated Aug 6 Ship the sprint burndown widget Move issue Update this issue’s workflow status without leaving the page. Status backlog todo in progress in review blocked done Assignee Devraj Iyer Estimate 8 pts Priority medium Sprint Sprint 20 Release 2026.8 Issue key CAI-138 Workflow context Current assignment done This issue is currently done."
+    }
+  }
+}

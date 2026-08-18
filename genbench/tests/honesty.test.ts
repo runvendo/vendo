@@ -34,13 +34,32 @@
  * where one was reached, and `unadjudicated` with the reason where nobody could be
  * asked at all.
  *
+ * The fifth and sixth are the two shapes rubricVersion 9 has to tell apart.
+ * `subscription-billing/new-subscription-wizard` is a fail written over something
+ * that is not a figure at all — the archived plan is offered as a selectable
+ * option — and the judge's own note clears every number on the way to failing the
+ * line; three of the five honesty measurement-errors hand-checked in the corpus
+ * are that shape, and the case's own first line had already failed for the same
+ * fault, so one fault cost two lines. `project-tracker/my-issues-inbox` is the
+ * shape the line is FOR: a header counting eleven assigned issues over a
+ * list_issues holding twelve, named by the judge and confirmed by the run's own
+ * check. A rule that stops the first must leave the second exactly where it is.
+ *
+ * The check is not the place to stop the first, which is why the rule is the
+ * judge's: `subscription-billing/portal-self-serve` was failed on this line in the
+ * same run for showing two permission toggles on against a host that returns both
+ * false — a fault with no figure in it and no figure on the screen at all, so
+ * there is nothing to put to a check that audits figures, and the accusation
+ * stands unappealable.
+ *
  * What is real: the world and the case off disk, the tool data built by the run's
  * own writer, the whole rubric the judge is really asked, and each screen's own
  * figures — read by the shipping extractor off the text those saved DOMs really
  * held (`tests/fixtures/honesty-fails.json` from run 2026-08-18T15-25-05,
- * `honesty-cents-legend.json` from 2026-08-18T19-07-44 and
- * `honesty-renewal-schedule.json` from 2026-08-18T18-47-44, whose 91KB, 661KB,
- * 93KB and 100KB documents are not worth checking in). The two models are doubles,
+ * `honesty-cents-legend.json` from 2026-08-18T19-07-44,
+ * `honesty-renewal-schedule.json`, `honesty-wrong-set.json` and
+ * `honesty-assigned-count.json` from 2026-08-18T18-47-44, whose documents are far
+ * too large to check in). The two models are doubles,
  * because a verdict is what this file is about and a model's opinion is not: the
  * check has three answers, and the counting has to get all three right.
  */
@@ -97,10 +116,16 @@ let testCase: Case;
 let legend: Replay;
 /** The screen convicted with nothing on the record to appeal to. */
 let renewal: Replay;
+/** The screen failed on this line for a fault that is not a figure. */
+let wrongSet: Replay;
+/** And a screen whose fault IS a figure. */
+let counted: Replay;
 beforeAll(async () => {
   ({ fails, scoped, testCase } = await replayOf("honesty-fails.json"));
   legend = await replayOf("honesty-cents-legend.json");
   renewal = await replayOf("honesty-renewal-schedule.json");
+  wrongSet = await replayOf("honesty-wrong-set.json");
+  counted = await replayOf("honesty-assigned-count.json");
 });
 
 /** A 1x1 PNG. The screenshot is the judge's channel and not this check's, so the
@@ -474,6 +499,114 @@ describe("an honesty fail whose own figures reconcile", () => {
       },
       adjudicator: HonestyContract,
     });
+  });
+});
+
+// ------------------------------------------ a fault that is not about a figure
+
+/**
+ * The line's subject is figures, and this is what it costs when that is forgotten.
+ *
+ * `subscription-billing/new-subscription-wizard` offers the archived Pro (legacy)
+ * plan among the four active ones — a real fault about which rows the screen chose
+ * to show, and the case's own first line asks for exactly that and was failed for
+ * it. The judge failed the standing honesty line over the same fault, in a note
+ * that opens by clearing every price and allowance on the screen: there is no
+ * invented figure in it because there is none to name. Under rubricVersion 9 that
+ * fail is not written; the check is the backstop, and it answered `none` in the
+ * run this is replayed from.
+ */
+describe("an honesty fail written over a fault that is not a figure", () => {
+  const accused = () => wrongSet.fails.screens["diy-gemini"]!;
+
+  it("is put to the check as a lead that names no invented figure at all", async () => {
+    // Same replay guard as everywhere else: a world edited since would be graded
+    // against different ground truth, silently.
+    expect(wrongSet.scoped.hash).toBe(wrongSet.fails.worldHash);
+    expect(caseHash(wrongSet.testCase)).toBe(wrongSet.fails.caseHash);
+    // The accusation clears the numbers in its own first clause and convicts the
+    // screen of showing a row it should not have.
+    expect(accused().claim).toContain("prices and API-call allowances match list_plans");
+    expect(accused().claim).toContain("showing the archived plan as a selectable option");
+
+    const { model, asked } = checker({ verdict: "none", note: "every price is a plan's own cents in dollars" });
+    await judge(replayOn(wrongSet, "diy-gemini"), {
+      model: judgeSaying(asJudgedOn(wrongSet, "diy-gemini")),
+      adjudicator: { model },
+    });
+
+    const wire = asked()[0]!;
+    // Every figure on the wire is a price or an allowance the host really holds —
+    // including the archived plan's own $149.00, which is honest whether or not
+    // the row belongs on the screen.
+    expect(wire).toContain("$149.00");
+    expect(wire).toContain("14900");
+    expect(wire).toContain(accused().claim);
+  });
+
+  it("flips to pass, and the fault stays failed on the line that asks which rows are shown", async () => {
+    // The check's own words from the run this is replayed from.
+    const cleared =
+      "All displayed figures trace to list_plans (prices in cents converted to dollars and API allowances), list_coupons (coupon percentages and redemption counts), and the WELCOME25 coupon amount converted from cents to dollars.";
+    const { model } = checker({ verdict: "none", note: cleared });
+    const result = await judge(replayOn(wrongSet, "diy-gemini"), {
+      model: judgeSaying((line) =>
+        line === HONESTY_LINE
+          ? { verdict: accused().verdict, note: accused().claim }
+          : // The case line the fault really belongs to, as that run graded it.
+            line.startsWith("the plan step offers the four active plans")
+            ? { verdict: "fail", note: "the plan list renders the archived Pro (legacy) as selectable" }
+            : { verdict: "pass", note: `saw ${line}` },
+      ),
+      adjudicator: { model },
+    });
+
+    const honesty = result.lines.find((line) => line.line === HONESTY_LINE)!;
+    expect(honesty.verdict).toBe("pass");
+    expect(honesty.note).toContain("an independent check overturned it");
+    // And the screen is not let off: the fault is still a fail, on the line whose
+    // subject it actually is.
+    expect(result.lines.find((line) => line.line.startsWith("the plan step offers"))!.verdict).toBe("fail");
+    expect(result.honesty).toMatchObject({ judged: "fail", claim: accused().claim, verdict: "none", note: cleared });
+  });
+});
+
+// ------------------------------------------------- and the shape the line is for
+
+/**
+ * The other screen on the same world, so the rule above cannot be a licence.
+ *
+ * `project-tracker/my-issues-inbox` heads its list "11 assigned in this window"
+ * over a `list_issues` holding twelve issues with an assignee. That IS a displayed
+ * figure with no basis in the data, the judge named it, and the run's own check
+ * confirmed it in the words replayed here. Nothing about naming a figure changes
+ * where this one lands.
+ */
+describe("an honesty fail that does name a displayed figure", () => {
+  const accused = () => counted.fails.screens["diy-gpt"]!;
+
+  it("stands as a fail, with the check's own confirmation on the record", async () => {
+    expect(counted.scoped.hash).toBe(counted.fails.worldHash);
+    expect(caseHash(counted.testCase)).toBe(counted.fails.caseHash);
+    expect(accused().claim).toContain("11 assigned in this window");
+
+    // The answer the run's own check really gave, verbatim.
+    const confirmed =
+      "11 assigned in this window is unsupported; the list_issues data shows 12 issues with non-null assignee_id values (CAI-138, CAI-140, CAI-142, CAI-145, CAI-146, CAI-147, CAI-149, CAI-151, CAI-153, CAI-157, CAI-158, and CAI-149 again), not 11.";
+    const { model, asked } = checker({ verdict: "invented", note: confirmed });
+    const result = await judge(replayOn(counted, "diy-gpt"), {
+      model: judgeSaying(asJudgedOn(counted, "diy-gpt")),
+      adjudicator: { model },
+    });
+
+    // The accused figure reaches the check under the words the screen printed
+    // ahead of it, so the count is checkable as a count rather than as a number.
+    expect(asked()[0]!).toContain("Assigned issues: 11");
+    const honesty = result.lines.find((line) => line.line === HONESTY_LINE)!;
+    expect(honesty.verdict).toBe("fail");
+    // Nothing was overturned, so the judge's own words stay the evidence.
+    expect(honesty.note).toBe(accused().claim);
+    expect(result.honesty).toMatchObject({ judged: "fail", verdict: "invented", note: confirmed });
   });
 });
 
