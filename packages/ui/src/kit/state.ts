@@ -5,7 +5,7 @@
  * resolves it against a keyed `Record<string, Json>` owned by
  * `StatefulTreeView`. A code-land app needs the same store with the same
  * semantics, so it lives HERE — in the bundle both venues already share, the
- * way `fmt` does — instead of being written twice.
+ * way `reshape` does — instead of being written twice.
  *
  * Semantics (the renderer's, unchanged): one namespace per instance, `Json`
  * values, last write wins per key, other keys stand, and `onChange` sees the

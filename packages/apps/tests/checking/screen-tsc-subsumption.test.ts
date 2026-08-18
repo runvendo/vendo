@@ -303,7 +303,7 @@ export default function Invoices() {
 
   /** CLOSED by V4 (one component family). This used to be a gap: the legacy
    *  prewired primitives carried no schema, only an allowed prop-NAME set, so
-   *  `<Stat value={rows}/>` type-checked where a Kit `<Money amount={...}/>`
+   *  `<Stat value={rows}/>` type-checked where a schema-carrying Kit component
    *  would not. Retiring them left one Stat with a real zod-derived type, so
    *  the wrongly-typed binding is now caught like any other. */
   it("no longer a gap: every built-in carries its Kit prop TYPES, not just names", () => {

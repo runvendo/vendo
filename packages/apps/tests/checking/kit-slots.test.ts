@@ -112,8 +112,8 @@ describe("the Kit's slots", () => {
   });
 
   it("says so when the component takes no element at all", () => {
-    expect(issuesFor("Money", { value: element("Text") })[0])
-      .toContain("<Money> takes no element in its props");
+    expect(issuesFor("Badge", { label: element("Text") })[0])
+      .toContain("<Badge> takes no element in its props");
   });
 
   /** WHAT goes in a slot is design, not bookkeeping: every one of these used to

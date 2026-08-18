@@ -37,7 +37,7 @@ const painted = (over: Partial<Node> = {}): Node[] => [
   node("t1", "DataTable", { props: { rows: [], columns }, children: ["r1"] }),
   node("r1", "TableRow", { children: ["c1", "c2"], ...over }),
   node("c1", "Text", { props: { text: "Checking" } }),
-  node("c2", "Money", { props: { amount: 12 } }),
+  node("c2", "Text", { props: { text: "$12.00" } }),
 ];
 
 describe("a DataTable row the model painted", () => {
@@ -70,7 +70,7 @@ describe("a DataTable row the model painted", () => {
           label: "Accounts",
           content: element("DataTable", {
             props: { rows: [], columns },
-            children: [element("TableRow", { children: [element("Text"), element("Money")] })],
+            children: [element("TableRow", { children: [element("Text"), element("Text")] })],
           }),
         }],
       },

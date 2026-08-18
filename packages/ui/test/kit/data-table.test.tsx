@@ -3,18 +3,21 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
 import { Button } from "../../src/kit/forms/button.js";
-import { EnumBadge, Money, Text } from "../../src/kit/values.js";
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
-// Money in the rows is DOLLARS: a `format:"money"` column pretty-prints the
-// value as it stands, so a host's cents field is divided by 100 upstream.
-// The dates are built off the CURRENT year because that is what decides whether
-// a date cell shows its year — a hardcoded year would flip every expectation
-// here the moment the calendar turned.
+/** The one-line helpers a screen defines at the top of its own file. The table
+ *  formats nothing, so the rows arrive holding finished text — which is what a
+ *  screen prepares them as. */
+const money = (dollars: number): string =>
+  dollars.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso: string): string =>
+  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
 const year = new Date().getFullYear();
 const rows = [
-  { id: 1, client: { name: "Hartwell" }, amount: 2500, dueDate: `${year}-03-14`, status: "overdue" },
-  { id: 2, client: { name: "Acme" }, amount: 900, dueDate: `${year}-01-02`, status: "paid" },
-  { id: 3, client: { name: "Borealis" }, amount: 1750, dueDate: `${year}-02-20`, status: "overdue" },
+  { id: 1, client: { name: "Hartwell" }, amount: money(2500), dueDate: day(`${year}-03-14`), status: "overdue" },
+  { id: 2, client: { name: "Acme" }, amount: money(900), dueDate: day(`${year}-01-02`), status: "paid" },
+  { id: 3, client: { name: "Borealis" }, amount: money(1750), dueDate: day(`${year}-02-20`), status: "overdue" },
 ];
 
 /**
@@ -43,12 +46,12 @@ function stubLayout(columnWidth: number, clientWidth: number): () => void {
 
 const columns = [
   { key: "client.name", label: "Client" },
-  { key: "amount", label: "Amount", format: "money" as const, align: "end" as const },
-  { key: "dueDate", label: "Due", format: "date" as const },
+  { key: "amount", label: "Amount", align: "end" as const },
+  { key: "dueDate", label: "Due" },
 ];
 
 describe("DataTable", () => {
-  it("renders rows, resolves dot-path keys, and formats cells", () => {
+  it("renders rows, resolves dot-path keys, and shows each cell as prepared", () => {
     render(<DataTable rows={rows} columns={columns} />);
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.getByText("$2,500.00")).toBeTruthy();
@@ -60,7 +63,7 @@ describe("DataTable", () => {
    *  from it — so the table reads it as the description it stands for, and a
    *  list may mix the two. */
   it("takes a column written as its bare key, beside a described one", () => {
-    render(<DataTable rows={rows} columns={["client.name", { key: "amount", label: "Amount", format: "money" }]} />);
+    render(<DataTable rows={rows} columns={["client.name", { key: "amount", label: "Amount" }]} />);
     // The header is the humanized last path segment, exactly as an inferred
     // column's is, and the dot-path still resolves.
     expect(screen.getByRole("columnheader", { name: "Name" })).toBeTruthy();
@@ -82,51 +85,44 @@ describe("DataTable", () => {
     expect(screen.getByRole("columnheader", { name: "Client" })).toBeTruthy();
   });
 
-  it("reads a duration column as a duration, and still sorts it as the number it is", () => {
-    const builds = [
-      { id: 1, name: "4192", duration_seconds: 133 },
-      { id: 2, name: "4187", duration_seconds: 46 },
+  it("applies an initial sortBy", () => {
+    render(<DataTable rows={rows} columns={columns} sortBy="client.name asc" />);
+    const bodyRows = screen.getAllByRole("row").slice(1); // drop header
+    expect(bodyRows.map((r) => within(r).getAllByRole("cell")[0]?.textContent))
+      .toEqual(["Acme", "Borealis", "Hartwell"]);
+  });
+
+  /**
+   * A `cell` closure is where the formatting goes when the column must still
+   * SORT: the row data stays the number the tool returned, so 900 leads — where
+   * a column of prepared strings would put "$1,750.00" before "$900.00", as a
+   * string sort does.
+   */
+  it("sorts a column numerically while its cell shows the figure formatted", () => {
+    const invoices = [
+      { id: 1, client: "Hartwell", amount_cents: 250_000 },
+      { id: 2, client: "Acme", amount_cents: 90_000 },
+      { id: 3, client: "Borealis", amount_cents: 175_000 },
     ];
     render(
       <DataTable
-        rows={builds}
-        columns={[{ key: "name" }, { key: "duration_seconds", label: "Took", format: "duration" }]}
-        sortBy="duration_seconds asc"
-      />,
-    );
-    expect(screen.getByText("2m 13s")).toBeTruthy();
-    // The cell TEXT is formatted; the data stays numeric, so the shortest run
-    // leads rather than "133" sorting before "46" as a string would.
-    const first = screen.getAllByRole("row")[1]!;
-    expect(within(first).getAllByRole("cell")[0]?.textContent).toBe("4187");
-  });
-
-  // A duration formatter that assumes seconds prints "5m" for a host field that
-  // holds five hours, under a header that says nothing happened. The column says
-  // what its number COUNTS; nothing is guessed from the field's name.
-  it("reads a duration column in the unit the column declares", () => {
-    render(
-      <DataTable
-        rows={[{ id: 1, name: "Weekly sync", length: 90, slack: -115 }]}
+        rows={invoices}
         columns={[
-          { key: "name" },
-          { key: "length", label: "Runs", format: "duration", durationUnit: "minutes" },
-          // …and the sign phrased rather than printed: "-1h 55m" in an SLA column
-          // reads as a negative quantity of time, which is not a thing.
-          { key: "slack", label: "SLA", format: "duration", durationUnit: "minutes", durationSigned: true },
+          { key: "client", label: "Client" },
+          {
+            key: "amount_cents",
+            label: "Amount",
+            cell: invoices.map((row) => <Text text={money(row.amount_cents / 100)} />),
+          },
         ]}
+        sortBy="amount_cents asc"
       />,
     );
-    expect(screen.getByText("1h 30m")).toBeTruthy();
-    expect(screen.queryByText("1m 30s")).toBeNull();
-    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
-  });
-
-  it("applies an initial sortBy", () => {
-    render(<DataTable rows={rows} columns={columns} sortBy="amount asc" />);
-    const bodyRows = screen.getAllByRole("row").slice(1); // drop header
-    const firstCells = bodyRows.map((r) => within(r).getAllByRole("cell")[0]?.textContent);
-    expect(firstCells[0]).toBe("Acme"); // 900 is smallest
+    const bodyRows = screen.getAllByRole("row").slice(1);
+    expect(bodyRows.map((r) => within(r).getAllByRole("cell")[0]?.textContent))
+      .toEqual(["Acme", "Borealis", "Hartwell"]);
+    expect(bodyRows.map((r) => within(r).getAllByRole("cell")[1]?.textContent))
+      .toEqual(["$900.00", "$1,750.00", "$2,500.00"]);
   });
 
   it("caps rows with limit", () => {
@@ -167,9 +163,12 @@ describe("DataTable", () => {
     expect(screen.queryByRole("columnheader", { name: /Client/u })).toBeNull();
   });
 
-  it("renders an unrenderable numeric cell as a placeholder, never $NaN", () => {
-    render(<DataTable rows={[{ id: 9, client: { name: "X" }, amount: Number.NaN }]} columns={columns} />);
-    expect(screen.queryByText(/NaN/)).toBeNull();
+  // The one coercion the containers still read through: an ABSENT field is a
+  // designed dash, never the word the record's own hole spells.
+  it("renders an absent cell as a placeholder, never 'undefined'", () => {
+    render(<DataTable rows={[{ id: 9, client: { name: "X" } }]} columns={columns} />);
+    expect(screen.getAllByText("—")).toHaveLength(2);
+    expect(screen.queryByText(/undefined/)).toBeNull();
   });
 
   // A dropdown is a list of the values that EXIST, so picking one means "this
@@ -193,11 +192,9 @@ describe("DataTable", () => {
     expect(screen.queryByText("Acme")).toBeNull();
   });
 
-  // Every filter compares against the text the cell SHOWS. The columns are
-  // formatted — "$2,500.00", "Mar 14" — while the filters read the raw field
-  // ("2500", "2026-03-14"), so a person searching for what is in front of them
-  // got the empty state, and one searching the raw form got rows whose text
-  // does not contain what they typed.
+  // Every filter compares against the text the cell SHOWS, which is the field as
+  // the screen prepared it — so a person types what is in front of them ("Mar 14",
+  // "$2,500") and the table answers, whatever shape the tool's own field had.
   it("searches the text the cells actually show", () => {
     render(<DataTable rows={rows} columns={columns} searchable />);
     const search = screen.getByRole("searchbox");
@@ -213,32 +210,13 @@ describe("DataTable", () => {
   it("offers filter options in the words the column displays", () => {
     render(<DataTable rows={rows} columns={columns} filterableBy={["dueDate"]} />);
     const filter = screen.getByRole("combobox", { name: "Filter by Due" });
-    expect(within(filter).getByRole("option", { name: "Mar 14" })).toBeTruthy();
-    expect(within(filter).queryByRole("option", { name: `${year}-03-14` })).toBeNull();
+    // The values that EXIST, as the cells show them — one option per distinct cell.
+    expect(within(filter).getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["All Due", "Feb 20", "Jan 2", "Mar 14"]);
 
     fireEvent.change(filter, { target: { value: "Mar 14" } });
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.queryByText("Acme")).toBeNull();
-  });
-
-  // The year is the same four characters on every row of a this-year column, so
-  // it is clutter — until the column straddles years, when dropping it would
-  // make two different days read as the same one.
-  it("drops the year from a date column that is entirely this year", () => {
-    render(<DataTable rows={rows} columns={columns} />);
-    expect(screen.getByText("Mar 14")).toBeTruthy();
-    expect(screen.queryByText(`Mar 14, ${year}`)).toBeNull();
-  });
-
-  it("keeps the year for the WHOLE column once its rows straddle years", () => {
-    const straddling = [
-      { id: 1, client: { name: "Hartwell" }, amount: 2500, dueDate: `${year}-03-14` },
-      { id: 2, client: { name: "Acme" }, amount: 900, dueDate: `${year - 1}-12-30` },
-    ];
-    render(<DataTable rows={straddling} columns={columns} />);
-    expect(screen.getByText(`Mar 14, ${year}`)).toBeTruthy();
-    expect(screen.getByText(`Dec 30, ${year - 1}`)).toBeTruthy();
-    expect(screen.queryByText("Mar 14")).toBeNull();
   });
 
   it("never breaks a formatted figure across two lines", () => {
@@ -658,7 +636,7 @@ describe("DataTable — a cell on one line", () => {
   // A figure is one unbreakable atom — "Mar 14" split across two lines reads as
   // two values — and it is one whether or not the column said anything.
   it("keeps a formatted figure on one line", () => {
-    render(<DataTable rows={rows} columns={[{ key: "amount", format: "money" }]} />);
+    render(<DataTable rows={rows} columns={[{ key: "amount" }]} />);
     const cell = cellFor("$2,500.00");
     expect(cell.style.whiteSpace).toBe("nowrap");
     expect(cell.style.textOverflow).toBe("");
@@ -687,15 +665,15 @@ describe("DataTable — a cell on one line", () => {
 });
 
 /**
- * A column with no `format` prints what the record holds, and nothing else. The
- * table used to READ an unformatted column — a `*_cents` name was money, an
- * ISO-shaped string was a date, a `*seconds` name was a duration, a hex string
- * was mono — which is a guess about what a field MEANS made from how it is
- * spelled. Right most of the time is a wrong figure the rest of the time, under
- * a header that says nothing happened. `format` is the whole of the instruction;
- * arithmetic belongs in the `cell` function, where the row is in scope.
+ * A column prints what the record holds, and nothing else. The table used to READ
+ * an unformatted column — a `*_cents` name was money, an ISO-shaped string was a
+ * date, a `*seconds` name was a duration, a hex string was mono — which is a
+ * guess about what a field MEANS made from how it is spelled. Right most of the
+ * time is a wrong figure the rest of the time, under a header that says nothing
+ * happened. There is no token left to guess with either: the screen formats where
+ * its rows are prepared, or in a `cell` function where the row is in scope.
  */
-describe("DataTable — a column the model left unformatted", () => {
+describe("DataTable — a column the screen left as it stands", () => {
   const deploys = [
     { id: 1, commit: "9f2c1ab", deployedAt: `${year}-08-12T14:05:00Z`, cost_cents: 452_900, duration_seconds: 157 },
     { id: 2, commit: "4e81d0c", deployedAt: `${year}-08-11T09:41:00Z`, cost_cents: 91_250, duration_seconds: 46 },
@@ -710,10 +688,16 @@ describe("DataTable — a column the model left unformatted", () => {
     expect(screen.queryByText("$4,529.00")).toBeNull();
   });
 
-  // …and the money token is a printing instruction, never a unit one: it says
-  // "render this as currency", not "these are cents".
-  it("prints a cents-NAMED column the model DID format as dollars, undivided", () => {
-    render(<DataTable rows={deploys} columns={[{ key: "cost_cents", format: "money" }]} />);
+  // …and where the screen DID prepare the figure, the table prints exactly that:
+  // the ÷100 is the screen's to write or to skip, and nothing here second-guesses
+  // which it meant.
+  it("prints a cents-NAMED column the screen formatted as the screen wrote it", () => {
+    render(
+      <DataTable
+        rows={deploys.map((row) => ({ ...row, cost_cents: money(row.cost_cents) }))}
+        columns={[{ key: "cost_cents" }]}
+      />,
+    );
     expect(screen.getByText("$452,900.00")).toBeTruthy();
     expect(screen.queryByText("$4,529.00")).toBeNull();
   });
@@ -732,11 +716,6 @@ describe("DataTable — a column the model left unformatted", () => {
   it("leaves a column of shas in the prose face", () => {
     render(<DataTable rows={deploys} columns={[{ key: "commit" }]} />);
     expect(screen.getByText("9f2c1ab").getAttribute("style")).not.toContain("--vendo-mono-family");
-  });
-
-  it("renders a format:\"code\" column in mono", () => {
-    render(<DataTable rows={deploys} columns={[{ key: "id", format: "code" }]} />);
-    expect(screen.getByText("1").getAttribute("style")).toContain("--vendo-mono-family");
   });
 });
 
@@ -805,7 +784,7 @@ describe("DataTable — a slot written as a function of the row", () => {
       <DataTable
         rows={invoices}
         columns={[
-          { key: "amount", label: "Amount", cell: perRow((row) => <Money value={row.amount / 100} />) },
+          { key: "amount", label: "Amount", cell: perRow((row) => <Text text={money(row.amount / 100)} />) },
           { key: "client", label: "Flag", cell: <Text text="Open" /> },
         ]}
       />,

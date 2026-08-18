@@ -1,21 +1,14 @@
-/** CardList — one branded card per record, formatted by its fields (W2 §The Kit). */
+/** CardList — one branded card per record, its fields as label/value rows (W2 §The Kit). */
 import type { ReactNode } from "react";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat } from "../format.js";
 import { fieldItems, readField, rowSlot } from "../row.js";
-import { densityVars, font, hairline, mono, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
+import { densityVars, font, hairline, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
   key: string;
   label?: string;
-  format?: ValueFormat;
-  /** What one unit of a `format:"duration"` value IS — seconds (default) or
-   *  minutes. A `minutes_remaining` field read as seconds prints a plausible
-   *  duration off by 60×, so the unit is declared, never multiplied in. */
-  durationUnit?: "seconds" | "minutes";
-  /** Phrase a `format:"duration"` sign: "3h 20m left" / "overdue 1h 55m". */
-  durationSigned?: boolean;
   /** Kit elements rendered as this field's VALUE (the label stays). Written as a
    *  function of the item, it arrives as ONE element per item in `items` order. */
   cell?: ReactNode | readonly ReactNode[];
@@ -109,22 +102,17 @@ export function CardList({ items: rawItems, titleField, badgeField, fields: rawF
                 ) : null}
               </div>
             )}
-            {fields.map((f) => {
-              const format = f.format ?? "text";
-              return (
-                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
-                  <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                  {/* By POSITION, and that is right here: the cards paint in
-                      `items` order and nothing reorders them — unlike a
-                      DataTable, which sorts, so it matches by identity. */}
-                  {rowSlot(f.cell, index) ?? (
-                    <span style={{ ...numeric, ...(format === "code" ? mono : {}) }}>
-                      {applyFormat(readField(item, f.key), format, { unit: f.durationUnit, signed: f.durationSigned }) ?? "—"}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {fields.map((f) => (
+              <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
+                <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
+                {/* By POSITION, and that is right here: the cards paint in
+                    `items` order and nothing reorders them — unlike a
+                    DataTable, which sorts, so it matches by identity. */}
+                {rowSlot(f.cell, index) ?? (
+                  <span style={numeric}>{applyFormat(readField(item, f.key), "text") ?? "—"}</span>
+                )}
+              </div>
+            ))}
           </article>
         );
       })}

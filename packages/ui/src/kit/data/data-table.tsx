@@ -1,8 +1,9 @@
 /**
  * DataTable — the flagship (W2 §The Kit). TanStack Table internals; the model
  * only fills props. It sorts, filters, searches, paginates, resolves dot-path
- * column keys, formats each cell by its `format` token, and shows a named-query
- * empty state — none of which the model has to author.
+ * column keys, gives way on a narrow surface, and shows a named-query empty
+ * state — none of which the model has to author. A cell's TEXT is the field as
+ * the screen prepared it; formatting figures is the screen's own job.
  */
 import { Children, createContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
@@ -16,9 +17,9 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
-import { applyFormat, formatDateTime, type ValueFormat } from "../format.js";
+import { applyFormat } from "../format.js";
 import { fieldItems, readField, rowSlot } from "../row.js";
-import { densityVars, font, hairline, microLabel, mono, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
+import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -33,16 +34,6 @@ export interface DataTableColumn {
    *  carried a warning nobody could act on at render time, and a screen that
    *  wrote `header` shipped a humanized key instead of the title it authored. */
   header?: string;
-  /** Value-tier format applied to every cell. */
-  format?: ValueFormat;
-  /** What a `format:"duration"` cell's number COUNTS — seconds unless the host
-   *  stores minutes. The formatter never converts a unit it was not told about,
-   *  so a minutes field read as seconds prints "5m" for five hours. */
-  durationUnit?: "seconds" | "minutes";
-  /** Phrase a `format:"duration"` cell's sign instead of printing it: "3h 20m
-   *  left", "overdue 1h 55m". A bare "-1h 55m" in an SLA column reads as a
-   *  negative quantity of time, which is not a thing. */
-  durationSigned?: boolean;
   align?: "start" | "center" | "end";
   /** The column's width in px: the `<th>`'s width, and the cap a truncating cell
    *  ellipsizes inside. Chromium honours a `max-width` on a `<td>` in the auto
@@ -62,7 +53,7 @@ export interface DataTableColumn {
    *  number competes with the inferred ones on that one scale rather than in a
    *  league of its own. */
   priority?: number;
-  /** Kit elements rendered instead of the formatted text. Written as a function
+  /** Kit elements rendered instead of the field's own text. Written as a function
    *  of the row, it arrives as ONE element per row in `rows` order; a stored
    *  screen holds a single element for every row. `key` still drives sorting,
    *  filtering and searching. */
@@ -129,40 +120,14 @@ export const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"
 export const headerText = (col: DataTableColumn): string =>
   col.label ?? col.header ?? humanizeEnum(col.key?.split(".").pop() ?? "");
 
-/** A cell's formatted text, or `null` when the value is unrenderable. `compact`
- *  is the date default — see `compactDateKeys`. */
-function cellText(value: unknown, col: DataTableColumn, compact: boolean): string | null {
-  const format = col.format ?? "text";
-  if (compact && (format === "date" || format === "datetime")) {
-    return typeof value === "string" || typeof value === "number" || value instanceof Date
-      ? formatDateTime(value, { mode: format, compact: true })
-      : null;
-  }
-  return applyFormat(value, format, { unit: col.durationUnit, signed: col.durationSigned });
-}
-
 /**
- * The text a cell actually SHOWS, which is the only thing a filter may compare
- * against: the person filters on what is in front of them. Filtering the raw
- * field instead meant "$2,500.00" and "Mar 14" were unsearchable, while the
- * dropdown offered "2026-03-14" as an option for a column reading "Mar 14".
- * Unrenderable cells (the "—" placeholder) filter as empty.
+ * The text a cell SHOWS, which is the only thing a filter may compare against:
+ * the person filters on what is in front of them, not on the raw field behind
+ * it. Unrenderable cells (the "—" placeholder) filter as empty.
  */
-function displayText(row: Record<string, unknown>, column: DataTableColumn, compact: boolean): string {
+function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
   if (column.key === undefined) return "";
-  return cellText(readField(row, column.key), column, compact) ?? "";
-}
-
-/** The calendar year a date value lands in, read the way the cell shows it: a
- *  date-only ISO string is formatted in UTC (so the day cannot slip a zone), so
- *  its year is read in UTC too. */
-function dateYear(value: unknown): number | undefined {
-  if (typeof value !== "string" && typeof value !== "number" && !(value instanceof Date)) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
-    ? date.getUTCFullYear()
-    : date.getFullYear();
+  return applyFormat(readField(row, column.key), "text") ?? "";
 }
 
 export const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
@@ -288,52 +253,27 @@ export function DataTable(props: DataTableProps) {
     return [{ id, desc: (dir ?? "asc").toLowerCase() === "desc" }];
   }, [sortBy]);
 
-  /**
-   * The date columns that may drop the year — "Aug 12", not "Aug 12, 2026".
-   * In a column of this year's dates the year is the same four characters on
-   * every row, and judges read the repetition as clutter. It stops being noise
-   * the moment the column straddles years, and a column mixing the two forms
-   * reads as a data error, so the year returns for the WHOLE column. Judged off
-   * `data`, not the filtered rows, so filtering cannot change what a date means.
-   */
-  const compactDateKeys = useMemo(() => {
-    const thisYear = new Date().getFullYear();
-    const compact = new Set<string>();
-    for (const { key, format } of columns) {
-      if (key === undefined || (format !== "date" && format !== "datetime")) continue;
-      if (data.every((row) => (dateYear(readField(row, key)) ?? thisYear) === thisYear)) compact.add(key);
-    }
-    return compact;
-  }, [columns, data]);
-
   const tanstackColumns = useMemo<Array<ColumnDef<Record<string, unknown>>>>(
     () =>
-      columns.map((col, i) => {
-        const compact = col.key !== undefined && compactDateKeys.has(col.key);
-        return {
-          id: col.key ?? String(i),
-          // No key, no accessor: tanstack's own `getCanSort` is `!!accessorFn`,
-          // so an action column's header stops being click-to-sort by
-          // construction, and its contents stay out of the search.
-          ...(col.key === undefined
-            ? {}
-            : { accessorFn: (row: Record<string, unknown>) => readField(row, col.key!) }),
-          header: headerText(col),
-          cell: (ctx) => {
-            if (col.cell !== undefined) return forRow(col.cell, ctx.row.original);
-            const formatted = cellText(ctx.getValue(), col, compact);
-            if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
-            // The face rides on the VALUE, not the cell: a folded row's extra
-            // lines share this td and are prose.
-            return col.format === "code" ? <span style={mono}>{formatted}</span> : formatted;
-          },
-          // A dropdown lists the values that exist, so picking one means THIS
-          // value — "includesString" here let a pick of "paid" list the "unpaid"
-          // rows too.
-          filterFn: (row, _columnId, value) => displayText(row.original, col, compact) === String(value),
-        };
-      }),
-    [columns, compactDateKeys, forRow],
+      columns.map((col, i) => ({
+        id: col.key ?? String(i),
+        // No key, no accessor: tanstack's own `getCanSort` is `!!accessorFn`,
+        // so an action column's header stops being click-to-sort by
+        // construction, and its contents stay out of the search.
+        ...(col.key === undefined
+          ? {}
+          : { accessorFn: (row: Record<string, unknown>) => readField(row, col.key!) }),
+        header: headerText(col),
+        cell: (ctx) =>
+          col.cell !== undefined
+            ? forRow(col.cell, ctx.row.original)
+            : (applyFormat(ctx.getValue(), "text") ?? <span style={{ color: t.muted }}>—</span>),
+        // A dropdown lists the values that exist, so picking one means THIS
+        // value — "includesString" here let a pick of "paid" list the "unpaid"
+        // rows too.
+        filterFn: (row, _columnId, value) => displayText(row.original, col) === String(value),
+      })),
+    [columns, forRow],
   );
 
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
@@ -350,13 +290,11 @@ export function DataTable(props: DataTableProps) {
     globalFilterFn: (row, columnId, value) => {
       const col = columns.find((entry) => entry.key === columnId);
       if (!col) return false;
-      return displayText(row.original, col, compactDateKeys.has(columnId))
-        .toLowerCase()
-        .includes(String(value).toLowerCase());
+      return displayText(row.original, col).toLowerCase().includes(String(value).toLowerCase());
     },
     // Every column renders text, so every column is searchable on that text.
     // The default excludes any column whose raw value is not a string or number
-    // — a formatted date column being exactly that.
+    // — a `Date` or a boolean field being exactly that.
     getColumnCanGlobalFilter: () => true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -372,13 +310,13 @@ export function DataTable(props: DataTableProps) {
       const col = columns.find((entry) => entry.key === key) ?? { key };
       const set = new Set<string>();
       for (const row of data) {
-        const text = displayText(row, col, compactDateKeys.has(key));
+        const text = displayText(row, col);
         if (text !== "") set.add(text);
       }
       map.set(key, [...set].sort());
     }
     return map;
-  }, [filterableBy, data, columns, compactDateKeys]);
+  }, [filterableBy, data, columns]);
 
   const columnLabel = (key: string) => headerText(columns.find((c) => c.key === key) ?? { key });
 
@@ -675,9 +613,7 @@ export function DataTable(props: DataTableProps) {
                     const truncate = col?.truncate === true;
                     // The whole text of a cell that shows an ellipsis, so nothing
                     // is only readable by widening the window.
-                    const full = truncate && text && col?.key !== undefined
-                      ? displayText(row.original, col, compactDateKeys.has(col.key))
-                      : "";
+                    const full = truncate && text && col !== undefined ? displayText(row.original, col) : "";
                     return (
                       <td
                         key={cell.id}
@@ -701,9 +637,7 @@ export function DataTable(props: DataTableProps) {
                               // A folded column keeps its SLOT — a status
                               // column reads as its pill here too, not as the
                               // bare word the slot exists to kill.
-                              const value =
-                                forRow(other.cell, row.original)
-                                ?? displayText(row.original, other, other.key !== undefined && compactDateKeys.has(other.key));
+                              const value = forRow(other.cell, row.original) ?? displayText(row.original, other);
                               return value === ""
                                 ? []
                                 : [

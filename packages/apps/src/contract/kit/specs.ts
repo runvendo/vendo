@@ -14,7 +14,18 @@ import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropC
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
-const valueFormat = z.enum(["money", "date", "datetime", "time", "number", "duration", "text", "code"]);
+/**
+ * A CHART AXIS's format token — THE ONE EXCEPTION to the value tier's death.
+ *
+ * Every other displayed value in a screen passes through the model's own code, so
+ * the model formats it there with `Intl` and the Kit only displays and themes it.
+ * An axis tick is the one value that never does: the labels are computed
+ * HOST-SIDE off a numeric scale, from numbers the screen holds no value of, so a
+ * chart has to be TOLD what its figures mean rather than handed text. `duration`
+ * belongs here for that same reason — an axis of build times ticks in seconds the
+ * host reduces itself.
+ */
+const valueFormat = z.enum(["money", "date", "datetime", "time", "number", "duration", "text"]);
 const align = z.enum(["start", "center", "end"]);
 /** A series descriptor stays OPEN: what is written beside `key`, `label` and
  *  `color` is passed to that one series' engine element, so per-line colors are a
@@ -54,26 +65,6 @@ const seriesInput = z.array(z.union([
 const options = z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())]));
 const OPTIONS_DOC = "raw items, read through labelField/valueField; an item's own disabled greys that choice out and its own group heads a section";
 
-/** What a `format:"duration"` count IS. A host stores a duration in whichever
- *  unit its own column is named for, and the tier cannot see the name — so the
- *  screen used to have to write `* 60` at every read, and forgetting was a
- *  figure wrong by 60× that still formatted cleanly. */
-const durationUnit = z.enum(["seconds", "minutes"]);
-
-/** The two adjectives a `format` token cannot carry, written beside it wherever
- *  one is: a table column, a card field, a KeyValue row, a Stat. `durationSigned`
- *  phrases the sign instead of printing it — "3h 20m left", "overdue 1h 55m" —
- *  which is the difference between a countdown and an elapsed time, and nothing
- *  in the data says which one a negative number means. */
-const durationShape = {
-  durationUnit: durationUnit.optional(),
-  durationSigned: z.boolean().optional(),
-} as const;
-const DURATION_DOC = {
-  durationUnit: 'what a format:"duration" count holds — seconds (default) or minutes',
-  durationSigned: 'phrase the sign: "3h 20m left", "overdue 1h 55m"',
-} as const;
-
 /** The DESCRIPTIONS that mark a schema as something other than what it
  *  parses as. Exported because every reader of a Kit schema — the screen
  *  typings, the catalog's type printer — has to recognise the same strings,
@@ -94,10 +85,11 @@ export const ICON_NAME_DESCRIPTION = "lucide icon name in kebab-case";
  * Every slot may also be written as a FUNCTION that returns the element — the
  * natural React form, and for the per-row slots the recommended one: the screen
  * VM calls it and paints what it returns ({@link KIT_SLOT_PROPS}). A slot the Kit
- * paints once per ROW is called once for each — `cell: (row) => <Money
- * value={row.amount / 100}/>`, that row's own element with that row's own
- * handlers — and every other slot is called with no arguments at all, because it
- * has no row to be a function of.
+ * paints once per ROW is called once for each — `cell: (row) => <Text
+ * text={(row.amount_cents / 100).toLocaleString("en-US", { style: "currency",
+ * currency: "USD" })}/>`, that row's own element with that row's own handlers —
+ * and every other slot is called with no arguments at all, because it has no row
+ * to be a function of.
  *
  * The DESCRIPTION is the marker a slot is known by: `z.unknown()` prints as
  * `any`, which types nothing at all, so the component screen's typings print a
@@ -125,8 +117,6 @@ const tableColumn = z.union([z.string(), z.object({
    *  name. The prompt used to spend a sentence forbidding it; the column reads it
    *  as `label` instead. */
   header: z.string().optional(),
-  format: valueFormat.optional(),
-  ...durationShape,
   align: align.optional(),
   /** Px. Also what gives a truncated cell an edge to ellipsize against. */
   width: z.number().int().positive().optional(),
@@ -140,8 +130,6 @@ const tableColumn = z.union([z.string(), z.object({
 const cardField = z.union([z.string(), z.object({
   key: z.string(),
   label: z.string().optional(),
-  format: valueFormat.optional(),
-  ...durationShape,
   cell: slot.optional(),
 })]);
 const action = z.string().describe(ACTION_PROP_DESCRIPTION);
@@ -200,7 +188,7 @@ const SHARED_PROPS: ReadonlyArray<{
   {
     name: "tone",
     spec: config(tone, "emphasis — neutral | accent | info | success | warning | danger; info is a state in progress"),
-    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast", "Button"],
+    on: ["Text", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast", "Button"],
   },
   {
     name: "density",
@@ -364,16 +352,15 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ["<Divider/>"],
   },
 
-  // Values (money takes MAJOR units — dollars; dates take ISO/epoch). A figure
-  // declares no colour of its own (`ui` kit/values.tsx `valueFont`) and takes the
-  // text layer's, so `<Text tone="danger">Balance: <Money/></Text>` paints as one
-  // sentence where the figure used to jump back to the default text colour. Its
-  // own `tone` still wins, which is why every one of them keeps the adjective.
+  // Values. There is no value-FORMATTING tier any more: a figure is formatted in
+  // the screen's own code with `Intl` and arrives here as text, so what is left in
+  // this group is typography, the enum pill, and the glyph. A figure lives inside
+  // the sentence that carries it, which is what `Text`'s children are for.
   {
     name: "Text",
     group: "values",
     takesChildren: true,
-    summary: "Themed text. Use variant=heading for section titles. A figure goes INSIDE the sentence, as children — never in a hand-built string — and takes this text's colour, so tone the sentence, not every figure in it.",
+    summary: "Themed text. Use variant=heading for section titles. A figure you formatted goes INSIDE the sentence, as children, and takes this text's colour, so tone the sentence rather than the figure in it.",
     props: {
       // string | number, matching the implementation (`text: ReactNode`, which
       // renders a number verbatim). The spec said `string` only, which never
@@ -385,66 +372,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     },
     examples: [
       '<Text text="This month" variant="heading"/>',
-      '<Text variant="caption">Overdue: <Money value={overdue.total_cents / 100} tone="danger"/> across <Num value={overdue.count}/> clients</Text>',
-    ],
-  },
-  {
-    name: "Money",
-    group: "values",
-    summary: "An amount shown as currency. It expects DOLLARS and never converts — tool data is usually cents, so divide where you read it: `amount_cents / 100`. Hand it 2850 un-divided and the screen shows $2,850.00, not $28.50.",
-    props: {
-      value: data(z.number(), "the amount in dollars (major units)"),
-      currency: config(z.string(), "ISO 4217 code, default USD"),
-    },
-    examples: ["<Money value={invoices.total({}).amountCents / 100}/>"],
-  },
-  {
-    name: "DateTime",
-    group: "values",
-    summary: "A date/time from an ISO string, epoch millis, or Date. Invalid input renders a dash, never 'Invalid Date'. `compact` drops the year — \"Aug 7\", for a narrow column or a date this year.",
-    props: {
-      value: data(z.union([z.string(), z.number()]), "ISO string or epoch millis"),
-      mode: config(z.enum(["date", "time", "datetime", "relative"]), "how to render"),
-      // Read by `date` and `datetime` — the two modes that print a year at all.
-      // A clock has none to drop and `relative` counts from now, so on `time`
-      // and `relative` it is inert rather than wrong.
-      compact: config(z.boolean(), 'drop the year: "Aug 7" instead of "Aug 7, 2026" (date and datetime)'),
-      timeZone: config(z.string(), 'an IANA zone the stamp is read in — "America/New_York"; default is wherever the person is'),
-    },
-    examples: [
-      '<DateTime value={invoice.dueDate} mode="date"/>',
-      '<DateTime value={event.at} mode="relative"/>',
-      '<DateTime value={build.started} mode="datetime" compact/>',
-    ],
-  },
-  {
-    name: "Percent",
-    group: "values",
-    summary: "A percentage. It renders the number it is given and converts NOTHING — 46.1 is \"46.1%\", which is what a host `*_pct` field already holds. A 0..1 ratio is `* 100` where you prepare the data. Decimals show only where the number has them, up to two; `fractionDigits` pins them.",
-    props: {
-      value: data(z.number(), "the percentage itself, on a 0-100 scale — never a 0..1 ratio"),
-      fractionDigits: config(z.number().int().nonnegative(), "decimal places — pin them, rather than letting the figure choose"),
-    },
-    examples: ["<Percent value={goal.progress_pct}/>", "<Percent value={goal.progressRatio * 100}/>"],
-  },
-  {
-    name: "Num",
-    group: "values",
-    summary: "A grouped number. Use notation=compact for large counts (1.5M), and unit for the word after the figure (842 ms).",
-    props: {
-      value: data(z.number(), "the number"),
-      notation: config(z.enum(["standard", "compact"]), "grouping style"),
-      maximumFractionDigits: config(z.number().int().nonnegative(), "decimal places"),
-      // The other half of `maximumFractionDigits`, which was declared alone: the
-      // cap says how much precision to drop and nothing said how much to KEEP, so
-      // a figure of 8.0 hours printed "8" beside a 7.5 in the same column and the
-      // two read as different precisions.
-      minimumFractionDigits: config(z.number().int().nonnegative(), 'decimal places to KEEP — "8.0" rather than "8", where a column holds 7.5 as well'),
-      unit: config(z.string(), 'a unit written after the figure — "ms", "min", "h", "GB"'),
-    },
-    examples: [
-      '<Num value={metrics.count} notation="compact"/>',
-      '<Num value={service.tail_latency_ms} unit="ms"/>',
+      '<Text variant="caption" tone="danger">Overdue: {(overdue.total_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} across {overdue.count} clients</Text>',
     ],
   },
   {
@@ -477,11 +405,11 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DataTable",
     group: "data",
-    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys and formats each cell — you pass rows and columns. A column's `cell` is a function of the row, so any arithmetic or composition a cell needs belongs there; a per-row CONTROL goes in `rowActions`, which is a function of the row too. Dates in cells are compact (\"Aug 12\"); a cell stays on ONE line and EVERY column renders, so a frame too narrow for all of them scrolls sideways — no column is ever dropped or squeezed. Cap a long-prose column with a `width` (140-200) and `truncate` and it ellipsizes with the whole text in its hover title, instead of making the table wide. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
+    summary: "The smart table. Sorts, filters, searches, paginates and resolves dot-path column keys — you pass rows and columns. A cell shows its value as it stands, so a figure is formatted where you prepare the rows or inside the column's `cell`, which is a function of the row and the home for any arithmetic or composition; a per-row CONTROL goes in `rowActions`, a function of the row too. A cell stays on ONE line and EVERY column renders, so a frame too narrow for all of them scrolls sideways — no column is ever dropped or squeezed. Cap a long-prose column with a `width` (140-200) and `truncate` and it ellipsizes with the whole text in its hover title, instead of making the table wide. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
     takesChildren: true,
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key takes dot-paths (client.name); label (or header) is the heading; format is a value tier token; width is px; truncate clips that column to one line with an ellipsis and wants a width to bite against; priority opts the table into dropping columns on a frame too narrow for them, lowest first, and defaults to left-to-right; cell is a (row) => elements slot; key is optional on an action column"),
+      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key takes dot-paths (client.name); label (or header) is the heading; width is px; truncate clips that column to one line with an ellipsis and wants a width to bite against; priority opts the table into dropping columns on a frame too narrow for them, lowest first, and defaults to left-to-right; cell is a (row) => elements slot; key is optional on an action column"),
       fold: config(z.boolean(), "on a narrow frame, let the columns that do not fit give way and fold each into the first cell as an extra line — off by default, and so is giving way at all: the frame scrolls instead"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
@@ -495,7 +423,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       rowActions: config(slot, "the controls at the end of every row"),
     },
     examples: [
-      '<DataTable rows={invoices.list({status:"overdue"}).data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:(row) => <Stack gap={2}><Text text={row.client.name}/><Text text={row.number} variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger",paid:"success"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data.map((r) => ({ ...r, amount: (r.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" }), due: new Date(r.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) }))} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:(row) => <Stack gap={2}><Text text={row.client.name}/><Text text={row.number} variant="caption"/></Stack>},{key:"amount",align:"end"},{key:"due",label:"Due"},{key:"status",label:"Status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger",paid:"success"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>} emptyState="No overdue invoices"/>',
     ],
   },
   {
@@ -505,7 +433,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     takesChildren: true,
     props: {},
     examples: [
-      '<TableRow key={a.id}><Text text={a.name}/><Money value={a.balance_cents / 100}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>',
+      '<TableRow key={a.id}><Text text={a.name}/><Text text={(a.balance_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}/><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: a.id })}/></TableRow>',
     ],
   },
   {
@@ -516,13 +444,13 @@ const BASE_SPECS: KitComponentSpec[] = [
       items: data(rows, "items from a tool call", { required: true }),
       titleField: config(z.string(), "field for each card title"),
       badgeField: config(z.string(), "field rendered as a status pill"),
-      fields: config(z.array(cardField), "label/value rows on each card, or bare keys; defaults to the item's own keys; cell is a slot"),
+      fields: config(z.array(cardField), "label/value rows on each card, or bare keys; defaults to the item's own keys; a value shows as it stands, so format it in the data or in cell, which is a slot"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
       empty: config(slot, "elements shown instead of that text"),
       actions: config(slot, "the buttons above the cards"),
     },
-    examples: ['<CardList items={clients.list({}).data.map((c) => ({ ...c, balance: c.balance_cents / 100 }))} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
+    examples: ['<CardList items={clients.list({}).data.map((c) => ({ ...c, balance: (c.balance_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" }) }))} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance"}]}/>'],
   },
   {
     name: "Calendar",
@@ -544,19 +472,16 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Stat",
     group: "data",
-    summary: "A KPI/metric summary. Formats its value (money takes dollars — divide a cents field by 100 where you read it) and shows an optional trend. Kit value components nested inside render under the number.",
+    summary: "A KPI/metric summary — the figure's typography, tone and trend caption. It shows the value AS GIVEN, so format it yourself and hand over the finished string. Kit components nested inside render under the number.",
     takesChildren: true,
     props: {
       label: copy(z.string(), "metric name", { required: true }),
-      value: data(z.union([z.number(), z.string()]), "the figure — format it yourself with toLocaleString, or hand over the number and name a format token; a string renders as given and Stat does the typography either way", { required: true }),
-      format: config(valueFormat, "value tier format"),
-      durationUnit: config(durationUnit, DURATION_DOC.durationUnit),
-      durationSigned: config(z.boolean(), DURATION_DOC.durationSigned),
+      value: data(z.union([z.number(), z.string()]), "the figure, shown as it stands — format it with toLocaleString; a bare number renders grouped-as-written and Stat does the typography either way", { required: true }),
       unit: config(z.string(), 'a unit written after the value — "ms", "min", "h"'),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       icon: config(slot, "a glyph beside the metric name"),
     },
-    examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents / 100} format="money" trend="+12% MoM"/>'],
+    examples: ['<Stat label="Total overdue" value={(invoices.total({}).amountCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} trend="+12% MoM" tone="danger"/>'],
   },
   {
     name: "Badge",
@@ -571,11 +496,11 @@ const BASE_SPECS: KitComponentSpec[] = [
     summary: "ONE record's fields as label/value rows — the detail a table row expands into. A field takes a `cell` slot, exactly as a table column does.",
     props: {
       record: data(z.record(z.string(), z.unknown()), "the record from a tool call", { required: true }),
-      items: config(z.array(cardField), "the fields to show, or bare keys; defaults to the record's own keys; key supports dot-paths; format is a value tier token; cell is a slot"),
+      items: config(z.array(cardField), "the fields to show, or bare keys; defaults to the record's own keys; key supports dot-paths; a value shows as it stands, so format it in the data or in cell, which is a slot"),
       dividers: config(z.boolean(), "hairline rule between rows"),
     },
     examples: [
-      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"dueDate",format:"date"},{key:"amount_cents",label:"Amount",cell:(record) => <Money value={record.amount_cents / 100}/>},{key:"status",cell:(record) => <EnumBadge value={record.status}/>}]} dividers/>',
+      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"dueDate",label:"Due",cell:(record) => <Text text={new Date(record.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}/>},{key:"amount_cents",label:"Amount",cell:(record) => <Text text={(record.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}/>},{key:"status",cell:(record) => <EnumBadge value={record.status}/>}]} dividers/>',
     ],
   },
   {
@@ -629,13 +554,20 @@ const BASE_SPECS: KitComponentSpec[] = [
 
   // Charts (recharts internals; data props only; $NaN is unrenderable)
   //
-  // A chart is the one place money has no READ to divide at: it looks its numbers
-  // up BY KEY, so there is no `<Money value={row.x / 100}/>` to write and the
-  // division has to happen in the data prep. The examples here used to hand tool
-  // rows straight to `format="money"`, and a screen that copied one faithfully
-  // rendered cents as dollars — $285,000 of housing spend — while dividing
-  // correctly everywhere the Stat example was the model. So each of these says
-  // DOLLARS beside its own format token, and every example maps first.
+  // THE ONE EXCEPTION to the value tier's death: a chart keeps its axis `format`
+  // and `xFormat` tokens. Everywhere else in a screen the displayed value passes
+  // through the model's own code, so the model formats it there with `Intl` and
+  // hands over text. An axis tick never does — the labels are computed HOST-SIDE
+  // off a numeric scale, from numbers the screen holds no value of — so the series
+  // stay NUMERIC and the token is how the chart is told what they mean. Tooltips
+  // and bar labels read the same token, which is why they are not hand-formatted
+  // either.
+  //
+  // A chart also has no READ to divide at: it looks its numbers up BY KEY, so the
+  // `/ 100` has to happen in the data prep. These examples used to hand tool rows
+  // straight to `format="money"`, and a screen that copied one faithfully rendered
+  // cents as dollars — $285,000 of housing spend. So each of these says DOLLARS
+  // beside its own format token, and every example maps first.
   {
     name: "LineChart",
     group: "charts",

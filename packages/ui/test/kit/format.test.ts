@@ -5,7 +5,6 @@ import {
   formatDuration,
   formatMoney,
   formatNum,
-  formatPercent,
   isRenderableNumber,
 } from "../../src/kit/format.js";
 
@@ -52,33 +51,6 @@ describe("formatMoney (takes major units)", () => {
   });
 });
 
-describe("formatPercent (prints the number it is given)", () => {
-  it("prints a percentage as given, and converts NOTHING", () => {
-    // The defect this closes: `Intl`'s own `style: "percent"` multiplies by 100,
-    // so a host field already on a 0-100 scale — which is how a `*_pct` field is
-    // stored — printed as "4,610%".
-    expect(formatPercent(46.1)).toBe("46.1%");
-    expect(formatPercent(42)).toBe("42%");
-    expect(formatPercent(0.42)).toBe("0.42%");
-  });
-
-  it("never rounds a figure it was not asked to round — 7.25% is not 7%", () => {
-    expect(formatPercent(7.25)).toBe("7.25%");
-    // Up to two decimals, and only where the number has them.
-    expect(formatPercent(12.34)).toBe("12.34%");
-    expect(formatPercent(42, { fractionDigits: 1 })).toBe("42.0%");
-    expect(formatPercent(12.34, { fractionDigits: 1 })).toBe("12.3%");
-  });
-
-  it("groups a figure large enough to need it", () => {
-    expect(formatPercent(1234.5)).toBe("1,234.5%");
-  });
-
-  it("returns null for non-finite input", () => {
-    expect(formatPercent(Number.NaN)).toBeNull();
-  });
-});
-
 describe("formatNum", () => {
   it("groups thousands", () => {
     expect(formatNum(1234567)).toBe("1,234,567");
@@ -100,33 +72,14 @@ describe("formatNum", () => {
   });
 });
 
-describe("formatDuration (takes seconds unless told minutes)", () => {
+describe("formatDuration (takes seconds, and only seconds)", () => {
   it("reads a count of seconds as a duration", () => {
     expect(formatDuration(268)).toBe("4m 28s");
     expect(formatDuration(412)).toBe("6m 52s");
     expect(formatDuration(158 * 60)).toBe("2h 38m");
-  });
-
-  it("takes the count in minutes when that is the unit the field is in", () => {
-    // The forgotten multiply this closes: read as seconds, 200 minutes printed
-    // "3m 20s" — a plausible duration wrong by 60×, with nothing on screen to
-    // say so. A declared unit cannot be forgotten.
-    expect(formatDuration(200, { unit: "minutes" })).toBe("3h 20m");
+    // No unit to declare any more: a series stored in minutes multiplies where
+    // its data is prepared, because a chart's `format` is a bare word.
     expect(formatDuration(200)).toBe("3m 20s");
-    expect(formatDuration(0.5, { unit: "minutes" })).toBe("0m 30s");
-    expect(formatDuration(268, { unit: "seconds" })).toBe("4m 28s");
-  });
-
-  it("phrases the sign instead of printing it when asked", () => {
-    // "-1h 55m" in an SLA column reads as a negative quantity of time, which is
-    // not a thing; the word is what says which side of the deadline the row is on.
-    expect(formatDuration(200, { unit: "minutes", signed: true })).toBe("3h 20m left");
-    expect(formatDuration(-115 * 60, { signed: true })).toBe("overdue 1h 55m");
-    expect(formatDuration(-115, { unit: "minutes", signed: true })).toBe("overdue 1h 55m");
-    // Zero stays the plain figure: everything under half a second rounds to it,
-    // and neither "0s left" nor "overdue 0s" is a claim that count supports.
-    expect(formatDuration(0, { signed: true })).toBe("0s");
-    expect(formatDuration(-0.2, { signed: true })).toBe("0s");
   });
 
   it("keeps to the two largest units — a duration is one figure, not three", () => {
@@ -165,19 +118,12 @@ describe("formatDuration (takes seconds unless told minutes)", () => {
     expect(formatDuration("268" as unknown as number)).toBeNull();
   });
 
-  it("is reachable through the format token every column and Stat takes", () => {
+  // The `duration` token survives for the ONE place the Kit still formats a
+  // figure itself: a chart axis, whose ticks come off a numeric scale the host
+  // reduces, so the chart has to be told what its numbers mean.
+  it("is reachable through the format token a chart axis takes", () => {
     expect(applyFormat(268, "duration")).toBe("4m 28s");
     expect(applyFormat("268", "duration")).toBeNull();
-  });
-
-  it("carries the unit and the phrasing through the format token", () => {
-    // The token alone cannot say what a count is in — so the options ride with
-    // it, from the `durationUnit`/`durationSigned` prop on a Stat, a column, a
-    // card field or a KeyValue row down to here.
-    expect(applyFormat(200, "duration", { unit: "minutes" })).toBe("3h 20m");
-    expect(applyFormat(-115, "duration", { unit: "minutes", signed: true })).toBe("overdue 1h 55m");
-    // Nothing passed is the old reading, unchanged.
-    expect(applyFormat(200, "duration", {})).toBe("3m 20s");
   });
 });
 
@@ -189,6 +135,19 @@ describe("formatDateTime", () => {
   it("formats epoch millis and Date instances", () => {
     const d = new Date(Date.UTC(2026, 0, 2, 0, 0, 0));
     expect(formatDateTime(d, { mode: "date", timeZone: "UTC" })).toBe("Jan 2, 2026");
+  });
+
+  it("compact drops the YEAR and keeps the clock", () => {
+    expect(formatDateTime("2026-08-12", { mode: "date" })).toBe("Aug 12, 2026");
+    expect(formatDateTime("2026-08-12", { mode: "date", compact: true })).toBe("Aug 12");
+    const stamp = formatDateTime(Date.UTC(2026, 7, 12, 15, 30), {
+      mode: "datetime",
+      compact: true,
+      timeZone: "UTC",
+    });
+    expect(stamp).toContain("Aug 12");
+    expect(stamp).toMatch(/3:30/);
+    expect(stamp).not.toContain("2026");
   });
 
   it("shows no clock for a date-only value asked for as a datetime", () => {

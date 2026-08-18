@@ -114,7 +114,7 @@ const tools: readonly HostToolInfo[] = [
 ];
 
 /** The names this host's surface renders — the Kit slice a screen here needs. */
-const catalog = ["Stack", "Row", "Card", "Text", "Money", "DateTime", "Button", "Callout"];
+const catalog = ["Stack", "Row", "Card", "Text", "Button", "Callout"];
 
 const ROWS = {
   data: [
@@ -148,7 +148,7 @@ const refusal = async (
 };
 
 const GOOD = `import { useState } from "react";
-import { Button, Callout, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Callout, Card, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
@@ -167,8 +167,8 @@ export default function PendingTransfers() {
         <Card key={transfer.id} title={transfer.recipient}>
           <Row justify="between" align="center">
             <Stack gap={4}>
-              <Money value={transfer.amount_cents / 100} />
-              <DateTime value={transfer.scheduled_for} mode="date" />
+              <Text text={(transfer.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} />
+              <Text text={new Date(transfer.scheduled_for).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} variant="caption" />
             </Stack>
             <Button label="Cancel" variant="secondary" onClick={() => setConfirming(transfer.id)} />
           </Row>
@@ -243,35 +243,6 @@ describe("a screen that passes", () => {
     } finally {
       screen.dispose();
     }
-  });
-
-  // The three props a screen had no way to spell: the year a narrow column drops,
-  // a count of seconds read as a duration, and the unit that keeps a latency from
-  // being a bare number. Undeclared in the specs, each one is a blocking error
-  // here — which is what a model writing them off the catalog would have hit.
-  it("passes a screen that drops the year, reads seconds as a duration, and names a unit", async () => {
-    const result = await checkComponentScreen({
-      source: `import { DataTable, DateTime, Num, Row, Stack, Stat, useQuery } from "@vendo/screen";
-export default function S() {
-  const pending = useQuery("list_pending_transfers");
-  return (
-    <Stack gap={12}>
-      <Stat label="Longest wait" value={pending.data[0].amount_cents} format="duration" />
-      <Row gap={8} align="center">
-        <DateTime value={pending.data[0].scheduled_for} mode="date" compact />
-        <Num value={pending.data[0].amount_cents} unit="ms" />
-      </Row>
-      <DataTable rows={pending.data} columns={[{ key: "amount_cents", label: "Took", format: "duration" }]} />
-    </Stack>
-  );
-}
-`,
-      hostTools: tools,
-      catalog: [...catalog, "DataTable", "Num", "Stat"],
-      runQuery: async () => ROWS,
-    });
-
-    expect(result).toMatchObject({ ok: true, issues: [] });
   });
 
   it("passes a screen with no queries at all, and runs nothing", async () => {
@@ -637,7 +608,7 @@ export default function S() { return <img><Text text="x" /></img>; }
     expect(codes).toEqual(["types"]);
     expect(text).toContain("line 2: writes the HTML element <img>");
     expect(text).toContain("The HTML a screen has is display-only: div, span, section");
-    expect(text).toContain("Anything with behavior comes from \"@vendo/screen\": Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
+    expect(text).toContain("Anything with behavior comes from \"@vendo/screen\": Stack, Row, Card, Text, Button, Callout.");
     // The closing tag is the same break; a repair list that says everything
     // twice reads as two problems.
     expect(text.match(/writes the HTML element/gu)).toHaveLength(1);
@@ -661,7 +632,7 @@ export default function S() { return <Sidebar><Text text="x" /></Sidebar>; }
 `);
 
     expect(text).toContain("renders <Sidebar>, which this screen never imported");
-    expect(text).toContain("The components available are: Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
+    expect(text).toContain("The components available are: Stack, Row, Card, Text, Button, Callout.");
   });
 
   it("refuses a member the screen module does not export", async () => {
@@ -779,7 +750,7 @@ export default function S() { return <Row><Badge label="Paid" tone="${tone}" /><
 
   it("never reads `key` as a prop — a mapped row writes one, and the real fault is the one named", async () => {
     const mapped = (row: string) => checkComponentScreen({
-      source: `import { DataTable, Money, TableRow, Text, useQuery } from "@vendo/screen";
+      source: `import { DataTable, TableRow, Text, useQuery } from "@vendo/screen";
 export default function S() {
   const pending = useQuery("list_pending_transfers");
   return (
@@ -800,7 +771,8 @@ export default function S() {
     });
 
     // The pattern the Kit prompt teaches, `key` and all.
-    expect(await mapped("<Money value={transfer.amount_cents / 100} />")).toMatchObject({ ok: true, issues: [] });
+    expect(await mapped('<Text text={(transfer.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} />'))
+      .toMatchObject({ ok: true, issues: [] });
 
     // …and where the KEYED element is broken, `key` must not be what the repair
     // is told about: it rides along in every element-level props error, and the
@@ -809,10 +781,10 @@ export default function S() {
     const sentences = async (cell: string): Promise<string> =>
       (await mapped(cell)).issues.map(({ message }) => message).join("\n");
     for (const [broken, fault] of [
-      ['<Money value={1} sparkle={true} />', 'sets unknown prop "sparkle"'],
-      ["<Money value={transfer.recipient} />", 'prop "value" on <Money> takes number'],
+      ['<Text text="1" sparkle={true} />', 'sets unknown prop "sparkle"'],
+      ["<Text text={transfer} />", 'prop "text" on <Text> takes string | number'],
     ] as const) {
-      const keyed = await sentences(broken.replace("<Money ", "<Money key={transfer.id} "));
+      const keyed = await sentences(broken.replace("<Text ", "<Text key={transfer.id} "));
       expect(keyed).toContain(fault);
       expect(keyed).toBe(await sentences(broken));
     }
@@ -1256,13 +1228,13 @@ export default function Ledger() {
    * it: two rows, two amounts, each computed from its own row.
    */
   it("admits a per-row cell written as a function of the row", async () => {
-    const result = await painted(`import { DataTable, Money } from "@vendo/screen";
+    const result = await painted(`import { DataTable, Text } from "@vendo/screen";
 
 export default function Ledger() {
   return (
     <DataTable
       rows={[{ id: "tr_1", amount: 4200 }, { id: "tr_2", amount: 900 }]}
-      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money value={row.amount / 100} /> }]}
+      columns={[{ key: "amount", label: "Amount", cell: (row) => <Text text={(row.amount / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} /> }]}
     />
   );
 }
@@ -1270,8 +1242,8 @@ export default function Ledger() {
 
     expect(result.issues).toEqual([]);
     const table = Object.values(result.initialTree?.nodes ?? {}).find(({ component }) => component === "DataTable");
-    const cells = (table?.props.columns as Array<{ cell: Array<{ props: { value: number } }> }>)[0]!.cell;
-    expect(cells.map(({ props }) => props.value)).toEqual([42, 9]);
+    const cells = (table?.props.columns as Array<{ cell: Array<{ props: { text: string } }> }>)[0]!.cell;
+    expect(cells.map(({ props }) => props.text)).toEqual(["$42.00", "$9.00"]);
   });
 
   /** EVERY slot, not just a per-row one: `Tabs.tabs[].content`,
@@ -1332,7 +1304,7 @@ export default function Panels() {
    */
   it("names the keys an item accepts when a screen writes one it has not got", async () => {
     const result = await checkComponentScreen({
-      source: `import { KeyValue, Money, Text, useQuery } from "@vendo/screen";
+      source: `import { KeyValue, Text, useQuery } from "@vendo/screen";
 
 export default function Receipt() {
   const pending = useQuery("list_pending_transfers");
@@ -1342,7 +1314,7 @@ export default function Receipt() {
       record={transfer}
       items={[
         { label: "Recipient", field: <Text text={transfer.recipient} /> },
-        { label: "Amount", field: <Money value={transfer.amount_cents / 100} /> },
+        { label: "Amount", field: <Text text={String(transfer.amount_cents / 100)} /> },
       ]}
     />
   );
@@ -1358,7 +1330,7 @@ export default function Receipt() {
     // The key it wrote, where it wrote it, and the keys that would have worked —
     // the same shape a misspelled tool payload key gets.
     expect(message).toContain('writes the key "field", which items on <KeyValue> does not accept');
-    expect(message).toContain("Its keys are: key, label, format, durationUnit, durationSigned, cell (required: key)");
+    expect(message).toContain("Its keys are: key, label, cell (required: key)");
     // …and NOT the slot sentence, which named no key at all.
     expect(message).not.toContain("this slot is painted once");
   });

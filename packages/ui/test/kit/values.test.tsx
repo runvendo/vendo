@@ -1,86 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { formatDateTime } from "../../src/kit/format.js";
-import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
-
-describe("Money", () => {
-  it("formats a dollar amount as currency", () => {
-    render(<Money value={1234.56} />);
-    expect(screen.getByText("$1,234.56")).toBeTruthy();
-  });
-
-  it("renders a placeholder for NaN — never $NaN", () => {
-    const { container } = render(<Money value={Number.NaN} />);
-    expect(container.textContent).toBe("—");
-    expect(container.textContent).not.toContain("NaN");
-  });
-});
-
-describe("DateTime", () => {
-  it("formats a date-only string without slipping a day", () => {
-    render(<DateTime value="2026-03-14" mode="date" />);
-    expect(screen.getByText("Mar 14, 2026")).toBeTruthy();
-  });
-
-  it("renders a placeholder for an unparseable value", () => {
-    const { container } = render(<DateTime value="nope" />);
-    expect(container.textContent).toBe("—");
-  });
-
-  it("compact drops the YEAR and keeps the clock", () => {
-    expect(formatDateTime("2026-08-12", { mode: "date" })).toBe("Aug 12, 2026");
-    expect(formatDateTime("2026-08-12", { mode: "date", compact: true })).toBe("Aug 12");
-    const stamp = formatDateTime(Date.UTC(2026, 7, 12, 15, 30), {
-      mode: "datetime",
-      compact: true,
-      timeZone: "UTC",
-    });
-    expect(stamp).toContain("Aug 12");
-    expect(stamp).toMatch(/3:30/);
-    expect(stamp).not.toContain("2026");
-    const { container } = render(<DateTime value="2026-08-12" mode="date" compact />);
-    expect(container.textContent).toBe("Aug 12");
-  });
-});
-
-describe("Percent + Num", () => {
-  it("prints the percentage it is given, with no trailing zeros to show", () => {
-    render(<Percent value={42} />);
-    expect(screen.getByText("42%")).toBeTruthy();
-  });
-
-  // Rounding a figure nobody asked to round is a lie: an APR of 7.25% printed as
-  // "7%" is a different rate.
-  it("keeps the decimals the figure actually has", () => {
-    expect(render(<Percent value={7.25} />).container.textContent).toBe("7.25%");
-    expect(render(<Percent value={42} fractionDigits={1} />).container.textContent).toBe("42.0%");
-  });
-
-  // A host stores a rate as `apr_pct: 46.1`, and the ×100 convention turned that
-  // into "4,610%" on screen. Nothing multiplies now.
-  it("does not multiply a host's own 0-100 figure", () => {
-    expect(render(<Percent value={46.1} />).container.textContent).toBe("46.1%");
-  });
-
-  it("groups a large number", () => {
-    render(<Num value={1234567} />);
-    expect(screen.getByText("1,234,567")).toBeTruthy();
-  });
-
-  it("carries its unit, so a latency is never a bare number", () => {
-    const { container } = render(<Num value={842} unit="ms" />);
-    expect(container.textContent).toBe("842 ms");
-  });
-
-  // "8.0 hours" printed as "8": Intl has had the option all along, the component
-  // just never let a screen ask for it, and a column that alternates "8" and
-  // "7.5" reads as two different precisions.
-  it("keeps the trailing zeros the figure was written with", () => {
-    expect(render(<Num value={8} minimumFractionDigits={1} unit="hours" />).container.textContent).toBe("8.0 hours");
-    expect(render(<Num value={7.5} minimumFractionDigits={1} />).container.textContent).toBe("7.5");
-  });
-});
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
 describe("EnumBadge", () => {
   it("humanizes a snake_case enum value", () => {
@@ -129,36 +50,40 @@ describe("Text", () => {
     expect(render(<Text text={true} />).container.textContent).toBe("true");
   });
 
-  // VALUES IN SENTENCES. With `text` the only way in, a screen that wanted a
-  // figure inside a phrase hand-rolled `` `Overdue: $${x.toFixed(2)}` `` — an
-  // unlocalised, uncurrencied, NaN-prone string, i.e. every failure the value
-  // tier exists to make impossible, written around it.
-  it("takes children, so a Kit figure can sit inside a sentence", () => {
+  // VALUES IN SENTENCES, and the only road left: a screen formats its own
+  // figures, so the sentence is where a formatted figure sits. With `text` the
+  // only way in, a phrase and its figures would have to be concatenated into one
+  // string before they got here, and nothing in it could be composed or painted
+  // on its own.
+  it("takes children, so a formatted figure can sit inside a sentence", () => {
+    const overdue = (2500).toLocaleString("en-US", { style: "currency", currency: "USD" });
     const { container } = render(
       <Text variant="caption">
-        Overdue: <Money value={2500} /> across <Num value={12} /> invoices
+        Overdue: {overdue} on <Text variant="code">INV-4471</Text>
       </Text>,
     );
-    expect(container.textContent).toBe("Overdue: $2,500.00 across 12 invoices");
-    // The nested elements are the value tier's own, not flattened text — and the
-    // sentence around them still carries the variant it was given.
-    expect(container.querySelector('[data-kit="Money"]')).toBeTruthy();
+    expect(container.textContent).toBe("Overdue: $2,500.00 on INV-4471");
+    // The reference is a component of its own, not flattened text — and the
+    // sentence around it still carries the variant it was given.
+    expect(container.querySelector('[data-variant="code"]')).toBeTruthy();
     expect(container.querySelector('[data-kit="Text"]')!.getAttribute("data-variant")).toBe("caption");
   });
 
-  // A toned sentence painted its words red and the FIGURE stayed default: Money
-  // re-declared `t.text` on itself, so the overdue balance — the one word in the
-  // sentence carrying the meaning — was the only word that lost it.
-  it("hands its color down to the figures inside it", () => {
+  // A toned sentence painted its words red and the FIGURE stayed default: the
+  // old value tier re-declared `t.text` on itself, so the overdue balance — the
+  // one word in the sentence carrying the meaning — was the only word that lost
+  // it. A formatted figure is a run of text in the sentence now, which is the
+  // one shape the tone always reaches.
+  it("paints the figure in its sentence, not only the words around it", () => {
     const { container } = render(
-      <Text tone="danger">
-        Balance: <Money value={2500} />
-      </Text>,
+      <Text tone="danger">Balance: {(2500).toLocaleString("en-US", { style: "currency", currency: "USD" })}</Text>,
     );
-    expect(container.querySelector<HTMLElement>('[data-kit="Text"]')!.style.color).toContain("var(--vendo-color-danger");
-    // The figure declares no color of its own, which is what lets the cascade
-    // paint it — jsdom reports the declaration, a browser resolves it.
-    expect(container.querySelector<HTMLElement>('[data-kit="Money"]')!.style.color).toBe("inherit");
+    const sentence = container.querySelector<HTMLElement>('[data-kit="Text"]')!;
+    expect(sentence.style.color).toContain("var(--vendo-color-danger");
+    expect(sentence.textContent).toBe("Balance: $2,500.00");
+    // The figure wears no element of its own, so the color declared here IS the
+    // color it resolves to — jsdom reports the declaration, a browser paints it.
+    expect(sentence.children.length).toBe(0);
   });
 
   it("takes a plain string child", () => {

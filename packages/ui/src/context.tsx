@@ -54,8 +54,10 @@ export interface VendoContextValue {
   /** Host greeting-as-tutorial content (§6): intro + starter prompts, the
       `.vendo/greeting.json` shape. Absent = the built-in generic greeting. */
   greeting?: VendoGreeting;
-  /** The host's display currency + locale for every Kit formatter — what a
-      generated `format:"money"` column or `<Money cents/>` renders in. */
+  /** The host's display currency + locale for the formatting the KIT still does
+      itself — a chart's axis ticks, and the chrome's own rendering of a tool's
+      arguments. A screen formats its own figures with `Intl`, so the currency
+      also reaches the model through its briefing. */
   intl: KitIntl;
   /** Spec 2026-08-05 §2 — whether sends snapshot the visible host page into
       the [Situation] channel. Default true; false disables capture entirely

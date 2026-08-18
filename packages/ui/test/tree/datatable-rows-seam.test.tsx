@@ -11,9 +11,10 @@
  *
  * The failure it exists to catch is the one the 2026-08-16 benchmark found in
  * every model: a cents field bound by NAME, printed 100x too large, past every
- * gate. The ÷100 has to run in the VM, and the number it produces has to arrive
- * in the right column of the right row — whether the row was painted by hand as
- * a `<TableRow>` or written once as a function of the row.
+ * gate. The ÷100 and the currency both have to run in the VM — off the host's own
+ * `Intl`, borrowed across the wall — and the text they produce has to arrive in
+ * the right column of the right row, whether the row was painted by hand as a
+ * `<TableRow>` or written once as a function of the row.
  */
 import { beforeAll, afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -31,7 +32,7 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Text", "Money", "Button", "DataTable", "TableRow"];
+const CATALOG = ["Stack", "Text", "Button", "DataTable", "TableRow"];
 
 /** Cents, the way a host's API really hands them over. */
 const ACCOUNTS = [
@@ -40,7 +41,9 @@ const ACCOUNTS = [
 ];
 
 const BALANCES = `
-import { Button, DataTable, Money, Text, TableRow, tools, useQuery } from "@vendo/screen";
+import { Button, DataTable, Text, TableRow, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function Balances() {
   const accounts = useQuery("list_accounts");
@@ -55,7 +58,7 @@ export default function Balances() {
       {accounts.data.map((a) => (
         <TableRow key={a.id}>
           <Text text={a.name} />
-          <Money value={a.balance_cents / 100} />
+          <Text text={money(a.balance_cents)} />
           <Button label={"Cancel " + a.name} onClick={() => tools.cancel_transfer({ id: a.id })} />
         </TableRow>
       ))}
@@ -122,8 +125,9 @@ describe("a model-built table row, VM to paint", () => {
     expect(first.props).toEqual({});
     expect(first.children).toEqual([
       { component: "Text", props: { text: "Checking" }, children: [] },
-      // The arithmetic RAN, inside the VM, and a number stayed a number.
-      { component: "Money", props: { value: 1284.5 }, children: [] },
+      // The arithmetic AND the formatting both RAN, inside the VM: the cell
+      // crosses the wire as the finished text the table prints.
+      { component: "Text", props: { text: "$1,284.50" }, children: [] },
       {
         component: "Button",
         props: { label: "Cancel Checking", onClick: { $handler: "h1" } },
@@ -179,7 +183,9 @@ describe("a model-built table row, VM to paint", () => {
  * sorted order is exactly where an index match shows the wrong row's button.
  */
 const PER_ROW = `
-import { Button, DataTable, Money, tools, useQuery } from "@vendo/screen";
+import { Button, DataTable, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function Balances() {
   const accounts = useQuery("list_accounts");
@@ -188,7 +194,7 @@ export default function Balances() {
       rows={accounts.data}
       columns={[{ key: "name", label: "Account" },
                 { key: "balance_cents", label: "Balance", align: "end",
-                  cell: (a) => <Money value={a.balance_cents / 100} /> }]}
+                  cell: (a) => <Text text={money(a.balance_cents)} /> }]}
       sortBy="balance_cents desc"
       rowActions={(a) => <Button label={"Cancel " + a.name} onClick={() => tools.cancel_transfer({ id: a.id })} />}
     />
@@ -201,7 +207,7 @@ describe("a per-row slot, VM to paint", () => {
     const { tree } = served(PER_ROW);
     const columns = tree.props.columns as Array<{ cell?: unknown }>;
     const cells = columns[1]!.cell as Array<{ props: Record<string, unknown> }>;
-    expect(cells.map((cell) => cell.props.value)).toEqual([1284.5, 9001.25]);
+    expect(cells.map((cell) => cell.props.text)).toEqual(["$1,284.50", "$9,001.25"]);
     const actions = tree.props.rowActions as Array<{ props: Record<string, unknown> }>;
     expect(actions.map((action) => action.props.label)).toEqual(["Cancel Checking", "Cancel Savings"]);
     // Two rows, two handler ids — one for both was the defect: every Cancel

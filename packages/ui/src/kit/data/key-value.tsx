@@ -1,8 +1,8 @@
 /** KeyValue — one record's fields as two-column label/value rows (W2 §The Kit). */
 import { Fragment, type ReactNode } from "react";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat } from "../format.js";
 import { fieldItems, readField } from "../row.js";
-import { font, hairline, microLabel, mono, numeric, t, type KitStyled } from "../tokens.js";
+import { font, hairline, microLabel, numeric, t, type KitStyled } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface KeyValueItem {
@@ -10,14 +10,6 @@ export interface KeyValueItem {
   key: string;
   /** Row label; defaults to a humanized last path segment. */
   label?: string;
-  /** Value-tier format applied to the value. */
-  format?: ValueFormat;
-  /** What one unit of a `format:"duration"` value IS — seconds (default) or
-   *  minutes. A `minutes_remaining` field read as seconds prints a plausible
-   *  duration off by 60×, so the unit is declared, never multiplied in. */
-  durationUnit?: "seconds" | "minutes";
-  /** Phrase a `format:"duration"` sign: "3h 20m left" / "overdue 1h 55m". */
-  durationSigned?: boolean;
   /** Kit elements rendered as this row's VALUE (the label stays) — the DataTable
    *  cell contract, for a single record. Written as a function it is called once,
    *  with the record, so ONE element arrives and there is nothing to match. */
@@ -53,7 +45,6 @@ export function KeyValue({ record, items: rawItems, dividers = false, style }: K
       }}
     >
       {items.map((item, index) => {
-        const format = item.format ?? "text";
         const edge = !dividers || index === items.length - 1
           ? {}
           : {
@@ -68,9 +59,6 @@ export function KeyValue({ record, items: rawItems, dividers = false, style }: K
             <dd
               style={{
                 ...numeric,
-                // The face is the row's when the row prints a value; a `cell`
-                // slot brings components that carry their own.
-                ...(item.cell === undefined && format === "code" ? mono : {}),
                 ...edge,
                 margin: 0,
                 justifySelf: "end",
@@ -79,9 +67,7 @@ export function KeyValue({ record, items: rawItems, dividers = false, style }: K
                 overflowWrap: "anywhere",
               }}
             >
-              {item.cell ?? applyFormat(readField(record, item.key), format, { unit: item.durationUnit, signed: item.durationSigned }) ?? (
-                <span style={{ color: t.muted }}>—</span>
-              )}
+              {item.cell ?? applyFormat(readField(record, item.key), "text") ?? <span style={{ color: t.muted }}>—</span>}
             </dd>
           </Fragment>
         );

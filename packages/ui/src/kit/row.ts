@@ -2,12 +2,13 @@
  * Reading a record, and picking ONE row's element out of a per-row slot.
  *
  * A DataTable cell and a CardList card are painted once PER RECORD, and the slot
- * that fills one is written as a function of the row —
- * `cell: (row) => <Money value={row.amount_cents / 100}/>` — so a per-row slot
- * binds by CLOSURE: the arithmetic, the composition and that row's own handler
- * all live where the row is in scope. The screen VM calls the function once per
- * row and hands the component a LIST of elements, one per row, in the order of
- * the rows prop (apps `contract/kit/specs.ts` KIT_SLOT_PROPS).
+ * that fills one is written as a function of the row — `cell: (row) =>
+ * <Text>{(row.amount_cents / 100).toLocaleString("en-US", { style: "currency",
+ * currency: "USD" })}</Text>` — so a per-row slot binds by CLOSURE: the
+ * formatting, the composition and that row's own handler all live where the row
+ * is in scope. The screen VM calls the function once per row and hands the
+ * component a LIST of elements, one per row, in the order of the rows prop
+ * (apps `contract/kit/specs.ts` KIT_SLOT_PROPS).
  *
  * What is left here is what every container that reads records shares: the ONE
  * dot-path resolver, the bare-KEY shorthand each list prop takes, and the pick

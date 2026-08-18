@@ -135,12 +135,12 @@ describe("applyReshape", () => {
     expect(applyReshape(471711, [step("format", "money")])).toEqual({ ok: true, value: "$471,711.00" });
   });
 
-  it("format over ROWS is refused, and the reason teaches the column token", () => {
+  it("format over ROWS is refused, and the reason teaches the screen's own formatting", () => {
     // The row form stringified a column, which left DataTable sorting strings.
     const arrayValue = applyReshape(rows, [step("format", "money")]);
     expect(arrayValue.ok).toBe(false);
     if (!arrayValue.ok) {
-      expect(arrayValue.reason).toContain('format:"money"');
+      expect(arrayValue.reason).toContain("toLocaleString");
       expect(arrayValue.reason).toContain("sortBy");
     }
     const fieldForm = applyReshape(rows, [step("format", "revenue", "money")]);
@@ -229,7 +229,7 @@ describe("reshapeShape (compile-time flow)", () => {
     expect(scalar).toEqual({ ok: true, shape: { kind: "string" } });
     const overRows = reshapeShape(rowsShape, step("format", "money"));
     expect(overRows.ok).toBe(false);
-    if (!overRows.ok) expect(overRows.error.message).toContain('format:"money"');
+    if (!overRows.ok) expect(overRows.error.message).toContain("toLocaleString");
   });
 
   it("json stays defensive: any step flows, aggregates still type as number", () => {
@@ -278,10 +278,10 @@ describe("findInvalidReshape (the validateTree gate)", () => {
     expect(findInvalidReshape({ p: { $path: "/a", $reshape: "pick" } })).not.toBeNull();
   });
 
-  it("rejects the row form of format at the gate, naming the column token instead", () => {
+  it("rejects the row form of format at the gate, naming the screen's own formatting instead", () => {
     expect(findInvalidReshape({
       p: { $path: "/a", $reshape: [{ op: "format", args: ["amount", "money"] }] },
-    })).toContain('columns={[{key:"amount", format:"money"}]}');
+    })).toContain('cell: (row) => row.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })');
   });
 
   it("caps the chain length (bounded, non-Turing)", () => {
