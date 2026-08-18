@@ -181,23 +181,31 @@ const reseed = async (
     if (edited.failure === undefined) replayed = edited.app;
     else unapplied.push(wish);
   }
-  if (unapplied.length === seed.wishes.length) return replayed;
+  // Nothing landed when EVERY wish failed, so the provenance stays where it is
+  // and the version says so: the remix never reached the host's new version,
+  // and the drift warning has to survive for the retry. The report is written
+  // either way — this used to return early, which dropped the whole list on the
+  // one run where the person most needs to hear which wishes were left behind.
+  const anyLanded = unapplied.length < seed.wishes.length;
+  const nextBaseline = anyLanded ? baseline.hash : seed.baseline;
   // The report REPLACES the previous run's rather than adding to it: a wish that
   // lands this time has stopped being one to report.
   const rebased = {
     ...replayed,
-    seed: { ...seed, baseline: baseline.hash, unapplied: unapplied.length === 0 ? undefined : unapplied },
+    seed: { ...seed, baseline: nextBaseline, unapplied: unapplied.length === 0 ? undefined : unapplied },
   };
   const version: VersionEntry = {
     at: new Date().toISOString(),
-    intent: `Update ${seed.component} to the host's current version`,
+    intent: anyLanded
+      ? `Update ${seed.component} to the host's current version`
+      : `Update ${seed.component}: no recorded wish could be replayed`,
     rung: deps.rungFor(rebased),
   };
   const landed = await deps.persistEdit(replayed, rebased, version, ctx.principal.subject, { origin: "seed" });
   await deps.reportLifecycle("reseed", app.id, ctx, {
     component: seed.component,
     fromBaseline: seed.baseline,
-    toBaseline: baseline.hash,
+    toBaseline: nextBaseline,
   });
   return landed;
 };

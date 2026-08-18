@@ -56,15 +56,15 @@ describe("seed drift notice (06-apps §8)", () => {
     expect(screen.queryByRole("note", { name: NOTICE })).toBeNull();
   });
 
-  it("says LOUDLY that the host component moved on — and what the update COSTS", () => {
+  it("says LOUDLY that the host component moved on — and what the update DOES", () => {
     render(<TreeView tree={driftedTree(DRIFT)} components={{}} onAction={ok} />);
 
     const notice = screen.getByRole("note", { name: NOTICE });
     expect(notice.textContent).toContain('"net-worth-card"');
-    // Honest: updating hands over a fresh copy, so the person is told their own
-    // changes go with it — and that nothing moves until they ask.
-    expect(notice.textContent).toContain("fresh copy");
-    expect(notice.textContent).toContain("would be replaced");
+    // Honest: updating REPLAYS the changes the person asked for, and says which
+    // of them no longer fit — and nothing moves until they ask.
+    expect(notice.textContent).toContain("replays every change you asked for");
+    expect(notice.textContent).toContain("no longer fit");
     expect(notice.textContent).toContain("Nothing happens until you ask for it.");
     // Informational only: nothing is mutated without the user — the remixed
     // component still renders below the notice.

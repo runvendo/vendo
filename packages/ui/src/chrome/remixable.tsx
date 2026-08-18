@@ -11,6 +11,7 @@ import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { GRACE_MS, PinChrome, useMenuDismiss } from "./pin-chrome.js";
+import { vendoToast } from "./vendo-toasts.js";
 
 /**
  * The remixable-surface affordance: the host marking one of its own components
@@ -193,6 +194,17 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
       ? { label: "Didn’t load", name: "This view didn’t load", status: "The remix didn’t load — the chat that asked for it says why." }
       : undefined;
   const Original = () => <>{original}</>;
+  // "Update" REPLAYS the recorded wishes onto the host's new version — that is
+  // what the seed is FOR, and the menu item said so while doing nothing but a
+  // round trip. With no new version there is nothing to replay (the server
+  // refuses that as a conflict), so it stays the round trip it always was.
+  const drifted = surface?.kind === "tree" && (surface.payload as { seedDrift?: unknown }).seedDrift !== undefined;
+  const update = () => {
+    if (!drifted) return void refresh();
+    void client.apps.reseed(appId).then(() => refresh(), () => {
+      vendoToast({ text: "That didn’t go through — try again.", state: "error" });
+    });
+  };
   return (
     <ChromeRoot>
       <PinChrome
@@ -208,7 +220,7 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
         // message that no surface renders — so the prefill can name the THING
         // and never an id (spec §16 law 3).
         context={`The view being remixed is the "${slot}" slot, app ${appId}.`}
-        onRefresh={() => void refresh()}
+        onRefresh={update}
         onRevert={() => client.apps.delete(appId).then(onReverted)}
       >
         {staged?.kind === "tree" && !underReview ? (

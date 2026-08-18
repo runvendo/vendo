@@ -318,6 +318,11 @@ const remixComponent = async (
   request: string,
   slot: string | undefined,
 ): Promise<ToolOutcome> => {
+  // Asked BEFORE the mint, because afterwards the two cases are
+  // indistinguishable: a wish repeated VERBATIM leaves a deduped remix in
+  // exactly the state a fresh mint would be in, and reading the wish list back
+  // called it new — so the repeat landed nowhere and the receipt said "ready".
+  const before = await make.runtime.list(make.ctx);
   // The person's OWN words, not `ask`: the `<context>` fence that named the
   // component is this call's background, and a seed's wishes are replayed
   // verbatim onto every future version the host ships.
@@ -333,7 +338,7 @@ const remixComponent = async (
   // riding wish when it does. The fence stays in the thread, so a follow-up wish
   // arrives named this way too — that is an edit of the remix, and this being
   // the one door, it has to land as one rather than vanish.
-  if (seeded.seed?.wishes.at(-1) !== request) return await changeExistingApp(make, seeded.id);
+  if (before.some(({ id }) => id === seeded.id)) return await changeExistingApp(make, seeded.id);
   return receipt({
     id: seeded.id,
     title: seeded.name,

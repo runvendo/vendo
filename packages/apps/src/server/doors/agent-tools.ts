@@ -356,8 +356,11 @@ export const createAgentTools = (
             ...(result as unknown as Record<string, Json>),
             // A wish the host's new version could not take is a change the person
             // made and no longer has. It stays on the seed, and this is the
-            // sentence that gets it SAID rather than quietly dropped.
-            say: `${result.name} is on the host's current version, but these changes of yours did not fit it: `
+            // sentence that gets it SAID rather than quietly dropped. When NONE
+            // of them fit, the remix did not move either — so it must not say it did.
+            say: (unapplied.length === result.seed?.wishes.length
+              ? `${result.name} is still on the version you made it from — none of your changes fit the host's new one: `
+              : `${result.name} is on the host's current version, but these changes of yours did not fit it: `)
               + `${unapplied.map((wish) => `"${wish}"`).join(", ")}. They are still on record — ask for any of them again.`,
           },
         };

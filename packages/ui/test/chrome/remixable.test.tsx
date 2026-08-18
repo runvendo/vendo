@@ -240,6 +240,32 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     await waitFor(() => expect(opens().length).toBeGreaterThan(before));
   });
 
+  // The point of the wish list: the host ships a new version, and "Update"
+  // replays every wish onto it. The menu item read "Update" while doing nothing
+  // but re-read the same screen, and `client.apps.reseed` had no caller at all —
+  // the replay existed on the server and nothing on the page could reach it.
+  it("“Update” REPLAYS the wish list when the host component has moved on", async () => {
+    const forked = await seedRemix();
+    wire.state.surfaces.set(forked.id, {
+      ...wire.state.surfaces.get(forked.id)!,
+      seedDrift: {
+        component: SLOT,
+        componentName: `Seed${SLOT}`,
+        baseline: "sha256:fixture",
+        current: "sha256:fixture-NEW",
+        reason: "baseline-changed",
+      },
+    });
+    mount();
+    await waitFor(() => expect(forkSurface()).toBeTruthy());
+    fireEvent.click(managePill());
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+
+    await waitFor(() => {
+      expect(wire.requests.some(r => r.method === "POST" && r.path === `/apps/${forked.id}/reseed`)).toBe(true);
+    });
+  });
+
   it("“Revert” deletes the remix and restores the original child", async () => {
     const forked = await seedRemix();
     mount();

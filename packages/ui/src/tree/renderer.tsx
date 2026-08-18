@@ -1036,14 +1036,14 @@ function StatefulTreeView({
     : null;
 
   // 06-apps §8 — the host moved on under a remix. This has to be LOUD and it has
-  // to be HONEST: updating no longer replays what the person changed on top of
-  // the new version (that machinery is gone), it hands them the fresh copy
-  // instead. So the notice says what the update costs, in those words, and
-  // nothing happens until they ask for it.
+  // to be HONEST: updating REPLAYS every change the person asked for onto the
+  // new version, and names the ones that no longer fit rather than dropping
+  // them. The copy promised a fresh copy that replaced their changes, which was
+  // written in the window before that replay existed.
   const driftNotice = seedDrift !== null
     ? (
       <ContainedNotice label="Newer version available">
-        {`"${seedDrift.component}" has changed in the app since you made this. You can switch to the new version, but it comes as a fresh copy — the changes you made here would be replaced. Nothing happens until you ask for it.`}
+        {`"${seedDrift.component}" has changed in the app since you made this. Updating replays every change you asked for onto the new version, and tells you about any that no longer fit. Nothing happens until you ask for it.`}
       </ContainedNotice>
     )
     : null;

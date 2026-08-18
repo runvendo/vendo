@@ -1439,8 +1439,8 @@ html[data-vendo-dock] {
 .fl-remix-pill:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 /* The ✦ pill floats over the wrapper's top-right corner, on top of whatever the
    remix renders. A notice underneath it must not run its text beneath the pill:
-   the half of the drift warning the pill was covering is the half that says the
-   person's own changes would be replaced, and a warning you cannot finish
+   the half of the drift warning the pill was covering is the half that says
+   which of the person's own changes no longer fit, and a warning you cannot finish
    reading is worse than no warning — it looks like it did its job. The notice
    sets its padding inline, so the gutter it needs is a margin. */
 .fl-remixable [data-vendo-notice] { margin-right: 104px; }
