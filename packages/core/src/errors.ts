@@ -19,7 +19,14 @@ export type VendoErrorCode =
       than treating it as a business refusal. Wire-mapped to HTTP 503.
       Distinct from `sandbox-unavailable`, which names one specific capability
       rather than "something downstream broke". */
-  | "unavailable";
+  | "unavailable"
+  /** A typed store refused a write to a table it has not been told about and
+      answered the DDL that would make the write legal — the proposal, carried
+      here on `detail`. The store client confirms it and replays the write
+      (hostedStore's `mutate`), so a caller only ever sees this code when that
+      handshake was exhausted or the proposal named no app to confirm it
+      against. Wire-mapped to HTTP 409. */
+  | "schema-proposal";
 
 /** 01-core §15 */
 export const vendoErrorCodeSchema = z.enum([
@@ -32,6 +39,7 @@ export const vendoErrorCodeSchema = z.enum([
   "conflict",
   "forbidden",
   "unavailable",
+  "schema-proposal",
 ]) satisfies z.ZodType<VendoErrorCode>;
 
 /** 01-core §15 */

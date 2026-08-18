@@ -11,11 +11,14 @@ import {
   type RecordInput,
   type RecordQuery,
   type RecordStore,
+  STORE_WIRE_CAPABILITIES,
+  STORE_WIRE_CAPABILITIES_HEADER,
   STORE_WIRE_PATHS,
   STORE_WIRE_TURN_OPS,
   type StoreOps,
   type StoreOpsWithAppData,
   storeWireErrorSchema,
+  storeWireSchemaProposalSchema,
   type StoreWireStatus,
   storeWireStatusSchema,
   storeWireTurnCommitResponseSchema,
@@ -40,6 +43,20 @@ import type { VendoStore } from "./store.js";
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
 const CONSOLE_STORE_PATH = "/api/v1/store";
+
+/** The console's schema door, beside the wire mount: an in-order DdlOperation
+ * array for ONE app, answering the tables it serves afterwards. Deliberately
+ * not in STORE_WIRE_PATHS — that manifest's order IS the mount's capability
+ * level, so only ops belong in it, and this is a door the handshake uses rather
+ * than an op any caller may send. */
+const CONSOLE_SCHEMA_PATH = "/schema";
+
+/** What this client can read, declared on every store request
+ * ({@link STORE_WIRE_CAPABILITIES}): the mount only sends the proposal below to
+ * a client that says it can confirm one. */
+const CAPABILITY_HEADERS: Record<string, string> = {
+  [STORE_WIRE_CAPABILITIES_HEADER]: STORE_WIRE_CAPABILITIES,
+};
 
 /** Store calls are row/blob CRUD, not machine boots: generous enough for a
  * large blob transfer on a slow link, small enough that a hung console
@@ -108,10 +125,28 @@ const invalidResponse = (what: string): never => {
  * upstream 5xx rides its status → unavailable. What is left — a code no table
  * knows — is carried on a plain Error with the server's code attached, the
  * packages/apps cloud client's posture. */
-const raiseStoreError = (response: Response): Promise<never> =>
-  raiseCloudError(response, "store", (code, message) => {
+const raiseStoreError = async (response: Response): Promise<never> => {
+  const proposal = await schemaProposalError(response);
+  if (proposal !== undefined) throw proposal;
+  return raiseCloudError(response, "store", (code, message) => {
     throw Object.assign(new Error(message), { code: code ?? "unavailable" });
   });
+};
+
+/** A typed mount answers a write to a table it has not been told about with
+ * `{error: "schema-proposal", proposal}` on a 409 — a body that is neither the
+ * wire envelope nor anything raiseCloudError can read (its `error` is a STRING,
+ * so the console reading finds no code and no message and lands on the unknown
+ * tail). BOTH readings of a store failure have to recognize it, or the handshake
+ * in `mutate` never fires for the StoreAdapter façade — which is the surface an
+ * app's own row writes actually take. */
+const schemaProposalError = async (response: Response): Promise<VendoError | undefined> => {
+  if (response.status !== 409) return undefined;
+  const body: unknown = await response.clone().json().catch(() => undefined);
+  return storeWireSchemaProposalSchema.safeParse(body).success
+    ? parseStoreWireError(response.status, body)
+    : undefined;
+};
 
 function parseRecord(value: unknown): VendoRecord {
   const parsed = vendoRecordSchema.safeParse(value);
@@ -158,6 +193,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     apiKey: options.apiKey,
     timeoutMs,
     fetchImpl,
+    headers: CAPABILITY_HEADERS,
     raise: raiseStoreError,
   });
 
@@ -328,6 +364,10 @@ const traceOutcome = (error: unknown): string => {
  * already did it"; a fresh key per attempt would double-apply the write. */
 const newIdempotencyKey = (): string => `idm_${globalThis.crypto.randomUUID()}`;
 
+/** How many schema proposals ONE mutation may confirm before it gives up and
+ * surfaces the proposal it could not satisfy. */
+const SCHEMA_PROPOSAL_CYCLES = 3;
+
 /** Both meter reads bound their window the same way, and a Date is not a wire
  * type: the instants cross as the ISO datetimes the request schemas validate. */
 const bounds = (query: { since: Date; until?: Date }): { since: string; until?: string } => ({
@@ -380,11 +420,15 @@ const retryAfterMs = (response: Response): number | undefined => {
  * and `meter-exhausted` are not wire codes, so a 401/402 that DOES carry a
  * recognized envelope came from the service's protocol half and keeps it. */
 const raiseWireError = async (response: Response): Promise<never> => {
+  const text = await response.text();
   let payload: unknown;
   try {
-    payload = JSON.parse(await response.text());
+    payload = JSON.parse(text);
   } catch {
-    payload = undefined;
+    // Not JSON at all — an edge proxy's HTML, a gateway's plain sentence. The
+    // TEXT crosses on rather than `undefined`, so parseStoreWireError can put a
+    // bounded snippet of it in the message instead of erasing what arrived.
+    payload = text;
   }
   if (storeWireErrorSchema.safeParse(payload).success) throw parseStoreWireError(response.status, payload);
   throw cloudStandingError(response.status, payload, `Vendo Cloud store request failed with ${response.status}`)
@@ -431,6 +475,7 @@ function storeWireClient(
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     fetchImpl: options.fetch ?? defaultFetch,
+    headers: CAPABILITY_HEADERS,
     // The Response is gone by the time the retry below sees the error, so the
     // wait the console asked for rides on it.
     raise: (response) => raise(response).catch((error: unknown) => {
@@ -538,9 +583,60 @@ function storeWireClient(
       body: JSON.stringify(body),
     }));
 
-  /** Every mutation gets its key here, at the logical operation's one call. */
-  const mutate = (op: StoreWireOp, path: string, body: unknown, idempotencyKey = newIdempotencyKey()): Promise<unknown> =>
-    post(op, path, body, idempotencyKey);
+  /** The app a proposal would be confirmed against. App-data ops carry it in
+      their target, which is the ONLY place an appId exists on this wire —
+      Vendo's own engine drawers belong to no app and the mount declares them
+      itself. A proposal on an op without one gets no handshake: an appId
+      guessed from anywhere else declares a table in some other app's schema. */
+  const appIdOf = (body: unknown): string | undefined => {
+    const appId = (body as { target?: { appId?: unknown } } | null | undefined)?.target?.appId;
+    return typeof appId === "string" ? appId : undefined;
+  };
+
+  /** Accept one proposal, verbatim, on the mount's schema door. A refusal here
+      surfaces as itself — the write is not sent again on a schema that was
+      never applied. */
+  const confirmSchema = async (appId: string, proposal: unknown): Promise<void> => {
+    await send(`${CONSOLE_SCHEMA_PATH}/${encodeURIComponent(appId)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operations: [proposal] }),
+    });
+  };
+
+  /** Every mutation gets its key here, at the logical operation's one call —
+      and KEEPS it across the schema handshake, because a confirmed proposal is
+      a precondition of the same logical mutation, not a second one: a fresh key
+      on the replay is how a write lands twice.
+
+      A typed mount answers the first write to a table it has not been told
+      about with the DDL that would make the write legal, so the client confirms
+      it and sends the write again. One write can need more than one round —
+      create_table, then add_column for the fields the new table has no columns
+      for — so this loops, and it is capped: a mount that keeps proposing is
+      broken, and the caller has to hear that rather than watch a write spin.
+      The handshake lives at THIS call, the one place a mutation is issued, so
+      every writer — agents, automations, an interactive session — heals the
+      same way. */
+  const mutate = async (
+    op: StoreWireOp,
+    path: string,
+    body: unknown,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<unknown> => {
+    for (let cycle = 0; ; cycle += 1) {
+      try {
+        return await post(op, path, body, idempotencyKey);
+      } catch (error) {
+        const appId = appIdOf(body);
+        if (
+          !isVendoError(error) || error.code !== "schema-proposal"
+          || appId === undefined || cycle === SCHEMA_PROPOSAL_CYCLES
+        ) throw error;
+        await confirmSchema(appId, error.detail);
+      }
+    }
+  };
 
   const field = <T>(payload: unknown, name: string, what: string, ok: (value: unknown) => boolean): T => {
     const value = (payload as Record<string, unknown> | null | undefined)?.[name];

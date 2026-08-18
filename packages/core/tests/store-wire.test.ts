@@ -450,6 +450,47 @@ describe("vendo/store-wire@1", () => {
     expect(parseStoreWireError(404, undefined).code).toBe("not-implemented");
   });
 
+  /** Field 2026-08-17: a typed console answered the first write to an
+      undeclared table with `{error: "schema-proposal", proposal}` on a 409 —
+      `error` a STRING, so the envelope schema refused it, the bare status took
+      over, and the caller got "conflict / store wire request failed with HTTP
+      409" with the DDL the server had just handed it simply gone. */
+  it("reads the schema proposal as itself, proposal intact on detail", () => {
+    const proposal = {
+      op: "create_table",
+      table: "notes",
+      scope: "private",
+      columns: [{ name: "text", type: "text" }],
+    };
+    const error = parseStoreWireError(409, { error: "schema-proposal", proposal });
+    expect(error.code).toBe("schema-proposal");
+    expect(error.message).toContain("create_table notes");
+    // Verbatim — the client forwards this straight back to the schema door, so
+    // a field this build does not know must survive the round trip.
+    expect(error.detail).toEqual(proposal);
+    expect(STORE_WIRE_STATUS_BY_CODE["schema-proposal"]).toBe(409);
+    // The envelope still wins where both could match: an `error` OBJECT is the
+    // wire's own refusal, whatever it says.
+    expect(parseStoreWireError(409, { error: { code: "conflict", message: "id taken" } }).code).toBe("conflict");
+    // A proposal missing the fields the client explains itself with is not one.
+    expect(parseStoreWireError(409, { error: "schema-proposal" }).code).toBe("conflict");
+  });
+
+  it("an unreadable body rides the message, bounded — never silently erased", () => {
+    // The next protocol skew has to be diagnosable from the error alone.
+    expect(parseStoreWireError(409, { error: "unknown-protocol", hint: "upgrade" }).message)
+      .toContain(`{"error":"unknown-protocol","hint":"upgrade"}`);
+    expect(parseStoreWireError(504, "<html><title>504 Gateway Time-out</title></html>").message)
+      .toContain("504 Gateway Time-out");
+    // A megabyte of proxy error page cannot become the error message.
+    const flood = parseStoreWireError(500, "x".repeat(10_000)).message;
+    expect(flood.length).toBeLessThan(400);
+    expect(flood).toContain("…");
+    // Nothing to say about nothing.
+    expect(parseStoreWireError(500, undefined).message).toBe("store wire request failed with HTTP 500");
+    expect(parseStoreWireError(500, "").message).toBe("store wire request failed with HTTP 500");
+  });
+
   it("the reverse status table round-trips through the forward table", () => {
     for (const [status, code] of Object.entries({ 400: "validation", 402: "cloud-required", 403: "blocked", 409: "conflict" } as const)) {
       expect(STORE_WIRE_STATUS_BY_CODE[code]).toBe(Number(status));

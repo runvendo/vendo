@@ -45,7 +45,7 @@ import {
 import { storeAdapterConformance } from "@vendoai/core/conformance";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "../src/index.js";
 import { hostedStore, hostedStoreOps, type HostedStore } from "../src/hosted-store.js";
-import { fakeConsole } from "../src/hosted-store.test-util.js";
+import { fakeConsole, type RecordedRequest } from "../src/hosted-store.test-util.js";
 
 const encoder = new TextEncoder();
 
@@ -440,6 +440,179 @@ describe("hostedStore error mapping", () => {
       .rejects.toThrow(/invalid erase/);
     await expect(adapterFor(vi.fn(async () => Response.json({ keys: [1] }))).blobs("files").list())
       .rejects.toThrow(/invalid blob list/);
+  });
+});
+
+describe("store schema handshake", () => {
+  /** The two surfaces over the one wire, both driven against the SAME fake
+   *  console: the StoreAdapter façade (the console's error reading) and the op
+   *  client (the protocol's). They read a refusal differently, so a proposal
+   *  that only one of them recognized would heal on one surface and erase
+   *  itself on the other — which is exactly how this shipped broken. */
+  const surfaces = (console_: ReturnType<typeof fakeConsole>) => ({
+    facade: hostedStore({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      owner: "user_1",
+      fetch: console_.handler as unknown as typeof fetch,
+    }),
+    ops: hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: console_.handler as unknown as typeof fetch,
+    }),
+  });
+
+  const routeOf = (request: RecordedRequest): string => new URL(request.url).pathname;
+
+  it("declares what it can read on every store request, mutations included", async () => {
+    const console_ = fakeConsole();
+    const store = surfaces(console_).facade;
+    await store.records("app:x:notes").put({ id: "n_1", data: { text: "hi" } });
+    await store.records("app:x:notes").get("n_1");
+    await store.erase.bySubject("user_1");
+
+    // The write (with its two schema confirmations), the read, and the erase
+    // door that sits outside the op families — all of them.
+    expect(console_.requests.length).toBeGreaterThan(3);
+    for (const request of console_.requests) {
+      expect(request.capabilities).toBe("schema-proposal");
+    }
+  });
+
+  it("confirms the proposal and lands the write, on both surfaces", async () => {
+    const console_ = fakeConsole();
+    const { facade, ops } = surfaces(console_);
+
+    // A brand-new table: the mount proposes create_table, then — since a new
+    // table carries no data columns — add_column for the field this row has.
+    const put = await facade.records("app:x:notes").put({ id: "n_1", data: { text: "hi" } });
+    expect(put.id).toBe("n_1");
+    expect(console_.requests.map(routeOf)).toEqual([
+      "/api/v1/store/app-data/put",
+      "/api/v1/store/schema/x",
+      "/api/v1/store/app-data/put",
+      "/api/v1/store/schema/x",
+      "/api/v1/store/app-data/put",
+    ]);
+    expect(console_.requests[1]!.json).toEqual({
+      operations: [{ op: "create_table", table: "notes", scope: "private", columns: [] }],
+    });
+    expect(console_.requests[3]!.json).toEqual({
+      operations: [{ op: "add_column", table: "notes", scope: "private", columns: [{ name: "text", type: "text" }] }],
+    });
+    // Read back through the REAL read path — the row landed once, not twice.
+    expect((await facade.records("app:x:notes").get("n_1"))?.data).toEqual({ text: "hi" });
+    expect((await facade.records("app:x:notes").list()).records).toHaveLength(1);
+
+    // The declared table needs no second handshake, and the op surface — which
+    // reads a refusal through parseStoreWireError rather than the console's
+    // mapping — heals identically on a table of its own.
+    const before = console_.requests.length;
+    await facade.records("app:x:notes").put({ id: "n_2", data: { text: "again" } });
+    expect(console_.requests.slice(before).map(routeOf)).toEqual(["/api/v1/store/app-data/put"]);
+
+    const target = { appId: "x", collection: "invoices", owner: "user_1" };
+    await ops.appData!.put(target, { id: "inv_1", data: { total: 5 } });
+    expect((await ops.appData!.get(target, "inv_1"))?.data).toEqual({ total: 5 });
+  });
+
+  it("replays the SAME idempotency key across the handshake — one logical mutation", async () => {
+    const console_ = fakeConsole();
+    const keys: (string | null)[] = [];
+    const handler = (async (input: string, init: RequestInit = {}) => {
+      keys.push(new Headers(init.headers).get("idempotency-key"));
+      return console_.handler(input, init);
+    }) as unknown as typeof fetch;
+    await hostedStore({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", owner: "user_1", fetch: handler })
+      .records("app:x:notes").put({ id: "n_1", data: { text: "hi" } });
+
+    // Three writes, one key: the server can still tell "do it again" from
+    // "you already did it". The schema confirmations carry none — they are a
+    // precondition, not the mutation.
+    const written = keys.filter((key) => key !== null);
+    expect(written).toHaveLength(3);
+    expect(new Set(written).size).toBe(1);
+  });
+
+  it("gives up after three proposals and surfaces the last one, proposal intact", async () => {
+    // A mount that proposes forever — a broken typed plane, which is the only
+    // thing the cap defends against.
+    let attempts = 0;
+    const proposal = { op: "create_table", table: "notes", scope: "private", columns: [] };
+    const looping = hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async (url: string) => {
+        if (new URL(url).pathname.startsWith("/api/v1/store/schema/")) return Response.json({ tables: ["notes"] });
+        attempts += 1;
+        return Response.json({ error: "schema-proposal", proposal }, { status: 409 });
+      }) as unknown as typeof fetch,
+    });
+
+    const failure = await looping.appData!
+      .put({ appId: "x", collection: "notes", owner: "user_1" }, { id: "n_1", data: {} })
+      .then(() => undefined, (error: unknown) => error);
+    expect(failure).toBeInstanceOf(VendoError);
+    expect(failure).toMatchObject({ code: "schema-proposal", detail: proposal });
+    expect((failure as VendoError).message).toContain("create_table notes");
+    // The first send plus three confirmed retries, and then it stops.
+    expect(attempts).toBe(4);
+  });
+
+  it("never guesses an app: a proposal on an op that names none surfaces as itself", async () => {
+    let attempts = 0;
+    const ops = hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => {
+        attempts += 1;
+        return Response.json(
+          { error: "schema-proposal", proposal: { op: "create_table", table: "vendo_threads" } },
+          { status: 409 },
+        );
+      }) as unknown as typeof fetch,
+    });
+    await expect(ops.engine.put("vendo_threads", { id: "thr_1", data: {} }))
+      .rejects.toMatchObject({ code: "schema-proposal" });
+    // No appId on an engine write, so nothing was confirmed against a guess.
+    expect(attempts).toBe(1);
+  });
+
+  it("a client that declares nothing is refused, not proposed to", async () => {
+    // The header is the whole reason the mount may answer a proposal at all; a
+    // client that cannot read one must still get an honest refusal.
+    const console_ = fakeConsole();
+    const response = await console_.handler("https://cloud.test/api/v1/store/app-data/put", {
+      method: "POST",
+      headers: { authorization: "Bearer vnd_secret", "content-type": "application/json" },
+      body: JSON.stringify({
+        target: { appId: "x", collection: "notes", owner: "user_1" },
+        record: { id: "n_1", data: { text: "hi" } },
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(parseStoreWireError(response.status, await response.json())).toMatchObject({ code: "validation" });
+  });
+
+  it("says what it could not read, instead of erasing the body", async () => {
+    const unreadable = (body: string, status: number) => hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => new Response(body, { status })) as unknown as typeof fetch,
+    });
+    // The incident's shape: a 409 the envelope cannot parse used to reach the
+    // caller as a bare "HTTP 409" with the server's own words gone.
+    await expect(unreadable(JSON.stringify({ error: "unknown-protocol", hint: "upgrade" }), 409)
+      .engine.put("vendo_threads", { id: "thr_1", data: {} }))
+      .rejects.toMatchObject({
+        code: "conflict",
+        message: expect.stringContaining(`{"error":"unknown-protocol","hint":"upgrade"}`),
+      });
+    // Not JSON at all — an edge proxy's page still names itself.
+    await expect(unreadable("<html><title>504 Gateway Time-out</title></html>", 504)
+      .engine.get("vendo_threads", "thr_1"))
+      .rejects.toMatchObject({ code: "unavailable", message: expect.stringContaining("504 Gateway Time-out") });
   });
 });
 

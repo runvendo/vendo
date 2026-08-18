@@ -1,4 +1,5 @@
 import {
+  STORE_WIRE_CAPABILITIES_HEADER,
   STORE_WIRE_PATHS,
   isVendoError,
   VendoError,
@@ -26,6 +27,7 @@ export interface RecordedRequest {
   contentType: string | null;
   deploymentHost: string | null;
   deploymentName: string | null;
+  capabilities: string | null;
   json?: unknown;
   bytes?: Uint8Array;
 }
@@ -353,6 +355,66 @@ async function appDataOp(
   }
 }
 
+/** The console's typed data plane, as much of it as this seam needs. An app's
+ *  tables — and each table's columns — are DECLARED before rows may land in
+ *  them, and a write to something undeclared answers 409 carrying the DDL that
+ *  would make it legal instead of applying the write.
+ *
+ *  A `create_table` declares the table with NO data columns (its id and owner
+ *  belong to the mount, not the app), so the first write into a new table costs
+ *  two rounds — create_table, then add_column — which is why the client's
+ *  handshake is a loop and not a single retry. Nothing here is a stub of the
+ *  client's expectations: rows land through the same appData door as every other
+ *  write and come back out through the same read. */
+function appSchemas() {
+  // `<appId> <table>` → declared column names; neither half carries a space.
+  const tables = new Map<string, Set<string>>();
+  const key = (appId: string, table: string): string => `${appId} ${table}`;
+  const columnsOf = (operation: Body): string[] =>
+    ((operation.columns ?? []) as { name: string }[]).map((column) => column.name);
+  return {
+    /** The DDL this write needs first, or undefined when it may land. */
+    proposalFor(appId: string, table: string, data: unknown): Body | undefined {
+      const declared = tables.get(key(appId, table));
+      if (declared === undefined) return { op: "create_table", table, scope: "private", columns: [] };
+      const missing = Object.keys((data ?? {}) as object).filter((name) => !declared.has(name));
+      if (missing.length === 0) return undefined;
+      return {
+        op: "add_column",
+        table,
+        scope: "private",
+        columns: missing.map((name) => ({ name, type: "text" })),
+      };
+    },
+    /** The schema door: an in-order DdlOperation array, applied as given, and
+     *  the app's tables afterwards. `add_column` against a table that was never
+     *  created is refused — a client that dropped an operation from the middle
+     *  of the array must not read as a success. */
+    apply(appId: string, operations: Body[]): string[] {
+      for (const operation of operations) {
+        const table = operation.table as string;
+        const declared = tables.get(key(appId, table));
+        if (declared === undefined && operation.op !== "create_table") {
+          throw new VendoError("validation", `no table ${JSON.stringify(table)} in app ${appId}`);
+        }
+        const columns = declared ?? new Set<string>();
+        for (const name of columnsOf(operation)) columns.add(name);
+        tables.set(key(appId, table), columns);
+      }
+      return [...tables.keys()]
+        .filter((held) => held.startsWith(`${appId} `))
+        .map((held) => held.slice(appId.length + 1));
+    },
+  };
+}
+
+/** The capability the proposal above rides on. A client that does not declare
+ *  it cannot read a proposal, so the mount refuses the undeclared table the old
+ *  way instead — which is what makes the header load-bearing here: a client that
+ *  stopped sending it fails against this fake rather than degrading in silence. */
+const declares = (header: string | null, capability: string): boolean =>
+  (header ?? "").split(",").some((name) => name.trim() === capability);
+
 /** Everything the handler learns from the request before routing: the recorded
  *  shape the caller asserts against, with the body parsed into it. */
 async function record(request: Request): Promise<RecordedRequest> {
@@ -363,6 +425,7 @@ async function record(request: Request): Promise<RecordedRequest> {
     contentType: request.headers.get("content-type"),
     deploymentHost: request.headers.get("x-vendo-deployment-host"),
     deploymentName: request.headers.get("x-vendo-deployment-name"),
+    capabilities: request.headers.get(STORE_WIRE_CAPABILITIES_HEADER),
   };
   const raw = new Uint8Array(await request.arrayBuffer());
   if (recorded.contentType === "application/json") {
@@ -385,6 +448,7 @@ export function fakeConsole() {
   const requests: RecordedRequest[] = [];
   const eraseCalls: unknown[] = [];
   const vault = new Map<string, string>();
+  const schemas = appSchemas();
   // The drawers this mount has opened. The reference adapter hands out a
   // RecordStore per name and never lists the names back, so `footprint` measures
   // the ones that came through these doors — which is every drawer this fake can
@@ -452,8 +516,27 @@ export function fakeConsole() {
       assertEngineCollection(collection);
       return recordsOp(records(collection), engineOp, body, miss);
     }
+    // The schema door, beside the wire ops: one app's DDL, in order.
+    if (rest[0] === "schema" && rest.length === 2 && post) {
+      return json({ tables: schemas.apply(rest[1]!, (body.operations ?? []) as Body[]) });
+    }
     const appDataOpName = post ? APP_DATA_ROUTES.get(path) : undefined;
     if (appDataOpName !== undefined) {
+      // Rows are typed; files are not. A row write into a table this app has
+      // not declared answers the proposal rather than landing.
+      if (appDataOpName === "put") {
+        const target = body.target as AppDataTarget;
+        const proposal = schemas.proposalFor(
+          target.appId,
+          target.collection,
+          (body.record as { data?: unknown }).data,
+        );
+        if (proposal !== undefined) {
+          return declares(recorded.capabilities, "schema-proposal")
+            ? json({ error: "schema-proposal", proposal }, 409)
+            : envelope("validation", `no table ${JSON.stringify(target.collection)} in app ${target.appId}`);
+        }
+      }
       return appDataOp(records, (n) => adapter.blobs(n), appDataOpName, body, miss);
     }
     // The audit drawer's own read, and the vault — both over the same backing

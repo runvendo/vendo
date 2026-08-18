@@ -703,6 +703,42 @@ export const storeWireErrorSchema = z.object({
   }).passthrough(),
 }).passthrough() satisfies z.ZodType<StoreWireError>;
 
+/** What a client can do with an answer, declared on EVERY request it sends so a
+    mount never sends a shape the client cannot read. Comma-separated and
+    ADDITIVE — a mount reads it as a set and ignores names it does not know, a
+    client omits names it does not implement — which is what lets a mount grow an
+    answer shape without a version bump. Scoped to the store wire: the other
+    Cloud wires declare nothing, and managed inference does not carry Vendo
+    headers at all. */
+export const STORE_WIRE_CAPABILITIES_HEADER = "x-vendo-store-capabilities";
+
+/** The capabilities THIS build implements — today, only the schema-proposal
+    handshake below. */
+export const STORE_WIRE_CAPABILITIES = "schema-proposal";
+
+/** A typed mount's answer to a write against a table it has not been told
+    about: HTTP 409 carrying the DDL that would make the write legal, instead of
+    applying the write. `error` is the literal STRING "schema-proposal" — that is
+    what discriminates this body from {@link StoreWireError}, whose `error` is an
+    object, and the two have to be told apart by shape because they share a
+    status.
+
+    The proposal is passed through UNTOUCHED: the client forwards it verbatim to
+    the mount's schema door, so only the two fields it reads to explain itself
+    are typed here and every other field crosses on unread. */
+export interface StoreWireSchemaProposal {
+  error: "schema-proposal";
+  proposal: { op: string; table: string };
+}
+
+export const storeWireSchemaProposalSchema = z.object({
+  error: z.literal("schema-proposal"),
+  proposal: z.object({
+    op: z.string(),
+    table: z.string(),
+  }).passthrough(),
+}).passthrough() satisfies z.ZodType<StoreWireSchemaProposal>;
+
 /** Mirrors the umbrella wire's STATUS_BY_CODE — core cannot import it
     (layering: core depends on nothing). */
 export const STORE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
@@ -715,6 +751,10 @@ export const STORE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   "sandbox-unavailable": 501,
   "not-implemented": 501,
   unavailable: 503,
+  // The proposal's own status. A mount that serves the handshake sends the
+  // PROPOSAL body rather than this envelope; the entry exists so an exhausted
+  // handshake re-crossing a wire keeps the status it arrived on.
+  "schema-proposal": 409,
 };
 
 /** 404 is deliberately absent: only an ENVELOPED `not-found` may become the
@@ -753,18 +793,53 @@ export function storeWireErrorBody(error: VendoError): { status: number; body: S
   };
 }
 
+/** How much of an unreadable body rides the message: enough to name the shape
+    that arrived (a JSON key, an HTML title), short enough that a proxy's error
+    page can never become the error message. */
+const ERROR_BODY_SNIPPET = 200;
+
+/** The body this parser could not read, bounded, for the message. A body thrown
+    away here is the next protocol skew nobody can diagnose — field 2026-08-17:
+    a console 409 carrying a schema proposal reached the caller as a bare
+    "store wire request failed with HTTP 409" and the proposal was simply gone,
+    so the live repro was the only way to learn what the server had said. */
+function bodySnippet(body: unknown): string {
+  let text: string;
+  if (typeof body === "string") {
+    text = body;
+  } else {
+    try {
+      text = (JSON.stringify(body) as string | undefined) ?? "";
+    } catch {
+      return "";
+    }
+  }
+  if (text === "") return "";
+  return ` — body: ${text.length > ERROR_BODY_SNIPPET ? `${text.slice(0, ERROR_BODY_SNIPPET)}…` : text}`;
+}
+
 /** Client half: a non-2xx response → VendoError. An enveloped wire-legal
-    code wins over the bare status; recognized statuses map through
-    STATUS_TO_CODE (429/5xx → "unavailable", retryable); anything else
-    degrades to "not-implemented". */
+    code wins over the bare status; a schema proposal is recognized as ITSELF,
+    carrying the proposal on `detail` for the client that confirms it; recognized
+    statuses map through STATUS_TO_CODE (429/5xx → "unavailable", retryable);
+    anything else degrades to "not-implemented" — and says what it could not
+    read, because a silently discarded body is an undiagnosable skew. */
 export function parseStoreWireError(status: number, body: unknown): VendoError {
   const parsed = storeWireErrorSchema.safeParse(body);
   if (parsed.success) {
     return new VendoError(parsed.data.error.code, parsed.data.error.message, parsed.data.error.detail as Json);
   }
-  const code = STATUS_TO_CODE[status];
-  if (code !== undefined) {
-    return new VendoError(code, `store wire request failed with HTTP ${status}`);
+  const proposed = storeWireSchemaProposalSchema.safeParse(body);
+  if (proposed.success) {
+    const { op, table } = proposed.data.proposal;
+    return new VendoError(
+      "schema-proposal",
+      `the store proposed a schema change before this write: ${op} ${table}`,
+      proposed.data.proposal as Json,
+    );
   }
-  return new VendoError("not-implemented", `store wire request failed with HTTP ${status}`);
+  return new VendoError(
+    STATUS_TO_CODE[status] ?? "not-implemented",
+    `store wire request failed with HTTP ${status}${bodySnippet(body)}`,
+  );
 }

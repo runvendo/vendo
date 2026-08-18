@@ -57,6 +57,9 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   // parses a status code back into one, so there is no STATUS_TO_CODE here
   // to extend.
   unavailable: 503,
+  // Same: a schema proposal is a typed store's answer to its own client, and
+  // this wire has no table to propose.
+  "schema-proposal": 409,
 };
 
 export interface WireDeps {
