@@ -17,7 +17,7 @@
  * test names no path segment and no filename itself, so it can only pass while
  * the two halves still agree.
  */
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -42,7 +42,22 @@ const PNG = Buffer.from(
  *  back, and what the browser shot of it. */
 const OUTCOME: RunOutcome = { artifact: `<screen id="transfers"/>`, blocking: [], snapshots: [], settledMs: 2_000 };
 
-const SHOT: Shot = { png: PNG, visibleText: "3 pending transfers", dom: "", renders: true, consoleErrors: [] };
+/** The screen as the browser handed it over: the viewport shot, and one wide
+ *  table's own picture beside it — a distinct 1x1 so a reader that mixed the two
+ *  up would be caught rather than flattered. */
+const TABLE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+  "base64",
+);
+
+const SHOT: Shot = {
+  png: PNG,
+  tables: [TABLE_PNG],
+  visibleText: "3 pending transfers",
+  dom: "",
+  renders: true,
+  consoleErrors: [],
+};
 
 const PASSING: FloorResult = {
   delivered: true,
@@ -105,5 +120,19 @@ describe("the run folder", () => {
     const thumbnail = /<img[^>]*\ssrc="data:image\/png;base64,([^"]+)"/.exec(html)?.[1];
     expect(thumbnail).toBeDefined();
     expect(Buffer.from(thumbnail!, "base64")).toEqual(PNG);
+  });
+
+  /** The wide table's own picture is evidence the judge is shown, so it has to be
+   *  on disk under the name a re-score looks for — `regrade.test.ts` reads it back
+   *  through the real re-score, and nothing here spells that name either. */
+  it("writes a wide table's picture beside the shot it belongs to", async () => {
+    const runDir = await mkdtemp(join(tmpdir(), "genbench-run-folder-"));
+
+    await writeCase(runDir, { outcome: OUTCOME, html: PAGE, shot: SHOT, result: RESULT });
+
+    const caseDir = join(runDir, RESULT.contender, RESULT.case);
+    const shots = (await readdir(caseDir)).filter((name) => name.startsWith("table-"));
+    expect(shots).toHaveLength(1);
+    expect(await readFile(join(caseDir, shots[0]!))).toEqual(TABLE_PNG);
   });
 });

@@ -1088,7 +1088,14 @@ recorded before them carries neither the nested paths nor the filled number, and
 absent evidence has never been a pass here, so no earlier run's `actionProven`
 compares with a later one's. The judge's reading moves with them too, because the
 confirmation a revealed press opened is now narrated to it in the words a person
-reads off the dialog.
+reads off the dialog. And later the same day the judge started seeing what
+**scrolling** reveals: a table wider than the 480px frame is shot again at its full
+scroll width, up to three per screen, and shown beside the viewport shot as what it
+is — so the columns past the horizontal fold, which cost three style lines a
+convention they were keeping the whole time, are evidence rather than absence. The
+viewport shot is still the primary one and the floor is untouched, but the rubric
+gained the sentence that names those pictures, so `rubricVersion` is **7** and no
+verdict recorded under an earlier one compares with one after it.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of

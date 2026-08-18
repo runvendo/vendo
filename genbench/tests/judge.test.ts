@@ -743,7 +743,7 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(6);
+    expect(JudgeContract.rubricVersion).toBe(7);
   });
 
   /**
@@ -756,11 +756,33 @@ describe("JudgeContract", () => {
    * it pass is to move `rubricVersion` on purpose and paste the new digest,
    * which is exactly the decision the stamp exists to force.
    */
-  const PROMPT_HASH = "a1b29832c68e73b46194808566e8b0578d08dcbede322e378a009120048989c3";
+  const PROMPT_HASH = "aafb05bed5390a663b7fdca53a95b5a6264d59f61920a858b3deaae991233281";
 
   it("hashes the prompt, so any edit to it changes the contract", () => {
     expect(JudgeContract.promptHash).toBe(PROMPT_HASH);
     expect(createHash("sha256").update(SYSTEM_PROMPT).digest("hex")).toBe(PROMPT_HASH);
+  });
+
+  /**
+   * The sentence that says what the extra picture of a wide table IS, quoted
+   * byte-exact for the reason the clauses below are.
+   *
+   * A table wider than the 480px frame keeps its right-hand columns past the
+   * horizontal fold, and the judge was grading them as absent — three style lines
+   * were failed on conventions a person reaches by scrolling. The picture
+   * (`wideTables` in `render.ts`) is only evidence while the judge is told what it
+   * is looking at and that scrolling to it counts as seeing it.
+   */
+  const SCROLLED =
+    "Where the screen holds a horizontally scrollable table, a picture of that table at its full width follows the screenshot: a person reaches those columns by scrolling sideways, so what they show is shown.";
+
+  it("says what the extra picture of a wide table is, on the line the picture follows", () => {
+    expect(SYSTEM_PROMPT).toContain(SCROLLED);
+    // With the SCREENSHOT it arrives behind, not as a rule of its own further
+    // down: the judge reads the evidence list in order and the picture is part of
+    // the first entry.
+    expect(SYSTEM_PROMPT.indexOf(SCROLLED)).toBeGreaterThan(SYSTEM_PROMPT.indexOf("1. THE SCREENSHOT"));
+    expect(SYSTEM_PROMPT.indexOf(SCROLLED)).toBeLessThan(SYSTEM_PROMPT.indexOf("2. THE INTERACTION TRACE"));
   });
 
   /**

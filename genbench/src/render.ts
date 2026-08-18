@@ -360,8 +360,87 @@ ${seam(world, contender)}
  */
 const CHART_SCAFFOLDING = '[class*="recharts-cartesian-axis-tick"], #recharts_measurement_span';
 
+/** How many wide tables one screen gets a picture of. Past three, another
+ *  picture buys less than the judge's attention on the screen itself costs. */
+const MOST_WIDE_TABLES = 3;
+
+/** The mark the expansion below leaves on a container so the shooter out here can
+ *  find it again, taken off with the widths it set. */
+const WIDE = "data-genbench-wide";
+
+/**
+ * A table that scrolls sideways, shot at its FULL width (2026-08-18).
+ *
+ * The graded shot is the 480px viewport, and a table wider than that keeps its
+ * right-hand columns past the fold — where a person reaches them by scrolling and
+ * the judge could not reach them at all. Three style lines were failed on
+ * conventions that were on the screen the whole time, in the columns nobody
+ * scrolled to. So the fold gets its own picture, and the judge is told what it is
+ * looking at (`SYSTEM_PROMPT` in `judge.ts`).
+ *
+ * The container is found from the TABLE outwards — the nearest ancestor that clips
+ * it — so the Kit's scroll wrapper and a hand-written `overflow-x:auto` div are
+ * found by one rule, and a column that draws its table with `role="table"` divs is
+ * read the same way. Anything with nothing to scroll pays one `evaluate` and no
+ * screenshots, which is most cases.
+ *
+ * `max-content` rather than a measured width: it is whatever the table asks for,
+ * including columns a resize observer hands back once the room is there. And the
+ * page is put back exactly as it was, because the probe walks it next — a table
+ * left expanded is not the screen that was graded.
+ */
+async function wideTables(page: Page): Promise<Buffer[]> {
+  const was = await page.evaluate(
+    ([mark, cap]: [string, number]) => {
+      const clipping = new Set<HTMLElement>();
+      for (const table of document.querySelectorAll<HTMLElement>('table, [role="table"]')) {
+        for (let node: HTMLElement | null = table; node !== null; node = node.parentElement) {
+          if (node.scrollWidth - node.clientWidth > 1) {
+            clipping.add(node);
+            break;
+          }
+        }
+      }
+      return [...clipping].slice(0, cap).map((node, index) => {
+        const style = node.getAttribute("style");
+        node.setAttribute(mark, String(index));
+        node.style.width = "max-content";
+        node.style.maxWidth = "none";
+        node.style.overflow = "visible";
+        return style;
+      });
+    },
+    [WIDE, MOST_WIDE_TABLES] as [string, number],
+  );
+
+  const shots: Buffer[] = [];
+  // One at a time: two element shots of one page would race each other's scroll.
+  for (let index = 0; index < was.length; index += 1) {
+    shots.push(await page.locator(`[${WIDE}="${index}"]`).screenshot());
+  }
+
+  await page.evaluate(
+    ([mark, styles]: [string, Array<string | null>]) => {
+      styles.forEach((style, index) => {
+        const node = document.querySelector(`[${mark}="${index}"]`);
+        if (node === null) return;
+        node.removeAttribute(mark);
+        if (style === null) node.removeAttribute("style");
+        else node.setAttribute("style", style);
+      });
+    },
+    [WIDE, was] as [string, Array<string | null>],
+  );
+  return shots;
+}
+
 export interface Shot {
   readonly png: Buffer;
+  /** Every horizontally scrollable table on the settled screen, shot at its full
+   *  scroll width — what a person reaches by scrolling sideways and the viewport
+   *  shot above cannot hold. Empty for a screen with nothing to scroll, which is
+   *  most of them. */
+  readonly tables: readonly Buffer[];
   /** The page's visible text minus chart axis ticks — the same extraction for
    *  every contender, which is what makes the fabrication check comparable
    *  across artifact formats. */
@@ -512,6 +591,11 @@ export async function openBrowser(): Promise<Shooter> {
             // person sees at this size is all anyone sees, and a full-page shot
             // handed the judge a screen no person was ever shown.
             png: await page.screenshot(),
+            // Then the fold's own pictures — taken after the shot and after the
+            // reading above, both of which are of the screen exactly as it was
+            // graded. This is the only thing here that touches the page, and it
+            // puts back what it moved.
+            tables: await wideTables(page),
             visibleText,
             dom,
             renders: mounted && consoleErrors.length === 0,

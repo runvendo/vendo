@@ -53,6 +53,10 @@ export interface JudgeResult {
 
 export interface JudgeInput {
   readonly screenshot: Buffer;
+  /** Every horizontally scrollable table on the screen, shot at its full width
+   *  (`wideTables` in `render.ts`) and shown right after the screenshot. Absent or
+   *  empty for a screen with nothing to scroll, which is most of them. */
+  readonly tables?: readonly Buffer[];
   readonly artifact: string;
   readonly trace: readonly Probed[];
   /** Every canned response the world's tools answer with, as the caller wrote
@@ -87,7 +91,7 @@ export interface JudgeOptions {
 export const SYSTEM_PROMPT = `You are grading one screen of a software product against a fixed checklist. You are not its designer, its author, or a reviewer offering advice: you decide, line by line, what the evidence supports.
 
 THE EVIDENCE, in priority order. Where two sources disagree about what the screen shows, the earlier one wins.
-1. THE SCREENSHOT — the screen exactly as a person sees it. This is what the user actually gets.
+1. THE SCREENSHOT — the screen exactly as a person sees it. This is what the user actually gets. Where the screen holds a horizontally scrollable table, a picture of that table at its full width follows the screenshot: a person reaches those columns by scrolling sideways, so what they show is shown.
 2. THE INTERACTION TRACE — every control on the screen was pressed once, and this records what each press asked the application to do. This is what actually happened when the screen was used.
 3. THE SOURCE — what the screen was built from. This is only what was intended. The source may be written in any format, and its format is not evidence: it must never affect a verdict. A line the source promises but the screenshot does not show is not satisfied.
 4. THE TOOL DATA — every response the application's tools answer with, and the only data this screen ever had. It is not an account of what the screen shows, so it settles nothing above it; it is the ground truth for every number and every fact the screen claims.
@@ -110,16 +114,20 @@ Grade only the numbered lines. Anything else you notice about this screen, good 
  *  contender does, or two columns stop being comparable. */
 export const JudgeContract = {
   model: "claude-opus-5",
-  /** 6: a fail on the honesty line is now an accusation rather than a verdict —
-   *  one independent check has to name the invented figure too, or the line
-   *  flips to pass (`honesty.ts`). 5: a note that does the arithmetic, reconciles it and then stamps `fail`
+  /** 7: a table wider than the 480px frame is shot again at its full scroll width
+   *  and shown to the judge, which was grading the columns past that fold as
+   *  absent — three style lines were failed on conventions a person reaches by
+   *  scrolling (`wideTables` in `render.ts`). 6: a fail on the honesty line is now
+   *  an accusation rather than a verdict — one independent check has to name the
+   *  invented figure too, or the line flips to pass (`honesty.ts`). 5: a note that
+   *  does the arithmetic, reconciles it and then stamps `fail`
    *  was 11% of the honesty failures in the saved corpus, so the prompt says a
    *  note and a verdict that disagree are an error. 4: honesty left the
    *  mechanical floor and became a standing correctness line on this rubric,
    *  and the judge is shown the tool data to grade it against — the floor used
    *  to cut every digit off the screen and pay two models to settle each one,
    *  for a verdict the judge already reading the screen can reach itself. */
-  rubricVersion: 6,
+  rubricVersion: 7,
   promptHash: createHash("sha256").update(SYSTEM_PROMPT).digest("hex"),
 } as const;
 
@@ -451,6 +459,15 @@ async function ask(
               role: "user",
               content: [
                 { type: "image", image: input.screenshot, mediaType: "image/png" },
+                // Right after the screen they belong to, and named by the prompt
+                // rather than by a caption of their own: a table wider than the
+                // 480px frame has columns a person scrolls to, and the judge was
+                // grading them absent.
+                ...(input.tables ?? []).map((table) => ({
+                  type: "image" as const,
+                  image: table,
+                  mediaType: "image/png" as const,
+                })),
                 { type: "text", text: `SOURCE — what this screen was built from:\n\n${blind(input.artifact)}` },
                 {
                   type: "text",

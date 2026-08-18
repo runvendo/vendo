@@ -12,13 +12,22 @@
  *
  * A real browser, because both claims are about what Chromium did.
  */
+import type { UIPayload } from "@vendoai/core";
 import { MockLanguageModelV3 } from "ai/test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { judge } from "../src/judge.js";
 import { mutateSeam } from "../src/liveness.js";
-import { authoredPage, HARNESS_CONTRACT, openBrowser, worldToday, type Shooter } from "../src/render.js";
+import {
+  authoredPage,
+  bundleMount,
+  HARNESS_CONTRACT,
+  openBrowser,
+  pageHtml,
+  worldToday,
+  type Shooter,
+} from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
 let shooter: Shooter;
@@ -286,6 +295,154 @@ describe("the source the judge is given", () => {
       // And the name is still struck out of it: the DOM says who wrote the page
       // in every handler on it, which is the tell blinding exists to take.
       expect(sent).toContain("host.callTool");
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+});
+
+// ------------------------------------------ what scrolling sideways reveals
+
+/**
+ * A table wider than the 480px frame keeps its right-hand columns past the
+ * horizontal fold — where a person reaches them by scrolling and the judge,
+ * grading the viewport shot, could not reach them at all. Three style lines were
+ * failed on conventions that were on the screen the whole time.
+ *
+ * So the fold gets its own picture. The claim is about what Chromium hands over,
+ * so these run in a real browser, and the first one goes through the KIT's own
+ * table — every column renders at the width its content asks for and the wrapper
+ * scrolls (`data-table.tsx`), which is the shape that lost those lines.
+ */
+const TABLE_ROWS = [
+  { reference: "INV-2026-0148", client: "Northwind Traders", opened: "2026-08-04", assignee: "Priya Raman", status: "awaiting review", amount: "$12,480.00" },
+  { reference: "INV-2026-0149", client: "Fabrikam Logistics", opened: "2026-08-06", assignee: "Daniel Osei", status: "sent to client", amount: "$3,905.50" },
+  { reference: "INV-2026-0151", client: "Contoso Interiors", opened: "2026-08-09", assignee: "Mariana Silva", status: "overdue", amount: "$18,220.75" },
+];
+
+const KIT_WIDE_TABLE: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [
+    {
+      id: "root",
+      component: "DataTable",
+      props: { rows: TABLE_ROWS, columns: ["reference", "client", "opened", "assignee", "status", "amount"] },
+    },
+  ],
+} as UIPayload;
+
+/** The same shape a contender writes by hand: a table too wide for the frame,
+ *  inside the `overflow-x:auto` wrapper every hand-written one uses. */
+const HAND_WIDE_TABLE = (count: number): string => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>invoices</title>
+<style>body{margin:0;padding:20px;font:14px system-ui}
+.scroller{overflow-x:auto;border:1px solid #ddd;margin-bottom:16px}
+td,th{white-space:nowrap;padding:8px 14px;border-bottom:1px solid #eee}</style></head>
+<body>${`<div class="scroller"><table><thead><tr>${Object.keys(TABLE_ROWS[0]!)
+  .map((key) => `<th>${key}</th>`)
+  .join("")}</tr></thead><tbody>${TABLE_ROWS.map(
+  (row) => `<tr>${Object.values(row).map((cell) => `<td>${cell}</td>`).join("")}</tr>`,
+).join("")}</tbody></table></div>`.repeat(count)}
+<script>window.__settled = true;</script>
+</body></html>`;
+
+/** A table that FITS: two short columns at the same viewport, so nothing about it
+ *  is past any fold and nothing should be shot twice. */
+const FITS_IN_THE_FRAME = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>totals</title>
+<style>body{margin:0;padding:20px;font:14px system-ui}td{padding:8px}</style></head>
+<body><table><tbody><tr><td>Open</td><td>3</td></tr><tr><td>Paid</td><td>9</td></tr></tbody></table>
+<script>window.__settled = true;</script>
+</body></html>`;
+
+/** A PNG's own width, off the IHDR — big-endian 32-bit at byte 16. */
+const widthOf = (png: Buffer): number => png.readUInt32BE(16);
+
+/** Every picture the judge was really sent, in order. The SDK hands an image over
+ *  as a `file` part whose bytes are either a byte array or base64. */
+const pictures = (call: { prompt: unknown }): Buffer[] =>
+  (call.prompt as Array<{ content: unknown }>)
+    .flatMap((message) =>
+      Array.isArray(message.content) ? (message.content as Array<{ type: string; data?: unknown }>) : [],
+    )
+    .filter((part) => part.type === "file")
+    .map((part) =>
+      typeof part.data === "string" ? Buffer.from(part.data, "base64") : Buffer.from(part.data as Uint8Array),
+    );
+
+describe("a table that scrolls sideways", () => {
+  let bundle: string;
+  beforeAll(async () => {
+    bundle = await bundleMount();
+  }, 120_000);
+
+  it("is shot again at its full width, and the screen is left exactly as it was graded", async () => {
+    const world = await worldNamed("maple");
+    const visit = await shooter.visit(pageHtml(KIT_WIDE_TABLE, world, bundle, "vendo-sonnet"));
+    try {
+      const { png, tables } = await visit.shot();
+
+      // The graded shot is untouched: the frame the contract promises, whatever
+      // else was captured beside it.
+      expect({ width: widthOf(png), height: png.readUInt32BE(20) }).toEqual({ width: 480, height: 900 });
+      // And one extra picture, WIDER than that frame — which it can only be if the
+      // columns past the fold are in it.
+      expect(tables).toHaveLength(1);
+      expect(widthOf(tables[0]!)).toBeGreaterThan(480);
+
+      // The probe walks this page next, so the expansion has to be undone: a table
+      // left at full width is not the screen the shot above was taken of.
+      const after = await visit.page.evaluate(() => {
+        const scroller = document.querySelector("table")!.parentElement!;
+        return {
+          marked: document.querySelectorAll("[data-genbench-wide]").length,
+          clips: scroller.scrollWidth - scroller.clientWidth > 1,
+        };
+      });
+      expect(after).toEqual({ marked: 0, clips: true });
+    } finally {
+      await visit.close();
+    }
+  }, 120_000);
+
+  it("is not shot at all when the table fits, so most screens pay nothing", async () => {
+    const visit = await shooter.visit(FITS_IN_THE_FRAME);
+    try {
+      expect((await visit.shot()).tables).toEqual([]);
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+
+  it("is shot at most three times per screen, however many tables run off the edge", async () => {
+    const visit = await shooter.visit(HAND_WIDE_TABLE(4));
+    try {
+      const { tables } = await visit.shot();
+
+      expect(tables).toHaveLength(3);
+      for (const table of tables) expect(widthOf(table)).toBeGreaterThan(480);
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+
+  it("reaches the judge, right behind the screenshot it belongs to", async () => {
+    const world = await worldNamed("maple");
+    const visit = await shooter.visit(authoredPage(HAND_WIDE_TABLE(1), world, "diy-sonnet"));
+    try {
+      const { png, tables, dom } = await visit.shot();
+      const model = answering();
+
+      // Through the real judge, because the whole claim is about the prompt it
+      // assembles. No lines of its own, so the one standing line is the whole
+      // rubric and the double answers it in one call.
+      await judge(
+        { screenshot: png, tables, artifact: dom, trace: [], toolData: "", caseLines: [], styleLines: [], caseHash: "wide-table" },
+        { model },
+      );
+
+      expect(pictures(model.doGenerateCalls[0]!)).toEqual([png, tables[0]]);
     } finally {
       await visit.close();
     }

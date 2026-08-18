@@ -44,6 +44,13 @@ const PNG = Buffer.from(
   "base64",
 );
 
+/** The wide table's own picture, distinct from the shot above: the judge is shown
+ *  both, and a re-score that sent the same bytes twice would read as passing. */
+const TABLE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+  "base64",
+);
+
 /** The document the contender saved — a page with one live control on it, so the
  *  saved trace below is a trace this page could really have produced. */
 const HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title></head>
@@ -110,7 +117,7 @@ async function savedRun(results: readonly CaseResult[]): Promise<string> {
     await writeCase(runDir, {
       outcome: { artifact: HTML, blocking: [], format: "html", snapshots: [], settledMs: result.timing.settledMs },
       html: authoredPage(HTML, world, result.contender),
-      shot: { png: PNG, visibleText: "", dom: DOM, renders: true, consoleErrors: [] },
+      shot: { png: PNG, tables: [TABLE_PNG], visibleText: "", dom: DOM, renders: true, consoleErrors: [] },
       result,
     });
   }
@@ -133,15 +140,28 @@ const sent = (call: { prompt: unknown }): string[] => {
     .flatMap((part) => part.text ?? []);
 };
 
+/** Every picture the judge was really sent, in order: the screenshot, then the
+ *  wide tables. The SDK hands an image over as a `file` part whose bytes are
+ *  either a byte array or base64, so both readings are put back to bytes. */
+const pictures = (call: { prompt: unknown }): Buffer[] =>
+  (call.prompt as Array<{ content: unknown }>)
+    .flatMap((message) =>
+      Array.isArray(message.content) ? (message.content as Array<{ type: string; data?: unknown }>) : [],
+    )
+    .filter((part) => part.type === "file")
+    .map((part) => (typeof part.data === "string" ? Buffer.from(part.data, "base64") : Buffer.from(part.data as Uint8Array)));
+
 /** The grader, doubled: it answers every line it was asked and reports what the
- *  call cost, and it keeps the SOURCE channel it was handed so a test can say
- *  where the DOM came from. */
-function grader(): { model: MockLanguageModelV3; source: () => string } {
+ *  call cost, and it keeps the SOURCE channel and the pictures it was handed so a
+ *  test can say where the DOM came from and what the judge could see. */
+function grader(): { model: MockLanguageModelV3; source: () => string; shown: () => Buffer[] } {
   let source = "";
+  let shown: Buffer[] = [];
   const model = new MockLanguageModelV3({
     doGenerate: async (call) => {
       const parts = sent(call);
       source = parts.find((part) => part.startsWith("SOURCE")) ?? "";
+      shown = pictures(call);
       const asked = [...(parts.at(-1) ?? "").matchAll(/^\s*\d+\./gm)].length;
       return {
         content: [
@@ -161,7 +181,7 @@ function grader(): { model: MockLanguageModelV3; source: () => string } {
       };
     },
   });
-  return { model, source: () => source };
+  return { model, source: () => source, shown: () => shown };
 }
 
 const resultIn = async (runDir: string, result: CaseResult): Promise<CaseResult> =>
@@ -171,7 +191,7 @@ describe("regrade", () => {
   it("scores the saved screen under today's floor and today's rubric, and re-decides nothing else", async () => {
     const was = saved();
     const runDir = await savedRun([was]);
-    const { model, source } = grader();
+    const { model, source, shown } = grader();
 
     expect(await regrade({ runDir, jobs: 1 }, { model })).toBe(0);
 
@@ -192,6 +212,10 @@ describe("regrade", () => {
     expect(now.judged.cost?.usd).toBeCloseTo(0.115, 6);
     // The judge read the DOM the run recorded, not a repaint of the page.
     expect(source()).toContain("the DOM the run recorded");
+    // And it was shown every picture the run took: the viewport shot, and the
+    // wide table at its full width beside it. Dropping the second one would grade
+    // the columns past the fold as absent again, which is what it was there for.
+    expect(shown()).toEqual([PNG, TABLE_PNG]);
   });
 
   it("writes a whole run folder beside the source, linking the evidence, and never writes into the source", async () => {
@@ -213,7 +237,7 @@ describe("regrade", () => {
     expect(await readFile(join(regraded, "preview.html"), "utf8")).toContain(was.contender);
     // The evidence itself is the same FILE, not a second copy of it: a regraded
     // corpus is 200 screenshots and 200 pages that did not change.
-    for (const name of ["page.html", "screenshot.png", "dom.html"]) {
+    for (const name of ["page.html", "screenshot.png", "dom.html", "table-1.png"]) {
       expect((await stat(join(to, name))).ino).toBe((await stat(join(from, name))).ino);
     }
     // The verdicts are the one thing written fresh, and the source run is

@@ -314,7 +314,7 @@ const resultFor = (contender: string): CaseResult => ({
   agentSdkVersion: "0.0.0",
 });
 
-const SHOT: Shot = { png: PNG, visibleText: "", dom: "", renders: true, consoleErrors: [] };
+const SHOT: Shot = { png: PNG, tables: [], visibleText: "", dom: "", renders: true, consoleErrors: [] };
 
 /** Every identity the feed is showing, top row first, with whatever the guard
  *  wrote on the row it resolved. */

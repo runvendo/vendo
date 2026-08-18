@@ -604,6 +604,11 @@ export const exitCode = (results: readonly CaseResult[]): number =>
 const nodesOf = (payload: UIPayload | undefined): ReadonlyArray<{ source?: string; component?: string }> =>
   (payload as { nodes?: Array<{ source?: string; component?: string }> } | undefined)?.nodes ?? [];
 
+/** A wide table's picture, by its place on the screen: `table-1.png`. Written by
+ *  the run, read back by a re-score, linked on by `carry` — one spelling for all
+ *  three, and the pattern that finds them again is `TABLE_SHOT` below. */
+const tableShot = (index: number): string => `table-${index + 1}.png`;
+
 /**
  * One column's evidence on disk — the run folder's whole layout, in one place.
  *
@@ -630,6 +635,13 @@ export async function writeCase(
   if (wrote.html !== undefined) await writeFile(join(caseDir, "page.html"), wrote.html);
   if (wrote.shot !== undefined) {
     await writeFile(join(caseDir, "screenshot.png"), wrote.shot.png);
+    // One picture per table the screen can only show by scrolling sideways,
+    // beside the shot they belong to and numbered in the order they appear on it.
+    // The judge is shown them (`wideTables` in `render.ts`), so a re-score has to
+    // find them again — which is what names them here rather than in the loop.
+    for (const [index, table] of wrote.shot.tables.entries()) {
+      await writeFile(join(caseDir, tableShot(index)), table);
+    }
     // The judge's OTHER channel, saved beside the picture it was shown: the DOM
     // the browser held once the screen settled. Without it a re-score has to
     // paint `page.html` in a browser again just to read back what the shot
@@ -767,8 +779,22 @@ export function sourceOf(
  *  it. A filesystem that will not link gets the copy. */
 const EVIDENCE = ["artifact.tsx", "page.html", "screenshot.png", "dom.html"] as const;
 
+/** {@link tableShot} read back the other way. */
+const TABLE_SHOT = /^table-(\d+)\.png$/;
+
+/** The wide tables a saved case was shot with, in the order they appear on the
+ *  screen — found rather than named, because how many there are is the screen's
+ *  own. The judge is shown them on a re-score exactly as it was on the run. */
+async function savedTables(from: string): Promise<string[]> {
+  return (await readdir(from))
+    .map((name) => TABLE_SHOT.exec(name))
+    .filter((found): found is RegExpExecArray => found !== null)
+    .sort((left, right) => Number(left[1]) - Number(right[1]))
+    .map((found) => found[0]);
+}
+
 async function carry(from: string, to: string): Promise<void> {
-  for (const name of EVIDENCE) {
+  for (const name of [...EVIDENCE, ...(await savedTables(from))]) {
     if (!existsSync(join(from, name))) continue;
     await link(join(from, name), join(to, name)).catch(async () => await copyFile(join(from, name), join(to, name)));
   }
@@ -875,6 +901,12 @@ export async function regrade(args: RegradeArgs, options: JudgeOptions = {}): Pr
         : await judge(
             {
               screenshot,
+              // The run's own extra pictures, never taken again: painting the
+              // page to re-shoot a table would grade a screen this folder does
+              // not hold. A run recorded before they existed simply has none.
+              tables: await Promise.all(
+                (await savedTables(from)).map(async (name) => await readFile(join(from, name))),
+              ),
               artifact: dom,
               trace: was.trace,
               toolData: toolData(world),
@@ -1253,6 +1285,10 @@ async function main(argv: readonly string[]): Promise<number> {
         ? ungraded(testCase.pass, scoped.style)
         : await judge({
             screenshot: shot.png,
+            // And the fold, where the screen has one: a table wider than the
+            // frame at its full scroll width, which is the only way the columns
+            // past the fold are evidence at all.
+            tables: shot.tables,
             // The RENDERED DOM, for every column. Vendo's artifact is a TSX
             // document and both baselines' is HTML, so sending each column its
             // own artifact handed the judge a perfect classifier for which one
