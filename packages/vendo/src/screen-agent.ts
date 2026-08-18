@@ -1181,7 +1181,12 @@ export async function assembleScreen(
       ...turn,
       messages: [...messages, budget],
       options,
-      signal: AbortSignal.any([surface.signal, ended.signal]),
+      // The TURN's own hang-up, plus this drive's. Composed rather than
+      // re-listed: the turn's signal already carries the run's stop switch (a
+      // deployment that cannot check screens ends the drive), and spelling out
+      // `surface.signal` here instead dropped that switch on the floor — the
+      // hand aborted and the loop kept paying for steps.
+      signal: AbortSignal.any([turn.signal, ended.signal]),
     })) {
       if (event.type === "error") failure ??= event.message;
       if (event.type === "text") closing += event.delta;
