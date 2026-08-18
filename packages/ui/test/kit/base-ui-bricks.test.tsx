@@ -100,6 +100,34 @@ describe("Radio", () => {
     fireEvent.click(at("Hartwell"));
     expect(at("Hartwell").getAttribute("aria-checked")).toBe("true");
   });
+
+  it("refuses an option the TOOL marked disabled, and heads each run", () => {
+    // Off the raw item's own `disabled` and `group` keys: the item that cannot be
+    // picked is the one the tool said so about, so no prop names either.
+    const onChange = vi.fn();
+    const { container } = render(
+      <Radio
+        label="Plan"
+        options={[
+          { id: "p1", name: "Starter", group: "Monthly" },
+          { id: "p2", name: "Growth", group: "Monthly", disabled: true },
+          { id: "p3", name: "Starter, yearly", group: "Yearly" },
+        ]}
+        labelField="name"
+        valueField="id"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "Growth" }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio", { name: "Starter" }));
+    expect(onChange).toHaveBeenCalledWith("p1");
+
+    // One heading per run, where the run's first member stood.
+    expect([...container.querySelectorAll('[data-kit="Radio"] > span')].map((head) => head.textContent))
+      .toEqual(["Monthly", "Yearly"]);
+  });
 });
 
 describe("Slider", () => {
@@ -176,6 +204,39 @@ describe("Combobox", () => {
     fireEvent.input(screen.getByLabelText("Client"), { target: { value: "acm" }, inputType: "insertText" });
     fireEvent.click(await screen.findByRole("option", { name: "Acme" }));
     expect(onChange).toHaveBeenCalledWith("c2");
+  });
+
+  it("refuses an option the TOOL marked disabled, and heads each run", async () => {
+    const onChange = vi.fn();
+    render(
+      <Combobox
+        label="Client"
+        options={[
+          { id: "c1", name: "Hartwell", group: "Active" },
+          { id: "c2", name: "Acme", group: "Dormant", disabled: true },
+        ]}
+        labelField="name"
+        valueField="id"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.input(screen.getByLabelText("Client"), { target: { value: "a" }, inputType: "insertText" });
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["Hartwell", "Acme"]);
+    // Each run is a group, labelled — which is what names it to a screen reader.
+    expect(screen.getAllByRole("group").map((run) => run.firstElementChild?.textContent)).toEqual(["Active", "Dormant"]);
+
+    fireEvent.click(options[1] as HTMLElement);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("leaves an ungrouped list flat — no heading, no group", async () => {
+    render(<Combobox label="Client" options={clients} labelField="name" valueField="id" />);
+    fireEvent.input(screen.getByLabelText("Client"), { target: { value: "a" }, inputType: "insertText" });
+
+    expect((await screen.findAllByRole("option")).length).toBe(2);
+    expect(screen.queryAllByRole("group")).toEqual([]);
   });
 });
 
@@ -265,16 +326,25 @@ describe("Menu", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("lets children win over items — the dual API's rule", async () => {
+  // Children used to WIN over `items`, wrapped one per entry in an item with no
+  // handler: the menu opened, listed them, highlighted them on hover and did
+  // nothing at all when one was chosen. `items` + `onSelect` is the only API now —
+  // the floor refuses a nested Menu and names that pair as the fix — so all this
+  // brick has to do is stop pretending children work.
+  it("ignores children — items are the only entries, and they still fire", async () => {
+    const onSelect = vi.fn();
     render(
-      <Menu label="Actions" items={items}>
+      <Menu label="Actions" items={items} onSelect={onSelect}>
         <span>Export CSV</span>
       </Menu>,
     );
     fireEvent.click(screen.getByRole("button", { name: /Actions/ }));
 
     const entries = await screen.findAllByRole("menuitem");
-    expect(entries.map((entry) => entry.textContent)).toEqual(["Export CSV"]);
+    expect(entries.map((entry) => entry.textContent)).toEqual(["Send reminder", "Void"]);
+    expect(screen.queryByText("Export CSV")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Send reminder" }));
+    expect(onSelect).toHaveBeenCalledWith("remind");
   });
 });
 

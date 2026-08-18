@@ -10,6 +10,12 @@ export interface CardField {
   key: string;
   label?: string;
   format?: ValueFormat;
+  /** What one unit of a `format:"duration"` value IS — seconds (default) or
+   *  minutes. A `minutes_remaining` field read as seconds prints a plausible
+   *  duration off by 60×, so the unit is declared, never multiplied in. */
+  durationUnit?: "seconds" | "minutes";
+  /** Phrase a `format:"duration"` sign: "3h 20m left" / "overdue 1h 55m". */
+  durationSigned?: boolean;
   /** Kit elements rendered as this field's VALUE (the label stays). Written as a
    *  function of the item, it arrives as ONE element per item in `items` order. */
   cell?: ReactNode | readonly ReactNode[];
@@ -113,7 +119,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields: rawF
                       DataTable, which sorts, so it matches by identity. */}
                   {rowSlot(f.cell, index) ?? (
                     <span style={{ ...numeric, ...(format === "code" ? mono : {}) }}>
-                      {applyFormat(readField(item, f.key), format) ?? "—"}
+                      {applyFormat(readField(item, f.key), format, { unit: f.durationUnit, signed: f.durationSigned }) ?? "—"}
                     </span>
                   )}
                 </div>

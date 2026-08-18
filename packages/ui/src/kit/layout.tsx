@@ -1,9 +1,25 @@
 /** Layout tier — themed containers (W2 §The Kit). */
-import { Children, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
+import { Children, useEffect, useRef, useState, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
 import { densityVars, font, hairline, microLabel, resolveTone, t, toneColor, type KitDensity, type KitStyled, type KitTone } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
+
+/**
+ * `grow` — "as a child of a Row/Grid/Stack, take the remaining space". The
+ * shared adjective the raw `<div style={{flex:1}}>` escapes were reaching for:
+ * 17 of them counted, every one written because the Kit's containers could size
+ * their children but a child could not claim what was left, so a search box
+ * beside a button, or a chart beside a legend, dropped out of the Kit entirely.
+ *
+ * `minWidth: 0` rides along because those escapes wanted a child that SHRINKS
+ * as well as grows. A flex child keeps its content's intrinsic width by default,
+ * so a grown pane holding a wide table pushes its sibling off the row instead of
+ * scrolling inside its own box — the same floor SplitPane's tracks need, for the
+ * same reason.
+ */
+const growStyle = (grow: boolean | number | undefined): CSSProperties =>
+  grow === undefined || grow === false ? {} : { flexGrow: grow === true ? 1 : grow, minWidth: 0 };
 
 /** A toned container's rule. Neutral keeps the plain border rather than the
  *  tone's foreground: a card is a region, not a pill. */
@@ -15,14 +31,15 @@ const borderColor = (tone: KitTone | undefined): string => {
 export interface StackProps extends KitStyled {
   gap?: number;
   density?: KitDensity;
+  grow?: boolean | number;
 }
 
 /** Vertical flow. */
-export function Stack({ gap, density, style, children }: PropsWithChildren<StackProps>) {
+export function Stack({ gap, density, grow, style, children }: PropsWithChildren<StackProps>) {
   return (
     <div
       data-kit="Stack"
-      style={{ ...densityVars(density), display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap), ...style }}
+      style={{ ...densityVars(density), display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap), ...growStyle(grow), ...style }}
     >
       {children}
     </div>
@@ -35,6 +52,7 @@ export interface RowProps extends KitStyled {
   justify?: "start" | "center" | "end" | "between";
   wrap?: boolean;
   density?: KitDensity;
+  grow?: boolean | number;
 }
 
 const alignMap: Record<string, CSSProperties["alignItems"]> = {
@@ -51,7 +69,7 @@ const justifyMap: Record<string, CSSProperties["justifyContent"]> = {
 };
 
 /** Horizontal flow. */
-export function Row({ gap, align = "center", justify = "start", wrap = true, density, style, children }: PropsWithChildren<RowProps>) {
+export function Row({ gap, align = "center", justify = "start", wrap = true, density, grow, style, children }: PropsWithChildren<RowProps>) {
   // Avatar's stack rule pulls its sibling back by the row's gap, and a numeric
   // `gap` never reaches the density variable — so the row publishes whichever
   // gap it resolved.
@@ -68,6 +86,7 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, den
         alignItems: alignMap[align],
         justifyContent: justifyMap[justify],
         gap: resolved,
+        ...growStyle(grow),
         ...style,
       } as CSSProperties}
     >
@@ -82,10 +101,11 @@ export interface GridProps extends KitStyled {
   minChildWidth?: number;
   gap?: number;
   density?: KitDensity;
+  grow?: boolean | number;
 }
 
 /** Equal-width columns. */
-export function Grid({ columns = 2, minChildWidth = 0, gap, density, style, children }: PropsWithChildren<GridProps>) {
+export function Grid({ columns = 2, minChildWidth = 0, gap, density, grow, style, children }: PropsWithChildren<GridProps>) {
   const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
   // A fixed count CLIPS its cells once the screen is narrower than the count
   // needs; auto-fit wraps them instead. The inner `min()` is what keeps the last
@@ -103,6 +123,7 @@ export function Grid({ columns = 2, minChildWidth = 0, gap, density, style, chil
         gridTemplateColumns: template,
         alignItems: "stretch",
         gap: gapVar(gap),
+        ...growStyle(grow),
         ...style,
       }}
     >
@@ -112,9 +133,19 @@ export function Grid({ columns = 2, minChildWidth = 0, gap, density, style, chil
 }
 
 export interface SplitPaneProps extends KitStyled {
-  /** The first pane's width: pixels, or a fraction of the split below 1. */
-  size?: number;
+  /** The first pane's width: a CSS length ("40%", "18rem", "280px"), or px as a
+   *  bare number. A number below 1 is still read as a share of the split. */
+  size?: number | string;
 }
+
+/**
+ * Below this width, in px, the pair STACKS — because below this it is not a pair.
+ * The default first pane is 320px, and the second needs roughly 200 before its
+ * content is a column of wrapped fragments rather than a detail view. So 520 is
+ * where side-by-side stops being the layout the person described, and the
+ * arrangement that keeps their content is one pane above the other.
+ */
+const STACK_BELOW = 520;
 
 /**
  * Two panes side by side, at any width.
@@ -130,19 +161,54 @@ export interface SplitPaneProps extends KitStyled {
  * `minmax(0, …)` CodeBlock's block needs for the same reason — so a long line or
  * a wide table inside one pane scrolls in ITS OWN pane instead of pushing the
  * other one off the frame.
+ *
+ * The one width where side-by-side is the wrong answer is a frame too narrow to
+ * hold both: there the second pane was squeezed to a sliver and CLIPPED, so the
+ * detail half of "a list beside the thing it opens" simply was not on screen.
+ * Under {@link STACK_BELOW} the panes flow as rows instead — the same content,
+ * one above the other, still each in its own scrolling box.
  */
 export function SplitPane({ size = 320, style, children }: PropsWithChildren<SplitPaneProps>) {
-  // Below 1 it is a share of the split (0.4 → 40%), at or above it a width in
-  // px. Nothing else can be meant: a pane 0.4 pixels wide is not a layout.
-  const first = size > 0 && size < 1 ? `${size * 100}%` : `${Math.max(0, Math.floor(size))}px`;
+  // A string is a CSS length verbatim — "40%", "18rem", "280px" — which is the
+  // one spelling the spec now teaches. A number at or above 1 is px, and below 1
+  // it is a share of the split (0.4 → 40%): only TOLERATED, because stored
+  // screens carry the float and nothing else can be meant by it — a pane 0.4
+  // pixels wide is not a layout.
+  const first =
+    typeof size === "string"
+      ? size
+      : size > 0 && size < 1
+        ? `${size * 100}%`
+        : `${Math.max(0, Math.floor(size))}px`;
+  const root = useRef<HTMLDivElement | null>(null);
+  const [stacked, setStacked] = useState(false);
+  useEffect(() => {
+    const node = root.current;
+    // No ResizeObserver (SSR, jsdom): nothing is measured, so nothing stacks and
+    // the pair renders exactly as it always did. The trigger is the measurement,
+    // the way DataTable's fold reads its own width — the Kit paints inside a host
+    // page it does not control, so a media query would answer for the WINDOW
+    // while this pair sits in whatever column the host gave it.
+    if (node === null || typeof ResizeObserver === "undefined") return;
+    const measure = () => setStacked(node.clientWidth < STACK_BELOW);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   return (
     <div
       data-kit="SplitPane"
+      ref={root}
+      data-stacked={stacked ? "" : undefined}
       style={{
         display: "grid",
-        gridTemplateColumns: `minmax(0, ${first}) minmax(0, 1fr)`,
-        gridAutoFlow: "column",
-        gridAutoColumns: "minmax(0, 1fr)",
+        // Stacked, the panes are ROWS of one full-width track: keeping the two
+        // columns is exactly what clipped the second one, and keeping `column`
+        // auto-flow would hand every extra child an implicit column again.
+        gridTemplateColumns: stacked ? "minmax(0, 1fr)" : `minmax(0, ${first}) minmax(0, 1fr)`,
+        gridAutoFlow: stacked ? "row" : "column",
+        gridAutoColumns: stacked ? undefined : "minmax(0, 1fr)",
         alignItems: "stretch",
         gap: "var(--vendo-density-content-gap, 10px)",
         minHeight: 0,
@@ -181,10 +247,11 @@ export interface SurfaceProps extends KitStyled {
   header?: ReactNode;
   /** Kit elements under the content — the buttons a region ends with. */
   footer?: ReactNode;
+  grow?: boolean | number;
 }
 
 /** A bordered, elevated container; optional title. */
-export function Surface({ title, tone, density, header, footer, style, children }: PropsWithChildren<SurfaceProps>) {
+export function Surface({ title, tone, density, header, footer, grow, style, children }: PropsWithChildren<SurfaceProps>) {
   return (
     <section
       data-kit="Surface"
@@ -199,6 +266,7 @@ export function Surface({ title, tone, density, header, footer, style, children 
         borderRadius: t.radiusMedium,
         background: t.surface,
         padding: "var(--vendo-density-card-padding, 16px)",
+        ...growStyle(grow),
         ...style,
       }}
     >
@@ -232,10 +300,11 @@ export interface CardProps extends KitStyled {
   header?: ReactNode;
   /** Kit elements under the content — the buttons a card ends with. */
   footer?: ReactNode;
+  grow?: boolean | number;
 }
 
 /** A titled content block; Surface is the untitled/plain container. */
-export function Card({ title, description, tone, density, header, footer, style, children }: PropsWithChildren<CardProps>) {
+export function Card({ title, description, tone, density, header, footer, grow, style, children }: PropsWithChildren<CardProps>) {
   return (
     <article
       data-kit="Card"
@@ -250,6 +319,7 @@ export function Card({ title, description, tone, density, header, footer, style,
         borderRadius: t.radiusLarge,
         background: t.surface,
         padding: "var(--vendo-density-card-padding, 16px)",
+        ...growStyle(grow),
         ...style,
       }}
     >

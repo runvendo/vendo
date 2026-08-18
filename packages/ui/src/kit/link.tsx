@@ -3,10 +3,11 @@
  * the press is handed to the host's `onNavigate`, so the host's own router does
  * the moving and keeps its transitions.
  *
- * A target the registry does not carry renders as plain text. That is the whole
- * security posture: generated output SELECTS among the host's routes, it never
- * authors a URL, so there is no offsite or `javascript:` target for it to emit —
- * and a param it does fill is URL-encoded before it reaches the path.
+ * A target the registry does not carry renders as visibly inert text — muted,
+ * with no link affordance. That is the whole security posture: generated output
+ * SELECTS among the host's routes, it never authors a URL, so there is no offsite
+ * or `javascript:` target for it to emit — and a param it does fill is
+ * URL-encoded before it reaches the path.
  *
  * NO `href`, deliberately. A registered path is written the way the host's
  * router takes it, which is not the way the browser does: Maple is mounted at
@@ -33,7 +34,12 @@ export function Link({ to, params, label, style, children }: PropsWithChildren<L
   const nav = to === undefined ? undefined : resolveVendoRoute(routes, to, params);
   const content = label ?? children;
   if (nav === undefined || navigate === undefined) {
-    return <span data-kit="Link" style={{ ...font, ...style }}>{content}</span>;
+    // Refusing to link is only half of it: rendered in the ordinary text colour,
+    // the words of a dead link read as live content, so "View account" sat in the
+    // page looking like prose somebody wrote on purpose and nobody could tell the
+    // route was missing. Muted and MARKED — visibly inert, with no link
+    // affordance at all: no accent, no underline, no cursor, no role.
+    return <span data-kit="Link" data-kit-inert="" style={{ ...font, color: t.muted, ...style }}>{content}</span>;
   }
   return (
     <a

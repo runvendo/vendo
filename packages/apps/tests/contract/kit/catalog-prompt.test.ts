@@ -61,7 +61,7 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
     // The union is part of the shape: a column may be the bare KEY the preamble
     // teaches, or the described object — printing only one half would send the
     // model writing the other into a prop it thinks is illegal.
-    expect(entry("DataTable")).toContain("`columns: (string|{key?, label?, format?, align?, cell?})[]`");
+    expect(entry("DataTable")).toContain("`columns: (string|{key?, label?, header?, format?, durationUnit?, durationSigned?, align?, width?, truncate?, priority?, cell?})[]`");
     expect(entry("Button")).toContain("`onClick: fn`");
     expect(entry("Surface")).toContain("`header: element`");
   });
@@ -142,24 +142,29 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
   });
 
   /**
-   * THE BUDGET, re-measured 2026-08-18 when the run-on line became an entry:
-   * 54 bricks cost 28,355 characters (~7.1k tokens), against `kitPrompt`'s
-   * 36,376 for the same bricks as a section apiece.
+   * THE BUDGET, re-measured 2026-08-18 after the capability pass: 54 bricks cost
+   * 26,618 characters (~6.7k tokens), against `kitPrompt`'s 39,496 for the same
+   * bricks as a section apiece.
    *
-   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 490
+   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 500
    * characters a brick — heading, summary, props, slots AND example — the
-   * 55-brick kit still fits (26,950 plus the preamble), while a brick that grew
-   * past 490 would break that promise long before the total noticed.
+   * 55-brick kit still fits (27,500 plus the ~3,400-character preamble), while a
+   * brick that grew past 500 would break that promise long before the total
+   * noticed.
    *
-   * Both numbers move DELIBERATELY, in a commit that says why, and this move is
-   * the LAYOUT: 460 bought a run-on line per brick, which is exactly what came
-   * back as unreadable. A heading and a line break per kind of fact costs ~28
-   * characters a brick, and readability is what the extra buys.
+   * Both numbers move DELIBERATELY, in a commit that says why. The move from 490
+   * to 500 is CAPABILITY: a table column now says `width`, `truncate`, `priority`
+   * and `header`, a duration says which unit it holds, a button takes an `icon`
+   * and a `loading`, and a series takes its own `format` — and every one of those
+   * is a word the model was already writing into a prop the floor refused. The
+   * compact type walked off each schema is what carries them, so the growth is in
+   * the derived half, not in prose; the ~7 characters of slack per brick are
+   * deliberate, because a bound with no room is a bound everyone learns to raise.
    */
   it("stays under the section-per-brick catalog, with room for the 55-brick kit", () => {
     const prompt = catalogPrompt();
     expect(prompt.length).toBeLessThanOrEqual(32_000);
     expect(prompt.length).toBeLessThan(kitPrompt().length);
-    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(490);
+    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(500);
   });
 });

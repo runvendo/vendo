@@ -1186,7 +1186,7 @@ export default function Receipt() {
     // The key it wrote, where it wrote it, and the keys that would have worked —
     // the same shape a misspelled tool payload key gets.
     expect(message).toContain('writes the key "field", which items on <KeyValue> does not accept');
-    expect(message).toContain("Its keys are: key, label, format, cell (required: key)");
+    expect(message).toContain("Its keys are: key, label, format, durationUnit, durationSigned, cell (required: key)");
     // …and NOT the slot sentence, which named no key at all.
     expect(message).not.toContain("this slot is painted once");
   });

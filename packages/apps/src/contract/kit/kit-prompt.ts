@@ -38,8 +38,10 @@ export const PREAMBLE = [
   "- `<Percent>` prints the number it is given — `42.5` is \"42.5%\" — so a ratio is",
   "  `* 100` where you read it, and nothing is rounded that you did not round.",
   "- `format=\"duration\"` — a Stat, a column, a card or KeyValue field — reads a",
-  "  count of SECONDS: `268` → \"4m 28s\", so a minutes field is `* 60` where you",
-  "  read it.",
+  "  count of SECONDS: `268` → \"4m 28s\". A field stored in minutes says so beside",
+  "  it, `durationUnit=\"minutes\"`, rather than being multiplied at the read; and",
+  "  `durationSigned` phrases the sign for a deadline — \"3h 20m left\",",
+  "  \"overdue 1h 55m\" — instead of printing a bare minus.",
   "- `unit` writes the word after a figure:",
   "  `<Num value={svc.tail_latency_ms} unit=\"ms\"/>` → \"842 ms\".",
   "- `<DateTime compact/>` drops the year — \"Aug 7\", not \"Aug 7, 2026\".",
@@ -65,7 +67,11 @@ export const PREAMBLE = [
   "  label comes from the key — the shorthand `Select.options` already takes.",
   "- Side by side stays side by side: Row and Grid WRAP as the frame narrows, so a",
   "  list beside the record it opens is a `<SplitPane>` — two panes, never wrapped,",
-  "  each scrolling its own content.",
+  "  each scrolling its own content, stacked only when the frame cannot hold both.",
+  "- **grow** on a Stack, Row, Grid, Surface or Card takes the remaining space in",
+  "  the container around it: `<Row><Stack grow>…</Stack><Button .../></Row>`.",
+  "  There is no raw `<div style={{flex:1}}>` to reach for — the block that",
+  "  stretches says so itself.",
 ].join("\n");
 
 /**

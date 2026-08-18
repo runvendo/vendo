@@ -148,11 +148,12 @@ describe("DataTable with model-painted rows", () => {
 
   // The fold is written against five judge failures, and DataTable cannot reach
   // into a model-built row to do it — so the row folds its own, off the same
-  // count and the same column labels.
+  // set and the same column labels. It is opt-in now, because folding is what
+  // made rows three lines tall.
   it("folds the columns that do not fit into the row's first cell", () => {
     const restore = stubLayout(200, 420);
     try {
-      render(painted());
+      render(painted({ fold: true }));
       expect(screen.getAllByRole("columnheader")).toHaveLength(2);
       const first = screen.getAllByRole("row")[1]!;
       const cells = within(first).getAllByRole("cell");
@@ -161,6 +162,46 @@ describe("DataTable with model-painted rows", () => {
       // alone — "Checking: Cancel" would read as the row's own value.
       expect(cells[0]!.textContent).toBe("CheckingCancel");
       expect(cells[1]!.textContent).toBe("$1,284.50");
+    } finally {
+      restore();
+    }
+  });
+
+  it("leaves the columns that do not fit out of the row entirely, unasked", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(painted());
+      const cells = within(screen.getAllByRole("row")[1]!).getAllByRole("cell");
+      expect(cells).toHaveLength(2);
+      expect(cells[0]!.textContent).toBe("Checking");
+      expect(cells[1]!.textContent).toBe("$1,284.50");
+      // The control that rode in the fold is not anywhere else either.
+      expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * THE INDEX CLAIM, on the columns this time. The column that gives way is the
+   * least important one WHEREVER it sits, so the ones left are not a prefix: a row
+   * that placed its cells by counting them would put the balance under the action
+   * column's header, which is the misalignment this whole component exists to
+   * prevent.
+   */
+  it("keeps every cell under its own column when a middle column gives way", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(painted({ columns: [COLUMNS[0]!, { ...COLUMNS[1]!, priority: 0 }, COLUMNS[2]!] }));
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toEqual(["Account", ""]);
+      // Two cells: the account, and the control the third column was written for.
+      expect(grid()).toEqual([
+        ["Checking", "Cancel"],
+        ["Savings", "Cancel"],
+        ["Travel", "Cancel"],
+      ]);
+      expect(screen.queryByText("$1,284.50")).toBeNull();
     } finally {
       restore();
     }

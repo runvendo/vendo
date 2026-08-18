@@ -39,6 +39,20 @@ describe("KeyValue", () => {
     expect(screen.getByText("$250,000.00")).toBeTruthy();
   });
 
+  it("reads a duration row in the unit its field is in, and phrases the sign", () => {
+    render(
+      <KeyValue
+        record={{ minutesLeft: 200, minutesLate: -115 }}
+        items={[
+          { key: "minutesLeft", format: "duration", durationUnit: "minutes", durationSigned: true },
+          { key: "minutesLate", format: "duration", durationUnit: "minutes", durationSigned: true },
+        ]}
+      />,
+    );
+    expect(screen.getByText("3h 20m left")).toBeTruthy();
+    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
+  });
+
   it("gives a code row the host's mono face", () => {
     render(<KeyValue record={invoice} items={[{ key: "status", label: "Status", format: "code" }]} />);
     expect(screen.getByText("past_due").getAttribute("style")).toContain("--vendo-mono-family");
@@ -213,6 +227,28 @@ describe("CodeBlock", () => {
     // lives in the shot — but the floor is what the shot depends on.
     expect(block.style.gridTemplateColumns).toBe("minmax(0, 1fr)");
     expect(container.querySelector("pre")!.style.overflowX).toBe("auto");
+  });
+
+  it("reflows a long line when asked to wrap, keeping the floor that lets it", () => {
+    const { container } = render(<CodeBlock code={"x".repeat(400)} wrap />);
+    const pre = container.querySelector("pre") as HTMLElement;
+    expect(pre.style.whiteSpace).toBe("pre-wrap");
+    // A payload is routinely ONE unbroken token, which `pre-wrap` alone leaves
+    // overflowing the wrap it was asked for.
+    expect(pre.style.overflowWrap).toBe("anywhere");
+    // Wrapping changes what the `pre` DOES at a narrow width, never what the
+    // block asks for — the track floored at 0 stays either way.
+    const block = container.querySelector('[data-kit="CodeBlock"]') as HTMLElement;
+    expect(block.style.gridTemplateColumns).toBe("minmax(0, 1fr)");
+  });
+
+  it("caps its height rather than pushing the screen below the fold", () => {
+    const { container } = render(<CodeBlock code={"line\n".repeat(400)} maxHeight={240} />);
+    const pre = container.querySelector("pre") as HTMLElement;
+    expect(pre.style.maxHeight).toBe("240px");
+    expect(pre.style.overflowY).toBe("auto");
+    // Unasked, the block grows with its payload: a cap nobody set is not one.
+    expect((render(<CodeBlock code="ok" />).container.querySelector("pre") as HTMLElement).style.maxHeight).toBe("");
   });
 
   it("still lets a caller override the layout it defaults to", () => {

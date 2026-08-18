@@ -10,6 +10,12 @@ export interface StatProps extends KitStyled {
   value: number | string;
   /** Value-tier format. */
   format?: ValueFormat;
+  /** What one unit of a `format:"duration"` value IS — seconds (default) or
+   *  minutes. A `minutes_remaining` field read as seconds prints a plausible
+   *  duration off by 60×, so the unit is declared, never multiplied in. */
+  durationUnit?: "seconds" | "minutes";
+  /** Phrase a `format:"duration"` sign: "3h 20m left" / "overdue 1h 55m". */
+  durationSigned?: boolean;
   /** A unit written after the value — "ms", "min", "h". */
   unit?: string;
   /** A trend / delta caption, e.g. "+12% MoM". */
@@ -29,10 +35,10 @@ export interface StatProps extends KitStyled {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", unit, trend, tone, density, icon, style, children }: StatProps) {
+export function Stat({ label, value, format = "text", durationUnit, durationSigned, unit, trend, tone, density, icon, style, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
-  const shown = applyFormat(value, format);
+  const shown = applyFormat(value, format, { unit: durationUnit, signed: durationSigned });
   const formatted = shown !== null && unit !== undefined ? `${shown} ${unit}` : shown;
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;

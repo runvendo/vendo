@@ -24,8 +24,55 @@ const align = z.enum(["start", "center", "end"]);
  *  the engine and meant nothing to it. */
 const seriesInput = z.array(z.union([
   z.string(),
-  z.object({ key: z.string(), label: z.string().optional(), color: z.string().optional() }).passthrough(),
+  z.object({
+    key: z.string(),
+    label: z.string().optional(),
+    /** The word the model was already reaching for. `name` is the ENGINE's own
+     *  spelling of a series' title, so it arrived, passed through, and then lost
+     *  to the `label ?? key` default — a renamed series that kept its raw field
+     *  name. The Kit reads it as `label` now and still owns what reaches the
+     *  engine, exactly as it does for `color`. */
+    name: z.string().optional(),
+    color: z.string().optional(),
+    /** THIS series' units, over the chart's. A chart of two series in different
+     *  units (an amount and a count) has no one chart-level token that reads
+     *  both. */
+    format: valueFormat.optional(),
+  }).passthrough(),
 ]));
+
+/**
+ * Raw tool output as choices — the ONE shape Select, Radio and Combobox share.
+ *
+ * Nothing reshapes on the way in, so the two things a choice needs to say about
+ * itself are read off the item where they already sit: its own `disabled` greys
+ * that one out, and its own `group` puts it under a heading. Two more `*Field`
+ * props would have been two more names for the model to carry, and a screen that
+ * builds this array can spell either word directly. A bare string or number
+ * carries neither — that is the whole point of the shorthand.
+ */
+const options = z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())]));
+const OPTIONS_DOC = "raw items, read through labelField/valueField; an item's own disabled greys that choice out and its own group heads a section";
+
+/** What a `format:"duration"` count IS. A host stores a duration in whichever
+ *  unit its own column is named for, and the tier cannot see the name — so the
+ *  screen used to have to write `* 60` at every read, and forgetting was a
+ *  figure wrong by 60× that still formatted cleanly. */
+const durationUnit = z.enum(["seconds", "minutes"]);
+
+/** The two adjectives a `format` token cannot carry, written beside it wherever
+ *  one is: a table column, a card field, a KeyValue row, a Stat. `durationSigned`
+ *  phrases the sign instead of printing it — "3h 20m left", "overdue 1h 55m" —
+ *  which is the difference between a countdown and an elapsed time, and nothing
+ *  in the data says which one a negative number means. */
+const durationShape = {
+  durationUnit: durationUnit.optional(),
+  durationSigned: z.boolean().optional(),
+} as const;
+const DURATION_DOC = {
+  durationUnit: 'what a format:"duration" count holds — seconds (default) or minutes',
+  durationSigned: 'phrase the sign: "3h 20m left", "overdue 1h 55m"',
+} as const;
 
 /** The DESCRIPTIONS that mark a schema as something other than what it
  *  parses as. Exported because every reader of a Kit schema — the screen
@@ -73,14 +120,26 @@ const tableColumn = z.union([z.string(), z.object({
    *  that is not there. A keyless column sorts, filters and searches on nothing. */
   key: z.string().optional(),
   label: z.string().optional(),
+  /** The word the model writes anyway. It arrived, validated, and was then
+   *  ignored for the humanized key — a labelled column reading as its raw field
+   *  name. The prompt used to spend a sentence forbidding it; the column reads it
+   *  as `label` instead. */
+  header: z.string().optional(),
   format: valueFormat.optional(),
+  ...durationShape,
   align: align.optional(),
+  /** Px. Also what gives a truncated cell an edge to ellipsize against. */
+  width: z.number().int().positive().optional(),
+  truncate: z.boolean().optional(),
+  /** Which columns survive a narrow frame. */
+  priority: z.number().optional(),
   cell: slot.optional(),
 })]);
 const cardField = z.union([z.string(), z.object({
   key: z.string(),
   label: z.string().optional(),
   format: valueFormat.optional(),
+  ...durationShape,
   cell: slot.optional(),
 })]);
 const action = z.string().describe(ACTION_PROP_DESCRIPTION);
@@ -143,14 +202,27 @@ const SHARED_PROPS: ReadonlyArray<{
     on: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
   },
   {
+    // Self-declaring, not parent-side: the container that GROWS is the one that
+    // says so, which is the only form that survives being nested. Every raw
+    // `<div style={{flex:1}}>` a screen wrote — seventeen of them counted — was
+    // reaching for exactly this, and reached past the Kit to get it.
+    name: "grow",
+    spec: config(z.union([z.boolean(), z.number()]), "inside a Row, Grid or Stack, take the remaining space — the container that stretches says so itself, so a row never needs a raw flex div"),
+    on: ["Stack", "Row", "Grid", "Surface", "Card"],
+  },
+  {
     name: "disabled",
     spec: config(z.boolean(), "greys the control out and stops it answering — how a control says 'not yet' instead of failing silently"),
     on: [...CONTROLS, "Button", "Form"],
   },
   {
+    // Enforced for the native three now, not only for the Base UI controls that
+    // register themselves with a Form: `Form` checks its own element's validity
+    // before it calls `onSubmit` (`ui` forms/form.tsx), so a required Textarea,
+    // Select or Checkbox stops a submit instead of decorating one.
     name: "required",
     spec: config(z.boolean(), "the form will not submit without it"),
-    on: ["Input", "Textarea", "Select", "DatePicker"],
+    on: ["Input", "Textarea", "Select", "DatePicker", "Checkbox"],
   },
   {
     name: "hint",
@@ -191,6 +263,13 @@ const ENGINES: Readonly<Record<string, string>> = {
   Form: "Base UI", Input: "Base UI", Menu: "Base UI", Modal: "Base UI", Progress: "Base UI",
   Radio: "Base UI", SegmentedControl: "Base UI", Sheet: "Base UI", Slider: "Base UI",
   Switch: "Base UI", Tabs: "Base UI", Toast: "Base UI", Tooltip: "Base UI",
+  // The three that render a plain DOM control rather than a library one. Their
+  // engine is the ELEMENT, and its vocabulary is as real as recharts': `maxLength`
+  // on a textarea, `size` on a select, `name` on a checkbox all work, and every
+  // one of them was refused by name while the identical prop went through on
+  // Input. The trade is the same one every engine takes — the prop list opens, so
+  // a misspelling reaches the DOM instead of a refusal.
+  Textarea: "<textarea>", Select: "<select>", Checkbox: "<input>",
 };
 
 // ---- specs ---------------------------------------------------------------
@@ -233,9 +312,12 @@ const BASE_SPECS: KitComponentSpec[] = [
     name: "SplitPane",
     takesChildren: true,
     group: "layout",
-    summary: "Two panes SIDE BY SIDE, at any width — the list beside the thing it opens. Row and Grid both wrap; this one never does, and each pane scrolls its own content instead of widening the other.",
+    summary: "Two panes SIDE BY SIDE — the list beside the thing it opens. Row and Grid both wrap; this one never does, and each pane scrolls its own content instead of widening the other. On a frame too narrow to hold both it stacks them vertically rather than clipping the second.",
     props: {
-      size: config(z.number().positive(), "the first pane's width in px, or a share of the split below 1 (0.4 → 40%); default 320"),
+      // The float still works, because stored screens carry it — but it is no
+      // longer TAUGHT: one prop that meant px above 1 and a share below it was a
+      // rule the model had to remember, and "40%" says the same thing out loud.
+      size: config(z.union([z.number().positive(), z.string()]), 'the first pane\'s size, as a CSS length ("40%", "18rem") or a number of px; default 320. A bare number below 1 still reads as a share (0.4 → 40%) for stored screens — write "40%"'),
     },
     examples: ['<SplitPane size={280}><DataTable rows={tickets.data} columns={["subject","status"]}/><KeyValue record={open} items={["subject","status","opened"]}/></SplitPane>'],
   },
@@ -276,17 +358,21 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Text",
     group: "values",
-    summary: "Themed text. Use variant=heading for section titles.",
+    takesChildren: true,
+    summary: "Themed text. Use variant=heading for section titles. A figure goes INSIDE the sentence, as children — never in a hand-built string.",
     props: {
       // string | number, matching the implementation (`text: ReactNode`, which
       // renders a number verbatim). The spec said `string` only, which never
       // bit anyone while the legacy prewired Text shadowed this one with a
       // permissive `any` prop — retiring it (V4) made the over-tight schema
       // load-bearing and blocked the very common `<Text text={count}/>`.
-      text: copy(z.union([z.string(), z.number()]), "the text to show"),
+      text: copy(z.union([z.string(), z.number()]), "the text to show; or nest the sentence as children"),
       variant: config(z.enum(["body", "heading", "caption", "label", "code"]), "text role"),
     },
-    examples: ['<Text text="This month" variant="heading"/>'],
+    examples: [
+      '<Text text="This month" variant="heading"/>',
+      '<Text variant="caption">Overdue: <Money value={overdue.total_cents / 100} tone="danger"/> across <Num value={overdue.count}/> clients</Text>',
+    ],
   },
   {
     name: "Money",
@@ -372,11 +458,12 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DataTable",
     group: "data",
-    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys and formats each cell — you pass rows and columns. A column's `cell` is a function of the row, so any arithmetic or composition a cell needs belongs there; a per-row CONTROL goes in `rowActions`, which is a function of the row too. Dates in cells are compact (\"Aug 12\"), and columns past the screen's width FOLD into the first cell rather than scrolling out of sight — prefer few, rich columns. A column's header text is `label`, not `header`. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
+    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys and formats each cell — you pass rows and columns. A column's `cell` is a function of the row, so any arithmetic or composition a cell needs belongs there; a per-row CONTROL goes in `rowActions`, which is a function of the row too. Dates in cells are compact (\"Aug 12\"); a cell stays on ONE line, truncating with the full text in its hover title, and on a frame too narrow for every column the least important drop — so cap a long-prose column with a `width` (140-200) instead of letting it crowd the others out. `paginate` is a page SIZE, so omit it for no pagination rather than passing false.",
     takesChildren: true,
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key supports dot-paths like client.name; format is a value tier token; cell is a (row) => elements slot; key is optional on an action column"),
+      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key takes dot-paths (client.name); label (or header) is the heading; format is a value tier token; width is px; truncate is on by default for plain text; priority keeps a column on a narrow frame, lowest dropping first, and defaults to left-to-right; cell is a (row) => elements slot; key is optional on an action column"),
+      fold: config(z.boolean(), "on a narrow frame, fold the dropped columns into the first cell as extra lines rather than leaving them out"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
@@ -444,6 +531,8 @@ const BASE_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "metric name", { required: true }),
       value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
       format: config(valueFormat, "value tier format"),
+      durationUnit: config(durationUnit, DURATION_DOC.durationUnit),
+      durationSigned: config(z.boolean(), DURATION_DOC.durationSigned),
       unit: config(z.string(), 'a unit written after the value — "ms", "min", "h"'),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       icon: config(slot, "a glyph beside the metric name"),
@@ -473,7 +562,13 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Timeline",
     group: "data",
-    summary: "A history down a spine: one dot-marked entry per record, in the order the tool returned them. `cell` renders Kit components for each entry instead of a title field.",
+    summary: "A history down a spine: one dot-marked entry per record, in the order the tool returned them. An entry's body is EITHER a `titleField` or a `cell` of Kit components — never both; the cell paints and the title would be dropped.",
+    // `cell` wins at render (`ui` timeline.tsx), so a screen that wrote both got
+    // the body it composed and lost the title it asked for, with nothing said.
+    exclusive: [{
+      props: ["cell", "titleField"],
+      fix: "A cell is the whole body, so keep `cell` and write the title INSIDE it (`cell: (entry) => <Stack gap={2}><Text text={entry.description}/>…</Stack>`), or drop `cell` and keep `titleField` for a plain one-line entry.",
+    }],
     props: {
       entries: data(rows, "entries from a tool call", { required: true }),
       titleField: config(z.string(), "field for each entry's title"),
@@ -503,10 +598,12 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "CodeBlock",
     group: "data",
-    summary: "Monospaced code or a raw payload with a language chip. Shows the text exactly as it came — no highlighting, no copy button.",
+    summary: "Monospaced code or a raw payload with a language chip. Shows the text exactly as it came — no highlighting, no copy button. Long lines scroll sideways unless `wrap` folds them; a long payload takes a `maxHeight` so it scrolls instead of growing the page.",
     props: {
       code: data(z.string(), "the code or payload to show", { required: true }),
       language: config(z.string(), "language label for the chip, e.g. json"),
+      wrap: config(z.boolean(), "fold long lines instead of scrolling them sideways"),
+      maxHeight: config(z.number().int().positive(), "px cap; past it the block scrolls rather than growing the page"),
     },
     examples: ['<CodeBlock language="json" code={webhooks.get({id}).data.payload}/>'],
   },
@@ -519,7 +616,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category (x) field", { required: true }),
-      series: config(seriesInput, "value series (keys or {key,label,color})", { required: true }),
+      series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its tooltip in that series' units", { required: true }),
       format: config(valueFormat, "y-axis + tooltip format"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
@@ -536,7 +633,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
-      series: config(seriesInput, "value series (keys or {key,label,color,format}); a series' own format reads its bars and labels", { required: true }),
+      series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its bars and their labels", { required: true }),
       format: config(valueFormat, "axis + tooltip + bar-label format"),
       stacked: config(z.boolean(), "stack series into one bar"),
       horizontal: config(z.boolean(), "horizontal bars"),
@@ -551,7 +648,7 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. Zero and invalid slices are dropped. Every slice is named and valued in a legend under the ring, so set `format`.",
+    summary: "A donut/pie of category shares. A zero KEEPS its place in the legend reading 0; an unrenderable value is dropped, and a negative one is refused outright — a share of a whole cannot be below zero. Every slice is named and valued in a legend under the ring, so set `format`.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
@@ -611,15 +708,19 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Select",
     group: "forms",
-    summary: "A dropdown over a RAW array of tool output. Map objects with labelField/valueField — no reshaping. multiple selects several.",
+    summary: "A dropdown over a RAW array of tool output. Map objects with labelField/valueField — no reshaping. `multiple` selects several, and reports the whole selection as an array.",
     props: {
-      options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
+      options: data(options, OPTIONS_DOC, { required: true }),
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
       valueField: config(z.string(), "object field for the value"),
-      value: config(z.string(), "the chosen value (controlled), paired with onChange"),
+      // An array too, because `multiple` reports one: a multi-select handed a
+      // single string had nowhere to hold the second choice, so it stayed
+      // uncontrolled and the screen's handler read `e.target.value` off an array
+      // and got undefined.
+      value: config(z.union([z.string(), z.array(z.string())]), "the chosen value (controlled), paired with onChange; an array of them when multiple"),
       placeholder: copy(z.string(), "empty-choice text"),
-      multiple: config(z.boolean(), "allow several values"),
+      multiple: config(z.boolean(), "allow several values; the handler receives them as an array"),
       onChange: config(action, "called on change"),
     },
     // Controlled, like every other field: the screen holds the choice, so
@@ -658,10 +759,11 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Checkbox",
     group: "forms",
-    summary: "A boolean toggle. Controlled: `checked` plus an `onChange` function.",
+    summary: "A boolean toggle. Controlled: `checked` plus an `onChange` function; `indeterminate` is the header box over a partly-selected list.",
     props: {
       label: copy(z.string(), "field label"),
       checked: config(z.boolean(), "the current checked state (controlled)"),
+      indeterminate: config(z.boolean(), "neither checked nor clear"),
       onChange: config(action, "called on toggle"),
     },
     examples: ['<Checkbox label="Include paid"/>'],
@@ -682,7 +784,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "forms",
     summary: "One choice out of a few, all of them visible. Takes a RAW array of tool output through labelField/valueField, exactly as Select does; past about six options use Select.",
     props: {
-      options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
+      options: data(options, OPTIONS_DOC, { required: true }),
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
       valueField: config(z.string(), "object field for the value"),
@@ -729,7 +831,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     group: "forms",
     summary: "A type-to-filter dropdown over a RAW array of tool output — Select's shape, for a list too long to scan.",
     props: {
-      options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
+      options: data(options, OPTIONS_DOC, { required: true }),
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
       valueField: config(z.string(), "object field for the value"),
@@ -756,20 +858,28 @@ const BASE_SPECS: KitComponentSpec[] = [
   },
   {
     name: "Button",
+    takesChildren: true,
     group: "forms",
-    summary: "A button. `onClick` takes a function; calling a tool in it is the only way the UI changes anything, and the runtime routes that call through the guard + approval pipe.",
+    summary: "A button. `onClick` takes a function; calling a tool in it is the only way the UI changes anything, and the runtime routes that call through the guard + approval pipe. Its text is `label`, or the children — `<Button>Save</Button>` says the same thing.",
     props: {
-      label: copy(z.string(), "button text", { required: true }),
+      // No longer REQUIRED, because the children say it too: it was required to
+      // stop a nameless button shipping, and `<Button>Save</Button>` is named.
+      label: copy(z.string(), "button text; or write it as the children"),
       onClick: config(action, "called on click; call a tool in it"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
+      icon: config(iconName, "a lucide glyph before the label, in kebab-case"),
+      loading: config(z.boolean(), "the click is in flight: a spinner takes the icon's place and the button stops answering, so the tool cannot fire twice"),
     },
-    examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+    examples: [
+      '<Button label="Remind all" icon="send" onClick={() => tools.send_reminders({})}/>',
+      '<Button label="Cancel transfer" variant="danger" loading={cancelling} onClick={() => tools.cancel_transfer({ id })}/>',
+    ],
   },
   {
     name: "Link",
     takesChildren: true,
     group: "forms",
-    summary: "Sends someone to a page of the host product. `to` NAMES a route the host registered — never a URL. A name the host did not register renders as plain text and goes nowhere, so link only where the host said you may.",
+    summary: "Sends someone to a page of the host product. `to` NAMES a route the host registered — never a URL. A name the host did not register renders as muted, visibly inert text with nothing to press, so link only where the host said you may.",
     props: {
       to: config(z.string(), "the registered route's name", { required: true }),
       params: config(z.record(z.string(), z.string()), "values for the route path's :params"),
@@ -854,9 +964,13 @@ const BASE_SPECS: KitComponentSpec[] = [
   },
   {
     name: "Menu",
-    takesChildren: true,
     group: "feedback",
-    summary: "Actions behind one trigger, for the row of buttons that would not fit. Give `items` and one `onSelect`, or nest an entry per line as children.",
+    summary: "Actions behind one trigger, for the row of buttons that would not fit. Its entries are DATA — `items` plus one `onSelect` — and it renders nothing nested inside it.",
+    // It USED to wrap each child in a menu entry with no handler attached, so a
+    // menu written with nested <Button>s opened and did nothing at all: the one
+    // shape a person cannot tell from a broken product. The children branch is
+    // gone (`ui` menu.tsx), so this names what to write instead.
+    childrenFix: 'A menu entry is data, not an element: write items={[{label:"Send reminder",value:"remind",icon:"send"},{label:"Void",value:"void"}]} with one onSelect={(e) => tools.invoice_action({ action: e.target.value })}.',
     props: {
       label: copy(z.string(), "the trigger's text", { required: true }),
       items: config(

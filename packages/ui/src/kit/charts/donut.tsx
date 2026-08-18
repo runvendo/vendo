@@ -52,18 +52,37 @@ export function DonutChart({
   // the same guard the other Kit charts get via sanitizeSeries.
   // The whole row rides along under the slice's own two keys, so a `tooltip`
   // slot reads the same fields here as it does on a line or a bar. `at` is the
-  // row's place in `data`, kept because zero and invalid slices are DROPPED: a
+  // row's place in `data`, kept because UNRENDERABLE slices are still DROPPED: a
   // slice's place on the ring is not its row's, so a per-row tooltip list has to
   // be re-laid against the slices that survived or every hover past a dropped
   // one reads a row off.
+  // A ZERO is not one of the dropped. It is real data — "this category spent
+  // nothing" is an answer — and dropping it took the row out of the LEGEND too,
+  // so a screenshot of five categories showed four and never said which one was
+  // missing. It draws no arc, which is correct, and reads 0 under the ring.
   const slices = (Array.isArray(data) ? data : [])
     .map((row, at) => ({ ...row, at, name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
-    .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ at: number; name: string; value: number }>;
+    .filter((s) => isRenderableNumber(s.value)) as Array<{ at: number; name: string; value: number }>;
+  const fmt = (v: unknown) => applyFormat(v, format) ?? "";
+  // A negative value is REFUSED, out loud, rather than filtered: a donut states
+  // shares of one whole, so a negative cannot be one of them. Dropped quietly it
+  // takes its category out of the ring AND out of the legend while every
+  // remaining share reads against the wrong total — a chart that is confidently
+  // wrong. The box names the slice and what to draw instead; it does not throw (a
+  // screen must not die on its data) and it does not take the absolute value,
+  // which would invent a figure the host never said.
+  const negative = slices.find((slice) => slice.value < 0);
+  if (negative) {
+    return (
+      <ChartEmpty height={height} style={style}>
+        {`Negative values aren't shares of a whole: “${negative.name}” is ${fmt(negative.value)}. Chart these as a BarChart instead.`}
+      </ChartEmpty>
+    );
+  }
   if (slices.length === 0) {
     return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
   const hovered = Array.isArray(tooltip) ? slices.map((slice) => tooltip[slice.at]) : tooltip;
-  const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
     <div
       data-kit="DonutChart"

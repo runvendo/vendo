@@ -68,6 +68,20 @@ describe("DataTable", () => {
     expect(screen.getByText("$2,500.00")).toBeTruthy();
   });
 
+  /** `header` is the word a model reaches for first, and the spec used to spend a
+   *  line warning against it — a warning that arrives too late to save the column,
+   *  which shipped under a humanized key instead of the title it was given. */
+  it("takes a column's header text spelled `header`", () => {
+    render(<DataTable rows={rows} columns={[{ key: "client.name", header: "Client name" }, { key: "amount" }]} />);
+    expect(screen.getByRole("columnheader", { name: "Client name" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Name" })).toBeNull();
+  });
+
+  it("lets `label` win where a column carries both", () => {
+    render(<DataTable rows={rows} columns={[{ key: "client.name", label: "Client", header: "Client name" }]} />);
+    expect(screen.getByRole("columnheader", { name: "Client" })).toBeTruthy();
+  });
+
   it("reads a duration column as a duration, and still sorts it as the number it is", () => {
     const builds = [
       { id: 1, name: "4192", duration_seconds: 133 },
@@ -85,6 +99,27 @@ describe("DataTable", () => {
     // leads rather than "133" sorting before "46" as a string would.
     const first = screen.getAllByRole("row")[1]!;
     expect(within(first).getAllByRole("cell")[0]?.textContent).toBe("4187");
+  });
+
+  // A duration formatter that assumes seconds prints "5m" for a host field that
+  // holds five hours, under a header that says nothing happened. The column says
+  // what its number COUNTS; nothing is guessed from the field's name.
+  it("reads a duration column in the unit the column declares", () => {
+    render(
+      <DataTable
+        rows={[{ id: 1, name: "Weekly sync", length: 90, slack: -115 }]}
+        columns={[
+          { key: "name" },
+          { key: "length", label: "Runs", format: "duration", durationUnit: "minutes" },
+          // …and the sign phrased rather than printed: "-1h 55m" in an SLA column
+          // reads as a negative quantity of time, which is not a thing.
+          { key: "slack", label: "SLA", format: "duration", durationUnit: "minutes", durationSigned: true },
+        ]}
+      />,
+    );
+    expect(screen.getByText("1h 30m")).toBeTruthy();
+    expect(screen.queryByText("1m 30s")).toBeNull();
+    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
   });
 
   it("applies an initial sortBy", () => {
@@ -110,6 +145,26 @@ describe("DataTable", () => {
   it("shows the named-query empty state for zero rows", () => {
     render(<DataTable rows={[]} columns={columns} emptyState="No overdue invoices" />);
     expect(screen.getByText("No overdue invoices")).toBeTruthy();
+  });
+
+  /**
+   * A table with nothing in it is the MESSAGE, and nothing else. The columns are
+   * inferred from the first row, so a table waiting on its query inferred them
+   * from a row that is not there and painted a header row of no columns at all —
+   * a <tr> holding nothing, above the sentence that already said everything.
+   */
+  it("paints no header row at all when there are no rows", () => {
+    render(<DataTable rows={[]} emptyState="No overdue invoices" />);
+    expect(screen.queryAllByRole("columnheader")).toHaveLength(0);
+    // One row on the whole table: the message's own.
+    expect(screen.getAllByRole("row")).toHaveLength(1);
+    expect(screen.getByText("No overdue invoices")).toBeTruthy();
+  });
+
+  it("drops the header row even where the columns were declared", () => {
+    render(<DataTable rows={[]} columns={columns} />);
+    expect(screen.queryAllByRole("columnheader")).toHaveLength(0);
+    expect(screen.queryByRole("columnheader", { name: /Client/u })).toBeNull();
   });
 
   it("renders an unrenderable numeric cell as a placeholder, never $NaN", () => {
@@ -189,7 +244,10 @@ describe("DataTable", () => {
   it("never breaks a formatted figure across two lines", () => {
     render(<DataTable rows={rows} columns={columns} />);
     expect(screen.getByText("$2,500.00").closest("td")!.style.whiteSpace).toBe("nowrap");
-    expect(screen.getByText("Hartwell").closest("td")!.style.whiteSpace).toBe("");
+    // The prose column is one line too now, because a plain cell truncates by
+    // default. What is particular to a figure is that it stays unbreakable even
+    // where the column asked to WRAP — see the truncate suite below.
+    expect(screen.getByText("Hartwell").closest("td")!.style.whiteSpace).toBe("nowrap");
   });
 
   it("re-declares the spacing scale on its own element for density=compact", () => {
@@ -199,11 +257,11 @@ describe("DataTable", () => {
   });
 
   // A narrow surface used to scroll the right-hand columns out of view with
-  // nothing to say they existed. Only the ones that do not FIT fold — a table
-  // that folded every column but the first is a stack of cards, which is not a
-  // table and reads as one field per line.
-  it("keeps the columns that fit and folds only the rest into the first cell", () => {
-    // Three 200px columns; 420px of room, so two fit and the third folds.
+  // nothing to say they existed. Only the ones that do not FIT give way — a table
+  // showing one column is a stack of cards, which is not a table and reads as one
+  // field per line.
+  it("keeps the columns that fit and shows only the rest of them nowhere", () => {
+    // Three 200px columns; 420px of room, so two fit and the third gives way.
     const restore = stubLayout(200, 420);
     try {
       render(<DataTable rows={rows} columns={columns} />);
@@ -215,8 +273,23 @@ describe("DataTable", () => {
 
       const firstRow = screen.getAllByRole("row")[1]!;
       expect(within(firstRow).getAllByRole("cell")).toHaveLength(2);
-      // The folded column rides in the FIRST cell, labelled, not in every cell.
-      const cells = within(firstRow).getAllByRole("cell");
+      // Unasked, the column that did not fit leaves no line behind it: folding it
+      // into the first cell is what made rows three lines tall.
+      expect(firstRow.textContent).not.toContain("Due:");
+      expect(firstRow.textContent).not.toContain("Mar 14");
+    } finally {
+      restore();
+    }
+  });
+
+  // …and `fold` is how a screen asks for it back: the column that did not fit
+  // rides in the FIRST cell, labelled, not in every cell.
+  it("folds the columns that did not fit into the first cell when asked", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(<DataTable rows={rows} columns={columns} fold />);
+      const cells = within(screen.getAllByRole("row")[1]!).getAllByRole("cell");
+      expect(cells).toHaveLength(2);
       expect(cells[0]!.textContent).toContain("Due: Mar 14");
       expect(cells[1]!.textContent).not.toContain("Due:");
     } finally {
@@ -227,11 +300,41 @@ describe("DataTable", () => {
   it("keeps the first column however narrow the surface is", () => {
     const restore = stubLayout(200, 40);
     try {
-      render(<DataTable rows={rows} columns={columns} />);
+      render(<DataTable rows={rows} columns={columns} fold />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(1);
       const firstRow = screen.getAllByRole("row")[1]!;
       expect(firstRow.textContent).toContain("Amount: $2,500.00");
       expect(firstRow.textContent).toContain("Due: Mar 14");
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * WHICH column gives way is a question about importance, not about position.
+   * The table used to drop the rightmost one it could, so a screen that put the
+   * status it was built to show last lost exactly that column on a phone. A
+   * declared `priority` competes with the positions the other columns infer, and
+   * the lowest number is the first to go.
+   */
+  it("gives up the least important column, not the last one", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(
+        <DataTable
+          rows={rows}
+          columns={[columns[0]!, { ...columns[1]!, priority: 0 }, { ...columns[2]!, priority: 5 }]}
+        />,
+      );
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toHaveLength(2);
+      expect(headers[0]).toContain("Client");
+      // The AMOUNT column is the one that went, though it sits in the middle.
+      expect(headers[1]).toContain("Due");
+      expect(headers.join()).not.toContain("Amount");
+      // …and the cells that are left still sit under their own headers.
+      const cells = within(screen.getAllByRole("row")[1]!).getAllByRole("cell");
+      expect(cells.map((cell) => cell.textContent)).toEqual(["Hartwell", "Mar 14"]);
     } finally {
       restore();
     }
@@ -246,6 +349,7 @@ describe("DataTable", () => {
       render(
         <DataTable
           rows={rows}
+          fold
           columns={[
             ...columns,
             {
@@ -273,7 +377,7 @@ describe("DataTable", () => {
   it("wraps its folded lines even when the first column is a figure", () => {
     const restore = stubLayout(200, 220);
     try {
-      render(<DataTable rows={rows} columns={[columns[1]!, columns[0]!, columns[2]!]} />);
+      render(<DataTable rows={rows} columns={[columns[1]!, columns[0]!, columns[2]!]} fold />);
       const cell = screen.getByText("$2,500.00").closest("td")!;
       expect(cell.style.whiteSpace).toBe("nowrap");
       const fold = cell.querySelector("div")!;
@@ -288,7 +392,7 @@ describe("DataTable", () => {
   it("folds nothing when every column fits", () => {
     const restore = stubLayout(100, 900);
     try {
-      render(<DataTable rows={rows} columns={columns} />);
+      render(<DataTable rows={rows} columns={columns} fold />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(3);
       expect(screen.getAllByRole("row")[1]!.textContent).not.toContain("Due:");
     } finally {
@@ -350,7 +454,9 @@ describe("DataTable", () => {
   it("keeps a column whose fractional widths fill the room exactly", () => {
     const restore = stubSubpixelLayout({ Client: 320.8125, Amount: 387.546875, Due: 291.640625 }, 1_000);
     try {
-      render(<DataTable rows={rows} columns={columns} />);
+      // `fold` so the second assertion still says something: a column that went
+      // would leave its line in the first cell.
+      render(<DataTable rows={rows} columns={columns} fold />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(3);
       expect(screen.getAllByRole("row")[1]!.textContent).not.toContain("Due:");
     } finally {
@@ -384,7 +490,7 @@ describe("DataTable", () => {
   it("does not spend a fractional border as room", () => {
     const restore = stubSubpixelLayout({ Client: 100, Amount: 100, Due: 100.093_75 }, 300, 0.093_75);
     try {
-      render(<DataTable rows={rows} columns={columns} />);
+      render(<DataTable rows={rows} columns={columns} fold />);
       expect(screen.getAllByRole("columnheader")).toHaveLength(2);
       expect(screen.getAllByRole("row")[1]!.textContent).toContain("Due:");
     } finally {
@@ -456,7 +562,7 @@ describe("DataTable", () => {
   it("keeps a folded column folded when the actions column is measured again", () => {
     const { settle, restore } = stubMeasuredLayout(WIDTHS, 350);
     try {
-      render(<DataTable rows={rows} columns={columns} rowActions={<span>Pay</span>} />);
+      render(<DataTable rows={rows} columns={columns} rowActions={<span>Pay</span>} fold />);
       // Natural edges are 100 / 300 / 600, so at 350px of room the third column
       // folds and the actions column rides beside the two that fit.
       expect(screen.getAllByRole("columnheader")).toHaveLength(3);
@@ -493,6 +599,67 @@ describe("DataTable", () => {
     } finally {
       restore();
     }
+  });
+});
+
+/**
+ * ONE LINE PER CELL — the 90-160px rows a judge measured.
+ *
+ * A wrapping cell hides its overflow in ROW HEIGHT: the auto table layout squeezes
+ * the column, the sentence takes three lines, and the table reports that everything
+ * fits. So a plain text cell is one line with an ellipsis and the whole text in
+ * `title=`, and `truncate={false}` is how a column asks for the wall back.
+ */
+describe("DataTable — a cell on one line", () => {
+  const note = "Quarterly reconciliation of the payables ledger against the bank feed";
+  const notes = [{ id: 1, client: "Hartwell", note }];
+  const cellFor = (text: string) => screen.getByText(text).closest("td")!;
+
+  it("truncates a plain text cell, and keeps the whole text in its title", () => {
+    render(<DataTable rows={notes} columns={[{ key: "client" }, { key: "note", label: "Note" }]} />);
+    const cell = cellFor(note);
+    expect(cell.style.whiteSpace).toBe("nowrap");
+    expect(cell.style.overflow).toBe("hidden");
+    expect(cell.style.textOverflow).toBe("ellipsis");
+    // Nothing is readable only by widening the window.
+    expect(cell.title).toBe(note);
+  });
+
+  it("wraps the cell again for truncate={false}, and titles nothing", () => {
+    render(<DataTable rows={notes} columns={[{ key: "client" }, { key: "note", truncate: false }]} />);
+    const cell = cellFor(note);
+    expect(cell.style.whiteSpace).toBe("");
+    expect(cell.style.textOverflow).toBe("");
+    expect(cell.title).toBe("");
+  });
+
+  // A figure is one unbreakable atom whatever the column asked for — "Mar 14"
+  // split across two lines reads as two values — so wrapping is the one thing
+  // `truncate={false}` cannot buy it.
+  it("keeps a formatted figure on one line even where the column asked to wrap", () => {
+    render(<DataTable rows={rows} columns={[{ key: "amount", format: "money", truncate: false }]} />);
+    const cell = cellFor("$2,500.00");
+    expect(cell.style.whiteSpace).toBe("nowrap");
+    expect(cell.style.textOverflow).toBe("");
+  });
+
+  // A slot holds ELEMENTS: there is no text to clip and none to put in a title,
+  // and one line through a status pill would cut the pill.
+  it("leaves a column that paints its own cells alone", () => {
+    render(<DataTable rows={rows} columns={[{ key: "status", cell: <Text text="Overdue" /> }]} />);
+    const cell = screen.getAllByText("Overdue")[0]!.closest("td")!;
+    expect(cell.style.whiteSpace).toBe("");
+    expect(cell.title).toBe("");
+  });
+
+  /** `width` is the cap the ellipsis needs to bite. Chromium honours a `max-width`
+   *  on a <td> in the auto table layout and ignores a `width` on the <th> while the
+   *  cell can still grow, so a declared width is written to both — measured in
+   *  Chromium, where the th alone left the table 727px wide inside a 400px box. */
+  it("writes a declared width to the header and caps the cell", () => {
+    render(<DataTable rows={notes} columns={[{ key: "client" }, { key: "note", label: "Note", width: 160 }]} />);
+    expect(screen.getByRole("columnheader", { name: "Note" }).style.width).toBe("160px");
+    expect(cellFor(note).style.maxWidth).toBe("160px");
   });
 });
 

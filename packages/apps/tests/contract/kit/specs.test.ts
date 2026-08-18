@@ -23,10 +23,17 @@ import {
 const READERS: Record<string, readonly string[]> = {
   tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
   density: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
+  // The containers that stretch, and only those: `grow` is `flexGrow` on the
+  // block's own root, so a component that draws no container of its own would
+  // take the prop and drop it.
+  grow: ["Stack", "Row", "Grid", "Surface", "Card"],
   // The controls that IMPLEMENT each one, and none of the ones that do not —
   // these three shipped for months as props the Kit painted and no spec admitted.
   disabled: ["Input", "Textarea", "Select", "Combobox", "DatePicker", "DateRange", "Checkbox", "Switch", "Radio", "Slider", "SegmentedControl", "Button", "Form"],
-  required: ["Input", "Textarea", "Select", "DatePicker"],
+  // Checkbox joined the day `Form` started checking its own element's validity:
+  // before that a required checkbox was a prop the Kit set on the input and
+  // Base UI's noValidate form ignored.
+  required: ["Input", "Textarea", "Select", "DatePicker", "Checkbox"],
   hint: ["Input", "Textarea", "Select", "Combobox", "DatePicker", "DateRange", "Checkbox", "Switch", "Radio", "Slider"],
 };
 
@@ -53,7 +60,10 @@ describe("the Kit specs", () => {
     // end to end in tests/checking/floor.test.ts).
     expect(kitPropClasses("DataTable")?.tone).toBeUndefined();
     expect(kitPropClasses("Divider")?.density).toBeUndefined();
-    expect(kitPropClasses("Checkbox")?.required).toBeUndefined();
+    // A Switch applies the moment it is flipped, so there is no submit for a
+    // `required` to block — and `grow` on a value is a flex property on a span.
+    expect(kitPropClasses("Switch")?.required).toBeUndefined();
+    expect(kitPropClasses("Money")?.grow).toBeUndefined();
   });
 
   it("admits the whole tone vocabulary, and the two spellings stored apps carry", () => {
@@ -166,6 +176,79 @@ describe("the Kit specs", () => {
     const select = kitSpec("Select")!;
     expect(validateProps(select, { options: [], value: "bld_4192" }).success).toBe(true);
     expect(kitPropClasses("Select")?.value).toBe("config");
+  });
+
+  /**
+   * The capability props, pinned by NAME.
+   *
+   * Every one of these is a prop a model already wrote and the floor already
+   * refused — a column's `header`, a `width`, a button's `icon`. Zod strips an
+   * unknown key rather than failing it, so what admits a prop is its presence in
+   * `kitPropClasses` (→ `wirePropNames` → the `components-exist` check), and a
+   * capability that only reads well in a summary is a capability the gate rejects.
+   */
+  it("admits what a table column needs to survive a narrow frame", () => {
+    const table = kitSpec("DataTable")!;
+    expect(validateProps(table, {
+      rows: [],
+      fold: true,
+      columns: [{ key: "client.name", header: "Client", width: 220, truncate: false, priority: 3 }],
+    }).success).toBe(true);
+    // …and the shapes stay typed: a width is a positive integer of pixels.
+    expect(validateProps(table, { rows: [], columns: [{ key: "a", width: "wide" }] }).success).toBe(false);
+    expect(kitPropClasses("DataTable")?.fold).toBe("config");
+  });
+
+  it("lets a duration say which unit it is stored in, everywhere a format token is written", () => {
+    // A minutes field used to be `* 60` at the read, and forgetting was a figure
+    // wrong by 60× that still formatted cleanly.
+    for (const [component, props] of [
+      ["Stat", { label: "Time left", value: 200, format: "duration", durationUnit: "minutes", durationSigned: true }],
+      ["DataTable", { rows: [], columns: [{ key: "sla_minutes", format: "duration", durationUnit: "minutes", durationSigned: true }] }],
+      ["CardList", { items: [], fields: [{ key: "sla_minutes", format: "duration", durationUnit: "minutes" }] }],
+      ["KeyValue", { record: {}, items: [{ key: "sla_minutes", format: "duration", durationSigned: true }] }],
+    ] as const) {
+      expect(validateProps(kitSpec(component)!, props).success, component).toBe(true);
+    }
+    expect(kitPropClasses("Stat")?.durationUnit).toBe("config");
+    expect(validateProps(kitSpec("Stat")!, { label: "x", value: 1, durationUnit: "fortnights" }).success).toBe(false);
+  });
+
+  it("lets a multiple Select hold the whole selection", () => {
+    // One string had nowhere to keep the second choice, so the control stayed
+    // uncontrolled and the screen's handler read `e.target.value` off an array.
+    const select = kitSpec("Select")!;
+    expect(validateProps(select, { options: [], multiple: true, value: ["a", "b"] }).success).toBe(true);
+    expect(validateProps(select, { options: [], value: "a" }).success).toBe(true);
+  });
+
+  it("admits the props that turn a dead control into an honest one", () => {
+    expect(kitPropClasses("Button")?.icon).toBe("config");
+    expect(kitPropClasses("Button")?.loading).toBe("config");
+    expect(kitPropClasses("Checkbox")?.indeterminate).toBe("config");
+    expect(kitPropClasses("CodeBlock")?.wrap).toBe("config");
+    expect(kitPropClasses("CodeBlock")?.maxHeight).toBe("config");
+    // A button names itself with children now, so the label stopped being the
+    // only way to have a name.
+    expect(kitSpec("Button")!.props.label?.required).toBe(false);
+    for (const name of ["Text", "Button"]) expect(kitSpec(name)?.takesChildren, name).toBe(true);
+  });
+
+  it("gives a SplitPane one way to say how wide the first pane is", () => {
+    const split = kitSpec("SplitPane")!;
+    for (const size of ["40%", "18rem", 280, 0.4]) {
+      expect(validateProps(split, { size }).success, String(size)).toBe(true);
+    }
+  });
+
+  /** The three native controls RENDER an element, so the element's own
+   *  vocabulary is theirs — `maxLength` on a textarea was refused by name while
+   *  the identical prop went through on Input, whose engine was declared. */
+  it("declares an engine for the controls that pass props to a DOM element", () => {
+    for (const name of ["Textarea", "Select", "Checkbox"]) {
+      expect(kitSpec(name)?.engine, name).toBeDefined();
+      expect(validateProps(kitSpec(name)!, { options: [], maxLength: 280 }).success, name).toBe(true);
+    }
   });
 
   it("names the childless components", () => {

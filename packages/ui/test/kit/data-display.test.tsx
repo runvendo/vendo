@@ -26,6 +26,20 @@ describe("Stat", () => {
     expect(screen.getByText("842 ms")).toBeTruthy();
   });
 
+  it("reads a duration in the unit its field is in, and phrases the sign", () => {
+    // A `minutes_remaining` field used to need a `* 60` in the value expression,
+    // and forgotten it printed "3m 20s" for 200 minutes — off by 60× and
+    // plausible. The tile declares the unit instead.
+    render(
+      <>
+        <Stat label="Time left" value={200} format="duration" durationUnit="minutes" durationSigned />
+        <Stat label="Past due" value={-115} format="duration" durationUnit="minutes" durationSigned />
+      </>,
+    );
+    expect(screen.getByText("3h 20m left")).toBeTruthy();
+    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
+  });
+
   it("renders a placeholder for an unrenderable value, never $NaN", () => {
     render(<Stat label="Broken" value={Number.NaN} format="money" />);
     expect(screen.queryByText(/NaN/)).toBeNull();
@@ -114,6 +128,18 @@ describe("CardList", () => {
     render(<CardList items={items} titleField="name" fields={["balance"]} />);
     expect(screen.getAllByText("balance")).toHaveLength(2);
     expect(screen.getByText("2500")).toBeTruthy();
+  });
+
+  it("reads a duration field in the unit it is in, and phrases the sign", () => {
+    render(
+      <CardList
+        items={[{ id: 1, name: "Hartwell", sla: -115 }, { id: 2, name: "Acme", sla: 200 }]}
+        titleField="name"
+        fields={[{ key: "sla", label: "SLA", format: "duration", durationUnit: "minutes", durationSigned: true }]}
+      />,
+    );
+    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
+    expect(screen.getByText("3h 20m left")).toBeTruthy();
   });
 
   it("gives a code field the host's mono face", () => {

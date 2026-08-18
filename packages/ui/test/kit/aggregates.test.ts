@@ -52,9 +52,35 @@ describe("the aggregates read naturally in code-land", () => {
     expect(daysUntil("not a date")).toBeUndefined();
   });
 
+  it("skips the rows that carry no number instead of erasing the column", () => {
+    // What this closes: ONE bad cell degraded the whole reduction to undefined,
+    // so a single "n/a" in a 500-row amount column erased the total the other
+    // 499 rows agreed on. A host that writes null for some rows and omits the
+    // key in others is the ordinary case, not a broken one.
+    const dirty: Json = [
+      { amount_cents: 12_000 },
+      { amount_cents: "n/a" },
+      { amount_cents: null },
+      {},
+      { amount_cents: 8_000 },
+    ];
+    expect(sum(dirty, "amount_cents")).toBe(20_000);
+    expect(average(dirty, "amount_cents")).toBe(10_000);
+    expect(min(dirty, "amount_cents")).toBe(8_000);
+    expect(max(dirty, "amount_cents")).toBe(12_000);
+    // And the other half of the rule: rows were rejected and not one of them
+    // yielded a number, so there is no answer — `sum(rows, "nope")` as 0 is a
+    // wrong number that reads as real.
+    expect(sum(invoices, "nope")).toBeUndefined();
+    expect(sum(invoices, "issued_at")).toBeUndefined();
+  });
+
   it("answers empty rows the way the expression engine does", () => {
     expect(sum([], "amount_cents")).toBe(0);
     expect(count([])).toBe(0);
+    // A column of nothing but nulls is emptiness in the DATA, not a mislabelled
+    // field: the reduce a screen writes by hand answers 0 there, so this does.
+    expect(sum([{ amount_cents: null }], "amount_cents")).toBe(0);
     expect(average([], "amount_cents")).toBeUndefined();
     expect(groupBy([], "issued_at", "month", "count")).toEqual([]);
   });

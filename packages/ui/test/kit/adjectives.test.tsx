@@ -195,6 +195,39 @@ describe("density is declared once and inherited", () => {
   });
 });
 
+describe("grow — the child that claims what is left", () => {
+  /** THE FAILURE it closes: 17 raw `<div style={{flex:1}}>` escapes counted in
+   *  generated screens, every one of them a child that needed the remaining
+   *  space and had no word for it — so the screen dropped out of the Kit to say
+   *  a single CSS declaration. */
+  it("every container takes the adjective", () => {
+    const containers: Array<[string, ReactElement]> = [
+      ["Stack", <Stack grow />],
+      ["Row", <Row grow />],
+      ["Grid", <Grid grow />],
+      ["Surface", <Surface grow />],
+      ["Card", <Card grow />],
+    ];
+    for (const [name, node] of containers) {
+      const { container } = render(node);
+      expect(kit(container, name).style.flexGrow, name).toBe("1");
+      // The escapes wanted a child that SHRINKS as well as grows: without the
+      // floor, a grown pane holding a wide table pushes its sibling off the row.
+      expect(kit(container, name).style.minWidth, name).toBe("0");
+    }
+  });
+
+  it("takes a share as a number, and declares nothing when it is not asked for", () => {
+    expect(kit(render(<Row grow={2} />).container, "Row").style.flexGrow).toBe("2");
+    expect(kit(render(<Row />).container, "Row").style.flexGrow).toBe("");
+    expect(kit(render(<Row grow={false} />).container, "Row").style.minWidth).toBe("");
+  });
+
+  it("still lets a caller's own style win, like every other adjective", () => {
+    expect(kit(render(<Stack grow style={{ flexGrow: 3 }} />).container, "Stack").style.flexGrow).toBe("3");
+  });
+});
+
 describe("Grid minChildWidth", () => {
   it("auto-fits so cells wrap instead of clipping, and wins over columns", () => {
     const { container } = render(<Grid columns={4} minChildWidth={160} />);

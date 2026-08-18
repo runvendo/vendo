@@ -8,9 +8,15 @@ export interface CodeBlockProps extends KitStyled {
   code?: string;
   /** Language label for the chip, e.g. "json". */
   language?: string;
+  /** Soft-wrap long lines instead of scrolling them sideways — what a prose-ish
+   *  payload (an error message, a log line) wants, where code wants the scroll. */
+  wrap?: boolean;
+  /** Cap the block's height in px. Past it the block scrolls; without it a
+   *  2,000-line payload pushes everything after it below the fold. */
+  maxHeight?: number;
 }
 
-export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
+export function CodeBlock({ code = "", language, wrap, maxHeight, style }: CodeBlockProps) {
   return (
     <div
       data-kit="CodeBlock"
@@ -29,7 +35,10 @@ export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
         // block does not stop that: only a flex/grid ITEM's automatic minimum
         // size is zeroed by it, and the block is usually neither. One grid track
         // floored at 0 is: the block still ASKS for its max-content, and accepts
-        // any width down to nothing — so the `pre` below scrolls instead.
+        // any width down to nothing — so the `pre` below scrolls instead, or
+        // reflows when `wrap` is on. The floor is what makes EITHER possible, and
+        // `wrap` is per-instance, so the block that has to survive the 480px
+        // frame is the one nobody passed it to.
         display: "grid",
         gridTemplateColumns: "minmax(0, 1fr)",
         ...style,
@@ -54,6 +63,13 @@ export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
           margin: 0,
           padding: "var(--vendo-density-card-padding, 12px 14px)",
           overflowX: "auto",
+          // `pre-wrap` alone breaks at whitespace, and a payload is routinely ONE
+          // unbroken token (a base64 blob, a 400-char JSON string) — which would
+          // overflow the wrap it was asked for.
+          whiteSpace: wrap ? "pre-wrap" : undefined,
+          overflowWrap: wrap ? "anywhere" : undefined,
+          maxHeight,
+          overflowY: maxHeight === undefined ? undefined : "auto",
           fontFamily: t.monoFamily,
           fontSize: "0.85em",
           lineHeight: 1.55,

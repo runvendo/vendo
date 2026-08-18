@@ -121,6 +121,33 @@ describe("Text", () => {
     expect(render(<Text text={true} />).container.textContent).toBe("true");
   });
 
+  // VALUES IN SENTENCES. With `text` the only way in, a screen that wanted a
+  // figure inside a phrase hand-rolled `` `Overdue: $${x.toFixed(2)}` `` — an
+  // unlocalised, uncurrencied, NaN-prone string, i.e. every failure the value
+  // tier exists to make impossible, written around it.
+  it("takes children, so a Kit figure can sit inside a sentence", () => {
+    const { container } = render(
+      <Text variant="caption">
+        Overdue: <Money value={2500} /> across <Num value={12} /> invoices
+      </Text>,
+    );
+    expect(container.textContent).toBe("Overdue: $2,500.00 across 12 invoices");
+    // The nested elements are the value tier's own, not flattened text — and the
+    // sentence around them still carries the variant it was given.
+    expect(container.querySelector('[data-kit="Money"]')).toBeTruthy();
+    expect(container.querySelector('[data-kit="Text"]')!.getAttribute("data-variant")).toBe("caption");
+  });
+
+  it("takes a plain string child", () => {
+    expect(render(<Text>Hi</Text>).container.textContent).toBe("Hi");
+  });
+
+  /** `text` wins where both are given: it is the prop every stored screen
+   *  carries, and the renderer hands children to every node it paints. */
+  it("keeps text winning over children", () => {
+    expect(render(<Text text="From the prop">ignored</Text>).container.textContent).toBe("From the prop");
+  });
+
   it("lands an object on the placeholder rather than throwing or spelling it out", () => {
     // `text={row.client}` where `client` is a record: as a React child that
     // throws, and through a formatter it reads "[object Object]".

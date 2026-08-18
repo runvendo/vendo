@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { sanitizeSeries, sanitizeNumbers } from "../../src/kit/charts/sanitize.js";
@@ -45,9 +45,22 @@ describe("chart empty/invalid states (never a broken chart)", () => {
     expect(screen.getByText("No data")).toBeTruthy();
   });
 
-  it("DonutChart shows the empty state with all-zero slices", () => {
-    render(<DonutChart data={[{ label: "A", value: 0 }]} categoryKey="label" valueKey="value" emptyState="Nothing" />);
+  it("DonutChart shows the empty state when no slice holds a renderable number", () => {
+    render(<DonutChart data={[{ label: "A", value: null }]} categoryKey="label" valueKey="value" emptyState="Nothing" />);
     expect(screen.getByText("Nothing")).toBeTruthy();
+  });
+
+  // A zero is not nothing. "This category spent nothing" is an answer, and
+  // dropping the slice took its row out of the LEGEND too — a ring of five
+  // categories showed four and never said which one went missing. The zero draws
+  // no arc, which is correct, and reads 0 under the ring.
+  it("DonutChart keeps a zero slice in the legend, reading a formatted 0", () => {
+    render(
+      <DonutChart data={[{ label: "A", value: 0 }]} categoryKey="label" valueKey="value" format="money" emptyState="Nothing" />,
+    );
+    expect(screen.queryByText("Nothing")).toBeNull();
+    expect(screen.getByText("A")).toBeTruthy();
+    expect(screen.getByText("$0.00")).toBeTruthy();
   });
 
   it("DonutChart shows the empty state (never crashes) when data is undefined or not an array", () => {
@@ -154,6 +167,33 @@ describe("DonutChart legend", () => {
     expect(container.querySelector('[data-kit="DonutLegend"]')).toBeNull();
     expect(container.textContent).not.toContain("rent");
   });
+
+  // A donut states shares of ONE WHOLE, so a negative value cannot be one of
+  // them. Filtered out quietly it took its category off the ring AND out of the
+  // legend while every share that remained read against the wrong total — a chart
+  // that is confidently wrong, which is worse than one that refuses. The box
+  // names the slice and what to draw instead, and it is NOT the author's own
+  // "nothing here" slot: this is bad data, not absent data.
+  it("refuses a negative slice out loud, naming it and the chart to draw instead", () => {
+    render(
+      <DonutChart
+        data={[...spend, { label: "refunds", value: -40 }]}
+        categoryKey="label"
+        valueKey="value"
+        format="money"
+        emptyState="Nothing"
+        empty={<p>the author&apos;s own empty state</p>}
+      />,
+    );
+    const refusal = document.querySelector('[data-kit="ChartEmpty"]')!.textContent ?? "";
+    expect(refusal).toContain("refunds");
+    expect(refusal).toContain("-$40.00");
+    expect(refusal).toContain("BarChart");
+    expect(screen.queryByText("the author's own empty state")).toBeNull();
+    expect(screen.queryByText("Nothing")).toBeNull();
+    // ...and no ring, so nothing reads against a total that lost a category.
+    expect(screen.queryByText("rent")).toBeNull();
+  });
 });
 
 /**
@@ -175,6 +215,71 @@ function stubChartSize(width: number, height: number): () => void {
     globalThis.ResizeObserver = real;
   };
 }
+
+/**
+ * The hovered point's own tooltip — where a series' LABEL and its VALUE are both
+ * printed, so it is the one place both halves of a series descriptor are
+ * readable. Recharts resolves a hover through a middleware behind
+ * `requestAnimationFrame`, so the read waits: read synchronously, the wrapper is
+ * still empty and every assertion passes vacuously.
+ */
+async function hoveredTooltip(container: HTMLElement): Promise<string> {
+  fireEvent.mouseMove(container.querySelector(".recharts-wrapper")!, { clientX: 120, clientY: 100 });
+  return await waitFor(() => {
+    const text = container.querySelector(".recharts-tooltip-wrapper")?.textContent ?? "";
+    expect(text).not.toBe("");
+    return text;
+  });
+}
+
+/**
+ * `name` is the word a caller reaches for to rename a series, and it landed
+ * nowhere: the engine owns that prop, so the Kit Omit-ed it and set it from
+ * `label` alone — a series written `{ key: "duration_seconds", name: "Build
+ * time" }` charted as "duration_seconds" and said nothing about why.
+ */
+describe("chart series descriptors", () => {
+  const builds = [
+    { number: "4191", duration_seconds: 412 },
+    { number: "4187", duration_seconds: 46 },
+  ];
+
+  it("LineChart reads `name` as the series label, and the series' own format for its value", async () => {
+    // A chart of two series in different units has no ONE chart-level token that
+    // reads both, so the series carries its own — and the LINE chart dropped it
+    // straight through to the engine, where it meant nothing: this tooltip read
+    // "412" while a bar chart said "6m 52s" off the identical prop.
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <LineChart
+          data={builds}
+          xKey="number"
+          series={[{ key: "duration_seconds", name: "Build time", format: "duration" }]}
+          format="number"
+        />,
+      );
+      const tip = await hoveredTooltip(container);
+      expect(tip).toContain("Build time");
+      expect(tip).toContain("6m 52s");
+    } finally {
+      restore();
+    }
+  });
+
+  it("BarChart reads `name` as the series label too", async () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <BarChart data={builds} xKey="number" series={[{ key: "duration_seconds", name: "Build time" }]} format="duration" />,
+      );
+      expect(await hoveredTooltip(container)).toContain("Build time");
+    } finally {
+      restore();
+    }
+  });
+});
+
 
 describe("Sparkline tone", () => {
   const stroke = (node: ReactElement): string | null =>

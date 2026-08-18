@@ -28,9 +28,35 @@ export interface DataTableColumn {
   key?: string;
   /** Header label; defaults to a humanized last path segment. */
   label?: string;
+  /** The same header under the other word for it. `header` is the word a model
+   *  reaches for first, and refusing it cost the column its name: the prompt
+   *  carried a warning nobody could act on at render time, and a screen that
+   *  wrote `header` shipped a humanized key instead of the title it authored. */
+  header?: string;
   /** Value-tier format applied to every cell. */
   format?: ValueFormat;
+  /** What a `format:"duration"` cell's number COUNTS — seconds unless the host
+   *  stores minutes. The formatter never converts a unit it was not told about,
+   *  so a minutes field read as seconds prints "5m" for five hours. */
+  durationUnit?: "seconds" | "minutes";
+  /** Phrase a `format:"duration"` cell's sign instead of printing it: "3h 20m
+   *  left", "overdue 1h 55m". A bare "-1h 55m" in an SLA column reads as a
+   *  negative quantity of time, which is not a thing. */
+  durationSigned?: boolean;
   align?: "start" | "center" | "end";
+  /** The column's width in px: the `<th>`'s width, and the cap a truncating cell
+   *  ellipsizes inside. Chromium honours a `max-width` on a `<td>` in the auto
+   *  table layout and ignores a `width` on the `<th>` while the cell can still
+   *  grow, so a declared width is written to both. */
+  width?: number;
+  /** One line, an ellipsis, and the full text in `title=`; see {@link truncates}
+   *  for when it is on without being asked for. */
+  truncate?: boolean;
+  /** How important this column is when there is not room for all of them: the
+   *  LOWEST gives way first. Inferred from POSITION where it is not declared —
+   *  the first column is the most important — and a declared number competes with
+   *  the inferred ones on that one scale rather than in a league of its own. */
+  priority?: number;
   /** Kit elements rendered instead of the formatted text. Written as a function
    *  of the row, it arrives as ONE element per row in `rows` order; a stored
    *  screen holds a single element for every row. `key` still drives sorting,
@@ -66,6 +92,12 @@ export interface DataTableProps extends KitStyled {
    *  that may be OPERATED because the function that wrote it had a row to act
    *  on. One element per row in `rows` order. */
   rowActions?: ReactNode | readonly ReactNode[];
+  /** A column that did not fit folds its label and its value into the first cell
+   *  as an extra line, instead of being left out. Off by default: every folded
+   *  column is another line in the row, and a row of four lines is the 90-160px
+   *  height a judge measured (three columns folded reads at 132px in Chromium).
+   *  Which columns are worth the width is better said with `priority`. */
+  fold?: boolean;
   /** Spacing scale for this table's subtree. */
   density?: KitDensity;
   /** One <TableRow> per record, in `rows` order — the model paints the cells
@@ -74,25 +106,32 @@ export interface DataTableProps extends KitStyled {
 }
 
 /** What a TableRow needs and cannot be handed as props: the columns it places
- *  its cells against, and how many still fit (kit/data/table-row.tsx). */
-export const TableContext = createContext<{ columns: DataTableColumn[]; visible: number } | undefined>(undefined);
+ *  its cells against, which of them the surface had no room for, and whether
+ *  those fold rather than going quiet (kit/data/table-row.tsx). The dropped ones
+ *  are a SET and not a count, because the columns that give way are the least
+ *  important ones wherever they sit, not the last ones. */
+export const TableContext = createContext<
+  { columns: DataTableColumn[]; dropped: ReadonlySet<number>; fold: boolean } | undefined
+>(undefined);
 
 export const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
   a === "end" ? "right" : a === "center" ? "center" : "left";
 
-/** A column's header text: its own label, or its key humanized. */
+/** A column's header text: its own label, the same thing spelled `header`, or its
+ *  key humanized. */
 export const headerText = (col: DataTableColumn): string =>
-  col.label ?? humanizeEnum(col.key?.split(".").pop() ?? "");
+  col.label ?? col.header ?? humanizeEnum(col.key?.split(".").pop() ?? "");
 
 /** A cell's formatted text, or `null` when the value is unrenderable. `compact`
  *  is the date default — see `compactDateKeys`. */
-function cellText(value: unknown, format: ValueFormat, compact: boolean): string | null {
+function cellText(value: unknown, col: DataTableColumn, compact: boolean): string | null {
+  const format = col.format ?? "text";
   if (compact && (format === "date" || format === "datetime")) {
     return typeof value === "string" || typeof value === "number" || value instanceof Date
       ? formatDateTime(value, { mode: format, compact: true })
       : null;
   }
-  return applyFormat(value, format);
+  return applyFormat(value, format, { unit: col.durationUnit, signed: col.durationSigned });
 }
 
 /**
@@ -104,7 +143,7 @@ function cellText(value: unknown, format: ValueFormat, compact: boolean): string
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn, compact: boolean): string {
   if (column.key === undefined) return "";
-  return cellText(readField(row, column.key), column.format ?? "text", compact) ?? "";
+  return cellText(readField(row, column.key), column, compact) ?? "";
 }
 
 /** The calendar year a date value lands in, read the way the cell shows it: a
@@ -120,6 +159,23 @@ function dateYear(value: unknown): number | undefined {
 }
 
 export const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
+
+/**
+ * Whether this column's cells are ONE line with an ellipsis — on by default
+ * wherever the cell is plain text.
+ *
+ * THE FAILURE: a judge measured rows 90-160px tall. A wrapping cell hides its
+ * overflow in ROW HEIGHT — the auto table layout squeezes the column and the text
+ * takes three lines — so the table always "fits" while the reader gets a wall,
+ * and the fold below never even triggers because nothing ever overflowed. One
+ * line is the honest shape, and `truncate={false}` asks for the wall back.
+ *
+ * A `cell` slot holds ELEMENTS, not text, so a column that paints its own cells
+ * is left alone unless it asks: there is no text to clip and nothing to put in a
+ * `title=`.
+ */
+const truncates = (col: DataTableColumn | undefined): boolean =>
+  col?.truncate ?? (col?.key !== undefined && col.cell === undefined);
 
 /** The line-per-column list a folded column moves into. The cell it rides in
  *  may be a FIGURE, whose nowrap/tabular is inherited: a folded line is prose,
@@ -165,6 +221,7 @@ export function DataTable(props: DataTableProps) {
     caption,
     toolbar,
     rowActions,
+    fold = false,
     density,
     style,
   } = props;
@@ -248,7 +305,7 @@ export function DataTable(props: DataTableProps) {
           header: headerText(col),
           cell: (ctx) => {
             if (col.cell !== undefined) return forRow(col.cell, ctx.row.original);
-            const formatted = cellText(ctx.getValue(), col.format ?? "text", compact);
+            const formatted = cellText(ctx.getValue(), col, compact);
             if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
             // The face rides on the VALUE, not the cell: a folded row's extra
             // lines share this td and are prose.
@@ -314,10 +371,18 @@ export function DataTable(props: DataTableProps) {
   const painted = Children.toArray(props.children);
 
   /**
-   * Columns past the width the surface has FOLD into the first one. The wrapper
-   * scrolls horizontally, which on a narrow surface parks the right-hand columns
-   * off-screen with nothing to say they exist — five separate judge failures.
-   * The trigger is the measurement itself: no prop, no invented breakpoint.
+   * Columns past the width the surface has GIVE WAY, least important first. The
+   * wrapper scrolls horizontally, which on a narrow surface parks the right-hand
+   * columns off-screen with nothing to say they exist — five separate judge
+   * failures. The trigger is the measurement itself: no prop, no invented
+   * breakpoint.
+   *
+   * The pair with `truncates`: a one-line cell states its column's TRUE width
+   * instead of swallowing the overflow in row height, so this measurement finally
+   * sees the crowding a judge saw as 160px rows — which means MORE columns give
+   * way here than did while every cell wrapped, and that is the trade. A column
+   * that is not shown is honest; a row three lines tall is not. `fold` puts the
+   * ones that went back on the page, under the first cell.
    */
   const scroller = useRef<HTMLDivElement | null>(null);
   const headRow = useRef<HTMLTableRowElement | null>(null);
@@ -339,16 +404,39 @@ export function DataTable(props: DataTableProps) {
    * folded away came back at a width where it did not fit.
    */
   const expandedHeaderCount = columns.length + (rowActions === undefined ? 0 : 1);
-  const [visibleCount, setVisibleCount] = useState(columns.length);
+  /**
+   * The order columns give way in: the LOWEST priority first, and on a tie the
+   * rightmost of the pair. Index 0 is not in the list at all — the first column
+   * always stays, however narrow the surface is, and saying that once here beats
+   * a floor on every count downstream.
+   *
+   * With nothing declared the inferred `length - index` makes this
+   * right-to-left, which is the order the table has always dropped in.
+   */
+  const dropOrder = useMemo(() => {
+    const rank = (i: number) => columns[i]?.priority ?? columns.length - i;
+    return columns.map((_col, i) => i).slice(1).sort((a, b) => rank(a) - rank(b) || b - a);
+  }, [columns]);
+  const [dropCount, setDropCount] = useState(0);
+  /** Which columns went, by index. */
+  const dropped = useMemo(() => new Set(dropOrder.slice(0, dropCount)), [dropOrder, dropCount]);
+  // The drop ORDER is the dependency, not `columns` itself: the order is the whole
+  // of what a measurement is read against, and as a string it survives a new
+  // `rows` array — where the columns' own identity does not, so a screen's inline
+  // `columns={[…]}` would re-subscribe the observer on every render. `noRows` is
+  // here because an empty table has no header row to measure (E13), so the
+  // arrival of the first row is the moment there is anything to read.
+  const orderKey = dropOrder.join();
+  const noRows = bodyRows.length === 0;
   useEffect(() => {
     const node = scroller.current;
-    // No ResizeObserver (SSR, jsdom): nothing is measured, so nothing folds and
+    // No ResizeObserver (SSR, jsdom): nothing is measured, so nothing drops and
     // the table behaves exactly as it always did.
     if (node === null || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const headers = headRow.current?.children;
       // Only the data columns are measured — the actions column is a trailing
-      // extra that never folds, so it has no edge of its own to keep.
+      // extra that never drops, so it has no edge of its own to keep.
       if (headers !== undefined && headers.length === expandedHeaderCount) {
         let edge = 0;
         naturalEdges.current = [...headers].slice(0, columns.length)
@@ -356,19 +444,26 @@ export function DataTable(props: DataTableProps) {
       }
       const edges = naturalEdges.current;
       if (edges.length === 0) return;
-      // Keep every column that has room, fold only the ones that do not. The
-      // first column always stays, however narrow the surface is.
+      // Give one column up at a time, least important first, until what is left
+      // fits. A width is the gap between two natural edges, so what is compared
+      // never depends on which columns are shown right now — which is the
+      // oscillation the edges are recorded once for.
       const room = unrounded(node.clientWidth, contentWidth(node));
-      setVisibleCount(Math.max(1, edges.filter((right) => right <= room).length));
+      let total = edges[edges.length - 1] ?? 0;
+      let count = 0;
+      while (total > room && count < dropOrder.length) {
+        const index = dropOrder[count++]!;
+        total -= edges[index]! - (edges[index - 1] ?? 0);
+      }
+      setDropCount(count);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [columns.length, expandedHeaderCount]);
-  const folded = visibleCount < columns.length;
-  /** Only the columns that fit keep a header and a cell of their own. */
-  const shown = <T,>(all: T[]): T[] => (folded ? all.slice(0, visibleCount) : all);
+  }, [orderKey, expandedHeaderCount, noRows]);
+  /** Whether the columns that went are shown as extra lines under the first cell. */
+  const folded = fold && dropped.size > 0;
 
   return (
     <div
@@ -452,47 +547,55 @@ export function DataTable(props: DataTableProps) {
           {caption ? (
             <caption style={{ ...microLabel, padding: cellPad, textAlign: "left" }}>{caption}</caption>
           ) : null}
-          <thead>
-            {table.getHeaderGroups().map((hg) => (
-              <tr ref={headRow} key={hg.id} style={{ background: t.surfaceRaised }}>
-                {shown(hg.headers).map((header, i) => {
-                  // By INDEX, not by id: a keyless action column's id is its
-                  // position, which matches no column's key.
-                  const col = columns[i];
-                  const sorted = header.column.getIsSorted();
-                  return (
-                    <th
-                      key={header.id}
-                      scope="col"
-                      onClick={header.column.getToggleSortingHandler()}
-                      style={{
-                        ...microLabel,
-                        borderBottom: hairline,
-                        padding: cellPad,
-                        textAlign: alignCss(col?.align),
-                        cursor: header.column.getCanSort() ? "pointer" : "default",
-                        userSelect: "none",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {sorted === "asc" ? " ▲" : sorted === "desc" ? " ▼" : ""}
-                    </th>
-                  );
-                })}
-                {rowActions === undefined ? null : (
-                  <th scope="col" aria-label="Actions" style={{ borderBottom: hairline, padding: cellPad, width: 0 }} />
-                )}
-              </tr>
-            ))}
-          </thead>
+          {/* No rows, no header. A table with nothing in it painted a header row
+              of the columns inferred from a row that is not there — a <tr> of
+              nothing at all — and even with columns declared, a lone rank of
+              names over an empty message says less than the message does. The
+              bordered box stays, so the empty state still reads as a table. */}
+          {noRows ? null : (
+            <thead>
+              {table.getHeaderGroups().map((hg) => (
+                <tr ref={headRow} key={hg.id} style={{ background: t.surfaceRaised }}>
+                  {hg.headers.map((header, i) => {
+                    // By INDEX, not by id: a keyless action column's id is its
+                    // position, which matches no column's key. The index is the
+                    // COLUMN's, so a dropped one leaves a hole rather than
+                    // shifting every header after it onto the wrong column.
+                    if (dropped.has(i)) return null;
+                    const col = columns[i];
+                    const sorted = header.column.getIsSorted();
+                    return (
+                      <th
+                        key={header.id}
+                        scope="col"
+                        onClick={header.column.getToggleSortingHandler()}
+                        style={{
+                          ...microLabel,
+                          borderBottom: hairline,
+                          padding: cellPad,
+                          textAlign: alignCss(col?.align),
+                          cursor: header.column.getCanSort() ? "pointer" : "default",
+                          userSelect: "none",
+                          whiteSpace: "nowrap",
+                          width: col?.width,
+                        }}
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {sorted === "asc" ? " ▲" : sorted === "desc" ? " ▼" : ""}
+                      </th>
+                    );
+                  })}
+                  {rowActions === undefined ? null : (
+                    <th scope="col" aria-label="Actions" style={{ borderBottom: hairline, padding: cellPad, width: 0 }} />
+                  )}
+                </tr>
+              ))}
+            </thead>
+          )}
           <tbody>
-            {bodyRows.length === 0 ? (
+            {noRows ? (
               <tr>
-                <td
-                  colSpan={Math.max(1, shown(columns).length) + (rowActions === undefined ? 0 : 1)}
-                  style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
-                >
+                <td style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}>
                   <EmptyOrForming>{empty ?? emptyState}</EmptyOrForming>
                 </td>
               </tr>
@@ -502,7 +605,7 @@ export function DataTable(props: DataTableProps) {
               // painted row by `index` — tanstack's index into the ROOT data
               // array, which sorting does not touch. The border moves to the
               // <tr>, because the <td>s belong to the TableRow now.
-              <TableContext.Provider value={{ columns, visible: visibleCount }}>
+              <TableContext.Provider value={{ columns, dropped, fold }}>
                 {bodyRows.map((row, rowIndex) => (
                   <tr key={row.id} style={{ borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline }}>
                     {painted[row.index] ?? null}
@@ -520,26 +623,42 @@ export function DataTable(props: DataTableProps) {
             ) : (
               bodyRows.map((row, rowIndex) => (
                 <tr key={row.id}>
-                  {shown(row.getVisibleCells()).map((cell, cellIndex) => {
+                  {row.getVisibleCells().map((cell, cellIndex) => {
+                    // The cell of a column that gave way is not painted anywhere
+                    // — by index, so the cells that are left stay under their own
+                    // headers however scattered the dropped ones are.
+                    if (dropped.has(cellIndex)) return null;
                     const col = columns[cellIndex];
                     // A slot is elements, not a figure: only formatted text is
                     // one unbreakable atom ("Mar 14" split across two lines
                     // reads as two values). Tabular is the table's own default.
                     const figure = col?.format !== undefined && col.format !== "text" && col.cell === undefined;
+                    const truncate = truncates(col);
+                    // The whole text of a cell that shows an ellipsis, so nothing
+                    // is only readable by widening the window.
+                    const full = truncate && col?.key !== undefined && col.cell === undefined
+                      ? displayText(row.original, col, compactDateKeys.has(col.key))
+                      : "";
                     return (
                       <td
                         key={cell.id}
+                        title={full === "" ? undefined : full}
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : hairline,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
-                          whiteSpace: figure ? "nowrap" : undefined,
+                          whiteSpace: truncate || figure ? "nowrap" : undefined,
+                          // The ellipsis needs a definite cap to bite, and a
+                          // declared `width` is the only one there is: uncapped,
+                          // a one-line column simply asks for its full width and
+                          // the drop above is what keeps the table in its surface.
+                          ...(truncate ? { overflow: "hidden", textOverflow: "ellipsis", maxWidth: col?.width } : {}),
                         }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         {folded && cellIndex === 0 ? (
                           <div style={foldStyle}>
-                            {columns.slice(visibleCount).flatMap((other, j) => {
+                            {columns.filter((_col, j) => dropped.has(j)).flatMap((other, j) => {
                               // A folded column keeps its SLOT — a status
                               // column reads as its pill here too, not as the
                               // bare word the slot exists to kill.

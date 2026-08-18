@@ -36,6 +36,18 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, header, actio
         // fires in parallel. Form is the one place every Kit-composed submit
         // passes through, so it — not the generated code — owns preventDefault.
         e.preventDefault();
+        // And by the same reasoning it owns the constraint check. Base UI's Form
+        // validates the controls that REGISTER with it and marks the element
+        // `noValidate`, so on the three fields that are still native — Textarea,
+        // Select, Checkbox — a `required` decorated the label and stopped
+        // nothing. The element's own validity is what those three answer to, and
+        // this is the one place every submit passes through, so the field that
+        // failed takes the focus and `onSubmit` is never called.
+        const form = e.currentTarget;
+        if (!form.checkValidity()) {
+          form.querySelector<HTMLElement>(":invalid")?.focus();
+          return;
+        }
         onSubmit?.(e);
       }}
       {...given(engine)}

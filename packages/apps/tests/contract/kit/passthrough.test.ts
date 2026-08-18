@@ -32,8 +32,19 @@ describe("passthrough styling in the specs", () => {
     }
   });
 
+  /** A DOM element is an engine too. Textarea, Select and Checkbox render a plain
+   *  `<textarea>` / `<select>` / `<input>`, whose own vocabulary is as real as
+   *  recharts' — and `maxLength` on a Textarea was a blocking error while the
+   *  identical prop went through on Input, whose engine was named. */
+  it("names the DOM element on the three controls that render one", () => {
+    expect(kitSpec("Textarea")?.engine).toBe("<textarea>");
+    expect(kitSpec("Select")?.engine).toBe("<select>");
+    expect(kitSpec("Checkbox")?.engine).toBe("<input>");
+    expect(kitPrompt({ only: ["Select"] })).toContain("plus any `<select>` prop");
+  });
+
   it("leaves a component that wraps nothing without an engine, so a typo stays an error", () => {
-    for (const name of ["Stack", "Text", "DataTable", "Button", "Select"]) {
+    for (const name of ["Stack", "Text", "DataTable", "Button", "CardList"]) {
       expect(kitSpec(name)?.engine, name).toBeUndefined();
     }
   });

@@ -74,6 +74,28 @@ describe("an open Toast", () => {
     expect(await screen.findByText("Second.")).toBeTruthy();
     expect(screen.queryByText("First.")).toBeNull();
   });
+
+  it("stacks a second brick's notice with the first instead of painting over it", async () => {
+    // Each brick used to draw its OWN `position: fixed` box at the same corner, so
+    // the second notice landed exactly on top of the first and the first was gone
+    // from the screen while still counting down. No CSS relates two independently
+    // positioned fixed boxes, so the fix is that there is only ever one: both
+    // notices are laid out as descendants of a single positioned stack.
+    render(
+      <>
+        <Toast open message="Reminder sent." duration={60_000} />
+        <Toast open message="Invoice voided." duration={60_000} />
+      </>,
+    );
+    const stackOf = (node: HTMLElement) => node.closest("[data-vendo-portal='kit-toasts']");
+    const first = stackOf(await screen.findByText("Reminder sent."));
+    const second = stackOf(await screen.findByText("Invoice voided."));
+    expect(first).not.toBeNull();
+    expect(first).toBe(second);
+    // ...and nothing inside it positions itself out of that column again.
+    const escaped = [...first!.querySelectorAll<HTMLElement>("*")].filter((node) => node.style.position === "fixed");
+    expect(escaped).toEqual([]);
+  });
 });
 
 describe("the Kit stylesheet", () => {

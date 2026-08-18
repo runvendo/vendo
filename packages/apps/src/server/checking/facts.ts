@@ -326,9 +326,16 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
     parent?: string,
   ): void => {
     const anchor = (message: string): FactIssue => at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message);
+    const spec = kitSpec(component);
     const kids: unknown[] = Array.isArray(children) ? children : [];
     if (kids.length > 0 && CHILDLESS.has(component)) {
-      issues.push(anchor(`nests ${kids.length === 1 ? "1 node" : `${kids.length} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`));
+      // The generic tail is true of every leaf and useful for almost none of
+      // them, so a component whose own answer is not obvious names it
+      // (`KitComponentSpec.childrenFix` — <Menu>'s entries are data plus one
+      // handler, and the refusal used to leave the model to guess that).
+      const fix = spec?.childrenFix
+        ?? `Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`;
+      issues.push(anchor(`nests ${kids.length === 1 ? "1 node" : `${kids.length} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. ${fix}`));
     }
     // WHERE a row sits is the whole of what makes it a row: a <TableRow>'s
     // children are its CELLS, placed in the TABLE's column order (`packages/ui`
@@ -355,8 +362,16 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
         }
       }
     }
-    const spec = kitSpec(component);
     if (spec === undefined || !isRecord(props)) return;
+    // TWO props for one job, where the component honours one and drops the other
+    // (`KitComponentSpec.exclusive`). Each is valid alone, so no schema can fail
+    // the pair — and the one that loses loses in silence, which is the class this
+    // whole walk exists for.
+    for (const { props: rivals, fix } of spec.exclusive ?? []) {
+      const written = rivals.filter((name) => Object.hasOwn(props, name) && props[name] !== undefined);
+      if (written.length < 2) continue;
+      issues.push(anchor(`writes ${written.map((name) => `"${name}"`).join(" and ")} together on <${component}>, which paints only one of them and drops the rest without a word. ${fix}`));
+    }
     // A Map, not the record: a prop key is model-written, and `slots["toString"]`
     // on a plain object answers with Object's own.
     const slots = new Map(Object.entries(spec.slots ?? {})

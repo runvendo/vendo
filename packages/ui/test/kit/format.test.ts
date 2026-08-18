@@ -100,12 +100,33 @@ describe("formatNum", () => {
   });
 });
 
-describe("formatDuration (takes seconds)", () => {
+describe("formatDuration (takes seconds unless told minutes)", () => {
   it("reads a count of seconds as a duration", () => {
     expect(formatDuration(268)).toBe("4m 28s");
     expect(formatDuration(412)).toBe("6m 52s");
-    // A minutes field is `* 60` where it is read, the way cents are `/ 100`.
     expect(formatDuration(158 * 60)).toBe("2h 38m");
+  });
+
+  it("takes the count in minutes when that is the unit the field is in", () => {
+    // The forgotten multiply this closes: read as seconds, 200 minutes printed
+    // "3m 20s" — a plausible duration wrong by 60×, with nothing on screen to
+    // say so. A declared unit cannot be forgotten.
+    expect(formatDuration(200, { unit: "minutes" })).toBe("3h 20m");
+    expect(formatDuration(200)).toBe("3m 20s");
+    expect(formatDuration(0.5, { unit: "minutes" })).toBe("30s");
+    expect(formatDuration(268, { unit: "seconds" })).toBe("4m 28s");
+  });
+
+  it("phrases the sign instead of printing it when asked", () => {
+    // "-1h 55m" in an SLA column reads as a negative quantity of time, which is
+    // not a thing; the word is what says which side of the deadline the row is on.
+    expect(formatDuration(200, { unit: "minutes", signed: true })).toBe("3h 20m left");
+    expect(formatDuration(-115 * 60, { signed: true })).toBe("overdue 1h 55m");
+    expect(formatDuration(-115, { unit: "minutes", signed: true })).toBe("overdue 1h 55m");
+    // Zero stays the plain figure: everything under half a second rounds to it,
+    // and neither "0s left" nor "overdue 0s" is a claim that count supports.
+    expect(formatDuration(0, { signed: true })).toBe("0s");
+    expect(formatDuration(-0.2, { signed: true })).toBe("0s");
   });
 
   it("keeps to the two largest units — a duration is one figure, not three", () => {
@@ -136,6 +157,16 @@ describe("formatDuration (takes seconds)", () => {
   it("is reachable through the format token every column and Stat takes", () => {
     expect(applyFormat(268, "duration")).toBe("4m 28s");
     expect(applyFormat("268", "duration")).toBeNull();
+  });
+
+  it("carries the unit and the phrasing through the format token", () => {
+    // The token alone cannot say what a count is in — so the options ride with
+    // it, from the `durationUnit`/`durationSigned` prop on a Stat, a column, a
+    // card field or a KeyValue row down to here.
+    expect(applyFormat(200, "duration", { unit: "minutes" })).toBe("3h 20m");
+    expect(applyFormat(-115, "duration", { unit: "minutes", signed: true })).toBe("overdue 1h 55m");
+    // Nothing passed is the old reading, unchanged.
+    expect(applyFormat(200, "duration", {})).toBe("3m 20s");
   });
 });
 

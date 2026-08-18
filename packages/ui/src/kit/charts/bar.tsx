@@ -46,7 +46,12 @@ interface BarChartOwnProps extends KitStyled {
 export type BarChartProps = BarChartOwnProps & KitEngine<ComponentProps<typeof Bar>, BarChartOwnProps, "dataKey" | "name">;
 
 function normalize(series: BarSeriesInput[]) {
-  return series.map((s) => (typeof s === "string" ? { key: s, label: s, color: undefined, format: undefined } : { ...s, label: s.label ?? s.key }));
+  // `name` is SPENT here — it is the alias for `label`, and the `undefined` it
+  // leaves behind is what `given()` drops, so the word never reaches the engine
+  // as the series name the component owns.
+  return series.map((s) => (typeof s === "string"
+    ? { key: s, label: s, color: undefined, format: undefined }
+    : { ...s, label: s.label ?? s.name ?? s.key, name: undefined }));
 }
 
 const axisTick = { fill: t.muted, fontSize: 11 };

@@ -12,6 +12,12 @@ export interface KeyValueItem {
   label?: string;
   /** Value-tier format applied to the value. */
   format?: ValueFormat;
+  /** What one unit of a `format:"duration"` value IS — seconds (default) or
+   *  minutes. A `minutes_remaining` field read as seconds prints a plausible
+   *  duration off by 60×, so the unit is declared, never multiplied in. */
+  durationUnit?: "seconds" | "minutes";
+  /** Phrase a `format:"duration"` sign: "3h 20m left" / "overdue 1h 55m". */
+  durationSigned?: boolean;
   /** Kit elements rendered as this row's VALUE (the label stays) — the DataTable
    *  cell contract, for a single record. Written as a function it is called once,
    *  with the record, so ONE element arrives and there is nothing to match. */
@@ -73,7 +79,7 @@ export function KeyValue({ record, items: rawItems, dividers = false, style }: K
                 overflowWrap: "anywhere",
               }}
             >
-              {item.cell ?? applyFormat(readField(record, item.key), format) ?? (
+              {item.cell ?? applyFormat(readField(record, item.key), format, { unit: item.durationUnit, signed: item.durationSigned }) ?? (
                 <span style={{ color: t.muted }}>—</span>
               )}
             </dd>

@@ -190,25 +190,52 @@ const DURATION_UNITS: ReadonlyArray<readonly [string, number]> = [
   ["d", 86_400], ["h", 3_600], ["m", 60], ["s", 1],
 ];
 
+export interface DurationOptions {
+  /** What one unit of the count IS — seconds (default) or minutes. */
+  unit?: "seconds" | "minutes";
+  /** Phrase the sign instead of printing it: a positive count is time still
+   *  to come ("3h 20m left"), a negative one is time already past
+   *  ("overdue 1h 55m"). */
+  signed?: boolean;
+}
+
 /**
- * A count of SECONDS as a duration: `268` → `"4m 28s"`, `46` → `"46s"`,
+ * A count of time as a duration: `268` → `"4m 28s"`, `46` → `"46s"`,
  * `9480` → `"2h 38m"`. The two largest non-zero units and no more — "1h 5m 3s"
  * is three figures where a person reads one — and under half a second is `"0s"`.
+ *
+ * Seconds unless `unit` says minutes. The `* 60` used to be the caller's job,
+ * the way a cents field is `/ 100` — but hosts store `minutes_remaining` at
+ * least as often as a seconds field, and a forgotten multiply here is INVISIBLE:
+ * 200 minutes read as seconds printed "3m 20s", a plausible duration off by 60×.
+ * A unit that is declared cannot be forgotten. Money keeps the caller's divide
+ * because there the two units differ per currency, so there is no one token to
+ * name; time's do not.
+ *
+ * `signed` phrases the sign instead of printing it. A bare "-1h 55m" in an SLA
+ * column reads as a negative quantity of time, which is not a thing — the word
+ * is what says which side of the deadline the row is on. Zero stays the plain
+ * "0s" either way: everything under half a second rounds to it, and neither
+ * "0s left" nor "overdue 0s" is a claim that count can support.
  *
  * Hand-rolled rather than `Intl.DurationFormat`: it is absent from engines this
  * still ships on, which is the same engine drift `MINOR_UNITS` exists for.
  */
-export function formatDuration(seconds: number | undefined): string | null {
-  if (!isRenderableNumber(seconds)) return null;
+export function formatDuration(count: number | undefined, options: DurationOptions = {}): string | null {
+  if (!isRenderableNumber(count)) return null;
+  const seconds = options.unit === "minutes" ? count * 60 : count;
   let rest = Math.round(Math.abs(seconds));
   const parts: string[] = [];
   for (const [suffix, size] of DURATION_UNITS) {
-    const count = Math.floor(rest / size);
-    rest -= count * size;
-    if (count > 0) parts.push(`${count}${suffix}`);
+    const units = Math.floor(rest / size);
+    rest -= units * size;
+    if (units > 0) parts.push(`${units}${suffix}`);
     if (parts.length === 2) break;
   }
-  return parts.length === 0 ? "0s" : `${seconds < 0 ? "-" : ""}${parts.join(" ")}`;
+  if (parts.length === 0) return "0s";
+  const figure = parts.join(" ");
+  if (!options.signed) return `${seconds < 0 ? "-" : ""}${figure}`;
+  return seconds < 0 ? `overdue ${figure}` : `${figure} left`;
 }
 
 export type DateInput = string | number | Date;
@@ -289,15 +316,24 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
  *  where the cell is painted. */
 export type ValueFormat = "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | "code";
 
-/** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
-export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
+/**
+ * Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable.
+ *
+ * The third argument is the DURATION options and nothing else, because duration
+ * is the only token that takes any: a count needs its unit and its sign named,
+ * where a date or an amount reads correctly from the token alone. It is spelled
+ * `duration` rather than `options` so the next reader grows a sibling argument
+ * instead of a per-token grab-bag that every one of the dozen call sites would
+ * then have to thread.
+ */
+export function applyFormat(value: unknown, format: ValueFormat = "text", duration?: DurationOptions): string | null {
   switch (format) {
     case "money":
       return typeof value === "number" ? formatMoney(value) : null;
     case "number":
       return typeof value === "number" ? formatNum(value) : null;
     case "duration":
-      return typeof value === "number" ? formatDuration(value) : null;
+      return typeof value === "number" ? formatDuration(value, duration) : null;
     case "date":
     case "datetime":
     case "time":

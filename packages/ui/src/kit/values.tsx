@@ -4,7 +4,7 @@
  * the percentage itself. Nothing here converts anything.
  * Any unrenderable value collapses to a muted placeholder, never bad text.
  */
-import { isValidElement, type CSSProperties, type ReactNode } from "react";
+import { isValidElement, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
 import {
   applyFormat,
   formatDateTime,
@@ -185,7 +185,7 @@ export interface TextProps extends KitStyled {
 }
 
 /** Themed text. Heading renders an <h3>; others render a <span>. */
-export function Text({ text, variant = "body", tone, style }: TextProps) {
+export function Text({ text, variant = "body", tone, style, children }: PropsWithChildren<TextProps>) {
   // `text` holds ANYTHING the expression behind it evaluated to: a plain object
   // as a React child throws ("Objects are not valid as a React child") and a
   // boolean renders as literally NOTHING, which is how `active: false` came out
@@ -198,11 +198,19 @@ export function Text({ text, variant = "body", tone, style }: TextProps) {
   // placeholder dash there reads as "no data" for data that is still on its
   // way. Nothing renders as nothing; the dash is for a value that arrived and
   // could not be shown.
-  const content = isValidElement(text)
+  const written = isValidElement(text)
     ? text
     : text === undefined || text === null || text === ""
       ? null
       : (applyFormat(typeof text === "object" ? null : text, "text") ?? <Placeholder />);
+  // CHILDREN are the sentence form, and the whole point of them is that a Kit
+  // value element can sit INSIDE the sentence: `<Text variant="caption">Overdue:
+  // <Money value={x}/> across <Num value={n}/> invoices</Text>`. With `text` the
+  // only way in, a screen that wanted a figure in a phrase hand-rolled
+  // `` `Overdue: $${x.toFixed(2)}` `` — an unlocalised, uncurrencied, NaN-prone
+  // string that the value tier exists to make impossible. `text` still wins where
+  // both are given: it is the prop every stored screen carries.
+  const content = written ?? children;
   const rootStyle: CSSProperties = {
     ...font,
     // `label` IS the micro-label — the word over a figure, not prose. `caption`
