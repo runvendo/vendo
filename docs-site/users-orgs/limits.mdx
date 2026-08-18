@@ -67,6 +67,13 @@ an org cap needs — see [Orgs & memberships](/users-orgs/orgs-and-memberships).
   sharing principal and the meter. An org is spelled one way everywhere.
 </Note>
 
+<Warning>
+  A `pools` entry of your own wins on a name collision, so you can meter an org by
+  your own key — but if you do, do it for every member of that org. Half an org on
+  `org:acme` and half on your key is one allowance split across two meters, and
+  each one under-counts.
+</Warning>
+
 The Maple demo in `examples/demo-bank` wires exactly this: one `memberships`
 seam, one org cap, and a refusal worded in Maple's own voice.
 
