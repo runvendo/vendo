@@ -355,6 +355,77 @@ describe("the seed keeps EVERY wish, and a re-seed replays all of them in order"
   });
 });
 
+// ---------------------------------------------------------------------------
+// THE ✦ ONE DOOR. The wrapper's ✦ mints nothing: it opens the chat prefilled
+// ("Remix my <Slot>: ") and names the component in the conversation's context
+// ("The view being remixed is the "<Slot>" component on the host's page."). So
+// `vendo_make` is the only thing that can turn that wish into a REMIX, and if it
+// mints an ordinary app instead the wrapper never finds it and the ✦ silently
+// does nothing at all.
+// ---------------------------------------------------------------------------
+
+/** The wrapper's discovery rule, verbatim — `useRemixFork` in
+ *  `packages/ui/src/chrome/remixable.tsx` reads `client.apps.list()` (the wire's
+ *  `GET /apps`, which is `runtime.list()`) and takes the OLDEST app seeded from
+ *  this component. If this returns undefined the ✦ did nothing. */
+const discovered = (apps: AppDocument[], component: string): string | undefined =>
+  apps.filter((app) => app.seed?.component === component).at(-1)?.id;
+
+/** The call the agent makes after reading the ✦'s context fence. */
+const remixCall = (id: string, request: string) =>
+  ({ id, tool: "vendo_make", args: { request, component: SLOT } });
+
+describe("the ✦ one door — a wish naming the host component becomes a remix", () => {
+  it("mints a seeded app the wrapper discovers, carrying the wish already", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+
+    const outcome = await runtime.agentTools().execute(remixCall("call_remix", "add a sparkline"), owner);
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    // READ BACK through the ordinary list door — the one the wrapper polls.
+    const appId = discovered(await runtime.list(owner), SLOT);
+    expect(appId, "the wrapper must find the remix, or the ✦ did nothing").toBeDefined();
+    const app = await runtime.get(appId!, owner);
+    // Provenance the wrapper matches on, and the wish a re-seed replays.
+    expect(app?.seed).toEqual({ component: SLOT, baseline: "sha256:maple-base", wishes: ["add a sparkline"] });
+    // And it IS a screen, so there is something to mount in the original's place.
+    expect(app?.source?.[SCREEN_FILE]?.text).toContain("add a sparkline");
+  });
+
+  it("lands a SECOND wish on the same remix instead of dropping it on the dedupe", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const tools = runtime.agentTools();
+
+    // The context fence stays in the thread, so a follow-up wish arrives named
+    // the same way. The seed door dedupes per (subject, component) and drops the
+    // riding instruction — this is the ONE door, so the wish must still land.
+    await tools.execute(remixCall("call_first", "add a sparkline"), owner);
+    const outcome = await tools.execute(remixCall("call_second", "make the number bigger"), owner);
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    const seeded = (await runtime.list(owner)).filter(({ seed }) => seed?.component === SLOT);
+    expect(seeded, "a second wish must not mint a second remix").toHaveLength(1);
+    expect(seeded[0]?.seed?.wishes).toEqual(["add a sparkline", "make the number bigger"]);
+  });
+
+  it("refuses a component the host never captured rather than minting an orphan", async () => {
+    const { runtime } = buildingRuntime(memoryStore());
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_invented",
+      tool: "vendo_make",
+      args: { request: "add a sparkline", component: "invented-by-the-model" },
+    }, owner);
+
+    // The captured baselines ARE the allowlist: an id nothing captured names no
+    // component on the page, so nothing is minted and the model is told why.
+    expect(outcome).toMatchObject({ status: "error", error: { code: "not-found" } });
+    expect(await runtime.list(owner)).toHaveLength(0);
+  });
+});
+
 describe("seed.from is idempotent per (subject, component)", () => {
   it("a double tap returns the SAME app instead of minting a second", async () => {
     const store = memoryStore();
