@@ -134,7 +134,7 @@ describe("a finding has to be worth the repair round it buys", () => {
     );
     // What clears it, in the reviewer's own terms…
     expect(REVIEWER_SYSTEM).toContain("a control that does not work");
-    expect(REVIEWER_SYSTEM).toContain("a deliverable the ask named by name");
+    expect(REVIEWER_SYSTEM).toContain("anything the ask named by name that nothing here delivers");
     expect(REVIEWER_SYSTEM).toContain("a displayed value breaking a rule this product's owner stated");
     // …and what does not, named so a model cannot rule its own taste material.
     expect(REVIEWER_SYSTEM).toMatch(/a label's phrasing[\s\S]*?polish suggestion/u);
@@ -145,6 +145,50 @@ describe("a finding has to be worth the repair round it buys", () => {
     // ate either half would be a rewrite of the verdict, not a filter on it.
     expect(REVIEWER_SYSTEM).toMatch(/Severity: "block" ONLY for what the person cannot detect themselves/u);
     expect(REVIEWER_SYSTEM).toContain('"warn" for everything else');
+  });
+});
+
+describe("the ask's own nouns are walked one by one", () => {
+  /**
+   * THE BIGGEST CLUSTER THERE IS. Run 2026-08-18T21-39-10 failed 11 cases on one
+   * shape: a screen better than its predecessor in every other way that quietly
+   * dropped a noun the ask named — a field on a team form, an owner's name beside a
+   * row, the person's own reason echoed back. The walk it was given listed
+   * DELIVERABLES (a reminder, a schedule, a column), so a noun smaller than one fell
+   * between the rule and the bar and nothing reported it.
+   */
+  const RULE_FIVE = "5. WORK QUIETLY DROPPED.";
+
+  it("walks the ask's named ELEMENTS, down to a field, a name and an echo", () => {
+    const at = REVIEWER_SYSTEM.indexOf(RULE_FIVE);
+    expect(at, "the reviewer's prompt no longer has a dropped-work rule").toBeGreaterThan(-1);
+    const rule = REVIEWER_SYSTEM.slice(at, REVIEWER_SYSTEM.indexOf("Severity:", at));
+
+    expect(rule).toContain("WALK THE ASK'S NAMED ELEMENTS ONE BY ONE");
+    // The three the run lost, in the reviewer's own terms.
+    expect(rule).toContain("a field it says a form takes");
+    expect(rule).toContain("a person or a team it says the screen shows");
+    expect(rule).toContain("a word of their own it says to echo back");
+    // Still a fact and never a remedy, exactly like every other rule.
+    expect(rule).toContain("quote the ask's own words for it");
+    expect(rule).not.toMatch(ADVISORY);
+  });
+
+  it("rules an ask-named element material by definition, so the bar cannot eat the walk", () => {
+    // THE TWO PULL AGAINST EACH OTHER. The bar (15de735a1) exists to silence an
+    // eager reviewer, and a missing team field is small enough to read as a nit —
+    // so the walk says outright that the person asking for it IS the materiality,
+    // and the bar's own list carries it.
+    expect(REVIEWER_SYSTEM).toContain("AN ELEMENT THE ASK NAMED IS MATERIAL BY DEFINITION");
+    // …and the bar's own list of what clears it says the same thing, in the same
+    // grain: not a deliverable alone, but a field, a name, an echo.
+    expect(REVIEWER_SYSTEM).toContain(
+      "anything the ask named by name that nothing here delivers — a deliverable, a field, a name, a word of theirs echoed back",
+    );
+    // …and the other direction, in the same sentence: what the bar turns away is
+    // the reviewer's own taste, and nothing the person named.
+    expect(REVIEWER_SYSTEM).toMatch(/a label's phrasing[\s\S]*?polish suggestion/u);
+    expect(REVIEWER_SYSTEM).toContain("YOUR idea rather than something the person asked for by name");
   });
 });
 
@@ -232,6 +276,43 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
     const system = String(calls[0]?.prompt?.[0]?.content ?? "");
     expect(system).toContain(CITE_TOTALS);
     expect(system).toContain(NO_UNATTENDED);
+  });
+});
+
+describe("a house rule is not a lesser finding", () => {
+  it("names a broken house rule in the severity the reviewer picks from", async () => {
+    // A TOOL DESCRIPTION IS PROMPT, and this one rode next to a rubric that told the
+    // reviewer to warn about a broken convention while the description offered two
+    // named sins and a leftovers bin. The bin now names it.
+    const calls: ScriptedModelCall[] = [];
+    const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
+
+    await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
+
+    const tool = calls[0]?.tools?.[0] as { inputSchema?: { properties: { findings: { items: {
+      properties: { severity: { description: string } };
+    } } } } };
+    const severity = tool.inputSchema?.properties.findings.items.properties.severity.description ?? "";
+    expect(severity).toContain("a broken house rule included");
+    // The split itself is untouched: a house rule buys a repair, never a refusal.
+    expect(severity).toMatch(/^block for dishonesty and invented data/u);
+    expect(REVIEWER_SYSTEM).toContain("every rule of this product's own that the screen breaks");
+  });
+
+  it("lets the host's own rules decide whether a screen owes a confirmation", () => {
+    // The carve-out ("a screen is never wrong for having no confirmation step of its
+    // own") was written against a screen asking twice, and it also blinded the
+    // reviewer to the hosts whose own rules DEMAND the step — which is the reading
+    // `skills/format-reference.ts` already gives the writer.
+    expect(REVIEWER_SYSTEM).not.toContain("never wrong for having no confirmation step");
+    expect(REVIEWER_SYSTEM).toContain("THIS PRODUCT'S OWN STATED RULES DECIDE");
+    // The default stands where no rule speaks…
+    expect(REVIEWER_SYSTEM).toContain("a screen that confirms nothing of its own is not wrong for that alone");
+    // …and the product's own approval is a confirmation, so a rule it satisfies is
+    // satisfied and no finding is filed about it.
+    expect(REVIEWER_SYSTEM).toContain("not the product's own approval either, which counts wherever it fires");
+    // What a rule requires is material even when it is not a value on screen.
+    expect(REVIEWER_SYSTEM).toContain("anything else one of those rules requires that this screen does not do");
   });
 });
 

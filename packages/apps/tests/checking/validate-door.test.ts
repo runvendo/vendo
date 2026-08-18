@@ -593,3 +593,108 @@ describe("what the screen fetched and never showed", () => {
     expect(systemPrompts[0] ?? "").toContain("FETCHED AND NEVER SHOWN IS THE SAME DROP.");
   }, 60_000);
 });
+
+/**
+ * NAMED IN THE ASK, AND NOWHERE ON THE SCREEN — through the real door, end to end.
+ *
+ * The largest cluster in run 2026-08-18T21-39-10, 11 cases: a screen better than
+ * the one before it in every other way, missing one noun the person named — a field
+ * on a team form, an owner's name beside a row, their own reason echoed back.
+ *
+ * LEFTOVERS cannot reach this one, which is the whole point of the fixture: the
+ * dropped noun was never FETCHED, so every field the query returned is on the
+ * screen and the mechanical half has nothing to say. The only reader that can catch
+ * it is one walking the person's own words, and the only thing that can stop it is
+ * the materiality bar mistaking a small noun for a nit — so both clauses are keyed
+ * on here, and the case below it pins the bar still working in the other direction.
+ */
+const INVOICES_TOOL = "maple_list_invoices";
+
+const OWNER_ASK = "list my open invoices with the amount and the owner on each row";
+
+const OWNERLESS_SCREEN = `import { DataTable, useQuery } from "@vendo/screen";
+
+export default function Invoices() {
+  const invoices = useQuery("${INVOICES_TOOL}");
+  return <DataTable rows={invoices.data} columns={["client", "amount"]} />;
+}
+`;
+
+const INVOICE_ROWS = { data: [{ id: "inv_7", client: "Northwind", amount: 990 }] };
+
+const invoicesRegistry: ToolRegistry = {
+  async descriptors() {
+    return [{
+      name: INVOICES_TOOL,
+      title: "Open invoices",
+      description: "The invoices still owed on this account",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      risk: "read",
+    }];
+  },
+  async execute() { return { status: "ok", output: INVOICE_ROWS }; },
+};
+
+/** The two clauses the walk needs to survive its own bar: the walk itself, down to
+ *  a noun smaller than a deliverable, and the ruling that the person naming it IS
+ *  the materiality. */
+const ASK_WALK = "WALK THE ASK'S NAMED ELEMENTS ONE BY ONE";
+const ASK_NAMED_MATERIAL = "AN ELEMENT THE ASK NAMED IS MATERIAL BY DEFINITION";
+/** …and what keeps the widened walk from reporting every absent field: a leftover
+ *  nobody asked about is nobody's finding. */
+const ID_IS_NOT_A_DROP = "an internal id, a foreign key, or a flag nothing here turns on is not";
+
+const MISSING_OWNER: Finding = {
+  severity: "warn",
+  where: "<DataTable>",
+  message: 'the ask names the owner on each row; the table draws client and amount, and no query on this screen returns an owner.',
+};
+
+const UNSHOWN_ID: Finding = {
+  severity: "warn",
+  where: "<DataTable>",
+  message: "the rows carry an id and the table does not draw it",
+};
+
+describe("a noun the ask named and the screen never shows", () => {
+  it("reports it, on a screen whose leftovers say nothing at all about it", async () => {
+    const runtime = setup(undefined, undefined, OWNERLESS_SCREEN, invoicesRegistry);
+    const appId = await storedApp(runtime);
+    // A reader that files it only while the rubric carries BOTH halves: take either
+    // the walk or its materiality out and this goes red — which is the only way the
+    // test can be about the rubric rather than about a scripted constant.
+    readsTheRubric = (rubric) =>
+      (rubric.includes(ASK_WALK) && rubric.includes(ASK_NAMED_MATERIAL) ? [MISSING_OWNER] : []);
+
+    const result = await runtime.validate({ appId, request: OWNER_ASK }, ctx);
+
+    const prompt = userPrompts[0] ?? "";
+    // The person's own words, and the screen that answers all but one of them.
+    expect(prompt).toContain(`USER_REQUEST: ${OWNER_ASK}`);
+    expect(prompt).toContain('columns={["client", "amount"]}');
+    // THE POINT: the mechanical half never sees this drop. `owner` is in the ask and
+    // in nothing else — no query returns it, so no leftover can name it.
+    expect(prompt.slice(prompt.indexOf("SCREEN ("))).not.toContain("owner");
+    // A warn, so the screen is repaired rather than thrown away.
+    expect(result.ok).toBe(true);
+    expect(result.findings).toContainEqual({ ...MISSING_OWNER, check: "reviewer" });
+  }, 60_000);
+
+  it("stays silent about a field the ask never named, so the wider walk is still a walk of the ASK", async () => {
+    // THE OTHER DIRECTION OF THE SAME PAIR. Widening (5) from deliverables to nouns
+    // must not turn every unshown field into a repair round: the id these rows carry
+    // is a real leftover, it reaches the reviewer as one, and nobody asked for it.
+    const runtime = setup(undefined, undefined, OWNERLESS_SCREEN, invoicesRegistry);
+    const appId = await storedApp(runtime);
+    readsTheRubric = (rubric) => (rubric.includes(ID_IS_NOT_A_DROP) ? [] : [UNSHOWN_ID]);
+
+    const result = await runtime.validate({ appId, request: OWNER_ASK }, ctx);
+
+    // The reviewer read it — this is silence, not a skipped call — and it was really
+    // shown the id it stayed quiet about.
+    expect(reviewerCalls).toBe(1);
+    const prompt = userPrompts[0] ?? "";
+    expect(prompt.slice(prompt.indexOf("LEFTOVERS ("))).toContain(`id ("inv_7")`);
+    expect(result).toEqual({ ok: true, findings: [] });
+  }, 60_000);
+});

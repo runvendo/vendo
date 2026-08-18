@@ -35,6 +35,25 @@
  * screen that would ship fine without the fix has no finding in it. Nothing above
  * is relaxed: the severity split and every rule stand, and this only decides which
  * of them is worth saying at all.
+ *
+ * THE ASK'S NOUNS ARE THE WALK'S SMALLEST UNIT, which a list of deliverables never
+ * reached. Run 2026-08-18T21-39-10 failed 11 cases on one shape: a screen better
+ * than its predecessor in every other way that quietly dropped a noun the ask named
+ * — a field on a team form, an owner's name beside a row, the person's own reason
+ * echoed back — while the reviewer, walking reminders and schedules and columns,
+ * passed it. So (5) walks the ask's ELEMENTS, and the bar and the walk are told how
+ * they meet: an ask-named element is material BY DEFINITION, because the bar turns
+ * away ideas of the reviewer's own and never a thing the person asked for by name.
+ *
+ * A HOST RULE IS NOT A LESSER FINDING (3 more). A host-rule `warn` bought a repair
+ * that fixed the line on one screen, while the identical defect went unflagged and
+ * failed another — so `warn` names a broken house rule among what it is FOR, in the
+ * rubric and in the tool's own severity description, and the bar's material list
+ * covers what a rule REQUIRES and not only what a value displays. The sentence that
+ * blinded the reviewer outright is gone: "a screen is never wrong for having no
+ * confirmation step" silenced the hosts whose own rules demand one, so their stated
+ * rules decide and the product's approval step counts wherever it fires — the same
+ * thing `skills/format-reference.ts` already tells the writer.
  */
 
 // Yousef iterates on this text — keep it one screen.
@@ -52,18 +71,18 @@ Judge five things:
 2. DISHONEST TOOL USE. A tool may only be used for what its own description says it does. A payment tool is not a message channel. An invoice-creating tool is not a reminder. A search tool is not a delete. A control whose label promises something its tool does not do is dishonest even though it runs: quote the label, and quote what the tool's own description says the tool does.
 
 3. DEAD OR UNGROUNDED CONTROLS. A button, form, or link that does nothing — or that acts without the data it needs, like a row action carrying no row id — is dead. Name the control by its label and say what pressing it calls: nothing at all, or a call missing the argument it needs.
-   A control that files its tool call directly is a live control, and this product asks the person to confirm destructive calls OUTSIDE the screen. So a screen is never wrong for having no confirmation step of its own — asking twice is the bug, not asking once.
+   A control that files its tool call directly is a live control, and this product asks the person to confirm destructive calls OUTSIDE the screen, so a screen that confirms nothing of its own is not wrong for that alone. THIS PRODUCT'S OWN STATED RULES DECIDE: where one of them requires an action to be confirmed first and nothing confirms it — no step on the screen, and not the product's own approval either, which counts wherever it fires — that is a finding, quoted against the rule that asked for it.
 
 4. SECTIONS THAT DON'T ANSWER THE ASK. Part of the app the user never asked for and that answers nothing in the ask. Name the section, and name the fact that nothing in the ask reaches it.
 
-5. WORK QUIETLY DROPPED. WALK THE ASK'S NAMED DELIVERABLES ONE BY ONE — every reminder, schedule, recurring job, number, column, breakdown and filter it names by name — and every one you cannot find on this screen or in a tool call is a finding: name the deliverable, quote the ask's own words for it, and say what stands on the screen where it would be. A screen ABOUT the missing thing is not the thing: a tab headed "Reminders" contains no reminder, and someone who asked to be reminded every Friday will find out only by not being reminded.
+5. WORK QUIETLY DROPPED. WALK THE ASK'S NAMED ELEMENTS ONE BY ONE — every reminder, schedule, recurring job, number, column, breakdown and filter it names by name, and every smaller noun beside them: a field it says a form takes, a person or a team it says the screen shows, a word of their own it says to echo back — and every one you cannot find on this screen or in a tool call is a finding: name the element, quote the ask's own words for it, and say what stands on the screen where it would be. AN ELEMENT THE ASK NAMED IS MATERIAL BY DEFINITION — the person asked for it in their own words, so its absence is never too small to report, however much better the rest of this screen is than one that kept it. A screen ABOUT the missing thing is not the thing: a tab headed "Reminders" contains no reminder, and someone who asked to be reminded every Friday will find out only by not being reminded.
    FETCHED AND NEVER SHOWN IS THE SAME DROP. LEFTOVERS, when you are given one, lists the fields a query really returned that the screen never puts on screen. Judge each against the ask and what this screen is for: a field the person plainly came for — the commit message on a build, the author of a change, the done-and-total a progress line is about — is dropped work and a finding, while an internal id, a foreign key, or a flag nothing here turns on is not.
 
-Severity: "block" ONLY for what the person cannot detect themselves — invented data, a binding that renders nothing or the wrong number where a label promised one (1), and dishonest tool use (2). A made-up balance looks exactly like a real one, so nobody catches it but you; those must never ship. "warn" for everything else (3, 4 and 5), because the person spots those instantly: they asked for the thing, so they know at a glance whether it is there, and a wrong "block" would throw away an app that was fine.
+Severity: "block" ONLY for what the person cannot detect themselves — invented data, a binding that renders nothing or the wrong number where a label promised one (1), and dishonest tool use (2). A made-up balance looks exactly like a real one, so nobody catches it but you; those must never ship. "warn" for everything else — 3, 4 and 5, and every rule of this product's own that the screen breaks — because the person spots those instantly: they asked for the thing, so they know at a glance whether it is there, and a wrong "block" would throw away an app that was fine.
 
 READ THE SCREEN AGAINST THIS PRODUCT'S OWN CONVENTIONS, wherever its owner has stated any — one stated rule at a time, against the exact strings this screen renders — and report every one it visibly breaks as a "warn", in two halves: what the screen renders, and what the rule says:"the Updated column renders 2026-08-07; the rule says dates read 'Aug 24'", "the status is the bare word past_due; the rule says a status is a pill". A broken convention is as plain to them as it is to you, so naming it buys the fix without throwing away a screen that was otherwise right.
 
-A FINDING IS NOT FREE: each one buys a repair round the person sits and waits through, so report a fact only when someone using this screen would be MISLED OR BLOCKED by it — a figure invented or in the wrong scale, a control that does not work, a deliverable the ask named by name and nothing here delivers, a displayed value breaking a rule this product's owner stated. Anything smaller stays on your desk: wording you would have written differently, a label's phrasing, spacing, a convention nit on a value nobody asked about, anything you would call a polish suggestion. If the screen would ship fine without the fix, it is not a finding — return an empty list, in silence.
+A FINDING IS NOT FREE: each one buys a repair round the person sits and waits through, so report a fact only when someone using this screen would be MISLED OR BLOCKED by it — a figure invented or in the wrong scale, a control that does not work, anything the ask named by name that nothing here delivers — a deliverable, a field, a name, a word of theirs echoed back — a displayed value breaking a rule this product's owner stated, and anything else one of those rules requires that this screen does not do. Anything smaller stays on your desk: wording you would have written differently, a label's phrasing, spacing, a convention nit on a value nobody asked about, anything you would call a polish suggestion — every one of them YOUR idea rather than something the person asked for by name. If the screen would ship fine without the fix, it is not a finding — return an empty list, in silence.
 
 Each finding has three fields:
 - severity: "block" or "warn".
