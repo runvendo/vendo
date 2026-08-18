@@ -251,6 +251,33 @@ describe("blindness", () => {
     );
   });
 
+  /**
+   * And a chooser the harness answered, for the same reason (2026-08-18).
+   *
+   * A typed value said so; a CHOSEN one said nothing at all, so a confirmation
+   * echoing the probe's own pick read as the screen inventing a target.
+   * `project-tracker/sprint-board` failed the honesty line on "CAI-153 will move to
+   * \"Backlog\"" — "an invented target not derived from the control", said the note,
+   * of the option the probe had chosen one press earlier.
+   */
+  it("renders a chosen option before the press outcome", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "To do",
+        dialog: 'Move issue?\n\nCAI-153 will move to "Backlog".',
+        changed: true,
+        chose: [{ field: "To do", value: "Backlog" }],
+        calls: [],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `the harness chose "Backlog" in "To do", then pressed "To do" — opened a confirmation:`,
+    );
+  });
+
   /** A press can do both, and then the judge is owed both: dropping the call
    *  would fail a "pressing it calls X" line on a screen that really does call X
    *  and then ask. */
@@ -359,6 +386,38 @@ describe("blindness", () => {
 
     expect(traceSent(model.doGenerateCalls[0]!)).toContain(
       `inside the confirmation, it has ONE pressable control, so it is judged by that control alone`,
+    );
+  });
+
+  /**
+   * The same for a second step the page shows INLINE (2026-08-18).
+   *
+   * "Press Open, pick a status, press Save" is one action with no dialog in it, and
+   * the record stopped at the first press — so "pressing Save moves the issue" was
+   * unprovable for the screens that had the whole flow right. The order is part of
+   * the evidence and is stated, because the Save's call carries what the press
+   * before it chose, and the judge has to be able to read it as the harness's.
+   */
+  it("renders what each control a press revealed in the page called", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Hand off",
+        changed: true,
+        calls: [],
+        revealed: [
+          { label: "Pick an assignee", changed: true, chose: [{ field: "Pick an assignee", value: "Rosa Iyer" }], calls: [] },
+          { label: "Confirm hand-off", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+        ],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "Hand off" — called nothing, and changed the screen`
+        + `\n  it revealed controls the screen did not have before, pressed in the order a person meets them`
+        + ` — the harness chose "Rosa Iyer" in "Pick an assignee", then pressing "Pick an assignee" called nothing,`
+        + ` and the screen moved; pressing "Confirm hand-off" called cancel_transfer({"id":"tr_1"})`,
     );
   });
 

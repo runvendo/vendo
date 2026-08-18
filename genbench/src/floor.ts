@@ -29,11 +29,13 @@ export interface WiredActionsResult {
    *  press that fires none is still one control that was pressed. */
   readonly pressed: number;
   readonly bindings: readonly Binding[];
-  /** What cleared an `action` case's bar, and which of the two did it: a press
-   *  that asked the host for something, or a confirmation that WORKS — one whose
-   *  own controls were pressed and found to both act and decline. Absent when
-   *  neither happened. */
-  readonly acted?: "tool" | "confirmation";
+  /** What cleared an `action` case's bar, and which of the three did it: a press
+   *  that asked the host for something, a confirmation that WORKS — one whose own
+   *  controls were pressed and found to both act and decline — or a control the
+   *  press REVEALED that wrote (2026-08-18), which is the same evidence one step
+   *  inside a second step the page shows inline instead of in a dialog. Absent when
+   *  none of them happened. */
+  readonly acted?: "tool" | "confirmation" | "revealed";
   /** Why the check failed for a reason no single binding carries — an `action`
    *  case none of whose presses did either. */
   readonly why?: string;
@@ -200,11 +202,18 @@ export function wiredActions(
   const confirmations = trace
     .filter((candidate) => candidate.dialog !== undefined)
     .map((candidate) => checkConfirmation(candidate.inside, world));
+  // A write one press inside an inline reveal is the action, proven (2026-08-18):
+  // "press Hand off, pick an assignee, press Confirm" is one flow, and the probe
+  // used to stop at the first press of it. Nothing else about the reveal is graded
+  // — its paths are not bindings, so a revealed control that did nothing costs the
+  // screen nothing. Walking further can only ever prove more.
   const acted = bindings.some((binding) => binding.effect === "tool" && holds(binding))
     ? "tool"
     : confirmations.some((broken) => broken === undefined)
       ? "confirmation"
-      : undefined;
+      : trace.some((candidate) => (candidate.revealed ?? []).some((path) => wrote(path.calls, world)))
+        ? "revealed"
+        : undefined;
   const why = !tags.includes("action") || acted !== undefined
     ? undefined
     : confirmations.length === 0

@@ -394,14 +394,13 @@ leaves. OpenRouter takes **no cut of tokens**: what it really charges is 5.5%
 (min $0.80) on credit top-ups, which is not a per-token price and is therefore in
 no number this benchmark produces.
 
-`openai/gpt-5.6-terra` is the exception and is priced at **$1/$6, half its own
-$2/$12 list rate**: the router's OpenAI endpoint carries a 50% discount on Terra
-today, while its Azure and Bedrock endpoints for the same model — and OpenAI's
-own pricing page — quote the undiscounted rate. That is a real bill and a
-temporary one, exactly as Sonnet 5's introductory rate is, and when it expires
-this row goes back up. `codex` is priced at OpenAI's own **$2/$12** for the same
-model, because its CLI bills the platform account directly rather than through
-the router.
+`openai/gpt-5.6-terra` is priced at its **list rate, $2/$12** — the same number
+`codex` uses for the same model — not the router's temporary 50% discount on
+Terra. The router's OpenAI endpoint bills $1/$6 today, but its Azure and Bedrock
+endpoints for the same model, and OpenAI's own pricing page, all quote the
+undiscounted $2/$12, and a coupon that can expire any day shouldn't flatter one
+column over the others it's compared against. The actual bill on that column may
+be lower than this table says while the discount lasts.
 
 ## The world
 
@@ -569,7 +568,15 @@ shapes. A value the harness invents is data no screen claimed, which is why the
 probe used to type nothing at all; the sentinel is what resolves that. The fill
 goes on the trace beside the press it bought (`filled` in `Probed`), and a tool
 call carrying `probe input` is unmistakably the harness's, so a wire that carried
-it into the arguments is **proof** the field is bound to the tool. Nothing hunts
+it into the arguments is **proof** the field is bound to the tool. A CHOICE says so
+too as of 2026-08-18 — `chose: [{ field, value }]` beside `filled`, on the press it
+was made for, from the precondition pass and from the press's own choosing alike —
+in the words the option SHOWS rather than its `value`, because the words are what a
+screen echoes back. It was the one thing the harness supplied that the trace never
+mentioned, and it cost a correct screen a line: `project-tracker/sprint-board`
+failed the honesty line on the confirmation "CAI-153 will move to \"Backlog\"", the
+judge calling Backlog "an invented target not derived from the control" when
+Backlog was the option the probe itself had picked one press earlier. Nothing hunts
 for the combination that unlocks a screen, and a control still locked after that
 one pass goes **unpressed and ungraded** — a screen being careful is not a screen
 with a dead control. A form the screen never locked is pressed **as it stands**,
@@ -682,6 +689,52 @@ happened to follow was credited with it. `buildlog/build-detail` lost *offers
 exactly one control to run it again* that way — "View lint log" was recorded as
 opening "Build queued to run again.", the retry toast from three presses earlier,
 which the judge correctly read as a second control that reruns the build.
+
+### The second step in the page (2026-08-18)
+
+**A second step does not need a dialog to live in**, and the probe only walked into
+`[role=dialog]`. "Press *Hand off* → an assignee picker and a *Confirm hand-off*
+appear in the page" is the same shape as a confirmation, and it was recorded as
+`effect: "state"` and nothing else: the controls that do the work went unpressed,
+and the write went unproven one press past where the evidence stopped.
+`project-tracker`'s `capacity-rebalance` and `my-issues-inbox` failed `actionProven`
+that way in the columns that had the whole flow **right**.
+
+So when a press puts pressable controls on the screen that were not there before,
+each of them is pressed once, and what each called goes on the trace as `revealed`
+(`Path` in `src/probe.ts`, narrated to the judge exactly as `inside` is). New is
+decided by comparing the controls before the press with the controls after it, each
+one identified by what it is, what role it answers to, how it is labelled and what
+it says — so a control the press merely re-rendered keeps its signature and is
+correctly not new, which is what stops a page that rebuilds its whole body on every
+press from reading as a page where every control just appeared. A signature that was
+already on the screen is never new, so a second *Save* beside a first one is missed
+rather than invented.
+
+Two things differ from the dialog walk, and both on purpose:
+
+- **In document order, on one page**, not one control per fresh page. A dialog's
+  controls are alternative ANSWERS to one question — pressing *Confirm* and then
+  *Cancel* means nothing — while a reveal's are usually one FORM, and the *Save* at
+  the end of it is locked until the picker before it is answered. Isolated, every
+  such Save would be disabled on its own fresh page and skipped, and the write
+  behind it would still be unprovable. Document order is the order a person meets
+  them, it is one pass, and nothing here hunts for a combination
+- **Nothing about the reveal is graded as a control of the screen.** Its paths are
+  not bindings, so a revealed control that did nothing costs the screen nothing;
+  the only verdict a reveal can reach is that an `action` case's write is
+  **proven** (`acted: "revealed"`), which is why walking one press further moves
+  the floor in one direction only
+
+A dialog and a reveal are never both walked for one press: a dialog's controls ARE
+controls that press revealed, and walking them twice would press each way out of a
+confirmation a second time without the isolation that walk promises. A control an
+earlier press in the sequence took off the screen is **skipped**, not pressed into
+thin air — a five-second click that lands on nothing would go on the trace as a
+control that did nothing, which is the exact false failure this walk exists to stop
+inventing. The cost of that is stated with the other limits: a step whose dismiss
+comes before its confirm in the document loses the confirm, because this is one pass
+and never a hunt.
 
 ## Liveness
 
@@ -897,6 +950,19 @@ the others. The sentence the writers are given caught up with it the same day:
 so every prompt that describes the seam changed too — the same added bytes for
 every column, which is what keeps them comparable with each other.
 
+A select's own value moving is a sixth, the same day: the four numbers `Look`
+already read are blind to a chooser whose selected option changed and nothing
+else did — count, elements and `on` don't move on a value alone, and `text`
+compares a LENGTH, which two different labels can share by coincidence — so a
+screen that saves on choice, or one whose choice only unlocks a control further
+down the page, read as `effect: "none"` on `project-tracker/file-bug` and
+`trades-accounting/log-job-expense` alike. Every select's current value is read
+and compared now, beside the other four, so a chooser the probe successfully
+changes always registers as having moved, the same standing a checkbox or a
+switch already had from its own `on` count. One direction only: this can only
+turn a `none` the probe used to record into a `state`, never the other way, so no
+run recorded before it compares with one after it.
+
 Three grading bugs closed later on 2026-08-18, and each moves numbers. The
 judge's identity strike no longer eats the word `vendor`, so every
 `trades-accounting` and `property-management` case is graded on prose the harness
@@ -917,6 +983,23 @@ still missing and needs a field on `ScreenOutcome`
 (`packages/apps/src/contract/screen.ts`) — from out here the reviewer's verdict is
 watchable and whether the repair round ran is not.
 
+Two probe fairness fixes later on 2026-08-18 are a fifth and a sixth break, and
+unlike the ones above the floor half of it moves in **one direction only**. Walking
+the controls a press REVEALS in the page means an `action` case can now be proven by
+a write one press inside an inline second step (`acted: "revealed"`), so a screen
+that was correctly wired and simply unreachable — the probe stopping at the press
+that opened the step — goes from a failed `actionProven` to a passed one. Nothing
+can newly fail on it: a revealed control is not a binding, so one that does nothing
+costs the screen nothing, and every column is walked by the same code. But traces
+recorded before it carry no `revealed` paths at all and absent evidence has never
+been a pass here, so an earlier run's `actionProven` still does not compare with a
+later one's. The judge's reading moves in both directions on both fixes, because both
+add evidence it did not have: the revealed paths, and `chose` — the trace now says
+which values the HARNESS picked, which is what `project-tracker/sprint-board` needed
+to stop losing the honesty line to a confirmation echoing the probe's own choice
+back. `rubricVersion` stays **5**: the rubric and the prompt are untouched, and what
+changed is what the trace tells the judge.
+
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of
 nine of them costs now — and a locked control costs one pass over the screen's
@@ -930,10 +1013,19 @@ unlocking something a person could press; where it guards a control that needs a
 second condition as well, it unlocks nothing visible and is recorded as a control
 that did nothing. The pass runs before the press that opens a dialog and never
 inside one, so a control locked behind a field in the dialog itself is still
-recorded as unproven. Multi-step flows are followed
+recorded as unproven. An inline step costs one press per control it revealed, and
+those are the cheapest presses the probe makes — they share the page the opening
+press left standing rather than reloading for each — but a screen where every row
+reveals a small form pays for all of them. Multi-step flows are followed
 exactly one dialog deep: a confirmation that opens a second confirmation is
 recorded as a press that changed the screen, and nothing inside the second one is
-pressed. A control that navigates off the screen — a link with an `href` — is
+pressed. A reveal is one level deep the same way, and it is one PASS as well as one
+level: the controls it revealed are pressed in document order, so a step whose
+dismiss sits before its confirm loses the confirm, and a control that only appears
+after two of them are answered is never reached. A step the screen keeps in the
+markup and merely un-hides is not a reveal either — identity is what a control is
+and says, not whether it is laid out — so those controls are pressed as controls of
+the screen, from the page's first count, exactly as they were before. A control that navigates off the screen — a link with an `href` — is
 recorded as having gone somewhere and called nothing, which is the only thing that
 can be read once `window.vendo` has left with the page.
 
@@ -971,3 +1063,11 @@ past: `store-admin` lands on 2027-01-01 off a coupon expiring 2026-12-31, and
 `trades-accounting` on 2026-09-05 off an invoice due 2026-09-04. The remedy is
 one sentence of prose in that world's file — at the price every world-file edit
 carries, a new `world.hash` and a fresh start for that world's numbers.
+
+`buildlog`'s `get_build_stages` and `get_build_log` ignore `build_id`: one static
+fixture answers every build, always build 4188's. Nothing in the world format
+lets a tool's canned data vary by argument (`cannedResponse` in `src/world.ts`
+returns `tool.data` untouched), so the fix is documentation, not data — each
+tool's `does` now says plainly that it never varies and to only ask about build
+4188, which is what both cases that call them already do. A new `world.hash`,
+so `buildlog` runs from before this fix do not compare with ones after it.

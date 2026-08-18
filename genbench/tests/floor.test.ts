@@ -408,6 +408,48 @@ describe("wiredActions", () => {
       expect(dead.why).toContain('its confirmation has one control, "OK"');
     });
 
+    /**
+     * The same evidence one press inside a step the page shows INLINE
+     * (2026-08-18).
+     *
+     * "Press Hand off, pick an assignee, press Confirm" is a whole action with no
+     * dialog anywhere in it, and the probe walked into `[role=dialog]` and not into
+     * this — so `project-tracker`'s `capacity-rebalance` and `my-issues-inbox`
+     * failed this bar in the columns that had the flow right, with the write one
+     * press past where the evidence stopped. A reveal is not a confirmation and is
+     * not graded like one: there is no decline to look for, only whether anything
+     * the press revealed really went through.
+     */
+    describe("an inline second step", () => {
+      const step = (revealed: Probed["revealed"]): Probed[] => [
+        { label: "Hand off", changed: true, calls: [], ...(revealed === undefined ? {} : { revealed }) },
+      ];
+      const PICKED = { label: "Pick an assignee", changed: true, calls: [] };
+
+      it("is proven by a revealed control that wrote", () => {
+        const result = wiredActions(step([PICKED, ACTS]), world, ["action"]);
+        expect(result.pass).toBe(true);
+        expect(result.acted).toBe("revealed");
+      });
+
+      it("is NOT proven where nothing it revealed wrote", () => {
+        const result = wiredActions(step([PICKED, { label: "Confirm", changed: false, calls: [] }]), world, ["action"]);
+        expect(result.pass).toBe(false);
+        expect(result.acted).toBeUndefined();
+      });
+
+      /** Walking one press further can only ever prove MORE: a revealed control
+       *  that did nothing is not a binding, so it cannot fail a check the screen's
+       *  own controls passed. */
+      it("never turns a revealed control that did nothing into a dead one", () => {
+        const result = wiredActions(step([{ label: "Confirm", changed: false, calls: [] }]), world, []);
+        expect(result.bindings).toEqual([
+          { where: "Hand off", effect: "state", why: "changed the screen without calling a tool" },
+        ]);
+        expect(result.pass).toBe(true);
+      });
+    });
+
     /** A dialog nobody could press into proves nothing — and neither does a
      *  trace recorded before the probe went inside, which is why no run from
      *  before tonight compares with one after it. */

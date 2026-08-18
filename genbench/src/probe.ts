@@ -97,6 +97,16 @@ const TYPED = "probe input";
  *  the page paints its own toggle, `:checked` where it uses the browser's. */
 const ON = "[aria-checked=true], :checked";
 
+/** Every chooser on the page, shown or not hidden from assistive tech — the same
+ *  filter every other species gets. A `<select>` has no "on" state to count, so
+ *  it needs its own read: see `Look.chosen` below. */
+const SELECTS = `select${SHOWN}`;
+
+/** Joins the values `Look.chosen` reads off every select into one string. Not a
+ *  character any option value would hold, so two selects' worth of values never
+ *  read as one long one that happens to match. */
+const CHOSEN_SEP = String.fromCharCode(0);
+
 /**
  * What a control ALREADY BEING the one showing looks like, on the control itself:
  * the selected tab, the item marked as where you are, the radio already on.
@@ -159,6 +169,21 @@ export interface Filled {
 }
 
 /**
+ * One chooser the HARNESS answered for the screen, and the option it picked — in
+ * the words that option SHOWS, because those are the words a screen echoes back.
+ *
+ * A typed value has said `filled: [...]` since the day the probe started typing,
+ * and a CHOSEN one said nothing at all, so a confirmation quoting the harness's own
+ * pick read as the screen inventing a target: `project-tracker/sprint-board` lost
+ * the honesty line to "CAI-153 will move to \"Backlog\"" — Backlog being the option
+ * the probe had chosen one line earlier, in a trace that never mentioned it.
+ */
+export interface Chosen {
+  readonly field: string;
+  readonly value: string;
+}
+
+/**
  * One way out of a confirmation, pressed on its own fresh page.
  *
  * Which control confirms is still not the probe's business — it presses ALL of
@@ -169,6 +194,10 @@ export interface Path {
   readonly label: string;
   /** The dialog closed, or the screen moved under it. */
   readonly changed: boolean;
+  /** Present exactly when this press was a CHOICE — a chooser is pressed by
+   *  choosing, inside a walk as much as outside one, and a call carrying the
+   *  harness's pick has to say whose pick it was wherever it is read. */
+  readonly chose?: readonly Chosen[];
   readonly calls: readonly Fired[];
 }
 
@@ -189,11 +218,35 @@ export interface Probed {
    *  Present exactly when `dialog` is; empty when the dialog had nothing
    *  pressable in it, which is itself the verdict on that dialog. */
   readonly inside?: readonly Path[];
+  /**
+   * Every control this press put on the screen that was not on it before, pressed
+   * once each, in the order a person meets them (2026-08-18).
+   *
+   * A second step does not need a dialog to live in. "Click Open → a status picker
+   * and a Save button appear in the page" is the same shape as a confirmation and
+   * was recorded as `effect: "state"` and nothing else, so the controls that do the
+   * work went unpressed and the action went unproven: `project-tracker`'s
+   * `capacity-rebalance` and `my-issues-inbox` failed `actionProven` in the columns
+   * that had them right, with the write one press past where the evidence stopped.
+   *
+   * The walk is one level deep and never recursive, exactly like `inside`, and it is
+   * the one the reveal itself asks for: the new controls are pressed in document
+   * order on the page the opening press left standing, because a picker and the Save
+   * beside it are one step and not two ways out of the same question. Absent where a
+   * press revealed nothing, or where nothing it revealed could be pressed.
+   */
+  readonly revealed?: readonly Path[];
   /** The fields the harness filled to get this press, and with what. Present
    *  exactly when it filled any: the screen did not have this data, so every
    *  reader of the trace — the judge included — is told where it came from before
    *  it grades a call that carries it. */
   readonly filled?: readonly Filled[];
+  /** The choosers the harness answered to get this press, and with what — the
+   *  precondition pass's, and the press's own where the control pressed was a
+   *  chooser. Present exactly when it chose any, and on the trace for `filled`'s
+   *  reason: a screen echoing the harness's pick back is not a screen inventing
+   *  one. */
+  readonly chose?: readonly Chosen[];
   /** The press visibly moved the screen — a dialog opened, a tab switched, a row
    *  was dismissed, a toggle flipped. What tells a control that only changes local
    *  state apart from one that is dead, since neither asks the host for anything. */
@@ -206,9 +259,10 @@ export interface Probed {
   readonly calls: readonly Fired[];
 }
 
-/** What the screen is, in the four cheapest numbers that answer "did that press
- *  do anything": what it has asked the host for, how much text it is showing, how
- *  many elements are showing it, and how many of its controls are on.
+/** What the screen is, in the cheapest readings that answer "did that press do
+ *  anything": what it has asked the host for, how much text it is showing, how
+ *  many elements are showing it, how many of its controls are on, how many are
+ *  pressable, and which option every chooser currently holds.
  *
  *  One reader for both sides of a press, so what the wait below watched for and
  *  what the trace records can never disagree about what changed. */
@@ -227,6 +281,16 @@ interface Look {
    *  nothing — the same false failure one turn on, and the one pressing choosers
    *  at all would otherwise have invented (2026-08-18). */
   readonly live: number;
+  /** Every `<select>` on the page's current value, joined in document order. A
+   *  chooser moving from "Open" to "Closed" changes none of the four readings
+   *  above whenever the two labels happen to share a length — count, elements and
+   *  `on` are untouched by a value changing at all, and `text` compares a LENGTH
+   *  rather than the letters in it — so a screen that saves on choice, with
+   *  nothing else on the page moving, read as a control that did nothing
+   *  (2026-08-18, `project-tracker/file-bug` and `trades-accounting/log-job-expense`).
+   *  A separator no option value contains keeps two selects' worth of values from
+   *  reading as one long one that happens to match. */
+  readonly chosen: string;
 }
 
 /** Nothing evaluated in the page may be a NAMED function: tsx compiles this file
@@ -239,14 +303,15 @@ interface Look {
  *  reading them as an exception loses the whole case instead of one press. */
 const look = async (page: Page): Promise<Look> =>
   await page.evaluate(
-    (what: { on: string; live: string }) => ({
+    (what: { on: string; live: string; selects: string; sep: string }) => ({
       calls: window.vendo?.calls ?? [],
       text: document.body.innerText.length,
       elements: document.querySelectorAll("*").length,
       on: document.querySelectorAll(what.on).length,
       live: document.querySelectorAll(what.live).length,
+      chosen: [...document.querySelectorAll<HTMLSelectElement>(what.selects)].map((select) => select.value).join(what.sep),
     }),
-    { on: ON, live: ACTIONABLE },
+    { on: ON, live: ACTIONABLE, selects: SELECTS, sep: CHOSEN_SEP },
   );
 
 /** The wait a press earns: until it asks the host for something it had not asked
@@ -262,8 +327,11 @@ const settle = async (page: Page, before: Look): Promise<void> => {
     elements: before.elements,
     on: before.on,
     live: before.live,
+    chosen: before.chosen,
     onSelector: ON,
     liveSelector: ACTIONABLE,
+    selectSelector: SELECTS,
+    sep: CHOSEN_SEP,
   };
   await page
     .waitForFunction(
@@ -272,12 +340,52 @@ const settle = async (page: Page, before: Look): Promise<void> => {
         || document.body.innerText.length !== mark.text
         || document.querySelectorAll("*").length !== mark.elements
         || document.querySelectorAll(mark.onSelector).length !== mark.on
-        || document.querySelectorAll(mark.liveSelector).length !== mark.live,
+        || document.querySelectorAll(mark.liveSelector).length !== mark.live
+        || [...document.querySelectorAll<HTMLSelectElement>(mark.selectSelector)]
+            .map((select) => select.value)
+            .join(mark.sep) !== mark.chosen,
       was,
       { timeout: EFFECT_MS },
     )
     .catch(() => undefined);
 };
+
+/**
+ * Every control on the screen right now, each as the one string that identifies it
+ * across a re-paint: what it is, what role it answers to, how it is labelled, and
+ * what it says.
+ *
+ * Read on both sides of a press, because the difference is what that press
+ * REVEALED. `textContent` rather than `innerText`, so identity does not move with
+ * layout: a control the press merely re-rendered keeps its signature and is
+ * correctly not new, which is what keeps a page that rebuilds its whole body on
+ * every press from reading as a page where every control just appeared.
+ */
+const controlsOn = async (page: Page): Promise<string[]> =>
+  await page
+    .evaluate(
+      (species: string) =>
+        [...document.querySelectorAll(species)].map(
+          (node) =>
+            `${node.tagName}/${node.getAttribute("role") ?? ""}/${node.getAttribute("aria-label") ?? ""}/${node.textContent?.trim() ?? ""}`,
+        ),
+      CONTROLS,
+    )
+    .catch(() => []);
+
+/** Which of the controls on the screen now were not on it before, as indices into
+ *  `CONTROLS` in document order on the page as the press left it. A signature that
+ *  was already there is not new however many copies of it there are now: this would
+ *  rather miss a second "Save" than walk a control that was always on the screen. */
+const appearedIn = (before: readonly string[], after: readonly string[]): number[] =>
+  after.flatMap((control, index) => (before.includes(control) ? [] : [index]));
+
+/** What the harness answered for the screen in one precondition pass: the choosers
+ *  it set and the boxes it filled, each in the words the trace reports them by. */
+interface Given {
+  readonly chose: readonly Chosen[];
+  readonly filled: readonly Filled[];
+}
 
 /**
  * Everything the screen is asking for, given once, in document order: every
@@ -297,17 +405,26 @@ const settle = async (page: Page, before: Look): Promise<void> => {
  * on the page, so a form defaulting priority to `high` showed `high` and sent
  * `urgent`, and was convicted for the harness's edit.
  */
-const supply = async (page: Page): Promise<Filled[]> => {
+const supply = async (page: Page): Promise<Given> => {
   const choosers = page.locator(CHOICE);
   const many = await choosers.count();
+  const chose: Chosen[] = [];
   for (let index = 0; index < many; index += 1) {
     const chooser = choosers.nth(index);
     const option = await chooser
-      .evaluate((node: HTMLSelectElement) =>
-        node.value === "" ? [...node.options].find((choice) => choice.value !== "" && !choice.disabled)?.value : undefined,
-      )
+      .evaluate((node: HTMLSelectElement) => {
+        if (node.value !== "") return undefined;
+        const first = [...node.options].find((choice) => choice.value !== "" && !choice.disabled);
+        return first === undefined ? undefined : { value: first.value, text: first.text };
+      })
       .catch(() => undefined);
-    if (option !== undefined) await chooser.selectOption(option, { timeout: CLICK_MS }).catch(() => undefined);
+    if (option === undefined) continue;
+    // Named BEFORE the choice, because a chooser's name is the option it is
+    // SHOWING: read after, it would report the harness's own pick as the field
+    // that pick went into.
+    const field = await nameOf(chooser, index);
+    await chooser.selectOption(option.value, { timeout: CLICK_MS }).catch(() => undefined);
+    chose.push({ field, value: option.text });
   }
   // Visible only: a field the screen is not showing is not one it is asking for,
   // and waiting out the bound on each of them would spend the case's budget.
@@ -325,7 +442,7 @@ const supply = async (page: Page): Promise<Filled[]> => {
       .catch(() => undefined);
     filled.push({ field: await nameOf(field, index), value: TYPED });
   }
-  return filled;
+  return { chose, filled };
 };
 
 /** What a control is called, in the words a person reads off it — or, for a box
@@ -350,17 +467,20 @@ const nameOf = async (element: Locator, index: number): Promise<string> => {
  * the first real option that is not the one already showing. Re-choosing the
  * option a `<select>` is already on fires no `change` at all, so a screen that
  * saves on choice would read as a dead control; and the placeholder is no more a
- * choice here than it is in `supply`.
+ * choice here than it is in `supply`. Its `value` is what the choice is made with
+ * and its `text` is what goes on the trace, because the words are what a screen
+ * echoes and a `value` of `backlog` beside a confirmation reading "Backlog" is a
+ * connection the judge should not have to make.
  *
  * `already` — pressing it could only repeat what the screen already shows
  * (`ALREADY`), a chooser with no option but the one it is on included.
  */
-const intent = async (element: Locator): Promise<{ option?: string; already: boolean }> =>
+const intent = async (element: Locator): Promise<{ option?: { value: string; text: string }; already: boolean }> =>
   await element
     .evaluate((node: Element, already: string) => {
       if (!(node instanceof HTMLSelectElement)) return { already: node.matches(already) };
       const option = [...node.options].find((choice) => choice.value !== "" && !choice.disabled && !choice.selected);
-      return option === undefined ? { already: true } : { option: option.value, already: false };
+      return option === undefined ? { already: true } : { option: { value: option.value, text: option.text }, already: false };
     }, ALREADY)
     .catch(() => ({ already: false }));
 
@@ -390,6 +510,15 @@ const dialogsOn = async (page: Page): Promise<string[]> =>
     .then((texts) => texts.map((text) => text.trim().slice(0, DIALOG_CHARS)))
     .catch(() => []);
 
+/** One press, and the one thing about it a caller has to act on beyond the record:
+ *  where the controls it REVEALED are, as indices into `CONTROLS` on the page the
+ *  press left standing. Empty for the press that navigated away, which left no
+ *  screen to compare. */
+interface Pressed {
+  readonly probed: Probed;
+  readonly appeared: readonly number[];
+}
+
 /**
  * One press, read the same way whichever side of a dialog's edge it is on.
  *
@@ -397,18 +526,19 @@ const dialogsOn = async (page: Page): Promise<string[]> =>
  * it asks the host through the same recorder, and it moves the screen the same
  * way. Written once so the two can never be graded by different rules.
  */
-const press = async (visit: Visit, element: Locator, label: string): Promise<Probed> => {
+const press = async (visit: Visit, element: Locator, label: string): Promise<Pressed> => {
   // Read BEFORE the click, and after any precondition: what a choice moved on
   // the screen belongs to the choice, and crediting it to the press would let a
   // chooser make a dead button look like a live one.
   const before = await look(visit.page);
   const stood = await dialogsOn(visit.page);
+  const had = await controlsOn(visit.page);
   const { option, already } = await intent(element);
   // Every species is pressed by clicking, except the one that is pressed by
   // choosing. What it DID is read the same way for both.
   await (option === undefined
     ? element.click({ timeout: CLICK_MS })
-    : element.selectOption(option, { timeout: CLICK_MS })
+    : element.selectOption(option.value, { timeout: CLICK_MS })
   ).catch(() => undefined);
   await settle(visit.page, before);
 
@@ -422,21 +552,29 @@ const press = async (visit: Visit, element: Locator, label: string): Promise<Pro
   // nothing on the way. The screen is put back for the next candidate rather
   // than the whole case being lost to one anchor.
   const after = await look(visit.page).catch(() => undefined);
+  const appeared = after === undefined ? [] : appearedIn(had, await controlsOn(visit.page));
   if (after === undefined) await visit.reset();
   return {
-    label,
-    ...(said === undefined ? {} : { dialog: said }),
-    ...(already ? { alreadyActive: true as const } : {}),
-    changed:
-      after === undefined
-      || after.text !== before.text
-      || after.elements !== before.elements
-      || after.on !== before.on
-      || after.live !== before.live,
-    // Only what THIS press asked for. The recorder is the page's, not the
-    // press's, so handing over the whole array credited one load-time call to
-    // every control on the screen and graded a dead button as wired.
-    calls: after?.calls.slice(before.calls.length) ?? [],
+    probed: {
+      label,
+      ...(said === undefined ? {} : { dialog: said }),
+      ...(already ? { alreadyActive: true as const } : {}),
+      // The harness's own pick, on the press it was made by, for the same reason a
+      // fill is on the press it bought.
+      ...(option === undefined ? {} : { chose: [{ field: label, value: option.text }] }),
+      changed:
+        after === undefined
+        || after.text !== before.text
+        || after.elements !== before.elements
+        || after.on !== before.on
+        || after.live !== before.live
+        || after.chosen !== before.chosen,
+      // Only what THIS press asked for. The recorder is the page's, not the
+      // press's, so handing over the whole array credited one load-time call to
+      // every control on the screen and graded a dead button as wired.
+      calls: after?.calls.slice(before.calls.length) ?? [],
+    },
+    appeared,
   };
 };
 
@@ -463,11 +601,57 @@ const insideDialog = async (visit: Visit, reopen: () => Promise<void>): Promise<
   for (let index = 0; index < many; index += 1) {
     if (index > 0) await reopen();
     const control = controls.nth(index);
-    const { label, changed, calls } = await press(visit, control, await nameOf(control, index));
+    const { probed } = await press(visit, control, await nameOf(control, index));
     // The dialog's own words are on the press that opened it; an in-dialog press
     // that leaves it standing has not opened a second confirmation, so nothing
     // here carries one.
-    paths.push({ label, changed, calls });
+    paths.push({
+      label: probed.label,
+      changed: probed.changed,
+      ...(probed.chose === undefined ? {} : { chose: probed.chose }),
+      calls: probed.calls,
+    });
+  }
+  return paths;
+};
+
+/**
+ * Every control a press REVEALED, pressed in document order on the page that press
+ * left standing (2026-08-18).
+ *
+ * The dialog walk one level out, for the second step that has no dialog to live in:
+ * "press Open, and a status picker and a Save appear in the page" is the same shape
+ * as a confirmation, and the probe walked into `[role=dialog]` and not into this —
+ * so the controls that do the work went unpressed and the screens that had the
+ * second step RIGHT were the ones that failed `actionProven`.
+ *
+ * In ORDER, on ONE page, which is where this parts company with the dialog walk and
+ * has to: a dialog's controls are alternative ANSWERS to one question — press
+ * "Confirm" and pressing "Cancel" afterwards means nothing — while a reveal's are
+ * usually one FORM, and the Save at the end of it is locked until the picker before
+ * it is answered. Isolating each path would have left every such Save disabled and
+ * skipped, which is the failure this exists to fix. Document order is the order a
+ * person meets them, it is one pass, and nothing here hunts for a combination.
+ *
+ * A control an earlier press in the sequence took off the screen is skipped rather
+ * than pressed into thin air: a five-second click that lands on nothing would go on
+ * the trace as a control that did nothing, which invents exactly the dead control
+ * this walk exists to stop inventing.
+ */
+const insideReveal = async (visit: Visit, appeared: readonly number[]): Promise<Path[]> => {
+  const controls = visit.page.locator(CONTROLS);
+  const paths: Path[] = [];
+  for (const index of appeared) {
+    const control = controls.nth(index);
+    const live = control.and(visit.page.locator(ACTIONABLE)).filter({ visible: true });
+    if ((await live.count()) === 0) continue;
+    const { probed } = await press(visit, control, await nameOf(control, index));
+    paths.push({
+      label: probed.label,
+      changed: probed.changed,
+      ...(probed.chose === undefined ? {} : { chose: probed.chose }),
+      calls: probed.calls,
+    });
   }
   return paths;
 };
@@ -493,13 +677,13 @@ export async function probe(visit: Visit): Promise<Probed[]> {
     // Whether the screen had to be given what it asked for before this control
     // would take a press — which is half of the walk back to a dialog it opens.
     let gave = false;
-    // And what of that the harness TYPED, which belongs on this press: it is the
-    // one part of the precondition the screen did not supply itself.
-    let typed: readonly Filled[] = [];
+    // And what the harness typed and chose to do it, which belongs on this press:
+    // it is the part of the precondition the screen did not supply itself.
+    let given: Given = { chose: [], filled: [] };
     if ((await live.count()) === 0) {
       if (!asks) continue;
       touched = true;
-      typed = await supply(visit.page);
+      given = await supply(visit.page);
       gave = true;
       // Still locked after the screen got what it asked for: it is guarding
       // something else, and a screen being careful is not a screen with a dead
@@ -512,21 +696,35 @@ export async function probe(visit: Visit): Promise<Probed[]> {
     }
     touched = true;
     const label = await nameOf(element, index);
-    const pressed = { ...(await press(visit, element, label)), ...(typed.length === 0 ? {} : { filled: typed }) };
-    if (pressed.dialog === undefined) {
-      trace.push(pressed);
+    const { probed, appeared } = await press(visit, element, label);
+    // The precondition's choices and the press's own are one list: both are the
+    // harness's, and a reader asking where a value came from should not have to
+    // know which turn of the probe supplied it.
+    const chose = [...given.chose, ...(probed.chose ?? [])];
+    const pressed = {
+      ...probed,
+      ...(given.filled.length === 0 ? {} : { filled: given.filled }),
+      ...(chose.length === 0 ? {} : { chose }),
+    };
+    if (probed.dialog !== undefined) {
+      // The same walk again, for the next path inside the dialog: the screen from
+      // scratch, what it asked for where this control needed it, then this control.
+      // Its result is thrown away — it is how the dialog gets back on the screen,
+      // not a second reading of the press that opened it.
+      const reopen = async (): Promise<void> => {
+        await visit.reset();
+        if (gave) await supply(visit.page);
+        await press(visit, element, label);
+      };
+      trace.push({ ...pressed, inside: await insideDialog(visit, reopen) });
       continue;
     }
-    // The same walk again, for the next path inside the dialog: the screen from
-    // scratch, what it asked for where this control needed it, then this control.
-    // Its result is thrown away — it is how the dialog gets back on the screen,
-    // not a second reading of the press that opened it.
-    const reopen = async (): Promise<void> => {
-      await visit.reset();
-      if (gave) await supply(visit.page);
-      await press(visit, element, label);
-    };
-    trace.push({ ...pressed, inside: await insideDialog(visit, reopen) });
+    // A dialog and an inline reveal are never walked for the same press: a dialog's
+    // controls ARE controls the press revealed, and walking them twice would press
+    // each way out of a confirmation a second time under a name that says the
+    // opposite about what isolation it got.
+    const paths = appeared.length === 0 ? [] : await insideReveal(visit, appeared);
+    trace.push(paths.length === 0 ? pressed : { ...pressed, revealed: paths });
   }
   return trace;
 }

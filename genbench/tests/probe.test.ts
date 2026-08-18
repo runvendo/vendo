@@ -293,6 +293,65 @@ const OPEN_FORM = screen(
 );
 
 /**
+ * The second step in the PAGE, with no dialog anywhere near it.
+ *
+ * "Press Hand off, pick an assignee, press Confirm" is a whole action, and the
+ * probe walked into `[role=dialog]` and not into this — so the press that opens the
+ * step was recorded as a control that changed the screen, the controls that do the
+ * work went unpressed, and `project-tracker`'s `capacity-rebalance` and
+ * `my-issues-inbox` failed `actionProven` in the columns that had the flow RIGHT.
+ *
+ * The picker and the Save are one step, not two ways out of one question: the Save
+ * is locked until the picker is answered, so this page is also the proof that the
+ * revealed controls are pressed in order on ONE page. Walked in isolation like a
+ * dialog's paths, the Save would be disabled on its own fresh page and skipped, and
+ * the write behind it would still be unprovable.
+ */
+const reveal = (save: string): string =>
+  screen(
+    `<button id="go">Set a cap</button><div id="step"></div>`,
+    `document.getElementById("go").addEventListener("click", function () {
+    setTimeout(function () {
+      document.getElementById("step").innerHTML =
+        '<select id="cap"><option value="">Pick a cap</option><option value="5000">$50 a month</option></select>'
+        + '<button id="save" disabled>Save cap</button>';
+      document.getElementById("cap").addEventListener("change", function () {
+        document.getElementById("save").disabled = this.value === "";
+      });
+      ${save}
+    }, 50);
+  });`,
+  );
+
+const REVEALS = reveal(`document.getElementById("save").addEventListener("click", function () {
+        window.vendo.callTool("set_budget", {
+          category: "coffee",
+          limit_cents: Number(document.getElementById("cap").value),
+        });
+      });`);
+
+/** The same step with its Save wired to nothing — identical to a person right up
+ *  until they press it, and the class of screen that must not start passing
+ *  because the probe walked one press further. */
+const REVEALS_DEAD = reveal("");
+
+/** A step whose first control takes the step away. The walk is one pass in
+ *  document order and never a hunt, so what is gone when its turn comes is
+ *  skipped — recording it as a press that fired nothing would invent the dead
+ *  control this walk exists to stop inventing. */
+const REVEALS_DISMISS = screen(
+  `<button id="go">Set a cap</button><div id="step"></div>`,
+  `document.getElementById("go").addEventListener("click", function () {
+    var step = document.getElementById("step");
+    step.innerHTML = '<button id="drop">Not now</button><button id="save">Save cap</button>';
+    document.getElementById("drop").addEventListener("click", function () { step.innerHTML = ""; });
+    document.getElementById("save").addEventListener("click", function () {
+      window.vendo.callTool("set_budget", { category: "coffee", limit_cents: 5000 });
+    });
+  });`,
+);
+
+/**
  * The whole confirmation chain: the press opens a `[role=dialog]` with a message
  * and whichever controls the case is about, a beat after the click.
  *
@@ -557,11 +616,16 @@ describe("the click probe grades what a browser actually does", () => {
       // button is the other half of that: the screen moving under the choice
       // belongs to the choice, and crediting it to the press would make a dead
       // button look alive.
+      //
+      // `chose` is on both (2026-08-18): the harness picked `coffee` and the call
+      // carries `coffee`, and a trace that did not say so let the judge read the
+      // harness's own pick as a value the screen invented.
       expect(trace).toEqual([
-        { label: "Pick a category", changed: true, calls: [] },
+        { label: "Pick a category", changed: true, chose: [{ field: "Pick a category", value: "coffee" }], calls: [] },
         {
           label: "Save cap",
           changed: false,
+          chose: [{ field: "Pick a category", value: "coffee" }],
           calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
         },
       ]);
@@ -573,11 +637,16 @@ describe("the click probe grades what a browser actually does", () => {
 
       // Named by the option it was SHOWING, fired with the one it moved to: the
       // two together are the "not the one already showing" rule, which is the
-      // whole reason a select with no placeholder can be pressed at all.
+      // whole reason a select with no placeholder can be pressed at all. `changed`
+      // is true on its own account now (2026-08-18) — the select's displayed
+      // value moved from $10 to $50 — on top of the call it fired. And `chose` is
+      // what says the $50 in that call is the harness's pick rather than a figure
+      // the screen invented, on a screen whose shot still reads $10.
       expect(trace).toEqual([
         {
           label: "$10 a month",
-          changed: false,
+          changed: true,
+          chose: [{ field: "$10 a month", value: "$50 a month" }],
           calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
         },
       ]);
@@ -589,10 +658,12 @@ describe("the click probe grades what a browser actually does", () => {
 
       // $50 is the screen's own default and it is what the call carries. Set to
       // its first option like the chooser beside it, the screen would have shown
-      // one number and sent another.
+      // one number and sent another. Only the chooser the harness DID answer is on
+      // `chose`, which is the same rule read from the other end.
       expect(trace.find((probed) => probed.label === "Save cap")).toEqual({
         label: "Save cap",
         changed: false,
+        chose: [{ field: "Pick a category", value: "coffee" }],
         calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
       });
     });
@@ -631,14 +702,19 @@ describe("the click probe grades what a browser actually does", () => {
 
       // The button is the careful half — still locked after the choice, so it is
       // never pressed and never graded, and `pressed: 1` is the chooser rather
-      // than it. That chooser is wired to nothing and unlocks nothing, so it is a
-      // dead control and is graded as one, exactly as a dead button is.
-      expect(trace).toEqual([{ label: "Pick a category", changed: false, calls: [] }]);
+      // than it. The chooser itself is not dead: choosing "coffee" moves its own
+      // displayed value from the placeholder, on the same evidence a toggle that
+      // only flips itself is credited with (2026-08-18) — `effect: "state"` is
+      // "the screen moved without calling a tool", and unlocking nothing else is
+      // a separate, true fact this trace still carries in `pressed: 1`.
+      expect(trace).toEqual([
+        { label: "Pick a category", changed: true, chose: [{ field: "Pick a category", value: "coffee" }], calls: [] },
+      ]);
 
       const result = wiredActions(trace, world);
       expect(result.pressed).toBe(1);
       expect(result.bindings).toEqual([
-        { where: "Pick a category", effect: "none", why: "pressing it called nothing and changed nothing" },
+        { where: "Pick a category", effect: "state", why: "changed the screen without calling a tool" },
       ]);
     });
   });
@@ -817,6 +893,86 @@ describe("the click probe grades what a browser actually does", () => {
       expect(trace).toEqual([
         { label: "Cancel transfer", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
       ]);
+    });
+  });
+
+  /**
+   * The same walk for the second step that has no dialog to live in (2026-08-18).
+   *
+   * A press that reveals new pressable controls INLINE was recorded as a control
+   * that changed the screen and nothing more, so a correctly wired second step went
+   * unproven: two `project-tracker` screens failed `actionProven` with their write
+   * one press past where the evidence stopped, in the columns that had them right.
+   * The controls a press revealed are pressed now — one level deep, never
+   * recursive, and in the order a person meets them rather than one per fresh page,
+   * because a picker and the Save beside it are one step and not two answers to one
+   * question.
+   */
+  describe("presses the controls a press reveals in the page", () => {
+    it("proves an action whose write lives one press inside an inline step", async () => {
+      const trace = await traceOf(REVEALS);
+
+      // The chosen option is on the path that chose it, in the words it SHOWS —
+      // the same reason a filled box is on the press it bought, one level in.
+      expect(trace).toEqual([
+        {
+          label: "Set a cap",
+          changed: true,
+          calls: [],
+          revealed: [
+            { label: "Pick a cap", changed: true, chose: [{ field: "Pick a cap", value: "$50 a month" }], calls: [] },
+            {
+              label: "Save cap",
+              changed: false,
+              calls: [{ name: "set_budget", args: { category: "coffee", limit_cents: 5000 } }],
+            },
+          ],
+        },
+      ]);
+
+      const result = wiredActions(trace, world, ["action"]);
+      expect(result.pass).toBe(true);
+      expect(result.acted).toBe("revealed");
+    });
+
+    it("fails an action case whose inline step is wired to nothing", async () => {
+      const trace = await traceOf(REVEALS_DEAD);
+
+      // The same page, the same step, the same opening press — and the paths are
+      // where the two finally differ.
+      expect(trace[0]!.revealed).toEqual([
+        { label: "Pick a cap", changed: true, chose: [{ field: "Pick a cap", value: "$50 a month" }], calls: [] },
+        { label: "Save cap", changed: false, calls: [] },
+      ]);
+
+      const result = wiredActions(trace, world, ["action"]);
+      expect(result.pass).toBe(false);
+      expect(result.acted).toBeUndefined();
+      expect(result.why).toContain("no press ever asked the host for anything");
+      // And walking one press further never invents a failure: the revealed
+      // controls are not bindings, so the screen is graded on its own one press.
+      expect(result.bindings).toHaveLength(1);
+      expect(result.bindings[0]).toMatchObject({ effect: "state" });
+    });
+
+    it("skips a revealed control an earlier press in the step took away", async () => {
+      const trace = await traceOf(REVEALS_DISMISS);
+
+      // "Not now" empties the step, so the Save is not there when its turn comes.
+      // It goes unrecorded rather than pressed into thin air — a five-second click
+      // that lands on nothing would read as a control that did nothing.
+      expect(trace[0]!.revealed).toEqual([{ label: "Not now", changed: true, calls: [] }]);
+      expect(wiredActions(trace, world, ["action"]).acted).toBeUndefined();
+    });
+
+    it("does not walk a dialog twice by calling its controls a reveal", async () => {
+      const trace = await traceOf(CONFIRMED);
+
+      // A dialog's controls ARE controls the press revealed. They are walked as
+      // paths of the confirmation, under the isolation that walk promises, and
+      // never again as a reveal.
+      expect(trace[0]!.inside).toHaveLength(2);
+      expect(trace[0]).not.toHaveProperty("revealed");
     });
   });
 });

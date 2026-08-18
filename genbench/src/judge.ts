@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
 import { MAX_OUTPUT_TOKENS_FLOOR, usdFor, type UsageTotals } from "./meter.js";
-import type { Filled, Fired, Path, Probed } from "./probe.js";
+import type { Chosen, Filled, Fired, Path, Probed } from "./probe.js";
 
 /**
  * The non-mechanical half of the score: one verdict per rubric line — the case's
@@ -215,6 +215,42 @@ const askedText = (calls: readonly Fired[]): string =>
     })
     .join(", ");
 
+/** A control the probe found locked was pressed anyway, with a sentinel typed
+ *  into its empty text boxes first — said before the press outcome, or a
+ *  sentinel-carrying call reads to the judge as the screen inventing data. */
+const filledText = (filled: readonly Filled[] | undefined): string => {
+  if (filled === undefined || filled.length === 0) return "";
+  const each = filled.map((fill) => `"${fill.field}" with "${fill.value}"`).join(" and ");
+  return `the harness filled ${each}, then `;
+};
+
+/**
+ * And the same sentence for a chooser the harness answered (2026-08-18).
+ *
+ * A typed value has said so since the probe started typing; a CHOSEN one said
+ * nothing, so a confirmation echoing the probe's own pick read as the screen making
+ * a target up. `project-tracker/sprint-board` failed the honesty line on "CAI-153
+ * will move to \"Backlog\"" — the judge's note said that target was "not derived
+ * from the control", and Backlog was the option the probe had chosen a moment
+ * earlier, in a trace that said nothing about having chosen it.
+ */
+const choseText = (chose: readonly Chosen[] | undefined): string => {
+  if (chose === undefined || chose.length === 0) return "";
+  const each = chose.map((choice) => `"${choice.value}" in "${choice.field}"`).join(" and ");
+  return `the harness chose ${each}, then `;
+};
+
+/** One walked press, in the same words as a press on the screen itself — with what
+ *  the harness chose to make it, where it was a chooser. */
+const pathsText = (paths: readonly Path[]): string =>
+  paths
+    .map((path) => {
+      const asked = askedText(path.calls);
+      const did = asked !== "" ? `called ${asked}` : path.changed ? "called nothing, and the screen moved" : "called nothing";
+      return `${choseText(path.chose)}pressing "${path.label}" ${did}`;
+    })
+    .join("; ");
+
 /**
  * What the presses INSIDE a confirmation did, in the same words as the presses
  * outside it.
@@ -231,24 +267,26 @@ const askedText = (calls: readonly Fired[]): string =>
  */
 const insideText = (paths: readonly Path[]): string => {
   if (paths.length === 0) return "nothing inside it could be pressed";
-  const each = paths
-    .map((path) => {
-      const asked = askedText(path.calls);
-      const did = asked !== "" ? `called ${asked}` : path.changed ? "called nothing, and the screen moved" : "called nothing";
-      return `pressing "${path.label}" ${did}`;
-    })
-    .join("; ");
+  const each = pathsText(paths);
   return paths.length === 1 ? `it has ONE pressable control, so it is judged by that control alone — ${each}` : each;
 };
 
-/** A control the probe found locked was pressed anyway, with a sentinel typed
- *  into its empty text boxes first — said before the press outcome, or a
- *  sentinel-carrying call reads to the judge as the screen inventing data. */
-const filledText = (filled: readonly Filled[] | undefined): string => {
-  if (filled === undefined || filled.length === 0) return "";
-  const each = filled.map((fill) => `"${fill.field}" with "${fill.value}"`).join(" and ");
-  return `the harness filled ${each}, then `;
-};
+/**
+ * What the controls a press REVEALED did, in the same words (2026-08-18).
+ *
+ * A second step lives in the page as often as it lives in a dialog — press Open
+ * and a picker and a Save appear where the row was — and the record stopped at the
+ * press that opened it, so "pressing Save moves the issue" was as unprovable as a
+ * confirm behind a dialog used to be. Two `project-tracker` screens lost their
+ * action line to it while having the whole flow right.
+ *
+ * The order is part of the evidence and is stated: they are pressed as a person
+ * meets them, on one page, so the picker's answer is standing when the Save beside
+ * it is pressed — which is the only way a call carrying an earlier press's value
+ * reads as anything but invention.
+ */
+const revealedText = (paths: readonly Path[]): string =>
+  `it revealed controls the screen did not have before, pressed in the order a person meets them — ${pathsText(paths)}`;
 
 /** The probe's record as prose, because that is what a judge reads best. */
 function traceText(trace: readonly Probed[]): string {
@@ -279,8 +317,13 @@ function traceText(trace: readonly Probed[]): string {
               : probed.alreadyActive === true
                 ? "already active, a no-op by design"
                 : "called nothing, and changed nothing";
-      const within = probed.inside === undefined ? "" : `\n  inside the confirmation, ${insideText(probed.inside)}`;
-      return `${filledText(probed.filled)}pressed "${probed.label}" — ${did}${within}`;
+      const within =
+        probed.inside !== undefined
+          ? `\n  inside the confirmation, ${insideText(probed.inside)}`
+          : probed.revealed !== undefined
+            ? `\n  ${revealedText(probed.revealed)}`
+            : "";
+      return `${choseText(probed.chose)}${filledText(probed.filled)}pressed "${probed.label}" — ${did}${within}`;
     })
     .join("\n");
 }
