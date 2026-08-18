@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kitPrompt } from "../../../src/contract/kit/kit-prompt.js";
+import { kitPrompt, promptExamples } from "../../../src/contract/kit/kit-prompt.js";
 import { KIT_SPECS } from "../../../src/contract/kit/specs.js";
 
 /**
@@ -102,6 +102,36 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
     expect(prompt).toContain("converts nothing");
     expect(prompt).not.toContain('semantic:"money.cents"');
     expect(prompt).not.toContain("`*_cents` key is money in minor units");
+  });
+
+  /**
+   * The class the DonutChart example used to TEACH, swept over every example the
+   * catalog can show — the spec's own and the prompt's correction, because either
+   * one is what some component shows.
+   *
+   * A chart reads its numbers BY KEY, so there is no `<Money value={row.x / 100}/>`
+   * to divide in; the example handed tool rows straight to `format="money"`, and a
+   * benched screen copied it faithfully and printed cents as dollars — $285,000 of
+   * housing spend — while dividing correctly everywhere the Stat example was the
+   * model it followed. An example is the strongest teaching in the prompt, so one
+   * that skips the `/ 100` is a bug the catalog ships to every generation.
+   */
+  it("divides in every example that formats money, so none teaches cents as dollars", () => {
+    const money = /format[=:]"money"|<Money |amountField=/;
+    for (const spec of KIT_SPECS) {
+      for (const example of [...spec.examples, ...promptExamples(spec)]) {
+        if (!money.test(example)) continue;
+        expect(example, `${spec.name} formats money with no /100`).toContain("/ 100");
+      }
+    }
+  });
+
+  // …and every chart SAYS which unit it plots, because the division cannot happen
+  // at a read site the model can see — only in the data it hands over.
+  it("names dollars on the chart props that take money", () => {
+    for (const name of ["LineChart", "BarChart", "DonutChart"]) {
+      expect(kitPrompt({ only: [name], omitPreamble: true }), name).toContain("DOLLARS");
+    }
   });
 
   /**

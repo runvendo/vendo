@@ -109,8 +109,11 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   TableRow: ['<TableRow key={row.id}><Text text={row.name}/><Money value={row.balance_cents / 100}/></TableRow>'],
   CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance_cents",label:"Balance",cell:(item) => <Money value={item.balance_cents / 100}/>},{key:"plan"}]}/>'],
   KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",cell:(record) => <Money value={record.amount_cents / 100}/>}]} dividers/>'],
-  LineChart: ['<LineChart data={revenue.data} xKey="month" series={["amount"]} format="money"/>'],
-  DonutChart: ['<DonutChart data={spend.data} categoryKey="category" valueKey="amount" format="money"/>'],
+  // A chart reads its numbers BY KEY, so there is no cell to divide in: the `/ 100`
+  // moves into the data prep. Both of these used to hand tool rows straight to
+  // `format="money"`, and a screen that copied one rendered cents as dollars.
+  LineChart: ['<LineChart data={revenue.data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} xKey="month" series={["amount"]} format="money"/>'],
+  DonutChart: ['<DonutChart data={spend.data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} categoryKey="category" valueKey="amount" format="money"/>'],
   Timeline: ['<Timeline entries={payments.data} titleField="description" timeField="paidAt" timeAlign="end"/>'],
   CodeBlock: ['<CodeBlock language="json" code={webhook.data.payload}/>'],
   // Handlers are functions; every field is controlled.

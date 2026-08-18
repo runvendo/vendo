@@ -495,7 +495,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       rowActions: config(slot, "the controls at the end of every row"),
     },
     examples: [
-      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:(row) => <Stack gap={2}><Text text={row.client.name}/><Text text={row.number} variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger",paid:"success"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:(row) => <Stack gap={2}><Text text={row.client.name}/><Text text={row.number} variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger",paid:"success"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>} emptyState="No overdue invoices"/>',
     ],
   },
   {
@@ -522,7 +522,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       empty: config(slot, "elements shown instead of that text"),
       actions: config(slot, "the buttons above the cards"),
     },
-    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
+    examples: ['<CardList items={clients.list({}).data.map((c) => ({ ...c, balance: c.balance_cents / 100 }))} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
   },
   {
     name: "Calendar",
@@ -538,7 +538,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       month: config(z.string(), "the month to lay out, as ISO yyyy-mm"),
     },
     examples: [
-      '<Calendar items={bills.data.map((b) => ({ ...b, amount: b.amount / 100 }))} dateField="due_date" titleField="name" amountField="amount" statusField="status" tones={{ paid: "success", missed: "danger" }}/>',
+      '<Calendar items={bills.data.map((b) => ({ ...b, amount: b.amount_cents / 100 }))} dateField="due_date" titleField="name" amountField="amount" statusField="status" tones={{ paid: "success", missed: "danger" }}/>',
     ],
   },
   {
@@ -575,7 +575,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       dividers: config(z.boolean(), "hairline rule between rows"),
     },
     examples: [
-      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"amount",format:"money"},{key:"status",cell:(record) => <EnumBadge value={record.status}/>}]} dividers/>',
+      '<KeyValue record={invoices.get({id}).data} items={[{key:"client.name",label:"Client"},{key:"dueDate",format:"date"},{key:"amount_cents",label:"Amount",cell:(record) => <Money value={record.amount_cents / 100}/>},{key:"status",cell:(record) => <EnumBadge value={record.status}/>}]} dividers/>',
     ],
   },
   {
@@ -628,6 +628,14 @@ const BASE_SPECS: KitComponentSpec[] = [
   },
 
   // Charts (recharts internals; data props only; $NaN is unrenderable)
+  //
+  // A chart is the one place money has no READ to divide at: it looks its numbers
+  // up BY KEY, so there is no `<Money value={row.x / 100}/>` to write and the
+  // division has to happen in the data prep. The examples here used to hand tool
+  // rows straight to `format="money"`, and a screen that copied one faithfully
+  // rendered cents as dollars — $285,000 of housing spend — while dividing
+  // correctly everywhere the Stat example was the model. So each of these says
+  // DOLLARS beside its own format token, and every example maps first.
   {
     name: "LineChart",
     group: "charts",
@@ -636,7 +644,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category (x) field", { required: true }),
       series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its tooltip in that series' units", { required: true }),
-      format: config(valueFormat, "y-axis + tooltip format"),
+      format: config(valueFormat, "y-axis + tooltip format; money plots DOLLARS — divide a cents field where you prepare the data"),
       // The category axis had no format token at all, so a trend over days
       // printed the raw stamp the host stored under every tick while the figures
       // beside it read in the host's own words.
@@ -647,7 +655,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       tooltip: config(slot, "elements for the hovered point"),
       legend: config(slot, "a series key under the chart"),
     },
-    examples: ['<LineChart data={revenue.byMonth({}).data} xKey="month" series={["amount"]} format="money"/>'],
+    examples: ['<LineChart data={revenue.byMonth({}).data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} xKey="month" series={["amount"]} format="money"/>'],
   },
   {
     name: "BarChart",
@@ -657,7 +665,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
       series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its bars and their labels", { required: true }),
-      format: config(valueFormat, "axis + tooltip + bar-label format"),
+      format: config(valueFormat, "axis + tooltip + bar-label format; money plots DOLLARS — divide a cents field where you prepare the data"),
       stacked: config(z.boolean(), "stack series into one bar"),
       horizontal: config(z.boolean(), "horizontal bars"),
       height: config(z.number().int().positive(), "chart height in px"),
@@ -675,8 +683,8 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
-      valueKey: config(z.string(), "slice-value field", { required: true }),
-      format: config(valueFormat, "legend + tooltip format"),
+      valueKey: config(z.string(), "slice-value field — in DOLLARS where format is money, so divide a cents field where you prepare the data", { required: true }),
+      format: config(valueFormat, "legend + tooltip format; money reads DOLLARS and converts nothing"),
       // Enum-ness is judged per FIELD, not per value: one pill beside one bare
       // word in the same ring is worse than either reading alone, and a name field
       // ("ACME Corp") must keep the data's own words — which is why the legend
@@ -689,7 +697,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       empty: config(slot, "elements shown instead of that text"),
       tooltip: config(slot, "elements for the hovered slice"),
     },
-    examples: ['<DonutChart data={spend.byCategory({}).data} categoryKey="category" valueKey="amount" format="money"/>'],
+    examples: ['<DonutChart data={spend.byCategory({}).data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} categoryKey="category" valueKey="amount" format="money"/>'],
   },
   {
     name: "Sparkline",
