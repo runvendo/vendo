@@ -92,6 +92,27 @@ describe("the previewed verdict is the one the dispatch runs on", () => {
     expect(judge.decisions).toBe(2);
   });
 
+  it("a write voids only ITS run's previews — another run's verdict still stands", async () => {
+    const judge = countingJudge("run");
+    const guard = createGuard({ store: createMemoryStore(), judge });
+    const bound = guard.bind(new FixtureTools());
+    const mine = context();
+    const other = context({ sessionId: "session_other" });
+    const a = call(write.name, { value: 1 }, "call_run_a");
+    const b = call(write.name, { value: 2 }, "call_run_b");
+
+    await guard.previewCheck!(a, write, mine);
+    await guard.previewCheck!(b, write, other);
+    expect(judge.decisions).toBe(2);
+
+    // A write landing in `mine` is not the other run's business: its judge read
+    // a trail this call is not on. Voiding it too would spend a second pipeline
+    // on every concurrent run in the process.
+    await expect(bound.execute(a, mine)).resolves.toMatchObject({ status: "ok" });
+    await expect(bound.execute(b, other)).resolves.toMatchObject({ status: "ok" });
+    expect(judge.decisions).toBe(2);
+  });
+
   it("never answers for another SUBJECT's call", async () => {
     const judge = countingJudge("run");
     const guard = createGuard({ store: createMemoryStore(), judge });
