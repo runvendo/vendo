@@ -1,4 +1,4 @@
-import { log } from "@vendoai/core";
+import { canonicalJson, log } from "@vendoai/core";
 import type {
   ApprovalId,
   DeniedNeeds,
@@ -75,6 +75,8 @@ export interface TurnToolsOptions {
    *  {@link APPROVAL_WAIT_MS} — the web's closed-tab bound, unchanged. A turn
    *  whose person answers on a human clock (a text message) passes its own. */
   approvalWaitMs?: number;
+  /** An abort signal that cancels a parked wait early (e.g. if the user starts a new turn). */
+  signal?: AbortSignal;
 }
 
 let counter = 0;
@@ -114,7 +116,7 @@ export interface ApprovalWaiter {
   dispose(): void;
 }
 
-export function createApprovalWaiter(guard: Guard): ApprovalWaiter {
+export function createApprovalWaiter(guard: Guard, signal?: AbortSignal): ApprovalWaiter {
   const decided = new Map<ApprovalId, boolean>();
   const waiting = new Map<ApprovalId, (approved: boolean) => void>();
   const raised = new Set<ApprovalId>();
@@ -136,13 +138,23 @@ export function createApprovalWaiter(guard: Guard): ApprovalWaiter {
       raised.add(approvalId);
       const already = decided.get(approvalId);
       if (already !== undefined) return already;
+      if (signal?.aborted) return undefined;
       return new Promise<boolean | undefined>((resolve) => {
-        const timer = setTimeout(() => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           waiting.delete(approvalId);
           resolve(undefined);
+        };
+        const timer = setTimeout(() => {
+          waiting.delete(approvalId);
+          signal?.removeEventListener("abort", onAbort);
+          resolve(undefined);
         }, timeoutMs);
+        signal?.addEventListener("abort", onAbort);
         waiting.set(approvalId, (approved) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           resolve(approved);
         });
       });
@@ -188,7 +200,7 @@ export interface RuntimeTurnTools extends TurnTools {
 }
 
 export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
-  const waiter = createApprovalWaiter(options.guard);
+  const waiter = createApprovalWaiter(options.guard, options.signal);
   const approvalWaitMs = options.approvalWaitMs ?? APPROVAL_WAIT_MS;
   const bridge: ToolBridgeOptions = {
     ...options.bridge,
@@ -202,6 +214,10 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
   // like a name that never existed.
   const withheld = new Set(options.toolSurface?.withhold ?? []);
   const hidden = (name: string): boolean => withheld.has(name);
+
+  // Calls that returned pending-approval dynamically. Repeating them in the same
+  // turn is a duplicate card loop trap.
+  const parkedCalls = new Set<string>();
 
   /** Stamp the turn on every mirrored event once, here, rather than at each of
    *  the three raise sites — a tracer reading the mirror can join a call to its
@@ -391,11 +407,25 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         // channel (a `vendo_apps_*` tree plus the VENDO_VIEW_STREAM partials),
         // the connect card, the build-failed banner, the citations part and
         // `toolOutputCap` all come from here — never a second implementation.
+        const parkedKey = `${name}:${canonicalJson(args)}`;
+        if (parkedCalls.has(parkedKey)) {
+          // The model looped instead of asking the user. Fail fast instead of
+          // minting a duplicate card.
+          return refused("This still needs approval.");
+        }
+
         const outcome = await guardedCall(descriptor, bridge, args, { toolCallId });
         if (outcome.status === "pending-approval") {
+          parkedCalls.add(parkedKey);
           // The preview said run and the REAL check asked — a breaker or presence
           // boundary. Nobody is waiting on this one, so it must still be swept.
           waiter.raise(outcome.approvalId, { standing: !options.interactive });
+          
+          // Prune the key when the approval's decision resolves
+          waiter.wait(outcome.approvalId, approvalWaitMs).finally(() => {
+            parkedCalls.delete(parkedKey);
+          });
+
           // The guard asked twice for one tap; refusing to loop is the honest
           // answer (a second card for the same call would be a trap).
           return refused("This still needs approval.", {
