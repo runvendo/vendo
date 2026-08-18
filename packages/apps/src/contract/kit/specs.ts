@@ -455,18 +455,18 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Calendar",
     group: "data",
-    summary: "Items on a month grid — each on its own day with its label, amount and status. Use it when the question is which DAY, not which row. The month comes from the earliest item unless `month` names one.",
+    summary: "Items on a month grid — each on its own day with its label, figure and status. Use it when the question is which DAY, not which row. The month comes from the earliest item unless `month` names one.",
     props: {
       items: data(rows, "items from a tool call", { required: true }),
       dateField: config(z.string(), "field holding the day each item falls on"),
       titleField: config(z.string(), "field for each item's label"),
-      amountField: config(z.string(), "field holding each item's amount in dollars — divide a cents field by 100 where you read it"),
+      amountField: config(z.string(), "field shown under each item's label, exactly as it stands — format the figure where you prepare the items"),
       statusField: config(z.string(), "field whose value labels and tones each item"),
       tones: config(z.record(z.string(), toneWord), "status value → tone overrides"),
       month: config(z.string(), "the month to lay out, as ISO yyyy-mm"),
     },
     examples: [
-      '<Calendar items={bills.data.map((b) => ({ ...b, amount: b.amount_cents / 100 }))} dateField="due_date" titleField="name" amountField="amount" statusField="status" tones={{ paid: "success", missed: "danger" }}/>',
+      '<Calendar items={bills.data.map((b) => ({ ...b, amount: (b.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" }) }))} dateField="due_date" titleField="name" amountField="amount" statusField="status" tones={{ paid: "success", missed: "danger" }}/>',
     ],
   },
   {

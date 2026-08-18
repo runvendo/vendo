@@ -184,10 +184,12 @@ describe("CardList", () => {
 describe("Calendar", () => {
   // The maple bills the benchmark asks to see as a calendar. Aug 2026 opens on a
   // Saturday, so its first row leads with six of July's days.
+  // The figures arrive FORMATTED, as they do everywhere else in the Kit — the
+  // screen writes the currency where it prepares its items.
   const bills = [
-    { id: "bill_1", name: "Mission St Rent", amount: 2850, due_date: "2026-08-01", status: "paid" },
-    { id: "bill_3", name: "Ridgeline Gym", amount: 45, due_date: "2026-08-09", status: "missed" },
-    { id: "bill_4", name: "Verdant Streaming", amount: 15.99, due_date: "2026-08-12", status: "upcoming" },
+    { id: "bill_1", name: "Mission St Rent", amount: "$2,850.00", due_date: "2026-08-01", status: "paid" },
+    { id: "bill_3", name: "Ridgeline Gym", amount: "$45.00", due_date: "2026-08-09", status: "missed" },
+    { id: "bill_4", name: "Verdant Streaming", amount: "$15.99", due_date: "2026-08-12", status: "upcoming" },
   ];
   const month = (props: Partial<CalendarProps> = {}): HTMLElement =>
     render(
@@ -204,13 +206,24 @@ describe("Calendar", () => {
   const cell = (container: HTMLElement, day: string): Element =>
     container.querySelector(`[data-day="${day}"]`)!;
 
-  it("lands each item on its own day, with its name, amount and status", () => {
+  it("lands each item on its own day, with its name, figure and status", () => {
     const container = month();
     expect(cell(container, "2026-08-01").textContent).toBe("1Mission St Rent$2,850.00Paid");
     expect(cell(container, "2026-08-09").textContent).toBe("9Ridgeline Gym$45.00Missed");
     expect(cell(container, "2026-08-12").textContent).toBe("12Verdant Streaming$15.99Upcoming");
     // A day nothing falls on carries its number and nothing else.
     expect(cell(container, "2026-08-02").textContent).toBe("2");
+  });
+
+  it("shows the amount field AS GIVEN, never dressed as money", () => {
+    // The last limb of the dead value tier: the field was formatted as currency
+    // whatever it held, so a shift roster's HOURS rendered "$520.00" — a figure
+    // in a unit no tool ever returned.
+    const container = month({
+      items: [{ id: "shift_1", name: "Kitchen shift", amount: 520, due_date: "2026-08-03", status: "scheduled" }],
+      month: "2026-08",
+    });
+    expect(cell(container, "2026-08-03").textContent).toBe("3Kitchen shift520Scheduled");
   });
 
   it("takes its month from the earliest item, and `month` over that", () => {
