@@ -207,7 +207,7 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function makeAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_MAKE_TOOL,
-    description: "Create a Vendo app (generated UI) from a plain-language request. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW.",
+    description: "Create a Vendo app (generated UI) from a plain-language request. Returns fast with a vendo/app-ref@1 envelope carrying status \"building\" — the build was only ACCEPTED and is still streaming; you have not seen its contents and do not know yet whether it will succeed. Say only that you're building it (present tense, no specifics) and stop there. Never say it is created/ready/done, and never describe, list, or invent anything it will contain (no tables, no numbers, no chart data) — the embed shows real build progress and the true final result, including a build failure, and it will contradict anything you claim. If the build later fails, you will not be told in this reply; do not assume or claim success in a later turn either — check with the user or a read tool before describing this app again. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW. Pass `component` when the user is asking to change one of the HOST'S OWN pieces of the page they are looking at — the conversation's context says which one (\"The view being remixed is the \\\"NetWorthCard\\\" component on the host's page\"), so pass that name exactly as it is written there and never one you invented; it makes the user their own copy of that piece, carrying their request, and puts it on the page where the original was.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -220,6 +220,11 @@ function makeAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoP
         // The door's own wording, minus its pin-tool pointer — the pack has no
         // `vendo_apps_*` tool to point at.
         slot: { type: "string", minLength: 1 },
+        // Also the door's own argument, reaching the same handler. Its absence
+        // here was not a smaller loadout but a DEAD affordance: this schema is
+        // closed, so the ✦ on a host component could never reach the seed door
+        // through an adopted agent, and the button did nothing at all.
+        component: { type: "string", minLength: 1 },
       },
       required: ["request"],
       additionalProperties: false,
