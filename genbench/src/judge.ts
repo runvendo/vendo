@@ -237,7 +237,10 @@ function traceText(trace: readonly Probed[]): string {
       //
       // A control that only changes local state asked the host for nothing and is
       // still a working control; "called nothing" alone would read to the judge as
-      // a dead button and cost the screen a correctness line it earned.
+      // a dead button and cost the screen a correctness line it earned. Likewise a
+      // control that was ALREADY the one showing (2026-08-18): "called nothing, and
+      // changed nothing" reads to the judge as dead, when calling and moving
+      // nothing is exactly what pressing an active tab or a picked radio should do.
       const opened = probed.dialog === undefined ? "" : `opened a confirmation: ${JSON.stringify(probed.dialog)}`;
       const did =
         asked !== ""
@@ -246,7 +249,9 @@ function traceText(trace: readonly Probed[]): string {
             ? opened
             : probed.changed
               ? "called nothing, and changed the screen"
-              : "called nothing, and changed nothing";
+              : probed.alreadyActive === true
+                ? "already active, a no-op by design"
+                : "called nothing, and changed nothing";
       const within = probed.inside === undefined ? "" : `\n  inside the confirmation, ${insideText(probed.inside)}`;
       return `${filledText(probed.filled)}pressed "${probed.label}" — ${did}${within}`;
     })

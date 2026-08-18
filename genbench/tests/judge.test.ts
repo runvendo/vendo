@@ -320,6 +320,18 @@ describe("blindness", () => {
     );
   });
 
+  /** A control that was ALREADY the one showing — the active tab, the picked
+   *  radio — is a no-op by design (2026-08-18, floor.ts's `already-active`
+   *  binding), not a dead one; "called nothing, and changed nothing" alone
+   *  reads to the judge as a dead button. */
+  it("renders an already-active press as a no-op by design, not a dead control", async () => {
+    const model = answering();
+    const trace: Probed[] = [{ label: "Plumbing", changed: false, alreadyActive: true, calls: [] }];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(`pressed "Plumbing" — already active, a no-op by design`);
+  });
+
   it("keeps the artifact's format while taking its name — a tree still reads as a tree", async () => {
     const model = answering();
     await judge(input({ artifact: '{"format":"vendo/app@1","ui":"tree","nodes":[{"component":"Stat"}]}' }), { model });
