@@ -43,6 +43,7 @@ import {
   guardDecisionSchema,
   auditEventSchema,
   uiPayloadSchema,
+  treeNodeSchema,
   storageDeclSchema,
   appSeedSchema,
   triggerSourceSchema,
@@ -314,6 +315,13 @@ describe("§8 — UIPayload is the format-tag dispatch surface; unknown tags are
     if (parsed.success) expect(parsed.data.opaque).toEqual({ a: 1 }); // passthrough keeps unknown keys
     expect(uiPayloadSchema.safeParse({ root: "r" }).success).toBe(false); // no formatVersion
     expect(uiPayloadSchema.safeParse({ formatVersion: 1 }).success).toBe(false); // non-string tag
+  });
+
+  it("names every node source a painter may claim, the splitter's ported half included", () => {
+    for (const source of ["prewired", "host", "generated", "ported"]) {
+      expect(treeNodeSchema.safeParse({ id: "n1", component: "Text", source }).success).toBe(true);
+    }
+    expect(treeNodeSchema.safeParse({ id: "n1", component: "Text", source: "wired" }).success).toBe(false);
   });
 
 });

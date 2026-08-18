@@ -48,6 +48,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "connections",
   "actAs",
   "serverActions",
+  "remixWiring",
   "guard",
   "limits",
   "secrets",

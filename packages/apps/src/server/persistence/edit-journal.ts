@@ -286,7 +286,39 @@ const createEditIntents = () => {
     return recorded;
   };
 
-  return { editIntents, editVersions, editRefusals, takeEditRefusal, takeEditVersion };
+  /**
+   * The source a RE-SEED's replay must start from — the host's new port, handed
+   * to the assembler the way `editIntents` hands it the person's words.
+   *
+   * A re-seed replays the recorded wish onto the host's UPDATED component, and
+   * the assembler can only edit code it can see in the workspace. Nothing paints
+   * this into the row: the replay's own save is the single landing, so a replay
+   * that never lands leaves the person's screen exactly where it was.
+   *
+   * Published for the duration of ONE replay and taken ONCE. `reseed` clears it
+   * in a `finally`, so a replay that throws cannot leave a port behind for the
+   * next ordinary edit of that app to pick up, and the take below closes the
+   * same hole from the other side — two replays of one app cannot read each
+   * other's port because the first read empties the slot.
+   */
+  const replaySources = new Map<AppId, string>();
+
+  /** THIS replay's starting source, or nothing — and it is gone once read. */
+  const takeReplaySource = (appId: AppId): string | undefined => {
+    const published = replaySources.get(appId);
+    replaySources.delete(appId);
+    return published;
+  };
+
+  return {
+    editIntents,
+    editVersions,
+    editRefusals,
+    replaySources,
+    takeEditRefusal,
+    takeEditVersion,
+    takeReplaySource,
+  };
 };
 
 const createEditAssembler = (

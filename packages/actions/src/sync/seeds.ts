@@ -21,7 +21,10 @@ import {
   resolveImportSource,
   visitNodes,
   walk,
+  writeIfChanged,
 } from "./common.js";
+import { splitSlot, type SplitInput } from "./split/index.js";
+import { remixWiringSource, type WiringSlot } from "./split/wiring.js";
 
 const MAX_SCAN_FILES = 5_000;
 const ROOT_FILE = /^(?:src\/)?(?:app\/layout|app\/root|pages\/_app)\.(?:[cm]?[jt]sx?)$/u;
@@ -291,6 +294,7 @@ function sameCapturedPayload(left: SeedBaseline | null, right: SeedBaseline): bo
     subSources: baseline.subSources ?? {},
     sampleProps: baseline.sampleProps,
     styles: baseline.styles ?? [],
+    ported: baseline.ported ?? null,
   });
   return JSON.stringify(payload(left)) === JSON.stringify(payload(right));
 }
@@ -354,6 +358,35 @@ function defaultExportName(source: string, file: string): string | null {
   return defaultExportOf(source, file)?.name ?? null;
 }
 
+/** The slot's PORTED half, spreadable into its baseline. One tier, and the
+ *  gauntlet is the only judge: a slot that does not split gets no `ported`, no ✦
+ *  and a loud line — while every other slot in this run still captures, still
+ *  ports, and still ships. */
+async function portFor(
+  input: SplitInput,
+  wiring: WiringSlot[],
+  warnings: string[],
+): Promise<Pick<SeedBaseline, "ported">> {
+  const split = await splitSlot(input);
+  if (!split.ok) {
+    // One issue per line: a real component fails the gauntlet a dozen ways at
+    // once, and a dozen repair instructions joined by semicolons is a wall
+    // nobody reads — which is the same as not reporting them.
+    warnings.push([`remixable component ${input.slot} was not split, so it stays un-remixable (the rest of this sync is unaffected):`, ...split.issues].join("\n    "));
+    return {};
+  }
+  wiring.push(split.wiring);
+  return { ported: split.port };
+}
+
+/** ONE wiring file per sync, covering every slot that split. Written whenever
+ *  this host has a wrapper at all, so a run where the last port stops splitting
+ *  empties it instead of leaving a binding nothing points at. */
+async function writeWiring(directory: string, slots: readonly WiringSlot[], anyWrapper: boolean): Promise<void> {
+  if (!anyWrapper) return;
+  await writeIfChanged(path.join(directory, "remix-wiring.ts"), remixWiringSource(slots));
+}
+
 export async function capturePins(
   root: string,
   out: string,
@@ -364,6 +397,8 @@ export async function capturePins(
   const realRoot = await fs.realpath(root);
   const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
   const remixableDir = path.join(out, "remixable");
+  const generatedDir = path.join(out, "generated");
+  const wiring: WiringSlot[] = [];
 
   result.styles = await captureRootStyles(root, realRoot, files, result.warnings);
 
@@ -430,6 +465,11 @@ export async function capturePins(
       continue;
     }
     const { sourceImports, subSources } = walked.closure;
+    const ported = await portFor(
+      { slot, source: primary.source, file: primary.realFile, root, generatedDir },
+      wiring,
+      result.warnings,
+    );
     const hash = `sha256:${sha256Hex(primary.source)}`;
     const existing = await readExisting(baselineFile);
     const baseline: SeedBaseline = {
@@ -442,12 +482,14 @@ export async function capturePins(
       ...(Object.keys(sourceImports).length === 0 ? {} : { sourceImports }),
       ...(Object.keys(subSources).length === 0 ? {} : { subSources }),
       ...(styles.length === 0 ? {} : { styles }),
+      ...ported,
     };
     if (sameCapturedPayload(existing.baseline, baseline)) continue;
     await fs.mkdir(path.dirname(baselineFile), { recursive: true });
     await fs.writeFile(baselineFile, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
     (existing.exists ? result.drifted : result.captured).push(slot);
   }
+  await writeWiring(generatedDir, wiring, bySlot.size > 0);
   // A baseline whose slot matches no discovered wrapper is a forkable zombie —
   // delete it. A run with wrapper errors prunes nothing: an unresolvable
   // wrapper's slot is unknowable, and deleting its baseline would turn a loud

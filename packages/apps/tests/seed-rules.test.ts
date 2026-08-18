@@ -1,5 +1,6 @@
 import type {
   AppDocument,
+  SeedPort,
 } from "../src/contract/index.js";
 import { inClientApprovalSchema } from "../src/server/index.js";
 import { describe, expect, it } from "vitest";
@@ -29,6 +30,27 @@ describe("seed contract shapes", () => {
       approvedBy: "user_admin",
       at: capturedAt,
     })).toMatchObject({ versionHash: "sha256:z" });
+  });
+
+  it("carries the splitter's ported half, and reads a baseline without one", () => {
+    const captured = {
+      slot: "invoice-card",
+      source: "export function InvoiceCard() {}",
+      hash: "sha256:x",
+      exportable: true,
+      capturedAt,
+    };
+    const ported: SeedPort = {
+      source: "export default function InvoiceCard() { return <Card className=\"p-4\" />; }",
+      tools: ["invoices_get"],
+      holes: ["Sparkline"],
+    };
+    expect(seedBaselineSchema.parse({ ...captured, ported }).ported).toEqual(ported);
+    expect(seedBaselineSchema.parse(captured).ported).toBeUndefined();
+    expect(seedBaselineSchema.safeParse({
+      ...captured,
+      ported: { ...ported, tools: "invoices_get" },
+    }).success).toBe(false);
   });
 
 });

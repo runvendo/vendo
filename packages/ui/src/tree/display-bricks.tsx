@@ -3,9 +3,9 @@
  * (`packages/apps/src/contract/kit/display.ts`), keyed by tag. A drift test pins
  * the two in step, exactly as `KIT_COMPONENTS` is pinned to `KIT_SPECS`.
  *
- * Each brick is written out by hand and destructures exactly `style` and
- * `children`. That is the whole containment of the prop surface: there is no
- * spread, so `className`, `id`, `onClick`, `data-*`, `aria-*` and
+ * Each brick is written out by hand and destructures exactly `style`,
+ * `hostClass` and `children`. That is the whole containment of the prop surface:
+ * there is no spread, so `className`, `id`, `onClick`, `data-*`, `aria-*` and
  * `dangerouslySetInnerHTML` cannot arrive — not because a list refuses them, but
  * because nothing carries them through.
  */
@@ -13,6 +13,20 @@ import type { CSSProperties, ReactNode } from "react";
 
 export interface DisplayBrickProps {
   style?: CSSProperties;
+  /** The class this brick paints with — the HOST's own, off a component the
+   *  splitter ported out of real host source, so the port looks like what it was
+   *  ported from. A node's own `className` is not it and never reaches the DOM:
+   *  the renderer writes `hostClass` itself, after the props it binds and only
+   *  for a `source: "ported"` node, so neither a model nor a slot can spell it.
+   *
+   *  UNREACHABLE TODAY — nothing ever arrives here. Nothing stamps
+   *  `source: "ported"` on a node: `flattenTree`'s second argument is the only
+   *  thing that could, and the engine door it is called through takes ONE
+   *  argument (`tree/screen-engine.ts:85`), as do all three production callers.
+   *  So the renderer's test is always false and every brick paints
+   *  `className={undefined}`. Kept as the starting point if this is ever
+   *  funded; do not read it as working. */
+  hostClass?: string;
   children?: ReactNode;
 }
 
@@ -70,27 +84,27 @@ export function safeStyle(style: CSSProperties | undefined): CSSProperties | und
 }
 
 export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactNode> = {
-  div: ({ style, children }) => <div style={safeStyle(style)}>{children}</div>,
-  span: ({ style, children }) => <span style={safeStyle(style)}>{children}</span>,
-  section: ({ style, children }) => <section style={safeStyle(style)}>{children}</section>,
-  header: ({ style, children }) => <header style={safeStyle(style)}>{children}</header>,
-  footer: ({ style, children }) => <footer style={safeStyle(style)}>{children}</footer>,
-  aside: ({ style, children }) => <aside style={safeStyle(style)}>{children}</aside>,
-  h1: ({ style, children }) => <h1 style={safeStyle(style)}>{children}</h1>,
-  h2: ({ style, children }) => <h2 style={safeStyle(style)}>{children}</h2>,
-  h3: ({ style, children }) => <h3 style={safeStyle(style)}>{children}</h3>,
-  h4: ({ style, children }) => <h4 style={safeStyle(style)}>{children}</h4>,
-  h5: ({ style, children }) => <h5 style={safeStyle(style)}>{children}</h5>,
-  h6: ({ style, children }) => <h6 style={safeStyle(style)}>{children}</h6>,
-  p: ({ style, children }) => <p style={safeStyle(style)}>{children}</p>,
-  strong: ({ style, children }) => <strong style={safeStyle(style)}>{children}</strong>,
-  em: ({ style, children }) => <em style={safeStyle(style)}>{children}</em>,
-  small: ({ style, children }) => <small style={safeStyle(style)}>{children}</small>,
-  code: ({ style, children }) => <code style={safeStyle(style)}>{children}</code>,
-  blockquote: ({ style, children }) => <blockquote style={safeStyle(style)}>{children}</blockquote>,
-  ul: ({ style, children }) => <ul style={safeStyle(style)}>{children}</ul>,
-  ol: ({ style, children }) => <ol style={safeStyle(style)}>{children}</ol>,
-  li: ({ style, children }) => <li style={safeStyle(style)}>{children}</li>,
+  div: ({ style, hostClass, children }) => <div style={safeStyle(style)} className={hostClass}>{children}</div>,
+  span: ({ style, hostClass, children }) => <span style={safeStyle(style)} className={hostClass}>{children}</span>,
+  section: ({ style, hostClass, children }) => <section style={safeStyle(style)} className={hostClass}>{children}</section>,
+  header: ({ style, hostClass, children }) => <header style={safeStyle(style)} className={hostClass}>{children}</header>,
+  footer: ({ style, hostClass, children }) => <footer style={safeStyle(style)} className={hostClass}>{children}</footer>,
+  aside: ({ style, hostClass, children }) => <aside style={safeStyle(style)} className={hostClass}>{children}</aside>,
+  h1: ({ style, hostClass, children }) => <h1 style={safeStyle(style)} className={hostClass}>{children}</h1>,
+  h2: ({ style, hostClass, children }) => <h2 style={safeStyle(style)} className={hostClass}>{children}</h2>,
+  h3: ({ style, hostClass, children }) => <h3 style={safeStyle(style)} className={hostClass}>{children}</h3>,
+  h4: ({ style, hostClass, children }) => <h4 style={safeStyle(style)} className={hostClass}>{children}</h4>,
+  h5: ({ style, hostClass, children }) => <h5 style={safeStyle(style)} className={hostClass}>{children}</h5>,
+  h6: ({ style, hostClass, children }) => <h6 style={safeStyle(style)} className={hostClass}>{children}</h6>,
+  p: ({ style, hostClass, children }) => <p style={safeStyle(style)} className={hostClass}>{children}</p>,
+  strong: ({ style, hostClass, children }) => <strong style={safeStyle(style)} className={hostClass}>{children}</strong>,
+  em: ({ style, hostClass, children }) => <em style={safeStyle(style)} className={hostClass}>{children}</em>,
+  small: ({ style, hostClass, children }) => <small style={safeStyle(style)} className={hostClass}>{children}</small>,
+  code: ({ style, hostClass, children }) => <code style={safeStyle(style)} className={hostClass}>{children}</code>,
+  blockquote: ({ style, hostClass, children }) => <blockquote style={safeStyle(style)} className={hostClass}>{children}</blockquote>,
+  ul: ({ style, hostClass, children }) => <ul style={safeStyle(style)} className={hostClass}>{children}</ul>,
+  ol: ({ style, hostClass, children }) => <ol style={safeStyle(style)} className={hostClass}>{children}</ol>,
+  li: ({ style, hostClass, children }) => <li style={safeStyle(style)} className={hostClass}>{children}</li>,
 };
 
 /**

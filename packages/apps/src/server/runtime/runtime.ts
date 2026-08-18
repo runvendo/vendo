@@ -50,6 +50,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     access: createAccessSurface(ctx),
     automation: createAutomationDoor(ctx),
     slots: ctx.slots,
+    takeReplaySource: ctx.takeReplaySource,
     inClient: createInClientSurface(ctx),
     review: createReviewSurface(ctx),
     seed: createSeedSurface(ctx),

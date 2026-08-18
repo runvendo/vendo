@@ -16,6 +16,7 @@ import {
 } from "../src/server/persistence/placements.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 import { authoringAssembler, scriptedAssembler, scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
+import { FIXTURE_SCREEN } from "../src/server/testing/screen-document.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -594,6 +595,8 @@ describe("the empty-slot Remix gesture places its mint", () => {
         hash: "sha256:maple-base",
         exportable: false,
         capturedAt: "2026-07-14T12:00:00.000Z",
+        // No ported half, no ✦ — so the gesture this test places needs one.
+        ported: { source: FIXTURE_SCREEN, tools: [], holes: [] },
       }],
     });
 

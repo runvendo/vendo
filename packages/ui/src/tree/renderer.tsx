@@ -2,6 +2,7 @@ import {
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
+  TREE_NODE_SOURCES,
   applyReshape,
   isPathBinding,
   isStateBinding,
@@ -136,7 +137,7 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     if (!isPlainRecord(node)) return walkFail("each node must be an object");
     if (typeof node.id !== "string" || node.id.length === 0) return walkFail("each node must have a non-empty string id");
     if (typeof node.component !== "string") return walkFail(`node "${node.id}" must have a string component`);
-    if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+    if (node.source !== undefined && !TREE_NODE_SOURCES.includes(node.source as string)) {
       return walkFail(`node "${node.id}" has an invalid source`);
     }
     if (node.children !== undefined
@@ -703,11 +704,32 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
   // a container (Stack/Grid) with one bad prop must not swallow its valid
   // children (same containment scope as the generated paths above).
   const screen = props.screen;
+  // `hostClass` is written AFTER the bound props, and that is what makes it
+  // unforgeable: a brick paints a class off a PORTED node and off nothing else
+  // (display-bricks.tsx), whatever a node's own props say.
+  //
+  // UNREACHABLE TODAY — this test is always false, so the line below always
+  // passes `undefined`. Nothing stamps `source: "ported"` on a node:
+  // `flattenTree(root, source?)` is the only thing that could, and the engine
+  // door it goes through takes ONE argument (`tree/screen-engine.ts:85`), as do
+  // all three of its production callers (`apps` checking/toolchain.ts:182,
+  // `apps` edge/paint.ts:72, use-screen.ts:148). Kept as the starting point if
+  // this is ever funded; the exposure below is what it would then cost.
+  //
+  // KNOWN EXPOSURE, and it holds only while a remix is SINGLE-PLAYER. The class
+  // lands in the host's own light DOM — that is how a port inherits the host's
+  // stylesheet — so a class the model borrowed from elsewhere in the host renders
+  // as real host chrome, not an imitation of it. A private view deceives only its
+  // author; the REVIEW path breaks that, because a second person is deciding
+  // whether to trust what they are shown. The levers, neither built and neither
+  // decided: render the review path in the sandboxed surface instead of the light
+  // DOM, or strip classes on that path alone.
   return mismatch !== null
     ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
     : (
       <Implementation
         {...bound}
+        hostClass={node.source === "ported" ? bound?.className : undefined}
         {...(screen !== undefined && handlerBusy(node.props, screen.inFlight) ? { disabled: true } : {})}
       >
         {children}

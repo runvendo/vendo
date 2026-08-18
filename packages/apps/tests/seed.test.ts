@@ -29,6 +29,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
 import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
+import { FIXTURE_SCREEN } from "../src/server/testing/screen-document.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -62,6 +63,11 @@ const baseline = (hash = "sha256:maple-base"): SeedBaseline => ({
   subSources: { "src/format-currency.ts": { source: "export const money = 1;", imports: {} } },
   sampleProps: { valueCents: 120_000_000 },
   styles: [{ path: "src/app.css", css: ".host { color: rebeccapurple; }" }],
+  // The splitter's half — the ported source the ✦ seeds as the app's own
+  // `app.tsx`. Deliberately shares not one byte with `SOURCE` above, so the
+  // "nothing of the capture reaches the remix" assertions still mean what they
+  // say: the PORT travels, the raw capture never does.
+  ported: { source: FIXTURE_SCREEN, tools: [], holes: [] },
 });
 
 /** The ONE builder, as a fixture: it writes `app.tsx` and lands it through

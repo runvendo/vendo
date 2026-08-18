@@ -968,6 +968,31 @@ export interface ScreenAssemblerDeps {
   /** This principal's workspace, unwrapped. The assembler wraps it with the
    *  render seam itself, so composition never has to know that it must. */
   workspace: (ctx: RunContext) => Promise<WorkspaceFs>;
+  /**
+   * The app's stored `app.tsx` — what the checkout below projects into the
+   * workspace when the workspace has none.
+   *
+   * Composition fills it from `AppsRuntime.get`, exactly as it fills `render` and
+   * `remember`: this file depends on no store and must never reach for one. The
+   * reader that cannot do without it is the ✦ remix — `seed.from` writes the
+   * splitter's ported source to the ROW, and this loop can only edit code it can
+   * SEE in the workspace. Unfilled — or answering `undefined`, which is what
+   * composition does for every app that is NOT a remix — an edit starts from
+   * whatever the workspace already holds, which is exactly today's behaviour.
+   */
+  storedScreen?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
+  /**
+   * The source THIS run must start from, replacing whatever the workspace holds
+   * — `AppsRuntime.takeReplaySource`, published by a re-seed for its own replay
+   * and gone once read.
+   *
+   * Deliberately NOT folded into `storedScreen`: that one fills an EMPTY
+   * workspace and must never overwrite a save, while this one exists precisely
+   * to overwrite. Keeping them two slots is what makes the overwrite
+   * unreachable from an ordinary edit — an ordinary edit publishes nothing, so
+   * there is nothing for it to take.
+   */
+  replayFrom?: (appId: AppId) => string | undefined;
   /** The seam's optional halves — the checks floor and source persistence. A
    *  screen assembled here passes the same floor every other author's does, or it
    *  does not paint. */
@@ -1021,6 +1046,49 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
   return {
     async assemble(request: ScreenRequest, ctx: RunContext): Promise<ScreenOutcome> {
       const base = await deps.workspace(ctx);
+      // THE CHECKOUT — contract §3.2's law applied on the way IN: the row is the
+      // truth and the workspace is a working copy of it. The ✦ gesture writes a
+      // remix's PORTED `app.tsx` straight to the row (`seed.from`), so without
+      // this the loop's first `edit_app` finds no file and rewrites the component
+      // from nothing — the one thing a fork exists not to do.
+      //
+      // Through the UNWRAPPED workspace on purpose: the floor already graded
+      // these bytes before the row stored them, so painting them again here would
+      // buy nothing and cost a second gauntlet on every edit. It never overwrites
+      // — a file already here belongs to a save, and a save is newer than the row.
+      const checkout = `${appDirectory(request.appId)}/${APP_FILE}`;
+      // A RE-SEED replays the recorded wish onto the host's NEW port, so its
+      // starting point REPLACES the workspace copy — the person's old screen is
+      // what it is replacing. Nothing has been written to the row: this run's own
+      // save is the single landing, so a replay that never saves leaves the
+      // stored screen untouched. Only a re-seed publishes one.
+      let start = deps.replayFrom?.(request.appId);
+      // Otherwise the ordinary checkout, which only ever FILLS an empty
+      // workspace and can never overwrite a save.
+      if (start === undefined && !(await base.exists(checkout))) {
+        start = await deps.storedScreen?.(request.appId, ctx);
+      }
+      // Blank is not a screen — `open()` reads it the same way — and an empty
+      // file would leave `edit_app` editing nothing, which is worse than none.
+      //
+      // STAGED, NEVER COMMITTED — DO NOT ADD A `commit()` HERE. It looks like a
+      // missing half, and it is not: the staging IS the mechanism.
+      //
+      // A staged write is visible to this run's own reads and to nothing else
+      // (`workspace-fs.ts:91`, and `readFile` at `:276`), so a run that saves
+      // nothing lands nothing — the row keeps the person's screen and so does the
+      // workspace. Whatever the run DOES save commits this along with it, which is
+      // the only moment either copy should move.
+      //
+      // Committing here instead lands the checked-out source whether or not the
+      // run ever used it, and that is DATA LOSS with a green test in front of it:
+      // a failed re-seed leaves the host's new port sitting in the workspace, the
+      // next ordinary edit opens that instead of the person's screen, and saves it
+      // over the top. The row-level guarantee still passes the whole time, because
+      // the loss happens a turn later. Proven: re-add the commit and
+      // `remix-port-seed.e2e.test.ts`'s re-seed guarantee goes red on the
+      // workspace half.
+      if (start !== undefined && start.trim() !== "") await base.writeFile(checkout, start);
       /** The last SETTLED paint of this app, kept as it goes past on its way to the
        *  person's screen. It is the only place the resolved query answers exist —
        *  the seam spreads them beside the description on the final paint — so the

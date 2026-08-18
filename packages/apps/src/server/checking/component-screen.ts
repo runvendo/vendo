@@ -125,6 +125,11 @@ export interface ComponentScreenOptions {
   /** The pages a `<Link to>` may name. Absent → the host registered no registry
    *  and stage 5 measures no link against one. */
   routes?: VendoRouteMap;
+  /** This source is the splitter's PORT of a host component, not a screen a model
+   *  authored — the one dialect whose display tags take the host's `className`.
+   *  Only the hand that RAN the splitter may set it; it is never read off an app's
+   *  own record, because a remix's first act is a model edit of the port. */
+  ported?: boolean;
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
@@ -603,6 +608,7 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
     catalog: opts.catalog,
     tools: opts.hostTools,
     note: (reason) => notes.push(reason),
+    ...(opts.ported === true ? { ported: true } : {}),
   });
   announceUntyped(notes);
 

@@ -612,6 +612,44 @@ export default function S() { return <img><Text text="x" /></img>; }
     expect(text.match(/writes the HTML element/gu)).toHaveLength(1);
   });
 
+  /**
+   * `className` is a DIALECT, not a prop. A port carries the host's own classes —
+   * that is the whole point of porting one — and a screen a model authored has no
+   * such prop to write, so it cannot borrow the host's chrome even if it tries.
+   * The tag surface stays an allowlist in both: nothing else joined it.
+   */
+  const CLASSED = `import { Text } from "@vendo/screen";
+export default function S() { return <div className="maple-card rounded-lg"><Text text="x" /></div>; }
+`;
+
+  it("takes the host's className on a PORTED screen's display tag", async () => {
+    const passing = await checkComponentScreen({
+      source: CLASSED, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(passing.issues).toEqual([]);
+    expect(passing.ok).toBe(true);
+  });
+
+  it("has no className at all in the dialect a MODEL authors", async () => {
+    const { codes, text } = await refusal(CLASSED);
+    expect(codes).toEqual(["types"]);
+    expect(text).toContain("className");
+  });
+
+  it("still refuses a prop no display tag has, in either dialect", async () => {
+    const idProp = `import { Text } from "@vendo/screen";
+export default function S() { return <div id="card"><Text text="x" /></div>; }
+`;
+    const { codes, text } = await refusal(idProp);
+    expect(codes).toEqual(["types"]);
+    expect(text).toContain("id");
+
+    const ported = await checkComponentScreen({
+      source: idProp, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(ported.ok).toBe(false);
+  });
+
   it("refuses a name that does not exist inside a screen", async () => {
     const { text } = await refusal(`import { Text } from "@vendo/screen";
 export default function S() {

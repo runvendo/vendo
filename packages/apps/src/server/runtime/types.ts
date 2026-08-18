@@ -571,6 +571,21 @@ export interface AppsRuntime {
    */
   floor(ctx: RunContext, options?: { saves?: boolean }): AppFloor;
   /**
+   * The source a RE-SEED's replay must start from, or nothing — and it is gone
+   * once read.
+   *
+   * Public for the same reason `authoredScreen` and `commitSource` are: the hand
+   * that has to act on it is not in this package. A re-seed replays the recorded
+   * wish onto the host's NEW port, and only the assembler holds a workspace to
+   * put that port in front of the model. This block never paints it into the row
+   * — the replay's own save is the single landing, so a replay that does not land
+   * leaves the person's screen untouched.
+   *
+   * Empty except during a re-seed's own replay, and emptied by the read. An
+   * ordinary edit never publishes one, so it can never take one.
+   */
+  takeReplaySource(appId: AppId): string | undefined;
+  /**
    * What every tool a binding may name really RETURNS, annotated with this
    * host's own field semantics — the `:money.cents`, `:date.iso`, `:enum(a|b)`
    * marks that decide whether a number is dollars or cents on screen.

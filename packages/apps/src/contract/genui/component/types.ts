@@ -21,6 +21,7 @@
  *    reports back through {@link ScreenInstance.settle}. The screen cannot
  *    reach the network, so this is the only way anything leaves it.
  */
+import type { TreeNode } from "@vendoai/core";
 import type { ScreenBudget } from "./budget.js";
 
 /** A function-valued prop, as it crosses the VM boundary. */
@@ -131,6 +132,8 @@ export const SCREEN_FILE = "app.tsx";
 export interface FlatNode {
   id: string;
   component: string;
+  /** Stamped by whoever asked for the paint — see {@link flattenTree}. */
+  source?: TreeNode["source"];
   props: Record<string, unknown>;
   /** Child ids, in paint order. A text child is a {@link SCREEN_TEXT_NODE}. */
   children: string[];
