@@ -724,6 +724,50 @@ describe("report", () => {
     expect(await readFile(resultPath, "utf8")).toBe(before);
   });
 
+  /**
+   * The floor's per-check split, backfilled — no model, no browser, no probe.
+   *
+   * `result.json` already carries what the split is read from: the verdicts, the
+   * bindings under them and the check's own `why`. So a run graded before the
+   * split existed can be re-rendered under it, which is the whole reason this
+   * pass exists.
+   */
+  it("fills the floor's per-check split in for a run recorded before it existed", async () => {
+    const dead: FloorResult = {
+      delivered: true,
+      renders: true,
+      valid: false,
+      blocking: ["the screen the agent saved would not compile"],
+      wiredActions: {
+        pass: false,
+        pressed: 1,
+        bindings: [{ where: "Cancel", effect: "none", why: "pressing it called nothing and changed nothing" }],
+        why: "this case asks the screen to DO something, and no press ever asked the host for anything or opened a confirmation",
+      },
+      pass: false,
+    };
+    const runDir = await savedRun([scored(dead, JUDGED_WITH_A_LIE)]);
+
+    expect(await report({ runDir })).toBe(0);
+
+    const summary = JSON.parse(await readFile(join(runDir, "summary.json"), "utf8")) as RunSummary;
+    expect(summary.columns["vendo-sonnet"]!.floorChecks).toEqual({
+      delivered: { earned: 1, failed: 0, vacuous: 0 },
+      renders: { earned: 1, failed: 0, vacuous: 0 },
+      valid: { earned: 0, failed: 1, vacuous: 0 },
+      pressed: { earned: 0, failed: 1, vacuous: 0 },
+      // The press named no tool, so there was nothing on it to recognise.
+      wired: { earned: 0, failed: 0, vacuous: 1 },
+      // This case's stamps match no case in today's corpus, so the corpus cannot
+      // say it asked — the check's own `why` can, since only an `action` case is
+      // ever given one, and without that the split would stop adding up to the
+      // failed `wiredActions` above it.
+      actionProven: { earned: 0, failed: 1, vacuous: 0 },
+    });
+    // A compile crash and a dead button now read as two diseases on the page too.
+    expect(await readFile(join(runDir, "preview.html"), "utf8")).toContain(`<th>actionProven</th>`);
+  });
+
   /** Rewriting a page in place costs the page it replaces, so what this pass
    *  cannot work out for itself has to come off the summary already there: the
    *  disk's order is not the order the row was raced in, and a run holding

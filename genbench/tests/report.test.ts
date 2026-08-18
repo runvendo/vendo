@@ -376,6 +376,34 @@ describe("the preview page", () => {
    * never in front of it, while the column below was already muting it as
    * unearned. A cell that disagrees with the card under it is worse than no cell.
    */
+  /**
+   * The table that says WHICH disease a column has.
+   *
+   * Every other total on this page is a sum over all four checks, so a contender
+   * whose pages never compiled and a contender whose buttons are dead read as the
+   * same figure. Six columns instead: the three every screen is put to, and
+   * `wiredActions` as the three questions it answers at once.
+   */
+  it("breaks each column's floor out per check, `wiredActions` into its three questions", async () => {
+    const html = await preview(presses(), pressedWorlds(), ASKED_TO_ACT);
+
+    expect(html).toContain(
+      `<thead><tr><th>column</th><th>cases</th><th>delivered</th><th>renders</th><th>valid</th>` +
+        `<th>pressed</th><th>wired</th><th>actionProven</th></tr></thead>`,
+    );
+    // Three screens: every control held, one of them named no tool at all — so
+    // `wired` was never in front of it — and one was asked to act and never did.
+    // One number could only ever have said `11/12`.
+    expect(html).toContain(
+      `<tr><th>vendo-sonnet</th><td>3</td><td class="ok">3/3</td><td class="ok">3/3</td><td class="ok">3/3</td>` +
+        `<td class="ok">3/3</td><td class="ok">2/2 · 1 vacuous</td><td class="no">2/3</td></tr>`,
+    );
+    // Nobody asked the display column's screen to do anything, so its
+    // `actionProven` cell is beside the totals rather than failed in them.
+    expect(html).toContain(`<tr><th>diy-sonnet</th><td>1</td>`);
+    expect(html).toContain(`<td class="muted">— · 1 vacuous</td>`);
+  });
+
   it("keeps a vacuous check out of the shape table's numerator and its denominator", async () => {
     const html = await preview([resultFor("vendo-sonnet", "blank", "Show me nothing.")], { blank: world });
 
@@ -600,6 +628,49 @@ describe("summary.json", () => {
     // had nothing to press, and all 4 on the one whose controls held.
     expect(summary.columns["vendo-sonnet"]!.floor).toEqual({ earned: 9, failed: 1, vacuous: 2, degraded: 0 });
     expect(summary.columns["vendo-sonnet"]!.cases).toBe(3);
+  });
+
+  /**
+   * The same cells, one tally each — because one earned/failed sum cannot say
+   * which disease a column has, and a compile crash and a dead button moved it by
+   * the same amount.
+   *
+   * Off the REAL grader's bindings, and against the write axis's own fixture, so
+   * the split and the row beside it are two readings of one set of evidence.
+   */
+  it("splits the floor per check, with `wiredActions` as the three questions it answers", async () => {
+    const summary = await summaryOf(presses(), { worlds: pressedWorlds(), actionCases: ASKED_TO_ACT });
+    const column = summary.columns["vendo-sonnet"]!;
+
+    expect(column.floorChecks).toEqual({
+      delivered: { earned: 3, failed: 0, vacuous: 0 },
+      renders: { earned: 3, failed: 0, vacuous: 0 },
+      valid: { earned: 3, failed: 0, vacuous: 0 },
+      // Every control the probe pressed did something.
+      pressed: { earned: 3, failed: 0, vacuous: 0 },
+      // The screen whose only press opened a confirmation named no tool, so there
+      // was nothing on it to recognise or validate.
+      wired: { earned: 2, failed: 0, vacuous: 1 },
+      // …and that same screen is the one asked to act that never proved it.
+      actionProven: { earned: 2, failed: 1, vacuous: 0 },
+    });
+    // The total it splits does not move, and is not these added up: that screen
+    // missed one question and is still one failed `wiredActions` cell.
+    expect(column.floor).toEqual({ earned: 11, failed: 1, vacuous: 0, degraded: 0 });
+  });
+
+  /** A bar nobody set is not a bar a column failed: no case here asked its screen
+   *  to act, so that cell sits beside the totals exactly as a screen with nothing
+   *  to press sits beside `pressed`. */
+  it("keeps the action cell out of a column nobody asked to act", async () => {
+    const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one")]);
+
+    expect(summary.columns["vendo-sonnet"]!.floorChecks["actionProven"]).toEqual({
+      earned: 0,
+      failed: 0,
+      vacuous: 1,
+    });
+    expect(summary.columns["vendo-sonnet"]!.floorChecks["pressed"]).toEqual({ earned: 0, failed: 0, vacuous: 1 });
   });
 
   it("counts rubric lines by half, so an `na` on a case line is not a line that vanished", async () => {

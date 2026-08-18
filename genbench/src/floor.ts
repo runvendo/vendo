@@ -233,17 +233,72 @@ export function wiredActions(
  * stays out of any total: summing bare booleans is how a blank page came to
  * score full marks in the only aggregate this benchmark has.
  */
-export const checks = (
-  floor: FloorResult,
-): ReadonlyArray<{ name: string; pass: boolean; vacuous?: true; degraded?: true }> => [
+export interface Check {
+  /** The name the report prints, on the page and in `summary.json` alike. */
+  readonly name: string;
+  readonly pass: boolean;
+  readonly vacuous?: true;
+  readonly degraded?: true;
+}
+
+/** The three every screen is put to, whatever it was asked for — written once,
+ *  because the total and the per-check readout below must be two readings of the
+ *  same cells and not two lists that agree by hand. */
+const screenChecks = (floor: FloorResult): readonly Check[] => [
   { name: "delivered", pass: floor.delivered },
   { name: "renders", pass: floor.renders },
   { name: "valid", pass: floor.valid },
+];
+
+export const checks = (floor: FloorResult): readonly Check[] => [
+  ...screenChecks(floor),
   {
     name: "wiredActions",
     pass: floor.wiredActions.pass,
     ...(floor.wiredActions.pass && floor.wiredActions.pressed === 0 ? { vacuous: true as const } : {}),
   },
+];
+
+/**
+ * `wiredActions` as the three questions it answers at once.
+ *
+ * One cell held three different diseases — a screen whose buttons are dead, a
+ * screen that called a tool nobody declares, and a screen asked to DO something
+ * that never did — so in the run's totals a compile crash and a dead button moved
+ * one number by the same amount and neither said which had happened.
+ *
+ * Nothing is decided here that was not decided already: `wiredActions.pass` is
+ * exactly these three holding together, which `tests/floor.test.ts` pins over the
+ * real grader. The split is how the score is READ, so no run recorded before it
+ * compares differently after.
+ */
+export const wiredChecks = (actions: WiredActionsResult, asked: boolean): readonly Check[] => {
+  const fired = actions.bindings.filter((binding) => binding.effect === "tool");
+  return [
+    // Nothing to press is the vacuous pass this check always had: a screen with
+    // no controls on it was never put to the question.
+    {
+      name: "pressed",
+      pass: actions.bindings.every((binding) => binding.effect !== "none"),
+      ...(actions.pressed === 0 ? { vacuous: true as const } : {}),
+    },
+    // A press that only moved local state names no tool, so there is nothing to
+    // recognise and no arguments to validate — the same reason `Binding` asks
+    // `known` and `argsValid` of a tool press and of nothing else.
+    { name: "wired", pass: fired.every(holds), ...(fired.length === 0 ? { vacuous: true as const } : {}) },
+    // Only a case that ASKED the screen to act can earn or miss this one; on any
+    // other it is a bar nobody set.
+    { name: "actionProven", pass: actions.acted !== undefined, ...(asked ? {} : { vacuous: true as const }) },
+  ];
+};
+
+/** The floor's six cells: the three every screen is put to, and `wiredActions`
+ *  broken into the three it answers. One set of verdicts read at two altitudes —
+ *  never two counts of the same cells, since a screen can miss two of the three
+ *  at once and still be the single failed `wiredActions` it always was. */
+export const splitChecks = (floor: FloorResult, asked: boolean): readonly Check[] => [
+  ...screenChecks(floor),
+  ...wiredChecks(floor.wiredActions, asked),
 ];
 
 /** Every check has to hold. */

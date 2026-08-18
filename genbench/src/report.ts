@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checks, holds, type Binding, type WiredActionsResult } from "./floor.js";
+import { checks, holds, splitChecks, type Binding, type Check, type WiredActionsResult } from "./floor.js";
 import { HONESTY_LINE, type JudgeResult, type LineVerdict, type Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
 import type { CaseResult } from "./run.js";
@@ -172,6 +172,33 @@ const earned = (
   };
 };
 
+/** A set of cells as both tables print them: earned out of what was really in
+ *  front of the screens, with what was not counted beside it. Nothing graded in
+ *  it is muted rather than 0/0 — green on a question nobody put a column to is a
+ *  claim about that column nobody tested. */
+const scoreCell = (scored: readonly Check[]): string => {
+  const { passed, of, aside } = earned(scored);
+  return of === 0
+    ? `<td class="muted">—${escape(aside)}</td>`
+    : `<td class="${passed === of ? "ok" : "no"}">${passed}/${of}${escape(aside)}</td>`;
+};
+
+/**
+ * Whether a case asked its screen to DO something — `action` in `cases.json`.
+ *
+ * The corpus answers wherever it still holds the case. Where it does not, the
+ * floor's own `why` does: only an `action` case is ever given one. Without that
+ * fallback a case whose world has moved would take `actionProven` out of the
+ * totals while the `wiredActions` verdict above it still failed on that very
+ * line, and the split would stop adding up to the check it splits.
+ */
+const askedToAct = (result: CaseResult, actionCases: ReadonlySet<string>): boolean =>
+  actionCases.has(result.case) || result.floor.wiredActions.why !== undefined;
+
+/** One column's floor cells, split, in the order `splitChecks` asks them. */
+const splitOf = (rows: readonly CaseResult[], actionCases: ReadonlySet<string>): readonly Check[] =>
+  rows.flatMap((row) => splitChecks(row.floor, askedToAct(row, actionCases)));
+
 async function column(runDir: string, result: CaseResult): Promise<string> {
   const caseDir = join(result.contender, result.case);
   const shot = await readFile(join(runDir, caseDir, "screenshot.png")).catch(() => undefined);
@@ -246,6 +273,40 @@ const spendLine = (
 };
 
 /**
+ * What the floor FOUND, per check — the reading one number cannot give.
+ *
+ * Every other total on this page is a sum over all four checks, so a contender
+ * whose pages never compiled and a contender whose buttons are dead read as the
+ * same figure and a person cannot tell which disease they are looking at. These
+ * are those same verdicts, unsummed: the three checks every screen is put to, and
+ * `wiredActions` as the three questions it answers at once (`splitChecks` in
+ * `floor.ts`).
+ *
+ * A column per check and a row per contender, because it is the other way round
+ * that does not fit: seven contenders times six checks is a table nobody can
+ * read. Nothing is decided again here — a cell earned, missed, or never in front
+ * of a screen is the one the card below says it is, and the columns are named in
+ * the vocabulary `summary.json` uses so the page and the file cannot drift.
+ */
+const checkTable = (results: readonly CaseResult[], actionCases: ReadonlySet<string>): string => {
+  if (results.length === 0) return "";
+  const contenders = [...new Set(results.map((result) => result.contender))];
+  const names = [...new Set(splitOf(results, actionCases).map((check) => check.name))];
+  return `<table class="shapes">
+  <thead><tr><th>column</th><th>cases</th>${names.map((name) => `<th>${escape(name)}</th>`).join("")}</tr></thead>
+  <tbody>${contenders
+    .map((contender) => {
+      const rows = results.filter((result) => result.contender === contender);
+      const cells = splitOf(rows, actionCases);
+      return `<tr><th>${escape(contender)}</th><td>${rows.length}</td>${names
+        .map((name) => scoreCell(cells.filter((check) => check.name === name)))
+        .join("")}</tr>`;
+    })
+    .join("")}</tbody>
+</table>`;
+};
+
+/**
  * The run's floor score by shape — the only place on this page a contender's
  * screens are added up at all. Every column below is a single screen, so a
  * contender that holds the floor everywhere except charts says so here and
@@ -271,11 +332,7 @@ const shapeTable = (
   const shapes = [...new Set(results.map((result) => result.shape))].sort();
   // First-seen, so the cells read left to right in the column order below.
   const contenders = [...new Set(results.map((result) => result.contender))];
-  const cell = (rows: readonly CaseResult[]): string => {
-    const { passed, of, aside } = earned(rows.flatMap((row) => checks(row.floor)));
-    if (of === 0) return `<td class="muted">—${escape(aside)}</td>`;
-    return `<td class="${passed === of ? "ok" : "no"}">${passed}/${of}${escape(aside)}</td>`;
-  };
+  const cell = (rows: readonly CaseResult[]): string => scoreCell(rows.flatMap((row) => checks(row.floor)));
   return `<table class="shapes">
   <thead><tr><th>shape</th><th>cases</th>${contenders
     .map((contender) => `<th>${escape(contender)}</th>`)
@@ -707,6 +764,14 @@ addEventListener("message", function (event) {
 });
 `;
 
+/** One check across a column's screens: earned and failed are the screens it was
+ *  really in front of, vacuous the ones it was not. */
+export interface CheckTally {
+  readonly earned: number;
+  readonly failed: number;
+  readonly vacuous: number;
+}
+
 /** One column's whole run in numbers. Floor cells and rubric lines are counted
  *  the way the page above counts them — through `checks` and through each
  *  line's own origin — so the summary and the preview cannot tell two stories. */
@@ -714,6 +779,18 @@ export interface ColumnSummary {
   readonly model: string;
   readonly cases: number;
   readonly floor: { earned: number; failed: number; vacuous: number; degraded: number };
+  /** The cells `floor` sums, one tally per check instead of one total — with
+   *  `wiredActions` as the three questions it answers at once (`splitChecks` in
+   *  `floor.ts`): `pressed`, every control the probe pressed did something;
+   *  `wired`, every call that fired named a real tool with arguments the world
+   *  would accept; `actionProven`, a case that asked the screen to act showed its
+   *  write or a confirmation that works. Not a re-count of `floor`, which does not
+   *  move for any of this: a screen can miss two of the three at once and still be
+   *  the one failed `wiredActions` cell it always was, so these six say WHICH
+   *  disease a column has and `floor` goes on saying how much. Read off verdicts
+   *  already on disk, so `genbench report <run folder>` fills it in for a run
+   *  recorded before the split existed. */
+  readonly floorChecks: Readonly<Record<string, CheckTally>>;
   /** The case's OWN lines: what this screen was asked to show. A case line's
    *  `na` counts as a fail (`tally`); a style line's does not, and is counted
    *  here instead. */
@@ -782,6 +859,29 @@ const honestyCounts = (lines: readonly LineVerdict[]): { pass: number; fail: num
   fail: lines.filter((line) => line.verdict !== "pass").length,
 });
 
+/** The floor's cells kept apart by name, each counted exactly the way `floor`
+ *  counts all four at once: a vacuous cell out of both halves and beside them. */
+const checkTallies = (
+  rows: readonly CaseResult[],
+  actionCases: ReadonlySet<string>,
+): Record<string, CheckTally> => {
+  const cells = splitOf(rows, actionCases);
+  return Object.fromEntries(
+    [...new Set(cells.map((check) => check.name))].map((name) => {
+      const mine = cells.filter((check) => check.name === name);
+      const graded = mine.filter((check) => check.vacuous !== true);
+      return [
+        name,
+        {
+          earned: graded.filter((check) => check.pass).length,
+          failed: graded.filter((check) => !check.pass).length,
+          vacuous: mine.length - graded.length,
+        },
+      ];
+    }),
+  );
+};
+
 /**
  * The run's one number, per column, in one file.
  *
@@ -823,6 +923,7 @@ export async function writeSummary(input: {
         vacuous: scored.filter((check) => check.vacuous === true).length,
         degraded: scored.filter((check) => check.degraded === true).length,
       },
+      floorChecks: checkTallies(rows, actionCases),
       caseLines: lineCounts(inHalf(lines, "correctness")),
       honesty: honestyCounts(inHalf(lines, "honesty")),
       styleLines: lineCounts(inHalf(lines, "design")),
@@ -878,6 +979,7 @@ export async function writePreview(input: {
   actionCases?: ReadonlySet<string>;
 }): Promise<string> {
   const first = input.results[0];
+  const actionCases = input.actionCases ?? new Set<string>();
   // Grouped in first-seen order, and each group in the order the row was run:
   // which contender finished first never moves a column.
   const order = [...new Set(input.results.map((result) => result.case))];
@@ -899,7 +1001,8 @@ export async function writePreview(input: {
 <h1>genbench</h1>
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
 ${spendLine("judge", "graded", spent(input.results, (result) => result.judged.cost))}
-${shapeTable(input.results, input.worlds, input.actionCases ?? new Set())}
+${checkTable(input.results, actionCases)}
+${shapeTable(input.results, input.worlds, actionCases)}
 ${sections.join("")}
 </div>
 <aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>

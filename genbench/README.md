@@ -204,7 +204,8 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-gemini`,
 | `result.json` | the four floor verdicts, the judge's verdict for every rubric line, the contract the run graded under, the commit the harness ran at and the Agent SDK version, the click trace, console errors, timings, tokens and dollars. `cost.usage.reasoningTokens` splits out the part of the output the provider says was THINKING rather than written — a split of `outputTokens`, never an addend, so no dollar moves for it, and absent entirely where the provider itemises no such count, which is every first-party Anthropic call. `pipeline` is the vendo column's own review of the screen before anyone else graded it — every verdict the product's `validate` gate reached, with its findings, and whether anything painted after the last one — so a rubric line the judge failed can be read against what the product's reviewer said about the same screen. Absent where that gate was never reached, which is itself the reading: those bytes went out unreviewed |
 
 one `runs/<run>/summary.json` — the run's only aggregate, per column: floor cells
-earned, failed and vacuous; rubric case-lines and style-lines by
+earned, failed and vacuous, and the same cells one tally per check
+(`floorChecks`, below); rubric case-lines and style-lines by
 verdict; timeouts; degraded judgements; how far the screens that were ASKED to
 act actually got (`actions`, below); how long the column took (`settledMs` as
 median, p90 and worst, plus the median first render where a column reports one);
@@ -214,7 +215,12 @@ honest JSON, no CSV and no charts.
 
 And one `runs/<run>/preview.html`, which is where a person actually looks:
 
-- **the run's floor score by shape**, at the top, and ruled off under it each
+- **the run's floor by check**, at the very top: a row per column and a column
+  per check, so a contender whose pages never compiled and one whose buttons are
+  dead stop reading as the same number. Six cells — `delivered`, `renders`,
+  `valid`, and `wiredActions` as the three questions it answers at once
+  (`pressed`, `wired`, `actionProven`; see the floor, below)
+- **the run's floor score by shape**, under it, and ruled off beneath that each
   column's duration — the median case, the p90 and the worst, in seconds.
   Half of buy-versus-build is time, and one number per screen is not an
   answer to it
@@ -484,6 +490,32 @@ the run's totals (`checks` in `src/floor.ts`, which is what the shape table and
 `summary.json` both add up) and is counted beside them instead. Summing bare
 booleans is how a blank page came to score full marks in the only aggregate this
 benchmark had.
+
+### Read one at a time (2026-08-18)
+
+`wiredActions` held three different diseases at once, and added into one
+earned/failed sum they moved that sum by the same amount: a compile crash and a
+dead button read as identical. So the floor is also reported as **six cells**,
+which is `splitChecks` in `src/floor.ts` — the three above, and `wiredActions` as
+the three questions it really answers:
+
+- **pressed** — every control the probe pressed did something. Vacuous on a
+  screen with nothing to press
+- **wired** — every call that fired named a real tool with arguments the world
+  would accept. Vacuous where no press named a tool at all, since a control that
+  only moves local state has nothing to recognise or validate
+- **actionProven** — a case tagged `action` showed its write, or a confirmation
+  that works. Vacuous on every other case: a bar nobody set is not a bar a
+  column failed
+
+`wiredActions` holds exactly when its three do, so **nothing about what passes or
+fails moved and every run already on disk still compares** — this is presentation
+only. The six are not a re-count of the four either: a screen can miss two of the
+three at once and is still the one failed `wiredActions` cell it always was, so
+`floorChecks` says which disease a column has while `floor` goes on saying how
+much. It lands per column in `summary.json` as `floorChecks` and at the top of
+the preview as its own table, and `genbench report <run folder>` backfills both
+off verdicts already on disk — no model, no browser, no probe.
 
 Fabrication used to be a fifth check here, which cut every digit group out of the
 screen's text and paid two models per screen to settle them — one to say which

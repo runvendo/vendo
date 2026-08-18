@@ -1,9 +1,17 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { checks, passes, wiredActions, type FloorResult } from "../src/floor.js";
+import {
+  checks,
+  passes,
+  splitChecks,
+  wiredActions,
+  wiredChecks,
+  type Check,
+  type FloorResult,
+} from "../src/floor.js";
 import type { Probed } from "../src/probe.js";
-import { loadWorld, type World } from "../src/world.js";
+import { loadWorld, type CaseTag, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -50,6 +58,135 @@ describe("checks", () => {
     expect(passes(floorWith({}))).toBe(true);
     expect(passes(floorWith({ renders: false }))).toBe(false);
     expect(passes(floorWith({ wiredActions: { pass: false, pressed: 1, bindings: [] } }))).toBe(false);
+  });
+});
+
+/**
+ * The same verdicts, read at the altitude a person can act on.
+ *
+ * One `wiredActions` cell held three different diseases — a dead button, a call
+ * to a tool nobody declares, and a screen asked to DO something that never did —
+ * so in the run's totals a compile crash and a dead button moved one number by
+ * the same amount and nothing said which had happened.
+ *
+ * Nothing about what passes or fails moves: these three ARE that cell, and the
+ * first test here is the one that keeps them arithmetic on it.
+ */
+describe("splitChecks", () => {
+  const floorOf = (trace: readonly Probed[], tags: readonly CaseTag[]): FloorResult => ({
+    delivered: true,
+    renders: true,
+    valid: true,
+    blocking: [],
+    wiredActions: wiredActions(trace, world, tags),
+    pass: true,
+  });
+
+  /** Every shape of press the grader distinguishes, as it really grades them —
+   *  hand-written bindings would prove only the hand. */
+  const TRACES: Readonly<Record<string, readonly Probed[]>> = {
+    "a live tool call": [{ label: "Cancel", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] }],
+    "a dead control": [{ label: "Cancel", changed: false, calls: [] }],
+    "a tool nobody declares": [{ label: "Wipe", changed: false, calls: [{ name: "delete_account", args: { id: "x" } }] }],
+    "arguments the world would reject": [{ label: "Cancel", changed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
+    "a control that only moved the screen": [{ label: "Details", changed: true, calls: [] }],
+    "a confirmation that works": [
+      {
+        label: "Cancel all",
+        dialog: "Cancel 2 transfers?",
+        changed: true,
+        calls: [],
+        inside: [
+          { label: "Keep them", changed: true, calls: [] },
+          { label: "Yes, cancel them", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+        ],
+      },
+    ],
+    "nothing to press": [],
+  };
+
+  /**
+   * The invariant the whole split rests on: `wiredActions.pass` is exactly these
+   * three holding, over every shape of press the grader knows and asked both
+   * ways. Break it and a run recorded before the split stops comparing with one
+   * after it, which is the one thing this change promised not to do.
+   */
+  it("is the same verdict as the check it splits, on every shape of press", () => {
+    for (const [what, trace] of Object.entries(TRACES)) {
+      for (const asked of [true, false]) {
+        const actions = wiredActions(trace, world, asked ? ["action"] : ["display"]);
+        const held = wiredChecks(actions, asked).every((check) => check.vacuous === true || check.pass);
+
+        expect(held, `${what}, ${asked ? "asked to act" : "a display case"}`).toBe(actions.pass);
+      }
+    }
+  });
+
+  const cell = (floor: FloorResult, asked: boolean, name: string): Check =>
+    splitChecks(floor, asked).find((check) => check.name === name)!;
+
+  it("names the six cells `checks` sums, the first three unchanged", () => {
+    const floor = floorOf(TRACES["a live tool call"]!, ["action"]);
+
+    expect(splitChecks(floor, true).map((check) => check.name)).toEqual([
+      "delivered",
+      "renders",
+      "valid",
+      "pressed",
+      "wired",
+      "actionProven",
+    ]);
+    // The screen-wide three are the same objects `checks` hands out, not a second
+    // opinion about them.
+    expect(splitChecks(floor, true).slice(0, 3)).toEqual(checks(floor).slice(0, 3));
+  });
+
+  /** The reading the split exists for: three ways to fail `wiredActions`, and each
+   *  one lands on its own cell while the other two stay clean. */
+  it("puts a dead button, a bad call and an unproven action on three different cells", () => {
+    const dead = floorOf(TRACES["a dead control"]!, ["action"]);
+    expect(cell(dead, true, "pressed").pass).toBe(false);
+    expect(cell(dead, true, "wired")).toEqual({ name: "wired", pass: true, vacuous: true });
+
+    const unknown = floorOf(TRACES["a tool nobody declares"]!, ["action"]);
+    expect(cell(unknown, true, "pressed").pass).toBe(true);
+    expect(cell(unknown, true, "wired").pass).toBe(false);
+
+    const badArgs = floorOf(TRACES["arguments the world would reject"]!, ["action"]);
+    expect(cell(badArgs, true, "wired").pass).toBe(false);
+
+    // Every press held on its own; what this screen never did is ACT.
+    const moved = floorOf(TRACES["a control that only moved the screen"]!, ["action"]);
+    expect(cell(moved, true, "pressed").pass).toBe(true);
+    expect(cell(moved, true, "wired")).toEqual({ name: "wired", pass: true, vacuous: true });
+    expect(cell(moved, true, "actionProven").pass).toBe(false);
+  });
+
+  it("counts a confirmation the probe pressed both halves of as the action proven", () => {
+    const floor = floorOf(TRACES["a confirmation that works"]!, ["action"]);
+
+    expect(cell(floor, true, "actionProven").pass).toBe(true);
+    expect(floor.wiredActions.acted).toBe("confirmation");
+  });
+
+  /**
+   * Vacuous stays per check, which is the whole reason the split can be read.
+   * One number could only say "1 vacuous" about a screen; these say WHICH
+   * question was never in front of it — and a bar nobody set must not be scored
+   * for the same reason a blank page must not score full marks.
+   */
+  it("keeps each cell that was never in front of the screen out of its own totals", () => {
+    const blank = floorOf(TRACES["nothing to press"]!, ["display"]);
+    expect(cell(blank, false, "pressed")).toEqual({ name: "pressed", pass: true, vacuous: true });
+    expect(cell(blank, false, "wired")).toEqual({ name: "wired", pass: true, vacuous: true });
+    expect(cell(blank, false, "actionProven").vacuous).toBe(true);
+
+    // A display case whose presses really held: two cells earned, and the bar
+    // nobody set beside them rather than failed.
+    const display = floorOf(TRACES["a live tool call"]!, ["display"]);
+    expect(cell(display, false, "pressed")).toEqual({ name: "pressed", pass: true });
+    expect(cell(display, false, "wired")).toEqual({ name: "wired", pass: true });
+    expect(cell(display, false, "actionProven").vacuous).toBe(true);
   });
 });
 
