@@ -47,14 +47,14 @@ describe("pinned-app ✦ chrome (keyboard)", () => {
 
     fireEvent.click(edit);
     expect(edit.getAttribute("aria-expanded")).toBe("true");
-    for (const label of ["Edit in chat", "Refresh", "Unpin"]) {
+    for (const label of ["Edit in chat", "Update", "Revert"]) {
       expect(screen.getByRole("button", { name: label })).toBeTruthy();
     }
     // There is no History item — the popover is exactly these three.
     expect(screen.queryByRole("button", { name: /history/i })).toBeNull();
 
     fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Unpin" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Revert" })).toBeNull());
   });
 
   it("“Edit in chat” opens the overlay scoped to the app, composer prefilled and unsent", async () => {
@@ -73,7 +73,7 @@ describe("pinned-app ✦ chrome (keyboard)", () => {
     await waitFor(() => expect((composer as HTMLTextAreaElement).value).toBe("Update Invoices: "));
   });
 
-  it("a refused unpin says so and stays retryable — it never settles as done", async () => {
+  it("a refused revert says so and stays retryable — it never settles as done", async () => {
     const refused = vi.spyOn(client.apps, "unplace").mockRejectedValue(new Error("nope"));
     render(
       <VendoProvider client={client}>
@@ -83,13 +83,13 @@ describe("pinned-app ✦ chrome (keyboard)", () => {
     );
 
     fireEvent.click(await pill());
-    fireEvent.click(screen.getByRole("button", { name: "Unpin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revert" }));
 
-    // The row is still there, so the popover is too — with Unpin under the
+    // The row is still there, so the popover is too — with Revert under the
     // cursor where the person left it.
     expect(await screen.findByText(/didn.t go through/i)).toBeTruthy();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Unpin" }).hasAttribute("disabled")).toBe(false));
+      expect(screen.getByRole("button", { name: "Revert" }).hasAttribute("disabled")).toBe(false));
     expect(refused).toHaveBeenCalledWith("app_1", "hero");
   });
 });

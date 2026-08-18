@@ -23,6 +23,7 @@ import {
   GrantSetCard,
   useApprovalModal,
   NoPolicyNotice,
+  Remixable,
   VendoOverlay,
   VendoPalette,
   VendoSlot,
@@ -1841,6 +1842,51 @@ const pinnedViewTree: UIPayload = {
   ],
 };
 
+/** S2 — the ✦ is ONE DOOR. Two host components side by side: an unremixed one,
+ *  whose ✦ opens the conversation about it, and a remixed one, wearing the pin
+ *  chrome's single menu (Edit in chat · Update · Revert). */
+function PlainMerchants() {
+  return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Top merchants</h2><p style={{ margin: "6px 0 0" }}>Blue Bottle · $124.50</p></section>;
+}
+
+function RemixedMerchants() {
+  return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Recent payees</h2><p style={{ margin: "6px 0 0" }}>Ritual · $88.00</p></section>;
+}
+// A production bundle erases `Function.name`, so a wrapped component must carry
+// `displayName` for the affordance to exist at all (remixable.tsx `slotOf`) —
+// and this harness is built for real, which is how the browser gate catches it.
+PlainMerchants.displayName = "PlainMerchants";
+RemixedMerchants.displayName = "RemixedMerchants";
+
+function remixClient(client: VendoClient): VendoClient {
+  const remix = {
+    format: "vendo/app@1", id: "app_remix", name: "Recent payees", ui: "tree" as const,
+    seed: { component: "RemixedMerchants" },
+  };
+  return {
+    ...client,
+    apps: {
+      ...client.apps,
+      get: async () => remix,
+      list: async () => [remix],
+      open: async () => ({ kind: "tree", payload: pinnedViewTree }),
+    } as VendoClient["apps"],
+  };
+}
+
+function RemixableScenario() {
+  const client = useMemo(() => remixClient(baseClient), []);
+  return (
+    <VendoProvider client={client} components={components} theme={mapleTheme}>
+      <div style={{ display: "grid", gap: 32, maxWidth: 560 }}>
+        <Remixable><PlainMerchants /></Remixable>
+        <Remixable><RemixedMerchants /></Remixable>
+      </div>
+      <VendoOverlay launcher="none" />
+    </VendoProvider>
+  );
+}
+
 /** Existing-agents polish — a BYO chat page: plain host markup (Georgia serif,
  *  no Vendo chrome, like the examples' quickstarts) rendering a `vendo_*` tool
  *  output through `VendoToolResult` against the real wire fixture. */
@@ -1958,6 +2004,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };
     case "/slot-states": return { title: "Inline slot — ready / failed", content: <SlotStatesScenario /> };
     case "/slot-picker": return { title: "Add to… — embed writes a placement", content: <SlotPickerScenario />, ownProvider: true };
+    case "/remixable": return { title: "Remixable — the ✦ is one door into the chat", content: <RemixableScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
     case "/appframe-devserver": return { title: "Live dev-server preview (HMR)", content: <DevServerPreviewScenario /> };

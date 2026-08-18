@@ -276,7 +276,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   };
   children?: ReactNode;
 }) {
-  const { components } = useVendoProvider();
+  const { client, components } = useVendoProvider();
   // Screen-initiated approvals: a press inside the mounted view that parks on
   // the guard hands itself here, and the modal asks the question centered over
   // the page. The slot owns the presses inside it, so it owns the question
@@ -452,6 +452,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
       <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>
     </FluidReveal>
   );
+  const pinTitle = discovery.title !== undefined && discovery.title !== "" ? discovery.title : name;
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
@@ -461,10 +462,10 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
         {appId !== undefined && resolvesItself ? (
           <PinChrome
             appId={appId}
-            slotId={id}
-            title={discovery.title !== undefined && discovery.title !== "" ? discovery.title : name}
+            title={pinTitle}
+            context={`The view being edited is the "${pinTitle}" app (${appId}), pinned in the "${id}" slot.`}
             onRefresh={() => setReload(n => n + 1)}
-            onUnpinned={() => void discovery.refresh()}
+            onRevert={() => client.apps.unplace(appId, id).then(() => void discovery.refresh())}
           >
             {body}
           </PinChrome>

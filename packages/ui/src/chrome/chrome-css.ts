@@ -1452,12 +1452,12 @@ html[data-vendo-dock] {
   .fl-remix-pill { transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1); }
 }
 
-/* ---- ✦ management popover (2026-08-02 final shape) ----
-   The pill on an already-remixed component opens this instead of forking:
-   status line, open-in-panel, revert. Borrows the slot menu's glass look.
-   The wrap carries the pill's absolute position so pill and menu share an
-   anchor; the pill inside it drops its own offset. No entry animation — the
-   popover appears in place (reduced motion needs no special case). */
+/* ---- the ✦ menu (pin-chrome.tsx) ----
+   The one popover over an app the page is showing on the person's behalf, a
+   remix and a pinned app alike: edit in chat, update, revert. The wrap carries
+   the pill's absolute position so pill and menu share an anchor; the pill
+   inside it drops its own offset. No entry animation — the popover appears in
+   place (reduced motion needs no special case). */
 .fl-remix-menu-wrap { position: absolute; top: 3px; right: 4px; z-index: 7; }
 .fl-remix-menu-wrap .fl-remix-pill { position: static; }
 .fl-remix-menu { position: absolute; top: 26px; right: 0; min-width: 188px; padding: 6px;
@@ -1465,19 +1465,11 @@ html[data-vendo-dock] {
   border: 1px solid var(--vendo-border-strong); border-radius: 12px;
   background: var(--vendo-surface);
   box-shadow: var(--vendo-shadow-float); font-family: var(--vendo-font-family); }
-.fl-remix-status { padding: 6px 9px 7px; font: 500 11px/1.4 var(--vendo-font-family);
-  color: var(--vendo-fg-muted); border-bottom: 1px solid var(--vendo-border); margin-bottom: 3px; }
 .fl-remix-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font-family); padding: 7px 9px;
   border: 0; border-radius: 8px; background: transparent; color: var(--vendo-fg); cursor: pointer; }
 .fl-remix-menu button:hover { background: var(--vendo-accent-soft); }
 .fl-remix-menu button:disabled { color: var(--vendo-fg-muted); cursor: default; }
 .fl-remix-menu button.is-danger { color: var(--vendo-danger); }
-/* The ✦ gesture's own popover: the instruction it collects before it fires. */
-.fl-remix-ask { width: 220px; margin: 1px 0 4px; padding: 7px 9px;
-  border: 1px solid var(--vendo-border); border-radius: 8px;
-  background: var(--vendo-surface); color: var(--vendo-fg);
-  font: 500 12.5px/1.2 var(--vendo-font-family); }
-.fl-remix-ask:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
 
 /* ---- filled state ---- */
 .fl-slot-filled { position: relative; flex: 1; }
