@@ -92,14 +92,19 @@ export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;
 /** Complete list of every code doctor can emit, for CI enumeration. */
 export const doctorErrorCodes = Object.keys(DOCTOR_ERROR_CODES) as readonly DoctorErrorCode[];
 
-/** The verify playbook page the fix_ref URLs anchor into. The docs host
-    serves it directly — the marketing-site path 302s there, and some agent
-    HTTP clients refuse the hop (FINDINGS F7a). */
-export const VERIFY_URL = "https://docs.vendo.run/agents/verify";
+/** Where the per-code troubleshooting pages live: one page per code, named for
+    the lowercased code (the 1:1 contract doctor-codes.docs.test.ts enforces).
+    The docs host serves them directly — the marketing-site path 302s, and some
+    agent HTTP clients refuse the hop (FINDINGS F7a).
 
-/** Full fix URL for a code: the installed vendoai version rides as a query
- *  param BEFORE the fragment so the URL stays valid and the verify page can
- *  version-match its guidance. */
+    The retired `/agents/verify#<code>` spelling was a dead link twice over: the
+    page moved in the Cloud restructure, and a code in a URL FRAGMENT never
+    reaches the server, so every fix_ref landed on the same index and left the
+    reader to find their own code. */
+export const TROUBLESHOOTING_URL = "https://docs.vendo.run/production/troubleshooting";
+
+/** Full fix URL for a code: its own page, with the installed vendoai version as
+ *  a query param so the page can version-match its guidance. */
 export function doctorFixRef(code: DoctorErrorCode, version: string = CLI_VERSION): string {
-  return `${VERIFY_URL}?v=${encodeURIComponent(version)}#${code}`;
+  return `${TROUBLESHOOTING_URL}/${code.toLowerCase()}?v=${encodeURIComponent(version)}`;
 }

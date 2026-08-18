@@ -46,6 +46,18 @@ export interface McpPlanInput {
    * `jwt` and "none" do not, and both surface here as null.
    */
   authWired: AuthMatch | null;
+  /**
+   * Does the composition ALREADY on disk wire one of those presets? A re-run
+   * over an existing composition asks no auth question — init never rewrites a
+   * file it did not author — so `authWired` is null even for a host whose
+   * `lib/vendo.ts` says `auth: authJs()`, and refusing on that alone told a
+   * correctly wired host to "wire an auth preset" and wrote no door at all.
+   * Resolved by the caller (`composedAuthPreset`); this module stays fs-free.
+   *
+   * Never true at the same time as a non-null `authWired`: init only decides
+   * auth for a composition it is CREATING, and then there is nothing on disk.
+   */
+  authAlreadyWired?: boolean;
   /** Does the host have a live `"use server"` surface? The composition imports
       the generated registration map when it does. The map itself stays the
       caller's to plan: an EXISTING one is compared by the keys it registers,
@@ -59,6 +71,12 @@ export interface McpPlanInput {
   /** Did the user say yes to "will your own backend call these tools
       machine-to-machine?" */
   serviceKey: boolean;
+  /** A well-formed `VENDO_SERVICE_KEY` already in the host's env files, to
+      REUSE. Minting one unconditionally rotated the secret on every re-run and
+      the caller then overwrote .env.local with it, so every backend already
+      exchanging the old key started failing — the same reuse-don't-remint rule
+      `VENDO_API_KEY` follows. Read by the caller; this module stays fs-free. */
+  existingServiceKey?: string;
   /** The origin captured earlier this run — the DEV one, which is what a client
       config and doctor both want while the developer is still local. Null when
       the run could not ask. */
@@ -87,7 +105,9 @@ export interface McpPlan {
       `before` it already read. Null when the plan is `blocked`. */
   compositionSource: string | null;
   /**
-   * The generated service key, for the caller to write to `.env.local`.
+   * The service key the composition wires, for the caller to write to
+   * `.env.local` — `existingServiceKey` when the host already has a well-formed
+   * one, else freshly minted.
    * Present on local posture with a yes, and NOWHERE else. `serviceAuth` is
    * local-door mechanics: the RFC 8693 exchange lives at the door's own
    * `/token`, which a broker-fronted door does not serve — and an explicit
@@ -134,10 +154,17 @@ export function mcpStepLines(plan: Pick<McpPlan, "steps" | "envLines">): string[
 }
 
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
-    the answers call for it; this is separately callable so the shape can be
-    asserted without a plan. */
+    the answers call for it AND the host has none to reuse; this is separately
+    callable so the shape can be asserted without a plan. */
 export function generateServiceKey(): string {
   return randomBytes(32).toString("hex");
+}
+
+/** Is the value already in the host's env a key this door can exchange? The
+    shape `generateServiceKey` mints, and nothing else: anything other than 32
+    hex bytes is not reusable, so it is replaced rather than trusted. */
+export function wellFormedServiceKey(value: string | null | undefined): boolean {
+  return value !== null && value !== undefined && /^[0-9a-f]{64}$/i.test(value.trim());
 }
 
 /**
@@ -176,15 +203,15 @@ export function planMcp(input: McpPlanInput): McpPlan {
     return refuse(
       "MCP scaffolding is Next.js-only: the discovery documents live at origin-root paths, which only a "
       + "file-routed app directory can claim. Open the door by hand instead — pass `mcp: true` to createVendo "
-      + "and serve the well-known paths from your runtime: https://docs.vendo.run/existing-agents/mcp.",
+      + "and serve the well-known paths from your runtime: https://docs.vendo.run/outside-agents/quickstart.",
     );
   }
-  if (authWired === null) {
+  if (authWired === null && input.authAlreadyWired !== true) {
     return refuse(
       "The MCP door mints its own principals through an OAuth adapter and cannot open without one, so "
       + "nothing MCP was written. Wire an auth preset — auth: clerk(), authJs(), supabase() or auth0() all "
       + "carry it — then re-run `npx vendo init`. (jwt() and an anonymous composition do not carry the "
-      + "oauth half: https://docs.vendo.run/existing-agents/mcp.)",
+      + "oauth half: https://docs.vendo.run/outside-agents/quickstart.)",
     );
   }
 
@@ -222,7 +249,9 @@ export function planMcp(input: McpPlanInput): McpPlan {
   return {
     changes,
     compositionSource: compositionModuleSource({ serverActions, auth: authWired, models, mcp: { serviceAuth } }),
-    ...(serviceAuth ? { serviceKeyValue: generateServiceKey() } : {}),
+    ...(serviceAuth
+      ? { serviceKeyValue: wellFormedServiceKey(input.existingServiceKey) ? input.existingServiceKey!.trim() : generateServiceKey() }
+      : {}),
     modelWritten: models === null ? null : { provider: models.provider, path: relative(root, composition).split(sep).join("/") },
     steps,
     envLines: posture === "broker"

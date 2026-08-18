@@ -97,7 +97,7 @@ describe("vendo CLI commands", () => {
 
     // Every option but the models answer, so this stays init's ask pass: it
     // writes nothing and hands back the one question still open. (`--ai` is
-    // absent because --agent refuses it by name — the AI-flag test owns that.)
+    // absent because the AI-flag test owns it.)
     expect(await main(["init", root, "--agent", "--yes", "--force",
       "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed",
       "--use-case", "mcp", "--base-url", "https://app.acme.com", "--posture", "broker",
@@ -254,14 +254,13 @@ describe("vendo CLI commands", () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-ai-flags-"));
     cleanup.push(root);
 
-    // Parsed, not rejected. Under --agent an `--ai` that can never run is
-    // refused BY NAME rather than dropped, since judgment is delegated to the
-    // caller; --no-ai agrees with what happens and passes.
-    for (const flag of ["--ai", "--ai-polish"]) {
-      expect(await main(["init", root, "--agent", flag])).toBe(1);
-      expect(error.mock.calls.flat().join("\n")).toContain("has no effect with --agent");
+    // Parsed, not rejected — on --agent too. Agent mode GRADES (2026-08-18), so
+    // `--ai` is that mode's own default and `--engine` pins its rung: neither is
+    // a flag that can never run any more, and rejecting one would refuse the
+    // ordinary spelling. (The run below is the ask pass, so it writes nothing.)
+    for (const flag of ["--ai", "--ai-polish", "--no-ai"]) {
+      expect(await main(["init", root, "--agent", flag])).toBe(0);
     }
-    expect(await main(["init", root, "--agent", "--no-ai"])).toBe(0);
     expect(await readdir(root)).toEqual([]);
 
     for (const flag of ["--ai", "--no-ai", "--no-watermark", "--yes", "--theme-refresh"]) {

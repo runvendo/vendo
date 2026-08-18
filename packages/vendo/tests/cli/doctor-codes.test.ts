@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOCTOR_ERROR_CODES, VERIFY_URL, doctorErrorCodes, doctorFixRef } from "../../src/cli/doctor-codes.js";
+import { DOCTOR_ERROR_CODES, TROUBLESHOOTING_URL, doctorErrorCodes, doctorFixRef } from "../../src/cli/doctor-codes.js";
 import { CLI_VERSION } from "../../src/cli/shared.js";
 
 describe("doctor error-code registry", () => {
@@ -83,15 +83,17 @@ describe("doctor error-code registry", () => {
     `);
   });
 
-  it("builds a URL-valid fix_ref with the version param before the fragment", () => {
+  it("builds a URL-valid fix_ref that lands on the code's own page", () => {
     const ref = doctorFixRef("E-AUTH-001", "1.2.3");
-    // docs.vendo.run serves the verify playbook directly; the marketing-site
-    // path 302s (FINDINGS F7a) and some agents refuse to follow the hop.
-    expect(ref).toBe("https://docs.vendo.run/agents/verify?v=1.2.3#E-AUTH-001");
+    // docs.vendo.run serves the troubleshooting pages directly; the
+    // marketing-site path 302s (FINDINGS F7a) and some agents refuse the hop.
+    // The code is in the PATH, not a fragment — a fragment never reaches the
+    // server, so it could not select a page.
+    expect(ref).toBe("https://docs.vendo.run/production/troubleshooting/e-auth-001?v=1.2.3");
     const url = new URL(ref);
     expect(url.searchParams.get("v")).toBe("1.2.3");
-    expect(url.hash).toBe("#E-AUTH-001");
-    expect(`${url.origin}${url.pathname}`).toBe(VERIFY_URL);
+    expect(url.hash).toBe("");
+    expect(`${url.origin}${url.pathname}`).toBe(`${TROUBLESHOOTING_URL}/e-auth-001`);
   });
 
   it("defaults the version param to the installed CLI version", () => {

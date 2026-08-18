@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { z } from "zod";
 import { fieldSemanticSchema, gradedRiskLabelSchema, jsonSchemaSchema, type JsonSchema } from "@vendoai/core";
 import {
@@ -486,7 +486,8 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const file = judgmentsFileSchema.parse({ format: VENDO_JUDGMENTS_FORMAT, tools: sortedTools });
   // Don't create an empty file where none existed: a pass that found nothing to
   // record leaves the directory as it was.
-  if (storedFile !== null || Object.keys(sortedTools).length > 0) {
+  const wroteJudgments = storedFile !== null || Object.keys(sortedTools).length > 0;
+  if (wroteJudgments) {
     await writeIfChanged(judgmentsPath, `${JSON.stringify(file, null, 2)}\n`);
   }
 
@@ -504,6 +505,8 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     loosenings: { approved, declined, queued },
     repairedStages: stages.repairedStages,
     notes,
+    wroteJudgments,
+    judgmentsPath: relative(options.root, judgmentsPath),
   });
 
   return {
@@ -1025,6 +1028,10 @@ function reportNarrative(input: {
   loosenings: { approved: number; declined: number; queued: number };
   repairedStages: string[];
   notes: string[];
+  /** Did this pass land grades on disk? */
+  wroteJudgments: boolean;
+  /** Where they landed, root-relative — named out loud, see below. */
+  judgmentsPath: string;
 }): void {
   const { output, credential, judged, routed, patched, repairedStages, notes } = input;
   const { approved, declined, queued } = input.loosenings;
@@ -1093,6 +1100,23 @@ function reportNarrative(input: {
   // adding a tool is the deterministic scanner's job.
   for (const missed of judged.missedSurfaces) {
     output.error(`warning: missed surface (not extracted yet): ${sanitize(missed)}`);
+  }
+  // WHERE the grades went, and why tools.json still says "ungraded".
+  //
+  // The tallies above are the only thing this pass used to say, and three
+  // separate auditors read "hardened fields (14)" next to an unchanged
+  // tools.json full of `risk: "ungraded"` and concluded the pass had done
+  // nothing. Grades are a SEPARATE layer on purpose — tools.json is the raw
+  // scan, judgments.json is what a model proposed and a skeptic kept, and the
+  // runtime merges them (actions/src/judgments.ts) — so the receipt has to name
+  // both files or the split reads as a bug.
+  //
+  // The restart line rides here because a running dev server read the judgments
+  // once, at boot: nothing re-reads the file, so grades written by `sync --ai`
+  // do not reach the process the developer is looking at until it restarts.
+  if (input.wroteJudgments) {
+    output.log(`grades written to ${input.judgmentsPath} — tools.json keeps the raw scan; the runtime merges both`);
+    output.log("restart your dev server to pick up the new grades (a running one read them at boot)");
   }
 }
 

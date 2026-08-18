@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
+import { runsAgentLoop } from "@vendoai/actions/sync";
 import { exists, stripBom } from "./shared.js";
 import { walk } from "./theme/walk.js";
 
@@ -195,6 +196,45 @@ export async function wiresTenantConnectors(root: string): Promise<boolean> {
     says. */
 export async function composesOwnStore(root: string): Promise<boolean> {
   return hostSourceMatches(root, /\bcreateStore\s*\(/);
+}
+
+/** An API route file: an app-router `route.*` under an `api` segment, or
+    anything under `pages/api`. The agent-loop probe below is deliberately
+    narrower than the whole source tree — a lib module that happens to call
+    `generateText` is not a loop the host serves. */
+const API_ROUTE_FILE = /(?:^|\/)api\/(?:.*\/)?route\.[cm]?[jt]sx?$|(?:^|\/)pages\/api\//;
+
+/** The host's own agent-loop route, as a posix-style root-relative directory
+ *  (`app/api/chat`), or null.
+ *
+ *  This is what makes "through your own agent loop" the RECOMMENDED use case for
+ *  a host that already has one, instead of a third option nobody reads. The
+ *  evidence is the route scanner's own marker (`runsAgentLoop`), which is also
+ *  what excludes that route from the callable catalog — so the recommendation
+ *  and the exclusion can never disagree about what a loop is.
+ *
+ *  Not `hostSourceMatches`: that one walks every source file and answers a
+ *  boolean, and this needs both the narrower route filter and the PATH — the
+ *  route's directory is what the recommendation shows the developer.
+ *
+ *  Same bounded walk and comment-stripping as `detectVendoWiring`, so a host too
+ *  big to scan is judged consistently. First match wins: one loop is the whole
+ *  answer, and the directory is what a human recognises. */
+export async function detectAgentLoopRoute(root: string): Promise<string | null> {
+  const files = await walk(
+    root,
+    (relativePath) => SOURCE_FILE.test(relativePath) && API_ROUTE_FILE.test(relativePath.split(sep).join("/")),
+    SOURCE_SCAN_MAX_FILES,
+  );
+  for (const file of files) {
+    const source = await readFile(file, "utf8").catch(() => "");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    if (runsAgentLoop(code)) {
+      const parts = relative(root, file).split(sep);
+      return parts.slice(0, -1).join("/");
+    }
+  }
+  return null;
 }
 
 /** Bounded source scan shared by init and doctor so their wiring verdicts

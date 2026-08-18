@@ -42,15 +42,34 @@ export interface InitQuestions {
   questions: InitQuestion[];
 }
 
-const USE_CASE: InitQuestion = {
-  id: "use-case",
-  prompt: "How will people use your agent? Most apps embed it: your users chat with your product and it builds them real working screens from your data, dashboards, forms, views, right inside your app (recommended). Or: through your own agent loop. Or: from outside AI apps over MCP.",
-  options: [
-    { label: "Full-Stack Agent: chat + generated screens in your app", flag: "--use-case embedded", recommended: true },
-    { label: "Through your own agent loop (AI SDK / Mastra)", flag: "--use-case agent-loop" },
-    { label: "From outside AI apps over MCP", flag: "--use-case mcp" },
-  ],
-};
+const EMBEDDED_OPTION: InitQuestionOption = { label: "Full-Stack Agent: chat + generated screens in your app", flag: "--use-case embedded" };
+const AGENT_LOOP_OPTION: InitQuestionOption = { label: "Through your own agent loop (AI SDK / Mastra)", flag: "--use-case agent-loop" };
+const MCP_OPTION: InitQuestionOption = { label: "From outside AI apps over MCP", flag: "--use-case mcp" };
+
+/** The first question. Most apps embed — but a host whose own API already runs
+    an agent loop has ALREADY decided, and recommending "embedded" to it sent
+    people down a path they then had to undo while the route scanner was
+    meanwhile excluding that very route from the callable catalog. The
+    recommended option comes FIRST and carries its evidence: a recommendation
+    whose reason is invisible reads as a guess. */
+function useCaseQuestion(agentLoopRoute: string | null): InitQuestion {
+  if (agentLoopRoute === null) {
+    return {
+      id: "use-case",
+      prompt: "How will people use your agent? Most apps embed it: your users chat with your product and it builds them real working screens from your data, dashboards, forms, views, right inside your app (recommended). Or: through your own agent loop. Or: from outside AI apps over MCP.",
+      options: [{ ...EMBEDDED_OPTION, recommended: true }, AGENT_LOOP_OPTION, MCP_OPTION],
+    };
+  }
+  return {
+    id: "use-case",
+    prompt: `How will people use your agent? This app already runs an agent loop in ${agentLoopRoute}, so adding Vendo's guarded tools to that loop is the shortest path (recommended) — its route is excluded from the callable catalog either way, so nothing hands the agent a tool that calls itself. Or: embed Vendo's own chat and generated screens in your app. Or: from outside AI apps over MCP.`,
+    options: [
+      { ...AGENT_LOOP_OPTION, recommended: true, note: `detected an agent loop in ${agentLoopRoute}` },
+      EMBEDDED_OPTION,
+      MCP_OPTION,
+    ],
+  };
+}
 
 const MODELS: InitQuestion = {
   id: "models",
@@ -121,17 +140,38 @@ function mcpQuestions(cloudKey: boolean): InitQuestion[] {
 
 const PRESETS = Object.keys(AUTH_FAMILY_INFO) as AuthPresetName[];
 
-function authQuestion(detected: AuthPresetName | undefined): InitQuestion {
+const FULL_LIST: InitQuestionOption[] = [
+  ...PRESETS.map((preset) => ({ label: AUTH_FAMILY_INFO[preset].name, flag: `--auth ${preset}` })),
+  { label: "Your own JWT scheme", flag: "--auth jwt" },
+  { label: "No signed-in user", flag: "--auth none" },
+];
+
+/** Interactive mode DETECTS the provider and only confirms it; the agent form
+ *  handed back the full list with no recommendation whenever `wired` was empty,
+ *  so a coding agent relaying it had to guess for the person. Same detection,
+ *  same answer, all three ways it can come out:
+ *
+ *   · one family wired → that family is recommended (today's question);
+ *   · NOTHING detected → `none` is recommended, and the option says why. That is
+ *     exactly what an interactive run settles for: it never asks at all, because
+ *     there is nothing to choose from the advisory does not already name;
+ *   · SEVERAL families → the full list with no recommendation, deliberately. Two
+ *     matches is AMBIGUOUS, and naming one would name a provider the host may not
+ *     use and hide the other — the same reason interactive shows its picker.
+ */
+function authQuestion(detection: { wired?: AuthPresetName; matches: number }): InitQuestion {
+  const detected = detection.wired;
   if (detected === undefined) {
-    return {
-      id: "auth",
-      prompt: "Which auth should Vendo wire?",
-      options: [
-        ...PRESETS.map((preset) => ({ label: AUTH_FAMILY_INFO[preset].name, flag: `--auth ${preset}` })),
-        { label: "Your own JWT scheme", flag: "--auth jwt" },
-        { label: "No signed-in user", flag: "--auth none" },
-      ],
-    };
+    return detection.matches > 0
+      ? { id: "auth", prompt: "Which auth should Vendo wire?", options: FULL_LIST }
+      : {
+          id: "auth",
+          prompt: "Which auth should Vendo wire? Nothing was detected in package.json, so unless you name one the assistant acts with no signed-in user.",
+          options: [
+            { label: "No signed-in user", flag: "--auth none", recommended: true, note: "no auth dependency in package.json" },
+            ...FULL_LIST.filter((option) => option.flag !== "--auth none"),
+          ],
+        };
   }
   const name = AUTH_FAMILY_INFO[detected].name;
   const others = [...PRESETS.filter((preset) => preset !== detected), "jwt"].join("|");
@@ -161,15 +201,22 @@ export async function initQuestions(input: {
   /** The port the host's `dev` script names — the dev-URL question's prefill.
       Passed in rather than read here so the whole set stays assertable. */
   devPort: number;
+  /** The host's own agent-loop route (`app/api/chat`), or null — what moves the
+      use-case recommendation. Detected by the caller (framework.ts), so this set
+      stays assertable without a temp directory. */
+  agentLoopRoute?: string | null;
 }): Promise<InitQuestions | null> {
   const { options } = input;
   // `wired`, never `matches[0]`: two families matching is AMBIGUOUS, and
   // claiming the first one would name a provider the host may not use and hide
   // the other. Ambiguity falls through to the full-list question.
-  const detected = (await detectAuthPreset(input.root)).wired?.preset;
+  const detection = await detectAuthPreset(input.root);
+  const detected = detection.wired?.preset;
   const questions: InitQuestion[] = [];
-  if (options.useCase === undefined) questions.push(USE_CASE);
-  if (options.auth === undefined) questions.push(authQuestion(detected));
+  if (options.useCase === undefined) questions.push(useCaseQuestion(input.agentLoopRoute ?? null));
+  if (options.auth === undefined) {
+    questions.push(authQuestion({ ...(detected === undefined ? {} : { wired: detected }), matches: detection.matches.length }));
+  }
   if (!input.modelKey && options.byo !== true && options.cloudKey === undefined) questions.push(MODELS);
   if (options.baseUrl === undefined) questions.push(devUrlQuestion(input.devPort));
   // ONE gate for the MCP extras: they travel in the same relay, so `--posture`

@@ -128,6 +128,18 @@ function isVendoWireMount(route: RouteSource, walked: readonly string[]): boolea
 
 const AUTH_HANDLER_REASON = "it is an authentication handler";
 
+const AGENT_LOOP_MARKER =
+  /from\s*["'](?:ai|@anthropic-ai\/sdk|@ai-sdk\/[^"']+|@mastra\/[^"']+|@vendoai\/agents(?:\/[^"']+)?|@vendoai\/vendo\/(?:ai-sdk|mastra))["']|\b(?:streamText|generateText|vendoTools)\s*\(|\.\s*(?:respond|run)\s*\(/;
+
+/** Does this module run an agent/model loop? The SAME marker the exclusion below
+    matches, exported so `vendo init` can recommend the agent-loop use case off
+    the very evidence that would exclude the route — two copies of this regex
+    would drift on what a loop is, and then the tool the scanner refuses to
+    catalog would sit behind a use case init never offered. */
+export function runsAgentLoop(source: string): boolean {
+  return AGENT_LOOP_MARKER.test(source);
+}
+
 /**
  * Routes that belong to the HOST but must not be offered as tools. Unlike the
  * wire mount above, each one is still extracted: the tool keeps its real
@@ -142,9 +154,16 @@ const AUTH_HANDLER_REASON = "it is an authentication handler";
  * 1. The host's own agent endpoint — an AI-SDK / Mastra / raw-Anthropic loop,
  *    or a route that spreads Vendo's own tool pack. Cataloging one hands the
  *    agent a tool that calls the agent. Only the AGENT-shaped Vendo entry
- *    points count (`@vendoai/vendo/ai-sdk`, `/mastra`, a `vendoTools` or
- *    `vendo.respond` call): a route importing the umbrella for `vendo.store`
- *    is ordinary host code, and Maple's `/api/demo/reset` is exactly that.
+ *    points count (`@vendoai/vendo/ai-sdk`, `/mastra`, `@vendoai/agents`, a
+ *    `vendoTools` / `.respond(` / `.run(` call): a route importing the umbrella
+ *    for `vendo.store` is ordinary host code, and Maple's `/api/demo/reset` is
+ *    exactly that. `@vendoai/agents` is Vendo's OWN backend library, and a
+ *    `support.respond(…)` loop is never spelled `vendo.respond(…)` — the
+ *    receiver is whatever the host named its agent — so the call marker cannot
+ *    be anchored on one identifier. A host route that genuinely happens to call
+ *    something's `.run(` keeps the same escape every exclusion has: the tool is
+ *    emitted `disabled: true` with the reason on it, and one `disabled: false`
+ *    in `.vendo/overrides.json` puts it back.
  * 2. Auth.js's catch-all, which answers sign-in, callback, session, and CSRF
  *    for every provider behind one URL.
  *
@@ -157,7 +176,7 @@ const AUTH_HANDLER_REASON = "it is an authentication handler";
 const ROUTE_EXCLUSION_MARKERS: ReadonlyArray<{ reason: string; marker: RegExp }> = [
   {
     reason: "its handler runs an agent/model loop",
-    marker: /from\s*["'](?:ai|@anthropic-ai\/sdk|@ai-sdk\/[^"']+|@mastra\/[^"']+|@vendoai\/vendo\/(?:ai-sdk|mastra))["']|\b(?:streamText|generateText|vendoTools)\s*\(|\bvendo\.respond\s*\(/,
+    marker: AGENT_LOOP_MARKER,
   },
   {
     reason: AUTH_HANDLER_REASON,

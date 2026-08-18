@@ -182,12 +182,10 @@ async function initCommand(args: string[]): Promise<number> {
   if (initAi && args.includes("--no-ai")) {
     problems.push("--ai and --no-ai answer the same question — pass one or the other");
   }
-  // Agent mode delegates judgment to the caller, so an engine can never run on
-  // it. Saying so beats dropping the flag: silently ignoring one is exactly how
-  // the "--agent writes nothing" promise broke in the field.
-  if (args.includes("--agent") && (initAi || engine !== undefined)) {
-    problems.push(`${initAi ? "--ai" : "--engine"} has no effect with --agent: judgment is delegated to you and the receipt names what it left. Drop it, or drop --agent to let init judge`);
-  }
+  // Agent mode GRADES (2026-08-18): the pass is a scripted, skeptic-checked
+  // engine run, and every agent install used to ship an ungraded catalog whose
+  // every tool asked on each call. `--ai` is the mode's own default there, so
+  // both flags mean what they always meant and neither is rejected.
   const themePairs = options(args, "--theme");
   const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));
   if (badTheme !== undefined) {

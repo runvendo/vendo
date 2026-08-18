@@ -127,13 +127,21 @@ function run(root: string, sink: { output: Output }, extra: Partial<Parameters<t
 
 /** An --agent run with every question already answered: the WRITE pass, whose
     last line is the receipt. Leaving any one of them off makes it the ask
-    pass instead. */
+    pass instead.
+
+    `harnesses: []` because agent mode GRADES now (2026-08-18): without an empty
+    ladder these runs would probe the developer's own machine and, where Claude
+    Code is installed, spend a real model call per test. A test that wants the
+    pass to run supplies its own scripted harness. */
 function agentRun(
   root: string,
   sink: { output: Output },
   extra: Partial<Parameters<typeof runInit>[0]> = {},
 ): Promise<number> {
-  return run(root, sink, { agent: true, useCase: "embedded", auth: "none", byo: true, baseUrl: "http://localhost:3000", ...extra });
+  return run(root, sink, {
+    agent: true, useCase: "embedded", auth: "none", byo: true, baseUrl: "http://localhost:3000",
+    extract: { harnesses: [] }, ...extra,
+  });
 }
 
 const receiptOf = (logs: string[]): InitReceipt => JSON.parse(logs.at(-1)!) as InitReceipt;
@@ -348,7 +356,7 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain(`auth: ${preset}(),`);
     // The detected line carries its escape hatch, and the preset owns the
     // principal seam — no hand-wired anonymous resolver remains.
-    expect(route).toContain("https://docs.vendo.run/connect/act-as-presets");
+    expect(route).toContain("https://docs.vendo.run/production/auth");
     expect(route).not.toContain("principal");
     // Detection is silent: no question, no advisory.
     expect(sink.logs.join("\n")).not.toContain("Auth:");
@@ -457,7 +465,7 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain("auth: clerk(),");
     expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
     expect(route).not.toContain("Detected");
-    expect(route).toContain("https://docs.vendo.run/connect/act-as-presets");
+    expect(route).toContain("https://docs.vendo.run/production/auth");
     expect(route).not.toContain("principal");
     // …plus one install hint, since @clerk/backend is not in package.json.
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
@@ -484,7 +492,7 @@ describe("vendo init (zero-question)", () => {
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
     expect(advisories).toHaveLength(1);
     expect(advisories[0]).toContain("auth: jwt({ secret:");
-    expect(advisories[0]).toContain("https://docs.vendo.run/connect/act-as-presets");
+    expect(advisories[0]).toContain("https://docs.vendo.run/production/auth");
   });
 
   it("ambiguous detection offers the picker with detected families first (after none)", async () => {
@@ -1936,8 +1944,9 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(Array.isArray(receipt.riskRecommendations)).toBe(true);
     // The retired plan dump's fields are gone with it.
     expect(sink.logs.join("\n")).not.toContain("codeChanges");
-    // Agent mode never spawns a judgment engine and never asks to.
-    expect(sink.logs.join("\n")).toContain("Judgment: delegated to you");
+    // Agent mode asks for the judgment pass now; no engine resolves in a test
+    // fixture, so the checklist comes back as the caller's required work.
+    expect(sink.logs.join("\n")).not.toContain("Judgment: delegated to you");
   });
 
   it("asks MCP's two extra questions on the re-run that picked mcp", async () => {
@@ -2005,24 +2014,40 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(questionsOf(after.logs).questions.map((question) => question.id)).toEqual(["use-case", "auth", "dev-url"]);
   });
 
-  /** `--ai` cannot buy an engine here: the caller IS one. The harness below
-      throws the moment the ladder probes it, so reaching it fails the test. */
-  it("stays delegated under --ai and never probes an engine", async () => {
+  /** Agent mode GRADES (2026-08-18, Yousef's direction): the pass is a scripted,
+      skeptic-checked engine run, so "delegated to you" meant every agent install
+      shipped an ungraded catalog whose every tool asked on each call. It never
+      ASKS for consent — the mode is the consent — and the delegated receipt is
+      the one fallback left, for a machine with no engine at all. */
+  it("grades under --agent with an available engine, and never asks for consent", async () => {
     const root = await fixture();
     const sink = output();
+    let ran = 0;
     expect(await agentRun(root, sink, {
-      ai: true,
       extract: {
         harnesses: [{
-          id: "never",
-          availability: async () => { throw new Error("probed an engine"); },
-          run: async () => { throw new Error("ran an engine"); },
+          id: "scripted",
+          availability: async () => "a scripted harness",
+          run: async () => { ran += 1; return "```json\n" + JSON.stringify({ tools: [] }) + "\n```"; },
         }],
         confirm: async () => { throw new Error("asked for AI consent"); },
       },
     })).toBe(0);
-    expect(sink.logs.join("\n")).toContain("Judgment: delegated to you");
-    expect(receiptOf(sink.logs).judgment.status).toBe("delegated");
+    expect(ran).toBeGreaterThan(0);
+    expect(sink.logs.join("\n")).not.toContain("Judgment: delegated to you");
+    expect(receiptOf(sink.logs).judgment.status).toBe("graded");
+  });
+
+  /** …and with NO engine on the machine, the checklist comes back as REQUIRED
+      work rather than as a default nobody chose. */
+  it("hands the grading back as required work when no engine resolves", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await agentRun(root, sink, { extract: { harnesses: [] } })).toBe(0);
+    expect(sink.logs.join("\n")).toContain("judgment: REQUIRED, not done");
+    const receipt = receiptOf(sink.logs);
+    expect(receipt.judgment.status).toBe("delegated");
+    expect(receipt.judgment).toHaveProperty("checklist");
   });
 
   it("writes and receipts the agent-loop and mcp arms too", async () => {
@@ -2668,7 +2693,10 @@ describe("the five questions", () => {
     const aiSink = output();
     expect(await run(aiSdk, aiSink, { useCase: "agent-loop" })).toBe(0);
     const aiLogs = aiSink.logs.join("\n");
-    expect(aiLogs).toContain("2 STEPS LEFT");
+    // ONE step, not two: an agent-loop install mounts no Vendo UI by design, so
+    // the <VendoProvider> paste is not a step it owes (the rule doctor grades by).
+    expect(aiLogs).toContain("ONE STEP LEFT");
+    expect(aiLogs).not.toContain("VendoOverlay");
     expect(aiLogs).toContain('import { vendoTools } from "@vendoai/vendo/ai-sdk";');
     // The `vendo` the snippet calls has to COME from somewhere: a second
     // createVendo in the loop shares no state with the wire the embeds call.
@@ -2684,7 +2712,7 @@ describe("the five questions", () => {
     const mastraSink = output();
     expect(await run(mastra, mastraSink, { useCase: "agent-loop" })).toBe(0);
     const mastraLogs = mastraSink.logs.join("\n");
-    expect(mastraLogs).toContain("3 STEPS LEFT");
+    expect(mastraLogs).toContain("2 STEPS LEFT");
     expect(mastraLogs).toContain("vendoMastraTools");
     expect(mastraLogs).toContain("VENDO_PRINCIPAL_KEY");
   });

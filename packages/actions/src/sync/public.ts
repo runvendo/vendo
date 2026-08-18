@@ -40,3 +40,7 @@ export {
   type ToolSchemaPatchResult,
   type ToolSchemaSlot,
 } from "./schema-patch.js";
+// "Does this module run an agent/model loop?" — the marker the route scanner
+// excludes on, exported so `vendo init` recommends the agent-loop use case off
+// the SAME evidence rather than a second copy of the regex.
+export { runsAgentLoop } from "./route-scan.js";

@@ -74,7 +74,9 @@ describe("the tenant-connector vault check", () => {
     expect(check?.message).toContain("VENDO_STORE_ENCRYPTION_KEY");
     // The failure it is really about is the DEPLOY, and it says so.
     expect(check?.message).toContain("REFUSED outright in production");
-    expect(check?.fix_ref).toContain("#E-TENANT-001");
+    // The code is in the PATH, not a fragment: a fragment never reaches the
+    // server, so it could not select the code's own troubleshooting page.
+    expect(check?.fix_ref).toContain("/production/troubleshooting/e-tenant-001");
   });
 
   it("passes on either vault: the host's own key, or Cloud's", async () => {

@@ -639,8 +639,8 @@ describe("vendo doctor (model credentials + --json + cloud)", () => {
 
 /** Agent-install DX (design 2026-07-19 §CLI-3) — every check carries a stable
  *  id; failures and warnings additionally carry a registry `error_code` and a
- *  full `fix_ref` URL into docs.vendo.run/agents/verify. Passing checks carry
- *  neither (nothing to fix). */
+ *  full `fix_ref` URL into the code's own docs.vendo.run troubleshooting page.
+ *  Passing checks carry neither (nothing to fix). */
 describe("vendo doctor error codes + fix_refs", () => {
   it("stamps every failing check with a registered error_code and a full fix_ref URL", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-codes-broken-"));
@@ -656,7 +656,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       expect(check.id).toBeTruthy();
       expect(check.error_code).toMatch(/^E-[A-Z]+-\d{3}$/);
       expect(doctorErrorCodes).toContain(check.error_code);
-      expect(check.fix_ref).toBe(`https://docs.vendo.run/agents/verify?v=${CLI_VERSION}#${check.error_code}`);
+      expect(check.fix_ref).toBe(`https://docs.vendo.run/production/troubleshooting/${check.error_code!.toLowerCase()}?v=${CLI_VERSION}`);
     }
     // The remediation surface is broad: wiring, config, deps, tools.
     const codes = new Set(failures.map((check) => check.error_code));

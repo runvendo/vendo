@@ -471,10 +471,10 @@ describe("createPrettyOutput (visual system)", () => {
     pretty.log("\n  Without it, nothing on the page can reach Vendo.");
     pretty.log(rule);
     const plain = out.plain();
-    expect(plain).toContain("docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx");
+    expect(plain).toContain("docs.vendo.run/product/mount-the-surface#the-provider — exact wording for layout.tsx and _app.tsx");
     // Right under the wrap line it explains, and dim.
-    expect(plain.indexOf("</VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/quickstart"));
-    expect(out.raw()).toContain(`${ESC}[2mdocs.vendo.run/quickstart#the-client-mount`);
+    expect(plain.indexOf("</VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/product/mount-the-surface"));
+    expect(out.raw()).toContain(`${ESC}[2mdocs.vendo.run/product/mount-the-surface#the-provider`);
   });
 
   it("prints the mount paste as real JSX, with a dim … for the app tree already there", () => {
@@ -501,7 +501,7 @@ describe("createPrettyOutput (visual system)", () => {
     // The app tree is a dim PLACEHOLDER, not code to paste…
     expect(out.raw()).toContain(`${ESC}[2m…${ESC}[22m`);
     // …which is exactly what the docs pointer under it exists to resolve.
-    expect(plain.indexOf("│    </VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/quickstart"));
+    expect(plain.indexOf("│    </VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/product/mount-the-surface"));
   });
 
   it("keeps the real JSX when the host is a pages `_app` — the child expression differs, the shape does not", () => {
