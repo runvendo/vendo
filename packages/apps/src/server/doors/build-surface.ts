@@ -37,7 +37,8 @@ import {
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { checkComponentScreen, reviewComponentScreenInput } from "../checking/component-screen.js";
 import { screenCatalog } from "../checking/screen-typings.js";
-import { createAppFloor, floorChecks } from "../checking/floor.js";
+import { screenTypesCheck } from "../checking/facts.js";
+import { createAppFloor } from "../checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
 import { reviewerCheck } from "../checking/reviewer.js";
 import { generationDependencies, resolveProvider } from "../runtime/generation-context.js";
@@ -477,7 +478,7 @@ const createValidateDoor = (
     const findings = await createCheckingLayer({
       // The thorough door: the shared floor AND the reviewer. Off the
       // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-      checks: [...floorChecks(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
+      checks: [screenTypesCheck(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
     }).run({ document, request: "" });
     return { ok: !findings.some(({ severity }) => severity === "block"), findings };
   };
@@ -539,7 +540,7 @@ export const createBuildSurface = (
         // (theme, design rules, fill tiers, the partial-tree seam) is a fact about
         // an app, so none of them belongs in a check's inputs. The host's routes
         // ARE one — which pages exist is as much a fact as which tools do, and it
-        // is what `routes-exist` measures a `<Link to>` against. `model` rides
+        // is what the gauntlet's routes check measures a `<Link to>` against. `model` rides
         // along when the deployment has one and is absent when it does not — the
         // seam never spends it either way, and the AI reviewer is `validate`'s.
         deps: async () => ({

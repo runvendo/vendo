@@ -131,7 +131,11 @@ describe("build-failure lifecycle (#492)", () => {
 
     const surface = await runtime.open("app_legacy", context("user_ada"));
     expect(surface).toMatchObject({ kind: "failed" });
-    expect((surface as { reason: string }).reason).toContain("has no screen");
+    // The reason reaches a bank's customer through the embed, so it is one plain
+    // sentence: what happened and what to do, and none of the history that
+    // explains it to us.
+    expect((surface as { reason: string }).reason).toContain("can’t be opened");
+    expect((surface as { reason: string }).reason).toContain("create it again");
     // Nothing to retry: re-issuing the create would fail identically.
     expect(surface).not.toHaveProperty("retryable");
   });

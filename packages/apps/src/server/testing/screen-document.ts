@@ -20,8 +20,7 @@ export default function Dash() {
 
 /**
  * A stored app as the product writes one: it IS its `app.tsx`, spelled the way
- * `commitApp` spells it. The one fixture every test that needs a real app row
- * builds from, so "what a stored app looks like" is stated once.
+ * `commitApp` spells it. What this package's tests build a real app row from.
  */
 export const screenDocument = (id: AppId, over: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,

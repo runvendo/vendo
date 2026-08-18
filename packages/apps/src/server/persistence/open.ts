@@ -240,8 +240,7 @@ const serveOpenApp = (
   // with a reason instead of polling to its deadline.
   return {
     kind: "failed",
-    reason: "this app has no screen — it was stored before an app was its own app.tsx,"
-      + " and the layout it kept is no longer servable; re-create it",
+    reason: "This app can’t be opened any more — create it again to replace it.",
   };
 };
 
@@ -262,12 +261,9 @@ const serveOpenApp = (
  * flag on this door rather than a kind `open()` can return on its own, and it
  * costs a document read: nothing here renders the app.
  *
- * The geometry it rides comes from the build's OWN paint, never from a poll's:
- * an app IS its `app.tsx` and its tree is what RENDERING that produces, so a
- * half-built app's silhouette exists only inside a paint — and the build already
- * makes one on every landed commit. `formingTreeOf` reads that render's shape out
- * of memory (`forming.ts`), so the poll stays a document read and no document
- * keeps a tree. When nothing has painted yet the embed reads its beat bar.
+ * The geometry it rides is the build's OWN paint, read out of memory
+ * (`forming.ts`) so that stays true: a poll costs a document read, never a
+ * render.
  */
 export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
   (app: AppDocument, ctx: RunContext, options?: { pending?: boolean }) => Promise<OpenSurface | PendingSurface>

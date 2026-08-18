@@ -219,12 +219,12 @@ describe("the host's own plugged checks fire over a harness's write", () => {
     const spy: Check = {
       name: "spy",
       kind: "fact",
-      run: async ({ document, rendered, request }) => {
+      run: async ({ document, renderedTree, request }) => {
         seen = {
           id: document.id,
           name: document.name,
           source: document.source?.[SCREEN_FILE]?.text,
-          nodes: rendered?.nodes.length,
+          nodes: renderedTree?.nodes.length,
           request,
         };
         return [];

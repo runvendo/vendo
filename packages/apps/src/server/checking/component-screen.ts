@@ -234,8 +234,7 @@ const toolChain = (callee: Node): string[] | undefined => {
 };
 
 /** The value of a literal-JSON expression: `{ ok: true, value }`, or `ok: false`
- *  for anything computed. A query input executes as literal JSON — the same law
- *  the wire artifact enforces (facts.ts `queryInputIssues`) — so this is the
+ *  for anything computed. A query input executes as literal JSON, so this is the
  *  whole vocabulary an input may be written in. */
 const literalValue = (node: Node): { ok: true; value: unknown } | { ok: false } => {
   if (node.type === "Literal") {

@@ -5,10 +5,10 @@
  * through the door that already exists, `POST /apps/:appId/call`, which lands
  * on the guard-bound `AppCaller`. No second door, no second query path.
  *
- * The semantics are `createProgressiveQueryResolver`'s, mirrored (apps/open.ts):
- * a non-ok outcome contributes NO data and sets `dataUnavailable`, an "ok"
- * answer that happens to be empty is an ANSWER, and each distinct miss is
- * reported once. §6.4: a failed load must never read as "you have no spending".
+ * The semantics: a non-ok outcome contributes NO data and sets
+ * `dataUnavailable`, an "ok" answer that happens to be empty is an ANSWER, and
+ * each distinct miss is reported once. §6.4: a failed load must never read as
+ * "you have no spending".
  *
  * Total. A network failure is an unavailable read, not an exception.
  */

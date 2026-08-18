@@ -12,10 +12,8 @@
  * that miss the ask) are NOT here — they belong to the AI reviewer.
  */
 import {
-  shapeAtPointer,
   isPathBinding,
   isStateBinding,
-  type ShapeType,
   type TreeNode,
 } from "@vendoai/core";
 import {
@@ -81,107 +79,6 @@ const isActionBinding = (value: unknown): boolean =>
 
 export const isRuntimeBound = (value: unknown): boolean =>
   isPathBinding(value) || isStateBinding(value) || isExprBinding(value) || isActionBinding(value);
-
-/** Conservative kind check between a bound field's shape and the host prop's
- *  declared JSON-schema type: only CLEAR mismatches flag (an array of objects
- *  where number[] is expected renders an empty chart — the silent-breakage
- *  class); unknown shapes/schemas stay silent. */
-const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>): string | null => {
-  const type = typeof schema.type === "string" ? schema.type : undefined;
-  if (type === undefined || shape.kind === "json") return null;
-  if (type === "array") {
-    if (shape.kind !== "array") return `expected an array, the bound field is ${shape.kind}`;
-    const items = schema.items;
-    return isRecord(items) ? shapeSchemaMismatch(shape.items, items) : null;
-  }
-  if (type === "number" || type === "integer") {
-    return shape.kind === "number" ? null : `expected a number, the bound field is ${shape.kind}`;
-  }
-  if (type === "string") return shape.kind === "string" ? null : `expected a string, the bound field is ${shape.kind}`;
-  if (type === "boolean") return shape.kind === "boolean" ? null : `expected a boolean, the bound field is ${shape.kind}`;
-  if (type === "object") return shape.kind === "object" ? null : `expected an object, the bound field is ${shape.kind}`;
-  return null;
-};
-
-/** With the tools' declared response shapes AND the catalog's prop schemas both
- *  in hand, a top-level `$path` prop on a host node can be kind-checked end to
- *  end. Existence is the wire compiler's shape check; this catches the type
- *  mismatches that render silently broken (empty chart, blank stat). */
-export const bindingKindIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
-  if (deps.toolShapes === undefined) return [];
-  const issues: FactIssue[] = [];
-  const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
-  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
-  for (const node of tree.nodes) {
-    if (node.source !== "host" || node.props === undefined) continue;
-    const schema = hostSchemas.get(node.component);
-    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
-    if (properties === undefined) continue;
-    for (const [prop, value] of Object.entries(node.props)) {
-      if (!isPathBinding(value)) continue;
-      const [, queryName = "", ...rest] = value.$path.split("/");
-      const tool = queryTool.get(queryName);
-      const toolShape = tool === undefined ? undefined : deps.toolShapes[tool];
-      if (toolShape === undefined) continue;
-      const bound = shapeAtPointer(toolShape, rest.length === 0 ? "" : `/${rest.join("/")}`);
-      if (bound === undefined) continue;
-      const propSchema = properties[prop];
-      if (!isRecord(propSchema)) continue;
-      const mismatch = shapeSchemaMismatch(bound, propSchema);
-      if (mismatch !== null) {
-        issues.push(atProp(node.id, prop, `binds ${value.$path}: ${mismatch} — bind a field whose shape matches the component's prop type`));
-      }
-    }
-  }
-  return issues;
-};
-
-const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
-  string: "probe",
-  number: 1,
-  boolean: true,
-  array: [],
-  object: {},
-};
-
-/** The value a slot's zod schema is probed with. A DECLARED enum probes with
- *  one of its OWN values: `"probe"` through a `"paid" | "void"` slot fails a
- *  binding the host's contract actually permits. */
-const probeFor = (shape: ShapeType): unknown =>
-  "enum" in shape && shape.enum !== undefined && shape.enum.length > 0
-    ? shape.enum[0]
-    : KIND_PROBES[shape.kind];
-
-const KIT_SCREEN_SET: ReadonlySet<string> = new Set(KIT_SCREEN_COMPONENT_NAMES);
-
-export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
-  if (deps.toolShapes === undefined) return [];
-  const issues: FactIssue[] = [];
-  const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
-  for (const node of tree.nodes) {
-    if (node.source === "host" || node.source === "generated" || node.props === undefined) continue;
-    if (!KIT_SCREEN_SET.has(node.component)) continue;
-    const spec = kitSpec(node.component);
-    if (spec === undefined) continue;
-    for (const [prop, value] of Object.entries(node.props)) {
-      if (!isPathBinding(value) || "$reshape" in (value as unknown as Record<string, unknown>)) continue;
-      const propSpec = spec.props[prop];
-      if (propSpec === undefined) continue;
-      const [, queryName = "", ...rest] = value.$path.split("/");
-      const tool = queryTool.get(queryName);
-      const shape = tool === undefined ? undefined : deps.toolShapes[tool];
-      if (shape === undefined) continue;
-      const bound = shapeAtPointer(shape, rest.length === 0 ? "" : `/${rest.join("/")}`);
-      if (bound === undefined || bound.kind === "json" || bound.kind === "null") continue;
-      const probe = probeFor(bound);
-      if (probe === undefined) continue;
-      if (!propSpec.schema.safeParse(probe).success) {
-        issues.push(atProp(node.id, prop, `on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`));
-      }
-    }
-  }
-  return issues;
-};
 
 const standardIssuePath = (issue: unknown): Array<string | number> => {
   if (!isRecord(issue) || !Array.isArray(issue.path)) return [];

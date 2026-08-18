@@ -14,6 +14,7 @@ import { unzipSync, zipSync, type Zippable } from "fflate";
 import { appLifecycleEvent } from "./audit.js";
 import type { EngineOps } from "./engine.js";
 import { APPS_COLLECTION, appRecordInput } from "./persistence.js";
+import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { type SeedBaseline } from "../../contract/index.js";
 
 /**
@@ -99,13 +100,20 @@ const assertPortableSource = (document: unknown): void => {
 };
 
 /**
- * A `tree` with no `source` beside it is an app exported before an app was its
+ * A `tree` with no screen beside it is an app exported before an app was its
  * own `app.tsx` — the layout WAS the artifact. Nothing here can turn one back
  * into a screen, and the field list below drops it, so importing quietly would
  * mint a row that can never open. Refused instead, in those words.
+ *
+ * It measures the SAME thing `open` measures — inline `app.tsx` text that is not
+ * blank (`open.ts`) — because anything weaker admits a document that opens
+ * nowhere: a bare `source: {}` beside a tree cleared the old check.
  */
 const assertOpenableSource = (document: unknown): void => {
-  if (!isRecord(document) || document["tree"] === undefined || document["source"] !== undefined) return;
+  if (!isRecord(document) || document["tree"] === undefined) return;
+  const source = document["source"];
+  const screen = isRecord(source) ? source[SCREEN_FILE] : undefined;
+  if (isRecord(screen) && typeof screen["text"] === "string" && screen["text"].trim() !== "") return;
   throw validationError(
     "this .vendoapp holds a stored layout and no source: it was exported before an app was its own"
     + " app.tsx, so there is nothing in it that can open — re-export it from a deployment that still"

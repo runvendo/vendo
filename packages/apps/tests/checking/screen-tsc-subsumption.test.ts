@@ -29,18 +29,14 @@ import {
 } from "../../src/contract/index.js";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { bindingKindIssues, catalogIssues, kitSlotIssues } from "../../src/server/checking/facts.js";
+import { catalogIssues } from "../../src/server/checking/facts.js";
 import {
   COMPONENT_SCREEN_LIB,
   componentScreenTypings,
   screenCatalog,
 } from "../../src/server/checking/screen-typings.js";
 import { screenTscFindings } from "../../src/server/checking/screen-tsc.js";
-// The bespoke checks under test take the floor's own dependency type; using it
-// (not `GenerationDependencies` from ../generation/) keeps this test inside the
-// §7.3 floor-independence guard that deps.test.ts enforces.
-import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
-import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
+import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const TOOL = "maple_invoices_list";
 
@@ -113,13 +109,6 @@ const hostTools: HostToolInfo[] = [
     outputSchema,
   },
 ];
-
-const deps = (): FloorDependencies => ({
-  model: scriptedLanguageModel(() => "unused"),
-  catalog,
-  tools: hostTools,
-  toolShapes,
-});
 
 const typings = componentScreenTypings({ catalog: screenCatalog(catalog), tools: hostTools });
 
@@ -271,58 +260,6 @@ describe("tsc subsumes components-exist (prewiredPropsIssues)", () => {
     expect(bespoke[0]).toContain('unknown prop "onPress"');
     expect(findings[0]?.message).toContain('sets unknown prop "onPress"');
     expect(findings[0]?.message).toContain("onClick");
-  });
-});
-
-describe("tsc subsumes bindings-fit (bindingKindIssues)", () => {
-  const hostNode = (props: Record<string, unknown>): Tree =>
-    tree({ id: "card", component: "MapleNetWorthCard", source: "host", props } as Node);
-
-  it("a string field bound into a numeric host prop is a JSX assignability error", async () => {
-    const { bespoke, tsc: findings } = await bothReport(
-      screen('<MapleNetWorthCard valueCents={invoices.label} series={[1]} />', "MapleNetWorthCard"),
-      bindingKindIssues(hostNode({ valueCents: path("/invoices/label"), series: [1] }), deps())
-        .map((issue) => issue.message),
-    );
-    expect(bespoke[0]).toContain("expected a number, the bound field is string");
-    expect(findings[0]?.message).toContain('prop "valueCents"');
-    expect(findings[0]?.message).toContain("takes number");
-  });
-
-  it("a rows array bound into a number[] host prop is a JSX assignability error", async () => {
-    const { bespoke, tsc: findings } = await bothReport(
-      screen('<MapleNetWorthCard valueCents={invoices.total_cents} series={invoices.data} />', "MapleNetWorthCard"),
-      bindingKindIssues(hostNode({ valueCents: 1, series: path("/invoices/data") }), deps())
-        .map((issue) => issue.message),
-    );
-    expect(bespoke[0]).toContain("expected a number, the bound field is object");
-    expect(findings[0]?.message).toContain('prop "series"');
-  });
-});
-
-describe("tsc subsumes bindings-fit (kitSlotIssues)", () => {
-  it("a string field bound into Money.amount is a JSX assignability error", async () => {
-    const { bespoke, tsc: findings } = await bothReport(
-      screen('<Money amount={invoices.label} />', "Money"),
-      kitSlotIssues(
-        tree({ id: "money", component: "Money", props: { amount: path("/invoices/label") } } as Node),
-        deps(),
-      ).map((issue) => issue.message),
-    );
-    expect(bespoke[0]).toContain("binds /invoices/label, a string field");
-    expect(findings[0]?.message).toContain('prop "amount" on <Money> takes number');
-  });
-
-  it("rows bound into Percent.value is a JSX assignability error", async () => {
-    const { bespoke, tsc: findings } = await bothReport(
-      screen('<Percent value={invoices.data} />', "Percent"),
-      kitSlotIssues(
-        tree({ id: "percent", component: "Percent", props: { value: path("/invoices/data") } } as Node),
-        deps(),
-      ).map((issue) => issue.message),
-    );
-    expect(bespoke[0]).toContain("a array field");
-    expect(findings[0]?.message).toContain('prop "value" on <Percent> takes number');
   });
 });
 

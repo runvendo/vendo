@@ -6,7 +6,6 @@
  */
 import {
   VENDO_APP_FORMAT,
-  type ShapeType,
 } from "@vendoai/core";
 import {
   SCREEN_FILE,
@@ -27,10 +26,6 @@ const tools: HostToolInfo[] = [
     description: "Open invoices",
     risk: "read",
     inputSchema: { type: "object", properties: {} },
-    // The SAME response as `toolShapes` below, declared: the structural form is
-    // what the bespoke walkers read, the JSON Schema is what the compiler half
-    // (`screen-types`) reads, and a fixture where the two disagreed would prove
-    // nothing about either.
     outputSchema: {
       type: "object",
       properties: {
@@ -56,32 +51,12 @@ const tools: HostToolInfo[] = [
   },
 ];
 
-const toolShapes: Record<string, ShapeType> = {
-  host_listInvoices: {
-    kind: "object",
-    fields: {
-      data: {
-        kind: "array",
-        items: {
-          kind: "object",
-          fields: {
-            id: { kind: "string" },
-            client: { kind: "string" },
-            amountCents: { kind: "number" },
-          },
-        },
-      },
-    },
-  },
-};
-
 const catalog: NormalizedCatalog = [];
 
 const deps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => "the reviewer is not wired in these cases"),
   catalog,
   tools,
-  toolShapes,
 });
 
 /** A stored app as the checks read one: an app IS its `app.tsx`, spelled the way
@@ -311,9 +286,10 @@ export default function Invoices() {
    * A computed value's FIELDS belong to `screen-types` now, not to
    * `expressions-compute`: the gap is real JavaScript, so the screen's own text
    * type-checks against the query's DECLARED result type under the real
-   * compiler, and a second bespoke shape walker could only disagree with it
-   * (facts.ts `exprIssues`). So the layer is composed the way the two gates that
-   * run the compiler half compose it — the floor and the validate door.
+   * compiler, and the second bespoke shape walker that used to read the same
+   * fields could only disagree with it, so it is gone. The layer is composed the
+   * way the two gates that run the compiler half compose it — the floor and the
+   * validate door.
    *
    * The seam is real on both ends: the STORED `app.tsx` is what the check reads,
    * verbatim, and tsc reads that same text. Nothing here stubs either side.

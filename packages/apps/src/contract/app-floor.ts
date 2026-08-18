@@ -61,7 +61,7 @@ export interface CheckInput {
    * authoritative exactly because nothing stored it — it is this screen, on this
    * data, one moment ago.
    */
-  rendered?: { root: string; nodes: TreeNode[] };
+  renderedTree?: { root: string; nodes: TreeNode[] };
 }
 
 /**

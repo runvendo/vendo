@@ -26,7 +26,6 @@ import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { checkComponentScreen, screenName } from "./component-screen.js";
 import { screenCatalog } from "./screen-typings.js";
 import type { FloorDependencies } from "./deps.js";
-import { screenTypesCheck } from "./facts.js";
 import { runChecks } from "./layer.js";
 import type { ScreenToolchain } from "./toolchain.js";
 
@@ -42,7 +41,7 @@ const encoder = new TextEncoder();
  * lands (`persistence/app-source.ts`) — and a check reading the source here reads
  * what it would read off the store.
  *
- * The rendered tree rides BESIDE it, on `CheckInput.rendered` — see there.
+ * The rendered tree rides BESIDE it, on `CheckInput.renderedTree` — see there.
  */
 const screenDocumentOf = (appId: AppId, source: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -68,16 +67,6 @@ const refusalLine = ({ check, where, message }: Finding): string =>
   [check === undefined ? undefined : `[${check}]`, where, message]
     .filter((part) => part !== undefined)
     .join(" ");
-
-/**
- * THE floor: the mechanical checks every door runs on top of the layer's own
- * fact checks. One definition, imported by every door, because they used to run
- * different subsets and an app blocked at one shipped through another.
- *
- * The AI reviewer is NOT here. It spends a model call, so it stays exactly where
- * it is today: `AppsRuntime.validate` alone.
- */
-export const floorChecks = (deps: FloorDependencies): Check[] => [screenTypesCheck(deps)];
 
 export interface AppFloorOptions {
   /**
@@ -223,7 +212,7 @@ export const createAppFloor = (
         request: "",
         // A `FlatNode` IS a `TreeNode` with both optional members present — the
         // same reading the gauntlet's own tree stage takes of it.
-        rendered: {
+        renderedTree: {
           root: checked.initialTree.root,
           nodes: Object.values(checked.initialTree.nodes) as TreeNode[],
         },

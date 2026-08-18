@@ -122,7 +122,7 @@ describe("the one door in", () => {
     }
   });
 
-  it.each(ORIGINS)("drops a stale stored tree written as %s, and keeps the app", async (origin) => {
+  it("drops a stale stored tree already in the store, and keeps the app", async () => {
     // Rows written before the `tree` field was removed still carry one. It is
     // dropped rather than refused: the app IS its `app.tsx`, so a document that
     // predates the removal still opens on its source and must not brick over a
@@ -132,7 +132,15 @@ describe("the one door in", () => {
       ...valid("app_stale"),
       tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] },
     } as AppDocument;
-    await records.put(appRecordInput(stale, SUBJECT, false, origin));
+    // Seeded PAST `appRecordInput`, which is what such a row is: it predates the
+    // writer's strip. Writing it through the writer would strip it on the way in
+    // and leave the READ strip — the only half a legacy row ever meets —
+    // unexercised.
+    await records.put({
+      id: "app_stale",
+      data: { subject: SUBJECT, enabled: false, doc: stale },
+      refs: { subject: SUBJECT },
+    });
 
     // Read back through the real read path, not the object that was handed in.
     const doc = rowFromRecord((await records.get("app_stale"))!).doc;

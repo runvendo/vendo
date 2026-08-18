@@ -411,7 +411,7 @@ export interface SeedFromInput {
  * Without the second half the seam could only tell the truth about a whole app
  * half that THREW, and a query that answered "error", "blocked" or
  * "connect-required" would render "—" everywhere and read as "you have no data"
- * (see `ProgressiveQueryResolver.dataUnavailable`).
+ * (see `dataUnavailable` below).
  */
 export interface AuthoredAppResult {
   data: Record<string, Json>;

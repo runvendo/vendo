@@ -516,7 +516,7 @@ const useExprRuntime = (): void => {
   }, []);
 };
 
-const hasRenderableTreeContent = (tree: WalkTree): boolean => {
+const hasRenderableTreeContent = (tree: WalkTree, streaming: boolean): boolean => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -528,6 +528,12 @@ const hasRenderableTreeContent = (tree: WalkTree): boolean => {
     // A missing child renders the streaming skeleton, which is intentionally visible.
     if (node === undefined) return true;
     if (node.source === "host" || node.source === "generated") return true;
+    // Mid-build a node arrives as bare geometry — props and `source` alike
+    // stripped (apps `persistence/forming.ts`). Such a node either holds its own
+    // silhouette (`builtinContent`) or is a container whose leaves do, so either
+    // way something paints. Without this a forming tree of layout and `Text`
+    // collapsed to a single skeleton and stopped growing on screen.
+    if (streaming && node.source === undefined && node.props === undefined) return true;
     if (node.component === "Text") {
       const text = node.props?.text;
       if (text !== undefined && text !== null && String(text).trim() !== "") return true;
@@ -678,6 +684,18 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
       <ContainedNotice label="Unknown component">
         {`Unknown component "${node.component}".`}
       </ContainedNotice>
+    );
+  }
+  // Bare GEOMETRY — a name and a place, and nothing else: no props, nothing
+  // under it, and no `source`, which is exactly what a forming shape carries
+  // (apps `persistence/forming.ts`). The component resolves, so it would render
+  // its empty self and an empty `Text` is an empty line; the silhouette is what
+  // lets the tree GROW on screen as the build lands nodes.
+  if (props.streaming && node.source === undefined && node.props === undefined && (node.children?.length ?? 0) === 0) {
+    return (
+      <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
+        <FormingSkeleton name={node.component} />
+      </span>
     );
   }
   const { bound, mismatch } = bindProps(node.props ?? {}, props.data, props.state, invoke, handle);
@@ -986,7 +1004,7 @@ function StatefulTreeView({
     );
   }
 
-  if (!hasRenderableTreeContent(validation.tree)) {
+  if (!hasRenderableTreeContent(validation.tree, streaming)) {
     // A partial stream legitimately passes through content-less shapes on its
     // way to the full tree — hold a quiet skeleton; the notice is a verdict
     // reserved for FINAL payloads.

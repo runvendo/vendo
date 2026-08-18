@@ -205,8 +205,8 @@ const PARAM_SEGMENT = /^:(\w+)$/u;
 /** The parameters a registered path takes.
  *
  * ONE definition, because THREE readers must agree about it and they break in a
- * correlated way when they drift: this file's resolver, the floor's
- * `routes-exist` check, and the briefing's ROUTES section. A path whose
+ * correlated way when they drift: this file's resolver, the gauntlet's routes
+ * check (`facts.ts` `routeIssues`), and the briefing's ROUTES section. A path whose
  * parameters are read differently by any two of them is a link that resolves
  * and is refused, or is accepted and goes nowhere. */
 export const vendoRouteParams = (path: string): string[] =>

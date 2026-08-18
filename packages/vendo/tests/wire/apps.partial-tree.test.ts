@@ -94,7 +94,7 @@ export default function Balance() {
   return (
     <Stack gap={12}>
       <Text text="Account" variant="heading" />
-      <Text text={"${LABEL}: " + String(balance.cents)} />
+      <Text key={String(balance.cents)} text={"${LABEL}: " + String(balance.cents)} />
     </Stack>
   );
 }
@@ -188,6 +188,10 @@ describe("the build window's forming tree", () => {
 
     // 2. NO FIGURE, and no container one could hide in.
     expect(grown.some((node) => "props" in node)).toBe(false);
+    // Including the last container that is not a prop: the second `Text` is
+    // keyed on the balance itself, and `flatten.ts` spells a key straight into
+    // the node's id (`Text:133742`).
+    expect(grown.map((node) => node["id"]).join(" ")).not.toContain(String(CENTS));
     for (const key of ["data", "interactive", "components", "componentTools", "queries"]) {
       expect(JSON.parse(second.body).tree).not.toHaveProperty(key);
     }

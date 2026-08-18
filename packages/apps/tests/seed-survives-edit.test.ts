@@ -9,11 +9,11 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { RunContext, ShapeType, ToolRegistry } from "@vendoai/core";
+import type { RunContext, ToolRegistry } from "@vendoai/core";
 import type { AppDocument, NormalizedCatalog, SeedBaseline } from "../src/contract/index.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { createCheckingLayer } from "../src/server/checking/layer.js";
-import { floorChecks } from "../src/server/checking/floor.js";
+import { screenTypesCheck } from "../src/server/checking/facts.js";
 import type { FloorDependencies } from "../src/server/checking/deps.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -61,7 +61,6 @@ const floorDeps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => '<App name="unused"/>'),
   catalog: [] as NormalizedCatalog,
   tools: [],
-  toolShapes: {} as Record<string, ShapeType>,
 });
 
 describe("a seeded app survives its own edit door", () => {
@@ -96,7 +95,7 @@ describe("a seeded app survives its own edit door", () => {
     expect(JSON.stringify(app)).not.toContain(captured.source.slice(0, 80));
 
     const deps = floorDeps();
-    const findings = await createCheckingLayer({ checks: floorChecks(deps) })
+    const findings = await createCheckingLayer({ checks: [screenTypesCheck(deps)] })
       .run({ document: app as AppDocument, request: "" });
 
     expect(findings.filter(({ severity }) => severity === "block")).toEqual([]);

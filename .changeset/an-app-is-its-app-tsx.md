@@ -18,9 +18,11 @@ instead of throwing and leaving an embed to poll to its deadline; importing a
 `.vendoapp` that holds a layout and no source is refused in the same words rather
 than minting a row that can never open.
 
-The rendered tree a paint gate hands a host's own checks moves from the synthetic
-document onto `CheckInput.rendered`, where it belongs: it is what the person is
-about to see, not something a document carries.
+BREAKING for a host's own checks: a check that read `document.tree` reads
+`undefined` now and will never see a tree there again. The rendered tree moves
+onto `CheckInput.renderedTree`, beside `document` and `request`, where it belongs —
+it is what the person is about to see, not something a document carries — and
+every such check must move to that field.
 
 The tree as a RENDER language is untouched — `UIPayload`/`TreeNode`, the
 renderer, the streamed view parts, the render seam, and `ui: "tree"` as the

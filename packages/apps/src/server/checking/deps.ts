@@ -9,10 +9,7 @@
  * keeps working unchanged — and the floor now runs anywhere a catalog and a model
  * exist, which is what lets it move to the paint seam.
  */
-import type {
-  JsonSchema,
-  ShapeType,
-} from "@vendoai/core";
+import type { JsonSchema } from "@vendoai/core";
 import type {
   NormalizedCatalog,
   VendoRouteMap,
@@ -20,12 +17,12 @@ import type {
 import type { LanguageModel } from "ai";
 
 /** The slice of a tool descriptor the floor (and the generation prompts) need:
- *  prompt context and the query-tool existence check.
+ *  prompt context, and the signature `useQuery` is type-checked against.
  *
- *  It lives HERE, with the floor, because the floor is the thing that decides
- *  whether a query names a tool the host really has (`unknownToolIssues`) — and
- *  because a type the floor owns cannot follow the pipeline into quarantine. The
- *  generation engine re-exports it, so its own consumers are unaffected. */
+ *  It lives HERE, with the floor, because the screen type check is what reads it
+ *  (`screenTypesCheck`) and a type the floor owns cannot follow the pipeline into
+ *  quarantine. The generation engine re-exports it, so its own consumers are
+ *  unaffected. */
 export interface HostToolInfo {
   name: string;
   description: string;
@@ -49,11 +46,12 @@ export const isMutatingTool = (tool: HostToolInfo | undefined): boolean =>
  * The host surface a check measures against.
  *
  * `model` is for the AI reviewer alone — the one check that spends a model call —
- * and it is OPTIONAL because the floor genuinely runs without one: the seven
- * deterministic fact checks are pure lookups, and the paint seam calls exactly
- * those. A modelless floor loses its judgment half the same way the reviewer loses
- * it for any other reason it cannot judge, which is fail-open by design ("a
- * reviewer that could not judge must never be the reason a good app dies").
+ * and it is OPTIONAL because the floor genuinely runs without one: its
+ * deterministic checks are lookups and a compiler pass, and the paint seam calls
+ * exactly those. A modelless floor loses its judgment half the same way the
+ * reviewer loses it for any other reason it cannot judge, which is fail-open by
+ * design ("a reviewer that could not judge must never be the reason a good app
+ * dies").
  *
  * `AppsRuntime.validate` still refuses outright without a model, because a VERB
  * that answers "nothing wrong" after running only half its checks is the worst lie
@@ -73,15 +71,12 @@ export interface FloorDependencies {
   reviewModel?: LanguageModel;
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
   catalog: NormalizedCatalog;
-  /** Each tool's declared response schema in structural form
-   *  (`shapeFromJsonSchema`), keyed by tool. Absent → the binding, kit-slot and
-   *  expression checks have nothing to compare against and stay silent. */
-  toolShapes?: Readonly<Record<string, ShapeType>>;
-  /** The host tools a query may name. Absent → `tools-exist` stays silent. */
+  /** The host tools a query may name. Absent → the screen type check has no
+   *  tool signatures to type `useQuery` against. */
   tools?: readonly HostToolInfo[];
   /** The pages a `<Link to>` may name (`CreateVendoConfig.routes`). Absent → the
-   *  host registered no registry at all and `routes-exist` stays silent, exactly
-   *  as `tools` does; an EMPTY registry is a registry, and refuses every link. */
+   *  host registered no registry at all and the gauntlet's routes check stays
+   *  silent; an EMPTY registry is a registry, and refuses every link. */
   routes?: VendoRouteMap;
   /**
    * The island smoke-render gate: every island renders once in a headless DOM

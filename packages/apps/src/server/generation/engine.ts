@@ -9,6 +9,7 @@
  * ./lanes.ts. What is ENFORCED lives in ./validation and ../checking.
  */
 import {
+  type ShapeType,
   type ToolSemantics,
 } from "@vendoai/core";
 import {
@@ -33,6 +34,12 @@ export interface GenerationDependencies extends FloorDependencies {
   /** Narrowed to REQUIRED: the floor can run its deterministic half without a
    *  model, but a generation cannot happen without one. */
   model: LanguageModel;
+  /** Each tool's declared response schema in structural form
+   *  (`shapeFromJsonSchema`), keyed by tool: the shape cards the prompts render
+   *  and the automation planner reads. It sits here rather than on the floor
+   *  because no check reads it — the screen type check works off the tools'
+   *  own `outputSchema`. */
+  toolShapes?: Readonly<Record<string, ShapeType>>;
   /** Per-tool field semantics from `.vendo/semantics.json`: annotated shape
    *  cards and Kit format defaults. Keyed by tool name. */
   semantics?: Readonly<Record<string, ToolSemantics>>;

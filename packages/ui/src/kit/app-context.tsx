@@ -55,8 +55,7 @@ export interface VendoAppContextValue {
   /** Re-run every mounted query. What a successful action triggers. */
   refetchQueries(): Promise<void>;
   /**
-   * Say ONCE, per distinct miss, that a read resolved no data — the same
-   * report `createProgressiveQueryResolver` makes server-side (apps/open.ts).
+   * Say ONCE, per distinct miss, that a read resolved no data.
    * A binding that renders empty because a call was refused looks exactly like
    * one that renders empty because there is nothing to show; that silence cost
    * a live triage, so it stops being invisible here too.

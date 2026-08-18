@@ -327,6 +327,9 @@ describe("a screen mounts only once its build is terminal", () => {
       // geometry, and the body is asserted not to contain the number.
       const pending = JSON.parse(midBuild.wireBody) as { kind: string; tree?: { nodes?: object[] } };
       expect(pending.kind, `build ${index}`).toBe("pending");
+      // The geometry must BE there before "no props" says anything: an absent
+      // tree satisfies the line below on its own.
+      expect(pending.tree?.nodes?.length, `build ${index}`).toBeGreaterThan(0);
       expect(pending.tree?.nodes?.some((node) => "props" in node) ?? false, `build ${index}`).toBe(false);
       expect(midBuild.wireBody, `build ${index}`).not.toContain(String(DRAFT_TOTAL));
     }

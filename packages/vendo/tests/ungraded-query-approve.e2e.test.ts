@@ -117,7 +117,15 @@ async function renderedInsights(
   appId: string,
 ): Promise<Json | undefined> {
   const surface = await apps.open(appId as Parameters<typeof apps.open>[0], ctx)
-    .catch(() => undefined);
+    .catch((thrown: unknown) => {
+      // The ONE refusal that reads as "the region has nothing to show": THIS
+      // query did not get an answer out of the guard. Every other way an open
+      // can fail is a real break, and swallowing it would make the
+      // `toBeUndefined`s below pass for a reason nobody named.
+      const said = thrown instanceof Error ? thrown.message : String(thrown);
+      if (!said.includes('the query useQuery("host_getSpendingInsights"')) throw thrown;
+      return undefined;
+    });
   if (surface === undefined) return undefined;
   if (surface.kind !== "tree") throw new Error(`expected a tree surface, got ${surface.kind}`);
   return JSON.stringify(surface.payload) as Json;

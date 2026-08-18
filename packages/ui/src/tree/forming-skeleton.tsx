@@ -1,6 +1,6 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 
-export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control";
+export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control" | "line";
 
 /**
  * The shimmer bar every silhouette below is built from. V4 (one component
@@ -69,11 +69,24 @@ export function deriveFormShape(componentName: string): FormShape {
   if (/list|table|rows?|feed|history|log/i.test(componentName)) return "rows";
   // stat(?!us) — "RenewalStats" forms tiles, but "StatusRow" must not.
   if (/hero|stat(?!us)s?|metrics?|summary|kpi|overview|tiles?/i.test(componentName)) return "tiles";
+  // Last, so it only ever narrows the slab fallback: a text node becomes ONE
+  // LINE, and a 72px slab collapsing to a 16px line is the layout jump this
+  // file exists to prevent.
+  if (/text|title|heading|label|caption/i.test(componentName)) return "line";
   return "slab";
 }
 
-const band: CSSProperties = { display: "flex", gap: 10, width: "100%" };
+/**
+ * Every silhouette fills its parent — and a PERCENTAGE width contributes no
+ * intrinsic size, so a silhouette that is a flex item (any node inside a `Row`)
+ * sized to zero and the node vanished from the screen entirely. The floor is
+ * what gives such an item something to be; in a block parent it never binds.
+ */
+const FLOOR = "7rem";
+
+const band: CSSProperties = { display: "flex", gap: 10, width: "100%", minWidth: FLOOR };
 const cell: CSSProperties = { flex: 1, minWidth: 0 };
+const fill: CSSProperties = { display: "block", width: "100%", minWidth: FLOOR };
 
 /** The shape-aware streaming placeholder: shimmer silhouettes of the final
  *  geometry, so arrival is a crossfade instead of a slab popping into a view. */
@@ -90,7 +103,7 @@ export function FormingSkeleton({ name }: { name: string }) {
   }
   if (shape === "rows") {
     return (
-      <span data-form-shape="rows" style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }} aria-hidden="true">
+      <span data-form-shape="rows" style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", minWidth: FLOOR }} aria-hidden="true">
         <Skeleton height={40} />
         <Skeleton height={40} />
         <Skeleton height={40} />
@@ -99,27 +112,34 @@ export function FormingSkeleton({ name }: { name: string }) {
   }
   if (shape === "chart") {
     return (
-      <span data-form-shape="chart" style={{ display: "block", width: "100%" }} aria-hidden="true">
+      <span data-form-shape="chart" style={fill} aria-hidden="true">
         <Skeleton height={180} />
       </span>
     );
   }
   if (shape === "control") {
     return (
-      <span data-form-shape="control" style={{ display: "block", width: "100%" }} aria-hidden="true">
+      <span data-form-shape="control" style={fill} aria-hidden="true">
         <Skeleton width={148} height="var(--vendo-density-control-height, 38px)" />
       </span>
     );
   }
   if (shape === "pill") {
     return (
-      <span data-form-shape="pill" style={{ display: "flex", justifyContent: "flex-end", width: "100%" }} aria-hidden="true">
+      <span data-form-shape="pill" style={{ display: "flex", justifyContent: "flex-end", width: "100%", minWidth: FLOOR }} aria-hidden="true">
         <Skeleton width={110} height={22} />
       </span>
     );
   }
+  if (shape === "line") {
+    return (
+      <span data-form-shape="line" style={fill} aria-hidden="true">
+        <Skeleton width="62%" />
+      </span>
+    );
+  }
   return (
-    <span data-form-shape="slab" style={{ display: "block", width: "100%" }} aria-hidden="true">
+    <span data-form-shape="slab" style={fill} aria-hidden="true">
       <Skeleton height="72px" />
     </span>
   );

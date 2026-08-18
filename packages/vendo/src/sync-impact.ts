@@ -37,7 +37,9 @@ async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecor
 function referencedTools(doc: AppDocument): Set<string> {
   const tools = new Set<string>();
   // The compiler-stamped manifest of what each island's SOURCE calls through
-  // the ambient `tools` API — the only place a document names a tool.
+  // the ambient `tools` API. A screen's own `app.tsx` names host tools as well,
+  // in its `useQuery` calls, and nothing reads those yet — an app whose reads
+  // all live in the screen is absent from this report.
   for (const names of Object.values(doc.componentTools ?? {})) {
     for (const name of names) {
       if (!name.startsWith("fn:")) tools.add(name);

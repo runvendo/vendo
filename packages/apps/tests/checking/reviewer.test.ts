@@ -6,7 +6,6 @@
  */
 import {
   VENDO_APP_FORMAT,
-  type ShapeType,
 } from "@vendoai/core";
 import {
   SCREEN_FILE,
@@ -28,29 +27,10 @@ const tools: HostToolInfo[] = [{
   inputSchema: { type: "object", properties: {} },
 }];
 
-const toolShapes: Record<string, ShapeType> = {
-  host_listInvoices: {
-    kind: "object",
-    fields: {
-      data: {
-        kind: "array",
-        items: {
-          kind: "object",
-          fields: {
-            id: { kind: "string" },
-            client: { kind: "string" },
-            amountCents: { kind: "number" },
-          },
-        },
-      },
-    },
-  },
-};
-
 const catalog: NormalizedCatalog = [];
 
 const deps = (model: FloorDependencies["model"]): FloorDependencies =>
-  ({ model, catalog, tools, toolShapes });
+  ({ model, catalog, tools });
 
 /** The app the reviewer judges: its `app.tsx`, spelled exactly as the row spells
  *  it. The reviewer reads the STORED screen and nothing else. */

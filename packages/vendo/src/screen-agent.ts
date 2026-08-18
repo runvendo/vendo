@@ -315,9 +315,9 @@ const rowsIn = (output: Json): number | undefined => {
  * Read off the paint itself, which is the whole point: a description says what to
  * fetch (`queries`) and the render seam spreads the resolved answers beside it
  * (`data`) on the settled paint, keyed by query name — and a query that failed is
- * simply ABSENT from that record (`ProgressiveQueryResolver`). So the facts the
- * loop hears are the facts the person's screen was painted from, rather than a
- * second run of the same calls that could disagree with it.
+ * simply ABSENT from that record. So the facts the loop hears are the facts the
+ * person's screen was painted from, rather than a second run of the same calls
+ * that could disagree with it.
  */
 export const paintedQueries = (payload: UIPayload): readonly QueryOutcome[] => {
   /** A COMPONENT screen's queries live on the paint's interactive half instead: the
