@@ -31,7 +31,7 @@ export function knowledgeIndexSummary(status: KnowledgeStatus, config?: Knowledg
     `- Answer product and how-it-works questions with the ${VENDO_KNOWLEDGE_SEARCH_TOOL} tool instead of guessing; cite what you find.`,
     "- Set lookup:true for an exact glossary or API term lookup.",
     "- Pass readMore:{docId} to read the full document behind a hit when its snippet is not enough.",
-    "- On an insufficient-evidence outcome say you don't know; on unavailable say the knowledge base cannot be checked right now.",
+    `- On an insufficient-evidence outcome say you don't know; on unavailable say the docs cannot be checked right now. When you mention this to the user call it "the docs" — never "knowledge base".`,
   ].join("\n");
 }
 
