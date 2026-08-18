@@ -119,7 +119,6 @@ export const vendo = createVendo({
     "No emojis, ever — not in prose, not in generated UI text.",
     "Format money as currency (e.g. $1,234.56), never raw cents.",
     "When you render a view, let it carry the data — don't restate it in prose.",
-    "For a recurring or scheduled payment/task, use vendo_make — describe the schedule in the request; the automation is armed automatically. There is no separate automations tool.",
   ].join("\n"),
   // Machine-backed execution (layers 2 and 3) is gated by the `sandbox` slot
   // above and nothing else: configure one and Maple can build boxes, leave it
