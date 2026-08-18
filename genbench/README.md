@@ -238,13 +238,13 @@ And one `runs/<run>/preview.html`, which is where a person actually looks:
 - **a column per contender**, in a fixed order, each live and scrollable under
   its own verdicts and numbers, with the judge's screenshot demoted to a
   thumbnail
-- **the rubric, line by line**, under each column: every correctness line then
-  every design line, its verdict and the evidence the judge named, with a
-  tally per half. A DESIGN line the screen has no subject for is `na` and sits
-  out of the denominator; a correctness line is what the case asked for, so an
-  `na` on one scores as a fail rather than shrinking the total; a judge that
-  could not grade says so instead of printing a tally that would read as the
-  contender's score
+- **the rubric, line by line**, under each column: every ask line then
+  every design line, labelled **the ask** and **design** on the page, its
+  verdict and the evidence the judge named, with a tally per half. A DESIGN
+  line the screen has no subject for is `na` and sits out of the denominator;
+  an ask line is what the case asked for, so an `na` on one scores as a fail
+  rather than shrinking the total; a judge that could not grade says so
+  instead of printing a tally that would read as the contender's score
 - **the world-data panel** — collapsed: every tool the case's screens could
   call, what it does, and the exact response it answers with, overrides
   applied. It is what makes any number on any screen checkable by eye, and it
@@ -429,7 +429,7 @@ untagged cases and overrides naming fields no tool has — at collection time, s
 a world added tomorrow is linted the day it lands.
 
 `cases.json` holds the prompts. A case may override any tool's data — that is
-how the empty state is tested — and its `pass` lines are the correctness rubric
+how the empty state is tested — and its `pass` lines are the ask-met rubric
 the judge grades.
 
 Every `result.json` carries two comparability stamps and only compares with
@@ -849,10 +849,17 @@ lines (did it do what was asked) and the world's `style` lines (does it look
 like the product it claims to be) — from a pinned `claude-opus-5` that is shown
 the screenshot, the click trace, the source and the world's tool data.
 
+The preview labels the case's half **the ask** — whether the screen delivered
+what it was asked for, so this doc also calls the score **ask met** — where
+both used to say *correctness*; the world's half is still **design**. This is
+a display relabeling only: no verdict, tally or score moved, the judge's own
+prompt is untouched, and it still tags each line `[correctness]` or `[design]`
+(below).
+
 Every case carries one line it was not authored with, right after its own:
 **every number this screen shows comes from the tool data or is honestly derived
-from it — nothing is invented** (`HONESTY_LINE` in `src/judge.ts`). It is a
-correctness line like any other, so an `na` on it scores as a fail, and it is
+from it — nothing is invented** (`HONESTY_LINE` in `src/judge.ts`). It is an
+ask line like any other, so an `na` on it scores as a fail, and it is
 graded against the TOOL DATA block — every response the case's tools answer with,
 overrides applied, which is the same panel the preview shows a reader.
 
@@ -887,7 +894,7 @@ Every verdict is `pass`, `fail` or `na`, and carries one clause naming the
 evidence it was reached on. Each line arrives labelled `[correctness]` or
 `[design]`, because only a DESIGN line may honestly be `na`: its subject may
 genuinely be absent from this screen, so it is neither earned nor missed and sits
-out of the tally. A correctness line is what the case asked for, so a screen with
+out of the tally. An ask line is what the case asked for, so a screen with
 no sign of it did not do it, and an `na` there scores as a fail — dropping it
 shrank the denominator, and omitting a feature outscored building it imperfectly.
 

@@ -229,7 +229,7 @@ describe("the preview page", () => {
     // Two case lines, one passed. Two style lines, one passed and one whose
     // subject is not on this screen at all — that one is neither earned nor
     // missed, so counting it would grade the screen for what it does not have.
-    expect(html).toContain(`<span>correctness</span><b>1/2</b>`);
+    expect(html).toContain(`<span>the ask</span><b>1/2</b>`);
     expect(html).toContain(`<span>design</span><b>1/1</b>`);
   });
 
@@ -254,7 +254,7 @@ describe("the preview page", () => {
     );
 
     // Three case lines, one passed, and the `na` is one of the three.
-    expect(html).toContain(`<span>correctness</span><b>1/3</b>`);
+    expect(html).toContain(`<span>the ask</span><b>1/3</b>`);
     // The design half is untouched: its `na` is legitimate and still sits out.
     expect(html).toContain(`<span>design</span><b>1/1</b>`);
   });
@@ -281,12 +281,12 @@ describe("the preview page", () => {
 
     // The screen did what it was asked exactly as well as it did before; what it
     // made up is a different sentence, and it is said on a line of its own.
-    expect(html).toContain(`<span>correctness</span><b>1/2</b>`);
+    expect(html).toContain(`<span>the ask</span><b>1/2</b>`);
     expect(html).toContain(`<span>honesty</span><b>0/1</b>`);
     expect(html).toContain(`<span>design</span><b>1/1</b>`);
     // In the order the rubric is asked in: what it showed, whether it is true,
     // then how it looks.
-    expect(html.indexOf(">correctness<")).toBeLessThan(html.indexOf(">honesty<"));
+    expect(html.indexOf(">the ask<")).toBeLessThan(html.indexOf(">honesty<"));
     expect(html.indexOf(">honesty<")).toBeLessThan(html.indexOf(">design<"));
   });
 
@@ -305,7 +305,7 @@ describe("the preview page", () => {
     // Every line reads `fail`, so a literal tally would print 0/2 — which is a
     // sentence about the contender, and it would be false.
     expect(html).not.toContain(`<b>0/2</b>`);
-    expect(html).toContain(`<span>correctness</span><b>—</b>`);
+    expect(html).toContain(`<span>the ask</span><b>—</b>`);
   });
 
   it("shows what grading cost on its own line, and leaves it out of every column", async () => {
@@ -570,7 +570,7 @@ describe("the preview page", () => {
     );
 
     expect(html).toContain("floor only — no judge was asked about this screen");
-    expect(html).not.toContain(`<span>correctness</span>`);
+    expect(html).not.toContain(`<span>the ask</span>`);
     // Not the grader having a bad afternoon — nobody was asked.
     expect(html).not.toContain("judge degraded");
   });

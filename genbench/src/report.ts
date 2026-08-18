@@ -136,6 +136,8 @@ const rubricHalf = (label: string, lines: readonly LineVerdict[], degraded: bool
  * (`--floor-only`). It says so rather than printing nothing, because a column
  * whose verdicts are simply missing reads as a report that lost them.
  */
+// "the ask" is the human-facing label only (2026-08-18) — "correctness" stays
+// the internal half above and the judge's own prompt tag in judge.ts.
 const rubric = (judged: JudgeResult): string =>
   judged.lines.length === 0
     ? `<p class="unjudged">floor only — no judge was asked about this screen</p>`
@@ -145,7 +147,7 @@ const rubric = (judged: JudgeResult): string =>
       ? `<p class="degraded">judge degraded — this screen was not graded${judged.error === undefined ? "" : `: ${escape(judged.error)}`}</p>`
       : ""
   }
-  ${rubricHalf("correctness", inHalf(judged.lines, "correctness"), judged.degraded)}
+  ${rubricHalf("the ask", inHalf(judged.lines, "correctness"), judged.degraded)}
   ${rubricHalf("honesty", inHalf(judged.lines, "honesty"), judged.degraded)}
   ${rubricHalf("design", inHalf(judged.lines, "design"), judged.degraded)}
 </section>`;
@@ -813,8 +815,14 @@ export interface ColumnSummary {
    *  tool data's. It was counted in `caseLines`, where a screen that invented a
    *  figure and a screen that missed a row moved one number by the same amount.
    *  Two buckets — a screen either showed honest numbers or it did not, so an
-   *  `na` is counted the way `tally` counts one on any case line, as a fail. */
-  readonly honesty: { pass: number; fail: number };
+   *  `na` is counted the way `tally` counts one on any case line, as a fail.
+   *
+   *  `flipped` is how many of those passes are fails an independent check
+   *  overturned, because it could not name the figure the judge said was
+   *  invented (`honesty.ts`). Counted rather than hidden inside `pass`: it is the
+   *  measure of how much of this line's score was the grader's noise, and a run
+   *  where it climbs is a run whose judge is drifting. */
+  readonly honesty: { pass: number; fail: number; flipped: number };
   readonly styleLines: { pass: number; fail: number; na: number };
   /** Whether this column's screens are BOUND to the host's data or merely
    *  decorated with it: of the values the screens displayed, how many moved when
@@ -867,11 +875,19 @@ const lineCounts = (lines: readonly LineVerdict[]): { pass: number; fail: number
 
 /** The honesty line in two buckets rather than three, for the reason `tally`
  *  grades a case line's `na` rather than excusing it: an unanswered line about
- *  the numbers on the screen is not a line that had no subject. */
-const honestyCounts = (lines: readonly LineVerdict[]): { pass: number; fail: number } => ({
-  pass: lines.filter((line) => line.verdict === "pass").length,
-  fail: lines.filter((line) => line.verdict !== "pass").length,
-});
+ *  the numbers on the screen is not a line that had no subject. Plus how many of
+ *  the passes are the judge's own fails, overturned by a check that could not
+ *  name the figure it accused (`honesty.ts`) — read off the record the flip left
+ *  behind, never off the flipped verdict, which is now indistinguishable from a
+ *  pass the judge reached itself. */
+const honestyCounts = (rows: readonly CaseResult[]): { pass: number; fail: number; flipped: number } => {
+  const lines = inHalf(rows.flatMap((row) => row.judged.lines), "honesty");
+  return {
+    pass: lines.filter((line) => line.verdict === "pass").length,
+    fail: lines.filter((line) => line.verdict !== "pass").length,
+    flipped: rows.filter((row) => row.judged.honesty?.verdict === "none").length,
+  };
+};
 
 /** The floor's cells kept apart by name, each counted exactly the way `floor`
  *  counts all four at once: a vacuous cell out of both halves and beside them. */
@@ -939,7 +955,7 @@ export async function writeSummary(input: {
       },
       floorChecks: checkTallies(rows, actionCases),
       caseLines: lineCounts(inHalf(lines, "correctness")),
-      honesty: honestyCounts(inHalf(lines, "honesty")),
+      honesty: honestyCounts(rows),
       styleLines: lineCounts(inHalf(lines, "design")),
       liveness: bound(rows),
       actions: acted(rows, worlds, actionCases),
