@@ -121,12 +121,17 @@ export const KIT_ICON_NAMES: readonly string[] = ${JSON.stringify(NAMES)};
 
 const files = [[output, source], [namesOutput, namesSource]];
 
+const normalizeEol = (text) => text.replace(/\r\n/g, "\n");
+
 // Unlike the jail runtime, icons.gen.ts is COMMITTED, so the pre-scripts check
 // it rather than rewrite it: a curated-name edit or a lucide bump that nobody
 // regenerated must fail the build, not silently pass with missing glyphs.
 for (const [path, contents] of files) {
   if (process.argv.includes("--check")) {
-    if (await readFile(path, "utf8") !== contents) {
+    // Compared line-ending-insensitively: the generated string is LF, but a
+    // Windows checkout with core.autocrlf=true has CRLF on disk, so a raw !==
+    // calls a byte-identical file stale and no amount of regenerating fixes it.
+    if (normalizeEol(await readFile(path, "utf8")) !== normalizeEol(contents)) {
       console.error(`${path} is stale — run: pnpm --filter @vendoai/ui build:icons`);
       process.exit(1);
     }
