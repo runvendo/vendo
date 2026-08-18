@@ -210,6 +210,10 @@ describe.each(BASELINES)("$name is handed exactly what vendo is handed", ({ brie
 
     expect(sent).toContain("window.vendo.callTool(name, args)");
     expect(sent).toContain(`{ status: "ok", output:`);
+    // The guard's answer too (2026-08-18): the seam parks a write, so a prompt
+    // promising only ok-or-error is a prompt that lies about the seam — the same
+    // added bytes for every column, which is what keeps them comparable.
+    expect(sent).toContain(`{ status: "pending-approval", approvalId }`);
     expect(sent).toContain("RETURNS that object synchronously — it is not a Promise");
     // The label that used to introduce every tool's rows.
     expect(sent).not.toContain("returns:");

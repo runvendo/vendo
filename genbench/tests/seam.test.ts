@@ -316,8 +316,9 @@ const resultFor = (contender: string): CaseResult => ({
 
 const SHOT: Shot = { png: PNG, visibleText: "", dom: "", renders: true, consoleErrors: [] };
 
-/** Every identity the feed is showing, top row first. */
-type Rows = Array<{ who: string; tool: string }>;
+/** Every identity the feed is showing, top row first, with whatever the guard
+ *  wrote on the row it resolved. */
+type Rows = Array<{ who: string; tool: string; tag: string }>;
 
 describe("the feed's identity", () => {
   it("reads a call's contender off the frame that sent it, never off what the frame said", async () => {
@@ -348,16 +349,18 @@ describe("the feed's identity", () => {
           [...document.querySelectorAll("#feed li")].map((row) => ({
             who: row.querySelector(".who")?.textContent ?? "",
             tool: row.querySelector("code")?.textContent ?? "",
+            tag: row.querySelector(".approved")?.textContent ?? "",
           })),
         );
 
-      // The honest press, through the real recorder, from the real frame. Two
-      // rows, because `cancel_transfer` is a write: the ask, then the approval
-      // the guard released it with — both the same column's, which is the claim.
+      // The honest press, through the real recorder, from the real frame. ONE
+      // row, because `cancel_transfer` is a write and the guard's approval is
+      // that call's outcome rather than a second call: it lands on the row
+      // already showing the ask, which is what a person who pressed one button
+      // has to be able to read.
       await frame!.evaluate(() => window.vendo.callTool("cancel_transfer", { id: "tr_1" }));
       await expect.poll(rows, { timeout: 10_000 }).toEqual([
-        { who: "diy-sonnet", tool: "cancel_transfer" },
-        { who: "diy-sonnet", tool: "cancel_transfer" },
+        { who: "diy-sonnet", tool: "cancel_transfer", tag: "✓ approved" },
       ]);
 
       // The same frame, now claiming to be the column beside it. A document a
@@ -370,9 +373,8 @@ describe("the feed's identity", () => {
         ),
       );
       await expect.poll(rows, { timeout: 10_000 }).toEqual([
-        { who: "diy-sonnet", tool: "transfer_money" },
-        { who: "diy-sonnet", tool: "cancel_transfer" },
-        { who: "diy-sonnet", tool: "cancel_transfer" },
+        { who: "diy-sonnet", tool: "transfer_money", tag: "" },
+        { who: "diy-sonnet", tool: "cancel_transfer", tag: "✓ approved" },
       ]);
 
       // And a frame the report never embedded — a child a contender's own page

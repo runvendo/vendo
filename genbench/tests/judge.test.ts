@@ -225,6 +225,50 @@ describe("blindness", () => {
   });
 
   /**
+   * The guard's round trip, in the words the judge reads (2026-08-18).
+   *
+   * The host parks a destructive call and approves it a moment later, so a screen
+   * that leaves confirming to the host — which is what this product's own doctrine
+   * tells it to do — went through a confirmation the trace said nothing about, and
+   * was failed on the rubric lines asking for one. The name and the arguments are
+   * untouched, because they are what the floor grades; what the host did with them
+   * rides on the same sentence.
+   */
+  it("renders a guarded write as the round trip it was", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Cancel transfer",
+        changed: false,
+        calls: [{ name: "cancel_transfer", args: { id: "tr_1" }, status: "ok", approvalId: "apr_1" }],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `pressed "Cancel transfer" — called cancel_transfer({"id":"tr_1"}) — held by the host's approval step, then approved`,
+    );
+  });
+
+  /** And a call read while it is still parked says so, rather than reporting a
+   *  decision nobody has made yet. */
+  it("renders a write the host has not answered as still waiting", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Cancel transfer",
+        changed: false,
+        calls: [{ name: "cancel_transfer", args: { id: "tr_1" }, status: "pending-approval", approvalId: "apr_1" }],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `called cancel_transfer({"id":"tr_1"}) — held by the host's approval step, and still waiting`,
+    );
+  });
+
+  /**
    * What the presses INSIDE the confirmation did, in the words the judge reads
    * (2026-08-17).
    *

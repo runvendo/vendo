@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
 import { MAX_OUTPUT_TOKENS_FLOOR, usdFor, type UsageTotals } from "./meter.js";
-import type { Filled, Path, Probed } from "./probe.js";
+import type { Filled, Fired, Path, Probed } from "./probe.js";
 
 /**
  * The non-mechanical half of the score: one verdict per rubric line — the case's
@@ -164,6 +164,31 @@ const IDENTITY = /\bvendo\w*|\bdiy\b|\bclaude[\w-]*/gi;
 const blind = (text: string): string => text.replace(IDENTITY, "host");
 
 /**
+ * Every call a press made, and what the HOST did with the ones it did not simply
+ * answer.
+ *
+ * A write is confirmed OUTSIDE the screen: the host parks the call, answers
+ * `pending-approval`, and approves it a moment later (`seam` in `render.ts`). Left
+ * out of the prose, a screen that correctly leaves confirmation to the host looks
+ * like a screen that sends without asking — so a line like "asks for confirmation
+ * before it sends" was failed against a round trip the trace was silent about.
+ * The name and the arguments are untouched, because they are what the floor
+ * grades; this is only the guard's half of the same sentence.
+ */
+const askedText = (calls: readonly Fired[]): string =>
+  calls
+    .map((call) => {
+      const made = `${call.name}(${JSON.stringify(call.args)})`;
+      if (call.approvalId === undefined) return made;
+      // Read after the approval has landed, which is the normal case; a record
+      // read while the call is still parked says so rather than claiming a
+      // decision nobody made.
+      const guard = call.status === "ok" ? "then approved" : "and still waiting";
+      return `${made} — held by the host's approval step, ${guard}`;
+    })
+    .join(", ");
+
+/**
  * What the presses INSIDE a confirmation did, in the same words as the presses
  * outside it.
  *
@@ -181,7 +206,7 @@ const insideText = (paths: readonly Path[]): string => {
   if (paths.length === 0) return "nothing inside it could be pressed";
   const each = paths
     .map((path) => {
-      const asked = path.calls.map((call) => `${call.name}(${JSON.stringify(call.args)})`).join(", ");
+      const asked = askedText(path.calls);
       const did = asked !== "" ? `called ${asked}` : path.changed ? "called nothing, and the screen moved" : "called nothing";
       return `pressing "${path.label}" ${did}`;
     })
@@ -203,7 +228,7 @@ function traceText(trace: readonly Probed[]): string {
   if (trace.length === 0) return "Nothing on this screen could be pressed.";
   return trace
     .map((probed) => {
-      const asked = probed.calls.map((call) => `${call.name}(${JSON.stringify(call.args)})`).join(", ");
+      const asked = askedText(probed.calls);
       // A confirmation is where the probe STOPS, so its words are that press's
       // evidence: quoted verbatim, because "asks before it cancels two transfers"
       // is graded off what the dialog said and nothing else. A press that does

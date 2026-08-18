@@ -117,6 +117,15 @@ const DIALOG_CHARS = 500;
 export interface Fired {
   readonly name: string;
   readonly args: unknown;
+  /** What the HOST did with this call, on the entry it did it to (`seam` in
+   *  `render.ts`): a write is parked — `pending-approval` — and then approved a
+   *  microtask later, so a guarded write is one round trip and never two presses.
+   *  Absent on a read, which is answered on the spot, and on a call recorded by a
+   *  page that brought its own recorder. */
+  readonly status?: "ok" | "pending-approval";
+  /** The id the ask and the approval are tied together by, present exactly when
+   *  the host parked this call. */
+  readonly approvalId?: string;
 }
 
 /** One field the HARNESS answered for the screen, and what it put there. */

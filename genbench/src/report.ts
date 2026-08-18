@@ -635,6 +635,9 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 #feed .who{font-weight:600;color:var(--sec)}
 #feed code{color:var(--ink);background:var(--page);padding:1px 5px;border-radius:4px}
 #feed .args{color:var(--ter);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The guard's resolution, on the row it resolves — pushed to the far edge so a
+   parked write reads as one call that came back, not as two calls. */
+#feed .approved{flex:none;margin-left:auto;color:var(--ok)}
 @starting-style{#feed li{opacity:0;transform:translateY(-4px)}}
 @media (prefers-reduced-motion:reduce){#feed li{transition:opacity 150ms ease-out}}
 `;
@@ -652,9 +655,18 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
  * embedded — a child frame of its own — could post as a column entirely. A
  * sender that is not one of this report's own frames is not a contender.
  *
+ * A GUARDED write posts twice — the ask, then the approval that released it
+ * (`seam` in `render.ts`) — and the second one is the first one's outcome, not
+ * another call. So it lands on the row already showing that ask, which is what a
+ * person watching a screen press one button has to see. Matched by column and
+ * tool name, which is enough: a write's approval is posted from the microtask its
+ * own press queued, so it always arrives before any later press of the same tool
+ * can post. A read's row is simply never claimed.
+ *
  * No server, no shared state: the file works from disk, offline, forever.
  */
 const FEED_SCRIPT = `
+var parked = {};
 addEventListener("message", function (event) {
   var call = event.data;
   if (call === null || typeof call !== "object" || call.genbench !== "call") return;
@@ -664,6 +676,17 @@ addEventListener("message", function (event) {
     if (frames[i].contentWindow === event.source) sender = frames[i].getAttribute("data-contender");
   }
   if (sender === null) return;
+  var key = sender + " " + call.name;
+  if (call.approved) {
+    var ask = parked[key];
+    delete parked[key];
+    if (ask === undefined) return;
+    var tag = document.createElement("span");
+    tag.className = "approved";
+    tag.textContent = "✓ approved";
+    ask.append(tag);
+    return;
+  }
   var row = document.createElement("li");
   var when = document.createElement("time");
   when.textContent = new Date(call.ts).toLocaleTimeString("en-US", { hour12: false });
@@ -679,6 +702,7 @@ addEventListener("message", function (event) {
     return key + ": " + (typeof value === "string" ? value : JSON.stringify(value));
   }).join(", ") + "}";
   row.append(when, who, tool, args);
+  parked[key] = row;
   document.getElementById("feed").prepend(row);
 });
 `;

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { wiredActions } from "../src/floor.js";
 import { probe } from "../src/probe.js";
-import { openBrowser, type Shooter } from "../src/render.js";
+import { authoredPage, openBrowser, type Shooter } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
 /** The recorder every real benchmark page carries, in its smallest honest form.
@@ -38,6 +38,19 @@ const WIRED = fixture(`document.getElementById("go").addEventListener("click", (
 
 /** The dead one: the handler is never attached. It looks identical. */
 const DEAD = fixture("");
+
+/** The same wired button on a page that leaves the recorder to the HARNESS —
+ *  every fixture here declares its own, and a recorder a page brought itself is
+ *  one the guard never sees. `authoredPage` injects the real seam into this. */
+const WIRED_ON_SEAM = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>control</title></head><body>
+<div id="root"><button id="go">Cancel transfer</button></div>
+<script>
+  document.getElementById("go").addEventListener("click", function () {
+    window.vendo.callTool("cancel_transfer", { id: "tr_1" });
+  });
+</script>
+</body></html>`;
 
 /**
  * One call at LOAD, and a dead button beside it.
@@ -331,6 +344,29 @@ describe("the click probe grades what a browser actually does", () => {
     expect(trace).toEqual([
       { label: "Cancel transfer", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
     ]);
+    expect(wiredActions(trace, world).pass).toBe(true);
+  });
+
+  /**
+   * The HARNESS's own recorder, not a fixture's, so the guard is in the loop
+   * (2026-08-18): the seam parks a write, answers `pending-approval`, and approves
+   * it a microtask later, writing both onto the entry it released. Everything the
+   * judge is told about a confirmation this product actually ships comes off these
+   * two fields, so the probe has to carry them out of the page — the fixtures above
+   * bring their own recorder and would never show it.
+   */
+  it("carries what the host did with a guarded write into the trace", async () => {
+    const trace = await traceOf(authoredPage(WIRED_ON_SEAM, world, "diy-sonnet"));
+
+    expect(trace).toEqual([
+      {
+        label: "Cancel transfer",
+        changed: false,
+        calls: [{ name: "cancel_transfer", args: { id: "tr_1" }, status: "ok", approvalId: "apr_1" }],
+      },
+    ]);
+    // The guard leaves the name and the arguments alone, which is the whole
+    // reason no floor check moved with it.
     expect(wiredActions(trace, world).pass).toBe(true);
   });
 

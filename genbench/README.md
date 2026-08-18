@@ -785,13 +785,10 @@ shows something different, and the vendo column paints the product's own
 "Waiting for your approval" notice where it used to paint nothing. No floor check
 moved with it — the floor grades a call's name and arguments, which the guard
 leaves alone — but the pages are not the same pages, so the break is stated with
-the others.
-
-One sentence the writers are given has not caught up: `worldBlock` in
-`src/vendo.ts` still tells every baseline that `window.vendo.callTool` answers
-`{ status: "ok", … }` or `{ status: "error", … }`, which is now incomplete for a
-write. Correcting it changes both baselines' prompts, which is a comparability
-break of its own, so it is called out here rather than slipped in.
+the others. The sentence the writers are given caught up with it the same day:
+`worldBlock` in `src/vendo.ts` now names the parked answer beside the other two,
+so every prompt that describes the seam changed too — the same added bytes for
+every column, which is what keeps them comparable with each other.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads, and a locked control costs one pass over the screen's selects

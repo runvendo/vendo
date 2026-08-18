@@ -101,6 +101,9 @@ export function worldBlock(world: World): string {
 HOST TOOLS — the data is not written down here; a screen gets it by CALLING for it.
 \`window.vendo.callTool(name, args)\` answers with { status: "ok", output: <what that tool returns> }
 or { status: "error", error: { code, message } }, and it is how the page fetches what it shows.
+A tool that WRITES answers { status: "pending-approval", approvalId } instead: the host confirms a
+destructive call away from the screen and approves it a moment later, so a write is a round trip and
+has not gone through at the moment the call returns.
 The call RETURNS that object synchronously — it is not a Promise, so do not \`await\` it and do not
 call \`.then\` on it, and call it while the screen renders rather than after. A tool's \`outputSchema\`
 below is the shape to expect and never a value: any number, date or row that no call returned is
