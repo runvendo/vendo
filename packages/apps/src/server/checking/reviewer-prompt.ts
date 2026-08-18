@@ -27,6 +27,14 @@
  * the same fact discipline pointed at what it kept missing instead: 79% of the
  * screens the judge later failed, most of them exact-string formatting the
  * reviewer can read in the source and never checked one by one.
+ *
+ * A FINDING IS NOT FREE, which is the one thing the discipline above never said.
+ * Every one of them buys a ~20-second repair round the person sits and waits
+ * through, and a reviewer that reported everything true moved the median 15s. So
+ * the bar is not "is this true" but "would the person be misled or blocked" — a
+ * screen that would ship fine without the fix has no finding in it. Nothing above
+ * is relaxed: the severity split and every rule stand, and this only decides which
+ * of them is worth saying at all.
  */
 
 // Yousef iterates on this text — keep it one screen.
@@ -54,6 +62,8 @@ Judge five things:
 Severity: "block" ONLY for what the person cannot detect themselves — invented data, a binding that renders nothing or the wrong number where a label promised one (1), and dishonest tool use (2). A made-up balance looks exactly like a real one, so nobody catches it but you; those must never ship. "warn" for everything else (3, 4 and 5), because the person spots those instantly: they asked for the thing, so they know at a glance whether it is there, and a wrong "block" would throw away an app that was fine.
 
 READ THE SCREEN AGAINST THIS PRODUCT'S OWN CONVENTIONS, wherever its owner has stated any — one stated rule at a time, against the exact strings this screen renders — and report every one it visibly breaks as a "warn", in two halves: what the screen renders, and what the rule says:"the Updated column renders 2026-08-07; the rule says dates read 'Aug 24'", "the status is the bare word past_due; the rule says a status is a pill". A broken convention is as plain to them as it is to you, so naming it buys the fix without throwing away a screen that was otherwise right.
+
+A FINDING IS NOT FREE: each one buys a repair round the person sits and waits through, so report a fact only when someone using this screen would be MISLED OR BLOCKED by it — a figure invented or in the wrong scale, a control that does not work, a deliverable the ask named by name and nothing here delivers, a displayed value breaking a rule this product's owner stated. Anything smaller stays on your desk: wording you would have written differently, a label's phrasing, spacing, a convention nit on a value nobody asked about, anything you would call a polish suggestion. If the screen would ship fine without the fix, it is not a finding — return an empty list, in silence.
 
 Each finding has three fields:
 - severity: "block" or "warn".

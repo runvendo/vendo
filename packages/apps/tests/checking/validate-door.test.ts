@@ -66,6 +66,9 @@ const DEAD_CONTROL: Finding = {
   message: "pressing the button calls a tool that only reads invoices; nothing on this screen sends a reminder.",
 };
 
+/** The host's own convention about a status, in the owner's own words. */
+const PILL_RULE = "A status is a pill (EnumBadge), never a bare word.";
+
 /** A screen that paints a status as a BARE WORD — which is the one thing the host
  *  rule below forbids, and which no mechanical check can know is wrong. */
 const BARE_STATUS_SCREEN = `import { Stack, Text } from "@vendo/screen";
@@ -89,6 +92,29 @@ const BROKEN_CONVENTION: Finding = {
   message: 'the status renders as the bare word past_due, and this product\'s rule is "A status is a pill (EnumBadge), never a bare word".',
 };
 
+/** A screen whose only blemish is a matter of phrasing: a heading a reader with
+ *  taste would have written as "Invoices". Nothing on it is wrong, and nobody
+ *  using it is misled or blocked by a word. */
+const WORDY_HEADING_SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return <Stack gap={12}><Text text="Invoices list" variant="heading" /></Stack>;
+}
+`;
+
+/** The finding an eager reviewer files about it: a rewording, priced at a repair
+ *  round the person sits and waits through. */
+const LABEL_NIT: Finding = {
+  severity: "warn",
+  where: '<Text> labeled "Invoices list"',
+  message: 'the heading reads "Invoices list", and "Invoices" reads better',
+};
+
+/** The two halves of the charter's materiality bar the readers below apply: what
+ *  clears it, and what it turns away. */
+const MATERIAL_CONVENTION = "a displayed value breaking a rule this product's owner stated";
+const POLISH_BAR = "anything you would call a polish suggestion";
+
 /** A host's own JUDGMENT RULE, plugged in through a pack. It is not code: it is
  *  one sentence, and the reviewer is the only thing that can apply it. Without
  *  the reviewer, a `validate` could not enforce it at all. */
@@ -108,6 +134,11 @@ let userPrompts: string[] = [];
 let reviewerCalls = 0;
 let reviewerThrows = false;
 let reviewerRefuses = false;
+/** A reviewer that APPLIES the rubric it was just handed instead of answering a
+ *  constant: it is given that rubric and decides what to report. Set it and
+ *  `reviewerFindings` is ignored — which is what lets a test about the rubric's
+ *  own words fail when those words go. */
+let readsTheRubric: ((rubric: string) => Finding[]) | undefined;
 
 /** The reviewer, and ONLY the reviewer: the app under test is landed by the
  *  assembler in the `screen` slot, so every model call this fixture sees is a
@@ -129,7 +160,8 @@ const model = () => scriptedLanguageModel((call: ScriptedModelCall) => {
   // A refusal is the model answering in prose instead of calling the one tool it
   // was given — `strictToolCall` finds no call and reports nothing.
   if (reviewerRefuses) return "I would rather not judge this app.";
-  return { tool: "report_findings", input: { findings: reviewerFindings } };
+  const rubric = systemPrompts[systemPrompts.length - 1] ?? "";
+  return { tool: "report_findings", input: { findings: readsTheRubric?.(rubric) ?? reviewerFindings } };
 });
 
 /** The host's own design rules, as composition hands them to every writer — a
@@ -170,6 +202,7 @@ beforeEach(() => {
   reviewerCalls = 0;
   reviewerThrows = false;
   reviewerRefuses = false;
+  readsTheRubric = undefined;
 });
 
 /** A stored app to validate. Created with a clean reviewer so the create itself
@@ -354,18 +387,25 @@ describe("the host's own design rules are rubric lines, not just brief text", ()
    * pins is the pair a model needs to produce it, arriving in one call.
    */
   it("tells the reviewer to read the screen against those conventions, and to warn rather than block", async () => {
-    const runtime = setup(undefined, briefingWith("A status is a pill (EnumBadge), never a bare word."), BARE_STATUS_SCREEN);
+    const runtime = setup(undefined, briefingWith(PILL_RULE), BARE_STATUS_SCREEN);
     const appId = await storedApp(runtime);
-    reviewerFindings = [BROKEN_CONVENTION];
+    // A reader that files this finding only while the rubric carries BOTH halves it
+    // needs: the owner's rule, and the materiality bar counting a broken one as
+    // something a person is misled by. The bar came in to silence an eager
+    // reviewer; take the convention out of what clears it and this goes red.
+    readsTheRubric = (rubric) =>
+      (rubric.includes(PILL_RULE) && rubric.includes(MATERIAL_CONVENTION) ? [BROKEN_CONVENTION] : []);
 
     const result = await runtime.validate({ appId, request: "show me my invoices" }, ctx);
 
     const rubric = systemPrompts[0] ?? "";
     // The owner's own sentence…
-    expect(rubric).toContain("- A status is a pill (EnumBadge), never a bare word.");
+    expect(rubric).toContain(`- ${PILL_RULE}`);
     // …the instruction to judge the screen by it, at the severity that buys a fix…
     expect(rubric).toContain("READ THE SCREEN AGAINST THIS PRODUCT'S OWN CONVENTIONS");
     expect(rubric).toMatch(/visibly breaks[\s\S]*?"warn"/u);
+    // …the bar that says a broken one is still worth the person's wait…
+    expect(rubric).toContain(MATERIAL_CONVENTION);
     // …and in FACT form: the two halves are what the screen renders and what the
     // rule says, never what to render in its place. A finding reaches the repair
     // round as an order, so a remedy here is a remedy carried out.
@@ -389,6 +429,45 @@ describe("the host's own design rules are rubric lines, not just brief text", ()
     await runtime.validate({ appId }, ctx);
 
     expect(systemPrompts[0]).toBe(REVIEWER_SYSTEM);
+  });
+});
+
+/**
+ * THE OTHER HALF OF THE SAME BAR. Everything above buys a fix; this buys nothing.
+ * Every finding costs a repair round the person sits and waits through — the eager
+ * reviewer moved the median 15s — so a true remark that changes nothing anyone can
+ * feel is not worth the wait. The pair is deliberate: the convention test above
+ * proves the bar does not silence a real one, and this proves it silences a nit,
+ * and neither can pass by the bar going missing.
+ */
+describe("a finding has to be worth the repair round it buys", () => {
+  it("stays silent about a rewording, and hands the screen back ok with nothing to repair", async () => {
+    const runtime = setup(undefined, undefined, WORDY_HEADING_SCREEN);
+    const appId = await storedApp(runtime);
+    // A reviewer that WOULD file the nit, and stops only because the charter told
+    // it not to. Take the bar out of the prompt and this test goes red with a
+    // finding — which is the only way it can be about the bar at all.
+    readsTheRubric = (rubric) => (rubric.includes(POLISH_BAR) ? [] : [LABEL_NIT]);
+
+    const result = await runtime.validate({ appId, request: "show me my invoices" }, ctx);
+
+    // The reviewer read the screen — this is silence, not a skipped call.
+    expect(reviewerCalls).toBe(1);
+    expect(userPrompts[0] ?? "").toContain('text="Invoices list"');
+    expect(result).toEqual({ ok: true, findings: [] });
+  });
+
+  it("prices the bar in the charter's own words, next to what still clears it", async () => {
+    const runtime = setup(undefined, undefined, WORDY_HEADING_SCREEN);
+    const appId = await storedApp(runtime);
+
+    await runtime.validate({ appId, request: "show me my invoices" }, ctx);
+
+    const rubric = systemPrompts[0] ?? "";
+    expect(rubric).toContain("If the screen would ship fine without the fix, it is not a finding");
+    expect(rubric).toContain(POLISH_BAR);
+    // The bar filters what gets said; it does not soften the verdict on what does.
+    expect(rubric).toContain('Severity: "block" ONLY for what the person cannot detect themselves');
   });
 });
 

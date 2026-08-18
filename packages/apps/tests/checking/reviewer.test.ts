@@ -119,6 +119,35 @@ describe("a finding is a fact, and a fact only", () => {
   });
 });
 
+describe("a finding has to be worth the repair round it buys", () => {
+  /**
+   * TRUE IS NOT THE BAR. Every finding buys a ~20-second repair round the person
+   * sits and waits through, and a reviewer reporting every true thing it could see
+   * moved the median 15s — so a label it would have phrased differently cost real
+   * seconds to reword. The bar is what a person USING the screen loses by it.
+   */
+  it("bars everything a person using the screen would not lose anything to", () => {
+    expect(REVIEWER_SYSTEM).toContain("MISLED OR BLOCKED");
+    // The bar sentence itself, which is the whole ruling in one line.
+    expect(REVIEWER_SYSTEM).toContain(
+      "If the screen would ship fine without the fix, it is not a finding",
+    );
+    // What clears it, in the reviewer's own terms…
+    expect(REVIEWER_SYSTEM).toContain("a control that does not work");
+    expect(REVIEWER_SYSTEM).toContain("a deliverable the ask named by name");
+    expect(REVIEWER_SYSTEM).toContain("a displayed value breaking a rule this product's owner stated");
+    // …and what does not, named so a model cannot rule its own taste material.
+    expect(REVIEWER_SYSTEM).toMatch(/a label's phrasing[\s\S]*?polish suggestion/u);
+  });
+
+  it("keeps the severity split the bar sits on top of", () => {
+    // The bar decides WHETHER to report; the split decides how loud. A bar that
+    // ate either half would be a rewrite of the verdict, not a filter on it.
+    expect(REVIEWER_SYSTEM).toMatch(/Severity: "block" ONLY for what the person cannot detect themselves/u);
+    expect(REVIEWER_SYSTEM).toContain('"warn" for everything else');
+  });
+});
+
 describe("host and pack judgment rules reach the reviewer (F2)", () => {
   const CITE_TOTALS = "Every total on screen has to say which report it came from.";
   const NO_UNATTENDED = "Scheduled work must never move money, message a person, or delete anything.";
