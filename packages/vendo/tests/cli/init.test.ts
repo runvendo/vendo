@@ -15,6 +15,7 @@ import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
 const cleanup: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -2520,6 +2521,38 @@ describe("the five questions", () => {
       selectUseCase: async () => { throw new Error("prompted"); },
     })).toBe(0);
     expect(quietSink.logs.join("\n")).not.toContain("How will people use your agent?");
+  });
+
+  // The interactivity JUDGMENT, not the `interactive` flag: `npx vendo init` —
+  // the command every doc prints — carries npm exec's synthetic
+  // `npm_lifecycle_event=npx`, which read as a lifecycle hook and defaulted the
+  // whole run to embedded in silence. A real hook still gets nothing.
+  it.each([
+    ["npx", true],
+    ["predev", false],
+  ] as const)("a real TTY under npm_lifecycle_event=%s asks the use case: %s", async (event, asks) => {
+    vi.stubEnv("npm_lifecycle_event", event);
+    const tty = { in: process.stdin.isTTY, out: process.stdout.isTTY };
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    const asked: string[] = [];
+    // Every other prompt seam stubbed to its decline, because a real TTY means
+    // an unstubbed one would read this process's own stdin and hang: only the
+    // use case is under test here.
+    expect(await run(await fixture(), output(), {
+      ai: false,
+      cloud: { ...NO_CLOUD, models: "later" },
+      selectUseCase: async (question) => { asked.push(question); return "embedded"; },
+      confirmAuth: async () => false,
+      selectAuth: async () => "none",
+      askText: async () => "",
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    }).finally(() => {
+      process.stdin.isTTY = tty.in;
+      process.stdout.isTTY = tty.out;
+    })).toBe(0);
+    expect(asked).toEqual(asks ? ["How will people use your agent?"] : []);
   });
 
   it("--use-case agent-loop adds the snippet for the loop package.json already names", async () => {

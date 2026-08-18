@@ -35,9 +35,15 @@ export async function askYesNo(question: string, defaultYes = false): Promise<bo
     on a TTY: npm inherits the terminal, so a command that stops to ask would
     block what the human thinks is a dev-server start — and a reflexive Enter on
     a default-yes prompt would spend money. A run the human did not invoke never
-    gets a question. */
+    gets a question.
+
+    `npx` is the one event name that is not a script: `npx`/`npm exec` runs its
+    target as a synthetic script literally named `npx`, so the docs' own
+    `npx vendo init` arrived here looking like a hook and ran mute. A human
+    typing `npx vendo …` is a human; real hooks have their own names. */
 export function invokedByPackageScript(env: Record<string, string | undefined> = process.env): boolean {
-  return (env.npm_lifecycle_event ?? "").trim() !== "";
+  const event = (env.npm_lifecycle_event ?? "").trim();
+  return event !== "" && event !== "npx";
 }
 
 export async function exists(path: string): Promise<boolean> {

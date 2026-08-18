@@ -206,7 +206,9 @@ async function sync(options: SyncOptions): Promise<number> {
     const root = resolve(options.targetDir);
     // `--json` and `--yes` are non-interactive by construction, and so is a run
     // started by a package script: the `predev` hook an older init wrote has a
-    // TTY, but the human asked for a dev server, not a question.
+    // TTY, but the human asked for a dev server, not a question. `npx vendo
+    // sync` is not that run — npm names its exec script `npx`, and the person
+    // who typed it is waiting on the answer.
     const interactive = options.interactive
       ?? (options.yes !== true && !json && !invokedByPackageScript()
         && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
