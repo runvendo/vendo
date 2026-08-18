@@ -440,23 +440,32 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/dispatch")).toEqual(["POST"]);
   });
 
-  it("treats a NextAuth handler as GET+POST", async () => {
+  // The verb reading is unchanged; what changed is that the pair is emitted
+  // disabled (route-exclusions.test.ts owns that rule) — `host_auth_create` was
+  // a live, callable sign-in endpoint in every install that ran Auth.js.
+  it("reads a NextAuth handler as GET+POST and emits the pair disabled", async () => {
     const root = await temporaryRoot();
     await write(
       root,
       "pages/api/auth/[...nextauth].ts",
       "import NextAuth from \"next-auth\";\nexport default NextAuth({ providers: [] });\n",
     );
-    expect(await methodsFor(root, "/api/auth/{nextauth}")).toEqual(["GET", "POST"]);
+    expect(await methodsFor(root, "/api/auth/{nextauth}")).toEqual([]);
 
+    const authNote = "it is an authentication handler; excluded from the callable catalog; overrides.json can flip disabled/risk";
     expect(await scannedTools(root)).toEqual({
       tools: [
         { ...blind, name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "ungraded",
+          disabled: true, note: authNote,
           binding: { kind: "route", method: "GET", path: "/api/auth/{nextauth}", argsIn: "query" } },
         { ...blind, name: "host_auth_create", description: "POST /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "ungraded",
+          disabled: true, note: authNote,
           binding: { kind: "route", method: "POST", path: "/api/auth/{nextauth}", argsIn: "body" } },
       ],
-      warnings: [],
+      warnings: [
+        "route /api/auth/{nextauth} is excluded from the callable catalog because it is an authentication handler;"
+        + " re-enable it by setting its \"disabled\": false in .vendo/overrides.json",
+      ],
     });
   });
 

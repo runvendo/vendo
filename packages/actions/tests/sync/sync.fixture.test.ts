@@ -55,6 +55,10 @@ describe("vendoSync host fixture", () => {
       binding: { kind: "route", method: "GET", path: "/api/reports/summary", argsIn: "query" },
     });
     expect(toolsFile.tools.some((tool) => String(tool.binding?.path).startsWith("/api/vendo"))).toBe(false);
+    // …and the drop is no longer silent: the fixture's wire mount is named.
+    expect(first.warnings).toContain(
+      "route /api/vendo/{vendo} belongs to Vendo's own wire mount, not the host API, so no tool was emitted",
+    );
     expect(byName.get("host_export_data_unclassified")).toMatchObject({
       disabled: true,
       risk: "ungraded",

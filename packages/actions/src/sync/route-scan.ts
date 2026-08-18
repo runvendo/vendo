@@ -95,6 +95,86 @@ function isVendoRoute(urlPath: string): boolean {
 }
 
 /**
+ * Vendo's OWN wire mount — the front door this catalog is for, never part of
+ * the host API it describes.
+ *
+ * `vendo init` scaffolds it under `/api/vendo`, and that path convention used
+ * to be the whole check. A host that mounted `nextVendoHandler` anywhere else
+ * (an `(api)` route group, a branded `/api/assistant`) therefore shipped a live
+ * catch-all tool whose blast radius is everything Vendo exposes. Calling
+ * `nextVendoHandler` says what the route is wherever it sits, so the path and
+ * the call are both checked, and — like the GraphQL case below — the route
+ * yields no tool at all: an override could wake this one mechanically, but a
+ * tool that calls Vendo's own front door is never the answer to anything the
+ * agent was asked.
+ *
+ * The CALL is the marker, not the import specifier. Maple's `/api/demo/reset`
+ * is an ordinary host route that imports a `HostedStore` TYPE from
+ * `@vendoai/vendo/server`, and matching the specifier silently deleted it from
+ * the catalog — an exclusion with no tool has no override to undo it, so its
+ * only defence is being narrow.
+ *
+ * Matched against every module `verbsFromSource` walked, the same way
+ * GRAPHQL_SERVER_MARKER is, so a route that re-exports its verbs from a shared
+ * handler module is caught with the rest.
+ */
+const VENDO_WIRE_MARKER = /\bnextVendoHandler\s*\(/;
+
+function isVendoWireMount(route: RouteSource, walked: readonly string[]): boolean {
+  return isVendoRoute(route.urlPath)
+    || /\{vendo\}$/.test(route.urlPath)
+    || walked.some((source) => VENDO_WIRE_MARKER.test(source));
+}
+
+const AUTH_HANDLER_REASON = "it is an authentication handler";
+
+/**
+ * Routes that belong to the HOST but must not be offered as tools. Unlike the
+ * wire mount above, each one is still extracted: the tool keeps its real
+ * binding and is emitted `disabled: true` with the reason on it, the same shape
+ * an unclassified route already carries, so `.vendo/overrides.json` can flip
+ * `disabled` back. That override IS the false-positive escape hatch — a host's
+ * `/api/chat` may really be message CRUD that happens to import `ai` — and
+ * there is no flag and no question anywhere.
+ *
+ * Two sightings:
+ *
+ * 1. The host's own agent endpoint — an AI-SDK / Mastra / raw-Anthropic loop,
+ *    or a route that spreads Vendo's own tool pack. Cataloging one hands the
+ *    agent a tool that calls the agent. Only the AGENT-shaped Vendo entry
+ *    points count (`@vendoai/vendo/ai-sdk`, `/mastra`, a `vendoTools` or
+ *    `vendo.respond` call): a route importing the umbrella for `vendo.store`
+ *    is ordinary host code, and Maple's `/api/demo/reset` is exactly that.
+ * 2. Auth.js's catch-all, which answers sign-in, callback, session, and CSRF
+ *    for every provider behind one URL.
+ *
+ * Markers are matched against every module `verbsFromSource` walked (the route
+ * file plus each local re-export it followed), exactly like
+ * GRAPHQL_SERVER_MARKER below: `export { GET, POST } from "@/auth"` is the
+ * shape Auth.js's own docs scaffold, and checking only the route file would
+ * miss all of them.
+ */
+const ROUTE_EXCLUSION_MARKERS: ReadonlyArray<{ reason: string; marker: RegExp }> = [
+  {
+    reason: "its handler runs an agent/model loop",
+    marker: /from\s*["'](?:ai|@anthropic-ai\/sdk|@ai-sdk\/[^"']+|@mastra\/[^"']+|@vendoai\/vendo\/(?:ai-sdk|mastra))["']|\b(?:streamText|generateText|vendoTools)\s*\(|\bvendo\.respond\s*\(/,
+  },
+  {
+    reason: AUTH_HANDLER_REASON,
+    marker: /from\s*["'](?:next-auth|@auth\/core)(?:\/[^"']+)?["']|\bNextAuth\s*\(/,
+  },
+];
+
+/** The reason this route is emitted disabled, or null. The path test comes
+ *  first because a catch-all named after its owner (`[...nextauth]`) says what
+ *  it is even when the handler delegates to a module this scan cannot resolve. */
+function routeExclusion(route: RouteSource, walked: readonly string[]): string | null {
+  if (/\{nextauth\}$/i.test(route.urlPath)) return AUTH_HANDLER_REASON;
+  return ROUTE_EXCLUSION_MARKERS
+    .find(({ marker }) => walked.some((source) => marker.test(source)))?.reason ?? null;
+}
+
+/**
  * A GraphQL server answers one POST whose body is a `{ query, variables }`
  * envelope. Route dispatch (runtime/registry.ts) sends the model's arguments
  * as the whole JSON body, so a GraphQL endpoint scanned as a generic route
@@ -628,15 +708,12 @@ function mergeRouteInput(
 }
 
 async function routeSources(root: string): Promise<RouteSource[]> {
-  const files = await walk(root, (relativePath) => {
-    const route = routePath(relativePath);
-    return Boolean(route && !isVendoRoute(route.urlPath));
-  });
+  const files = await walk(root, (relativePath) => routePath(relativePath) !== null);
   const sources: RouteSource[] = [];
   for (const file of files) {
     const relativePath = path.relative(root, file).replace(/\\/g, "/");
     const route = routePath(relativePath);
-    if (!route || isVendoRoute(route.urlPath)) continue;
+    if (!route) continue;
     sources.push({
       file,
       ...route,
@@ -672,6 +749,20 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
       warnings.push(`route ${route.urlPath} is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted`);
       continue;
     }
+    if (isVendoWireMount(route, walked)) {
+      warnings.push(`route ${route.urlPath} belongs to Vendo's own wire mount, not the host API, so no tool was emitted`);
+      continue;
+    }
+    const excluded = routeExclusion(route, walked);
+    const exclusionNote = excluded === null
+      ? undefined
+      : `${excluded}; excluded from the callable catalog; overrides.json can flip disabled/risk`;
+    if (excluded !== null) {
+      warnings.push(
+        `route ${route.urlPath} is excluded from the callable catalog because ${excluded};`
+        + ` re-enable it by setting its "disabled": false in .vendo/overrides.json`,
+      );
+    }
     if (methods.size === 0) {
       const reason = route.kind === "pages"
         ? "pages handler has no supported HTTP method evidence"
@@ -692,7 +783,9 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         binding: { kind: "route", method: "POST", path: route.urlPath, argsIn: "body" },
         srcPath,
       });
-      warnings.push(`route ${route.urlPath} could not be classified: ${reason}`);
+      // An excluded route is already disabled and already said why; a second
+      // line about the verbs nobody will call is noise.
+      if (excluded === null) warnings.push(`route ${route.urlPath} could not be classified: ${reason}`);
       continue;
     }
     for (const method of HTTP_METHODS) {
@@ -712,7 +805,9 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         // rung covers them.
         outputSchemaSource: "unknown" satisfies SchemaSource,
         risk: extractedRisk(method),
-        ...(note ? { note } : {}),
+        ...(exclusionNote === undefined
+          ? (note ? { note } : {})
+          : { disabled: true, note: note === undefined ? exclusionNote : `${exclusionNote}; ${note}` }),
         binding: {
           kind: "route",
           method,
