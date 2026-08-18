@@ -630,6 +630,13 @@ function resolveWireUrl(env: Record<string, string | undefined>): string | undef
   }
 }
 
+/** How long the impact probe waits for the dev server's answer. Fail-soft: a
+ *  timeout reads as "impact unknown" like any other unreachable answer. But
+ *  the probe now follows VENDO_BASE_URL, which IS set in deploy environments
+ *  (where sync runs in prebuild), so a hung remote host must not be able to
+ *  stall the build beyond this bound. */
+const IMPACT_PROBE_TIMEOUT_MS = 10_000;
+
 async function probeImpact(input: {
   report: SyncReportWithWarnings;
   options: SyncFlowOptions;
@@ -655,6 +662,7 @@ async function probeImpact(input: {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify({ tools }),
+      signal: AbortSignal.timeout(IMPACT_PROBE_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
     const impact = impactResponse(await response.json());
