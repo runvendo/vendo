@@ -529,6 +529,8 @@ class GuardImplementation implements VendoGuard {
   #lastSweepAt = 0;
   /** The last freeze answer a fresh read produced (see {@link frozen}). */
   #frozenCache: { at: number; value: boolean } | undefined;
+  /** The after-the-fact audit writes, in order (see {@link flush}). */
+  #settled: Promise<void> = Promise.resolve();
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
   readonly #approvalRequestedCallbacks = new Set<(request: ApprovalRequest) => void>();
 
@@ -615,6 +617,26 @@ class GuardImplementation implements VendoGuard {
 
   async report(event: AuditEvent): Promise<void> {
     await this.reportThrough(event, (collection, record) => this.#engine.put(collection, record));
+  }
+
+  /** `report` for a row the call has already been decided by — the tool-call
+   *  row, written after the tool ran, which nothing downstream reads. Making
+   *  the caller wait on that store round trip buys the call nothing, and the
+   *  write was already best-effort in substance (a `vendo_audit` that is
+   *  momentarily down must never turn an outcome into an error, exactly as at
+   *  the frozen-block and unreadable-control sites).
+   *
+   *  Chained rather than fired loose, for two reasons: the rows land in the
+   *  order the calls did, and `flush()` is a hook a reader can await instead of
+   *  guessing. Every read of the trail through this guard settles the chain
+   *  first (`#queryAudit`), so a reader never races its own writes. */
+  #reportAfterTheFact(event: AuditEvent): void {
+    this.#settled = this.#settled.then(() => this.report(event)).catch(() => undefined);
+  }
+
+  /** Settle every after-the-fact audit write this guard has started. */
+  async flush(): Promise<void> {
+    await this.#settled;
   }
 
   /** `report`, with the audit row handed to `place` instead of written to this
@@ -926,7 +948,7 @@ class GuardImplementation implements VendoGuard {
         if (connectorAccount !== undefined || actAs !== undefined) {
           outcome = cleaned as ToolOutcome;
         }
-        await this.report(
+        this.#reportAfterTheFact(
           eventFromContext(ctx, {
             kind: "tool-call",
             tool: call.tool,
@@ -2484,6 +2506,9 @@ class GuardImplementation implements VendoGuard {
   async #queryAudit(
     filter: AuditQueryFilter,
   ): Promise<{ events: AuditEvent[]; cursor?: string }> {
+    // The trail's own reader never races the rows this guard wrote after the
+    // fact (#reportAfterTheFact) — it settles them before it reads.
+    await this.#settled;
     const limit = filter.limit ?? 50;
     if (limit <= 0) {
       return {
@@ -2548,6 +2573,9 @@ class GuardImplementation implements VendoGuard {
   }
 }
 
-export function createGuard(config: CreateGuardConfig): VendoGuard {
+/** `flush` rides the return type rather than `VendoGuard`: it is this
+ *  implementation's hook onto its own after-the-fact audit writes, not
+ *  something a host-supplied guard owes anyone. */
+export function createGuard(config: CreateGuardConfig): VendoGuard & { flush(): Promise<void> } {
   return new GuardImplementation(config);
 }
