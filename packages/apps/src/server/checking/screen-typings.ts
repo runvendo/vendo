@@ -483,7 +483,15 @@ export const screenCatalog = (
  *  those declarations are TRUE inside the box: the VM carries no ICU and borrows
  *  the host's real `Intl` across the wall (`genui/component/vm-program.ts`
  *  `INTL_SOURCE`). A smaller lib here would refuse the one idiom every model
- *  writes for money and dates while the VM ran it perfectly well. */
+ *  writes for money and dates while the VM ran it perfectly well.
+ *
+ *  THIS PIN DECIDES WHAT THE BRIDGE MUST CARRY. Every value-side name in this
+ *  lib's `Intl` is a name a screen may write and the box therefore has to answer;
+ *  one that is declared and unbridged is a green check over a screen that dies on
+ *  its first paint. Moving the pin moves that obligation — `ListFormat` and the
+ *  `formatRange` family arrive with es2021 and es2023 — so a bump lands together
+ *  with the bridge's new methods, and `tests/checking/screen-intl-parity.test.ts`
+ *  walks the two surfaces and refuses any difference either way. */
 export const COMPONENT_SCREEN_LIB = ["lib.es2020.d.ts"];
 
 export interface ComponentScreenTypingsInput {

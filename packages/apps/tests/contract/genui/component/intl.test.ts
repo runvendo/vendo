@@ -230,6 +230,119 @@ describe("plurals", () => {
   });
 });
 
+describe("alphabetical order", () => {
+  it("sorts in the locale's own alphabet, where a < gets it wrong", () => {
+    // The whole reason a collation is not a comparison: by codepoint "ä" is 0xE4
+    // and sorts after "z", and in German it belongs beside "a". QuickJS answers
+    // `localeCompare` by codepoint, so before this crossed the wall it returned a
+    // number — the WRONG one — and painted a list in an order nobody would notice.
+    expect(says(`const answer = "ä".localeCompare("z", "de-DE") < 0;`)).toBe("true");
+    expect(says(`const answer = new Intl.Collator("de-DE").compare("ä", "z") < 0;`)).toBe("true");
+    expect(says(`const answer = new Intl.Collator("en-US").compare("a", "b");`)).toBe("-1");
+    expect(says(`const answer = new Intl.Collator("en-US").compare("b", "b");`)).toBe("0");
+  });
+
+  it("sorts a column of names the way the person reading it expects", () => {
+    // What a sorted column IS: hand `compare` to `sort`. It is passed DETACHED,
+    // which is how everyone writes it and which only works because the bridge's
+    // `compare` reads nothing off `this`.
+    expect(says(`
+  const names = ["Zoë", "Ärger", "apple", "Banana"];
+  const answer = names.sort(new Intl.Collator("de-DE").compare).join(",");`)).toBe("apple,Ärger,Banana,Zoë");
+    // Case and accents folded away — the option that makes a search box work.
+    expect(says(`const answer = new Intl.Collator("en-US", { sensitivity: "base" }).compare("resume", "résumé");`))
+      .toBe("0");
+    // Numbers read as numbers, not as text: "item 10" after "item 9".
+    expect(says(`const answer = new Intl.Collator("en-US", { numeric: true }).compare("item 9", "item 10") < 0;`))
+      .toBe("true");
+  });
+
+  it("resolves against the wall when the screen names no locale, and prints the same twice", () => {
+    // Against the host's own answer rather than a literal: a collation resolves
+    // to the locale whose TABLE it uses, and ICU drops a region that changes no
+    // ordering ("de-DE" resolves to "de"). What is asserted is that the wall's
+    // locale reached the collator at all — the host's default would be en-US.
+    expect(says(`const answer = new Intl.Collator().resolvedOptions().locale;`, { locale: "de-DE" }))
+      .toBe(new Intl.Collator("de-DE").resolvedOptions().locale);
+    const order = `const answer = ["Ärger", "apple", "Zoë"].sort(new Intl.Collator().compare).join(",");`;
+    expect(says(order, { locale: "de-DE" })).toBe(says(order, { locale: "de-DE" }));
+    expect(says(order, { locale: "sv-SE" })).not.toBe(says(order, { locale: "de-DE" }));
+  });
+});
+
+describe("the words for a code", () => {
+  it("names a region, a language and a currency in the reader's own language", () => {
+    expect(says(`const answer = new Intl.DisplayNames("en-US", { type: "region" }).of("US");`)).toBe("United States");
+    expect(says(`const answer = new Intl.DisplayNames("en-US", { type: "language" }).of("de");`)).toBe("German");
+    expect(says(`const answer = new Intl.DisplayNames("de-DE", { type: "region" }).of("US");`))
+      .toBe(new Intl.DisplayNames("de-DE", { type: "region" }).of("US"));
+    expect(says(`const answer = new Intl.DisplayNames("en-US", { type: "currency" }).of("USD");`)).toBe("US Dollar");
+  });
+
+  it("hands back undefined for a code it has no name for, which JSON could not have carried", () => {
+    // `of` is the one bridged call whose answer may be absent, and `undefined` is
+    // not a JSON value: `null` crosses the wall and reads back as `undefined`.
+    // "QQ" is unassigned; "ZZ" would not do, because CLDR names that one
+    // "Unknown Region" and there would be nothing absent to carry.
+    expect(says(`const answer = typeof new Intl.DisplayNames("en-US", { type: "region", fallback: "none" }).of("QQ");`))
+      .toBe("undefined");
+    // With the default fallback the code itself comes back, not a blank.
+    expect(says(`const answer = new Intl.DisplayNames("en-US", { type: "region" }).of("QQ");`)).toBe("QQ");
+    expect(says(`const answer = new Intl.DisplayNames("en-US", { type: "region" }).resolvedOptions().fallback;`))
+      .toBe("code");
+  });
+});
+
+describe("a locale tag, taken apart", () => {
+  it("reads the language, the region and the script off a tag", () => {
+    expect(says(`const answer = new Intl.Locale("en-US").language;`)).toBe("en");
+    expect(says(`const answer = new Intl.Locale("en-US").region;`)).toBe("US");
+    expect(says(`const answer = new Intl.Locale("zh-Hant-TW").script;`)).toBe("Hant");
+    expect(says(`const answer = new Intl.Locale("en-US-u-ca-buddhist").calendar;`)).toBe("buddhist");
+    // `baseName` is the language, script and region alone; `toString` keeps the
+    // extension, and the two are deliberately different strings.
+    expect(says(`const answer = new Intl.Locale("en-US-u-ca-buddhist").baseName;`)).toBe("en-US");
+    expect(says(`const answer = String(new Intl.Locale("en-US-u-ca-buddhist"));`)).toBe("en-US-u-ca-buddhist");
+    // A field the tag does not carry is absent, not blank.
+    expect(says(`const answer = typeof new Intl.Locale("en-US").script;`)).toBe("undefined");
+  });
+
+  it("fills in and strips back out what only CLDR's tables know", () => {
+    // The two answers this VM could not have computed: likely-subtags is exactly
+    // the data QuickJS does not carry, so both come from the host.
+    expect(says(`const answer = String(new Intl.Locale("en").maximize());`)).toBe("en-Latn-US");
+    expect(says(`const answer = String(new Intl.Locale("en-Latn-US").minimize());`)).toBe("en");
+    // Recursive, because `maximize` hands back a real one: its own fields resolve
+    // through the same wall.
+    expect(says(`const answer = new Intl.Locale("en").maximize().region;`)).toBe("US");
+  });
+
+  it("is accepted anywhere a locale is, the way a real one is", () => {
+    expect(says(`const answer = new Intl.NumberFormat(new Intl.Locale("de-DE"), { style: "currency", currency: "EUR" }).format(1234.5);`))
+      .toBe(new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(1234.5));
+  });
+});
+
+describe("which locales the host can answer in", () => {
+  it("canonicalizes the tags a screen names", () => {
+    expect(says(`const answer = Intl.getCanonicalLocales("EN-us").join(",");`)).toBe("en-US");
+    expect(says(`const answer = Intl.getCanonicalLocales(["en-us", "DE-de"]).join(",");`)).toBe("en-US,de-DE");
+    expect(says(`const answer = Intl.getCanonicalLocales().length;`)).toBe("0");
+  });
+
+  it("answers supportedLocalesOf per format, because each has its own data", () => {
+    expect(says(`const answer = Intl.NumberFormat.supportedLocalesOf(["en-US"]).join(",");`)).toBe("en-US");
+    expect(says(`const answer = Intl.DateTimeFormat.supportedLocalesOf("de-DE").join(",");`)).toBe("de-DE");
+    expect(says(`const answer = Intl.Collator.supportedLocalesOf(["en-US", "de-DE"]).join(",");`)).toBe("en-US,de-DE");
+    // A tag no ICU carries is dropped rather than refused — the point of asking.
+    expect(says(`const answer = Intl.PluralRules.supportedLocalesOf(["zz"]).length;`)).toBe("0");
+    // Named nothing, supports nothing: the argument IS the question, so an absent
+    // one must not quietly become the wall's locale.
+    expect(says(`const answer = Intl.RelativeTimeFormat.supportedLocalesOf().length;`)).toBe("0");
+    expect(says(`const answer = Intl.DisplayNames.supportedLocalesOf(["en-US"]).join(",");`)).toBe("en-US");
+  });
+});
+
 describe("the wall", () => {
   it("defaults to the HOST's zone, never the machine the VM runs on", () => {
     // 01:30Z is the 16th everywhere in the Americas, so this string is the

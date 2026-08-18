@@ -101,18 +101,52 @@ ${INTL_SOURCE}
  * both ("NaN", "∞"); as JSON they would arrive as `null` and format as zero — a
  * date in 1970 where a browser throws. So a value rides as its decimal spelling
  * and the host reads it back with `Number`.
+ *
+ * THE SURFACE IS THE TYPINGS' SURFACE, EXACTLY. What a screen may write is what
+ * `lib.es2020.d.ts` declares (server/checking/screen-typings.ts
+ * `COMPONENT_SCREEN_LIB`), so every value-side name in that lib's `Intl` is here
+ * and nothing else is: `Collator`, `DateTimeFormat`, `DisplayNames`, `Locale`,
+ * `NumberFormat`, `PluralRules`, `RelativeTimeFormat`, `getCanonicalLocales`,
+ * each with the methods that lib gives it. A name the lib admits and this file
+ * omits is a screen that passes every gate and then dies on its first paint with
+ * "not a function" — the pre-bridge trap, reborn on the edges — and a name here
+ * that the lib does not declare is unreachable code. `screen-intl-parity.test.ts`
+ * walks both sides and refuses any difference, in either direction; `ListFormat`,
+ * `Segmenter` and the `formatRange` family are absent here because that lib does
+ * not declare them, and adding them means moving the lib pin first.
  */
 const INTL_SOURCE = `(function () {
   var ask = globalThis.__vendo_intl;
   delete globalThis.__vendo_intl;
   // Captured before the screen's own code can reassign either: what the host is
   // asked is what this file said to ask.
-  var stringify = JSON.stringify, parse = JSON.parse;
+  var stringify = JSON.stringify, parse = JSON.parse, isArray = Array.isArray;
+
+  /** A locales argument as the list of TAGS it names. A \`Locale\` from below reads
+   *  as its own tag, the way a real one does when it is passed as a locale. */
+  function tags(locales) {
+    return locales === undefined ? [] : (isArray(locales) ? locales : [locales]).map(String);
+  }
+
+  /** The same list, or NOTHING where the screen named no locale at all — what it
+   *  left out is the wall's, and an empty list is the machine's default in a
+   *  browser, which is the one answer this box may never give. */
+  function named(locales) {
+    var list = tags(locales);
+    return list.length === 0 ? undefined : list;
+  }
 
   // \`unit\` is \`RelativeTimeFormat\`'s alone; \`stringify\` drops it where it is
   // undefined, so every other ask crosses the wall the shape it always did.
   function answer(op, locale, options, value, unit) {
-    return ask(stringify({ op: op, locale: locale, options: options, value: value, unit: unit }));
+    return ask(stringify({ op: op, locale: named(locale), options: options, value: value, unit: unit }));
+  }
+
+  /** The same ask for the formats whose argument is TEXT rather than a number: a
+   *  collation's two operands, a display name's code, one locale tag, or the
+   *  whole locales list a \`supportedLocalesOf\` is asked about. */
+  function about(op, locale, options, text) {
+    return ask(stringify({ op: op, locale: named(locale), options: options, text: text }));
   }
 
   /** Any value as the decimal spelling of a number. A Date reads as its instant,
@@ -160,15 +194,87 @@ const INTL_SOURCE = `(function () {
       resolvedOptions: function () { return parse(answer("pluralResolved", locale, options)); },
     };
   }
+  // Where two strings sort in a locale's own alphabet — the half of an
+  // alphabetical list that \`<\` gets wrong the moment a name leaves ASCII ("ä"
+  // sorts after "z" by codepoint and beside "a" in German). \`compare\` reads
+  // nothing off \`this\`, so \`rows.sort(collator.compare)\` works detached, the way
+  // a real one does.
+  function Collator(locale, options) {
+    return {
+      compare: function (x, y) { return Number(about("collate", locale, options, [String(x), String(y)])); },
+      resolvedOptions: function () { return parse(answer("collateResolved", locale, options)); },
+    };
+  }
+  // A region, language, script or currency code as the words a person reads:
+  // "US" → "United States". \`of\` answers \`undefined\` for a code the locale has no
+  // name for, which JSON cannot carry, so \`null\` crosses and reads back as the
+  // \`undefined\` the standard promises.
+  function DisplayNames(locale, options) {
+    return {
+      of: function (code) {
+        var name = parse(about("display", locale, options, [String(code)]));
+        return name === null ? undefined : name;
+      },
+      resolvedOptions: function () { return parse(answer("displayResolved", locale, options)); },
+    };
+  }
+  // One tag taken apart — the language, region and script a screen reads off it.
+  // Resolved by the host in a single ask, \`maximize\`/\`minimize\` included: those
+  // two answer out of CLDR's likely-subtags table, which is exactly the data this
+  // VM does not carry, so each returns the tag the host resolved rather than a
+  // guess made in here.
+  function Locale(tag, options) {
+    var facts = parse(about("locale", undefined, options, [String(tag)]));
+    return {
+      baseName: facts.baseName,
+      calendar: facts.calendar,
+      caseFirst: facts.caseFirst,
+      collation: facts.collation,
+      hourCycle: facts.hourCycle,
+      language: facts.language,
+      numberingSystem: facts.numberingSystem,
+      numeric: facts.numeric,
+      region: facts.region,
+      script: facts.script,
+      maximize: function () { return Locale(facts.maximized); },
+      minimize: function () { return Locale(facts.minimized); },
+      toString: function () { return facts.tag; },
+    };
+  }
+
+  /** \`supportedLocalesOf\`, which every one of these constructors carries. It is
+   *  per-constructor because each format has its own locale data — a locale the
+   *  host can count in can be one it cannot phrase an interval in. */
+  function supported(op) {
+    return function (locales, options) { return parse(about(op, undefined, options, tags(locales))); };
+  }
+  NumberFormat.supportedLocalesOf = supported("numberSupported");
+  DateTimeFormat.supportedLocalesOf = supported("dateSupported");
+  RelativeTimeFormat.supportedLocalesOf = supported("relativeSupported");
+  PluralRules.supportedLocalesOf = supported("pluralSupported");
+  Collator.supportedLocalesOf = supported("collateSupported");
+  DisplayNames.supportedLocalesOf = supported("displaySupported");
+
   globalThis.Intl = {
-    NumberFormat: NumberFormat,
+    Collator: Collator,
     DateTimeFormat: DateTimeFormat,
-    RelativeTimeFormat: RelativeTimeFormat,
+    DisplayNames: DisplayNames,
+    Locale: Locale,
+    NumberFormat: NumberFormat,
     PluralRules: PluralRules,
+    RelativeTimeFormat: RelativeTimeFormat,
+    getCanonicalLocales: function (locales) { return parse(about("canonical", undefined, undefined, tags(locales))); },
   };
 
   Number.prototype.toLocaleString = function (locale, options) {
     return answer("number", locale, options, spell(this));
+  };
+  // \`Collator\` by another name, and the one every model reaches for to sort a
+  // column of names. Unbridged it was WORSE than missing: QuickJS answers it by
+  // codepoint, so it returned a number — the wrong one — and painted a list in an
+  // order nobody would notice was wrong.
+  String.prototype.localeCompare = function (that, locale, options) {
+    return Number(about("collate", locale, options, [String(this), String(that)]));
   };
   // Only where the host gave a clock: withheld, \`Date\` was deleted above and
   // there is no prototype left to reach.

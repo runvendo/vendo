@@ -147,6 +147,16 @@ type IntlOp =
   | "date" | "dateParts" | "dateResolved"
   | "relative" | "relativeParts" | "relativeResolved"
   | "plural" | "pluralResolved"
+  /** `Collator`'s two, which `String.prototype.localeCompare` shares — it is the
+   *  same comparison under another name. */
+  | "collate" | "collateResolved"
+  | "display" | "displayResolved"
+  /** One tag taken apart, and the tags a locales list canonicalizes to. */
+  | "locale" | "canonical"
+  /** `supportedLocalesOf`, one op per constructor: each format has its own locale
+   *  data, so the answer genuinely differs by which one is asking. */
+  | "numberSupported" | "dateSupported" | "relativeSupported"
+  | "pluralSupported" | "collateSupported" | "displaySupported"
   /** `Date.prototype`'s three, which differ from `date` only in what each
    *  defaults to when the screen named no components. */
   | "day" | "time" | "stamp";
@@ -163,7 +173,39 @@ interface IntlAsk {
   /** What the count counts, for the one format whose `format` takes two
    *  arguments: `"hour"` in `format(-2, "hour")` → "2 hours ago". */
   unit?: string;
+  /** The STRING arguments, where a format takes those instead of a number: a
+   *  collation's two operands, a display name's code, one locale tag, or the whole
+   *  locales list a `supportedLocalesOf` is asked about. */
+  text?: string[];
 }
+
+/**
+ * One locale tag as the fields a screen reads off it, plus the two tags
+ * `maximize`/`minimize` resolve to.
+ *
+ * Both of those read CLDR's likely-subtags table — precisely the data the VM does
+ * not carry — so they are resolved HERE, once, and the VM builds each result by
+ * asking again with the tag this answer named. `JSON.stringify` drops the fields
+ * the tag does not carry, which is the `undefined` the standard promises for each
+ * of them.
+ */
+const localeFacts = (locale: Intl.Locale) => ({
+  /** The full identifier, extensions included — `baseName` is the language,
+   *  script and region alone, and `toString()` is not the same string. */
+  tag: locale.toString(),
+  baseName: locale.baseName,
+  calendar: locale.calendar,
+  caseFirst: locale.caseFirst,
+  collation: locale.collation,
+  hourCycle: locale.hourCycle,
+  language: locale.language,
+  numberingSystem: locale.numberingSystem,
+  numeric: locale.numeric,
+  region: locale.region,
+  script: locale.script,
+  maximized: locale.maximize().toString(),
+  minimized: locale.minimize().toString(),
+});
 
 /**
  * One ask, answered by the host's real `Intl`: the formatted text, or JSON where
@@ -182,10 +224,20 @@ interface IntlAsk {
 const answerIntl = (ask: IntlAsk, wall: { locale: string; timeZone: string }): string => {
   const locale = ask.locale ?? wall.locale;
   const value = Number(ask.value);
+  /** The string arguments. `first`/`second` are a collation's operands, a display
+   *  name's code or a locale tag; `locales` is the whole list, for the statics
+   *  whose argument IS a list of locales rather than one format's locale. */
+  const locales = ask.text ?? [];
+  const [first = "", second = ""] = locales;
   const counts = ask.options as Intl.NumberFormatOptions | undefined;
   const dates = { timeZone: wall.timeZone, ...ask.options } as Intl.DateTimeFormatOptions;
   const words = ask.options as Intl.RelativeTimeFormatOptions | undefined;
   const forms = ask.options as Intl.PluralRulesOptions | undefined;
+  const order = ask.options as Intl.CollatorOptions | undefined;
+  // `DisplayNames` is the one format whose options MUST carry a `type`, so this
+  // asserts rather than narrows: an ask that omits it is the host's `TypeError` to
+  // raise, and it is the same one a browser raises.
+  const names = ask.options as unknown as Intl.DisplayNamesOptions;
   const unit = ask.unit as Intl.RelativeTimeFormatUnit;
   switch (ask.op) {
     case "number": return new Intl.NumberFormat(locale, counts).format(value);
@@ -199,6 +251,20 @@ const answerIntl = (ask: IntlAsk, wall: { locale: string; timeZone: string }): s
     case "date": return new Intl.DateTimeFormat(locale, dates).format(value);
     case "dateParts": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).formatToParts(value));
     case "dateResolved": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).resolvedOptions());
+    case "collate": return String(new Intl.Collator(locale, order).compare(first, second));
+    case "collateResolved": return JSON.stringify(new Intl.Collator(locale, order).resolvedOptions());
+    // `of` answers `undefined` for a code the locale has no name for, and JSON
+    // carries no `undefined` — `null` crosses and the VM reads it back as one.
+    case "display": return JSON.stringify(new Intl.DisplayNames(locale, names).of(first) ?? null);
+    case "displayResolved": return JSON.stringify(new Intl.DisplayNames(locale, names).resolvedOptions());
+    case "locale": return JSON.stringify(localeFacts(new Intl.Locale(first, ask.options as Intl.LocaleOptions)));
+    case "canonical": return JSON.stringify(Intl.getCanonicalLocales(locales));
+    case "numberSupported": return JSON.stringify(Intl.NumberFormat.supportedLocalesOf(locales, counts));
+    case "dateSupported": return JSON.stringify(Intl.DateTimeFormat.supportedLocalesOf(locales, ask.options));
+    case "relativeSupported": return JSON.stringify(Intl.RelativeTimeFormat.supportedLocalesOf(locales, words));
+    case "pluralSupported": return JSON.stringify(Intl.PluralRules.supportedLocalesOf(locales, forms));
+    case "collateSupported": return JSON.stringify(Intl.Collator.supportedLocalesOf(locales, order));
+    case "displaySupported": return JSON.stringify(Intl.DisplayNames.supportedLocalesOf(locales, ask.options));
     case "day": return new Date(value).toLocaleDateString(locale, dates);
     case "time": return new Date(value).toLocaleTimeString(locale, dates);
     case "stamp": return new Date(value).toLocaleString(locale, dates);
