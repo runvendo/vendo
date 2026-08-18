@@ -201,7 +201,7 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-gemini`,
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
 | `screenshot.png` | that page, shot once it has settled — the **viewport**, 480x900, which is the frame the harness contract promises and the only one the judge is shown |
 | `dom.html` | what the browser held once that screen settled, script bodies dropped: the judge's SOURCE evidence, saved because it is what lets the folder be scored again without painting anything |
-| `result.json` | the four floor verdicts, the judge's verdict for every rubric line, the contract the run graded under, the commit the harness ran at and the Agent SDK version, the click trace, console errors, timings, tokens and dollars. `cost.usage.reasoningTokens` splits out the part of the output the provider says was THINKING rather than written — a split of `outputTokens`, never an addend, so no dollar moves for it, and absent entirely where the provider itemises no such count, which is every first-party Anthropic call |
+| `result.json` | the four floor verdicts, the judge's verdict for every rubric line, the contract the run graded under, the commit the harness ran at and the Agent SDK version, the click trace, console errors, timings, tokens and dollars. `cost.usage.reasoningTokens` splits out the part of the output the provider says was THINKING rather than written — a split of `outputTokens`, never an addend, so no dollar moves for it, and absent entirely where the provider itemises no such count, which is every first-party Anthropic call. `pipeline` is the vendo column's own review of the screen before anyone else graded it — every verdict the product's `validate` gate reached, with its findings, and whether anything painted after the last one — so a rubric line the judge failed can be read against what the product's reviewer said about the same screen. Absent where that gate was never reached, which is itself the reading: those bytes went out unreviewed |
 
 one `runs/<run>/summary.json` — the run's only aggregate, per column: floor cells
 earned, failed and vacuous; rubric case-lines and style-lines by
@@ -360,7 +360,7 @@ second failure.
 
 One case is roughly **1-4 minutes and $0.30-$0.50** of contender spend, plus the
 judge. A world is **ten or fifteen cases**, so one world's
-run is roughly 10-15x that; `--world all` is **200 cases**, and nobody runs that
+run is roughly 10-15x that; `--world all` is **199 cases**, and nobody runs that
 casually. `--models` multiplies the whole thing again by the number of models,
 because the matrix is every harness in every model.
 
@@ -409,7 +409,8 @@ A world is a **folder**, `worlds/<name>/`:
 
 There are **fourteen worlds** — `maple` (consumer banking) plus thirteen more,
 from build logs to trades accounting — carrying **fifteen cases** each, except
-`buildlog` and `fieldops` at ten, so the whole corpus is **200 cases**. A tool
+`buildlog` and `fieldops` at ten and `trades-accounting` at fourteen, so the
+whole corpus is **199 cases**. A tool
 that declares `data` returns rows and is graded
 `read`; one that only declares `takes` mutates and is graded `write`. Input
 schemas are derived from `takes` (a name → type map), output schemas from the
@@ -762,7 +763,18 @@ The strike is on the **brand**, not on the word: `vendor`, `vendors`, `vendorId`
 and `vendor_name` reach the judge as written. Striking them was a live scoring
 bug — two of the fourteen worlds keep vendors, and every sentence about one
 arrived as "host", in the screen AND in the tool data the honesty line is graded
-against, so the judge compared a garbled screen with a garbled ground truth.
+against, so the judge compared a garbled screen with a garbled ground truth. It
+is a blunt instrument either way, so the corpus is linted against it: no world
+may say anything the strike rewrites (`worlds.test.ts`), which is what keeps a
+future world from being graded against prose the harness edited.
+
+And it is **symmetric**, or it is not blinding. `crayon` goes too: the thesys page
+paints through that vendor's own UI kit, so `--crayon-*` and `.crayon-*` named
+that column on sight in every one of its DOMs while both others were struck.
+Unlike `vendor` nothing spares it — `crayon` is an ordinary English word, safe
+only because no world says it — so a world that ever sells crayons has to spare
+it in `judge.ts` first, and the corpus lint is what makes that a red test rather
+than a silently garbled case.
 
 Every verdict is `pass`, `fail` or `na`, and carries one clause naming the
 evidence it was reached on. Each line arrives labelled `[correctness]` or
@@ -861,6 +873,17 @@ screen convicted of a control it does not have is scored on what it really does.
 And the rubric gained a paragraph — a note and a verdict that disagree are an
 error, which was 11% of the honesty failures — so `rubricVersion` is **5** and no
 verdict recorded under 4 compares with one after it.
+
+Blinding `crayon` the same day is a fourth, and it lands on **one column**: every
+`thesys` case before it was graded by a judge that could name that column from its
+markup, and every one after it by a judge that cannot, so no `thesys` verdict
+compares across that line. The other columns are untouched — nothing they emit
+says `crayon` — which is the point: it was the asymmetry that was the bug. The
+`pipeline` field arrived beside it and breaks nothing, being a recording rather
+than a rule: no floor check, rubric line or exit code reads it. Its repair half is
+still missing and needs a field on `ScreenOutcome`
+(`packages/apps/src/contract/screen.ts`) — from out here the reviewer's verdict is
+watchable and whether the repair round ran is not.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads — the choosers among them included, which is what a table of

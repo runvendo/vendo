@@ -175,6 +175,50 @@ describe("the vendo driver reports one revision", () => {
 });
 
 /**
+ * The product's OWN review, on the record (2026-08-18).
+ *
+ * `result.json` carried the judge's verdict and nothing about how the screen got
+ * there, so a failed rubric line could not be told apart from a reviewer that
+ * never mentioned the defect. The driver already fills the `validate` verb the
+ * gate answers through, so the verdict costs nothing to watch — and this is a seam
+ * test, so the gate that answers here is the product's real one.
+ */
+describe("the vendo driver records the product's own review", () => {
+  it("carries the verdict the gate reached, and whether anything painted after it", async () => {
+    const outcome = await vendoDriver().run({
+      world,
+      testCase: caseFor("reviewed"),
+      meter: scripted([saveTurn(PAINTS, "c1"), stopTurn()]),
+    });
+
+    // The loop reviews the screen it is about to hand over, so a run that painted
+    // carries one verdict, reached after the paint it is about.
+    expect(outcome.pipeline?.reviews).toHaveLength(1);
+    expect(outcome.pipeline?.reviews[0]).toMatchObject({ ok: true, findings: [] });
+    expect(outcome.pipeline!.reviews[0]!.atMs).toBeGreaterThan(outcome.snapshots[0]!.atMs);
+    // Nothing painted after the verdict, which is what a screen with nothing to
+    // repair looks like. A `true` here is the only sign from out here that a
+    // repair round wrote something that reached the person.
+    expect(outcome.pipeline?.paintedAfter).toBe(false);
+  });
+
+  it("reports no review at all for a screen the product never reviewed", async () => {
+    const outcome = await vendoDriver().run({
+      world,
+      testCase: caseFor("unreviewed"),
+      meter: scripted([saveTurn(PAINTS, "c1"), saveTurn(LANDS_UNPAINTED, "c2"), stopTurn()]),
+    });
+
+    // The gate runs on a screen that painted, and the delivered document is not
+    // one: the last save landed and painted nothing. So those bytes went out
+    // unreviewed, and the absence is what says so — a reading no judge's verdict
+    // could give, because the judge grades the screen and not the road to it.
+    expect(outcome.blocking).toHaveLength(1);
+    expect(outcome.pipeline).toBeUndefined();
+  });
+});
+
+/**
  * A screen painted before the bell is a real screen.
  *
  * A case that hit its cap used to be recorded as having delivered NOTHING — the

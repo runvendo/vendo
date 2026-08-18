@@ -118,6 +118,11 @@ describe("blindness", () => {
     // to the judge with the vendor's name on it.
     "vendoai",
     "diy",
+    // The bought column's own signature: its page paints through the vendor's
+    // `@crayonai` UI kit, so `--crayon-*` and `.crayon-*` named it on sight in
+    // every one of its DOMs while both others were struck. Blinding is symmetric
+    // or it is not blinding.
+    "crayon",
     "claude-code",
     "claude-sonnet-5",
     "claude-opus-5",
@@ -137,7 +142,9 @@ describe("blindness", () => {
         // document is stamped with the format (VENDO_APP_FORMAT).
         artifact: `{"format":"vendo/app@1","tree":{"formatVersion":"vendo-genui/v2"}}
 <script type="module">import { PayloadView } from "@vendoai/ui/tree";</script>
-<button onclick="window.vendo.callTool('cancel_transfer', { id: 'tr_1' })">Cancel</button>`,
+<style>body{--crayon-primary-text:#111}</style>
+<div class="crayon-shell-container--mobile">
+<button onclick="window.vendo.callTool('cancel_transfer', { id: 'tr_1' })">Cancel</button></div>`,
         // A control's label is page text, and page text can sign its own work.
         trace: [{ label: "Built with Vendo", changed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
       }),

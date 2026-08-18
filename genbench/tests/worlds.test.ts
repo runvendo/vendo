@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { vendoThemeSchema } from "@vendoai/apps/contract";
 import { TOOL_NAME_PATTERN } from "@vendoai/core";
 import { beforeAll, describe, expect, it } from "vitest";
+import { blind } from "../src/judge.js";
 import { CASE_SHAPES, loadCases, loadWorld, type Case, type CaseTag, type World } from "../src/world.js";
 
 const worldsDir = join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds");
@@ -241,6 +242,22 @@ for (const name of folders) {
 
     it("carries at least ten cases", () => {
       expect(cases.length).toBeGreaterThanOrEqual(10);
+    });
+
+    /**
+     * The judge's blinding is a blunt instrument, and this world's rows are the
+     * GROUND TRUTH it grades the honesty line against.
+     *
+     * A struck word in authored data is rewritten on the way in, so the judge
+     * compares a screen against a truth the harness garbled — which is exactly
+     * how `\bvendo\w*` cost `trades-accounting` and `property-management` every
+     * sentence they say about a vendor. `vendor` is spared by name now; `crayon`
+     * is not, and a world that ever sells crayons has to spare it in `judge.ts`
+     * before it can be authored here.
+     */
+    it("says nothing the judge's blinding would rewrite", () => {
+      const authored = JSON.stringify({ app: world.app, style: world.style, tools: world.tools, cases });
+      expect(blind(authored)).toBe(authored);
     });
 
     it("overrides only tools and fields the world has", () => {

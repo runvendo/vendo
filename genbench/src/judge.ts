@@ -172,9 +172,23 @@ const ATTEMPT_TIMEOUT_MS = 90_000;
  * so the judge read a screen and a ground truth that had both been garbled by the
  * blinding. Nothing this benchmark has ever put in front of a judge spells the
  * brand with an `r` after it, so the one letter is the whole rule.
+ *
+ * `crayon` is the same rule for the BOUGHT column, and blinding has to be
+ * symmetric or it is not blinding: the thesys page paints through the vendor's own
+ * `@crayonai` UI kit, so `--crayon-*` and `.crayon-*` were 283,868 signatures
+ * across 106 DOMs — one column the judge could name on sight while both others
+ * were struck. `\w*` for the reason `vendo` has it and no lookahead, because
+ * nothing spares it: `crayon` IS an ordinary English word, and it is safe only
+ * because none of the fourteen worlds says it — scanned, in every `world.json`
+ * and `cases.json`, and in every saved DOM, where every match sits inside a
+ * `<style>` block and not one is prose a person reads. A world that ever sells
+ * crayons has to spare it here first.
  */
-const IDENTITY = /\bvendo(?!r)\w*|\bdiy\b|\bclaude[\w-]*/gi;
-const blind = (text: string): string => text.replace(IDENTITY, "host");
+const IDENTITY = /\bvendo(?!r)\w*|\bcrayon\w*|\bdiy\b|\bclaude[\w-]*/gi;
+/** Exported for the corpus lint: a world's own prose and rows reach the judge
+ *  through this, and one that says a struck word would be graded against a ground
+ *  truth the harness had rewritten (`worlds.test.ts`). */
+export const blind = (text: string): string => text.replace(IDENTITY, "host");
 
 /**
  * Every call a press made, and what the HOST did with the ones it did not simply

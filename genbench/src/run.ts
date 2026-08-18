@@ -29,7 +29,7 @@ import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "./render.js";
 import { tally, writePreview, writeSummary, type RunSummary } from "./report.js";
 import { thesysDriver, thesysProvider } from "./thesys.js";
-import { vendoDriver } from "./vendo.js";
+import { vendoDriver, type Pipeline } from "./vendo.js";
 import { cannedResponse, caseHash, loadCases, loadWorld, worldForCase, type Case, type CaseShape, type Lane, type World } from "./world.js";
 
 export type HarnessId = "vendo" | "diy" | "claude-code" | "thesys" | "codex";
@@ -73,6 +73,9 @@ export interface RunOutcome {
   readonly usd?: number;
   /** What a contender that runs its own engine says about that session. */
   readonly session?: SessionRecord;
+  /** What the contender's OWN reviewer said on the way to this screen. Only the
+   *  product has one, so only that column reports it. */
+  readonly pipeline?: Pipeline;
   /** When the contender had something new to show. Only the clock is shared —
    *  what each snapshot holds is the driver's own business. */
   readonly snapshots: ReadonlyArray<{ atMs: number }>;
@@ -143,6 +146,11 @@ export interface CaseResult {
   readonly agentSdkVersion: string;
   /** A contender that runs its own engine, in that engine's own words. */
   readonly session?: SessionRecord;
+  /** The contender's OWN review of this screen before anyone else graded it, and
+   *  whether it painted again after — the only way to tell a defect the product's
+   *  reviewer never mentioned from one it named and failed to repair. Only the
+   *  vendo column has an internal reviewer, so only it carries this. */
+  readonly pipeline?: Pipeline;
   readonly failure?: string;
 }
 
@@ -1284,6 +1292,7 @@ async function main(argv: readonly string[]): Promise<number> {
       ...(meter.answeredBy() === undefined ? {} : { modelVersion: meter.answeredBy()! }),
       ...stamp,
       ...(outcome?.session === undefined ? {} : { session: outcome.session }),
+      ...(outcome?.pipeline === undefined ? {} : { pipeline: outcome.pipeline }),
       ...(failure === undefined ? {} : { failure }),
     };
     await writeCase(runDir, { outcome, html: page, shot, result });

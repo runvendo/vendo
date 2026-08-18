@@ -145,6 +145,50 @@ console.log(JSON.stringify({ status: "ok", output: answers[name] }, null, 2));
   );
 }
 
+/** One verdict the product's own review gate reached, as this driver watched it
+ *  go past. */
+export interface Review {
+  /** On the run's own clock, so a verdict can be read against the paints in
+   *  `snapshots`. */
+  readonly atMs: number;
+  /** No BLOCKING finding — which is not the same as no findings at all: the gate
+   *  grades the ask rules `warn` on purpose, and the loop repairs a warn too. */
+  readonly ok: boolean;
+  /** One line per finding, severity first, in the words the model was shown. */
+  readonly findings: readonly string[];
+}
+
+/**
+ * What the product's OWN reviewer said while this screen was being assembled.
+ *
+ * `result.json` used to carry the judge's verdict and nothing about how the screen
+ * got there, so a failed rubric line could not be told apart from a reviewer that
+ * never mentioned the defect. This is the missing half, and it costs nothing to
+ * watch: the driver already fills the `validate` verb the gate is reached through
+ * ({@link vendoVerbsRegistry} below), so every verdict either of its two callers
+ * reached is on this list, in order — the loop's own closing review (`judgeScreen`
+ * in `packages/vendo/src/screen-agent.ts`) and the agent's "validate what you
+ * saved". The ones carrying the person's ask are the loop's: the model's schema
+ * does not advertise `request`, so nothing else can pass it.
+ *
+ * THE REPAIR HALF IS NOT HERE, and cannot be from out here. Whether the round ran
+ * and whether the floor accepted its bytes are `assembleScreen` internals, and
+ * `ScreenOutcome` (`packages/apps/src/contract/screen.ts`) answers `assembled`
+ * with a sentence and nothing else — reporting it needs a field on that contract.
+ */
+export interface Pipeline {
+  readonly reviews: readonly Review[];
+  /** A view landed AFTER the last verdict — from out here the only sign that a
+   *  repair wrote something that reached the screen, and never proof it fixed
+   *  anything. */
+  readonly paintedAfter: boolean;
+}
+
+/** A finding as its reader gets it: what kind it is, where it is, and the
+ *  teaching sentence. */
+const said = (finding: { severity: string; where?: string; message: string }): string =>
+  `${finding.severity}: ${finding.where === undefined ? "" : `${finding.where} — `}${finding.message}`;
+
 export function vendoDriver(): Contender {
   return { run };
 }
@@ -217,6 +261,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   const workspaces = workspaceStore(store);
 
   const snapshots: Array<{ atMs: number; payload: UIPayload }> = [];
+  const reviews: Review[] = [];
   let appsRef: ReturnType<typeof createApps> | undefined;
   const assembler = screenAssembler({
     models: { default: meter.model, apps: meter.model },
@@ -248,8 +293,8 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   // saved" and the call fails, so it spends its whole step budget blind. Same
   // ports the product wires.
   const verbs = vendoVerbsRegistry({
-    validate: (input, verbCtx) =>
-      apps.validate(
+    validate: async (input, verbCtx) => {
+      const verdict = await apps.validate(
         input.appId === undefined
           ? {}
           : {
@@ -258,7 +303,13 @@ async function run(request: RunRequest): Promise<RunOutcome> {
               ...(input.viewport === undefined ? {} : { viewport: input.viewport }),
             },
         verbCtx,
-      ),
+      );
+      // Read on the way past, and handed on untouched: this is the one door the
+      // product's reviewer answers through, and the loop must see exactly what it
+      // would have seen without an observer here ({@link Pipeline}).
+      reviews.push({ atMs: meter.elapsedMs(), ok: verdict.ok, findings: verdict.findings.map(said) });
+      return verdict;
+    },
     schedule: async () => {
       throw new Error("genbench: the screen lane arms no schedules");
     },
@@ -329,9 +380,21 @@ async function run(request: RunRequest): Promise<RunOutcome> {
     if (outcome?.kind === "assembled" && blocking.length > 0) {
       failure = "the delivered document does not render, so no screen is reported for it";
     }
+    const lastReview = reviews.at(-1);
     return {
       ...(artifact === undefined ? {} : { artifact }),
       blocking,
+      // What the product's own reviewer said on the way to this screen, and
+      // whether anything painted after it said so ({@link Pipeline}). Absent when
+      // the gate was never reached, which is a run that never saved anything.
+      ...(lastReview === undefined
+        ? {}
+        : {
+            pipeline: {
+              reviews,
+              paintedAfter: snapshots.some((snapshot) => snapshot.atMs > lastReview.atMs),
+            },
+          }),
       // The seam emits a skeleton first and the settled view last; the last one
       // is the screen a person is left looking at.
       ...(painted === undefined ? {} : { payload: painted.payload }),
