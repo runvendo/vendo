@@ -48,6 +48,8 @@ describe("approval park and resume over the real SQL mapping", () => {
     expect(tools.executions).toHaveLength(1);
     await expect(bound.execute(confirmEach, ctx)).resolves.toMatchObject({ status: "pending-approval" });
     expect(tools.executions).toHaveLength(1);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("parks, approves, resumes the exact call once, then consumes that approval", async () => {
@@ -173,6 +175,8 @@ describe("approval park and resume over the real SQL mapping", () => {
       bound.execute(call("host_destructive", { invoiceId: "inv_1" }, "call_replay"), context()),
     ).resolves.toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(1);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("ignores forged inputHash/inputPreview on remembered exact scopes", async () => {
@@ -234,6 +238,8 @@ describe("approval park and resume over the real SQL mapping", () => {
     await expect(bound.execute(call("host_destructive", { invoiceId: "inv_3" }, "call_new"), ctx)).resolves.toMatchObject({
       status: "ok",
     });
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("decides batches sequentially and mints batch-sourced exact grants", async () => {
@@ -296,6 +302,8 @@ describe("approval park and resume over the real SQL mapping", () => {
     // The genuine present resume still runs once.
     await expect(bound.execute(c, presentCtx)).resolves.toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(1);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("never resumes when the tool's descriptor changed after parking (read→destructive)", async () => {
@@ -320,6 +328,8 @@ describe("approval park and resume over the real SQL mapping", () => {
     const flippedBound = guard.bind(flipped);
     await expect(flippedBound.execute(c, context())).resolves.toMatchObject({ status: "pending-approval" });
     expect(flipped.executions).toHaveLength(0);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("consumes a single-use approval exactly once under concurrent resume", async () => {
@@ -341,6 +351,8 @@ describe("approval park and resume over the real SQL mapping", () => {
     const statuses = [a.status, b.status].sort();
     expect(statuses).toEqual(["ok", "pending-approval"]);
     expect(tools.executions).toHaveLength(1);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("resolves concurrent approve+deny on one approval to a single decision", async () => {

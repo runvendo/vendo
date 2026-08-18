@@ -125,5 +125,7 @@ describe("grants are filtered by tool in the query, not in JavaScript", () => {
       status: "pending-approval",
     });
     expect(tools.executions).toHaveLength(0);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 });

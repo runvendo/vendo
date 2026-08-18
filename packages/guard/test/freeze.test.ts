@@ -56,6 +56,8 @@ describe("the freeze flag over the real store", () => {
     await expect(bound.execute(read, context())).resolves.toMatchObject({ status: "ok" });
     await expect(bound.execute(granted, context())).resolves.toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(3);
+    // Settle the after-the-fact audit rows before the fixture store closes.
+    await guard.flush();
   });
 
   it("writes the flag row the console reads, and audits both directions plus every blocked call", async () => {
@@ -110,6 +112,8 @@ describe("the freeze flag over the real store", () => {
     expect(await guard.frozen()).toBe(false);
     await expect(bound.execute(read, context())).resolves.toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(1);
+    // Settle the after-the-fact audit row before the fixture store closes.
+    await guard.flush();
   });
 
   it("omits the risk field on the frozen block row — the short-circuit grades nothing", async () => {
