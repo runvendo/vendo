@@ -199,7 +199,7 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-gemini`,
 | --- | --- |
 | `artifact.tsx` | the screen the contender actually saved — TSX bytes, hence the extension (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
-| `screenshot.png` | that page, shot once it has settled — the **viewport**, 480x900, which is the frame the harness contract promises and the only one the judge is shown |
+| `screenshot.png` | that page, shot once it has settled — the **viewport**, 1280x900, which is the frame the harness contract promises and the only one the judge is shown |
 | `table-1.png` | one per table the screen can only show by scrolling sideways, in the order they appear on it and at most three: that table at its **full scroll width**, which is the only way the columns past the fold reach the judge. Absent for a screen with nothing to scroll, which is most of them |
 | `dom.html` | what the browser held once that screen settled, script bodies dropped: the judge's SOURCE evidence, saved because it is what lets the folder be scored again without painting anything |
 | `result.json` | the four floor verdicts, the judge's verdict for every rubric line, the contract the run graded under, the commit the harness ran at and the Agent SDK version, the click trace, console errors, timings, tokens and dollars. `cost.usage.reasoningTokens` splits out the part of the output the provider says was THINKING rather than written — a split of `outputTokens`, never an addend, so no dollar moves for it, and absent entirely where the provider itemises no such count, which is every first-party Anthropic call. `pipeline` is the vendo column's own review of the screen before anyone else graded it — every verdict the product's `validate` gate reached, with its findings, and whether anything painted after the last one — so a rubric line the judge failed can be read against what the product's reviewer said about the same screen. Absent where that gate was never reached, which is itself the reading: those bytes went out unreviewed |
@@ -1090,7 +1090,7 @@ absent evidence has never been a pass here, so no earlier run's `actionProven`
 compares with a later one's. The judge's reading moves with them too, because the
 confirmation a revealed press opened is now narrated to it in the words a person
 reads off the dialog. And later the same day the judge started seeing what
-**scrolling** reveals: a table wider than the 480px frame is shot again at its full
+**scrolling** reveals: a table wider than the 1280px frame is shot again at its full
 scroll width, up to three per screen, and shown beside the viewport shot as what it
 is — so the columns past the horizontal fold, which cost three style lines a
 convention they were keeping the whole time, are evidence rather than absence. The
