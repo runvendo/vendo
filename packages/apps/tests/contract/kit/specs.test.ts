@@ -21,7 +21,10 @@ import {
  *  validates and the renderer drops it, which is the silent failure the whole
  *  prop-name gate exists to turn into a blocking error. */
 const READERS: Record<string, readonly string[]> = {
-  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
+  // Button joined when `variant` was merged into the one tone vocabulary: `tone`
+  // is the taught word on a button now, and `variant` is the deprecated alias the
+  // renderer still maps onto the same three tones.
+  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast", "Button"],
   density: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
   // The containers that stretch, and only those: `grow` is `flexGrow` on the
   // block's own root, so a component that draws no container of its own would

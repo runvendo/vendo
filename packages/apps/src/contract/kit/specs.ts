@@ -157,9 +157,13 @@ const action = z.string().describe(ACTION_PROP_DESCRIPTION);
  * teaching the 200-odd names on every generation.
  */
 const iconName = z.string().describe(ICON_NAME_DESCRIPTION);
-/** The one tone vocabulary. The two older spellings still parse, because stored
- *  apps carry them; only the five are taught. */
-const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.enum(["default", "info"]));
+/** The one tone vocabulary. `info` is the status colour of a state in progress —
+ *  "running", "pending review" — which used to reach for `accent` and paint the
+ *  brand rather than a status. */
+const toneWord = z.enum(["neutral", "accent", "info", "success", "warning", "danger"]);
+/** The taught vocabulary plus the older spelling of `neutral`, which still parses
+ *  because stored apps carry it. */
+const tone = toneWord.or(z.enum(["default"]));
 const density = z.enum(["comfortable", "compact"]);
 
 /** The help line under a form control. A shared adjective AND a slot, because it
@@ -195,8 +199,8 @@ const SHARED_PROPS: ReadonlyArray<{
 }> = [
   {
     name: "tone",
-    spec: config(tone, "emphasis — neutral | accent | success | warning | danger"),
-    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast"],
+    spec: config(tone, "emphasis — neutral | accent | info | success | warning | danger; info is a state in progress"),
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast", "Button"],
   },
   {
     name: "density",
@@ -356,12 +360,16 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ["<Divider/>"],
   },
 
-  // Values (money takes MAJOR units — dollars; dates take ISO/epoch)
+  // Values (money takes MAJOR units — dollars; dates take ISO/epoch). A figure
+  // declares no colour of its own (`ui` kit/values.tsx `valueFont`) and takes the
+  // text layer's, so `<Text tone="danger">Balance: <Money/></Text>` paints as one
+  // sentence where the figure used to jump back to the default text colour. Its
+  // own `tone` still wins, which is why every one of them keeps the adjective.
   {
     name: "Text",
     group: "values",
     takesChildren: true,
-    summary: "Themed text. Use variant=heading for section titles. A figure goes INSIDE the sentence, as children — never in a hand-built string.",
+    summary: "Themed text. Use variant=heading for section titles. A figure goes INSIDE the sentence, as children — never in a hand-built string — and takes this text's own colour, so a bad-news sentence is toned once, here, rather than on every figure in it.",
     props: {
       // string | number, matching the implementation (`text: ReactNode`, which
       // renders a number verbatim). The spec said `string` only, which never
@@ -423,6 +431,11 @@ const BASE_SPECS: KitComponentSpec[] = [
       value: data(z.number(), "the number"),
       notation: config(z.enum(["standard", "compact"]), "grouping style"),
       maximumFractionDigits: config(z.number().int().nonnegative(), "decimal places"),
+      // The other half of `maximumFractionDigits`, which was declared alone: the
+      // cap says how much precision to drop and nothing said how much to KEEP, so
+      // a figure of 8.0 hours printed "8" beside a 7.5 in the same column and the
+      // two read as different precisions.
+      minimumFractionDigits: config(z.number().int().nonnegative(), 'decimal places to KEEP — "8.0" rather than "8", where a column holds 7.5 as well'),
       unit: config(z.string(), 'a unit written after the figure — "ms", "min", "h", "GB"'),
     },
     examples: [
@@ -437,7 +450,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       value: data(z.string().nullable(), "the raw enum value"),
       labels: config(z.record(z.string(), z.string()), "value → display label overrides"),
-      tones: config(z.record(z.string(), z.enum(["neutral", "accent", "success", "warning", "danger"])), "value → tone overrides"),
+      tones: config(z.record(z.string(), toneWord), "value → tone overrides"),
     },
     examples: ['<EnumBadge value={invoice.status} tones={{ overdue: "danger", paid: "success" }}/>'],
   },
@@ -517,7 +530,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       titleField: config(z.string(), "field for each item's label"),
       amountField: config(z.string(), "field holding each item's amount in dollars — divide a cents field by 100 where you read it"),
       statusField: config(z.string(), "field whose value labels and tones each item"),
-      tones: config(z.record(z.string(), z.enum(["neutral", "accent", "success", "warning", "danger"])), "status value → tone overrides"),
+      tones: config(z.record(z.string(), toneWord), "status value → tone overrides"),
       month: config(z.string(), "the month to lay out, as ISO yyyy-mm"),
     },
     examples: [
@@ -614,12 +627,16 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "LineChart",
     group: "charts",
-    summary: "A line/trend chart. Y-axis ticks and tooltips are formatted by the format token.",
+    summary: "A line/trend chart. Y-axis ticks and tooltips are formatted by the format token, the x axis by xFormat.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category (x) field", { required: true }),
       series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its tooltip in that series' units", { required: true }),
       format: config(valueFormat, "y-axis + tooltip format"),
+      // The category axis had no format token at all, so a trend over days
+      // printed the raw stamp the host stored under every tick while the figures
+      // beside it read in the host's own words.
+      xFormat: config(valueFormat, 'x-axis tick + tooltip heading format — a stored date reads "Jul 30, 2026" instead of "2026-07-30"'),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
       empty: config(slot, "elements shown instead of that text"),
@@ -868,13 +885,18 @@ const BASE_SPECS: KitComponentSpec[] = [
       // stop a nameless button shipping, and `<Button>Save</Button>` is named.
       label: copy(z.string(), "button text; or write it as the children"),
       onClick: config(action, "called on click; call a tool in it"),
-      variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
+      // The older word for the same three tones, kept ACCEPTED and no longer
+      // taught: `tone` is the Kit's one emphasis vocabulary now, and a screen that
+      // mixes the two words must degrade rather than die. Stored screens carry
+      // `variant` by the hundred, and the renderer reads it wherever no `tone` is
+      // written (`ui` forms/button.tsx `VARIANT_TONE`).
+      variant: config(z.enum(["primary", "secondary", "danger"]), "deprecated — the older spelling of tone: primary=accent, secondary=neutral, danger=danger"),
       icon: config(iconName, "a lucide glyph before the label, in kebab-case"),
       loading: config(z.boolean(), "the click is in flight: a spinner takes the icon's place and the button stops answering, so the tool cannot fire twice"),
     },
     examples: [
       '<Button label="Remind all" icon="send" onClick={() => tools.send_reminders({})}/>',
-      '<Button label="Cancel transfer" variant="danger" loading={cancelling} onClick={() => tools.cancel_transfer({ id })}/>',
+      '<Button label="Cancel transfer" tone="danger" loading={cancelling} onClick={() => tools.cancel_transfer({ id })}/>',
     ],
   },
   {

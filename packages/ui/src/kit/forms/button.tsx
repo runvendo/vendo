@@ -4,13 +4,19 @@
  * Crayon/Tambo/Tremor buttons (which can't mutate anything), this carries a real
  * host action. Standalone it just calls the bound callback.
  */
-import type { PropsWithChildren } from "react";
+import type { CSSProperties, PropsWithChildren } from "react";
 import { useVendoThemeOrDefault } from "../../context.js";
 import { Icon } from "../icon.js";
-import { font, hairline, t, transitionFor, type KitStyled } from "../tokens.js";
+import { font, hairline, resolveTone, t, toneColor, transitionFor, type KitStyled, type KitTone } from "../tokens.js";
 
 export interface ButtonProps extends KitStyled {
   label?: string;
+  /** How loud the action is, in the Kit's ONE tone vocabulary. `accent` is the
+   *  page's own action and the default; `neutral` is the quiet one beside it. */
+  tone?: KitTone;
+  /** @deprecated The older word for the same three tones — `primary`,
+   *  `secondary`, `danger`. Still read, so a stored screen keeps painting, but
+   *  `tone` is the word to write. */
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
   /** A lucide glyph before the label — the action's own mark. */
@@ -57,12 +63,26 @@ function Spinner({ still }: { still: boolean }) {
   );
 }
 
-export function Button({ label, variant = "primary", disabled = false, icon, loading = false, onClick, type = "button", style, children }: PropsWithChildren<ButtonProps>) {
+/** The deprecated `variant` words, on the tones they always meant: the page's
+ *  brand action, the quiet one beside it, and the destructive one. */
+const VARIANT_TONE: Readonly<Record<string, KitTone>> = {
+  primary: "accent",
+  secondary: "neutral",
+  danger: "danger",
+};
+
+export function Button({ label, tone, variant, disabled = false, icon, loading = false, onClick, type = "button", style, children }: PropsWithChildren<ButtonProps>) {
   const { motion } = useVendoThemeOrDefault();
-  const primary = variant === "primary";
-  const danger = variant === "danger";
-  const background = primary ? t.accent : danger ? t.danger : t.surface;
-  const color = primary || danger ? t.accentText : t.text;
+  // `tone` is the taught prop and wins; `variant` is read only where no tone was
+  // written, so a stored screen paints exactly as it did. An unknown word in
+  // either lands on `accent`, the default a button has always had, instead of
+  // taking the screen down — the same fail-soft every other tone prop has.
+  const paint = resolveTone(tone ?? VARIANT_TONE[variant ?? "primary"], "accent");
+  // Every tone but `neutral` is FILLED: a button is the thing being pressed, so it
+  // states its tone in the fill rather than in the pale pill `toneStyle` paints.
+  const filled = paint !== "neutral";
+  const background = filled ? toneColor(paint) : t.surface;
+  const color = filled ? t.accentText : t.text;
   // In flight is not switched off. The DOM's own `disabled` is what refuses the
   // second click — and, on a submit, the second submission — but the fill and the
   // text stay: greyed out to nothing, a busy button reads as an unavailable one.
@@ -71,7 +91,7 @@ export function Button({ label, variant = "primary", disabled = false, icon, loa
     <button
       type={type}
       data-kit="Button"
-      data-variant={variant}
+      data-tone={paint}
       disabled={inert}
       aria-busy={loading ? true : undefined}
       onClick={() => {
@@ -84,13 +104,19 @@ export function Button({ label, variant = "primary", disabled = false, icon, loa
         justifyContent: "center",
         gap: "var(--vendo-density-inline-gap, 7px)",
         minHeight: "var(--vendo-density-control-height, 38px)",
-        border: primary || danger ? `${t.borderWidth} solid transparent` : hairline,
+        border: filled ? `${t.borderWidth} solid transparent` : hairline,
         borderRadius: t.radiusSmall,
         color,
         background,
+        // The hover fill lives beside the resting one, because that is where the
+        // theme owns a colour (kit-css.ts): the sheet carries the STATE and reads
+        // the value from here, so every tone hovers without a rule of its own.
+        "--vendo-kit-button-hover": filled
+          ? `color-mix(in srgb, ${background} 88%, ${t.text})`
+          : t.surfaceRaised,
         // The one lift in the Kit: the page's filled action. Every other surface
         // is flat and states its edge with the hairline instead.
-        boxShadow: primary || danger ? t.shadowSmall : "none",
+        boxShadow: filled ? t.shadowSmall : "none",
         cursor: disabled ? "not-allowed" : loading ? "progress" : "pointer",
         fontWeight: t.weightEmphasis,
         lineHeight: t.lineHeightHeading,
@@ -98,7 +124,8 @@ export function Button({ label, variant = "primary", disabled = false, icon, loa
         padding: "var(--vendo-density-control-padding, 9px 12px)",
         transition: transitionFor("background-color", "border-color", "box-shadow", "opacity"),
         ...style,
-      }}
+        // The custom property above is not in React's `CSSProperties`.
+      } as CSSProperties}
     >
       {loading ? <Spinner still={motion === "reduced"} /> : icon === undefined ? null : <Icon name={icon} />}
       {label ?? children}

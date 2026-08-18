@@ -136,7 +136,7 @@ export default function PendingTransfers() {
                 <Money value={transfer.amount_cents / 100} />
                 <DateTime value={transfer.scheduled_for} mode="date" />
               </Stack>
-              <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
+              <Button label="Cancel" tone="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
             </Row>
           </Card>
         ))
@@ -229,7 +229,7 @@ export default function Tickets() {
           <Row gap={6}>
             <Button label="Open" disabled={row.id === openId} onClick={() => setOpenId(row.id)} />
             <Tooltip label={row.status === "closed" ? "Already closed" : "Close this ticket"}>
-              <Button label="Close" variant="danger" disabled={row.status === "closed"} onClick={() => tools.close_ticket({ id: row.id })} />
+              <Button label="Close" tone="danger" disabled={row.status === "closed"} onClick={() => tools.close_ticket({ id: row.id })} />
             </Tooltip>
           </Row>
         )} />

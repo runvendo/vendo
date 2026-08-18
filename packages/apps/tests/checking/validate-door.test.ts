@@ -66,6 +66,28 @@ const DEAD_CONTROL: Finding = {
   message: "the button calls a tool that only reads invoices — it sends no reminder; drop it or say so honestly.",
 };
 
+/** A screen that paints a status as a BARE WORD — which is the one thing the host
+ *  rule below forbids, and which no mechanical check can know is wrong. */
+const BARE_STATUS_SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Invoices() {
+  return (
+    <Stack gap={12}>
+      <Text text="Invoices" variant="heading" />
+      <Text text="past_due" variant="body" />
+    </Stack>
+  );
+}
+`;
+
+/** What the reviewer answers when it applies that rule: a `warn`, because the
+ *  person can see it too, quoting the rule it applied. */
+const BROKEN_CONVENTION: Finding = {
+  severity: "warn",
+  where: '<Text> reading "past_due"',
+  message: 'the status is a bare word, and this product\'s rule is "A status is a pill (EnumBadge), never a bare word" — render it as <EnumBadge value={invoice.status}/>.',
+};
+
 /** A host's own JUDGMENT RULE, plugged in through a pack. It is not code: it is
  *  one sentence, and the reviewer is the only thing that can apply it. Without
  *  the reviewer, a `validate` could not enforce it at all. */
@@ -313,6 +335,44 @@ describe("the host's own design rules are rubric lines, not just brief text", ()
     // doubled into a line that reads as a quotation of nothing.
     expect(rubric).toContain("- Every money figure names its account.");
     expect(rubric).not.toContain("- - Every money figure");
+  });
+
+  /**
+   * …AND THE REVIEWER IS TOLD TO GRADE THE SCREEN AGAINST THEM.
+   *
+   * Handing over the rules was half of it. The rubric arrived under "ALSO REJECT",
+   * which names no severity, while the prompt's own severity paragraph enumerates
+   * the five things it was written for and stops — so a broken convention was
+   * either not looked for at all or reported as a `block`, and a `block` on a font
+   * or a date format throws away a screen that was otherwise right.
+   *
+   * Nothing on this path is stubbed but the verdict: the rule travels the real
+   * briefing pack, the real door and the real prompt, the offending screen travels
+   * the real gauntlet, and the finding travels the real checking layer back out.
+   * There is no model in a test, so the scripted half is the ANSWER — and what this
+   * pins is the pair a model needs to produce it, arriving in one call.
+   */
+  it("tells the reviewer to read the screen against those conventions, and to warn rather than block", async () => {
+    const runtime = setup(undefined, briefingWith("A status is a pill (EnumBadge), never a bare word."), BARE_STATUS_SCREEN);
+    const appId = await storedApp(runtime);
+    reviewerFindings = [BROKEN_CONVENTION];
+
+    const result = await runtime.validate({ appId, request: "show me my invoices" }, ctx);
+
+    const rubric = systemPrompts[0] ?? "";
+    // The owner's own sentence…
+    expect(rubric).toContain("- A status is a pill (EnumBadge), never a bare word.");
+    // …the instruction to judge the screen by it, at the severity that buys a fix…
+    expect(rubric).toContain("READ THE SCREEN AGAINST THIS PRODUCT'S OWN CONVENTIONS");
+    expect(rubric).toMatch(/visibly breaks[\s\S]*?"warn"/u);
+    // …and the screen that breaks it, in the same call.
+    expect(userPrompts[0] ?? "").toContain('text="past_due"');
+    // The finding comes back out of the door and does NOT kill the screen: `ok`
+    // stays true on a warn, and the screen agent's repair round reads the findings
+    // rather than the verdict (`vendo` screen-agent.ts `judgeScreen`), so a broken
+    // convention is fixed instead of shipped.
+    expect(result.ok).toBe(true);
+    expect(result.findings).toContainEqual({ ...BROKEN_CONVENTION, check: "reviewer" });
   });
 
   it("sends the prompt it always sent when the host set no rules", async () => {

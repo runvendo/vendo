@@ -3,6 +3,7 @@ import {
   Bar,
   BarChart as RBarChart,
   CartesianGrid,
+  Rectangle,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -10,7 +11,7 @@ import {
 } from "recharts";
 import type { ComponentProps, ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
+import { seriesColor, t, toneColor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
@@ -55,6 +56,45 @@ function normalize(series: BarSeriesInput[]) {
 }
 
 const axisTick = { fill: t.muted, fontSize: 11 };
+
+/** The one rounded end of a bar, in px — recharts' corner order is
+ *  `[topLeft, topRight, bottomRight, bottomLeft]`. */
+const CORNER = 4;
+
+/**
+ * ONE BAR, and the two things recharts cannot say about a bar that hangs the
+ * other way.
+ *
+ * It spells a value below the baseline as a NEGATIVE `height` (going up) or
+ * `width` (going right) and passes both straight onto the SVG element, where
+ * `width="-18.125"` is not a legal attribute value — a saved case shipped exactly
+ * that. So the element carries the MAGNITUDE, and the sign becomes the end that is
+ * rounded, because a bar's far end is the other one when it grows the other way.
+ *
+ * And a loss is painted in the Kit's own bad-news tone rather than in the series
+ * colour: a bar pointing the other way is the one figure on a chart a reader must
+ * not have to trace back to an axis to recognise, and every charting library in
+ * the ecosystem colours it. `toneColor("danger")`, so it is the HOST's danger, not
+ * a red this file invented.
+ */
+type BarShapeProps = ComponentProps<typeof Rectangle>;
+
+function BarShape({ x = 0, y = 0, width = 0, height = 0, radius, fill, ...rest }: BarShapeProps) {
+  const loss = width < 0 || height < 0;
+  return (
+    <Rectangle
+      {...rest}
+      x={Math.min(x, x + width)}
+      y={Math.min(y, y + height)}
+      width={Math.abs(width)}
+      height={Math.abs(height)}
+      radius={height < 0
+        ? [0, 0, CORNER, CORNER]
+        : width < 0 ? [CORNER, 0, 0, CORNER] : radius}
+      fill={loss ? toneColor("danger") : fill}
+    />
+  );
+}
 
 export function BarChart({
   data,
@@ -112,7 +152,8 @@ export function BarChart({
             {cols.map(({ key, label, color, format: seriesFormat, ...seriesEngine }, i) => (
               <Bar
                 fill={color ?? seriesColor(i)}
-                radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                radius={horizontal ? [0, CORNER, CORNER, 0] : [CORNER, CORNER, 0, 0]}
+                shape={<BarShape />}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
                 // The figure ON the bar. A bar chart's whole job is comparing

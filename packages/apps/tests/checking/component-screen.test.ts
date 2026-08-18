@@ -736,6 +736,46 @@ export default function S() { return <Row><Icon name="credit-card" /></Row>; }
     expect(real.ok).toBe(true);
   });
 
+  /**
+   * A MISSPELLED TONE, by the same mechanism and for the same reason.
+   *
+   * `resolveTone` falls back to `neutral` for a word it does not know (`ui`
+   * kit/tokens.ts) — deliberately, because a stored screen carrying an old spelling
+   * must still render rather than crash. So `tone="sucess"` paints grey, which is a
+   * valid-looking pill nothing downstream can question. The Kit's tone schema is a
+   * zod enum, so the typings print it closed and the compiler is the refusal, with
+   * its own did-you-mean; the runtime fallback stays where it is, for the documents
+   * that need it.
+   */
+  it("refuses a tone the Kit's vocabulary has not got, and takes a real one", async () => {
+    const withBadge = (source: string) => checkComponentScreen({
+      source,
+      hostTools: tools,
+      catalog: [...catalog, "Badge"],
+      runQuery: async () => ROWS,
+    });
+
+    const typo = await withBadge(`import { Badge, Row } from "@vendo/screen";
+export default function S() { return <Row><Badge label="Paid" tone="sucess" /></Row>; }
+`);
+    expect(typo.ok).toBe(false);
+    expect(typo.issues.map(({ code }) => code)).toEqual(["types"]);
+    // The whole vocabulary is in the refusal, so the repair does not have to guess
+    // it — and the near miss gets the compiler's own spelling suggestion, which is
+    // the reason the set is a union of literals rather than a bespoke check.
+    expect(typo.issues[0]?.message).toContain('"neutral" | "accent" | "info" | "success" | "warning" | "danger"');
+    expect(typo.issues[0]?.message).toContain(`Did you mean '"success"'?`);
+
+    // …and every word the vocabulary really has passes, including `info`, which is
+    // a tone of its own now rather than an older spelling of neutral.
+    for (const tone of ["neutral", "accent", "info", "success", "warning", "danger"]) {
+      const real = await withBadge(`import { Badge, Row } from "@vendo/screen";
+export default function S() { return <Row><Badge label="Paid" tone="${tone}" /></Row>; }
+`);
+      expect(real.issues, tone).toEqual([]);
+    }
+  }, 30_000);
+
   it("never reads `key` as a prop — a mapped row writes one, and the real fault is the one named", async () => {
     const mapped = (row: string) => checkComponentScreen({
       source: `import { DataTable, Money, TableRow, Text, useQuery } from "@vendo/screen";

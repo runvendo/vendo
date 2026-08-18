@@ -31,6 +31,8 @@ Judge five things:
 
 Severity: "block" ONLY for what the person cannot detect themselves — invented data, a binding that renders nothing or the wrong number where a label promised one (1), and dishonest tool use (2). A made-up balance looks exactly like a real one, so nobody catches it but you; those must never ship. "warn" for everything else (3, 4 and 5), because the person spots those instantly: they asked for the thing, so they know at a glance whether it is there, and a wrong "block" would throw away an app that was fine.
 
+READ THE SCREEN AGAINST THIS PRODUCT'S OWN CONVENTIONS, wherever its owner has stated any, and report every one the screen visibly breaks — a bare status word where they said statuses are pills, an ISO date where they said "Aug 7" — as a "warn": a broken convention is as plain to them as it is to you, so naming it buys the fix without throwing away a screen that was otherwise right.
+
 Each finding has three fields:
 - severity: "block" or "warn".
 - where: the locus, as it appears in the app — the component and its label (<MetricCard> labeled "Revenue"), the query name, or "document" for the app as a whole.
