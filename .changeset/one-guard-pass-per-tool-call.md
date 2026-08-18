@@ -28,4 +28,24 @@ the tap that answers it IS the fresh verdict the dispatch reads.
 Host-API calls also ride the keep-alive connection pool the store already uses.
 Node's stock dispatcher drops an idle socket after ~4s — shorter than the gap
 between two of an agent's tool calls — so nearly every host round trip was paying
-a fresh TCP+TLS handshake. A host that passes its own `fetch` still wins.
+a fresh TCP+TLS handshake. Inference rides the same pool: the composed model
+seats now dial the Cloud gateway through it, so a turn does not re-handshake
+after every idle gap. A host that passes its own `fetch` — or its own ai-SDK
+model object — still wins.
+
+The tool-call audit row is written after the fact. It is the LAST thing a
+guarded call does, nothing downstream reads it, and the write was already
+best-effort in substance, so the caller no longer waits on that store round trip
+for an answer it already has. Every row still lands, in the order the calls did.
+Reading the trail through the guard (`audit.query`, `audit.export`) settles the
+outstanding writes first, so a reader can never race them, and `createGuard`
+returns a `flush()` for anyone reading the table by another route.
+
+A refused connect check costs one broker lookup instead of two. The connect gate
+runs twice for one tool call — the harness preflight rules a call to an
+unconnected service out before an approval can be minted for it, and the
+gate-wrapped registry rules it out again on the doors that never preview — and
+only the CONNECTED answer was cached, so every unconnected call asked the broker
+twice to say the same no. A negative answer is now trusted for one second: long
+enough for the two checks of one call, far short of an OAuth round trip, so a
+user who just connected is never told otherwise.
