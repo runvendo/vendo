@@ -76,9 +76,11 @@ export interface PrettyOutput extends Output {
       1-9 only: keep lists at nine options or fewer (a longer list stays
       arrow-navigable, but two-digit entry is deliberately not built). */
   select(question: string, options: SelectOption[], defaultIndex?: number): Promise<string>;
-  /** A free-text answer; Enter returns "" and the caller decides what a skip
-      means. Non-TTY stdin never prompts — "" stands. */
-  text(question: string, hint?: string): Promise<string>;
+  /** A free-text answer; Enter returns `defaultValue` where one is given, else
+      "" and the caller decides what a skip means. The echoed receipt shows what
+      the answer actually WAS, so an accepted default never reads as "skipped".
+      Non-TTY stdin never prompts — "" stands. */
+  text(question: string, hint?: string, defaultValue?: string): Promise<string>;
   /** A secret: the typing is not echoed and only a masked receipt reaches the
       transcript. The value itself is NEVER written to the terminal. */
   secret(question: string, hint?: string): Promise<string>;
@@ -399,10 +401,13 @@ export async function plainSelect(
 }
 
 /** The plain-terminal free-text prompt — plainSelect's sibling, same non-TTY
-    guard: a piped run never prompts and answers "". */
+    guard: a piped run never prompts and answers "". Enter takes `defaultValue`
+    where one is given, so "" always means "nobody was asked", never "the person
+    accepted the default". */
 export async function plainText(
   question: string,
   hint?: string,
+  defaultValue?: string,
   input: NodeJS.ReadableStream & { isTTY?: boolean } = stdin,
   output: NodeJS.WritableStream & { isTTY?: boolean } = stdout,
 ): Promise<string> {
@@ -411,7 +416,8 @@ export async function plainText(
   if (hint !== undefined) output.write(`  ${hint}\n`);
   const prompt = createInterface({ input, output });
   try {
-    return (await prompt.question("> ")).trim();
+    const typed = (await prompt.question("> ")).trim();
+    return typed === "" ? defaultValue ?? "" : typed;
   } finally {
     prompt.close();
   }
@@ -953,7 +959,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
         prompt.close();
       }
     },
-    async text(question, hint) {
+    async text(question, hint, defaultValue) {
       // Same stdin guard as confirm: no keypress source → no question, and ""
       // is the skip the caller already has to handle.
       if (input.isTTY !== true) return "";
@@ -965,7 +971,8 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
         output: promptOutput,
       });
       try {
-        const answer = (await prompt.question(`${BAR}  ${dim("›")} `)).trim();
+        const typed = (await prompt.question(`${BAR}  ${dim("›")} `)).trim();
+        const answer = typed === "" ? defaultValue ?? "" : typed;
         line(`${BAR}  ${lilac("●")} ${answer === "" ? dim("skipped") : answer}`);
         return answer;
       } finally {

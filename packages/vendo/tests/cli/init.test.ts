@@ -11,6 +11,7 @@ import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE } from "../../src/cli
 import { firstSentence, prettyThemeReview, runInit, type InitReceipt } from "../../src/cli/init.js";
 import type { InitQuestions } from "../../src/cli/init-questions.js";
 import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
+import { readEnvFiles } from "../../src/cli/sync-flow.js";
 
 const cleanup: string[] = [];
 
@@ -132,7 +133,7 @@ function agentRun(
   sink: { output: Output },
   extra: Partial<Parameters<typeof runInit>[0]> = {},
 ): Promise<number> {
-  return run(root, sink, { agent: true, useCase: "embedded", auth: "none", byo: true, ...extra });
+  return run(root, sink, { agent: true, useCase: "embedded", auth: "none", byo: true, baseUrl: "http://localhost:3000", ...extra });
 }
 
 const receiptOf = (logs: string[]): InitReceipt => JSON.parse(logs.at(-1)!) as InitReceipt;
@@ -243,16 +244,16 @@ describe("vendo init (zero-question)", () => {
       "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
     const sink = output();
     expect(await run(root, sink, {
-      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "https://app.acme.com",
+      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "http://localhost:3000",
     })).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain(
-      "  Set `VENDO_BASE_URL` in your deploy platform\n"
-      + "    `https://app.acme.com` — captured earlier, already in .env.example",
+      "  When you deploy, set `VENDO_BASE_URL` in your platform to the public origin\n"
+      + "    dev is answered — `http://localhost:3000` is in .env.local, and every discovery URL hangs off it",
     );
     // The headline of a step is never indented past two spaces, so a reader
     // (and a grep) can still tell a step from its detail.
-    expect(logs).toContain("  Point any MCP client at `https://app.acme.com/api/vendo/mcp`\n    your users' setup page");
+    expect(logs).toContain("  Point any MCP client at `http://localhost:3000/api/vendo/mcp`\n    your users' setup page");
   });
 
   it("is idempotent: a re-run changes nothing and says so", async () => {
@@ -1196,21 +1197,25 @@ describe("vendo init (zero-question)", () => {
     const example = await readFile(join(root, ".env.example"), "utf8");
     expect(example).toContain("HOST_FLAG=1");
     expect(example).toContain("VENDO_BASE_URL=http://localhost:3000");
-    // Post server-wiring semantics: dev trusts its own origin; production
-    // fails loud without the variable — no silent credential drop. Plus the
-    // clause that used to be missing: an agent loop and any backend process
-    // never see a wire request, so the origin trust never reaches them.
-    expect(example).toContain("Dev trusts the request's own");
-    expect(example).toContain("your own agent loop and any backend process");
-    expect(example).toContain("production fails loud without it");
+    // The line is an INSTRUCTION now, not a value to fill in at init: dev was
+    // answered into .env.local, production is set where the app deploys, and a
+    // public URL belongs in neither this file nor .env.local. The security
+    // phrasing is unchanged — the behaviour it describes did not change.
+    expect(example).toContain("Dev is already done");
+    expect(example).toContain("wrote your");
+    expect(example).toContain("platform's environment settings to the public URL");
+    expect(example).toContain("in neither a committed file nor .env.local");
+    expect(example).toContain("Production fails loud without it");
     expect(example).not.toContain("disabled without it");
     expect(await run(root, output())).toBe(0);
-    expect((await readFile(join(root, ".env.example"), "utf8")).match(/VENDO_BASE_URL/g)).toHaveLength(1);
+    // The ASSIGNMENT, not the name: the block's comment names the variable too,
+    // and what must never double is the line.
+    expect((await readFile(join(root, ".env.example"), "utf8")).match(/^VENDO_BASE_URL=/gm)).toHaveLength(1);
   });
 
-  /** The placeholder used to name :3000 on every host, so a dev on another port
-      copied a base URL that pointed at nothing. */
-  it("names the host's OWN dev port in the placeholder, and the deploy answer still replaces it", async () => {
+  /** The illustrative line used to name :3000 on every host, so a dev on
+      another port read a base URL that pointed at nothing. */
+  it("names the host's OWN dev port in .env.example, and no answer ever rewrites that file", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
@@ -1220,11 +1225,11 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, output())).toBe(0);
     expect(await readFile(join(root, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4000");
 
-    // captureBaseUrl replaces THAT line — one spelling, so it can never miss.
-    expect(await run(root, output(), { baseUrl: "https://app.acme.com" })).toBe(0);
-    const answered = await readFile(join(root, ".env.example"), "utf8");
-    expect(answered).toContain("VENDO_BASE_URL=https://app.acme.com");
-    expect(answered).not.toContain("localhost:4000");
+    // The dev answer lands in .env.local. .env.example is documentation now, so
+    // a run that captures an answer leaves it byte for byte.
+    expect(await run(root, output(), { baseUrl: "http://localhost:4100" })).toBe(0);
+    expect(await readFile(join(root, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4000");
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4100");
   });
 
   it("merges the sync hooks into existing scripts without clobbering them", async () => {
@@ -1873,17 +1878,21 @@ describe("vendo init --agent (ask first, then write)", () => {
     const asked = questionsOf(sink.logs);
     expect(asked.status).toBe("questions");
     expect(asked.detected.framework).toBe("next");
-    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "models"]);
+    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "models", "dev-url"]);
     // The prompts are chat copy, relayed verbatim: each option carries the
     // literal thing the agent does to pick it.
     expect(asked.questions[0]?.prompt).toContain("real working screens from your data");
     expect(asked.questions[0]?.options[0]).toMatchObject({ flag: "--use-case embedded", recommended: true });
     expect(asked.questions[2]?.options[0]?.command).toBe("npx vendo login --wait 90");
     expect(asked.questions[2]?.options[1]?.flag).toBe("--byo");
+    // The dev URL travels like the rest: the recommended option carries the
+    // host's own dev port, so relaying it costs the reader one word.
+    expect(asked.questions[3]?.prompt).toContain("Vendo writes it to .env.local as VENDO_BASE_URL");
+    expect(asked.questions[3]?.options[0])
+      .toMatchObject({ flag: "--base-url http://localhost:3000", recommended: true });
     // The mechanical answers never surface: they default like --yes and show
     // up in the diff.
     const ids = asked.questions.map((question) => question.id).join(" ");
-    expect(ids).not.toContain("base-url");
     expect(ids).not.toContain("theme");
     expect(ids).not.toContain("check");
     expect(await tree(root)).toEqual(before); // the ask pass wrote nothing
@@ -1937,11 +1946,15 @@ describe("vendo init --agent (ask first, then write)", () => {
     const sink = output();
     expect(await run(root, sink, { agent: true, useCase: "mcp", auth: "clerk" })).toBe(0);
     const asked = questionsOf(sink.logs);
-    expect(asked.questions.map((question) => question.id)).toEqual(["posture", "service-key"]);
-    expect(asked.questions[0]?.prompt).toContain("yourcompany.mcp.vendo.run");
-    expect(asked.questions[0]?.options[0]?.flag).toBe("--posture broker");
-    expect(asked.questions[1]?.prompt).toContain("machine to machine");
-    expect(asked.questions[1]?.options[0]?.flag).toBe("--service-key");
+    // The dev URL rides along on every path, MCP included — the door's own
+    // discovery derives from it.
+    expect(asked.questions.map((question) => question.id)).toEqual(["dev-url", "posture", "service-key"]);
+    const byId = (id: string): InitQuestions["questions"][number] | undefined =>
+      asked.questions.find((question) => question.id === id);
+    expect(byId("posture")?.prompt).toContain("yourcompany.mcp.vendo.run");
+    expect(byId("posture")?.options[0]?.flag).toBe("--posture broker");
+    expect(byId("service-key")?.prompt).toContain("machine to machine");
+    expect(byId("service-key")?.options[0]?.flag).toBe("--service-key");
   });
 
   /** A keyless run cannot reach a broker, so posture is not a decision — the
@@ -1952,10 +1965,10 @@ describe("vendo init --agent (ask first, then write)", () => {
     const sink = output();
     expect(await run(root, sink, { agent: true, useCase: "mcp", auth: "clerk", byo: true })).toBe(0);
     const asked = questionsOf(sink.logs);
-    expect(asked.questions.map((question) => question.id)).toEqual(["service-key"]);
+    expect(asked.questions.map((question) => question.id)).toEqual(["dev-url", "service-key"]);
     expect(JSON.stringify(asked)).not.toContain("broker");
     // Both answers carry the settled posture, so the SAME gate closes.
-    expect(asked.questions[0]?.options.map((option) => option.flag))
+    expect(asked.questions.find((question) => question.id === "service-key")?.options.map((option) => option.flag))
       .toEqual(["--posture local --service-key", "--posture local"]);
   });
 
@@ -1989,7 +2002,7 @@ describe("vendo init --agent (ask first, then write)", () => {
     await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"a".repeat(40)}\n`);
     const after = output();
     expect(await run(root, after, { agent: true })).toBe(0);
-    expect(questionsOf(after.logs).questions.map((question) => question.id)).toEqual(["use-case", "auth"]);
+    expect(questionsOf(after.logs).questions.map((question) => question.id)).toEqual(["use-case", "auth", "dev-url"]);
   });
 
   /** `--ai` cannot buy an engine here: the caller IS one. The harness below
@@ -2044,7 +2057,7 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(await run(root, sink, { agent: true, env: { ANTHROPIC_API_KEY: "sk-ant-test" } })).toBe(0);
     const asked = questionsOf(sink.logs);
     expect(asked.detected.auth).toBe("clerk");
-    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth"]);
+    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "dev-url"]);
     expect(asked.questions[1]?.prompt)
       .toBe("It detected Clerk. Should the assistant act as your signed-in Clerk user?");
     expect(asked.questions[1]?.options).toEqual([
@@ -2676,20 +2689,96 @@ describe("the five questions", () => {
     expect(mastraLogs).toContain("VENDO_PRINCIPAL_KEY");
   });
 
-  it("--base-url replaces init's own .env.example placeholder and never touches .env.local", async () => {
+  /** The dev URL is a QUESTION now, and its answer is WRITTEN. An agent loop, a
+      backend process and the MCP door each send real HTTP requests back at the
+      host's own API, and none of them sees a wire request to learn the origin
+      from — so every one of those installs used to meet "Cannot execute … set
+      VENDO_BASE_URL" on its first turn. One Enter now settles it. */
+  it("asks where the app runs in dev, prefilled with the host's own port, and writes the answer to .env.local", async () => {
     const root = await fixture();
-    expect(await run(root, output(), { baseUrl: "https://app.acme.com" })).toBe(0);
-    const example = await readFile(join(root, ".env.example"), "utf8");
-    expect(example).toContain("VENDO_BASE_URL=https://app.acme.com");
-    expect(example).not.toContain("VENDO_BASE_URL=http://localhost:3000");
-    // A production URL in .env.local would repoint local dev's discovery,
-    // callbacks and forwarding at the deployed origin.
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0" },
+      scripts: { dev: "next dev --port 4000" },
+    }));
+    const asked: Array<{ question: string; hint?: string; prefill?: string }> = [];
+    const sink = output();
+    // A bare Enter is resolved by the prompt itself — the seam stands in for a
+    // terminal, so it answers with the default it was handed.
+    expect(await run(root, sink, {
+      interactive: true,
+      askText: async (question, hint, prefill) => {
+        asked.push({ question, hint, prefill });
+        return prefill ?? "";
+      },
+    })).toBe(0);
+
+    expect(asked).toEqual([{
+      question: "Where does this app run in dev?",
+      hint: "Enter to accept http://localhost:4000",
+      prefill: "http://localhost:4000",
+    }]);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4000");
+    expect(sink.logs.join("\n")).toContain("Wrote VENDO_BASE_URL=http://localhost:4000 to .env.local");
+    // The question that used to live here is gone: production is told at deploy
+    // time, never asked at init.
+    expect(sink.logs.join("\n")).not.toContain("Where will this deploy?");
+  });
+
+  /** Writing the prefill unasked would be a GUESS wearing an answer's clothes:
+      unset, dev still learns the request's own origin and production fails
+      loud, so silence is the honest outcome. */
+  it("never asks and never writes .env.local on an unattended run", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      yes: true,
+      askText: async () => { throw new Error("prompted"); },
+    })).toBe(0);
     await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
 
-    // Enter declines: the placeholder stands, byte for byte.
-    const skipped = await fixture();
-    expect(await run(skipped, output(), { interactive: true, askText: async () => "" })).toBe(0);
-    expect(await readFile(join(skipped, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:3000");
+    // --base-url is the same answer arriving as a flag, and it writes.
+    const answered = await fixture();
+    expect(await run(answered, output(), { yes: true, baseUrl: "http://localhost:5173" })).toBe(0);
+    expect(await readFile(join(answered, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:5173");
+  });
+
+  /** The MCP arm's own question, answered from the same prompt — and then read
+      back through the OTHER side of the seam: `readEnvFiles` is the CLI's one
+      env reader, the same call doctor makes before grading E-MCP-009, so the
+      file init writes is the file doctor sees. Nothing is stubbed on either end.
+      Local posture in dev is the point: the door's client URL and its discovery
+      both want the origin the developer is looking at. */
+  it("MCP: the dev answer opens the door locally, and the CLI's env reader sees it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-dev-url-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "mcp-host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+      scripts: { dev: "next dev -p 4300" },
+    }));
+    await writeFile(join(root, "app", "layout.tsx"),
+      'import { VendoProvider } from "@vendoai/vendo/react";\n'
+      + "export default function Layout({ children }) { return <VendoProvider>{children}<VendoOverlay /></VendoProvider>; }\n");
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      auth: "clerk",
+      interactive: true,
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      selectUseCase: async () => "local",
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(0);
+
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4300");
+    // The client URL a user pastes into Claude is the dev origin, not a guess.
+    expect(sink.logs.join("\n")).toContain("Point any MCP client at `http://localhost:4300/api/vendo/mcp`");
+
+    // The read-back, through the reader doctor itself uses — no env override,
+    // no stub: whatever this returns is what E-MCP-009 grades.
+    expect((await readEnvFiles(root))["VENDO_BASE_URL"]).toBe("http://localhost:4300");
   });
 
   it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {

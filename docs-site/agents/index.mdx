@@ -143,14 +143,17 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    pick, and the flag that answers it. Put all of them to your human in your
    very next message, in your own words, in one turn. Keep init's order and
    keep its recommendation first: "recommended" in the label is not enough if
-   the cursor lands on the other choice. Usually there are three. How will
+   the cursor lands on the other choice. Usually there are four. How will
    people use your agent: embedded in their app (most apps, and the
    recommended pick), through their own agent loop, or from outside AI apps
    over MCP. Should the assistant act as their signed-in user, on the provider
-   init detected ([which preset?](/production/auth)). And where the model comes
+   init detected ([which preset?](/production/auth)). Where the model comes
    from: a free Vendo Cloud key is one browser click and needs no provider
-   account, or they bring their own Anthropic or OpenAI key. Say what each
-   option gets their users, not what it configures.
+   account, or they bring their own Anthropic or OpenAI key. And where their
+   app runs in dev — init prefills the port their `dev` script names, so this
+   one is usually a yes, and the answer lands in `.env.local` as
+   `VENDO_BASE_URL`. Say what each option gets their users, not what it
+   configures.
 
    Take the model answer first, before you re-run anything. It is the one
    answer that has no flag: the Vendo Cloud pick is a login you run now, and
@@ -328,7 +331,7 @@ MCP**) and init writes 1 and 2 below for you — the composition with
 route:
 
 ```bash
-npx vendo init --agent --use-case mcp --auth authJs --base-url https://app.example.com
+npx vendo init --agent --use-case mcp --auth authJs --base-url http://localhost:3000
 ```
 
 That path needs Next.js and one of the four zero-arg presets,
@@ -406,19 +409,22 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    at the origin root as well (`app.use("/.well-known", mountVendo())`),
    registered after the app's own well-known routes.
 
-3. **`VENDO_BASE_URL`.** Set it to the deployment's FULL public URL, path
-   prefix included. The issuer, every advertised endpoint, the
+3. **`VENDO_BASE_URL`.** It names the origin the door actually answers on: the
+   dev origin while your human is local, the deployment's FULL public URL (path
+   prefix included) in production. The issuer, every advertised endpoint, the
    protected-resource identifier, and the RFC 8707 audience all derive from it;
    left unset they come from the request URL — behind any proxy the
    proxy-internal origin, so discovery advertises endpoints no client can reach.
    Forwarded headers are never consulted.
 
-   ```bash
-   VENDO_BASE_URL=https://app.example.com
+   ```bash .env.local
+   VENDO_BASE_URL=http://localhost:3000
    ```
 
-   `--base-url` only writes it into `.env.example`; setting it where the host
-   deploys stays your human's. Doctor FAILS
+   Init's dev-URL question already wrote that line (`--base-url` is the same
+   answer as a flag). Production is set where the host DEPLOYS — in the
+   platform's own environment settings, never in a committed file — and that one
+   stays your human's. Doctor FAILS
    [`E-MCP-009`](/production/troubleshooting/e-mcp-009) on an MCP-wired project with neither
    this variable nor `mcp: { baseUrl }`.
 

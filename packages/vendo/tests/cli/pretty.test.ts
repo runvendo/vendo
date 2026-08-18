@@ -765,6 +765,9 @@ describe("createPrettyOutput (visual system)", () => {
   it("plainText and plainSecret answer the empty skip without prompting when not a TTY", async () => {
     expect(await plainText("Where will this deploy?")).toBe("");
     expect(await plainSecret("Paste your provider key")).toBe("");
+    // A default does NOT leak past the guard: "" still means nobody was asked,
+    // so a piped run can never be handed an answer it never gave.
+    expect(await plainText("Where does this app run in dev?", undefined, "http://localhost:3000")).toBe("");
   });
 
   it("confirm parses y / n / Enter-default / other text through a real readline", async () => {
@@ -825,6 +828,33 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("● skipped");
   });
 
+  /** A prefilled question has no skip: Enter IS the answer, and the receipt has
+      to say so — echoing "skipped" over a value that was just written is how a
+      transcript starts lying about what the run did. */
+  it("text takes a default on Enter and echoes the value, not a skip", async () => {
+    const out = sink();
+    const io = promptStreams();
+    const pretty = createPrettyOutput({
+      write: out.write,
+      input: io.input,
+      promptOutput: io.output,
+      banner: false,
+    });
+
+    const accepted = pretty.text("Where does this app run in dev?", "Enter to accept http://localhost:4000", "http://localhost:4000");
+    io.input.write("\n");
+    expect(await accepted).toBe("http://localhost:4000");
+
+    const typed = pretty.text("Where does this app run in dev?", undefined, "http://localhost:4000");
+    io.input.write("http://localhost:8080\n");
+    expect(await typed).toBe("http://localhost:8080");
+
+    const plain = out.plain();
+    expect(plain).toContain("● http://localhost:4000");
+    expect(plain).toContain("● http://localhost:8080");
+    expect(plain).not.toContain("● skipped");
+  });
+
   it("secret echoes a masked receipt and never the value", async () => {
     const out = sink();
     const io = promptStreams();
@@ -881,11 +911,18 @@ describe("createPrettyOutput (visual system)", () => {
 
   it("plainText and plainSecret drive a real readline, and only plainSecret hides the typing", async () => {
     const asked = promptStreams();
-    const answer = plainText("Where will this deploy?", "Enter to skip", asked.input, asked.output);
+    const answer = plainText("Where will this deploy?", "Enter to skip", undefined, asked.input, asked.output);
     asked.input.write("https://app.acme.com\n");
     expect(await answer).toBe("https://app.acme.com");
     expect(asked.echoed()).toContain("Where will this deploy?");
     expect(asked.echoed()).toContain("  Enter to skip");
+
+    // Enter on a prefilled question answers with the default — the NO_COLOR
+    // path the dev-URL question rides in a plain terminal.
+    const defaulted = promptStreams();
+    const byEnter = plainText("Where does this app run in dev?", undefined, "http://localhost:4000", defaulted.input, defaulted.output);
+    defaulted.input.write("\n");
+    expect(await byEnter).toBe("http://localhost:4000");
 
     const secret = promptStreams();
     (secret.input as PassThrough & { setRawMode?: (mode: boolean) => void }).setRawMode = () => undefined;

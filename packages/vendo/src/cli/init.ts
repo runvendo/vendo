@@ -26,11 +26,11 @@ import {
 } from "./init-auth.js";
 import { aiBelowPeerFloor, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
 import {
-  baseUrlLine,
   compositionModulePath,
   compositionModuleSource,
   compositionSpecifier,
   customServerSource,
+  devBaseUrl,
   devPort,
   disabledTools,
   expressServerSource,
@@ -186,9 +186,10 @@ export interface InitOptions {
   /** --use-case: answer the first question without asking. Unattended runs
       take "embedded" — today's behaviour, so no existing script changes. */
   useCase?: InitUseCase;
-  /** --base-url: answer "where will this deploy?" without asking. Written to
-      .env.example ONLY, by replacing init's own localhost placeholder — never
-      .env.local, where a production URL would repoint local dev's discovery,
+  /** --base-url: answer "where does this app run in dev?" without asking —
+      written to .env.local as VENDO_BASE_URL. A DEPLOYED URL does not belong
+      here: production reads the variable from the hosting platform's own env,
+      and a public URL in .env.local would repoint local dev's discovery,
       callbacks and credential forwarding at the deployed origin. */
   baseUrl?: string;
   /** --posture: how outside agents sign in (MCP use case only). */
@@ -246,8 +247,10 @@ export interface InitOptions {
   /** Test seam: the use-case question, and the MCP posture select that hangs
       off it. Mirrors the auth picker's shape. */
   selectUseCase?: (question: string, options: SelectOption[]) => Promise<string>;
-  /** Test seam: the free-text asks (the base URL). "" is a decline. */
-  askText?: (question: string, hint?: string) => Promise<string>;
+  /** Test seam: the free-text asks (the dev base URL). "" is "nobody was
+      asked" — the prompt itself turns a bare Enter into the prefilled default,
+      so a seam that answers "" stands for a run that never got to ask. */
+  askText?: (question: string, hint?: string, defaultValue?: string) => Promise<string>;
   /** Test seam: the doctor-check offer. Mirrors the auth confirm's shape. */
   confirmCheck?: (question: string, defaultYes: boolean) => Promise<boolean>;
   /** Test seam: the check itself (default: `vendo doctor`). */
@@ -746,12 +749,21 @@ async function resolveUseCase(input: {
   return (INIT_USE_CASES as readonly string[]).includes(picked) ? picked as InitUseCase : "embedded";
 }
 
-/** "Where will this deploy?" — one Enter to decline, and the answer replaces
-    init's OWN placeholder in .env.example. Nowhere else: a production URL in
-    .env.local would repoint local dev's discovery, callbacks and credential
-    forwarding at the deployed origin, and dev already trusts the request's
-    own origin. Returns the captured URL, or null when skipped. */
-export async function captureBaseUrl(input: {
+/** "Where does this app run in dev?" — prefilled with the port the host's own
+    `dev` script names, so Enter is the whole interaction, and the answer lands
+    in .env.local as VENDO_BASE_URL. Own-agent-loop tools, backend processes and
+    the MCP door never see a wire request, so without it the first tool call
+    meets "Cannot execute … set VENDO_BASE_URL" instead of working.
+ *
+ *  A run that cannot ASK writes NOTHING: the prefill is only an answer when a
+ *  person accepts it, and a guessed origin is worse than an absent one — unset
+ *  in dev still learns the request's own origin, and production fails loud.
+ *  Production is told at deploy time, never asked here: a public URL in
+ *  .env.local would repoint local dev's discovery, callbacks and credential
+ *  forwarding at the deployed origin.
+ *
+ *  Returns the answer, or null when the run could not ask. */
+export async function captureDevBaseUrl(input: {
   root: string;
   options: InitOptions;
   output: Output;
@@ -760,22 +772,24 @@ export async function captureBaseUrl(input: {
 }): Promise<string | null> {
   const { root, options, output, pretty, interactive } = input;
   // plainText carries plainSelect's guard — a non-TTY input or output returns
-  // the fallback and never prompts — so a piped run stays byte-identical while
-  // a NO_COLOR terminal still gets the question. Making this pretty-only would
-  // silently delete the feature for anyone who sets NO_COLOR.
+  // "" and never prompts — so a piped run stays byte-identical while a NO_COLOR
+  // terminal still gets the question. Making this pretty-only would silently
+  // delete the feature for anyone who sets NO_COLOR.
+  // The seam sits INSIDE the interactivity gate, like the auth confirm's: a
+  // stubbed prompt must not make an unattended run ask a question the real one
+  // never reaches.
   const ask = options.baseUrl !== undefined
     ? async () => options.baseUrl!
-    : options.askText
-      ?? (options.yes === true || !interactive ? undefined : (pretty === null ? plainText : pretty.text));
+    : options.yes === true || !interactive
+      ? undefined
+      : options.askText ?? (pretty === null ? plainText : pretty.text);
   if (ask === undefined) return null;
-  const url = (await ask("Where will this deploy?", "e.g. https://app.acme.com — Enter to skip")).trim();
+  const prefill = devBaseUrl(await devPort(root));
+  const url = (await ask("Where does this app run in dev?", `Enter to accept ${prefill}`, prefill)).trim();
   if (url === "") return null;
-  const path = join(root, ".env.example");
-  const current = await readOptional(path);
-  const placeholder = baseUrlLine(await devPort(root));
-  if (current === null || !current.includes(placeholder)) return url;
-  await writeText(path, current.replace(placeholder, `VENDO_BASE_URL=${url}`));
-  output.log("written to .env.example — set it in your deploy platform's env");
+  await upsertEnvLocal(root, "VENDO_BASE_URL", url);
+  output.log(`Wrote VENDO_BASE_URL=${url} to .env.local`);
+  await ensureEnvLocalIgnored(root, output);
   return url;
 }
 
@@ -916,7 +930,9 @@ async function planMcpScaffold(input: {
     models: scaffoldModel(root, options),
     // Not optional: a null base URL is an ANSWER the plan reads, and it is
     // what makes steps[] lead with the recoverable version of E-MCP-009's
-    // failure instead of assuming an origin.
+    // failure instead of assuming an origin. Set, it is the DEV origin — which
+    // is the right one for a client config and for doctor, both of which run
+    // against the app the developer is looking at.
     baseUrl,
   });
   if (mcp.blocked !== undefined) {
@@ -1850,10 +1866,10 @@ async function finishRun(input: {
     wrote, risks,
   } = input;
 
-  // Where will this deploy? — every path but MCP, which needed the answer
-  // before it wrote. One Enter declines and the placeholder stands. The answer
-  // is written to .env.example inside, so there is nothing to read back here.
-  if (useCase !== "mcp") await captureBaseUrl({ root, options, output, pretty, interactive });
+  // Where does this app run in dev? — every path but MCP, which needed the
+  // answer before it wrote. The answer lands in .env.local inside, so there is
+  // nothing to read back here.
+  if (useCase !== "mcp") await captureDevBaseUrl({ root, options, output, pretty, interactive });
 
   // Variant B: the wired route stays (it serves apps and approvals to the
   // embeds) — what is added is the one snippet for their own loop.
@@ -1998,6 +2014,7 @@ const explainedPlanFailure = (error: unknown): boolean => {
       framework: await resolveFramework(root, options),
       modelKey: cloudKey || scaffoldModel(root, options) !== null,
       cloudKey,
+      devPort: await devPort(root),
     });
     if (questions !== null) {
       output.log(JSON.stringify(questions, null, 2));
@@ -2061,10 +2078,10 @@ const explainedPlanFailure = (error: unknown): boolean => {
     // The MCP door derives every discovery URL from VENDO_BASE_URL and both
     // extra answers change the composition's own source, so that path needs
     // all three BEFORE it writes. Every other path asks the URL at the end,
-    // where it is one Enter to decline.
+    // where it is one Enter.
     let mcp: ReturnType<typeof planMcp> | null = null;
     if (useCase === "mcp") {
-      const baseUrl = await captureBaseUrl({ root, options, output, pretty, interactive });
+      const baseUrl = await captureDevBaseUrl({ root, options, output, pretty, interactive });
       mcp = await planMcpScaffold({
         root, options, output, pretty, interactive, changes, baseUrl,
         framework: plan.framework, authWired, cloudKey: cloud.keyValid,

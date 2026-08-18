@@ -59,8 +59,9 @@ export interface McpPlanInput {
   /** Did the user say yes to "will your own backend call these tools
       machine-to-machine?" */
   serviceKey: boolean;
-  /** The public origin captured earlier this run, or null when the user skipped
-      the question. */
+  /** The origin captured earlier this run — the DEV one, which is what a client
+      config and doctor both want while the developer is still local. Null when
+      the run could not ask. */
   baseUrl: string | null;
   /** The provider key init found in the environment. This path's composition
       module is the ONLY place it may land: the thin route composes nothing, so
@@ -206,8 +207,8 @@ export function planMcp(input: McpPlanInput): McpPlan {
   // indents the detail lines, so a step never wraps mid-phrase into a wall.
   const steps = [
     baseUrl === null
-      ? "Set `VENDO_BASE_URL` in your deploy platform to this deployment's public origin\nwithout it, discovery points at the wrong origin and clients cannot find your server"
-      : `Set \`VENDO_BASE_URL\` in your deploy platform\n\`${baseUrl}\` — captured earlier, already in .env.example`,
+      ? "Set `VENDO_BASE_URL` to the origin this app answers on — .env.local in dev, your deploy platform in production\nwithout it, discovery points at the wrong origin and clients cannot find your server"
+      : `When you deploy, set \`VENDO_BASE_URL\` in your platform to the public origin\ndev is answered — \`${baseUrl}\` is in .env.local, and every discovery URL hangs off it`,
     `Point any MCP client at \`${clientBase}${MCP_MOUNT}\`\nyour users' setup page ships free at \`${MCP_MOUNT}/connect\` — copy for Claude · ChatGPT · Cursor included`,
     "Claude Code: `/plugin marketplace add runvendo/vendo` then `/plugin install vendo@vendo`",
   ];

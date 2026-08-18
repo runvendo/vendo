@@ -50,20 +50,26 @@ export const support = agent({
 ```
 
 <Note>
-  **Set `VENDO_BASE_URL` before the first turn.** `api()` tools are not
-  in-process calls — each one is a real HTTP request back at your own API, and
-  `api()` reads this variable to know where to send it. There is no Vendo route
-  mounted on this path for it to learn the origin from, so unset means the first
-  tool call throws `Cannot execute … set VENDO_BASE_URL, or pass baseUrl`.
+  **`VENDO_BASE_URL` has to be set before the first turn — init asked you for
+  it.** `api()` tools are not in-process calls — each one is a real HTTP request
+  back at your own API, and `api()` reads this variable to know where to send
+  it. There is no Vendo route mounted on this path for it to learn the origin
+  from, so unset means the first tool call throws `Cannot execute … set
+  VENDO_BASE_URL, or pass baseUrl`.
+
+  An interactive `vendo init` asks where your app runs in dev and writes the
+  answer for you, so the line is usually already there:
 
   ```bash .env.local
   VENDO_BASE_URL=http://localhost:3000
   ```
 
-  Use the port your own server listens on. In production it is the deployment's
-  full public URL, path prefix included; `api({ baseUrl })` overrides it, and
-  `VENDO_HOST_API_URL` is the answer when your API answers on another origin
-  ([environment variables](/reference/environment-variables)).
+  Add it by hand (with the port your own server listens on) if init ran
+  unattended — a `--yes` or piped run never guesses an origin. In production
+  you set the same variable in your hosting platform's environment settings, to
+  the deployment's full public URL, path prefix included; `api({ baseUrl })`
+  overrides it, and `VENDO_HOST_API_URL` is the answer when your API answers on
+  another origin ([environment variables](/reference/environment-variables)).
 </Note>
 
 Skipping `vendo login`? Then nothing resolves a model for you, and the first

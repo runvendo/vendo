@@ -7,9 +7,9 @@
  * as flags on a re-run, and that run writes. No new flags exist for any of it:
  * every option below names one of the six init already validates.
  *
- * Only what a PERSON must decide appears here. The base URL, the zod floor, the
- * theme slots and the live check are mechanical, so they default exactly as
- * `--yes` leaves them and show up in the diff instead of in someone's chat.
+ * Only what a PERSON must decide appears here. The zod floor, the theme slots
+ * and the live check are mechanical, so they default exactly as `--yes` leaves
+ * them and show up in the diff instead of in someone's chat.
  *
  * PURE apart from reading the host's dependencies for auth: every prompt is
  * decided from the answers already on the command line, so the whole set is
@@ -60,6 +60,20 @@ const MODELS: InitQuestion = {
     { label: "Own key", flag: "--byo", note: "put the key in .env.local first, it never enters the chat" },
   ],
 };
+
+/** The dev URL. A QUESTION and not a mechanical default, because the answer is
+    WRITTEN (.env.local) and only the person running init knows which origin
+    their app answers on — a guessed origin fails the first tool call with the
+    developer believing it was configured. The prefill is the port their own
+    `dev` script names, so the recommended option is the whole answer. */
+const devUrlQuestion = (port: number): InitQuestion => ({
+  id: "dev-url",
+  prompt: `Where does this app run in dev? Vendo writes it to .env.local as VENDO_BASE_URL: your own agent loop, any backend process and the MCP door all send real HTTP requests back at your API, so without it the first tool call fails. Your dev script says http://localhost:${port}.`,
+  options: [
+    { label: `http://localhost:${port}`, flag: `--base-url http://localhost:${port}`, recommended: true },
+    { label: "Another origin", flag: "--base-url <url>", note: "replace the placeholder with the origin the dev server actually prints" },
+  ],
+});
 
 const SERVICE_KEY_PROMPT = "Will your own backend call these tools machine to machine, like a nightly job? If yes I'll set up a service key.";
 
@@ -144,6 +158,9 @@ export async function initQuestions(input: {
   /** A Vendo Cloud key specifically — the only thing a broker posture can run
       on, so it decides whether the MCP sign-in question exists at all. */
   cloudKey: boolean;
+  /** The port the host's `dev` script names — the dev-URL question's prefill.
+      Passed in rather than read here so the whole set stays assertable. */
+  devPort: number;
 }): Promise<InitQuestions | null> {
   const { options } = input;
   // `wired`, never `matches[0]`: two families matching is AMBIGUOUS, and
@@ -154,6 +171,7 @@ export async function initQuestions(input: {
   if (options.useCase === undefined) questions.push(USE_CASE);
   if (options.auth === undefined) questions.push(authQuestion(detected));
   if (!input.modelKey && options.byo !== true && options.cloudKey === undefined) questions.push(MODELS);
+  if (options.baseUrl === undefined) questions.push(devUrlQuestion(input.devPort));
   // ONE gate for the MCP extras: they travel in the same relay, so `--posture`
   // on the way back is what says they were answered. A bare `--service-key` has
   // no "no" spelling, so gating on it would ask forever.

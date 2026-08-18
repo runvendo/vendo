@@ -151,11 +151,15 @@ describe("the .env.example base URL", () => {
     expect(devScriptPort("PORT=5050 node server.js")).toBe(5050);
   });
 
-  it("names that port, and names the exception to dev's own-origin trust", () => {
+  it("names that port, and reads as an instruction rather than a value to fill in", () => {
     expect(vendoEnvExample(4000)).toContain("VENDO_BASE_URL=http://localhost:4000\n");
-    // The clause that used to be missing: an agent loop and any backend process
-    // never see a wire request, so the origin trust never reaches them.
-    expect(vendoEnvExample(3000)).toContain("your own agent loop and any backend process");
+    // Dev was answered into .env.local by init's own question; production is
+    // set where the app deploys, and belongs in neither file here.
+    const example = vendoEnvExample(3000);
+    expect(example).toContain("Dev is already done");
+    expect(example).toContain("platform's environment settings to the public URL");
+    expect(example).toContain("in neither a committed file nor .env.local");
+    expect(example).toContain("Production fails loud without it");
   });
 });
 

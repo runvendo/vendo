@@ -51,7 +51,7 @@ Init may have bumped `zod`. Leave that alone: it is a version floor, not a Vendo
 
 | File | Remove |
 | --- | --- |
-| `.env.local` | the `VENDO_API_KEY` line, then [revoke the key](#the-cloud-side) |
+| `.env.local` | the `VENDO_BASE_URL` line, and the `VENDO_API_KEY` line — then [revoke the key](#the-cloud-side) |
 | `.env.example` | the appended Vendo block: `VENDO_BASE_URL` plus the commented `VENDO_HOST_API_URL`, `VENDO_LOGIN_URL`, and `ANTHROPIC_API_KEY` lines |
 | deployed environments | `VENDO_BASE_URL`, `VENDO_API_KEY`, and any other `VENDO_*` variables you set |
 

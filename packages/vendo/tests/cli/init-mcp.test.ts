@@ -118,14 +118,20 @@ describe("planMcp — the service key", () => {
 
 describe("planMcp — the two steps that stay the user's", () => {
   it("puts the base URL FIRST, always", () => {
-    expect(plan().steps[0]).toContain("Set `VENDO_BASE_URL`");
+    expect(plan().steps[0]).toContain("`VENDO_BASE_URL`");
     expect(plan({ baseUrl: null }).steps[0]).toContain("Set `VENDO_BASE_URL`");
-    expect(plan({ posture: "broker", serviceKey: true }).steps[0]).toContain("Set `VENDO_BASE_URL`");
+    expect(plan({ posture: "broker", serviceKey: true }).steps[0]).toContain("`VENDO_BASE_URL`");
   });
 
-  it("names the captured origin when there is one, and the risk when there is not", () => {
-    expect(plan().steps[0]).toContain("`https://app.acme.com` — captured earlier, already in .env.example");
+  /** The captured origin is the DEV one now (init writes it to .env.local), so
+      the step points at deploy time for production instead of claiming the
+      answer already covers it. */
+  it("names the captured origin as dev-and-done, and the risk when there is none", () => {
+    expect(plan().steps[0]).toContain("When you deploy, set `VENDO_BASE_URL` in your platform to the public origin");
+    expect(plan().steps[0]).toContain("`https://app.acme.com` is in .env.local");
+    expect(plan().steps[0]).not.toContain(".env.example");
     expect(plan({ baseUrl: null }).steps[0]).toContain("points at the wrong origin");
+    expect(plan({ baseUrl: null }).steps[0]).toContain(".env.local in dev, your deploy platform in production");
   });
 
   it("points clients at the same URL in BOTH postures — it derives from the base URL, never the broker", () => {

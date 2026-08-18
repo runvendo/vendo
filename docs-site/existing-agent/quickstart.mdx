@@ -196,21 +196,23 @@ One component covers all three, so you never branch on the envelope yourself.
 Run your own chat and ask for something behind your API. The answer comes back as a working card, inside your own bubble.
 
 <Note>
-  **Set `VENDO_BASE_URL` in development.** A `vendo_*` tool call is a real HTTP
-  request back at your own API, so something has to name the origin to send it
-  to. Vendo learns that origin from requests that reach the wire route init
-  wrote — but on this path the tool runs in *your* chat route, which is not one
-  of them, so name it yourself:
+  **`VENDO_BASE_URL` in development — init already asked you for it.** A
+  `vendo_*` tool call is a real HTTP request back at your own API, so something
+  has to name the origin to send it to. Vendo learns that origin from requests
+  that reach the wire route init wrote — but on this path the tool runs in
+  *your* chat route, which is not one of them, so the variable is what names it:
 
   ```bash .env.local
   VENDO_BASE_URL=http://localhost:3000
   ```
 
-  Use the port your dev server actually prints. Without it, the first tool call
-  comes back with `Cannot execute … set VENDO_BASE_URL, or pass baseUrl`, and
-  forwarding the caller's own credentials is refused. Deployments set it to the
-  public URL, path prefix included ([environment
-  variables](/reference/environment-variables)).
+  An interactive `vendo init` writes that line from your answer, prefilled with
+  the port your `dev` script names. If init ran unattended it wrote nothing —
+  add the line with the port your dev server actually prints. Without it, the
+  first tool call comes back with `Cannot execute … set VENDO_BASE_URL, or pass
+  baseUrl`, and forwarding the caller's own credentials is refused. Deployments
+  set the same variable in the hosting platform, to the public URL, path prefix
+  included ([environment variables](/reference/environment-variables)).
 </Note>
 
 <Frame>

@@ -582,17 +582,25 @@ export async function devPort(root: string): Promise<number> {
   }
 }
 
-/** The line `vendo init` writes and `captureBaseUrl` later replaces with the
-    deployed URL — one spelling, so the replacement can never miss. */
-export const baseUrlLine = (port: number): string => `VENDO_BASE_URL=http://localhost:${port}`;
+/** Where the host answers in dev: the value the dev-URL question prefills, and
+    the illustrative line `.env.example` carries. One spelling for both. */
+export const devBaseUrl = (port: number): string => `http://localhost:${port}`;
+
+export const baseUrlLine = (port: number): string => `VENDO_BASE_URL=${devBaseUrl(port)}`;
 
 export const vendoEnvExample = (port: number): string =>
   "# This deployment's FULL public URL — path prefix included. Nothing strips its\n" +
   "# path: every URL Vendo builds (host tool calls, login redirects, box callbacks)\n" +
-  "# hangs off it. Dev trusts the request's own origin automatically, EXCEPT for\n" +
-  "# your own agent loop and any backend process — they never see a wire request,\n" +
-  "# so they need this set even in dev; production fails loud without it (a\n" +
-  "# credential-forwarding call errors instead of silently running unauthenticated).\n" +
+  "# hangs off it.\n" +
+  "#\n" +
+  "# Dev is already done: `vendo init` asked where this app runs and wrote your\n" +
+  "# answer to .env.local. When you DEPLOY, set VENDO_BASE_URL in your hosting\n" +
+  "# platform's environment settings to the public URL — a production URL belongs\n" +
+  "# in neither a committed file nor .env.local. Production fails loud without it\n" +
+  "# (a credential-forwarding call errors instead of silently running\n" +
+  "# unauthenticated).\n" +
+  "#\n" +
+  "# For reference, the dev shape:\n" +
   `${baseUrlLine(port)}\n` +
   "# Optional — the host API on another origin (default: the public URL above).\n" +
   "# VENDO_HOST_API_URL=\n" +

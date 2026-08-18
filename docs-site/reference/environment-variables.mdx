@@ -13,7 +13,7 @@ Every variable a host developer sets. Keys are credentials; config selects.
 | Variable | What it does | Set where |
 | --- | --- | --- |
 | `VENDO_API_KEY` | Authenticates Vendo Cloud; fills any adapter slot you left unset. | `.env.local`, written by init |
-| `VENDO_BASE_URL` | This deployment's full public URL, path prefix included. | deploy platform · init seeds `.env.example` |
+| `VENDO_BASE_URL` | The origin this process answers on: the dev origin locally, the deployment's full public URL, path prefix included, in production. | deploy platform · `.env.local` in dev, written by init from its dev-URL question |
 | `VENDO_MCP_BROKER_URL` | Your tenant's broker endpoint; setting it turns on broker mode. | deploy platform |
 | `VENDO_MCP_FEDERATION_SECRET` | Secret a broker signs its login-federation handshake with. | deploy platform |
 | `VENDO_CLOUD_URL` | Overrides the Vendo Cloud base URL for runtime and CLI. Default `https://console.vendo.run`. | deploy platform |

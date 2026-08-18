@@ -150,7 +150,7 @@ describe("vendo CLI commands", () => {
     expect(error.mock.calls.flat().join("\n")).toContain("--use-case must be one of embedded, agent-loop, mcp");
 
     expect(await main(["init", root, "--base-url", "app.acme.com"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--base-url must be this deployment's full public URL");
+    expect(error.mock.calls.flat().join("\n")).toContain("--base-url must be the full origin this app answers on in dev");
 
     expect(await main(["init", root, "--use-case", "mcp", "--posture", "hybrid"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--posture must be local or broker");
