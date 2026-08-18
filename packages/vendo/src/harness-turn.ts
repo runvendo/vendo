@@ -60,6 +60,7 @@ import {
 } from "@vendoai/store";
 import {
   createHarnessRuntime,
+  createTurnTimings,
   latestUserIntent,
   provideHarnessAdapters,
   THREAD_ID_HEADER,
@@ -396,6 +397,9 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     },
 
     async stream(input) {
+      // The turn's clock, started at the top: `durationMs` used to begin after
+      // the opening reads, which is why a slow store was invisible in it.
+      const timings = createTurnTimings();
       validateMessage(input?.message);
       // The message choke (limits.ts owns the counting, the policy and the
       // recording): asked BEFORE the thread is resolved, so a refused message
@@ -415,6 +419,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // without costing a read, which is what it always cost.
       const given = input.threadId as ThreadId | undefined;
       const { subject } = input.ctx.principal;
+      // The store phase: the handshake, the envelope read, the thread resolve,
+      // the opening write and the workspace open — everything before the prompt
+      // is assembled. One span, because it is one wait for the person.
+      const storeAt = Date.now();
       const batched = (given === undefined || isThreadId(given)) && await servesTurn();
       // Minted HERE only when the envelope will ask for it: a turn has to name
       // its thread before it can read it, and a first turn still has a
@@ -531,6 +539,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           ...(index === undefined ? {} : { index }),
         }),
       ]);
+      timings.add("store", Date.now() - storeAt);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.
@@ -539,26 +548,37 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // every tool call passes the bridge's `onCall`, and `liveTurn`'s disposer
       // is the runtime's turn end (it retracts the publication in the run's
       // `finally`). Names and counts only — no argument and no result.
-      const startedAt = Date.now();
       const toolNames = new Set<string>();
       let toolCalls = 0;
-      const emitRun = (outcome: "ok" | "error", errorCode: string | null): void => emitUsage({
-        name: "agent_run",
-        durationMs: Date.now() - startedAt,
-        // No rail carries the thinker's step count out of the harness runtime
-        // (the workbench's `step-start` is dev-only, gated on VENDO_WORKBENCH),
-        // so this stays 0 until the runtime publishes one.
-        steps: 0,
-        toolCalls,
-        tools: [...toolNames].sort(),
-        modelFamily: modelFamilyOf(config.models),
-        outcome,
-        errorCode,
-      });
+      const emitRun = (outcome: "ok" | "error", errorCode: string | null): void => {
+        const durationMs = timings.elapsed();
+        const { ttft = 0, store = 0, prompt = 0, tools: toolsMs = 0, guard = 0 } = timings.ms;
+        emitUsage({
+          name: "agent_run",
+          durationMs,
+          ttftMs: ttft,
+          storeMs: store,
+          promptMs: prompt,
+          // Whatever the other four leave over — the thinker's own wall time,
+          // which is what a slow turn is usually made of.
+          modelMs: Math.max(0, durationMs - store - prompt - toolsMs - guard),
+          toolsMs,
+          guardMs: guard,
+          steps: timings.steps,
+          toolCalls,
+          tools: [...toolNames].sort(),
+          modelFamily: modelFamilyOf(config.models),
+          outcome,
+          errorCode,
+        });
+      };
       const bridge = config.bridge?.(input.ctx, thread.id) as ToolBridgeOptions | undefined;
       const runtime = createHarnessRuntime({
         tools: config.tools,
         guard: config.guard,
+        // The same collector the marks above went into: the runtime adds the
+        // ones only it can see (the first output, the model calls).
+        timings,
         // Read off THIS turn's mount, so a skill the host stopped shipping is
         // gone the moment they deploy — no stale copy to invalidate.
         skills: createTurnSkills(workspace),
@@ -652,6 +672,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // harness's. Which discovery section it may promise is decided by what is
       // actually on the listing: a curated surface has `find_tools`, an uncurated one
       // has the connector pair (and only with connectors configured), or neither.
+      const promptAt = Date.now();
       const rail = config.harness.toolSurface?.curated !== false
         ? "find-tools" as const
         : config.connectorDiscovery === true ? "connectors" as const : false;
@@ -662,6 +683,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // provider's prompt cache cold. Same block builder, same this-turn-only
       // life: the ctx and `Turn.situation`, never the store.
       const situation = situationPromptBlock(input.ctx.context);
+      timings.add("prompt", Date.now() - promptAt);
       const response = await runtime.run<never>({
         harness: config.harness,
         threadId: thread.id,

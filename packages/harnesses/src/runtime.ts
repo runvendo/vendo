@@ -73,6 +73,44 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+/** Which phase of a turn a duration belongs to — `agent_run`'s flat breakdown,
+ *  and the whole vocabulary. */
+export type TurnTimingKey = "ttft" | "store" | "prompt" | "tools" | "guard";
+
+/**
+ * ONE turn's measurements, collected by whoever is standing where the time is
+ * spent: composition marks its store reads and its prompt assembly, the runtime
+ * marks the first output and the steps, the guard and the tool bridge mark
+ * theirs. DURATIONS AND COUNTS ONLY — a mark can never carry a prompt, an
+ * argument, or a name.
+ *
+ * `add` accumulates, because tool time and guard time are many calls and one
+ * number each. `elapsed` is ms since the turn began, which is what the
+ * time-to-first-output mark and the run's own `durationMs` are read from.
+ */
+export interface TurnTimings {
+  add(key: TurnTimingKey, ms: number): void;
+  /** One more model call. */
+  step(): void;
+  elapsed(): number;
+  readonly ms: Readonly<Partial<Record<TurnTimingKey, number>>>;
+  readonly steps: number;
+}
+
+/** A collector for the turn starting NOW. */
+export function createTurnTimings(): TurnTimings {
+  const startedAt = Date.now();
+  const ms: Partial<Record<TurnTimingKey, number>> = {};
+  let steps = 0;
+  return {
+    ms,
+    get steps() { return steps; },
+    add: (key, value) => { ms[key] = (ms[key] ?? 0) + value; },
+    step: () => { steps += 1; },
+    elapsed: () => Date.now() - startedAt,
+  };
+}
+
 /** Build contract §6 — lane D's `threadMessageStore(store)` return value. Typed
  *  structurally so this package never imports @vendoai/store: the store handle
  *  arrives as a composed value. */
@@ -144,6 +182,10 @@ export interface HarnessRuntimeDeps {
      */
     steer: (text: string, messageId: string) => Promise<boolean>;
   }) => () => void;
+  /** This turn's measurements ({@link TurnTimings}), for whoever reports them.
+   *  The runtime fills the marks only it can see — the first output on the wire
+   *  and the model calls. Unset, nothing is measured. */
+  timings?: TurnTimings;
   /**
    * Land this turn's three closing writes — the messages it produced, the
    * harness state to carry into the next one, and the run's audit row — in ONE
@@ -411,10 +453,25 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           // here, in the loop, in the guarded-call path — is a map miss.
           const closeWorkbench = openWorkbench(turnId, (part) => writeDebug(writer, part));
           const text = new TextChannel(writer);
+          // The turn's first model call. Every ROUND of tool calls below is one
+          // more: the thinker asks, runs what it asked for, then asks again. A
+          // turn that used no tool still thought once.
+          deps.timings?.step();
+          /** Is the next `call` the start of a new round? True at the turn's
+           *  start (the first call opens one) and again after every result; a
+           *  step's parallel calls are all announced before any of them lands,
+           *  so they stay in the round they belong to. */
+          let newRound = true;
           const mirror = (event: MirrorEvent): void => {
-            // Close the open text part first, so a reply that spans tool calls
-            // renders as prose, tool, prose instead of collapsing into one block.
-            if (event.kind === "call") text.break();
+            if (event.kind === "call") {
+              if (newRound) {
+                newRound = false;
+                deps.timings?.step();
+              }
+              // Close the open text part first, so a reply that spans tool calls
+              // renders as prose, tool, prose instead of collapsing into one block.
+              text.break();
+            } else if (event.kind === "result") newRound = true;
             writeMirror(writer, event);
           };
           const tools = createTurnTools({
@@ -540,6 +597,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               }
               switch (event.type) {
                 case "text":
+                  // Time to first output, marked HERE because here is where the
+                  // user's first word reaches the wire. Once per turn: the mark
+                  // is the FIRST one, and `add` would sum the rest.
+                  if (deps.timings?.ms.ttft === undefined) deps.timings?.add("ttft", deps.timings.elapsed());
                   text.delta(event.delta);
                   break;
                 case "status":
