@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
-import { adjudicateHonesty, type HonestyAdjudication, type HonestyOptions } from "./honesty.js";
+import { adjudicateHonesty, unadjudicated, type HonestyAdjudication, type HonestyOptions } from "./honesty.js";
 import { MAX_OUTPUT_TOKENS_FLOOR, usdFor, type UsageTotals } from "./meter.js";
 import type { Chosen, Filled, Fired, Path, Probed } from "./probe.js";
 
@@ -44,10 +44,12 @@ export interface JudgeResult {
    *  screen, and folding the benchmark's own overhead into it would make the
    *  columns incomparable. Absent when no judge call was made at all. */
   readonly cost?: { usage: UsageTotals; usd: number };
-  /** The second opinion on the standing honesty line, where the judge failed it
-   *  (`honesty.ts`). Present only then — it is the one line a fail is checked
-   *  twice — and it holds both verdicts, so a line that now reads `pass` still
-   *  says what the judge said and who overturned it. */
+  /** The second opinion on the standing honesty line, wherever that line reads
+   *  `fail` (`honesty.ts`). Present for EVERY such fail and absent from every
+   *  pass — it is the one line a fail is checked twice — and it holds both
+   *  verdicts, so a line that now reads `pass` still says what the judge said and
+   *  who overturned it, and a fail nobody could put to the check says so in as
+   *  many words rather than by an absence. */
   readonly honesty?: HonestyAdjudication;
 }
 
@@ -574,10 +576,18 @@ export async function judge(input: JudgeInput, options: JudgeOptions = {}): Prom
   };
 
   if (!answered.ok) {
+    // Every line fails, honesty among them — and that is the GRADER being unwell
+    // rather than a screen being accused, so the check is not opened: overturning
+    // one line of a rubric nobody read would report a screen as honest that
+    // nobody looked at, and it would spend a call per case through an outage.
+    // The record still gets written, because a fail with nothing beside it is
+    // indistinguishable from a check that silently never ran (`unadjudicated`).
+    const note = "the judge did not grade this screen";
     return {
-      lines: lines.map((entry) => ({ ...entry, verdict: "fail", note: "the judge did not grade this screen" })),
+      lines: lines.map((entry) => ({ ...entry, verdict: "fail", note })),
       degraded: true,
       error: answered.error,
+      honesty: unadjudicated(note, `the judge was degraded rather than reached, so nothing accused this screen: ${answered.error ?? "no reason given"}`),
       ...stamped,
     };
   }

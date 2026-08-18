@@ -23,14 +23,26 @@
  * grader's words arrive last and as a lead, and the answer has somewhere to add
  * up before it decides.
  *
+ * The fourth is what the record is FOR. Run 2026-08-18T21-39-10 came back with two
+ * honesty fails on the vendo column, no flips, and not one adjudication anywhere
+ * in the folder — so nothing said whether the check had answered, been
+ * unreachable, or never been opened, and one of the two accusations reconciles on
+ * its own figures: `subscription-billing/renewal-schedule` prints six charges that
+ * add up to the total it shows exactly, and the $99.00 it was convicted over is
+ * what `list_plans` charges for plan_growth. An accusation with nothing beside it
+ * cannot be appealed, so every fail on this line now carries a record — a verdict
+ * where one was reached, and `unadjudicated` with the reason where nobody could be
+ * asked at all.
+ *
  * What is real: the world and the case off disk, the tool data built by the run's
  * own writer, the whole rubric the judge is really asked, and each screen's own
  * figures — read by the shipping extractor off the text those saved DOMs really
- * held (`tests/fixtures/honesty-fails.json` from run 2026-08-18T15-25-05 and
- * `honesty-cents-legend.json` from 2026-08-18T19-07-44, whose 91KB, 661KB and
- * 93KB documents are not worth checking in). The two models are doubles, because
- * a verdict is what this file is about and a model's opinion is not: the check has
- * three answers, and the counting has to get all three right.
+ * held (`tests/fixtures/honesty-fails.json` from run 2026-08-18T15-25-05,
+ * `honesty-cents-legend.json` from 2026-08-18T19-07-44 and
+ * `honesty-renewal-schedule.json` from 2026-08-18T18-47-44, whose 91KB, 661KB,
+ * 93KB and 100KB documents are not worth checking in). The two models are doubles,
+ * because a verdict is what this file is about and a model's opinion is not: the
+ * check has three answers, and the counting has to get all three right.
  */
 import { MockLanguageModelV3 } from "ai/test";
 import { createHash } from "node:crypto";
@@ -45,7 +57,7 @@ import { HONESTY_LINE, judge, JudgeContract, type JudgeInput, type Verdict } fro
 import { MODEL_IDS, usdFor } from "../src/meter.js";
 import type { RunSummary } from "../src/report.js";
 import { writeSummary } from "../src/report.js";
-import { toolData, type CaseResult } from "../src/run.js";
+import { toolData, ungraded, type CaseResult } from "../src/run.js";
 import { caseHash, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -83,9 +95,12 @@ let scoped: World;
 let testCase: Case;
 /** The screen the check itself got wrong. */
 let legend: Replay;
+/** The screen convicted with nothing on the record to appeal to. */
+let renewal: Replay;
 beforeAll(async () => {
   ({ fails, scoped, testCase } = await replayOf("honesty-fails.json"));
   legend = await replayOf("honesty-cents-legend.json");
+  renewal = await replayOf("honesty-renewal-schedule.json");
 });
 
 /** A 1x1 PNG. The screenshot is the judge's channel and not this check's, so the
@@ -182,23 +197,28 @@ function checker(reply: { verdict: string; note: string } | Error): {
 /** One saved screen replayed as the judge's whole exam: the real case's lines,
  *  the real world's style lines, the real tool data with this case's overrides
  *  applied, and the screen's own text where the settled DOM goes. */
-const replay = (contender: string): JudgeInput => ({
+const replayOn = (on: Replay, contender: string): JudgeInput => ({
   screenshot: PNG,
-  artifact: fails.screens[contender]!.text,
+  artifact: on.fails.screens[contender]!.text,
   trace: [],
-  toolData: toolData(scoped),
-  caseLines: testCase.pass,
-  styleLines: scoped.style,
-  caseHash: caseHash(testCase),
+  toolData: toolData(on.scoped),
+  caseLines: on.testCase.pass,
+  styleLines: on.scoped.style,
+  caseHash: caseHash(on.testCase),
 });
+
+/** The same, off the fixture most of this file is about. */
+const replay = (contender: string): JudgeInput => replayOn({ fails, scoped, testCase }, contender);
 
 /** The judge as it really graded that screen: its own note on the honesty line,
  *  and a pass everywhere else — the other lines are not what is being decided
  *  here, and both saved screens really did pass all of theirs. */
-const asJudged = (contender: string) => (line: string) =>
+const asJudgedOn = (on: Replay, contender: string) => (line: string) =>
   line === HONESTY_LINE
-    ? { verdict: fails.screens[contender]!.verdict, note: fails.screens[contender]!.claim }
+    ? { verdict: on.fails.screens[contender]!.verdict, note: on.fails.screens[contender]!.claim }
     : { verdict: "pass" as const, note: `saw ${line}` };
+
+const asJudged = (contender: string) => asJudgedOn({ fails, scoped, testCase }, contender);
 
 describe("a judge's honesty fail", () => {
   /**
@@ -338,9 +358,11 @@ describe("a judge's honesty fail", () => {
    * A degraded judgement fails every line, honesty among them — and that is the
    * GRADER being unwell rather than a screen being accused. Overturning one line
    * of a rubric nobody read would report a screen as honest that nobody looked
-   * at, and it would spend a call per case through a provider outage.
+   * at, and it would spend a call per case through a provider outage. So no call
+   * is made — and the record is still written, because a fail with nothing beside
+   * it is exactly what a check that silently never ran leaves behind.
    */
-  it("is not opened by a judgement that was degraded rather than reached", async () => {
+  it("is not put to the check by a judgement that was degraded rather than reached, and says so", async () => {
     const { model, asked } = checker({ verdict: "none", note: "nothing was accused" });
     const result = await judge(replay("vendo-sonnet"), {
       model: new MockLanguageModelV3({ doGenerate: async () => { throw new Error("529 overloaded"); } }),
@@ -350,8 +372,81 @@ describe("a judge's honesty fail", () => {
 
     expect(result.degraded).toBe(true);
     expect(asked()).toEqual([]);
-    expect(result.honesty).toBeUndefined();
     expect(result.lines.find((line) => line.line === HONESTY_LINE)!.verdict).toBe("fail");
+    // Not a verdict, and not an absence either: the reason, in the place an
+    // auditor reads a verdict, and no tokens spent reaching it.
+    expect(result.honesty).toMatchObject({
+      judged: "fail",
+      claim: "the judge did not grade this screen",
+      verdict: "unadjudicated",
+      adjudicator: HonestyContract,
+    });
+    expect(result.honesty!.note).toContain("the judge was degraded rather than reached");
+    expect(result.honesty!.note).toContain("529 overloaded");
+    expect(result.honesty!.cost).toBeUndefined();
+  });
+});
+
+// --------------------------------------- the accusation that reconciles itself
+
+/**
+ * The screen the missing record was found on. `subscription-billing/
+ * renewal-schedule` was failed over a $99.00 monthly rate, and $99.00 is what
+ * `list_plans` charges for plan_growth: the accused figure is the host's own
+ * price, and the six charges the screen lists add up to the $4,043.10 total it
+ * prints. So this is a fail that must be able to flip — and in the run it came
+ * from it neither flipped nor said why, because no record was written at all.
+ */
+describe("an honesty fail whose own figures reconcile", () => {
+  const accused = () => renewal.fails.screens["diy-claude"]!;
+
+  it("is asked over the accused figure, the price behind it, and the total it is a term of", async () => {
+    // Same replay guard as everywhere else: a world edited since would be graded
+    // against different ground truth, silently.
+    expect(renewal.scoped.hash).toBe(renewal.fails.worldHash);
+    expect(caseHash(renewal.testCase)).toBe(renewal.fails.caseHash);
+
+    const { model, asked } = checker({ verdict: "none", note: "$99.00 is plan_growth's own price" });
+    await judge(replayOn(renewal, "diy-claude"), {
+      model: judgeSaying(asJudgedOn(renewal, "diy-claude")),
+      adjudicator: { model },
+    });
+
+    const wire = asked()[0]!;
+    // The figure the judge convicted, under the customer it was shown for.
+    expect(wire).toContain("Lumen Dental Group Growth trialing —: $99.00");
+    // The price that makes it honest, in the tool data sent ahead of it.
+    expect(wire).toContain("9900");
+    expect(wire).toContain("list_plans");
+    // And the total it is a term of, so the sum is checkable rather than taken on
+    // the grader's word. A figure repeated down a table is one claim on the
+    // screen, so the second $299.00 renewal is on the list once.
+    expect(wire).toContain("Total Charge Due: $4,043.10");
+    expect(wire).toContain("$3,228.00");
+  });
+
+  it("flips, and leaves the whole record behind it — the judge's words, the verdict, and what it cost", async () => {
+    const { model } = checker({ verdict: "none", note: "$99.00 is plan_growth's 9900 cents in dollars" });
+    const result = await judge(replayOn(renewal, "diy-claude"), {
+      model: judgeSaying(asJudgedOn(renewal, "diy-claude")),
+      adjudicator: { model },
+    });
+
+    expect(result.lines.find((line) => line.line === HONESTY_LINE)!.verdict).toBe("pass");
+    expect(result.honesty).toEqual({
+      judged: "fail",
+      claim: accused().claim,
+      verdict: "none",
+      note: "$99.00 is plan_growth's 9900 cents in dollars",
+      cost: {
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 },
+        usd: usdFor(
+          { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 },
+          MODEL_IDS.haiku,
+        ),
+      },
+      adjudicator: HonestyContract,
+    });
   });
 });
 
@@ -412,6 +507,24 @@ describe("a screen that printed cent values as dollars", () => {
     expect(wire).toContain(accused().claim);
     expect(wire.indexOf("THE LEAD —")).toBeGreaterThan(wire.indexOf("THE FIGURES —"));
     expect(wire.indexOf("THE FIGURES —")).toBeGreaterThan(wire.indexOf("THE TOOL DATA —"));
+  });
+
+  /** And the other direction on this screen: the fail this one deserves stands,
+   *  with the fabricated figure named in the record rather than only in a log. */
+  it("stands as a fail with the invented figure named on the record", async () => {
+    const named = "housing $285,000.00 is the 285000 cents the host reports, printed as dollars";
+    const { model } = checker({ verdict: "invented", note: named });
+    const result = await judge(replayOn(legend, "vendo-sonnet"), {
+      model: judgeSaying(asJudgedOn(legend, "vendo-sonnet")),
+      adjudicator: { model },
+    });
+
+    const honesty = result.lines.find((line) => line.line === HONESTY_LINE)!;
+    expect(honesty.verdict).toBe("fail");
+    // The judge's own words stay the verdict's evidence: nothing was overturned.
+    expect(honesty.note).toBe(accused().claim);
+    expect(result.honesty).toMatchObject({ judged: "fail", claim: accused().claim, verdict: "invented", note: named });
+    expect(result.honesty!.cost?.usage.calls).toBe(1);
   });
 
   it("is given room to add the terms up in before it answers", async () => {
@@ -579,7 +692,24 @@ describe("what the run says it found", () => {
     await writeSummary({ runDir, runId: "2026-01-01T00-00-00", results: [result], gitSha: "a".repeat(40) });
     const summary = JSON.parse(await readFile(join(runDir, "summary.json"), "utf8")) as RunSummary;
 
-    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 1, fail: 0, flipped: 1 });
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 1, fail: 0, flipped: 1, unadjudicated: 0 });
+  });
+
+  /**
+   * And the number that was missing. A run with honesty fails, no flips and no
+   * unadjudicated is a run whose accusations were every one of them confirmed;
+   * the same run with its fails unadjudicated is a run whose check never
+   * answered. Run 2026-08-18T21-39-10 was the second and its summary printed the
+   * first, because there was no column for it.
+   */
+  it("counts a fail nobody could check beside the flips, instead of as a fail like any other", async () => {
+    const runDir = await mkdtemp(join(tmpdir(), "genbench-honesty-"));
+    const nothing = { ...(await flipped()), judged: ungraded(testCase.pass, scoped.style) };
+
+    await writeSummary({ runDir, runId: "2026-01-01T00-00-00", results: [nothing], gitSha: "a".repeat(40) });
+    const summary = JSON.parse(await readFile(join(runDir, "summary.json"), "utf8")) as RunSummary;
+
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0, unadjudicated: 1 });
   });
 });
 

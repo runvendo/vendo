@@ -757,7 +757,7 @@ describe("summary.json", () => {
   it("counts the standing honesty line on its own, and out of the case's own", async () => {
     const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one")]);
 
-    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 1, fail: 0, flipped: 0 });
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 1, fail: 0, flipped: 0, unadjudicated: 0 });
     // Two authored case lines, and the standing one is in neither other half.
     expect(summary.columns["vendo-sonnet"]!.caseLines).toEqual({ pass: 1, fail: 1, na: 0 });
   });
@@ -774,7 +774,7 @@ describe("summary.json", () => {
     };
     const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one", unanswered)]);
 
-    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0 });
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0, unadjudicated: 0 });
   });
 
   it("counts the run's own failures — timeouts and a judge that was down — as its own", async () => {
@@ -839,7 +839,7 @@ describe("summary.json", () => {
     const summary = await summaryOf([{ ...resultFor("vendo-sonnet", "a", "one"), judged: unjudged }]);
 
     expect(summary.columns["vendo-sonnet"]!.caseLines).toEqual({ pass: 0, fail: 0, na: 0 });
-    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 0, flipped: 0 });
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 0, flipped: 0, unadjudicated: 0 });
     expect(summary.columns["vendo-sonnet"]!.styleLines).toEqual({ pass: 0, fail: 0, na: 0 });
     expect(summary.columns["vendo-sonnet"]!.judgeDegraded).toBe(0);
   });

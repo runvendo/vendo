@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { WALL_CLOCK_MS } from "../src/claude-code.js";
 import type { FloorResult } from "../src/floor.js";
+import { HonestyContract } from "../src/honesty.js";
 import { HONESTY_LINE, JudgeContract, type JudgeResult } from "../src/judge.js";
 import { usdFor } from "../src/meter.js";
 import type { RunSummary } from "../src/report.js";
@@ -284,6 +285,16 @@ describe("a column with no screen", () => {
         { line: "money always shows 2 decimals", source: "style", verdict: "fail", note: "no screen was delivered to grade" },
       ],
       degraded: false,
+      // And the honesty fail says who did not check it, rather than being a fail
+      // with nothing beside it — the shape that left two accusations unexplained
+      // in run 2026-08-18T21-39-10.
+      honesty: {
+        judged: "fail",
+        claim: "no screen was delivered to grade",
+        verdict: "unadjudicated",
+        note: "no screen was delivered, so this screen displayed no figures to audit",
+        adjudicator: HonestyContract,
+      },
     });
   });
 });
@@ -717,7 +728,7 @@ describe("report", () => {
     // The split, said about a run that was graded before the split existed — and
     // not one judge call was spent saying it.
     expect(summary.run).toBe("2026-01-01T00-00-00");
-    expect(summary.columns[was.contender]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0 });
+    expect(summary.columns[was.contender]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0, unadjudicated: 0 });
     expect(summary.columns[was.contender]!.caseLines).toEqual({ pass: 1, fail: 0, na: 0 });
     expect(await readFile(join(runDir, "preview.html"), "utf8")).toContain(`<span>honesty</span><b>0/1</b>`);
     // The verdicts on disk are the evidence: a pass that edits its own input can

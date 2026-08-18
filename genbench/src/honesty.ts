@@ -110,6 +110,27 @@ export const HonestyContract = {
   promptHash: createHash("sha256").update(HONESTY_PROMPT).digest("hex"),
 } as const;
 
+/**
+ * The record the HARNESS writes for itself, where nobody could be asked.
+ *
+ * A fail on this line is an accusation, and an accusation with nothing beside it
+ * on the record is the bug this exists to close: run 2026-08-18T21-39-10 came
+ * back with two honesty fails, no flips, and not one adjudication anywhere in the
+ * folder — so nothing said whether the check had answered, been unreachable, or
+ * never been opened at all. A record cannot be absent for a fail now. The three
+ * paths that fail this line without putting a figure to the check — a judge that
+ * never graded, a contender that delivered no screen, and a call that did not
+ * come back — all write one of these instead, and the `why` is the whole point of
+ * it: it is what an auditor reads where a verdict would be.
+ */
+export const unadjudicated = (claim: string, why: string): HonestyAdjudication => ({
+  judged: "fail",
+  claim,
+  verdict: "unadjudicated",
+  note: why,
+  adjudicator: HonestyContract,
+});
+
 const verdictSchema = jsonSchema<{ working: string; verdict: HonestyVerdict; note: string }>({
   type: "object",
   properties: {
@@ -279,9 +300,7 @@ export async function adjudicateHonesty(
     return { ...stamped, verdict, note, cost };
   } catch (thrown) {
     return {
-      ...stamped,
-      verdict: "unadjudicated",
-      note: thrown instanceof Error ? thrown.message : String(thrown),
+      ...unadjudicated(input.claim, thrown instanceof Error ? thrown.message : String(thrown)),
       ...(cost === undefined ? {} : { cost }),
     };
   }

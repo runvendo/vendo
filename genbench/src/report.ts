@@ -819,8 +819,16 @@ export interface ColumnSummary {
    *  overturned, because it could not name the figure the judge said was
    *  invented (`honesty.ts`). Counted rather than hidden inside `pass`: it is the
    *  measure of how much of this line's score was the grader's noise, and a run
-   *  where it climbs is a run whose judge is drifting. */
-  readonly honesty: { pass: number; fail: number; flipped: number };
+   *  where it climbs is a run whose judge is drifting.
+   *
+   *  `unadjudicated` is how many of the FAILS nobody checked at all: no screen was
+   *  delivered, the judge never graded, or the call did not come back. It sits
+   *  beside `flipped` because the two are read together — a run with fails, no
+   *  flips and no unadjudicated is a run whose accusations were all confirmed,
+   *  while the same run with every fail unadjudicated is a run whose check never
+   *  answered, and until this was counted the summary printed the same numbers for
+   *  both. */
+  readonly honesty: { pass: number; fail: number; flipped: number; unadjudicated: number };
   readonly styleLines: { pass: number; fail: number; na: number };
   /** Whether this column's screens are BOUND to the host's data or merely
    *  decorated with it: of the values the screens displayed, how many moved when
@@ -877,13 +885,18 @@ const lineCounts = (lines: readonly LineVerdict[]): { pass: number; fail: number
  *  the passes are the judge's own fails, overturned by a check that could not
  *  name the figure it accused (`honesty.ts`) — read off the record the flip left
  *  behind, never off the flipped verdict, which is now indistinguishable from a
- *  pass the judge reached itself. */
-const honestyCounts = (rows: readonly CaseResult[]): { pass: number; fail: number; flipped: number } => {
+ *  pass the judge reached itself. And how many of the fails nobody checked, read
+ *  off the record the same way: every fail carries one, so a fail with no record
+ *  is a bug in the writer rather than a case to count. */
+const honestyCounts = (
+  rows: readonly CaseResult[],
+): { pass: number; fail: number; flipped: number; unadjudicated: number } => {
   const lines = inHalf(rows.flatMap((row) => row.judged.lines), "honesty");
   return {
     pass: lines.filter((line) => line.verdict === "pass").length,
     fail: lines.filter((line) => line.verdict !== "pass").length,
     flipped: rows.filter((row) => row.judged.honesty?.verdict === "none").length,
+    unadjudicated: rows.filter((row) => row.judged.honesty?.verdict === "unadjudicated").length,
   };
 };
 

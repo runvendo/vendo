@@ -11,7 +11,7 @@ import { claudeCodeDriver, WALL_CLOCK_MS as CLAUDE_CODE_WALL_CLOCK_MS, type Sess
 import { codexDriver, WALL_CLOCK_MS as CODEX_WALL_CLOCK_MS } from "./codex.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
-import type { HonestyVerdict } from "./honesty.js";
+import { unadjudicated, type HonestyVerdict } from "./honesty.js";
 import { judge, JudgeContract, rubricLines, type JudgeOptions, type JudgeResult } from "./judge.js";
 import { liveness, type LivenessOptions, type LivenessResult } from "./liveness.js";
 import {
@@ -537,15 +537,22 @@ export function surviveLateFailures(inFlight: ReadonlySet<string>): void {
  * judge call is spent on a screenshot that does not exist. Graded rather than
  * skipped, because a column that quietly drops out of the rubric is a benchmark
  * that flatters whoever crashed.
+ *
+ * The honesty line fails here with the rest, and nothing accused it: there is no
+ * screen, so there are no figures to audit and no check to open. Said out loud on
+ * the record rather than left to an absence — three of run 2026-08-18T18-47-44's
+ * honesty fails came out of here, `vendo-sonnet/subscription-billing/
+ * renewal-schedule` among them, and every one of the three sat in its folder as a
+ * fail with nothing beside it (`unadjudicated` in `honesty.ts`).
  */
-export const ungraded = (caseLines: readonly string[], styleLines: readonly string[]): JudgeResult => ({
-  lines: rubricLines(caseLines, styleLines).map((entry) => ({
-    ...entry,
-    verdict: "fail" as const,
-    note: "no screen was delivered to grade",
-  })),
-  degraded: false,
-});
+export const ungraded = (caseLines: readonly string[], styleLines: readonly string[]): JudgeResult => {
+  const note = "no screen was delivered to grade";
+  return {
+    lines: rubricLines(caseLines, styleLines).map((entry) => ({ ...entry, verdict: "fail" as const, note })),
+    degraded: false,
+    honesty: unadjudicated(note, "no screen was delivered, so this screen displayed no figures to audit"),
+  };
+};
 
 /**
  * The rubric for a run that never bought one: no lines at all.
