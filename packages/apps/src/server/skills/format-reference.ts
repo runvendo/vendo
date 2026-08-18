@@ -81,6 +81,10 @@ Those two imports are everything there is. Nothing else can be loaded.
   - A guarded host still asks once per call on top of it, and that is the trade:
     only your Modal can say how many, and being asked twice beats a batch that
     goes out silently.
+- Another exception: a confirmation THIS product's own rules require. When the
+  host design rules in the brief name an action as confirm-first, that step is
+  part of the app — build it. The guard's own ask counts where it fires; where
+  it does not, yours is the one the rules asked for.
 
 ## Components and plain HTML
 

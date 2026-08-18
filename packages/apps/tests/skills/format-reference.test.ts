@@ -236,6 +236,18 @@ describe("the reference only teaches what a screen really has", () => {
     expect(VENDO_FORMAT_REFERENCE).toMatch(/an unanswered read draws its empty shell/u);
   });
 
+  /** "Never build a confirm step of your own" was written against the GUARD, which
+   *  asks on the host's behalf — but the host also states rules of its own, and a
+   *  brief whose `HOST DESIGN RULES` say an irreversible action asks for
+   *  confirmation is naming a step of the product. A model that read the doctrine
+   *  as absolute skipped it and failed the host's own rule (fleet run
+   *  2026-08-18T21-39-10). The rules the brief carries outrank the default. */
+  it("lets the host's own rules ask for a confirmation the guard would otherwise own", () => {
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/a confirmation THIS product's own rules require/u);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/host design rules in the brief name an action as confirm-first/u);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/The guard's own ask counts where it fires/u);
+  });
+
   it("forbids the HTML and CSS a screen genuinely does not have", () => {
     // The display bricks are the ONLY HTML in the check's program, and they take
     // children and a style and nothing else — so `className` is still a type
