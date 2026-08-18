@@ -933,7 +933,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   transform-origin: center; animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
 .fl-overlay-close { position: absolute; top: 12px; right: 12px; z-index: 5; width: 28px; height: 28px;
   border-radius: 9px; display: grid; place-items: center; border: 0; background: transparent;
-  color: var(--vendo-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
+  color: var(--vendo-fg-muted); cursor: pointer;
+  transition: background .12s, color .12s, right .45s cubic-bezier(.22, 1, .36, 1); }
 .fl-overlay-close:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
 /* ENG-221: new-conversation sits just left of the close X — same quiet header
    treatment (it shares .fl-overlay-close), only the horizontal offset differs.
@@ -957,27 +958,40 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   to   { transform: translate(-50%, -50%) scaleX(1) scaleY(1); opacity: 1; } }
 /* ---------- split-view workspace (2026-07 demo feedback) ---------- */
 /* The overlay's expandable workspace: the panel grows near-fullscreen, the
-   featured microapp renders LARGE on a left stage (the leftover ~2/3) and the
-   conversation docks as the right rail. One animated property does the pane
-   work — the rail's flex-basis walks 100% ⇄ max(360px, 33.5%), so the stage
-   (flex 1 1 0) grows exactly as the rail shrinks; the panel's own width/height
-   ride the existing .45s spring. The thread's DOM slot is identical in both
-   states (no remount — the ENG-221 invariant). */
+   conversation docks as the left rail and the featured microapp renders LARGE
+   on a right stage (the leftover ~2/3) — the canvas convention: you talk on
+   the left, the built thing renders on the right. One animated property does
+   the pane work — the rail's flex-basis walks 100% ⇄ var(--vendo-rail-w), so
+   the stage (flex 1 1 0) grows exactly as the rail shrinks; the panel's own
+   width/height ride the existing .45s spring. The thread's DOM slot is
+   identical in both states (no remount — the ENG-221 invariant). */
 .fl-split { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .fl-split-stage { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column;
   background: var(--vendo-bg); opacity: 0;
-  border-right: 0 solid var(--vendo-border);
-  transition: opacity .28s ease .1s, border-right-width 0s .45s; }
+  border-left: 0 solid var(--vendo-border);
+  transition: opacity .28s ease .1s, border-left-width 0s .45s; }
 .fl-split-rail { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column;
   transition: flex-basis .45s cubic-bezier(.22, 1, .36, 1), filter .22s ease; }
 /* The signed-out panel (H2-E): one centered quiet line where the thread would
    be — same ground, no chrome, nothing that looks broken. */
 .fl-signedout { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .fl-signedout-line { margin: 0; font-size: 15px; color: var(--vendo-muted-foreground, #6b7280); text-align: center; }
-.fl-overlay-panel[data-vendo-expanded] { width: min(1500px, 96vw); height: min(940px, 94vh); }
-.fl-overlay-panel[data-vendo-expanded] .fl-split-rail { flex-basis: max(360px, 33.5%); }
-.fl-overlay-panel[data-vendo-expanded] .fl-split-stage { opacity: 1; border-right-width: 1px;
-  transition: opacity .28s ease .1s, border-right-width 0s; }
+.fl-overlay-panel[data-vendo-expanded] { width: min(1500px, 96vw); height: min(940px, 94vh);
+  --vendo-rail-w: max(360px, 33.5%); }
+.fl-overlay-panel[data-vendo-expanded] .fl-split-rail { flex-basis: var(--vendo-rail-w); }
+.fl-overlay-panel[data-vendo-expanded] .fl-split-stage { opacity: 1; border-left-width: 1px;
+  transition: opacity .28s ease .1s, border-left-width 0s; }
+/* The header cluster (close/new/expand/history) belongs to the CHAT column in
+   both postures, so when the rail docks left the whole ladder rides to the
+   rail's top-right edge — same offsets, now measured from the divider. Its
+   .45s right-glide (on .fl-overlay-close) tracks the rail's flex-basis walk
+   exactly: both interpolate linearly against the same animating panel width.
+   Docked never expands, but the guard keeps a stale attribute harmless. */
+.fl-overlay-panel[data-vendo-expanded]:not(.fl-dock) .fl-overlay-close { right: calc(100% - var(--vendo-rail-w) + 12px); }
+.fl-overlay-panel[data-vendo-expanded]:not(.fl-dock) .fl-overlay-new { right: calc(100% - var(--vendo-rail-w) + 46px); }
+.fl-overlay-panel[data-vendo-expanded]:not(.fl-dock) .fl-overlay-expand { right: calc(100% - var(--vendo-rail-w) + 80px); }
+.fl-overlay-panel[data-vendo-expanded]:not(.fl-dock) .fl-overlay-history { right: calc(100% - var(--vendo-rail-w) + 114px); }
+.fl-overlay-panel[data-vendo-expanded]:not(.fl-dock) .fl-history { right: calc(100% - var(--vendo-rail-w) + 12px); }
 /* The stage: a quiet porcelain workspace — hairline-framed content, generous
    air, the same app-boundary vocabulary as the in-thread card. */
 .fl-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: fl-fade-in .22s ease both; }
@@ -1002,6 +1016,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    conversation; the rail keeps rendering beneath it. */
 .fl-history { position: absolute; top: 48px; right: 12px; z-index: 6;
   width: min(320px, calc(100% - 24px)); max-height: min(60%, 420px);
+  transition: right .45s cubic-bezier(.22, 1, .36, 1);
   display: flex; flex-direction: column; overflow: hidden;
   background: var(--vendo-surface); color: var(--vendo-fg);
   border: 1px solid color-mix(in srgb, var(--vendo-fg) 12%, transparent);

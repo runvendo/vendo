@@ -485,7 +485,7 @@ function embedFlight(
   return { mode: "out", from, target, clipTo, clone: makeClone(stageEl, from.width) };
 }
 
-/** The workspace's left pane: the featured app rendered large, with the build's
+/** The workspace's right pane: the featured app rendered large, with the build's
     own beat rail under it. Stays mounted through expanded → collapsing →
     collapsed (`mounted`) so the featured app does not blink out before the panes
     finish sliding. */
@@ -1102,6 +1102,17 @@ export function VendoOverlay({
             stage pane is width-0 and empty; the rail IS the whole panel. */}
         <SplitViewContext.Provider value={splitContextValue}>
           <div className="fl-split">
+            <div className="fl-split-rail" key="rail">
+              <RailBody signedOut={signedOut} notice={signedOutNotice} prefillScope={prefillScope.current}>
+                <Thread
+                  key={`${conversationKey ?? 0}:${conversationEpoch}:${resumeThreadId ?? "new"}`}
+                  {...resumeThreadProps(resumeThreadId)}
+                  discoverability={dial}
+                  firstRunGreeting={greeting}
+                  onThreadId={adoptThreadId}
+                />
+              </RailBody>
+            </div>
             <WorkspaceStage
               key="stage"
               mounted={stagePhase !== "collapsed"}
@@ -1115,17 +1126,6 @@ export function VendoOverlay({
                 setOpen(false);
               }}
             />
-            <div className="fl-split-rail" key="rail">
-              <RailBody signedOut={signedOut} notice={signedOutNotice} prefillScope={prefillScope.current}>
-                <Thread
-                  key={`${conversationKey ?? 0}:${conversationEpoch}:${resumeThreadId ?? "new"}`}
-                  {...resumeThreadProps(resumeThreadId)}
-                  discoverability={dial}
-                  firstRunGreeting={greeting}
-                  onThreadId={adoptThreadId}
-                />
-              </RailBody>
-            </div>
           </div>
         </SplitViewContext.Provider>
       </div>
