@@ -294,11 +294,13 @@ describe("the page the vendor's renderer paints", () => {
 
         // Their action dispatch, through `window.vendo.callTool`, with the
         // action's own type and params — which is what the floor scores.
+        // `objectContaining`, because a write also carries what the seam's guard
+        // did with it (`status`, `approvalId`) — evidence beside the name and
+        // arguments, never instead of them.
         const trace = await probe(visit);
-        expect(trace.flatMap((pressed) => pressed.calls)).toContainEqual({
-          name: "cancel_transfer",
-          args: { id: "tr_1" },
-        });
+        expect(trace.flatMap((pressed) => pressed.calls)).toContainEqual(
+          expect.objectContaining({ name: "cancel_transfer", args: { id: "tr_1" } }),
+        );
 
         // `toContainEqual` treats an undefined-valued key as absent, so the
         // assertion above holds even when the dispatch carries junk. The floor

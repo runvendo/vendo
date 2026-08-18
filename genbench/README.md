@@ -59,8 +59,9 @@ The two columns with hands get one thing more, because an in-house team building
 against its own API has it too: each agentic driver writes an executable
 `world-tools` into the workspace it opens (`installWorldTools` in `src/vendo.ts`),
 and `./world-tools <name> ['<json args>']` prints the same
-`{ status: "ok", output: … }` envelope the page's bridge answers with. It is for
-LOOKING while building; the delivered page still has to fetch for itself, and
+`{ status: "ok", output: … }` envelope the page's bridge answers a READ with — a
+write is guarded at render time and answers `pending-approval` first (below). It is
+for LOOKING while building; the delivered page still has to fetch for itself, and
 `TOOL_ACCESS` says so in the same bytes for both. `diy` is one model call with no
 directory, so it is told about no such thing — its only access is the page's, at
 render time, which is the whole of what a one-shot generation gets.
@@ -152,6 +153,36 @@ while `claude-code` and `codex` each run their own ten-minute wall clock inside
 the driver before they have delivered anything, so those cases get twelve. A
 shared five-minute bound would have ended both columns early and reported a
 timeout neither contender ever had.
+
+### A write is guarded (2026-08-18)
+
+The injected recorder answers a **read** on the spot, with the world's rows. A
+**write** — a tool the world declares by writing no rows for it (`riskOf` in
+`src/world.ts`, the same reading the write row and the confirmation check use) — is
+answered `{ status: "pending-approval", approvalId }` and approved a moment later.
+That is what this product does with a destructive call: it confirms it **outside
+the screen**. The host parks the call, the renderer paints "Waiting for your
+approval" in that control's own outcome slot (`outcomeNotice` in
+`ui/src/tree/renderer.tsx`), and the decision arrives from a surface the screen
+never draws.
+
+The seam used to answer every call `{ status: "ok" }` synchronously, so the one
+confirmation this product actually ships could not paint on any page here — while
+a contender following its doctrine ("never build a confirm step") was failed on
+rubric lines asking for one. The same injected bytes now guard every column's
+page, so the round trip is the same for whoever wrote the document: the ask and
+the approval both reach the preview's live feed, and the call the floor grades
+carries what the guard did with it (`status`, `approvalId`) beside the name and
+arguments it always carried. Nothing about the floor moved — a write with
+schema-valid arguments was, and still is, what an `action` case is proven by, and
+the guard is transparent to it.
+
+The approval is granted with nobody in the loop, because there is nobody: a
+benchmark page has no approvals queue and no chrome to answer from. It is granted
+so the write completes, and refused never, so no column is graded on a decision
+the harness invented. `tests/seam.test.ts` pins both halves — the parked answer
+and the approval that follows it, on a hand-written page and on the product's own —
+and that the product's notice paints on the control that asked.
 
 ## Run it
 
@@ -566,8 +597,10 @@ one wording all of them get: the harness presses each control in the dialog, the
 one that goes through must call the tool that does the work, and the one that
 backs out must not call it.
 
-Writes are canned here — the world answers success without keeping state — so
-pressing a confirm changes nothing a later case could inherit. The isolation is
+Writes keep no state here — the world guards one, approves it and answers success,
+and remembers nothing — so pressing a confirm changes nothing a later case could
+inherit. A screen's own confirmation is therefore a second guard in front of the
+host's, which is exactly what the product allows and never requires. The isolation is
 kept anyway, and by construction: every path is walked on a page painted from
 scratch, so no in-dialog press can see what another one did, and the candidate
 that follows is pressed on a page that has forgotten all of it.
@@ -745,7 +778,20 @@ absent evidence is not a pass. Filling the text a locked control is waiting for
 typed reason used to record `pressed: 0` and fail the action case it correctly
 implements, and now it is pressed and graded — while a screen whose field is
 decoration is now pressed and can fail. Both directions, so no run recorded
-before it compares with one after it.
+before it compares with one after it. Guarding every write (2026-08-18) is a
+fifth: the seam answers a write `pending-approval` and approves it a tick later
+instead of answering `ok` on the spot, so a page that shows what a write answered
+shows something different, and the vendo column paints the product's own
+"Waiting for your approval" notice where it used to paint nothing. No floor check
+moved with it — the floor grades a call's name and arguments, which the guard
+leaves alone — but the pages are not the same pages, so the break is stated with
+the others.
+
+One sentence the writers are given has not caught up: `worldBlock` in
+`src/vendo.ts` still tells every baseline that `window.vendo.callTool` answers
+`{ status: "ok", … }` or `{ status: "error", … }`, which is now incomplete for a
+write. Correcting it changes both baselines' prompts, which is a comparability
+break of its own, so it is called out here rather than slipped in.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads, and a locked control costs one pass over the screen's selects

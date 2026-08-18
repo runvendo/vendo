@@ -191,9 +191,31 @@ export function worldToday(world: World): string | undefined {
  * the clock TRAVELS WITH THE PAGE. A saved page re-painted by the regrade pass
  * or by the liveness pass — neither of which has a world in hand — is painted
  * under the very clock it was shot under, months later, on any laptop.
+ *
+ * A WRITE IS GUARDED (2026-08-18), because that is what this product does with
+ * one. A destructive call is confirmed OUTSIDE the screen: the host answers
+ * `pending-approval` with an id at press time, the renderer paints "Waiting for
+ * your approval" in that control's own outcome slot
+ * (`outcomeNotice` in `ui/src/tree/renderer.tsx`), and the decision arrives from a
+ * surface the screen does not draw. The seam answered EVERY call `{status:"ok"}`
+ * on the spot, so the only confirmation this product actually ships was
+ * unrenderable on any page here — while a contender following its doctrine and
+ * building no confirm step of its own was failed on rubric lines asking for one.
+ * A write is parked and then approved a moment later, so the round trip completes
+ * where nobody has an approvals queue to answer with; the ask and its approval
+ * both reach the live feed, and the call the floor grades carries what the guard
+ * did with it. Which tools those are is `riskOf`'s answer and nobody else's — the
+ * same reading the write row and `checkConfirmation` use — so a world declares
+ * its own destructive verbs by not writing rows for them.
+ *
+ * READS are untouched: a screen fetching what it shows must never wait on an
+ * approval to draw. And a page that brings its own `window.vendo` answers itself,
+ * exactly as it already does for reads — the contract tells every contender the
+ * recorder is already there and not to define one.
  */
 function seam(world: World, contender: string): string {
   const tools = Object.fromEntries(world.tools.map((tool) => [tool.name, cannedResponse(tool) as Json]));
+  const writes = world.tools.filter((tool) => tool.descriptor.risk === "write").map((tool) => tool.name);
   const today = worldToday(world);
   // Prefixed, unlike the three ids beside it, because this one is the harness
   // talking to ITSELF: no page reads it, and `today` unqualified is an id a real
@@ -205,23 +227,50 @@ ${today === undefined ? "" : jsonScript("genbench-today", today)}
 <script>
 (function () {
   var tools = JSON.parse(document.getElementById("tools").textContent);
+  var writes = ${JSON.stringify(writes)};
   var contender = ${JSON.stringify(contender)};
+  var post = function (message) {
+    message.genbench = "call";
+    message.contender = contender;
+    message.ts = Date.now();
+    try {
+      parent.postMessage(message, "*");
+    } catch (ignored) {}
+  };
+  var asks = 0;
   window.vendo = {
     calls: [],
     callTool: function (name, args) {
-      window.vendo.calls.push({ name: name, args: args });
-      return Object.hasOwn(tools, name)
-        ? { status: "ok", output: tools[name] }
-        : { status: "error", error: { code: "not-found", message: "no tool " + name } };
+      var call = { name: name, args: args };
+      window.vendo.calls.push(call);
+      if (!Object.hasOwn(tools, name)) {
+        return { status: "error", error: { code: "not-found", message: "no tool " + name } };
+      }
+      if (writes.indexOf(name) < 0) return { status: "ok", output: tools[name] };
+      asks += 1;
+      var approvalId = "apr_" + asks;
+      call.status = "pending-approval";
+      call.approvalId = approvalId;
+      // Approved once the press's own work is done, and recorded on the very
+      // call it released — so a guarded write reads as one round trip and never
+      // as two presses. A MICROtask rather than a timer: the page still gets the
+      // parked answer back from its handler, while anything reading the record
+      // from outside the page (the probe, a test) reads it after the queue has
+      // drained, so the trace does not depend on which side of a frame the read
+      // landed on. With a timer it did, and one page recorded its first press
+      // approved and its second still pending.
+      queueMicrotask(function () {
+        call.status = "ok";
+        post({ name: name, args: args, approved: approvalId });
+      });
+      return { status: "pending-approval", approvalId: approvalId };
     },
   };
   addEventListener("load", function () {
     var vendo = window.vendo;
     var inner = vendo.callTool;
     vendo.callTool = function (name, args) {
-      try {
-        parent.postMessage({ genbench: "call", contender: contender, name: name, args: args, ts: Date.now() }, "*");
-      } catch (ignored) {}
+      post({ name: name, args: args });
       return inner.call(vendo, name, args);
     };
   });
