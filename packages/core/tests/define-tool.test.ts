@@ -49,6 +49,19 @@ describe("defineTool", () => {
     expect(ran).toBe(false);
   });
 
+  it("parses a schema whose refinement is async, instead of throwing out of the parse", async () => {
+    const tool = defineTool({
+      name: "host_task_claim",
+      description: "Claim a task",
+      input: z.object({ id: z.string().refine(async (id) => id.startsWith("t_"), "unknown task") }),
+      risk: "write",
+      execute: async ({ id }) => ({ claimed: id }),
+    });
+
+    expect(await tool.execute({ id: "t_1" }, ctx, call)).toEqual({ claimed: "t_1" });
+    await expect(tool.execute({ id: "nope" }, ctx, call)).rejects.toThrow(/host_task_claim.*unknown task/s);
+  });
+
   it("stays a plain ToolDefinition, so a spread still reaches the fields it does not ask for", () => {
     const tool = { ...defineTool({
       name: "host_task_delete",

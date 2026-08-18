@@ -45,7 +45,10 @@ export function defineTool<Input extends z.ZodType>(tool: {
     inputSchema,
     risk: tool.risk,
     async execute(input, context) {
-      const parsed = tool.input.safeParse(input);
+      // Async: a schema whose refinement awaits anything throws out of the sync
+      // `safeParse` before it can produce a validation error. The wrapper is
+      // already async, so the async parse costs a sync schema nothing.
+      const parsed = await tool.input.safeParseAsync(input);
       if (!parsed.success) {
         const problems = parsed.error.issues
           .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
