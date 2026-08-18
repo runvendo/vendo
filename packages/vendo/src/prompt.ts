@@ -61,8 +61,17 @@ Verifying
 // perform it", so reporting a miss and replying in prose read as compliance with
 // this section while the connect etiquette below was asking for the opposite. Two
 // instructions, one situation, and the model may satisfy either.
+//
+// Same defect, different pair (maple text channel 2026-08-18): a transfer ask
+// was reported as no-matching-tool off the equipped reads alone — with
+// host_transferMoney one find_tools call away — because this bullet offered a
+// compliant exit that never required the search the discovery section asks
+// for. The bullet now makes the search the only way to establish "no
+// available tool" on a surface that has one — in the same tool-name-free
+// voice as HOW_YOU_WORK's discovery bullet, because this section rides every
+// surface and must not promise a rail the turn does not carry.
 const CAPABILITY_MISS_PROMPT = `When the user's ask cannot be fulfilled:
-- If no available tool can perform it, call vendo_report_capability_miss with kind "no-matching-tool" before replying.
+- If no available tool can perform it, call vendo_report_capability_miss with kind "no-matching-tool" before replying — and when this surface offers discovery tools, only a search can establish that: never conclude no tool exists from your equipped set alone.
 - An outside service this user has not connected is not a capability miss: ask for it with request_connection instead of reporting one.
 - If you explicitly give up after trying available approaches, call vendo_report_capability_miss with kind "agent-give-up" before replying.
 - List only tool names you actually considered. Do not call the reporter for a pending approval or a policy-blocked call.
