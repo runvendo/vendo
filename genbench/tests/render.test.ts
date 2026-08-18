@@ -17,14 +17,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { judge } from "../src/judge.js";
-import { authoredPage, HARNESS_CONTRACT, openBrowser, type Shooter } from "../src/render.js";
-import { loadWorld } from "../src/world.js";
+import { mutateSeam } from "../src/liveness.js";
+import { authoredPage, HARNESS_CONTRACT, openBrowser, worldToday, type Shooter } from "../src/render.js";
+import { loadWorld, type World } from "../src/world.js";
 
 let shooter: Shooter;
 beforeAll(async () => {
   shooter = await openBrowser();
 }, 60_000);
 afterAll(async () => await shooter.close());
+
+const worldNamed = async (name: string): Promise<World> =>
+  await loadWorld(join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds", name));
 
 /** A page that reaches out. It records what came back on itself, so the test
  *  reads the page's own account of the request rather than the harness's.
@@ -93,6 +97,120 @@ describe("the shot is the frame the contract names", () => {
   });
 });
 
+// ------------------------------------------------- the clock the page is on
+
+/** A page that says which zone it was painted in, and renders one of the Z
+ *  timestamps a world really answers with. */
+const TELLS_THE_TIME = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>clock</title></head>
+<body><p id="zone"></p><p id="sent"></p>
+<script>
+  document.getElementById("zone").textContent = "zone " + Intl.DateTimeFormat().resolvedOptions().timeZone;
+  document.getElementById("sent").textContent = "sent " + new Date("2026-08-10T08:12:00Z")
+    .toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  window.__settled = true;
+</script>
+</body></html>`;
+
+/** A page that does the arithmetic every "5 days ago" on every screen does: what
+ *  the browser thinks today is, minus a date a tool answered with. `authoredPage`
+ *  sets the settle itself, so nothing here has to.
+ *
+ *  `id="today"` on purpose: the harness writes the world's day into the page
+ *  under a PREFIXED id, and a page's own plain `today` must still be its own. */
+const COUNTS_THE_DAYS = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ago</title></head>
+<body><p id="today"></p><p id="ago"></p>
+<script>
+  var now = new Date();
+  document.getElementById("today").textContent = "today " + now.toISOString().slice(0, 10);
+  document.getElementById("ago").textContent =
+    Math.round((now - new Date("2026-08-01T00:00:00Z")) / 86400000) + " days ago";
+</script>
+</body></html>`;
+
+/**
+ * The screens are graded against tool data written in Z, so they have to be
+ * PAINTED in Z — and on the day the world says it is, not the day the operator
+ * happens to run the benchmark.
+ *
+ * Both halves were live failures, on both columns, charged to the contenders:
+ * `support-desk/ticket-detail` was failed for "message timestamps like 'Aug 10,
+ * 1:12 AM' do not correspond to any tool value (08:12Z)" — exactly the seven
+ * hours between the world and a Pacific laptop — and
+ * `support-desk/duplicate-merge` for calling 2026-08-12 "5 days ago" while
+ * calling the older 2026-08-10 "last week", which is what arithmetic against a
+ * wall clock five days past the world's newest datum produces.
+ */
+describe("the page is painted on the world's clock", () => {
+  it("renders a Z timestamp as the world wrote it, not shifted into the operator's zone", async () => {
+    const visit = await shooter.visit(TELLS_THE_TIME);
+    try {
+      const { visibleText } = await visit.shot();
+      expect(visibleText).toContain("zone UTC");
+      expect(visibleText).toContain("sent 08:12");
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+
+  it("believes it is the day the world says it is, however long ago the run was recorded", async () => {
+    const world = await worldNamed("maple");
+    // maple's own tool descriptions say "Today is 2026-08-11", and that is the
+    // whole claim: this expectation is a constant, so it can only pass because
+    // the clock came from the world and never from the calendar.
+    expect(worldToday(world)).toBe("2026-08-11T00:00:00.000Z");
+    const page = authoredPage(COUNTS_THE_DAYS, world, "diy-sonnet");
+    const visit = await shooter.visit(page);
+    try {
+      const { visibleText } = await visit.shot();
+      expect(visibleText).toContain("today 2026-08-11");
+      expect(visibleText).toContain("10 days ago");
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+
+  it("is the same clock when liveness paints the page again with the data moved", async () => {
+    const world = await worldNamed("maple");
+    const { html, moved } = mutateSeam(authoredPage(COUNTS_THE_DAYS, world, "diy-sonnet"));
+    // The mutation really did move something, so the repaint below is the one
+    // liveness takes and not a page it left alone.
+    expect(moved.length).toBeGreaterThan(0);
+    const visit = await shooter.visit(html);
+    try {
+      const { visibleText } = await visit.shot();
+      expect(visibleText).toContain("today 2026-08-11");
+      expect(visibleText).toContain("10 days ago");
+    } finally {
+      await visit.close();
+    }
+  }, 60_000);
+});
+
+/**
+ * Where that day comes from. A world's own word beats its newest row, because
+ * rows carry the future as readily as the past — `property-management` holds
+ * leases running to 2027-05-31 and states "today is Aug 12 2026", and taking the
+ * newest row plus a day would paint every one of its screens ten months late,
+ * with every active lease expired.
+ */
+describe("the day a world is looked at on", () => {
+  it("is what the world SAYS, not the last date in its rows", async () => {
+    expect(worldToday(await worldNamed("property-management"))).toBe("2026-08-12T00:00:00.000Z");
+    // The hour too, where the world names one — and in every spelling `worlds/`
+    // uses: "Today is 2026-08-12 and it is about 14:22", and support-desk's
+    // "`sla_minutes_remaining` is measured from now, 2026-08-12T15:10:00Z".
+    expect(worldToday(await worldNamed("observability"))).toBe("2026-08-12T14:22:00.000Z");
+    expect(worldToday(await worldNamed("support-desk"))).toBe("2026-08-12T15:10:00.000Z");
+  });
+
+  it("falls back to the newest row plus a day where a world says nothing", async () => {
+    // product-analytics states no today; its newest datum is 2026-08-11T06:41Z.
+    expect(worldToday(await worldNamed("product-analytics"))).toBe("2026-08-12T06:41:00.000Z");
+  });
+});
+
 // --------------------------------------------- what the judge is given to read
 
 /**
@@ -154,6 +272,7 @@ describe("the source the judge is given", () => {
           screenshot: png,
           artifact: dom,
           trace: [],
+          toolData: "",
           caseLines: ["shows the month's spending"],
           styleLines: [],
           caseHash: "settled-dom",

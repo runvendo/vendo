@@ -665,9 +665,24 @@ export interface AppsRuntime {
    * and findings read as "your screen is wrong". Only the second one gets fixed.
    * `appId` names what is stored — a screen has already passed its paint gate to
    * BE stored, so there is nothing else to check.
+   *
+   * `request` is the person's ask, verbatim, when the caller has it. The reviewer
+   * judges two of its five things against it — a section nobody asked for, work
+   * quietly dropped — and without it those rules read against nothing and can
+   * never fire. Absent is the caller saying it has no ask to hand over, which is
+   * what a bare verb call is: the checks that read it treat that as "no
+   * carve-out", the conservative direction.
+   *
+   * `viewport` is the surface the screen renders into, in CSS pixels, when the
+   * caller knows it — the same fact the writer was told. Given, the reviewer is
+   * shown the screen's FIRST PAINT in order, framed by those pixels, so a table
+   * below the fold and a step behind a click stop reading like content on screen.
+   * Absent, the reviewer's prompt is byte for byte the one it always was: a paint
+   * with no surface to measure it against is a frame the reader would have to
+   * guess.
    */
   validate(
-    input: { appId?: AppId },
+    input: { appId?: AppId; request?: string; viewport?: { width: number; height: number } },
     ctx: RunContext,
   ): Promise<{ ok: boolean; findings: Finding[] }>;
   /**

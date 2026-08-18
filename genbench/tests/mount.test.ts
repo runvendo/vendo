@@ -9,16 +9,18 @@
  * fires before the screen has finished painting is a benchmark measuring a
  * half-drawn page and calling it a verdict.
  *
- * A static payload paints in two frames and always has. An INTERACTIVE payload
- * (`payload.interactive` — compiled source and its queries) has a runtime to boot
- * inside `PayloadView` first, so `mount.tsx` gives it a grace before it says it is
- * settled. These pin both halves in a real browser: the static path unchanged,
- * and the interactive tag neither hanging the page nor being silently ignored.
+ * Every payload paints in two frames, and nothing waits on a timer. An
+ * INTERACTIVE payload (`payload.interactive` — compiled source and its queries)
+ * used to be given a flat extra second, because the engine behind `PayloadView`'s
+ * VM could not be waited on from outside it; `mount.tsx` now awaits that engine
+ * itself before it renders anything, so the wait is earned rather than guessed.
+ * These pin both halves in a real browser: the static path unchanged, and the
+ * interactive tag neither hanging the page nor being silently ignored.
  *
- * THE SEAM: the grace is flat because there is nothing to race it against yet.
- * When `PayloadView` boots the VM and can say when it has painted, that signal
- * replaces the wait and the grace becomes its ceiling — and this file is where
- * that change is proven.
+ * That the interactive mount has done its WORK by the time it says so — the
+ * screen's queries asked and their answers painted — is proven where the data
+ * is, in `liveness.test.ts`, against a real compiled screen rather than the
+ * minimal tag below.
  *
  * THE THEME is the other half, and it is graded: every judge note on a live
  * maple run said the vendo column's surface was accent #111111 with 6/10/16px
@@ -37,12 +39,6 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
-
-/** `VM_BOOT_MS` in `src/mount.tsx`. A browser entry cannot be imported from node
- *  — its first statement reads the document — so the number is written twice and
- *  only ever asserted as a FLOOR: a busy machine can be slower than the grace,
- *  never faster, so nothing here can report a bug the product does not have. */
-const VM_BOOT_MS = 1_000;
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
@@ -81,15 +77,13 @@ const INTERACTIVE: UIPayload = {
   interactive: SCREEN_INTERACTIVE,
 } as UIPayload;
 
-/** One page mounted the way a run mounts it, and how long it took to say it was
- *  ready. `visit` returns once `__settled` is set, so the elapsed time IS the
- *  wait the shot and the probe are made to take. */
-async function mounted(payload: UIPayload): Promise<{ shot: Shot; waitedMs: number }> {
-  const started = Date.now();
+/** One page mounted the way a run mounts it. `visit` returns once `__settled` is
+ *  set, so a page that never says it is ready never gets here — the settle is the
+ *  thing under test and the wait for it is how it is put to the question. */
+async function mounted(payload: UIPayload): Promise<{ shot: Shot }> {
   const visit = await shooter.visit(pageHtml(payload, world, bundle, "vendo-sonnet"));
-  const waitedMs = Date.now() - started;
   try {
-    return { shot: await visit.shot(), waitedMs };
+    return { shot: await visit.shot() };
   } finally {
     await visit.close();
   }
@@ -106,14 +100,15 @@ describe("the settle signal", () => {
     expect(shot.visibleText).toContain("Alex Rivera");
   }, 120_000);
 
-  it("an interactive payload still settles, and is given the boot grace first", async () => {
-    const { shot, waitedMs } = await mounted(INTERACTIVE);
+  it("an interactive payload settles too, on the same two frames and no timer", async () => {
+    const { shot } = await mounted(INTERACTIVE);
 
+    // The tag neither hangs the page nor is ignored: the mount awaits the screen
+    // engine before it renders, and then says it is ready on the frame it is
+    // ready on. Nothing here asserts a duration — a clock reading on a shared
+    // laptop reports the machine, not the product.
     expect(shot.renders).toBe(true);
-    // The tag is not ignored: the grace was actually taken. Without it, an
-    // interactive screen would be shot and pressed on whatever the VM had
-    // managed to paint by the second frame — which is nothing.
-    expect(waitedMs).toBeGreaterThanOrEqual(VM_BOOT_MS);
+    expect(shot.visibleText).toContain("Alex Rivera");
   }, 120_000);
 });
 

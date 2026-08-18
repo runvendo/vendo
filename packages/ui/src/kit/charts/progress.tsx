@@ -35,7 +35,12 @@ export function Progress({ value, max, label, showValue = false, tone, field, st
   }
   const ratio = max !== undefined && max !== 0 ? own / max : own;
   const clamped = Math.max(0, Math.min(1, ratio));
-  const pct = `${Math.round(clamped * 100)}%`;
+  // The bar stops at 100%, so past the cap the printed figure is the only
+  // honest reading of how far past it went: a label saying "100%" at 1.2 is a
+  // wrong number, not a style. The COLOR says nothing about it — whether over
+  // is bad news is the caller's to state with `tone`.
+  const over = ratio > 1;
+  const pct = `${Math.round((over ? ratio : clamped) * 100)}%`;
   return (
     <div data-kit="Progress" style={{ ...font, display: "flex", flexDirection: "column", gap: 4, ...style }}>
       {(label || showValue) && (

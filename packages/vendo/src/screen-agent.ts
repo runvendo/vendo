@@ -70,14 +70,13 @@ import {
 import {
   buildingAppsSkill,
   paintedIn,
-  repairInstruction,
   SCREEN_FILE,
   screenName,
   VALIDATE_TOOL,
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import { wrapLanguageModel, type LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -99,6 +98,60 @@ export const SCREEN_STEPS = 10;
  *  screen the person is already looking at. */
 export const REPAIR_STEPS = 3;
 
+/**
+ * How hard the model works on every turn AFTER the first one.
+ *
+ * A screen is designed in one turn — the whole document comes out of step 0 —
+ * and every step after it is a save, a patch, or the sentence about one, where
+ * deliberation buys nothing and is billed by the token. `effort` is the knob for
+ * that on the models this loop actually runs on: the Claude 5 line REJECTS a
+ * thinking budget outright (`budget_tokens` → 400), and `@ai-sdk/anthropic`
+ * carries `effort` straight through to `output_config.effort`.
+ *
+ * The write turn itself is left EXACTLY as the caller configured it — the
+ * deployment's own default is the honest "full", and only the cheapening is
+ * this file's.
+ */
+const PATCH_EFFORT = "low";
+
+/**
+ * The assembly seat, thinking hard once and cheaply thereafter.
+ *
+ * A middleware rather than the loop's own parameters, because the loop is
+ * `vendo()`'s: its per-step hook carries no provider options (ai 6.0.28), so the
+ * MODEL INSTANCE is the only seam this file owns. The flag lives on the instance
+ * and the instance is built per run, so two concurrent assemblies cannot spend
+ * each other's write turn — and the repair drive, which starts after it is
+ * spent, is all patch by construction.
+ *
+ * A seat that is a bare model id (or a v2 model) cannot be wrapped and is handed
+ * back untouched; a non-Anthropic provider ignores the namespace. Either way the
+ * run is exactly what it was.
+ */
+const seatByRole = (model: LanguageModel): LanguageModel => {
+  if (typeof model === "string" || model.specificationVersion !== "v3") return model;
+  let writeTurn = true;
+  return wrapLanguageModel({
+    model,
+    middleware: {
+      specificationVersion: "v3",
+      transformParams: async ({ params }) => {
+        if (writeTurn) {
+          writeTurn = false;
+          return params;
+        }
+        return {
+          ...params,
+          providerOptions: {
+            ...params.providerOptions,
+            anthropic: { ...params.providerOptions?.["anthropic"], effort: PATCH_EFFORT },
+          },
+        };
+      },
+    },
+  });
+};
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -109,7 +162,8 @@ export const ESCALATE_TOOL = "escalate";
  *  outside it. */
 export const SAVE_APP_TOOL = "save_app";
 
-/** The edit hand — the same document, one passage at a time. A sibling rather
+/** The edit hand — the same document, any number of exact passages in ONE
+ *  landing. A sibling rather
  *  than a second shape of `save_app`: "exactly one of `content` or `edit`" is a
  *  rule a JSON schema cannot state, so it would be enforced in prose and paid for
  *  at runtime, on the one hand this loop calls most. Two hands say it in the
@@ -294,6 +348,216 @@ const nearest = (document: string, find: string): string => {
     + `The file says this there:\n${document.slice(at, at + find.length + 60)}`;
 };
 
+/** One replacement, as the edit hand takes it. */
+interface Edit {
+  find: string;
+  replace: string;
+}
+
+/** Enough of a quote to recognise it and no more — a `find` can be half the
+ *  screen, and a refusal that repeats the whole of it teaches nothing. */
+const quote = (find: string): string => (find.length > 60 ? `${find.slice(0, 60)}…` : find);
+
+/**
+ * Every edit in one call applied to ONE document, or the sentence saying which
+ * edit stopped the lot.
+ *
+ * Matched against the ORIGINAL bytes and spliced by index, which is what makes a
+ * batch atomic. Applied one at a time, each edit would change the very document
+ * the next `find` was quoted against, so a model's copy goes stale halfway
+ * through its own call and the second half of a repair fails for a reason it
+ * cannot see. Same one-match rule as any editor's find/replace — a quote that
+ * matches twice cannot say which one was meant, one that matches nowhere
+ * describes a document that does not exist — and the refusal NAMES the edit that
+ * broke it beside the file's real text, because a model holding five of them
+ * cannot otherwise tell which one to re-quote.
+ *
+ * Spliced by index, never `String.replace`: with a string pattern that method
+ * still expands `$&`, `` $` `` and `$$` in the REPLACEMENT, and these documents
+ * are full of dollar signs.
+ */
+const editPlan = (
+  document: string,
+  edits: readonly Edit[],
+): { content: string } | { refusal: string } => {
+  const nothingChanged = (at: number, why: string): { refusal: string } => ({
+    refusal: `Edit ${at + 1} of ${edits.length} — ${JSON.stringify(quote(edits[at]!.find))} — did not apply, `
+      + `so NOTHING was changed: not that edit, and not the others. ${why}`,
+  });
+  const spans: Array<{ from: number; to: number; at: number; replace: string }> = [];
+  for (const [at, { find, replace }] of edits.entries()) {
+    const matches = document.split(find).length - 1;
+    if (matches > 1) {
+      return nothingChanged(at, `That text appears ${matches} times. Quote more of what surrounds it, until it `
+        + "matches in exactly one place.");
+    }
+    if (matches === 0) return nothingChanged(at, `That text is not in the file. ${nearest(document, find)}`);
+    const from = document.indexOf(find);
+    spans.push({ from, to: from + find.length, at, replace });
+  }
+  spans.sort((left, right) => left.from - right.from);
+  let content = "";
+  let read = 0;
+  for (const span of spans) {
+    // Two quotes that each match once can still cover the same bytes, and
+    // splicing both would write a document neither edit describes.
+    if (span.from < read) {
+      return nothingChanged(span.at, "It covers text another edit in this call also changes. Send one edit for "
+        + "that passage, or quote passages that do not overlap.");
+    }
+    content += document.slice(read, span.from) + span.replace;
+    read = span.to;
+  }
+  return { content: content + document.slice(read) };
+};
+
+/**
+ * The one refusal this gate repairs itself, and the sentence it reads to do it.
+ *
+ * A function written into an element slot (`cell: (row) => <Money …/>`) is the
+ * class this loop hits most, and the checker has already computed the exact line
+ * that fixes it off the AST — `cell={<Text field="amount"/>}`
+ * (`screen-typecheck.ts`'s slot branch). Handing that back as prose bought a
+ * whole rewrite of a screen the person was already looking at, twice in a row for
+ * the same error, so the gate writes it instead of asking for it. Only this class:
+ * the element is the checker's own bytes, and anything it did not spell out is a
+ * repair this file would be inventing.
+ */
+const SLOT_FUNCTION = /^line (\d+): .*: (\w+)=\{(<Text field="[^"]+"\/>)\}\.$/u;
+
+/** Where the value starting at `from` ends: the first comma or unmatched closer
+ *  outside any bracket. A brace inside a string literal defeats this scan — which
+ *  is exactly why the fixed bytes go back through the gauntlet rather than being
+ *  trusted. */
+const valueEnd = (line: string, from: number): number => {
+  let depth = 0;
+  for (let at = from; at < line.length; at += 1) {
+    const char = line[at] as string;
+    if ("([{".includes(char)) depth += 1;
+    else if (")]}".includes(char)) {
+      if (depth === 0) return at;
+      depth -= 1;
+    } else if (char === "," && depth === 0) return at;
+  }
+  return line.length;
+};
+
+/** The screen module's import list, which the element the fix writes has to be in. */
+const SCREEN_IMPORT = /import\s*\{([^}]*)\}\s*from\s*"@vendo\/screen"/u;
+
+/**
+ * The document with every flagged slot function replaced by the element the
+ * checker printed for it, and the sentences that say what changed.
+ *
+ * Nothing, unless EVERY refusal is one this gate can spell: a partial repair buys
+ * a second run of the whole gauntlet only to be refused again. The syntax around
+ * the element is this file's, because the slot is an object property (`cell: …`)
+ * while the checker's sentence is written in attribute form — the ELEMENT is
+ * verbatim, and it is the only part a wrong guess could invent.
+ */
+const slotFunctionFixes = (
+  document: string,
+  blocking: readonly string[],
+): { content: string; changed: string[] } | undefined => {
+  if (blocking.length === 0) return undefined;
+  const lines = document.split("\n");
+  const changed: string[] = [];
+  for (const refusal of blocking) {
+    const found = SLOT_FUNCTION.exec(refusal);
+    if (found === null) return undefined;
+    const at = Number(found[1]) - 1;
+    const line = lines[at];
+    const slot = found[2] as string;
+    const opens = line?.indexOf(`${slot}:`) ?? -1;
+    if (line === undefined || opens < 0) return undefined;
+    const from = opens + slot.length + 1;
+    const end = valueEnd(line, from);
+    lines[at] = `${line.slice(0, from)} ${found[3]}${line.slice(end)}`;
+    changed.push(`line ${found[1]}: \`${slot}:${line.slice(from, end)}\` is now \`${slot}: ${found[3]}\``);
+  }
+  const content = lines.join("\n");
+  const imported = SCREEN_IMPORT.exec(content);
+  // The element the checker named has to be imported, or the repair trades one
+  // refusal for another: a document that wrote `<Money/>` into the cell has no
+  // reason to have imported `<Text/>`.
+  if (imported === null || /\bText\b/u.test(imported[1] as string)) return { content, changed };
+  return {
+    content: content.slice(0, imported.index)
+      + `import { ${(imported[1] as string).trim()}, Text } from "@vendo/screen"`
+      + content.slice(imported.index + imported[0].length),
+    changed,
+  };
+};
+
+/**
+ * The second refusal this gate repairs itself: a change handler written as the
+ * value's own setter (`onChange={setStatus}`), which the checker has already
+ * printed as the whole attribute (`screen-typecheck.ts`'s change-handler
+ * branch). Same bar as {@link SLOT_FUNCTION} — the handler is the checker's
+ * bytes, and only the setter form is printed this way, because only there is
+ * there nothing else in the attribute to preserve.
+ */
+const CHANGE_HANDLER = /^line (\d+): .*: (\w+)=\{(\(e\) => \w+\(e\.target\.(?:value|checked)\))\}\.$/u;
+
+/** The document with every flagged change handler replaced by the one the
+ *  checker printed. Nothing unless EVERY refusal is one, for the reason
+ *  {@link slotFunctionFixes} gives up on a partial batch. */
+const changeHandlerFixes = (
+  document: string,
+  blocking: readonly string[],
+): { content: string; changed: string[] } | undefined => {
+  if (blocking.length === 0) return undefined;
+  const lines = document.split("\n");
+  const changed: string[] = [];
+  for (const refusal of blocking) {
+    const found = CHANGE_HANDLER.exec(refusal);
+    if (found === null) return undefined;
+    const at = Number(found[1]) - 1;
+    const line = lines[at];
+    const prop = found[2] as string;
+    const opens = line?.indexOf(`${prop}={`) ?? -1;
+    if (line === undefined || opens < 0) return undefined;
+    const from = opens + prop.length + 2;
+    const end = valueEnd(line, from);
+    lines[at] = `${line.slice(0, from)}${found[3]}${line.slice(end)}`;
+    changed.push(`line ${found[1]}: \`${prop}={${line.slice(from, end)}}\` is now \`${prop}={${found[3]}}\``);
+  }
+  return { content: lines.join("\n"), changed };
+};
+
+/**
+ * How a refused save is fixed: the flagged lines, and nothing else.
+ *
+ * This loop has a hand for exactly that, so every refusal it relays says which
+ * one, and relays nothing that argues with it ({@link refusal}). Told to write
+ * the file again, it did: a sixteen-hundred-token document re-emitted to move one
+ * attribute, for 13 seconds and then 8 more on the same error.
+ */
+const PATCH_ONLY = `Fix it with \`${EDIT_APP_TOOL}\` — one edit per finding, all of them in one call, `
+  + `quoting only the lines the findings name. Never save the whole document to fix one of them: `
+  + `everything else is already on the person's screen and right.`;
+
+/**
+ * A refusal as this loop hands it over: the findings, then the hand that fixes
+ * them — the one shape for BOTH ways a refusal reaches the model, the save's own
+ * answer and the reviewer's repair round.
+ *
+ * The findings travel VERBATIM; the builder gate's wrapper around them does not
+ * (`repairInstruction`). That wrapper heads them with "Fix each of these, then
+ * write the file again. Change nothing else." — right for a builder holding a
+ * whole file, and a straight contradiction of the line beneath it here. A model
+ * handed both obeyed the sentence it read first: every refusal bought a whole
+ * re-emitted document, ~2.5–3k tokens and 25–31 seconds each, and a measured
+ * 174-second tail was three to five of them.
+ */
+const refusal = (path: string, findings: readonly Finding[]): string | undefined =>
+  findings.length === 0 ? undefined : [
+    `${path}:`,
+    ...findings.map(({ where, message }) => (where === undefined ? `  - ${message}` : `  - ${where} ${message}`)),
+    "",
+    PATCH_ONLY,
+  ].join("\n");
+
 /** How many rows an answer carried, when it is countable: the output itself, or
  *  the one array inside it (`{ data: [...] }`, the shape most host tools return).
  *  Undefined is "delivered, uncountable" — never zero, which is a claim. */
@@ -365,8 +629,20 @@ const queryNote = ({ name, delivered, rows }: QueryOutcome): string =>
  * `validateWrittenApps` is the gate: it reads `app.tsx` back out of the
  * workspace and checks it as text. A screen is not text a checker can read twice —
  * its data comes from EXECUTING it — so the verb takes the app id, and the answer is
- * relayed in that gate's own shape (`repairInstruction`) so the loop reads one kind
- * of finding.
+ * relayed as {@link refusal} writes one, so the loop reads one kind of finding
+ * whichever check produced it.
+ *
+ * THE ASK TRAVELS WITH IT. Two of the reviewer's five things — a section nobody
+ * asked for, work quietly dropped — are written against the person's own words, and
+ * the verb had no field to carry them, so those two rules were dead text on every
+ * screen this gate ever judged. This loop is holding the ask (it is message 1 of
+ * every drive), so it hands it over verbatim.
+ *
+ * AND SO DOES THE SURFACE. The writer was told what it was writing into
+ * (`surfaceNote`) and the reviewer was not, so it judged the file and never the
+ * shape: a third table below the fold and a step behind a click read to it exactly
+ * like content on the person's screen. The same loop holds both facts, so it hands
+ * over both.
  *
  * FAIL-OPEN, exactly like that gate: every way this could not reach a verdict is
  * reported to the operator and to nobody else. A reviewer that could not judge must
@@ -376,11 +652,17 @@ const judgeScreen = async (
   surface: ScreenSurface,
   appId: AppId,
   path: string,
+  request: string,
+  viewport: ScreenInput["viewport"],
 ): Promise<string | undefined> => {
   // `surface.tools`, not `turn.tools`: this call is this file's own, and it runs
   // AFTER the model has spoken — through the turn's copy it would clear the very
   // words the run is about to hand back.
-  const result = await surface.tools.call(VALIDATE_TOOL, { appId });
+  const result = await surface.tools.call(VALIDATE_TOOL, {
+    appId,
+    request,
+    ...(viewport === undefined ? {} : { viewport }),
+  });
   if (result.status !== "ok") {
     console.error(
       `[vendo] could not judge ${appId} before finishing the screen, so it was not reviewed — `
@@ -393,12 +675,23 @@ const judgeScreen = async (
     console.error(`[vendo] validate answered in a shape this gate cannot read, so ${appId} was not reviewed`);
     return undefined;
   }
-  if (output.ok) return undefined;
   const findings = (Array.isArray(output.findings) ? output.findings : [])
     .filter((finding): finding is Finding =>
       typeof finding === "object" && finding !== null
       && typeof (finding as { message?: unknown }).message === "string");
-  return repairInstruction([{ path, appId, findings }]);
+  /**
+   * A WARN IS A REPAIR TOO — the gate reads the FINDINGS, not the verdict.
+   *
+   * `ok` is "no blocker", and the reviewer grades the ask rules `warn` on purpose:
+   * the person spots a missing section at a glance, so a wrong `block` would throw
+   * away an app that was fine. But this loop is not a person, and it is the last
+   * reader before they see it — so it reads the same list they would and fixes what
+   * is on it, at no risk to the screen: the repair is the same bounded round a
+   * blocker gets, and whatever survives it stands. Nothing but an EMPTY verdict is
+   * silence.
+   */
+  if (output.ok && findings.length === 0) return undefined;
+  return refusal(path, findings);
 };
 
 /** How much room the screen has, when the host said. Said ONLY then: a screen
@@ -421,7 +714,7 @@ the edge, and a stat grid that wraps rather than a fixed count that clips.`;
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
  */
-const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[], steps: number): string => `# In this loop
+const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[]): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
@@ -430,9 +723,18 @@ through the tools below.
 Build from the components that already exist: this product's own catalog and the
 standard Kit the manual documents. There is nothing else to import.${surfaceNote(input.viewport)}
 
-- **\`${SAVE_APP_TOOL}\`** saves this app's whole file. The app is
-  \`${input.appId}\`; you never name a path. Every save that parses repaints the person's
-  screen, so save as you go — a save is cheap and silence is not. Every save is checked as it
+A value the ask names must be READABLE AS TEXT on the screen — not implied by a
+chart, not behind a click.
+
+A slot holds an ELEMENT, never a function — \`cell: <Text field="amount"/>\`, never
+\`cell: (row) => <Money amount={row.amount}/>\`. A function there is serialized as a
+callback the renderer cannot paint, so that column comes out blank. The component
+inside a slot names its own row's field; every slot is the same rule (\`cell\`,
+\`content\`, \`rowActions\`).
+
+- **\`${SAVE_APP_TOOL}\`** saves this app's whole file. Every save that parses
+  repaints the person's screen, so save as you go — a save is cheap and silence is
+  not. Every save is checked as it
   lands — if something is wrong with it, the save tells you exactly what to fix.
   It also tells you what the person's screen actually GOT: whether the save
   painted, and what each of your queries delivered.
@@ -440,11 +742,12 @@ standard Kit the manual documents. There is nothing else to import.${surfaceNote
   have besides the file. Record what reading the file could not tell them — why
   you narrowed something, a constraint the tools imposed, a shape you ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
-- **\`${EDIT_APP_TOOL}\`** replaces one exact passage of the file you already
-  saved. Fixing an error? Send an edit, not a rewrite. Quote the text that goes in
-  \`find\`, write what replaces it in \`replace\`, and quote enough of it to match
-  in exactly one place — everything the person is already looking at then stays
-  where it is. It lands and is checked exactly like a save.
+- **\`${EDIT_APP_TOOL}\`** replaces exact passages of the file you already saved.
+  Fixing errors? Send edits, not a rewrite — all of them in one call, and they
+  land together or not at all. Quote the text that goes in each \`find\`, write
+  what replaces it in \`replace\`, and quote enough of it to match in exactly one
+  place — everything the person is already looking at then stays where it is. It
+  lands and is checked exactly like a save.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Writing one screen out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, a surface these components cannot express,
@@ -453,19 +756,20 @@ standard Kit the manual documents. There is nothing else to import.${surfaceNote
   if part of it runs away from the browser, escalate the WHOLE ask. The builder
   gets the person's own ask verbatim and does its own thinking, so all you write
   is one plain sentence saying what assembly cannot do here.
-- \`${steps}\` steps is this round's whole budget. Escalate rather than run out of it.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
 
 ## Your last words are what the person is told
 
-When you have stopped working, say what they now have — one or two plain
-sentences, in their words, and nothing else after it. Those exact words are what
-the assistant repeats to them, so they can only claim what your saves reported:
-what painted, and what each query delivered. If a query brought back no data or a
-save never reached the screen, say that plainly instead of describing the part that
-is blank.
+Say what they now have IN THE SAME MESSAGE as your last save — the words and the
+save that finishes the screen travel in one turn, and a turn spent only to speak
+is a turn the person sits through. One or two plain sentences, in their words, and
+nothing after it. Those exact words are what the assistant repeats to them, so
+they can only claim what your saves reported: what painted, and what each query
+delivered — which is the other reason to save as you go, so the save you speak
+beside holds no surprises. If a query brought back no data or a save never reached
+the screen, say that plainly instead of describing the part that is blank.
 
 ## This product's tools your screen can CALL, but you cannot call here
 
@@ -478,13 +782,18 @@ ${toolBrief(wireable)}`;
  *  briefing pack, then what is different here. The manual and the environment
  *  note are this rung's own INSTRUCTIONS — the box is told a different job in
  *  its own words; the pack between them is the product knowledge both rungs
- *  read byte for byte (`contract/briefing.ts`). */
-function screenBrief(input: ScreenInput, wireable: readonly ToolListing[], steps: number): string {
+ *  read byte for byte (`contract/briefing.ts`).
+ *
+ *  The same bytes for every drive of one assembly, deliberately: this text heads
+ *  the turn's cached prefix, so anything interpolated here that a repair round
+ *  changes costs the whole prefix its cache. What varies per drive — the step
+ *  budget — is that drive's own last word instead (`drive` below). */
+function screenBrief(input: ScreenInput, wireable: readonly ToolListing[]): string {
   return [
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input, wireable, steps),
+    environmentNote(input, wireable),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -559,6 +868,51 @@ export async function assembleScreen(
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
+   * What the run has SAID, in two halves — the closing words become the receipt's
+   * `say` verbatim (`make-receipt.ts`).
+   *
+   * `closing` is what the model has written since its last action; `spoken` is what
+   * it wrote in the same breath AS that action, because the closing words now ride
+   * the final save rather than costing a turn of their own (see the brief). Between
+   * them they are the whole definition: prose in the middle of the work is the model
+   * thinking out loud, and the receipt is whichever half the run ends on. This
+   * file's own gate calls go through `surface.tools` precisely so they are not
+   * mistaken for the model's. Nothing here composes a sentence — a run that says
+   * nothing hands back nothing, and the front door falls back.
+   */
+  let closing = "";
+  let spoken = "";
+  const acted = (): void => {
+    spoken = closing;
+    closing = "";
+  };
+  /** This drive's own hang-up, tripped by the save that ends the run (`drive`).
+   *  Never the caller's signal: every question about whether the CALLER went away
+   *  is asked of `surface.signal`, which this never touches. */
+  let ended: AbortController | undefined;
+  /** Has the reviewer already judged this run? ONE verdict per run, whether it was
+   *  handed back inside a save or fetched by the fallback below — the repair round
+   *  is capped at one, and nothing else bounds it. */
+  let reviewed = false;
+
+  /**
+   * ONE writer at a time, over the whole read-apply-write.
+   *
+   * A provider sends parallel tool calls, so both writing hands can run twice in
+   * one step — and an edit is a READ of the document followed by a write of it.
+   * Interleaved, two of them read the same pre-edit bytes and the second commit
+   * throws the first one's change away while both hands answer "That save
+   * landed", which is the one failure a model cannot detect from its own
+   * transcript. Landings queue here instead, so each one sees the one before it.
+   */
+  let writing: Promise<unknown> = Promise.resolve();
+  const serially = async <T>(work: () => Promise<T>): Promise<T> => {
+    const next = writing.then(work, work);
+    writing = next.then(() => undefined, () => undefined);
+    return await next;
+  };
+
+  /**
    * Write one hot-path file and land it.
    *
    * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
@@ -581,7 +935,17 @@ export async function assembleScreen(
    * landed, `paintedIn` says whether they reached the screen, and the paint itself
    * says what each query delivered.
    */
-  const landApp = async (turn: Turn<unknown>, content: string, decisions?: string): Promise<Json> => {
+  const landApp = async (
+    turn: Turn<unknown>,
+    content: string,
+    decisions?: string,
+    /** What this gate already fixed in these bytes before landing them, when the
+     *  document that arrived was refused for something it could spell (see
+     *  {@link slotFunctionFixes}). Set on the second pass only, so a fix is never
+     *  attempted on a fix, and reported either way — the model's copy of the
+     *  document has to stay true whichever verdict the fixed bytes earn. */
+    fixed?: readonly string[],
+  ): Promise<Json> => {
     const committed = await save(turn, APP_FILE, content);
     if (committed.status !== "ok") {
       return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
@@ -611,8 +975,8 @@ export async function assembleScreen(
      * gauntlet compiled it, scanned it, type-checked it, ran its queries and
      * rendered it, and each line it hands back is a repair instruction. Re-checking
      * the same bytes through `validate` would pay for all of that twice to be told
-     * the same thing. Relayed verbatim, in the same shape the builder's gate uses
-     * (`repairInstruction`), so the loop reads one kind of finding.
+     * the same thing. The lines are relayed verbatim, in the one shape a refusal
+     * takes here ({@link refusal}), so the loop reads one kind of finding.
      *
      * Only when the paint did NOT happen: a painted save already passed, so
      * anything more would second-guess the seam. `painted` absent means an
@@ -622,32 +986,74 @@ export async function assembleScreen(
     record.painted = painted?.includes(input.appId) ?? false;
     if (painted !== undefined && !record.painted) {
       const blocking = surface.screenIssues?.() ?? [];
-      const instruction = repairInstruction(blocking.length === 0 ? [] : [{
-        path: `${directory}/${APP_FILE}`,
-        appId: input.appId,
-        findings: blocking.map((message) => ({ severity: "block" as const, message })),
-      }]);
+      // THE GATE FIXES WHAT IT CAN ALREADY SPELL, rather than spending a turn
+      // asking for it. The fixed bytes go back through this same path, so the
+      // gauntlet — not this file — is what says the repair was right; if it
+      // refuses them too, the refusal below is the one the model reads, with the
+      // fix named in it so its copy of the document stays true.
+      const fix = fixed === undefined
+        ? slotFunctionFixes(content, blocking) ?? changeHandlerFixes(content, blocking)
+        : undefined;
+      if (fix !== undefined) return await landApp(turn, fix.content, decisions, fix.changed);
       // A floor that said nothing this loop can read — an unwired `component` door,
       // a screen refused before the gauntlet, a workspace wrapped without the seam
       // — leaves only the fact this hand does have. It is enough to act on, and
       // claiming a verdict nothing reached is what sent the loop back through a
       // call that could never succeed.
+      const instruction = refusal(
+        `${directory}/${APP_FILE}`,
+        blocking.map((message) => ({ severity: "block" as const, message })),
+      );
       return {
         saved: true,
         painted: false,
+        ...(fixed === undefined ? {} : { alreadyFixed: [...fixed] }),
         note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler screen.",
       };
     }
     // The data facts, only where there is a paint to read them off: they come from
     // the view the person is looking at, so no paint means nothing known.
     const queries = record.painted ? surface.queryOutcomes?.() ?? [] : [];
-    return {
+    const answer = {
       saved: true,
       // Omitted, never `false`, on an unwrapped workspace: this loop does not know.
       ...(painted === undefined ? {} : { painted: record.painted }),
       ...(queries.length === 0 ? {} : { data: queries.map(queryNote) }),
-      note: "That save landed.",
     };
+    const note = fixed === undefined
+      ? "That save landed."
+      : `That save landed — but it put a function in an element slot, which was fixed for you on the way `
+        + `to the screen: ${fixed.join("; ")}. Nothing else changed, so quote the file that way when you `
+        + `edit those lines.`;
+    /**
+     * THE CLOSING SAVE IS WHERE THE REVIEWER ANSWERS — into this very tool result.
+     *
+     * A save that painted and spoke in one breath is the end of the run, so the
+     * screen is up and the words describing it are already in hand. The reviewer is
+     * asked HERE and AWAITED here, and its findings ride back as part of the save's
+     * own answer: the next step of THIS drive is then the repair, with the document
+     * the model just wrote still in front of it. The alternative — hanging up and
+     * starting a second drive — pays for the reviewer's latency all the same and
+     * then buys a fresh drive that has to be handed the document back.
+     *
+     * Empty verdict, or a reviewer that could not reach one (`judgeScreen`
+     * fail-opens to `undefined`), and the run hangs up exactly as before: from
+     * INSIDE the call, before the result goes back, because the loop starts its
+     * next step the moment a tool answers.
+     *
+     * ONE round, and `reviewed` is the whole of what bounds it: the repair patch is
+     * itself a save that paints and speaks, and without the flag it would be judged
+     * again, and again.
+     */
+    if (record.painted && spoken.trim() !== "") {
+      const findings = reviewed
+        ? undefined
+        : await judgeScreen(surface, input.appId, `${directory}/${APP_FILE}`, input.request, input.viewport);
+      reviewed = true;
+      if (findings !== undefined) return { ...answer, note: `${note}\n\n${findings}` };
+      ended?.abort();
+    }
+    return { ...answer, note };
   };
 
   /** The memory block. Both hands take it — an edit that fixes a finding is
@@ -682,60 +1088,59 @@ export async function assembleScreen(
     },
     execute: async (args, turn) => {
       const { content, decisions } = args as { content: string; decisions?: string };
-      return await landApp(turn, content, decisions);
+      return await serially(async () => await landApp(turn, content, decisions));
     },
   };
 
   const editApp: HarnessHand = {
     name: EDIT_APP_TOOL,
     description:
-      "Change one exact passage of the file you already saved: `find` goes, `replace` takes its place. "
-      + "Use it to fix an error rather than saving the whole file again — the rest of the screen the "
-      + "person is looking at then stays exactly where it is. `find` must appear in the file exactly "
-      + "once, character for character. Lands and reports exactly like a save.",
+      "Change exact passages of the file you already saved: each edit's `find` goes, its `replace` takes "
+      + "its place. Use it to fix errors rather than saving the whole file again — the rest of the screen "
+      + "the person is looking at then stays exactly where it is. Send every edit you have in ONE call: "
+      + "they are matched against the file as it stands and land together, all of them or none. Each "
+      + "`find` must appear in that file exactly once, character for character. Lands and reports exactly "
+      + "like a save.",
     inputSchema: {
       type: "object",
       properties: {
-        find: {
-          type: "string",
-          description:
-            "The text to replace, exactly as the file has it — enough of it to appear in only one place.",
+        edits: {
+          type: "array",
+          minItems: 1,
+          description: "Every change to make, applied together in one save.",
+          items: {
+            type: "object",
+            properties: {
+              find: {
+                type: "string",
+                description:
+                  "The text to replace, exactly as the file has it — enough of it to appear in only one place.",
+              },
+              replace: { type: "string", description: "What goes there instead." },
+            },
+            required: ["find", "replace"],
+            additionalProperties: false,
+          },
         },
-        replace: { type: "string", description: "What goes there instead." },
         decisions: {
           type: "string",
           description: `Same decisions record as \`${SAVE_APP_TOOL}\` — it replaces this app's whole block.`,
         },
       },
-      required: ["find", "replace"],
+      required: ["edits"],
       additionalProperties: false,
     },
     execute: async (args, turn) => {
-      const { find, replace, decisions } = args as { find: string; replace: string; decisions?: string };
-      const document = await turn.workspace.readFile(`${directory}/${APP_FILE}`).catch(() => undefined);
-      if (document === undefined) {
-        return { saved: false, note: `There is no file to edit yet — save the whole screen with ${SAVE_APP_TOOL} first.` };
-      }
-      // Every code editor's find/replace rule, and for the same reason: a quote
-      // that matches twice cannot say which one the person meant, and one that
-      // matches nowhere is describing a document that does not exist. Neither
-      // touches the file, and both come back naming the real text — a mismatch is
-      // almost always a near miss, and the fix is a better quote, not a rewrite.
-      const matches = document.split(find).length - 1;
-      if (matches !== 1) {
-        return {
-          saved: false,
-          note: matches > 1
-            ? `That text appears ${matches} times, so nothing was changed. Quote more of what surrounds it, `
-              + "until it matches in exactly one place."
-            : `That text is not in the file, so nothing was changed. ${nearest(document, find)}`,
-        };
-      }
-      // Spliced by index, never `String.replace`: with a string pattern that
-      // method still expands `$&`, `` $` `` and `$$` in the REPLACEMENT, and these
-      // documents are full of dollar signs.
-      const at = document.indexOf(find);
-      return await landApp(turn, document.slice(0, at) + replace + document.slice(at + find.length), decisions);
+      const { edits, decisions } = args as { edits: readonly Edit[]; decisions?: string };
+      return await serially(async () => {
+        const document = await turn.workspace.readFile(`${directory}/${APP_FILE}`).catch(() => undefined);
+        if (document === undefined) {
+          return { saved: false, note: `There is no file to edit yet — save the whole screen with ${SAVE_APP_TOOL} first.` };
+        }
+        const planned = editPlan(document, edits);
+        if ("refusal" in planned) return { saved: false, note: planned.refusal };
+        return await landApp(turn, planned.content, decisions);
+      });
     },
   };
 
@@ -790,23 +1195,11 @@ export async function assembleScreen(
     .filter((listing) => !callable(listing))
     .filter((listing) => !NEVER_WIRED.includes(listing.name));
 
-  /**
-   * What the run said after its LAST action — the closing words, which become the
-   * receipt's `say` verbatim (`make-receipt.ts`).
-   *
-   * Every action OF THE MODEL'S clears it, and that is the whole definition: prose
-   * written between two tool calls is the model thinking out loud, and the summary
-   * is what it says once it has stopped working. This file's own gate calls go
-   * through `surface.tools` precisely so they are not mistaken for one of them.
-   * Nothing here composes a sentence — a run that says nothing hands back nothing,
-   * and the front door falls back.
-   */
-  let closing = "";
-  /** Every hand clears the closing words, exactly as a host call does below. */
+  /** Every hand takes the words with it, exactly as a host call does below. */
   const acting = (hand: HarnessHand): HarnessHand => ({
     ...hand,
     execute: async (args, turn) => {
-      closing = "";
+      acted();
       return await hand.execute(args, turn);
     },
   });
@@ -819,7 +1212,7 @@ export async function assembleScreen(
     // of the same static menu.
     tools: {
       call: (name, args) => {
-        closing = "";
+        acted();
         return surface.tools.call(name, args);
       },
       list: async () => listings,
@@ -828,8 +1221,9 @@ export async function assembleScreen(
     workspace: surface.workspace,
     // `vendo()` thinks with the turn's `default` seat, and the loop it drives
     // HERE is the app-writing one — so the seat this agent runs on is what the
-    // inner harness is handed as its default.
-    models: { ...surface.models, default: surface.models.apps },
+    // inner harness is handed as its default, wrapped so the write turn thinks
+    // and the saves and patches after it do not (`seatByRole`).
+    models: { ...surface.models, default: seatByRole(surface.models.apps) },
     state: runState(),
     options: {},
     signal: surface.signal,
@@ -844,17 +1238,13 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
-  /** The budget of the drive that is running, which is what the brief states.
-   *  The repair round has `REPAIR_STEPS`, not the whole assembly budget, and a
-   *  brief that says otherwise tells the model to plan for steps it has not got. */
-  let budget = SCREEN_STEPS;
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
-    system: () => screenBrief(input, wireable, budget),
+    system: () => screenBrief(input, wireable),
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. The text
@@ -870,8 +1260,33 @@ export async function assembleScreen(
     messages: Turn<VendoHarnessOptions>["messages"],
     options: VendoHarnessOptions = turn.options,
   ): Promise<void> => {
-    budget = options.maxSteps ?? SCREEN_STEPS;
-    for await (const event of harness.run({ ...turn, messages, options })) {
+    // The budget is the drive's LAST word, not a line in the brief. The repair
+    // round runs on `REPAIR_STEPS` rather than the whole assembly budget, and a
+    // number that changes between drives is a number the brief cannot hold: the
+    // brief heads a cached prefix of some sixteen thousand tokens, so saying `3`
+    // there instead of `10` re-uploaded every byte of it. Behind the history it
+    // costs one sentence.
+    const steps = options.maxSteps ?? SCREEN_STEPS;
+    const budget = {
+      id: `budget_${input.appId}`,
+      role: "user" as const,
+      parts: [{
+        type: "text" as const,
+        text: `\`${steps}\` steps is this round's whole budget. Escalate rather than run out of it.`,
+      }],
+    };
+    // Each drive gets its own hang-up, and its own words: what the model said on
+    // the drive before this one is not this drive's receipt, and a save here that
+    // says nothing must not inherit it (`landApp` reads both).
+    ended = new AbortController();
+    closing = "";
+    spoken = "";
+    for await (const event of harness.run({
+      ...turn,
+      messages: [...messages, budget],
+      options,
+      signal: AbortSignal.any([surface.signal, ended.signal]),
+    })) {
       if (event.type === "error") failure ??= event.message;
       if (event.type === "text") closing += event.delta;
     }
@@ -902,16 +1317,28 @@ export async function assembleScreen(
      * shown exactly what is wrong fixes it on the first try or not at all, and a
      * second round is the person waiting longer for the same answer. Whatever
      * survives it stands — the screen has already painted, and the honest thing is
-     * to leave it rather than take it away.
+     * to leave it rather than take it away. ANY finding buys that round, warnings
+     * included (`judgeScreen`): the ask rules and the host's own design rules are
+     * graded `warn` for a person's eye, and skipping them here left them costing a
+     * model call and changing nothing.
      *
      * `record.painted` is the gate, not `record.assembled`. A save that landed bytes
      * the seam declined to paint is not a finished screen: the hand already handed
      * that loop the floor's own sentences, the app has no row for the reviewer's
      * row-scoped door to find, and asking again here would only spend the person's
      * time repeating it.
+     *
+     * WHEN it asks is the save's business, not this line's: a run whose last save
+     * carried the closing words was judged AT that paint and read the verdict inside
+     * the save's own answer (`landApp`), so its repair is the next step of the drive
+     * that wrote the screen. This is the FALLBACK — a run that ended without a
+     * verdict, because it never spoke beside a save — and the only thing that still
+     * needs a drive of its own.
      */
     const appPath = `${directory}/${APP_FILE}`;
-    const instruction = record.painted ? await judgeScreen(surface, input.appId, appPath) : undefined;
+    const instruction = reviewed || !record.painted
+      ? undefined
+      : await judgeScreen(surface, input.appId, appPath, input.request, input.viewport);
     if (instruction !== undefined && !surface.signal.aborted) {
       // The document rides along: a drive starts from the messages it is given, so
       // the repair round has none of the first one's context — and a repair with no
@@ -924,12 +1351,14 @@ export async function assembleScreen(
           type: "text",
           text: saved === undefined
             ? instruction
-            : `${instruction}\n\nThis is the document you saved. Fix what the findings name — `
-              + `an edit of the passages that are wrong, not a rewrite:\n${saved}`,
+            : `${instruction}\n\nThis is the document you saved:\n${saved}`,
         }],
       }], { maxSteps: REPAIR_STEPS });
     }
-    const say = closing.trim();
+    // The words the run ended on: what it said after its last action, or — now that
+    // a save and the sentence about it ride one turn — what it said in the same
+    // breath as that action.
+    const say = (closing.trim() === "" ? spoken : closing).trim();
     return {
       kind: "assembled",
       ...(record.title === undefined ? {} : { title: record.title }),

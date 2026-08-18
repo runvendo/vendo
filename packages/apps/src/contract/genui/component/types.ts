@@ -49,6 +49,21 @@ export interface NestedNode {
   key?: string;
 }
 
+/**
+ * A control that was pressed and did nothing: it asked for no tool call, and
+ * the screen painted nothing new. The node it sits on and the prop that carries
+ * its handler.
+ *
+ * A FACT about one press, never a verdict. The sentence a person or a model
+ * reads is written by whichever gate asked for the press ({@link pressControls}
+ * is used by the save-time gauntlet), because a repair instruction belongs to
+ * the gate that refuses — not to the engine that observed.
+ */
+export interface InertControl {
+  node: string;
+  prop: string;
+}
+
 /** A tool call an event handler asked for, awaiting the host's answer. */
 export interface Intent {
   id: string;

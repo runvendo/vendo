@@ -25,7 +25,8 @@ Judge five things:
 
 4. SECTIONS THAT DON'T ANSWER THE ASK. Part of the app the user never asked for and that answers nothing.
 
-5. WORK QUIETLY DROPPED. Something the user explicitly asked for that the app simply does not do — a reminder, a schedule, a recurring job. A screen ABOUT the missing thing is not the thing: a tab headed "Reminders" is not a reminder, and someone who asked to be reminded every Friday will find out only by not being reminded. Name exactly what is missing.
+5. WORK QUIETLY DROPPED. Something the user explicitly asked for that the app simply does not do — a reminder, a schedule, a recurring job — or that it never puts on screen: a number, a column, a breakdown the ask named by name. A screen ABOUT the missing thing is not the thing: a tab headed "Reminders" is not a reminder, and someone who asked to be reminded every Friday will find out only by not being reminded. Name exactly what is missing.
+   FETCHED AND NEVER SHOWN IS THE SAME DROP. LEFTOVERS, when you are given one, lists the fields a query really returned that the screen never puts on screen. Judge each against the ask and what this screen is for: a field the person plainly came for — the commit message on a build, the author of a change, the done-and-total a progress line is about — is dropped work and a finding, while an internal id, a foreign key, or a flag nothing here turns on is not.
 
 Severity: "block" ONLY for what the person cannot detect themselves — invented data, a binding that renders nothing or the wrong number where a label promised one (1), and dishonest tool use (2). A made-up balance looks exactly like a real one, so nobody catches it but you; those must never ship. "warn" for everything else (3, 4 and 5), because the person spots those instantly: they asked for the thing, so they know at a glance whether it is there, and a wrong "block" would throw away an app that was fine.
 
@@ -34,7 +35,7 @@ Each finding has three fields:
 - where: the locus, as it appears in the app — the component and its label (<MetricCard> labeled "Revenue"), the query name, or "document" for the app as a whole.
 - message: ONE teaching sentence — what is wrong AND the real alternative ("the total is hand-typed as $12,480; the invoices query returns amountCents — bind and sum that instead"). Someone who cannot see the app has to understand it.
 
-Report nothing when nothing is wrong: an empty list is the normal, good answer. Never invent a finding to look thorough, and never report matters of taste (wording, colour, layout preference).`;
+Report nothing when nothing is wrong: an empty list is the normal, good answer. Never invent a finding to look thorough, and never report matters of taste (wording, colour, layout preference). A rule this product's owner set is never taste: a font, a colour, a date format becomes a RULE the moment they wrote it down — quote it and report it.`;
 
 export const REPORT_FINDINGS_DESCRIPTION =
   "Report everything wrong with this app. Report an empty list when nothing is wrong.";

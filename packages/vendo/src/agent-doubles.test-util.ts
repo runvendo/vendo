@@ -303,6 +303,10 @@ export type ScriptedModel = LanguageModel & {
   /** The system message of each call, so a suite can assert on the BRIEF a loop
    *  assembled without reaching into the loop to get it. */
   systemPrompts: string[];
+  /** The provider options each call carried. Per-role model parameters are set on
+   *  the MODEL INSTANCE (middleware), so what reaches the provider is the only
+   *  place a suite can read them. */
+  providerOptionsPerCall: Array<Record<string, unknown> | undefined>;
   calls: number;
 };
 
@@ -313,10 +317,12 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   const toolNamesPerCall: string[][] = [];
   const prompts: unknown[] = [];
   const systemPrompts: string[] = [];
+  const providerOptionsPerCall: Array<Record<string, unknown> | undefined> = [];
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
       toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
       prompts.push(structuredClone(request.prompt));
+      providerOptionsPerCall.push(request.providerOptions);
       const system = request.prompt.find((message) => message.role === "system");
       systemPrompts.push(typeof system?.content === "string" ? system.content : "");
       (model as ScriptedModel).calls += 1;
@@ -328,6 +334,7 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   model.toolNamesPerCall = toolNamesPerCall;
   model.prompts = prompts;
   model.systemPrompts = systemPrompts;
+  model.providerOptionsPerCall = providerOptionsPerCall;
   model.calls = 0;
   return model;
 }

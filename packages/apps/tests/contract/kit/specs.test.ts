@@ -91,6 +91,49 @@ describe("the Kit specs", () => {
       .toBe(true);
   });
 
+  // An identifier is a value with a FACE, not prose: the column token and the
+  // Text role are the two places a screen says so.
+  it("admits the code format on a column and the code role on Text", () => {
+    const table = kitSpec("DataTable")!;
+    expect(validateProps(table, { rows: [], columns: [{ key: "commit", format: "code" }] }).success).toBe(true);
+    const text = kitSpec("Text")!;
+    expect(validateProps(text, { text: "9f2c1ab", variant: "code" }).success).toBe(true);
+    expect(validateProps(text, { text: "9f2c1ab", variant: "monospace" }).success).toBe(false);
+  });
+
+  /**
+   * The host's own word for a field, carried onto the thing that shows it.
+   * `compute_cost` is minor units and its name never says so; the card the
+   * writer reads prints `money.cents` beside it, and this is the prop that
+   * carries that token across. A token the card can print and a field refuses
+   * would be a dead end for whoever copied it, so the vocabulary is core's own.
+   */
+  it("takes the host's semantic token on a column and on a field, and only a token core prints", () => {
+    const table = kitSpec("DataTable")!;
+    expect(validateProps(table, { rows: [], columns: [{ key: "compute_cost", semantic: "money.cents" }] }).success).toBe(true);
+    expect(validateProps(table, { rows: [], columns: [{ key: "branch", semantic: "code" }] }).success).toBe(true);
+    expect(validateProps(table, { rows: [], columns: [{ key: "compute_cost", semantic: "cents" }] }).success).toBe(false);
+    const cards = kitSpec("CardList")!;
+    expect(validateProps(cards, { items: [], fields: [{ key: "compute_cost", semantic: "money.cents" }] }).success).toBe(true);
+    const detail = kitSpec("KeyValue")!;
+    expect(validateProps(detail, { record: {}, items: [{ key: "branch", semantic: "code" }] }).success).toBe(true);
+  });
+
+  // Naming no fields is "show me the record", not an error: a detail screen
+  // that names none is asking for all of them.
+  it("lets a KeyValue name no fields at all", () => {
+    expect(validateProps(kitSpec("KeyValue")!, { record: { id: 1 } }).success).toBe(true);
+  });
+
+  // A field is CONTROLLED — the screen holds the choice so the rest of the
+  // screen can read it. Without `value` the prop failed the checks, and a form
+  // could not show anything about what was picked.
+  it("lets a Select be controlled, like every other field", () => {
+    const select = kitSpec("Select")!;
+    expect(validateProps(select, { options: [], value: "bld_4192" }).success).toBe(true);
+    expect(kitPropClasses("Select")?.value).toBe("config");
+  });
+
   it("names the childless components and what a cell may hold", () => {
     // The renderer hands children to every node it renders, so "renders no
     // children" is a fact only the spec can state.

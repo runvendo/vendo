@@ -114,6 +114,20 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
     expect(system).toContain(`- ${CITE_TOTALS}\n- ${NO_UNATTENDED}`);
   });
 
+  it("keeps the taste ban from swallowing them: an owner's rule is a rule, not taste", async () => {
+    // The rubric can carry a rule about a font, a colour or a date format — the
+    // three things the taste ban names. Without the exemption the reviewer reads
+    // its own last line and stays quiet about the rule it was just handed.
+    const calls: ScriptedModelCall[] = [];
+    const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
+
+    await factReviewerCheck(deps(model), samples, [CITE_TOTALS]).run(inputFor(invoicesApp));
+
+    const system = String(calls[0]?.prompt?.[0]?.content ?? "");
+    expect(system).toContain("never report matters of taste");
+    expect(system).toContain("A rule this product's owner set is never taste");
+  });
+
   it("says nothing about extra rules when no pack contributed one", async () => {
     const calls: ScriptedModelCall[] = [];
     const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });

@@ -22,9 +22,11 @@
 import {
   bootScreen,
   flattenTree,
+  pressControls,
   ScreenError,
   warmScreenEngine,
   type FlatTree,
+  type InertControl,
   type ScreenErrorKind,
   type ScreenInstance,
 } from "../../contract/genui/component/index.js";
@@ -89,9 +91,16 @@ export interface ScreenPaintInput {
 
 /** A failed paint is DATA, not a throw: `ScreenError`'s two fields are what the
  *  gauntlet's sentence is chosen on, and an error object does not survive a
- *  venue boundary. */
+ *  venue boundary.
+ *
+ *  `inert` is the same posture one step further: the running screen is the only
+ *  place a control can be pressed, and an instance cannot cross a venue
+ *  boundary, so the presses happen HERE and what comes back is which controls
+ *  did nothing — node and prop, no sentence. Required rather than optional, so
+ *  a toolchain that does not press has to say so out loud instead of passing a
+ *  dead button by omission. */
 export type ScreenPaintResult =
-  | { readonly ok: true; readonly tree: FlatTree }
+  | { readonly ok: true; readonly tree: FlatTree; readonly inert: readonly InertControl[] }
   | { readonly ok: false; readonly kind: ScreenErrorKind; readonly message: string };
 
 export interface ScreenToolchain {
@@ -99,8 +108,9 @@ export interface ScreenToolchain {
    *  {@link ScreenToolchainUnavailable} is a toolchain that cannot compile. */
   transform(source: string): Promise<ScreenTransform>;
   typecheck(input: ScreenTypecheckInput): Promise<ScreenTypecheckResult>;
-  /** A throw here is the engine failing to START, which is a different refusal
-   *  from a screen that would not paint. */
+  /** Run the screen: paint it, then press every control it painted. A throw
+   *  here is the engine failing to START, which is a different refusal from a
+   *  screen that would not paint. */
   paint(input: ScreenPaintInput): Promise<ScreenPaintResult>;
 }
 
@@ -168,7 +178,10 @@ export const nodeToolchain = (): ScreenToolchain => ({
     let instance: ScreenInstance | undefined;
     try {
       instance = bootScreen(input);
-      return { ok: true, tree: flattenTree(instance.tree()) };
+      const tree = flattenTree(instance.tree());
+      // Every press gets its own screen, booted from the same input — see
+      // press.ts for why, and for why a pressed write never happens.
+      return { ok: true, tree, inert: pressControls(tree, () => bootScreen(input)) };
     } catch (error) {
       // A throw that is not a `ScreenError` has no kind of its own. `boot` is
       // where it happened, and — like every kind but `render` and `budget` — it

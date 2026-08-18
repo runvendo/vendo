@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type { Visit } from "./render.js";
 
 /**
@@ -12,13 +12,73 @@ import type { Visit } from "./render.js";
  * indistinguishable here.
  */
 
-/** Everything a person can press. A disabled control is not actionable, so it is
- *  not a candidate — grading it would fail a screen for being careful. */
-const ACTIONABLE = "button:not([disabled]), [role=button]:not([aria-disabled=true]), a[href]";
+/**
+ * Every SPECIES of control a person can press, by the role it answers to.
+ *
+ * Buttons alone was the whole list, and that graded reachability-by-probe rather
+ * than wiring: a screen whose only actuators are toggles — each one correctly
+ * bound to a tool — was read as a screen with nothing to press and scored
+ * `pressed: 0`, while a screen of always-enabled buttons that call nothing scored
+ * better for being button-shaped. Roles rather than tags, because a role is the
+ * one thing the Kit's markup (`<span role=switch>`, Base UI's) and a hand-written
+ * page's (`<input type=checkbox>`) have in common; the two native inputs are here
+ * because they carry their role implicitly rather than in an attribute.
+ */
+const SPECIES = [
+  "button",
+  "[role=button]",
+  "a[href]",
+  "[role=switch]",
+  "[role=checkbox]",
+  "[role=radio]",
+  "[role=menuitem]",
+  "input[type=checkbox]",
+  "input[type=radio]",
+];
+
+/** A control hidden from assistive tech is the SAME control as the one beside it:
+ *  Base UI pairs the switch and the radio a person presses with an `aria-hidden`
+ *  proxy input that carries the form value, so pressing both would press one
+ *  control twice and count it twice. */
+const SHOWN = ":not([aria-hidden=true])";
+
+/** What can be pressed as the screen stands. A disabled control is not actionable,
+ *  so it is not pressed — grading it would fail a screen for being careful — but
+ *  it is no longer invisible either: see `CHOICE`. */
+const ACTIONABLE = SPECIES.map((species) => `${species}${SHOWN}:not([disabled]):not([aria-disabled=true])`).join(", ");
+
+/** Every control of every species in document order, whatever state it is in. One
+ *  index space, so a control that was locked when the page was counted is still
+ *  the same control after the choice that unlocks it. */
+const CONTROLS = SPECIES.map((species) => `${species}${SHOWN}`).join(", ");
+
+/**
+ * The one precondition the probe satisfies: a choice the screen is ASKING for.
+ *
+ * "Pick an agent, then press Assign" is a correctly built screen, and it was
+ * failing — the probe never touched the chooser, so the button stayed disabled,
+ * nothing was pressed, and a case that asked the screen to DO something scored
+ * zero wired controls. So the chooser gets set. Only a `<select>`, and only to an
+ * option the screen itself offers: a value the harness typed would be data no
+ * screen claimed, riding into a tool call the judge then grades as the screen's
+ * own.
+ */
+const CHOICE = "select:not([disabled])";
+
+/** What "switched on" looks like whoever drew the control — `aria-checked` where
+ *  the page paints its own toggle, `:checked` where it uses the browser's. */
+const ON = "[aria-checked=true], :checked";
 
 /** A press that never lands says "fired nothing", which is the verdict either
- *  way; this only stops one stuck control from spending the case's whole budget. */
+ *  way; this only stops one stuck control from spending the case's whole budget.
+ *  A choice that never lands is bounded by the same number for the same reason. */
 const CLICK_MS = 5_000;
+
+/** How long a locked control gets to WAKE once the screen has what it asked for.
+ *  A screen re-renders a beat after a choice, exactly as a press lands a beat
+ *  after a click, and reading `disabled` on the line after would call a control
+ *  that is about to open dead. Spent only on a control that stays locked. */
+const WAKE_MS = 1_000;
 
 /**
  * How long a press gets to LAND before what it did is read off the page.
@@ -41,23 +101,47 @@ export interface Fired {
   readonly args: unknown;
 }
 
-export interface Probed {
+/**
+ * One way out of a confirmation, pressed on its own fresh page.
+ *
+ * Which control confirms is still not the probe's business — it presses ALL of
+ * them, one per path, and records what each did. Which one the words call
+ * "Confirm" is a judgement, and the judge makes it off the dialog's text.
+ */
+export interface Path {
   readonly label: string;
-  /** The visible text of a `[role=dialog]` the press opened. Nothing inside it
-   *  is pressed: which control confirms is a judgement, not a lookup, and a robot
-   *  that guesses at it grades its own guess. What the dialog SAYS is the
-   *  evidence, and the judge is who reads it. Absent when none opened. */
-  readonly dialog?: string;
-  /** The press visibly moved the screen — a dialog opened, a tab switched, a row
-   *  was dismissed. What tells a control that only changes local state apart from
-   *  one that is dead, since neither asks the host for anything. */
+  /** The dialog closed, or the screen moved under it. */
   readonly changed: boolean;
   readonly calls: readonly Fired[];
 }
 
-/** What the screen is, in the three cheapest numbers that answer "did that press
- *  do anything": what it has asked the host for, how much text it is showing, and
- *  how many elements are showing it.
+export interface Probed {
+  readonly label: string;
+  /** The visible text of a `[role=dialog]` the press opened. What the dialog SAYS
+   *  is evidence only the judge can read, so it is carried verbatim. Absent when
+   *  none opened. */
+  readonly dialog?: string;
+  /** Every control inside that dialog, each pressed once, each on a page that
+   *  reached the dialog again from scratch (2026-08-17).
+   *
+   *  The opening used to be the whole record, and a dialog whose buttons are
+   *  wired to nothing was then indistinguishable from one that acts — both
+   *  cleared an `action` case's bar on having opened. So a rubric line like
+   *  "pressing approve fires approve_refund" could never be evidenced for any
+   *  action that lives behind a confirmation, and every column failed those lines.
+   *  Present exactly when `dialog` is; empty when the dialog had nothing
+   *  pressable in it, which is itself the verdict on that dialog. */
+  readonly inside?: readonly Path[];
+  /** The press visibly moved the screen — a dialog opened, a tab switched, a row
+   *  was dismissed, a toggle flipped. What tells a control that only changes local
+   *  state apart from one that is dead, since neither asks the host for anything. */
+  readonly changed: boolean;
+  readonly calls: readonly Fired[];
+}
+
+/** What the screen is, in the four cheapest numbers that answer "did that press
+ *  do anything": what it has asked the host for, how much text it is showing, how
+ *  many elements are showing it, and how many of its controls are on.
  *
  *  One reader for both sides of a press, so what the wait below watched for and
  *  what the trace records can never disagree about what changed. */
@@ -65,6 +149,11 @@ interface Look {
   readonly calls: readonly Fired[];
   readonly text: number;
   readonly elements: number;
+  /** How many of the screen's controls are switched on. A toggle that flips
+   *  changes neither the text nor the element count, so by those two alone a
+   *  switch a person can see move was a control that did nothing — the false
+   *  failure that pressing toggles at all would otherwise have invented. */
+  readonly on: number;
 }
 
 /** Nothing evaluated in the page may be a NAMED function: tsx compiles this file
@@ -76,68 +165,191 @@ interface Look {
  *  off the seam entirely; both are screens that asked the host for nothing, and
  *  reading them as an exception loses the whole case instead of one press. */
 const look = async (page: Page): Promise<Look> =>
-  await page.evaluate(() => ({
-    calls: window.vendo?.calls ?? [],
-    text: document.body.innerText.length,
-    elements: document.querySelectorAll("*").length,
-  }));
+  await page.evaluate(
+    (on: string) => ({
+      calls: window.vendo?.calls ?? [],
+      text: document.body.innerText.length,
+      elements: document.querySelectorAll("*").length,
+      on: document.querySelectorAll(on).length,
+    }),
+    ON,
+  );
 
 /** The wait a press earns: until it asks the host for something it had not asked
  *  for, or until the screen it is on is no longer the screen it was pressed on.
  *  A press that does neither spends the whole bound and is read as it stands,
  *  which is the honest verdict for a dead control. */
 const settle = async (page: Page, before: Look): Promise<void> => {
-  const was = { calls: before.calls.length, text: before.text, elements: before.elements };
+  // The selector rides along rather than being spelled a second time here: this
+  // wait and the reading above have to agree about what "on" means.
+  const was = { calls: before.calls.length, text: before.text, elements: before.elements, on: before.on, onSelector: ON };
   await page
     .waitForFunction(
       (mark: typeof was) =>
         window.vendo.calls.length > mark.calls
         || document.body.innerText.length !== mark.text
-        || document.querySelectorAll("*").length !== mark.elements,
+        || document.querySelectorAll("*").length !== mark.elements
+        || document.querySelectorAll(mark.onSelector).length !== mark.on,
       was,
       { timeout: EFFECT_MS },
     )
     .catch(() => undefined);
 };
 
+/**
+ * Every chooser on the screen set to its first REAL option, once, in document
+ * order.
+ *
+ * Option zero is usually the placeholder — "Assign to…", value `""` — which is
+ * the exact state the control was guarded against, so it is skipped. One pass and
+ * no second guess: nothing here hunts for the combination that unlocks a screen,
+ * because a probe that hunts returns a verdict that depends on how long it hunted.
+ */
+const choose = async (page: Page): Promise<void> => {
+  const choosers = page.locator(CHOICE);
+  const many = await choosers.count();
+  for (let index = 0; index < many; index += 1) {
+    const chooser = choosers.nth(index);
+    const option = await chooser
+      .evaluate((node: HTMLSelectElement) => [...node.options].find((choice) => choice.value !== "" && !choice.disabled)?.value)
+      .catch(() => undefined);
+    if (option !== undefined) await chooser.selectOption(option, { timeout: CLICK_MS }).catch(() => undefined);
+  }
+};
+
+/** What a control is called, in the words a person reads off it. */
+const nameOf = async (element: Locator, index: number): Promise<string> => {
+  const text = await element.innerText().catch(() => "");
+  const aria = await element.getAttribute("aria-label").catch(() => null);
+  return (text || aria || "").trim() || `control ${index + 1}`;
+};
+
+/**
+ * One press, read the same way whichever side of a dialog's edge it is on.
+ *
+ * A press inside a confirmation is a press: it lands late for the same reason,
+ * it asks the host through the same recorder, and it moves the screen the same
+ * way. Written once so the two can never be graded by different rules.
+ */
+const press = async (visit: Visit, element: Locator, label: string): Promise<Probed> => {
+  // Read BEFORE the click, and after any precondition: what a choice moved on
+  // the screen belongs to the choice, and crediting it to the press would let a
+  // chooser make a dead button look like a live one.
+  const before = await look(visit.page);
+  await element.click({ timeout: CLICK_MS }).catch(() => undefined);
+  await settle(visit.page, before);
+
+  // Read after the press has landed, so a confirmation the runtime paints a
+  // frame late is still a confirmation and not a control that did nothing.
+  // `isVisible` first because it answers on a missing element instead of
+  // waiting for one, which every press that opens no dialog is.
+  const dialog = visit.page.locator("[role=dialog]").first();
+  const said = (await dialog.isVisible().catch(() => false))
+    ? (await dialog.innerText().catch(() => "")).trim().slice(0, DIALOG_CHARS)
+    : undefined;
+
+  // A press that navigated away — a link with an href — leaves no screen to
+  // read: it went somewhere, which is the change, and it asked the host for
+  // nothing on the way. The screen is put back for the next candidate rather
+  // than the whole case being lost to one anchor.
+  const after = await look(visit.page).catch(() => undefined);
+  if (after === undefined) await visit.reset();
+  return {
+    label,
+    ...(said === undefined ? {} : { dialog: said }),
+    changed:
+      after === undefined || after.text !== before.text || after.elements !== before.elements || after.on !== before.on,
+    // Only what THIS press asked for. The recorder is the page's, not the
+    // press's, so handing over the whole array credited one load-time call to
+    // every control on the screen and graded a dead button as wired.
+    calls: after?.calls.slice(before.calls.length) ?? [],
+  };
+};
+
+/**
+ * Every way out of a confirmation, one per fresh page.
+ *
+ * The same isolation the screen's own controls get, one level in: a path is the
+ * whole walk — the screen from scratch, the precondition it asked for, the press
+ * that opened the dialog, then ONE control inside it — so no in-dialog press ever
+ * sees what another one did. `reopen` is that walk, handed in by the caller
+ * because only the caller knows which control opened this dialog and what it
+ * needed first.
+ *
+ * The dialog is already standing when this is called, so the first path is walked
+ * rather than re-walked. Only what a person can actually press counts as a path:
+ * a control that is hidden or locked inside a dialog is not a way out of it, and
+ * counting one as a press that fired nothing would hand a dialog the decline it
+ * does not have.
+ */
+const insideDialog = async (visit: Visit, reopen: () => Promise<void>): Promise<Path[]> => {
+  const controls = visit.page.locator("[role=dialog]").first().locator(ACTIONABLE).filter({ visible: true });
+  const many = await controls.count();
+  const paths: Path[] = [];
+  for (let index = 0; index < many; index += 1) {
+    if (index > 0) await reopen();
+    const control = controls.nth(index);
+    const { label, changed, calls } = await press(visit, control, await nameOf(control, index));
+    // The dialog's own words are on the press that opened it; an in-dialog press
+    // that leaves it standing has not opened a second confirmation, so nothing
+    // here carries one.
+    paths.push({ label, changed, calls });
+  }
+  return paths;
+};
+
 export async function probe(visit: Visit): Promise<Probed[]> {
   const trace: Probed[] = [];
-  const candidates = await visit.page.locator(ACTIONABLE).count();
+  const controls = visit.page.locator(CONTROLS);
+  const candidates = await controls.count();
+  // Read once, on the page nobody has touched: with no chooser on the screen there
+  // is no precondition to satisfy, so a locked control is passed over where it
+  // stands instead of costing a reload to learn the same thing.
+  const asks = (await visit.page.locator(CHOICE).count()) > 0;
+  // The shot was taken on a page nobody had touched yet, so the first candidate
+  // already has its fresh screen — and a candidate that was passed over left the
+  // screen exactly as it found it, so it does not owe the next one a reload.
+  let touched = false;
   for (let index = 0; index < candidates; index += 1) {
-    // The shot was taken on a page nobody had touched yet, so the first candidate
-    // already has its fresh screen and only the later ones need one.
-    if (index > 0) await visit.reset();
-    const element = visit.page.locator(ACTIONABLE).nth(index);
-    const text = await element.innerText().catch(() => "");
-    const aria = await element.getAttribute("aria-label").catch(() => null);
-    const before = await look(visit.page);
-    await element.click({ timeout: CLICK_MS }).catch(() => undefined);
-    await settle(visit.page, before);
-
-    // Read after the press has landed, so a confirmation the runtime paints a
-    // frame late is still a confirmation and not a control that did nothing.
-    // `isVisible` first because it answers on a missing element instead of
-    // waiting for one, which every press that opens no dialog is.
-    const dialog = visit.page.locator("[role=dialog]").first();
-    const said = (await dialog.isVisible().catch(() => false))
-      ? (await dialog.innerText().catch(() => "")).trim().slice(0, DIALOG_CHARS)
-      : undefined;
-
-    // A press that navigated away — a link with an href — leaves no screen to
-    // read: it went somewhere, which is the change, and it asked the host for
-    // nothing on the way. The screen is put back for the next candidate rather
-    // than the whole case being lost to one anchor.
-    const after = await look(visit.page).catch(() => undefined);
-    if (after === undefined) await visit.reset();
-    trace.push({
-      label: (text || aria || "").trim() || `control ${index + 1}`,
-      ...(said === undefined ? {} : { dialog: said }),
-      changed: after === undefined || after.text !== before.text || after.elements !== before.elements,
-      // Only what THIS press asked for. The recorder is the page's, not the
-      // press's, so handing over the whole array credited one load-time call to
-      // every control on the screen and graded a dead button as wired.
-      calls: after?.calls.slice(before.calls.length) ?? [],
-    });
+    if (touched) await visit.reset();
+    const element = controls.nth(index);
+    // Whether THIS control is pressable, rather than whether the screen has a
+    // pressable control somewhere.
+    const live = element.and(visit.page.locator(ACTIONABLE));
+    // Whether the screen had to be given what it asked for before this control
+    // would take a press — which is half of the walk back to a dialog it opens.
+    let chose = false;
+    if ((await live.count()) === 0) {
+      if (!asks) continue;
+      touched = true;
+      await choose(visit.page);
+      chose = true;
+      // Still locked after the screen got what it asked for: it is guarding
+      // something else, and a screen being careful is not a screen with a dead
+      // control. It goes unpressed and ungraded, exactly as it did before.
+      const woke = await live
+        .waitFor({ state: "attached", timeout: WAKE_MS })
+        .then(() => true)
+        .catch(() => false);
+      if (!woke) continue;
+    }
+    touched = true;
+    const label = await nameOf(element, index);
+    const pressed = await press(visit, element, label);
+    if (pressed.dialog === undefined) {
+      trace.push(pressed);
+      continue;
+    }
+    // The same walk again, for the next path inside the dialog: the screen from
+    // scratch, the choice it asked for where this control needed one, then this
+    // control. Its result is thrown away — it is how the dialog gets back on the
+    // screen, not a second reading of the press that opened it.
+    const reopen = async (): Promise<void> => {
+      await visit.reset();
+      if (chose) await choose(visit.page);
+      await press(visit, element, label);
+    };
+    trace.push({ ...pressed, inside: await insideDialog(visit, reopen) });
   }
   return trace;
 }

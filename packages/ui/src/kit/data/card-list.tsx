@@ -1,14 +1,19 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
+import type { SemanticToken } from "@vendoai/core";
 import type { ReactNode } from "react";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { readField, RowContext } from "../row.js";
-import { densityVars, font, hairline, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
+import { fieldItems, readField, readValue, RowContext, semanticFormat } from "../row.js";
+import { densityVars, font, hairline, mono, numeric, t, type KitDensity, type KitStyled } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
   key: string;
   label?: string;
   format?: ValueFormat;
+  /** What the HOST says this field is, copied off its tool's shape card
+   *  (`money.cents`, `date.iso`, `code`) — it decides the format and the units
+   *  this row reads in. */
+  semantic?: SemanticToken;
   /** Kit elements rendered as this field's VALUE for THIS item (the label
    *  stays); the components inside name their field. */
   cell?: ReactNode;
@@ -21,8 +26,9 @@ export interface CardListProps extends KitStyled {
   titleField?: string;
   /** Optional field rendered as a status pill (EnumBadge). */
   badgeField?: string;
-  /** Fields shown as label/value rows. */
-  fields?: CardField[];
+  /** Fields shown as label/value rows; a bare string is its key. Omitted, they
+   *  are the item's own keys, less the two the card already shows. */
+  fields?: Array<CardField | string>;
   /** Columns of cards (defaults to a responsive auto-fit grid). */
   columns?: number;
   /** Text shown when there are no items. */
@@ -35,9 +41,15 @@ export interface CardListProps extends KitStyled {
   density?: KitDensity;
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", empty, actions, density, style }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields: rawFields, columns, emptyState = "No items", empty, actions, density, style }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
+  // No `fields` is "show me the record", the same default DataTable's columns
+  // have: a card with a title and nothing under it is not a card. The title and
+  // the badge are already on the card, so they do not repeat as rows.
+  const fields = fieldItems<CardField>(
+    rawFields ?? Object.keys(items[0] ?? {}).filter((key) => key !== titleField && key !== badgeField),
+  );
   if (items.length === 0) {
     // The slot replaces the dashed box, not its TEXT: what goes in one is an
     // EmptyState, which draws that same frame itself — nested, it read as a
@@ -97,16 +109,21 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                   ) : null}
                 </div>
               )}
-              {fields.map((f) => (
-                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
-                  <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                  {f.cell ?? (
-                    <span style={numeric}>
-                      {applyFormat(readField(item, f.key), f.format ?? "text") ?? "—"}
-                    </span>
-                  )}
-                </div>
-              ))}
+              {fields.map((f) => {
+                // The host's declaration fills the format the model left off,
+                // and `readValue` reads the field in the units it declared.
+                const format = f.format ?? semanticFormat(f.semantic) ?? "text";
+                return (
+                  <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
+                    <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
+                    {f.cell ?? (
+                      <span style={{ ...numeric, ...(format === "code" ? mono : {}) }}>
+                        {applyFormat(readValue(item, { ...f, format }), format) ?? "—"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </article>
           </RowContext.Provider>
         );

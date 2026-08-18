@@ -7,7 +7,7 @@
 import type { ComponentType } from "react";
 
 // Components
-import { Card, Divider, Grid, Row, Stack, Surface } from "./layout.js";
+import { Card, Divider, Grid, Row, SplitPane, Stack, Surface } from "./layout.js";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "./values.js";
 import { Icon } from "./icon.js";
 import { DataTable } from "./data/data-table.js";
@@ -58,7 +58,7 @@ export {
 
 /** Name → React component, for the tree renderer. */
 export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string, never>>>> = {
-  Stack, Row, Grid, Surface, Card, Divider,
+  Stack, Row, Grid, SplitPane, Surface, Card, Divider,
   Text, Money, DateTime, Percent, Num, EnumBadge, Icon,
   DataTable, CardList, Calendar, Stat, Badge, KeyValue, Timeline, Avatar, CodeBlock,
   LineChart, BarChart, DonutChart, Sparkline, Progress,

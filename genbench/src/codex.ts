@@ -16,10 +16,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MODEL_IDS, usdFor, type ModelAlias, type UsageTotals } from "./meter.js";
+import { MODEL_IDS, usdFor, type ModelAlias, type UsageTally } from "./meter.js";
 import { HARNESS_CONTRACT } from "./render.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
-import { worldBlock } from "./vendo.js";
+import { installWorldTools, TOOL_ACCESS, worldBlock } from "./vendo.js";
 import type { Case, World } from "./world.js";
 
 /** The bits of a `codex exec` process this driver uses: the `--json` stream it
@@ -66,7 +66,7 @@ const PAGE = "index.html";
 const DELIVERY = `Write ONE file, \`${PAGE}\`, in your working directory: a complete document, saved over again each time you revise it. Nothing else is read.`;
 
 const brief = (world: World, testCase: Case): string =>
-  [worldBlock(world), "", DELIVERY, "", HARNESS_CONTRACT, "", `TASK: ${testCase.prompt}`].join("\n");
+  [worldBlock(world), "", DELIVERY, "", TOOL_ACCESS, "", HARNESS_CONTRACT, "", `TASK: ${testCase.prompt}`].join("\n");
 
 /** The pinned devDependency's own binary, never a bare `codex`: the operator's
  *  global install is some other version, and which engine wrote the page is part
@@ -186,7 +186,7 @@ const numberOf = (value: unknown): number => (typeof value === "number" && Numbe
  *  `meteredModel` does for a provider that reports only a total. Reasoning
  *  tokens are a subset of `output_tokens` rather than a number beside it, and
  *  adding them would bill this column's thinking twice. */
-function record(totals: Record<keyof UsageTotals, number>, raw: unknown): void {
+function record(totals: UsageTally, raw: unknown): void {
   const usage = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   const cacheRead = numberOf(usage["cached_input_tokens"]);
   const cacheWrite = numberOf(usage["cache_write_input_tokens"]);
@@ -215,6 +215,11 @@ async function run(request: RunRequest, options: CodexOptions): Promise<RunOutco
   // has to write, so a home under the workspace is a session that cannot start —
   // and one more directory the page's author can see.
   const home = await mkdtemp(join(tmpdir(), "genbench-codex-"));
+  // The host's tools, callable, before the session starts: this column has hands,
+  // so it gets the same look at the data the vendo column's loop gets. In the
+  // workspace because that is the one directory `workspace-write` lets the
+  // session see and the one its `--cd` puts it in.
+  await installWorldTools(workspace, world);
   const page = join(workspace, PAGE);
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 };
   let turns = 0;

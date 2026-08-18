@@ -9,10 +9,13 @@
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { runFloor } from "../src/floor.js";
 import type { Meter } from "../src/meter.js";
+import { pageHtml } from "../src/render.js";
+import type { RunOutcome } from "../src/run.js";
 import { vendoDriver } from "../src/vendo.js";
-import { loadWorld, type Case, type World } from "../src/world.js";
+import { cannedResponse, loadWorld, type Case, type World } from "../src/world.js";
 
 type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part>
   ? Part
@@ -36,12 +39,16 @@ const stopTurn = (): StreamPart[] => [
 ];
 
 /** A meter over a model that replays the given turns, so the loop — not a real
- *  model — decides what lands. */
-function scripted(turns: StreamPart[][]): Meter {
+ *  model — decides what lands. `onTurn` runs on the way INTO each turn, which is
+ *  the one place a test can reach mid-assembly: the loop has finished every
+ *  earlier turn's tool calls by then, and `assemble` has not answered yet. */
+function scripted(turns: StreamPart[][], onTurn: (turn: number) => void = () => undefined): Meter {
   const remaining = turns.map((turn) => [...turn]);
   let tick = 0;
+  let turn = 0;
   const model = new MockLanguageModelV3({
     doStream: async () => {
+      onTurn(turn++);
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
       return { stream: simulateReadableStream({ chunks }) };
@@ -113,5 +120,156 @@ describe("the vendo driver reports one revision", () => {
     expect(outcome.payload).toBeDefined();
     expect(outcome.blocking).toEqual([]);
     expect(outcome.failure).toBeUndefined();
+  });
+});
+
+/**
+ * A screen painted before the bell is a real screen.
+ *
+ * A case that hit its cap used to be recorded as having delivered NOTHING — the
+ * floor failed `delivered`, the judge failed all twelve rubric lines, and the
+ * assembler had painted and saved several times before the clock ran out. That
+ * is the harness's clock graded as the contender's quality. So a spent budget
+ * ends the WAIT and nothing else: whatever landed and whatever last painted is
+ * reported, through the same read a case that finished on time makes, with the
+ * cap said out loud beside it.
+ *
+ * The other half is the store: `assemble` takes no signal, so the assembler runs
+ * on and its stragglers keep reporting audit rows through this store. Closing it
+ * under them is what turned one zombie's write into `[vendo] store is closed`
+ * with nobody to catch it, and ended a whole run.
+ */
+describe("a case whose budget runs out", () => {
+  /** The driver's own warning, captured rather than printed. */
+  async function ranOut(run: () => Promise<RunOutcome>): Promise<{ outcome: RunOutcome; warned: string }> {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...said: unknown[]) => void lines.push(said.join(" ")));
+    try {
+      return { outcome: await run(), warned: lines.join("\n") };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  /** The budget expiring MID-assembly, which is the shape a real run has: the
+   *  first save has landed and painted, and the loop is asking for its next turn
+   *  when the bell rings. */
+  const outOfTime = async (id: string): Promise<{ outcome: RunOutcome; warned: string }> => {
+    const spent = new AbortController();
+    return await ranOut(
+      async () =>
+        await vendoDriver().run({
+          world,
+          testCase: caseFor(id),
+          meter: scripted([saveTurn(PAINTS, "c1"), stopTurn()], (turn) => {
+            if (turn === 1) spent.abort();
+          }),
+          signal: spent.signal,
+        }),
+    );
+  };
+
+  it("hands back the last screen it painted, and the floor reads it as delivered", async () => {
+    const { outcome } = await outOfTime("out-of-time");
+
+    // It really did paint before the bell — without this the case proves nothing.
+    expect(outcome.snapshots.length).toBeGreaterThan(0);
+    expect(outcome.artifact).toBe(PAINTS);
+    expect(outcome.payload).toBeDefined();
+    expect(outcome.blocking).toEqual([]);
+    expect(outcome.failure).toContain("the case's budget ran out");
+
+    // Graded through the run's OWN floor, with no stub on either side: a
+    // salvaged screen is a delivered screen. `renders` is the browser's word and
+    // not this seam's, so it is not what is being asked here.
+    const floor = runFloor({
+      world,
+      artifact: outcome.artifact,
+      blocking: outcome.blocking,
+      trace: [],
+      renders: false,
+      tags: [],
+    });
+    expect(floor.delivered).toBe(true);
+    expect(floor.valid).toBe(true);
+    // And the payload is a payload: the run's own page builder takes it.
+    expect(pageHtml(outcome.payload!, world, "", "vendo-sonnet")).toContain("This month");
+  });
+
+  it("still delivers nothing when the budget was gone before anything painted", async () => {
+    const spent = new AbortController();
+    spent.abort();
+
+    const { outcome } = await ranOut(
+      async () =>
+        await vendoDriver().run({
+          world,
+          testCase: caseFor("nothing-painted"),
+          meter: scripted([saveTurn(PAINTS, "c1"), stopTurn()]),
+          signal: spent.signal,
+        }),
+    );
+
+    expect(outcome.snapshots).toEqual([]);
+    expect(outcome.artifact).toBeUndefined();
+    expect(outcome.payload).toBeUndefined();
+    expect(outcome.failure).toContain("the case's budget ran out");
+    expect(
+      runFloor({ world, artifact: outcome.artifact, blocking: outcome.blocking, trace: [], renders: false, tags: [] })
+        .delivered,
+    ).toBe(false);
+  });
+
+  it("leaves its store open for the work still using it, and says so", async () => {
+    const { warned } = await outOfTime("abandoned");
+
+    expect(warned).toContain("abandoned's store stays open");
+  });
+});
+
+/** The other half of `diy.test.ts`'s fairness assertion. Every baseline reads
+ *  each descriptor in its own prompt (`worldBlock`); vendo was briefed with
+ *  neither, so it had to spend a paid turn calling a tool to learn what it
+ *  answers with. Read off the prompt the assembler really sent, because the
+ *  briefing that counts is the one on the wire. */
+describe("the vendo driver's briefing", () => {
+  /** The system prompt the assembler really sent — the briefing that counts is
+   *  the one on the wire, not the pack a helper returns. */
+  async function systemPrompt(each: World, id: string): Promise<string> {
+    const meter = scripted([saveTurn(PAINTS, "c1"), stopTurn()]);
+    await vendoDriver().run({ world: each, testCase: caseFor(id), meter });
+    return (meter.model as MockLanguageModelV3).doStreamCalls[0]!.prompt
+      .filter((message) => message.role === "system")
+      .map((message) => message.content as string)
+      .join("\n");
+  }
+
+  it("carries every world tool's descriptor, and none of their answers", async () => {
+    const sent = await systemPrompt(world, "briefed");
+
+    for (const tool of world.tools) expect(sent).toContain(JSON.stringify(tool.descriptor, null, 2));
+    // The canned rows stay out: vendo calls these tools for real.
+    const reads = world.tools.find((tool) => tool.data !== undefined)!;
+    expect(sent).not.toContain(JSON.stringify(cannedResponse(reads), null, 2));
+  });
+
+  /** Shapes are symmetric — every column reads each descriptor. What a field
+   *  MEANS is not handed over: the unit lives in the tool's own prose, and vendo
+   *  infers it at generation time exactly like every rival. A card naming this
+   *  world's fields with their units would be vendo marking its own exam.
+   *
+   *  The Kit's generic teaching of the `semantic` prop is a different thing and
+   *  stays: it is a product feature every host configures, and it names no field
+   *  of this world. So the pin is on the DERIVED line — `compute_cost` is the
+   *  field the whole card existed for, stated in CENTS in the prose below and
+   *  nowhere else. */
+  it("spells out no field's units, which no rival is told either", async () => {
+    const sent = await systemPrompt(await loadWorld(join(root, "worlds", "buildlog")), "no-units");
+
+    // The prose the model reads for itself really is there — otherwise this
+    // pins the absence of a world rather than the absence of a card.
+    expect(sent).toContain("CENTS");
+    expect(sent).not.toContain("compute_cost: money.cents");
+    expect(sent).not.toContain("FIELD UNITS");
   });
 });

@@ -9,9 +9,13 @@ import {
   type UIPayload,
 } from "@vendoai/core";
 import {
+  bootScreen,
   defaultVendoTheme,
+  flattenTree,
+  KIT_COMPONENT_NAMES,
   resolveTheme,
   themeCssVariables,
+  warmScreenEngine,
   type VendoTheme,
 } from "@vendoai/apps/contract";
 import { VendoProvider } from "@vendoai/ui";
@@ -38,43 +42,108 @@ const read = <T,>(id: string): T => JSON.parse(document.getElementById(id)!.text
 
 const theme = read<VendoTheme>("theme");
 applyThemeVars(themeCssVariables(resolveTheme(defaultVendoTheme, theme)));
-const payload = read<UIPayload>("payload");
+const served = read<UIPayload>("payload");
 
 /**
- * A screen `PayloadView` has to boot a runtime for before it can paint.
- *
- * The tag is the payload's own: an interactive payload carries `interactive`
- * ({ compiledSource, queries }), and the renderer boots the VM behind that same
- * entry point. Nothing here reaches into it — the bundle already carries whatever
- * `PayloadView` imports.
+ * A component screen's live half, exactly as the paint gate wrote it into the
+ * payload (`apps/src/server/checking/floor.ts:240`): the compiled module, the
+ * answers it was painted against, and how to read them again.
  */
-const interactive = (payload as { interactive?: unknown }).interactive !== undefined;
+interface Interactive {
+  readonly compiledSource: string;
+  readonly queries: Record<string, unknown>;
+  readonly queryPlan?: readonly { tool: string; input?: Json }[];
+}
+
+const interactive = (served as { interactive?: Interactive }).interactive;
 
 /**
- * The grace an interactive screen gets on top of its two frames, before the shot
- * is taken and the probe starts pressing.
+ * The payload as an OPEN produces it: the screen RUN — here, now — against the
+ * answers this host gives this page.
  *
- * Flat, and only for those payloads. The tempting alternative — settle once the
- * DOM has been quiet for a frame or two — cannot tell "the VM has finished" from
- * "the VM has not started yet", which is precisely the race this exists to lose.
- * A second is nothing against a case that takes minutes, and it is spent by no
- * static screen.
+ * A deployment never serves the paint it saved. `runtime.open` hands the app's
+ * own `app.tsx` back through the same gauntlet a save paints through, so the
+ * payload a person is served is the screen re-executed against the queries their
+ * open just made (`apps/src/server/persistence/open.ts:229`, and the comment on
+ * `createAppOpener`'s `screen` argument says so in the product's own words). A
+ * benchmark page has no server behind it — it is one file carrying one payload,
+ * frozen at the instant the assembler wrote it — so unless the open happens
+ * HERE, the vendo column ships the one thing this product says a screen is not:
+ * a snapshot. It measured as one, on 10% of its displayed values and dead last
+ * of seven columns (the liveness axis, 2026-08-17).
+ *
+ * The same engine and the same two calls the server makes, in the same order:
+ * read the plan, boot the compiled module on the answers, flatten the paint. A
+ * screen that declared no queries has nothing to re-read and is served exactly
+ * as it was — it is static because it asked for nothing, which is the one honest
+ * way to be.
  */
-const VM_BOOT_MS = 1_000;
+async function opened(): Promise<UIPayload> {
+  if (interactive === undefined) return served;
+  // Warmed for EVERY interactive payload, including one with nothing to re-read.
+  // The engine's WebAssembly is the one asynchronous thing between mount and a
+  // live screen, and `PayloadView` boots its own VM off this same warmed module
+  // (`ui/src/tree/screen-engine.ts`) — so awaiting it here is what lets the
+  // settle signal below be two frames rather than a guess at how long a VM takes.
+  await warmScreenEngine();
+  const plan = interactive.queryPlan ?? [];
+  if (plan.length === 0) return served;
+  const queries = Object.fromEntries(plan.map((query) => {
+    const outcome = window.vendo.callTool(query.tool, query.input ?? {});
+    // A read that failed leaves its key absent, which is what the renderer's own
+    // re-read does with one (`ui/src/tree/use-screen.ts:169`) — the screen
+    // renders that query empty rather than the page rendering nothing.
+    return [query.tool, outcome.status === "ok" ? outcome.output : undefined];
+  }));
+  const screen = bootScreen({
+    compiledSource: interactive.compiledSource,
+    queries,
+    // Exactly the renderer's own vocabulary — `StatefulTreeView` boots its VM
+    // with `[...KIT_COMPONENT_NAMES, ...components]` and nothing here registers
+    // a host component, so this is the same list the checks floor admitted.
+    catalog: KIT_COMPONENT_NAMES,
+    now: Date.now(),
+  });
+  try {
+    const flat = flattenTree(screen.tree());
+    // The fresh answers travel with the tree: the VM `PayloadView` boots for the
+    // screen's HANDLERS reads `interactive.queries`, and a handler working off
+    // the rows the assembler saw while the tree beside it shows today's is two
+    // screens in one.
+    return {
+      ...served,
+      nodes: Object.values(flat.nodes),
+      root: flat.root,
+      interactive: { ...interactive, queries },
+    } as unknown as UIPayload;
+  } finally {
+    screen.dispose();
+  }
+}
 
-function Screen(): JSX.Element {
-  // Two frames after the commit: the Kit's charts size themselves off a
-  // ResizeObserver, so the frame that mounts one is never the frame that draws it.
+function Screen({ payload }: { payload: UIPayload }): JSX.Element {
+  /**
+   * Two frames after the commit, for every payload there is — the Kit's charts
+   * size themselves off a ResizeObserver, so the frame that mounts one is never
+   * the frame that draws it.
+   *
+   * An interactive screen used to be given a flat extra second here, because the
+   * one asynchronous thing it was waiting on — the engine behind `PayloadView`'s
+   * own VM — could not be waited on from out here. It can now: `opened()` awaits
+   * exactly that engine before this ever renders, and the tree that mounts is
+   * already the finished paint rather than a skeleton the VM replaces. What is
+   * left for the VM to do is arm the `{$handler}` props, and the bridge HOLDS a
+   * press that lands before it is up and delivers it on boot
+   * (`ui/src/tree/use-screen.ts:224`), so the probe cannot lose one to the gap.
+   *
+   * That second was worth deleting because bind-by-default routes EVERY vendo
+   * case through this path: a fixed sleep here is a tax on the whole column, and
+   * one paid three times per case now that liveness paints each page twice more.
+   */
   useEffect(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (!interactive) {
-          window.__settled = true;
-          return;
-        }
-        setTimeout(() => {
-          window.__settled = true;
-        }, VM_BOOT_MS);
+        window.__settled = true;
       });
     });
   }, []);
@@ -96,4 +165,8 @@ function Screen(): JSX.Element {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<Screen />);
+// The open is asynchronous (the engine's WebAssembly loads once), so the mount
+// is too. Nothing paints before it: a served tree painted first and swapped a
+// beat later is a race the shot can lose, and losing it means grading the very
+// snapshot this page exists to stop shipping.
+void opened().then((payload) => createRoot(document.getElementById("root")!).render(<Screen payload={payload} />));

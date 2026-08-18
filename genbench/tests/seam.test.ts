@@ -25,12 +25,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FloorResult } from "../src/floor.js";
-import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import { writePreview } from "../src/report.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { writeCase, type CaseResult } from "../src/run.js";
-import { TriageContract } from "../src/triage.js";
 import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -180,7 +178,6 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 0, found: 0 },
   wiredActions: { pass: true, pressed: 1, bindings: [] },
   pass: true,
 };
@@ -206,8 +203,6 @@ const resultFor = (contender: string): CaseResult => ({
   caseHash: "case-hash",
   judged: GRADED,
   judgeContract: JudgeContract,
-  triageContract: TriageContract,
-  auditorContract: AUDITOR_CONTRACT,
   gitSha: "0".repeat(40),
   agentSdkVersion: "0.0.0",
 });

@@ -10,8 +10,6 @@ export interface CodeBlockProps extends KitStyled {
   language?: string;
 }
 
-const mono = "var(--vendo-mono-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)";
-
 export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
   return (
     <div
@@ -24,6 +22,16 @@ export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
         borderRadius: t.radiusMedium,
         background: t.surfaceRaised,
         overflow: "hidden",
+        // A `pre` never wraps, so its longest line is the block's min-content —
+        // and min-content propagates up through every panel around it, pushing
+        // the whole layout off a narrow frame with nothing to scroll (a 480px
+        // benchmark screen lost its assertion line that way). `overflow` on the
+        // block does not stop that: only a flex/grid ITEM's automatic minimum
+        // size is zeroed by it, and the block is usually neither. One grid track
+        // floored at 0 is: the block still ASKS for its max-content, and accepts
+        // any width down to nothing — so the `pre` below scrolls instead.
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr)",
         ...style,
       }}
     >
@@ -46,13 +54,13 @@ export function CodeBlock({ code = "", language, style }: CodeBlockProps) {
           margin: 0,
           padding: "var(--vendo-density-card-padding, 12px 14px)",
           overflowX: "auto",
-          fontFamily: mono,
+          fontFamily: t.monoFamily,
           fontSize: "0.85em",
           lineHeight: 1.55,
           tabSize: 2,
         }}
       >
-        <code style={{ fontFamily: mono }}>{code}</code>
+        <code style={{ fontFamily: t.monoFamily }}>{code}</code>
       </pre>
     </div>
   );

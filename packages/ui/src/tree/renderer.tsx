@@ -493,7 +493,7 @@ interface NodeRendererProps {
   marks: ReadonlyMap<string, NodeMark>;
 }
 
-const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
+const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid", "SplitPane"]);
 
 /**
  * The `$expr` interpreter is a WebAssembly module that loads once. Evaluation

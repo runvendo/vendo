@@ -37,9 +37,9 @@ export const HARNESS_CONTRACT = `THE PAGE — the seam every screen is scored th
 
 - SELF-CONTAINED. Inline every style and every script. The page is opened with NO network at all, so a CDN link, a webfont URL or an import of anything paints a blank screen.
 - WIRED. Every control a person can press must call \`window.vendo.callTool("<tool name>", { ...arguments })\`, with arguments that tool's input schema accepts. \`window.vendo\` is already on the page before anything you write runs — use it, do not define it.
-- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`. The harness records that it opened and the text it shows, and presses nothing inside it — what the dialog SAYS is what is graded.
+- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`. The harness records the text it shows, then presses EACH control inside it once, on a fresh screen each time: the one that goes through must call the tool that does the work, and the one that backs out must not call it.
 - FINISHED. The screen is considered settled two frames after the page loads, and it is shot then. Draw synchronously: anything painted later may not be in the picture anyone grades.
-- HONEST. Every number and every date on the screen must come from the tool data above — shown as it is, or computed from it. Anything else is graded as invented.
+- HONEST. Every number and every date on the screen must come from what a tool answered — shown as it is, or computed from it. Nothing above says what any tool answers with, so a screen only knows by asking. Anything else is graded as invented.
 - SIZED. It is shot at ${VIEWPORT.width}x${VIEWPORT.height}, and what a person sees there is all anyone sees.`;
 
 /** How long a page gets to commit and draw before the shot is taken anyway. */
@@ -68,6 +68,107 @@ export async function bundleMount(): Promise<string> {
 export const jsonScript = (id: string, value: unknown): string =>
   `<script type="application/json" id="${id}">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>`;
 
+/** The tag `jsonScript` writes, as the pattern that reads it back — one spelling
+ *  of the seam for everything that has to find it again: the clock below, and
+ *  the liveness mutation that rewrites the tools inside it. */
+export const jsonScriptRe = (id: string): RegExp =>
+  new RegExp(`<script type="application/json" id="${id}">([\\s\\S]*?)</script>`);
+
+/** The months a world writes a date with, in the order `Date.UTC` numbers them. */
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * One date as a world wrote it, as an instant.
+ *
+ * Anything carrying no zone is read as UTC. The worlds speak Z — `2026-08-12`,
+ * `2026-08-15 07:20`, `2026-08-12T15:10:00Z` are all in `worlds/` today — and
+ * reading a zoneless one in the operator's zone is the same drift the page's own
+ * `timezoneId` exists to stop, moved into the harness.
+ */
+function instant(written: string): number {
+  const text = written.trim();
+  const named = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/.exec(text);
+  if (named !== null) {
+    const month = MONTHS.indexOf(named[1]!.slice(0, 3).toLowerCase());
+    return month < 0 ? Number.NaN : Date.UTC(Number(named[3]), month, Number(named[2]));
+  }
+  const [day, clock] = text.split(/[T ]/);
+  if (clock === undefined) return Date.parse(day!);
+  return Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/.test(clock) ? `${day}T${clock}` : `${day}T${clock}Z`);
+}
+
+/**
+ * A world's own word on when it is being looked at, in every spelling `worlds/`
+ * uses today: "Today is 2026-08-15 and it is about 10:00 AM", "Today is Aug 12,
+ * 2026", "as of today, 2026-08-12", "`sla_minutes_remaining` is measured from
+ * now, 2026-08-12T15:10:00Z".
+ *
+ * The date, then the rest of the sentence, because several worlds put the hour
+ * beside the day and a screen that reads a clock deserves the one the world set.
+ */
+const DECLARED =
+  /\b(?:today is|today,|from now,)\s+(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?Z?)?|[A-Za-z]{3,9}\.? \d{1,2},? \d{4})([^.]*)/gi;
+
+/** "and it is about 10:00 AM", "about 14:22" — the hour beside the day. */
+const ABOUT = /\babout (\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+
+/** That hour as milliseconds into the day. A world writing 24-hour time says no
+ *  meridiem, so its hour is already the hour. */
+function intoTheDay([, written, minute, meridiem]: RegExpExecArray): number {
+  const said = Number(written);
+  const hour = meridiem === undefined ? said : (said % 12) + (meridiem.toUpperCase() === "PM" ? 12 : 0);
+  return (hour * 60 + Number(minute)) * 60_000;
+}
+
+/** Every date a tool answered with, wherever it sits in the rows. */
+const DATED = /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?/g;
+
+const A_DAY = 86_400_000;
+
+/**
+ * The moment a world is being looked at — decided by the WORLD, never by the
+ * laptop the run happens to be on.
+ *
+ * Every page used to be painted at the real wall-clock date, so a screen that
+ * printed "5 days ago" for a ticket dated 2026-08-12 was right on one morning
+ * and stale on the next, and the same saved page re-painted next year would say
+ * something different again. A benchmark whose answer moves overnight is not
+ * measuring the contender. The live run caught it: `support-desk/duplicate-merge`
+ * was failed for calling 2026-08-12 "5 days ago" while calling the OLDER
+ * 2026-08-10 "last week" — arithmetic against a clock the world does not share.
+ *
+ * Eleven of the fourteen worlds STATE when it is, in prose their contenders are
+ * given verbatim, so that word is the answer wherever it exists. The obvious
+ * alternative — the newest date in the rows, plus a day — is wrong for almost
+ * every world here, because rows carry the FUTURE as readily as the past: a
+ * lease that ends 2027-05-31, a coupon that expires 2026-12-31, an SLA due four
+ * days out. Taken literally it puts `property-management`'s today in June 2027,
+ * ten months past the "today is Aug 12 2026" its own tool descriptions state,
+ * which would render every active lease expired. So it is only the FALLBACK, for
+ * a world that says nothing — where it is at least deterministic, which is the
+ * property that matters most. A world with neither a statement nor a date in it
+ * pins nothing, and says so by answering `undefined`.
+ */
+export function worldToday(world: World): string | undefined {
+  const says = [world.app, ...world.style, ...world.tools.map((tool) => tool.descriptor.description ?? "")].join("\n");
+  // The LATEST of them, so a world that repeats itself does not depend on the
+  // order its tools happen to be declared in, and the statement that names an
+  // hour beats the one that names only the day.
+  const declared = [...says.matchAll(DECLARED)]
+    .map(([, day, tail]) => {
+      const at = instant(day!);
+      const about = ABOUT.exec(tail!);
+      return about === null || Number.isNaN(at) ? at : at + intoTheDay(about);
+    })
+    .filter((at) => !Number.isNaN(at));
+  if (declared.length > 0) return new Date(Math.max(...declared)).toISOString();
+
+  const dated = [...JSON.stringify(world.tools.map(cannedResponse)).matchAll(DATED)]
+    .map(([written]) => instant(written))
+    .filter((at) => !Number.isNaN(at));
+  return dated.length === 0 ? undefined : new Date(Math.max(...dated) + A_DAY).toISOString();
+}
+
 /**
  * The one seam every contender's page answers through, injected as the SAME
  * bytes whoever wrote the page: the recorder the click probe reads, answering
@@ -84,10 +185,23 @@ export const jsonScript = (id: string, value: unknown): string =>
  * The feed itself is `parent.postMessage`: that is what lets the report page
  * show a press in an embedded screen as it happens, tagged with the contender
  * whose frame fired it — with no server and no shared state.
+ *
+ * The world's own `today` rides along beside the rows, and for the same reason
+ * they do: `openBrowser` reads it back out and pins the page's clock to it, so
+ * the clock TRAVELS WITH THE PAGE. A saved page re-painted by the regrade pass
+ * or by the liveness pass — neither of which has a world in hand — is painted
+ * under the very clock it was shot under, months later, on any laptop.
  */
 function seam(world: World, contender: string): string {
   const tools = Object.fromEntries(world.tools.map((tool) => [tool.name, cannedResponse(tool) as Json]));
+  const today = worldToday(world);
+  // Prefixed, unlike the three ids beside it, because this one is the harness
+  // talking to ITSELF: no page reads it, and `today` unqualified is an id a real
+  // screen would plausibly use for a real panel — whose `getElementById("today")`
+  // would then find this tag instead. Written as a script so `shot()` strips it
+  // with the others: the clock the harness set is not evidence about the screen.
   return `${jsonScript("tools", tools)}
+${today === undefined ? "" : jsonScript("genbench-today", today)}
 <script>
 (function () {
   var tools = JSON.parse(document.getElementById("tools").textContent);
@@ -232,12 +346,34 @@ export interface Shooter {
   close(): Promise<void>;
 }
 
+/** The world's `today` as `seam` wrote it into the page. */
+const TODAY = jsonScriptRe("genbench-today");
+
 /** One browser for the whole run; every case reuses it. */
 export async function openBrowser(): Promise<Shooter> {
   const browser: Browser = await chromium.launch();
   return {
     async visit(html) {
-      const page = await browser.newPage({ viewport: { ...VIEWPORT } });
+      // UTC, because the worlds speak Z and the screens must too. Chromium takes
+      // the operator's zone otherwise, so every `2026-08-12T15:10:00Z` a tool
+      // answered painted seven hours earlier than it says on a Pacific laptop —
+      // and the judge, comparing the screen against the tool data it is given in
+      // Z, correctly reported the difference as invention. It failed the honesty
+      // line on `support-desk/ticket-detail` and `queue-split` for exactly that
+      // ("message timestamps like 'Aug 10, 1:12 AM' do not correspond to any
+      // tool value (08:12Z)"), in both columns, which is a harness bug both
+      // columns were charged for.
+      const page = await browser.newPage({ viewport: { ...VIEWPORT }, timezoneId: "UTC" });
+      // And the DAY the page believes it is, from the world rather than from the
+      // calendar. `setFixedTime` rather than `install`: it freezes what `Date`
+      // reads while leaving every timer running on real time, which the settle
+      // depends on — the double `requestAnimationFrame` in `authoredPage` and in
+      // `mount.tsx`, `mount.tsx`'s VM grace `setTimeout`, and the polling behind
+      // `waitForFunction` below. `install` would stop all four and nothing would
+      // ever settle. Set before the first `setContent`, and it rides an init
+      // script, so `reset()` re-paints under the same clock.
+      const today = TODAY.exec(html);
+      if (today !== null) await page.clock.setFixedTime(new Date(JSON.parse(today[1]!) as string));
       // "NO network at all" is a rule every contender is graded on, so the
       // harness has to be held to it too: a CDN font that happens to resolve on
       // the operator's laptop is a screen that cannot be reproduced anywhere

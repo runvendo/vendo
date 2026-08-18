@@ -9,12 +9,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { wiredActions, type FloorResult } from "../src/floor.js";
-import { JudgeContract, type JudgeResult } from "../src/judge.js";
+import { HONESTY_LINE, JudgeContract, type JudgeResult } from "../src/judge.js";
+import type { Probed } from "../src/probe.js";
 import { writePreview, writeSummary, type RunSummary } from "../src/report.js";
-import type { CaseResult } from "../src/run.js";
-import { TriageContract } from "../src/triage.js";
+import { unjudged, type CaseResult } from "../src/run.js";
 import { loadCases, loadWorld, worldForCase, type World } from "../src/world.js";
 
 const PASSING: FloorResult = {
@@ -22,24 +21,25 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 3, found: 3 },
   wiredActions: { pass: true, pressed: 0, bindings: [] },
   pass: true,
 };
 
-/** The vacuous pass: nothing on the screen was extractable, so the floor
- *  cleared trivially rather than because anything was actually checked. */
-const NOTHING_TO_CHECK: FloorResult = {
+/** The other reading of a `wiredActions` pass: controls really were pressed and
+ *  really held, so the cell was earned rather than cleared vacuously. */
+const CONTROLS_HELD: FloorResult = {
   ...PASSING,
-  honestData: { pass: true, offenders: [], examined: 0, found: 0 },
+  wiredActions: { pass: true, pressed: 2, bindings: [] },
 };
 
 /** One of each verdict, so a row that only handles two of them shows up. Two
- *  case lines with one pass, two style lines with one pass and one `na`. */
+ *  case lines with one pass, the standing honesty line every case is asked, and
+ *  two style lines with one pass and one `na`. */
 const JUDGED: JudgeResult = {
   lines: [
     { line: "shows every pending transfer the tool returned", source: "case", verdict: "pass", note: "three rows are listed" },
     { line: "each transfer names who it is going to", source: "case", verdict: "fail", note: "the rows show amounts and no recipient" },
+    { line: HONESTY_LINE, source: "case", verdict: "pass", note: "every amount is one the tool returned" },
     { line: "money always shows 2 decimals with a currency symbol", source: "style", verdict: "pass", note: "amounts render as $1,250.00" },
     { line: "destructive actions ask for confirmation", source: "style", verdict: "na", note: "nothing on this screen is destructive" },
   ],
@@ -65,8 +65,6 @@ const resultFor = (contender: string, testCase: string, prompt: string, judged: 
   caseHash: "case-hash",
   judged,
   judgeContract: JudgeContract,
-  triageContract: TriageContract,
-  auditorContract: AUDITOR_CONTRACT,
   gitSha: "0".repeat(40),
   agentSdkVersion: "0.0.0",
 });
@@ -85,11 +83,58 @@ beforeAll(async () => {
 const onPage = (value: unknown): string =>
   JSON.stringify(value, null, 2).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
-const preview = async (results: readonly CaseResult[], worlds: Record<string, World>): Promise<string> => {
+const preview = async (
+  results: readonly CaseResult[],
+  worlds: Record<string, World>,
+  actionCases?: ReadonlySet<string>,
+): Promise<string> => {
   const runDir = await mkdtemp(join(tmpdir(), "genbench-report-"));
   await writeFile(join(runDir, "preview-input.json"), "{}");
-  return await readFile(await writePreview({ runDir, runId: "run-1", results, worlds }), "utf8");
+  return await readFile(
+    await writePreview({ runDir, runId: "run-1", results, worlds, ...(actionCases === undefined ? {} : { actionCases }) }),
+    "utf8",
+  );
 };
+
+/** One screen's floor as the REAL grader scores the presses it was given. The
+ *  write axis is a re-read of exactly these bindings, so hand-writing them
+ *  would prove only the hand. */
+const pressed = (contender: string, testCase: string, trace: readonly Probed[]): CaseResult => ({
+  ...resultFor(contender, testCase, "one"),
+  floor: { ...PASSING, wiredActions: wiredActions(trace, world, ["action"]) },
+  trace,
+});
+
+const CANCELLED: readonly Probed[] = [
+  { label: "Cancel", changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+];
+
+/**
+ * Four screens, one set of evidence: a press that reached the host's write, a
+ * press that got as far as a confirmation, a press that called the host and
+ * asked it for ROWS — reading is not acting, which is the distinction the axis
+ * draws — and a DISPLAY case whose press happened to write, which is in
+ * nobody's fraction because nobody asked that screen to do anything.
+ *
+ * A function because the world is loaded in `beforeAll`, and one fixture
+ * because `summary.json` and the page are two readings of the same evidence
+ * and must never be handed two different sets of it.
+ */
+const presses = (): CaseResult[] => [
+  pressed("vendo-sonnet", "cancel-transfer", CANCELLED),
+  pressed("vendo-sonnet", "confirm-first", [
+    { label: "Cancel", changed: true, dialog: "Cancel the transfer to Alex?", calls: [] },
+  ]),
+  pressed("vendo-sonnet", "refresh-only", [
+    { label: "Refresh", changed: false, calls: [{ name: "list_transfers", args: { limit: 5 } }] },
+  ]),
+  pressed("diy-sonnet", "spend-overview", CANCELLED),
+];
+
+const ASKED_TO_ACT = new Set(["cancel-transfer", "confirm-first", "refresh-only"]);
+
+const pressedWorlds = (): Record<string, World> =>
+  Object.fromEntries(presses().map((result) => [result.case, world]));
 
 describe("the preview page", () => {
   it("keeps the column order it was given, whoever finished first", async () => {
@@ -214,6 +259,37 @@ describe("the preview page", () => {
     expect(html).toContain(`<span>design</span><b>1/1</b>`);
   });
 
+  /**
+   * The correctness column was answering two questions at once — whether the
+   * screen showed what was asked, and whether the numbers on it are real — so a
+   * screen that invented a figure and a screen that missed a row moved the same
+   * number by the same amount, and neither said which had happened.
+   */
+  it("scores the honesty line in a row of its own, never inside correctness", async () => {
+    const invented: JudgeResult = {
+      lines: JUDGED.lines.map((line) =>
+        line.line === HONESTY_LINE
+          ? { ...line, verdict: "fail" as const, note: "the balance is on no tool's answer" }
+          : line,
+      ),
+      degraded: false,
+    };
+    const html = await preview(
+      [resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.", invented)],
+      { "pending-transfers": world },
+    );
+
+    // The screen did what it was asked exactly as well as it did before; what it
+    // made up is a different sentence, and it is said on a line of its own.
+    expect(html).toContain(`<span>correctness</span><b>1/2</b>`);
+    expect(html).toContain(`<span>honesty</span><b>0/1</b>`);
+    expect(html).toContain(`<span>design</span><b>1/1</b>`);
+    // In the order the rubric is asked in: what it showed, whether it is true,
+    // then how it looks.
+    expect(html.indexOf(">correctness<")).toBeLessThan(html.indexOf(">honesty<"));
+    expect(html.indexOf(">honesty<")).toBeLessThan(html.indexOf(">design<"));
+  });
+
   it("says a degraded judgement out loud, and prints no tally that would read as a score", async () => {
     const degraded: JudgeResult = {
       lines: JUDGED.lines.map((line) => ({ ...line, verdict: "fail", note: "the judge did not grade this screen" })),
@@ -284,58 +360,129 @@ describe("the preview page", () => {
       { "pending-transfers": world, "spend-overview": world, "spend-chart": world },
     );
 
-    // Two table cases at five checks each, less the vacuous `wiredActions` on
+    // Two table cases at four checks each, less the vacuous `wiredActions` on
     // each screen (nothing to press): vendo ran both and lost two checks on one,
     // diy ran one of the two and held everything on it.
-    expect(html).toContain(`<tr><th>table</th><td>2</td><td class="no">6/8 · 2 vacuous</td><td class="ok">4/4 · 1 vacuous</td></tr>`);
+    expect(html).toContain(`<tr><th>table</th><td>2</td><td class="no">4/6 · 2 vacuous</td><td class="ok">3/3 · 1 vacuous</td></tr>`);
     // Only vendo ran the chart case, so diy's cell says so rather than scoring it.
-    expect(html).toContain(`<tr><th>chart</th><td>1</td><td class="ok">4/4 · 1 vacuous</td><td class="muted">—</td></tr>`);
+    expect(html).toContain(`<tr><th>chart</th><td>1</td><td class="ok">3/3 · 1 vacuous</td><td class="muted">—</td></tr>`);
     // Shapes nobody ran are not rows at all.
     expect(html).not.toContain(`<th>form</th>`);
   });
 
   /**
    * The one aggregate on this page, and it was adding up bare booleans — so a
-   * screen with no numbers on it and nothing to press scored a full 5/5 here,
-   * on two checks that were never in front of it, while the column below was
-   * already muting both as unearned. A cell that disagrees with the card under
-   * it is worse than no cell.
+   * screen with nothing to press scored full marks here, on a check that was
+   * never in front of it, while the column below was already muting it as
+   * unearned. A cell that disagrees with the card under it is worse than no cell.
    */
   it("keeps a vacuous check out of the shape table's numerator and its denominator", async () => {
-    const html = await preview(
-      [{ ...resultFor("vendo-sonnet", "blank", "Show me nothing."), floor: NOTHING_TO_CHECK }],
-      { blank: world },
-    );
+    const html = await preview([resultFor("vendo-sonnet", "blank", "Show me nothing.")], { blank: world });
 
-    // Three checks were really in front of it; the other two had nothing to be.
-    expect(html).toContain(`<td class="ok">3/3 · 2 vacuous</td>`);
-    expect(html).not.toContain(`<td class="ok">5/5</td>`);
+    // Three checks were really in front of it; the fourth had nothing to be.
+    expect(html).toContain(`<td class="ok">3/3 · 1 vacuous</td>`);
+    expect(html).not.toContain(`<td class="ok">4/4</td>`);
     // And the card's own header agrees with the table above it, to the digit.
-    expect(html).toContain(`<span class="score ok">3/3 · 2 vacuous</span>`);
+    expect(html).toContain(`<span class="score ok">3/3 · 1 vacuous</span>`);
   });
 
-  /** A check our own triage or auditor could not be reached for is not the
-   *  contender fabricating data, so it does not score and does not fail. */
-  it("keeps a degraded honesty check out of the score, and says so instead of a red mark", async () => {
-    const outage: FloorResult = {
-      ...PASSING,
-      honestData: {
-        pass: false,
-        offenders: [{ kind: "number", text: "$9,999.00", at: 0, why: "no executable derivation cleared it" }],
-        examined: 1,
-        found: 1,
-        degraded: true,
-        error: "529 overloaded",
-      },
-    };
+  /**
+   * Half the question this benchmark answers is time, and the page said it one
+   * screen at a time — in a card the reader has to scroll to and add up by hand.
+   * Three numbers, because one is not a duration: a column with a fast median
+   * and a forty-second worst case is a different product from one without it.
+   */
+  it("prints each column's duration under its floor cells, in seconds", async () => {
+    const timed = (contender: string, testCase: string, settledMs: number): CaseResult => ({
+      ...resultFor(contender, testCase, "one"),
+      timing: { settledMs },
+    });
     const html = await preview(
-      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: outage }],
+      [
+        timed("vendo-sonnet", "a", 2_000),
+        timed("diy-sonnet", "a", 9_000),
+        timed("vendo-sonnet", "b", 41_000),
+        timed("diy-sonnet", "b", 9_000),
+      ],
+      { a: world, b: world },
+    );
+
+    expect(html).toContain(
+      `<tr><th>duration</th><td class="muted">median · p90 · worst</td>` +
+        `<td>2s · 41s · 41s</td><td>9s · 9s · 9s</td></tr>`,
+    );
+  });
+
+  /**
+   * The other row under the floor cells: whether a column's screens FOLLOWED the
+   * host's data when it moved, or printed it once and stopped listening. A
+   * screen that displayed none of the moved values is out of both halves of the
+   * fraction and counted beside it, the way a vacuous check is everywhere else,
+   * and a column nobody has measured at all says nothing rather than zero.
+   */
+  it("prints each column's liveness under its floor cells, with the unmeasurable screens beside it", async () => {
+    const alive = (contender: string, testCase: string, liveness?: CaseResult["liveness"]): CaseResult => ({
+      ...resultFor(contender, testCase, "one"),
+      ...(liveness === undefined ? {} : { liveness }),
+    });
+    const html = await preview(
+      [
+        alive("vendo-sonnet", "a", { live: 2, displayed: 3 }),
+        alive("diy-sonnet", "a"),
+        alive("vendo-sonnet", "b", { live: 0, displayed: 0, vacuous: true }),
+        alive("diy-sonnet", "b"),
+      ],
+      { a: world, b: world },
+    );
+
+    expect(html).toContain(
+      `<tr><th>liveness</th><td class="muted">shown values that moved with the data</td>` +
+        `<td>2/3 · 1 vacuous</td><td class="muted">—</td></tr>`,
+    );
+  });
+
+  /**
+   * The third row under the floor cells, and the one reading the floor cannot
+   * give: the probe stops at a confirmation on purpose, so a screen that opens
+   * a dialog and a screen that really calls the host's write BOTH clear
+   * `wiredActions` — and they are not the same product. Off the bindings
+   * already saved: nothing is probed, judged or scored again.
+   */
+  it("says how far each column's action screens got — a write, a confirmation, or nothing", async () => {
+    const html = await preview(presses(), pressedWorlds(), ASKED_TO_ACT);
+
+    // Of the three cases that ASKED, one reached `cancel_transfer`, one got as
+    // far as the dialog, and one only ever read. The column with no action case
+    // at all says nothing rather than 0/0.
+    expect(html).toContain(
+      `<tr><th>writes</th><td class="muted">action cases whose presses called a write tool</td>` +
+        `<td>1/3 · 1 dialog</td><td class="muted">—</td></tr>`,
+    );
+  });
+
+  /** The row needs to be told which cases asked, because no `result.json` says
+   *  it — and a run whose world folder has moved since loses the row the way it
+   *  loses the data panel, rather than reporting a zero nobody earned. */
+  it("says nothing at all when nothing could tell it which cases asked", async () => {
+    const html = await preview(presses(), pressedWorlds());
+
+    expect(html).toContain(`<tr><th>writes</th><td class="muted">action cases whose presses called a write tool</td>` +
+      `<td class="muted">—</td><td class="muted">—</td></tr>`);
+  });
+
+  /** A run that never asked a judge has no verdicts to print, and says which
+   *  silence it is: a column whose rubric is simply missing reads as a report
+   *  that lost it. */
+  it("marks a floor-only screen where its verdicts would be, and prints no tally", async () => {
+    const html = await preview(
+      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), judged: unjudged }],
       { "pending-transfers": world },
     );
 
-    expect(html).toContain("— not checked");
-    expect(html).toContain(`1 degraded`);
-    expect(html).not.toContain(`<span class="v no">✕ fail</span>`);
+    expect(html).toContain("floor only — no judge was asked about this screen");
+    expect(html).not.toContain(`<span>correctness</span>`);
+    // Not the grader having a bad afternoon — nobody was asked.
+    expect(html).not.toContain("judge degraded");
   });
 
   it("carries the listener that turns a press in an embedded page into a feed row", async () => {
@@ -383,22 +530,6 @@ describe("the preview page", () => {
     );
   });
 
-  /** The cap is silent in the result unless the page says so: "20 values
-   *  checked" and "20 of 93 values checked" are different claims about a screen,
-   *  and only one of them was ever printed. */
-  it("says how many of the screen's numbers were actually examined when the cap bit", async () => {
-    const capped: FloorResult = {
-      ...PASSING,
-      honestData: { pass: true, offenders: [], examined: 20, found: 93 },
-    };
-    const html = await preview(
-      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: capped }],
-      { "pending-transfers": world },
-    );
-
-    expect(html).toContain("20 of 93 values checked");
-  });
-
   /** An `action` case can fail `wiredActions` while every press on it holds, so
    *  the check's own reason has to be readable beside them or the column shows a
    *  red mark over a row of green ticks. */
@@ -417,21 +548,8 @@ describe("the preview page", () => {
     expect(html).toContain("no press ever asked the host for anything");
   });
 
-  it("shows a vacuous honestData pass as muted, not a clean checkmark", async () => {
-    const html = await preview(
-      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: NOTHING_TO_CHECK }],
-      { "pending-transfers": world },
-    );
-
-    expect(html).toContain("nothing to check");
-    expect(html).toContain(`<dd><span class="v muted">`);
-    // Not the same markup a real pass earns — a vacuous pass must not read as
-    // the check having found and cleared anything.
-    expect(html).not.toContain(`<dd><span class="v ok">✓ · 0 values checked</span></dd>`);
-  });
-
-  /** The same two readings of a pass, on the other check that has them: a screen
-   *  with nothing to press passes without one control having been proven live. */
+  /** The two readings of a `wiredActions` pass: a screen with nothing to press
+   *  passes without one control having been proven live. */
   it("tells a screen whose controls all held apart from one with nothing to press", async () => {
     const live = wiredActions(
       [
@@ -451,45 +569,6 @@ describe("the preview page", () => {
     expect(vacuous).toContain("nothing to press");
     expect(vacuous).not.toContain("controls pressed");
   });
-
-  /**
-   * The audit block is where a reader overturns the honesty check, so it has to
-   * show what settled every value — including the ones a MODEL waived, in the
-   * clause it waived them with. A waiver nobody can read is a waiver nobody can
-   * argue with.
-   */
-  it("prints what settled every value: the tools' own text, a triage waiver, and an executed program", async () => {
-    const settled: FloorResult = {
-      ...PASSING,
-      honestData: {
-        pass: true,
-        offenders: [],
-        examined: 3,
-        found: 3,
-        audited: [
-          { text: "4471", program: "", result: "the tool data answers with this exact text", verdict: "cleared-by-verbatim", attempts: 0 },
-          { text: "12", program: "", result: "the hour on a clock", verdict: "skipped-by-triage", attempts: 0 },
-          { text: "67.2", program: "return share(data);", result: "67.2", verdict: "cleared-by-audit", attempts: 2 },
-        ],
-      },
-    };
-    const html = await preview(
-      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: settled }],
-      { "pending-transfers": world },
-    );
-
-    expect(html).toContain("cleared — the tool data answers with this exact text");
-    expect(html).toContain("not a data claim — the hour on a clock");
-    expect(html).toContain("cleared — executed to 67.2 · 2 attempts");
-    // The program is on the page, not behind a hover.
-    expect(html).toContain("return share(data);");
-    // Two values cleared of the two that were checked, and the waived one is
-    // named rather than counted into either side.
-    expect(html).toContain(`<b>2/2 · 1 waived</b>`);
-    // A waiver is not a pass and not a failure: the same recessive row a rubric
-    // line whose subject is absent gets.
-    expect(html).toContain(`<li class="na">`);
-  });
 });
 
 /**
@@ -501,22 +580,25 @@ describe("the preview page", () => {
  * the whole thing exists to answer had to be added up by hand.
  */
 describe("summary.json", () => {
-  const summaryOf = async (results: readonly CaseResult[]): Promise<RunSummary> => {
+  const summaryOf = async (
+    results: readonly CaseResult[],
+    against?: { worlds: Record<string, World>; actionCases: ReadonlySet<string> },
+  ): Promise<RunSummary> => {
     const runDir = await mkdtemp(join(tmpdir(), "genbench-summary-"));
-    const path = await writeSummary({ runDir, runId: "run-1", results, gitSha: "0".repeat(40) });
+    const path = await writeSummary({ runDir, runId: "run-1", results, gitSha: "0".repeat(40), ...against });
     return JSON.parse(await readFile(path, "utf8")) as RunSummary;
   };
 
-  it("adds one column's floor cells up, keeping vacuous and degraded out of both halves", async () => {
+  it("adds one column's floor cells up, keeping a vacuous one out of both halves", async () => {
     const summary = await summaryOf([
       resultFor("vendo-sonnet", "a", "one"),
       { ...resultFor("vendo-sonnet", "b", "two"), floor: { ...PASSING, renders: false, pass: false } },
-      { ...resultFor("vendo-sonnet", "c", "three"), floor: NOTHING_TO_CHECK },
+      { ...resultFor("vendo-sonnet", "c", "three"), floor: CONTROLS_HELD },
     ]);
 
-    // Three screens: 4 graded cells each on the first two (wiredActions is
-    // vacuous on every one of them), 3 on the blank one.
-    expect(summary.columns["vendo-sonnet"]!.floor).toEqual({ earned: 10, failed: 1, vacuous: 4, degraded: 0 });
+    // Three screens: 3 graded cells each on the first two, whose `wiredActions`
+    // had nothing to press, and all 4 on the one whose controls held.
+    expect(summary.columns["vendo-sonnet"]!.floor).toEqual({ earned: 9, failed: 1, vacuous: 2, degraded: 0 });
     expect(summary.columns["vendo-sonnet"]!.cases).toBe(3);
   });
 
@@ -525,6 +607,29 @@ describe("summary.json", () => {
 
     expect(summary.columns["vendo-sonnet"]!.caseLines).toEqual({ pass: 1, fail: 1, na: 0 });
     expect(summary.columns["vendo-sonnet"]!.styleLines).toEqual({ pass: 1, fail: 0, na: 1 });
+  });
+
+  it("counts the standing honesty line on its own, and out of the case's own", async () => {
+    const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one")]);
+
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 1, fail: 0 });
+    // Two authored case lines, and the standing one is in neither other half.
+    expect(summary.columns["vendo-sonnet"]!.caseLines).toEqual({ pass: 1, fail: 1, na: 0 });
+  });
+
+  /** A screen either showed honest numbers or it did not, so an unanswered
+   *  honesty line is not a line that had no subject — it is counted the way
+   *  `tally` counts an `na` on any case line, as a fail. */
+  it("counts an `na` on the honesty line as a fail rather than a bucket of its own", async () => {
+    const unanswered: JudgeResult = {
+      lines: JUDGED.lines.map((line) =>
+        line.line === HONESTY_LINE ? { ...line, verdict: "na" as const, note: "no numbers found" } : line,
+      ),
+      degraded: false,
+    };
+    const summary = await summaryOf([resultFor("vendo-sonnet", "a", "one", unanswered)]);
+
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 1 });
   });
 
   it("counts the run's own failures — timeouts and a judge that was down — as its own", async () => {
@@ -546,10 +651,52 @@ describe("summary.json", () => {
       run: "run-1",
       gitSha: "0".repeat(40),
       rubricVersion: JudgeContract.rubricVersion,
-      auditVersion: AUDITOR_CONTRACT.auditVersion,
-      triageVersion: TriageContract.triageVersion,
     });
     expect(summary.models).toContain("claude-sonnet-5");
+  });
+
+  /** The other half of buy-versus-build, and it had no aggregate anywhere: 200
+   *  cases wrote 200 timings and no total. Nearest rank, so every number here is
+   *  a case that really ran rather than the mean of two that did not. */
+  it("says how long a column took as the middle case and the tail behind it", async () => {
+    const summary = await summaryOf(
+      [7, 2, 9, 1, 4, 10, 3, 8, 5, 6].map((seconds, index) => ({
+        ...resultFor("vendo-sonnet", `case-${index}`, "one"),
+        timing: { settledMs: seconds * 1_000, firstRenderMs: seconds * 100 },
+      })),
+    );
+
+    expect(summary.columns["vendo-sonnet"]!.settledMs).toEqual({ median: 5_000, p90: 9_000, worst: 10_000 });
+    expect(summary.columns["vendo-sonnet"]!.firstRenderMedianMs).toBe(500);
+  });
+
+  it("says nothing about a first render for a column that never reported one", async () => {
+    const summary = await summaryOf([{ ...resultFor("vendo-sonnet", "a", "one"), timing: { settledMs: 2_000 } }]);
+
+    expect(summary.columns["vendo-sonnet"]!.firstRenderMedianMs).toBeUndefined();
+    expect(summary.columns["vendo-sonnet"]!.settledMs).toEqual({ median: 2_000, p90: 2_000, worst: 2_000 });
+  });
+
+  /** The same evidence the page's write row is read from, added up per column —
+   *  so a 200-case sweep can answer "how many of the screens we asked to act
+   *  actually reached the host's write side" without opening the page. */
+  it("adds a column's action cases up by how far its presses got", async () => {
+    const summary = await summaryOf(presses(), { worlds: pressedWorlds(), actionCases: ASKED_TO_ACT });
+
+    expect(summary.columns["vendo-sonnet"]!.actions).toEqual({ write: 1, dialog: 1, none: 1 });
+    // The display case's press reached a write and is still in nobody's count.
+    expect(summary.columns["diy-sonnet"]!.actions).toEqual({ write: 0, dialog: 0, none: 0 });
+  });
+
+  /** A skipped exam is a fact about the RUN, so it must not land on a column as
+   *  failed lines — which is what the `ungraded` shape would have done. */
+  it("counts a floor-only screen's rubric as nothing at all, in every half", async () => {
+    const summary = await summaryOf([{ ...resultFor("vendo-sonnet", "a", "one"), judged: unjudged }]);
+
+    expect(summary.columns["vendo-sonnet"]!.caseLines).toEqual({ pass: 0, fail: 0, na: 0 });
+    expect(summary.columns["vendo-sonnet"]!.honesty).toEqual({ pass: 0, fail: 0 });
+    expect(summary.columns["vendo-sonnet"]!.styleLines).toEqual({ pass: 0, fail: 0, na: 0 });
+    expect(summary.columns["vendo-sonnet"]!.judgeDegraded).toBe(0);
   });
 
   it("totals what each column spent, and each column only", async () => {

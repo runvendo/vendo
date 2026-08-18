@@ -111,21 +111,60 @@ const speak = (text: string): Chunk[] => [
 
 /** A model that replays scripted turns, and records how many times it was asked
  *  — and with which tools, which is the only place a composed loadout is
- *  readable from outside the loop. */
-function scripted(turns: Chunk[][]): LanguageModel & { calls: number; toolNamesPerCall: string[][] } {
+ *  readable from outside the loop, and with what, which is where a repair round's
+ *  instruction shows up. */
+function scripted(
+  turns: Chunk[][],
+): LanguageModel & { calls: number; toolNamesPerCall: string[][]; promptsPerCall: string[] } {
   const remaining = turns.map((turn) => [...turn]);
   const toolNamesPerCall: string[][] = [];
+  const promptsPerCall: string[] = [];
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
       (model as { calls: number }).calls += 1;
       toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
+      promptsPerCall.push(JSON.stringify(request.prompt));
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
       return { stream: simulateReadableStream({ chunks: chunks as never }) };
     },
-  }) as unknown as LanguageModel & { calls: number; toolNamesPerCall: string[][] };
+  }) as unknown as LanguageModel & { calls: number; toolNamesPerCall: string[][]; promptsPerCall: string[] };
   model.calls = 0;
   model.toolNamesPerCall = toolNamesPerCall;
+  model.promptsPerCall = promptsPerCall;
+  return model;
+}
+
+/**
+ * The REVIEW seat, scripted: one `report_findings` call, and the rubric it was
+ * sent.
+ *
+ * Its own seat rather than the writer's model, because the reviewer's is a
+ * `generateText` call and the loop's is a stream — one mock cannot answer both
+ * shapes. `rubrics` is where a host's own design rule is readable after it leaves
+ * the briefing pack, which is the whole claim below.
+ */
+function reviewSeat(
+  findings: ReadonlyArray<{ severity: string; where: string; message: string }>,
+): LanguageModel & { rubrics: string[] } {
+  const rubrics: string[] = [];
+  const model = new MockLanguageModelV3({
+    doGenerate: async (request) => {
+      rubrics.push(JSON.stringify(request.prompt));
+      return {
+        content: [{
+          type: "tool-call",
+          toolCallId: "rev_1",
+          toolName: "report_findings",
+          input: JSON.stringify({ findings }),
+        }],
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage: ZERO_USAGE,
+        warnings: [],
+      } as never;
+    },
+  }) as unknown as LanguageModel & { rubrics: string[] };
+  model.rubrics = rubrics;
   return model;
 }
 
@@ -145,7 +184,7 @@ interface Walked {
   /** Everything that crossed the wire to the surface. */
   chunks: Array<Record<string, unknown>>;
   vendo: ReturnType<typeof createVendo>;
-  model: LanguageModel & { calls: number; toolNamesPerCall: string[][] };
+  model: LanguageModel & { calls: number; toolNamesPerCall: string[][]; promptsPerCall: string[] };
 }
 
 /**
@@ -158,6 +197,12 @@ async function walk(options: {
   /** Skip `vendo_make` entirely and write the documents with the harness's own
    *  hands — the OTHER route into the same seam. */
   writes?: string[];
+  /** The REVIEW seat. Absent, the reviewer's call lands on the writer's mock,
+   *  which cannot answer a `generateText` — so it reports nothing, which is what
+   *  every case above relies on. */
+  review?: LanguageModel;
+  /** This host's own design rules, exactly as a deployment sets them. */
+  designRules?: string;
 }): Promise<Walked> {
   const store = await tempStore();
   const model = scripted(options.turns);
@@ -180,10 +225,11 @@ async function walk(options: {
     },
   });
   const vendo = createVendo({
-    models: { default: model },
+    models: { default: model, ...(options.review === undefined ? {} : { review: options.review }) },
     principal: async () => principal,
     store,
     harness: harness as never,
+    ...(options.designRules === undefined ? {} : { apps: { designRules: options.designRules } }),
   } as Parameters<typeof createVendo>[0]);
   const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
     method: "POST",
@@ -348,5 +394,55 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // turns — the whole point of cutting the fall-through.
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view")).toHaveLength(0);
     expect(walked.model.calls).toBe(2);
+  }, 60_000);
+});
+
+/**
+ * THE ASK AND THE HOUSE RULES, from the deployment's config to a repair round —
+ * the whole chain, with nothing stubbed but the two models.
+ *
+ * Both halves were live text over an empty slot. The verb had no field for the
+ * person's ask, so the reviewer's "sections that don't answer the ask" and "work
+ * quietly dropped" judged a screen against `USER_REQUEST:` and nothing after it.
+ * The host's design rules reached the WRITER's brief and stopped there, so
+ * "ALSO REJECT anything that breaks one of these rules" rendered over an empty
+ * list on every deployment. And both land as `warn` — which the gate skipped, so
+ * even a rule that DID fire changed nothing.
+ */
+describe("the ask and the host's rules reach the reviewer, and a warn is repaired", () => {
+  const RULE = "Dates are shown as `Aug 7`, never ISO.";
+  const BREACH = "the header renders 2026-08-07; this host's rule says dates are shown as `Aug 7`, never ISO";
+
+  it("carries both to the reviewer and spends exactly one repair round on the warn", async () => {
+    const review = reviewSeat([{ severity: "warn", where: "<Text> heading", message: BREACH }]);
+    const walked = await walk({
+      request: "show me what I spent this month, with a monthly total",
+      designRules: RULE,
+      review,
+      turns: [
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("Your spending is on screen."),
+        // The repair round…
+        speak("fixed the date format."),
+        // …and one turn it must never reach: a second round would show up here.
+        speak("nobody should read this"),
+      ],
+    });
+
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).toBe("ready");
+
+    // ── the ask travelled: the reviewer judged against the person's own words ──
+    expect(walked.model.calls).toBe(3);
+    expect(review.rubrics).toHaveLength(1);
+    expect(review.rubrics[0] ?? "").toContain("USER_REQUEST: show me what I spent this month, with a monthly total");
+
+    // ── the host's own rule travelled, as a rule the reviewer may reject on ────
+    expect(review.rubrics[0] ?? "").toContain("ALSO REJECT");
+    expect(review.rubrics[0] ?? "").toContain(RULE);
+
+    // ── and the warn it reported bought a repair round, which a `block`-only
+    //    gate would have thrown away ────────────────────────────────────────────
+    expect(walked.model.promptsPerCall[2] ?? "").toContain("never ISO");
   }, 60_000);
 });

@@ -95,6 +95,13 @@ describe("Text", () => {
     render(<Text text="Overview" variant="heading" />);
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
   });
+
+  // An identifier is compared character by character, not read as prose — and
+  // the face is the HOST's code font, never one the Kit picked.
+  it("renders the code variant in the host's mono face", () => {
+    render(<Text text="9f2c1ab" variant="code" />);
+    expect(screen.getByText("9f2c1ab").getAttribute("style")).toContain("--vendo-mono-family");
+  });
 });
 
 describe("the cell slot — a value bound to the row it is standing in", () => {

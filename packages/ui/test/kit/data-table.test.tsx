@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { useContext } from "react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
+import { RowContext } from "../../src/kit/row.js";
 import { EnumBadge } from "../../src/kit/values.js";
 
 // Money in the rows is DOLLARS: a `format:"money"` column pretty-prints the
@@ -52,6 +54,19 @@ describe("DataTable", () => {
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.getByText("$2,500.00")).toBeTruthy();
     expect(screen.getByText("Mar 14")).toBeTruthy();
+  });
+
+  /** A column written as the bare KEY, which is the shorthand `Select.options`
+   *  has always taken. It can only mean the key — the label already defaults
+   *  from it — so the table reads it as the description it stands for, and a
+   *  list may mix the two. */
+  it("takes a column written as its bare key, beside a described one", () => {
+    render(<DataTable rows={rows} columns={["client.name", { key: "amount", label: "Amount", format: "money" }]} />);
+    // The header is the humanized last path segment, exactly as an inferred
+    // column's is, and the dot-path still resolves.
+    expect(screen.getByRole("columnheader", { name: "Name" })).toBeTruthy();
+    expect(screen.getByText("Hartwell")).toBeTruthy();
+    expect(screen.getByText("$2,500.00")).toBeTruthy();
   });
 
   it("reads a duration column as a duration, and still sorts it as the number it is", () => {
@@ -384,5 +399,142 @@ describe("DataTable", () => {
     } finally {
       restore();
     }
+  });
+});
+
+/**
+ * A column with no `format` and no `semantic` prints what the record holds, and
+ * nothing else. The table used to READ an unformatted column — a `*_cents` name
+ * was money, an ISO-shaped string was a date, a `*seconds` name was a duration,
+ * a hex string was mono — which is a guess about what a field MEANS made from
+ * how it is spelled. Right most of the time is a wrong figure the rest of the
+ * time, under a header that says nothing happened. The instruction paths below
+ * (`format`, `semantic`) are the whole of it.
+ */
+describe("DataTable — a column the model left unformatted", () => {
+  const deploys = [
+    { id: 1, commit: "9f2c1ab", deployedAt: `${year}-08-12T14:05:00Z`, cost_cents: 452_900, duration_seconds: 157 },
+    { id: 2, commit: "4e81d0c", deployedAt: `${year}-08-11T09:41:00Z`, cost_cents: 91_250, duration_seconds: 46 },
+    { id: 3, commit: "b7a30f5", deployedAt: `${year}-08-09T22:18:00Z`, cost_cents: 1_204_075, duration_seconds: 9_480 },
+  ];
+
+  // The pin. A name is not an instruction: nothing divides here, so what is on
+  // screen is exactly the number the tool returned.
+  it("prints a cents-NAMED column as the raw number", () => {
+    render(<DataTable rows={deploys} columns={[{ key: "cost_cents" }]} />);
+    expect(screen.getByText("452900")).toBeTruthy();
+    expect(screen.queryByText("$4,529.00")).toBeNull();
+  });
+
+  // …and the money token is a printing instruction, never a unit one: it says
+  // "render this as currency", not "these are cents".
+  it("prints a cents-NAMED column the model DID format as dollars, undivided", () => {
+    render(<DataTable rows={deploys} columns={[{ key: "cost_cents", format: "money" }]} />);
+    expect(screen.getByText("$452,900.00")).toBeTruthy();
+    expect(screen.queryByText("$4,529.00")).toBeNull();
+  });
+
+  it("prints a column of ISO stamps exactly as they arrive", () => {
+    render(<DataTable rows={deploys} columns={[{ key: "deployedAt" }]} />);
+    expect(screen.getByText(`${year}-08-12T14:05:00Z`)).toBeTruthy();
+  });
+
+  it("prints a seconds-NAMED column as the raw number", () => {
+    render(<DataTable rows={deploys} columns={[{ key: "duration_seconds" }]} />);
+    expect(screen.getByText("157")).toBeTruthy();
+    expect(screen.queryByText("2m 37s")).toBeNull();
+  });
+
+  it("leaves a column of shas in the prose face", () => {
+    render(<DataTable rows={deploys} columns={[{ key: "commit" }]} />);
+    expect(screen.getByText("9f2c1ab").getAttribute("style")).not.toContain("--vendo-mono-family");
+  });
+
+  it("renders a format:\"code\" column in mono", () => {
+    render(<DataTable rows={deploys} columns={[{ key: "id", format: "code" }]} />);
+    expect(screen.getByText("1").getAttribute("style")).toContain("--vendo-mono-family");
+  });
+});
+
+/**
+ * What the HOST said the field is — the half no reader could have worked out.
+ *
+ * `compute_cost` is cents and its name never says so; `feat/timeline-brick` is
+ * a ref and it is a plain string by every structural test. Both are one line of
+ * the tool's own shape card, carried onto the column that shows them.
+ */
+describe("DataTable — the format the HOST declared", () => {
+  const builds = [
+    { id: "bld_4192", branch: "feat/timeline-brick", compute_cost: 620, started: "2026-08-15 09:58" },
+    { id: "bld_4191", branch: "main", compute_cost: 1870, started: "2026-08-15 09:41" },
+  ];
+
+  // The whole reason the channel exists: nothing about the NAME or the VALUE of
+  // `compute_cost` says minor units, so 1870 renders as $1,870.00 — a 100×
+  // misread — until the host's own word for it arrives.
+  it("divides a declared minor-unit column whose name says nothing", () => {
+    render(<DataTable rows={builds} columns={[{ key: "compute_cost", semantic: "money.cents" }]} />);
+    expect(screen.getByText("$18.70")).toBeTruthy();
+    expect(screen.queryByText("$1,870.00")).toBeNull();
+  });
+
+  it("sorts a declared minor-unit column by the number, not the printed money", () => {
+    render(<DataTable rows={builds} columns={[{ key: "compute_cost", semantic: "money.cents" }]} sortBy="compute_cost desc" />);
+    expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["$18.70", "$6.20"]);
+  });
+
+  // The declaration is the whole of it, and it reads both ways: a `*_cents`
+  // name means nothing on its own, and a host saying the field is already
+  // dollars gets dollars.
+  it("leaves a cents-NAMED column alone when the host declares it is dollars", () => {
+    render(
+      <DataTable
+        rows={[{ id: 1, cost_cents: 452_900 }]}
+        columns={[{ key: "cost_cents", semantic: "money.dollars" }]}
+      />,
+    );
+    expect(screen.getByText("$452,900.00")).toBeTruthy();
+  });
+
+  it("gives a declared code column the mono face, though it is nothing like a sha", () => {
+    render(<DataTable rows={builds} columns={[{ key: "branch", semantic: "code" }]} />);
+    expect(screen.getByText("feat/timeline-brick").getAttribute("style")).toContain("--vendo-mono-family");
+  });
+
+  it("reads a declared date column as a date, clock and all", () => {
+    render(<DataTable rows={builds} columns={[{ key: "started", semantic: "date.iso" }]} />);
+    expect(screen.queryByText("2026-08-15 09:58")).toBeNull();
+    expect(screen.getByText(/Aug 15.*9:58/)).toBeTruthy();
+  });
+
+  // The format token is the model's own word for how a column PRINTS; the
+  // semantic is the host's for what the field IS. A written format still wins
+  // the printing, and the units stay the host's either way.
+  it("still prints in the format the model wrote, in the units the host declared", () => {
+    render(<DataTable rows={builds} columns={[{ key: "compute_cost", semantic: "money.cents", format: "number" }]} />);
+    expect(screen.getByText("6.2")).toBeTruthy();
+  });
+
+  /**
+   * The read/write line. A row action prefills a write tool's argument off the
+   * record the row publishes, and that record is the RAW one — a screen that
+   * sent $18.70 where the host wanted 1870 would be the same 100× defect
+   * pointing the other way.
+   */
+  it("never converts the record a row action reads its arguments from", () => {
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useContext(RowContext)?.compute_cost);
+      return null;
+    }
+    render(
+      <DataTable
+        rows={builds}
+        columns={[{ key: "compute_cost", semantic: "money.cents" }]}
+        rowActions={<Probe />}
+      />,
+    );
+    expect(screen.getByText("$18.70")).toBeTruthy();
+    expect(seen).toEqual([620, 1870]);
   });
 });
