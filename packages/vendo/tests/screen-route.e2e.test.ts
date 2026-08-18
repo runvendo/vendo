@@ -421,7 +421,13 @@ describe("the ask and the host's rules reach the reviewer, and a warn is repaire
   it("carries both to the reviewer and spends exactly one repair round on the warn", async () => {
     const review = reviewSeat([{ severity: "warn", where: "<Text> heading", message: BREACH }]);
     const walked = await walk({
-      request: "show me what I spent this month, with a monthly total",
+      // No RECURRENCE WORD in the ask, deliberately. `make-tool.ts`'s
+      // `ASKS_TO_RECUR` reads one as the second half of a compound ask and hands
+      // it to the automation planner, which is a whole model call of its own —
+      // this case counts the calls the assembly loop spends, so the ask must not
+      // also be asking for a schedule. It said "with a monthly total" and the
+      // bare adjective tripped the detector.
+      request: "show me what I spent this month, with a total for the month",
       designRules: RULE,
       review,
       turns: [
@@ -440,7 +446,7 @@ describe("the ask and the host's rules reach the reviewer, and a warn is repaire
     // ── the ask travelled: the reviewer judged against the person's own words ──
     expect(walked.model.calls).toBe(3);
     expect(review.rubrics).toHaveLength(1);
-    expect(review.rubrics[0] ?? "").toContain("USER_REQUEST: show me what I spent this month, with a monthly total");
+    expect(review.rubrics[0] ?? "").toContain("USER_REQUEST: show me what I spent this month, with a total for the month");
 
     // ── the host's own rule travelled, as a rule the reviewer may reject on ────
     expect(review.rubrics[0] ?? "").toContain("ALSO REJECT");
