@@ -21,8 +21,7 @@
  * under a tenant-scoped name and read back only to build a connector — `list`
  * and `register` answer descriptors and metadata, never the credential.
  */
-import * as actions from "@vendoai/actions";
-import { mcpConnector, type Connector } from "@vendoai/actions";
+import { mcpConnector, openApiConnector, type Connector } from "@vendoai/actions";
 import {
   VendoError,
   isVendoError,
@@ -98,18 +97,6 @@ interface Registration {
   registeredAt: string;
 }
 
-/** TEMPORARY — S2 (parallel lane) lands `openApiConnector` on @vendoai/actions
- *  with exactly this frozen signature. It is read off the module OBJECT rather
- *  than imported by name because a named import of an export that does not exist
- *  yet fails the bundler outright. Delete this pair for a named import at rebase. */
-type OpenApiConnector = (config: {
-  spec: string | Record<string, unknown>;
-  baseUrl?: string;
-  headers?: Record<string, string>;
-  name?: string;
-}) => Connector;
-const actionsModule = actions as { openApiConnector?: OpenApiConnector };
-
 const summaryOf = (row: Registration): TenantConnectorSummary => ({
   org: row.org,
   name: row.name,
@@ -140,10 +127,6 @@ function connectorFor(row: Registration, token: string | undefined): Connector {
   }
   if (row.spec === undefined) {
     throw new VendoError("validation", `tenant connector "${row.name}": kind "openapi" needs a spec`);
-  }
-  const openApiConnector = actionsModule.openApiConnector;
-  if (openApiConnector === undefined) {
-    throw new VendoError("not-implemented", "this build of @vendoai/actions has no openApiConnector");
   }
   return openApiConnector({
     spec: row.spec,

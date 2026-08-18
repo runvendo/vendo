@@ -104,8 +104,62 @@ async function startMcpServer(tool: string): Promise<{
   return { url: `http://127.0.0.1:${port}`, authorizations, stop };
 }
 
-/** A real deployment over a real encrypted store. */
-async function deployment(): Promise<{ vendo: Vendo; store: VendoStore }> {
+/** The spec ONE tenant pastes. `servers[0]` is deliberately somewhere else, so
+ *  every call that lands proves the registration's own `url` won as the base. */
+const LEDGER_SPEC = {
+  openapi: "3.1.0",
+  info: { title: "Acme Ledger", version: "1.0.0" },
+  servers: [{ url: "http://127.0.0.1:1" }],
+  paths: {
+    "/accounts/{id}": {
+      get: {
+        operationId: "getAccount",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {},
+      },
+    },
+  },
+};
+
+/** A real REST API on a real port — the far end the spec above describes. Like
+ *  the MCP fixture it records what actually arrived, which is how the vaulted
+ *  token is proven to travel the whole way. */
+async function startRestApi(): Promise<{
+  url: string;
+  authorizations: string[];
+  paths: string[];
+  stop: () => Promise<void>;
+}> {
+  const authorizations: string[] = [];
+  const paths: string[] = [];
+  const server = createServer((req, res) => {
+    if (typeof req.headers.authorization === "string") authorizations.push(req.headers.authorization);
+    paths.push(req.url ?? "");
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ id: (req.url ?? "").split("/").pop(), balance: 4200 }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const { port } = server.address() as AddressInfo;
+  const stop = async (): Promise<void> => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  };
+  cleanups.push(stop);
+  return { url: `http://127.0.0.1:${port}`, authorizations, paths, stop };
+}
+
+/** A real deployment over a real encrypted store. `policy` is unset for every
+ *  listing test — a tenant tool's RISK is the guard's business, not this seam's,
+ *  and unset is the posture the rest of this file exercises. Only the test that
+ *  executes one passes a policy, so the guard runs the call instead of parking
+ *  it for approval (an OpenAPI GET grades `ungraded`, which asks by default). */
+async function deployment(policy?: "autopilot"): Promise<{ vendo: Vendo; store: VendoStore }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-connectors-"));
   const store = createStore({ dataDir, encryption: { key: randomBytes(32).toString("base64") } });
   cleanups.push(async () => {
@@ -118,6 +172,7 @@ async function deployment(): Promise<{ vendo: Vendo; store: VendoStore }> {
     principal: async () => ADA,
     store,
     profileDir: dataDir,
+    ...(policy === undefined ? {} : { guard: { policy } }),
   });
   return { vendo, store };
 }
@@ -305,6 +360,70 @@ describe("a tenant registers its own MCP server", () => {
     expect(await vendo.tenantConnectors.list("globex")).toHaveLength(1);
     expect(await storeSecrets(store).get(tenantConnectorSecret("globex", "logistics"))).toBe("tok_globex_live");
     expect(await storeSecrets(store).get("API_TOKEN")).toBe("host_owned");
+  });
+});
+
+describe("a tenant registers its own OpenAPI spec", () => {
+  it("registers by reading the spec, and hands back the tools it really declares", async () => {
+    const { vendo } = await deployment();
+    const api = await startRestApi();
+
+    const result = await vendo.tenantConnectors.register({
+      org: "acme",
+      name: "ledger",
+      kind: "openapi",
+      url: api.url,
+      spec: LEDGER_SPEC,
+      token: "tok_acme_rest",
+    });
+
+    // The whole point of the swap: this path used to refuse with
+    // `not-implemented`, and now answers with the operations the spec declares.
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.tools.map((tool) => tool.name)).toEqual(["openapi_ledger_getAccount"]);
+  });
+
+  it("grows the registering org's agent, and ONLY that org's", async () => {
+    const { vendo } = await deployment();
+    const api = await startRestApi();
+
+    await vendo.tenantConnectors.register({
+      org: "acme", name: "ledger", kind: "openapi", url: api.url, spec: LEDGER_SPEC,
+    });
+
+    expect(await toolNames(vendo, "acme")).toContain("openapi_ledger_getAccount");
+    expect(await toolNames(vendo, "globex")).not.toContain("openapi_ledger_getAccount");
+  });
+
+  it("calls the tenant's own API for real, carrying the vaulted token", async () => {
+    const { vendo } = await deployment("autopilot");
+    const api = await startRestApi();
+    await vendo.tenantConnectors.register({
+      org: "acme", name: "ledger", kind: "openapi", url: api.url, spec: LEDGER_SPEC, token: "tok_acme_rest",
+    });
+
+    // Through the SAME registry every door executes through — and out to a
+    // server that is genuinely listening.
+    const outcome = await vendo.guardedTools.execute(
+      { id: "call_1", tool: "openapi_ledger_getAccount", args: { id: "acc_1" } },
+      runAs("acme"),
+    );
+
+    expect(outcome).toEqual({ status: "ok", output: { id: "acc_1", balance: 4200 } });
+    // The registration's url beat the spec's own `servers[0]`, and the token
+    // came back out of the vault to ride the request.
+    expect(api.paths).toEqual(["/accounts/acc_1"]);
+    expect(api.authorizations).toEqual(["Bearer tok_acme_rest"]);
+  });
+
+  it("refuses a spec-less openapi registration by naming what is missing", async () => {
+    const { vendo } = await deployment();
+
+    const result = await vendo.tenantConnectors.register({ org: "acme", name: "ledger", kind: "openapi" });
+
+    expect(result).toMatchObject({ status: "error", error: { code: "validation" } });
+    expect(await vendo.tenantConnectors.list("acme")).toEqual([]);
   });
 });
 
