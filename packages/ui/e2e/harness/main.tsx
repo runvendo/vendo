@@ -32,6 +32,7 @@ import {
   VendoToolResult,
   vendoToast,
   type VendoCommand,
+  type VendoThreadProps,
 } from "../../src/chrome/index.js";
 import { AppFrame, PayloadView, TreeView } from "../../src/tree/index.js";
 import { browserTreeFixture } from "../fixtures/tree.js";
@@ -1874,6 +1875,14 @@ function remixClient(client: VendoClient): VendoClient {
   };
 }
 
+/** The host's own starter cards on the empty landing — what the panel shows a
+ *  person who opened it with nothing in mind, exactly as the demo host wires
+ *  them (VendoLayer). The ✦ opens the SAME panel about a particular component,
+ *  which is where these five have to get out of the way. */
+function StarterThread(props: VendoThreadProps) {
+  return <VendoThread {...props} suggestions={MAPLE_SUGGESTIONS} discoverability="quiet" />;
+}
+
 function RemixableScenario() {
   const client = useMemo(() => remixClient(baseClient), []);
   return (
@@ -1882,7 +1891,7 @@ function RemixableScenario() {
         <Remixable><PlainMerchants /></Remixable>
         <Remixable><RemixedMerchants /></Remixable>
       </div>
-      <VendoOverlay launcher="none" />
+      <VendoOverlay launcher="none" thread={StarterThread} />
     </VendoProvider>
   );
 }

@@ -10,7 +10,7 @@ import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
-import { GRACE_MS, PinChrome } from "./pin-chrome.js";
+import { GRACE_MS, PinChrome, useMenuDismiss } from "./pin-chrome.js";
 
 /**
  * The remixable-surface affordance: the host marking one of its own components
@@ -210,6 +210,7 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
 
 export function Remixable({ review = false, children }: RemixableProps) {
   const [revealed, setRevealed] = useState(false);
+  const root = useMenuDismiss(revealed, setRevealed);
   const grace = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(grace.current), []);
 
@@ -243,7 +244,11 @@ export function Remixable({ review = false, children }: RemixableProps) {
   // and its failures belong in the same thread as the asking.
   const openChat = () => {
     const opened = openVendoConversation({
-      prompt: `Remix my ${slot}: `,
+      // The person never sees `slot` anywhere else on the page — it is the
+      // React identifier sync captures under, and it read as a leaked internal
+      // to the first person who clicked this. The AGENT still gets it verbatim,
+      // in the context below, which is where a name it must echo belongs.
+      prompt: "Remix this view: ",
       context: `The view being remixed is the host component "${slot}". When you make the remix, pass component=${slot} verbatim.`,
       send: false,
     });
@@ -262,9 +267,13 @@ export function Remixable({ review = false, children }: RemixableProps) {
     <div
       className="fl-remixable"
       data-vendo-remixable={slot}
+      ref={root}
       {...(revealed ? { "data-vendo-revealed": "" } : {})}
       onPointerEnter={reveal}
-      onPointerLeave={release}
+      // Only a CURSOR leaves. A touch pointer's leave fires the instant the
+      // finger lifts, which would take the pill away with the tap that asked
+      // for it; the outside-press above is touch's dismissal.
+      onPointerLeave={event => { if (event.pointerType === "mouse") release(); }}
       onFocus={reveal}
       onBlur={release}
     >

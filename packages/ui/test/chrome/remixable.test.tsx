@@ -11,6 +11,24 @@ import { Remixable, VendoOverlay } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { createWireServer } from "../wire-server.js";
 
+/**
+ * jsdom 25 ships no `PointerEvent`, so every synthetic pointer event arrives
+ * with an undefined `pointerType` and a finger cannot be told from a cursor —
+ * which is the whole of the reveal's leave rule. This carries the init through
+ * (the plain `extends MouseEvent` shim in kit/base-ui-bricks.test.tsx drops it),
+ * so the two devices are expressible here. It stays an ENVIRONMENT stand-in: the
+ * real touchscreen behaviour is proven in the browser pass.
+ */
+if (typeof window.PointerEvent !== "function") {
+  window.PointerEvent = class extends MouseEvent {
+    readonly pointerType: string;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerType = init.pointerType ?? "";
+    }
+  } as unknown as typeof PointerEvent;
+}
+
 /** The slot is the wrapped component's identifier — what sync captures under. */
 const SLOT = "TopMerchants";
 
@@ -79,12 +97,30 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   it("blooms on hover and holds through the grace period on the way out", () => {
     vi.useFakeTimers();
     mount();
-    fireEvent.pointerEnter(wrapper());
+    fireEvent.pointerEnter(wrapper(), { pointerType: "mouse" });
     expect(revealed()).toBe(true);
-    fireEvent.pointerLeave(wrapper());
+    fireEvent.pointerLeave(wrapper(), { pointerType: "mouse" });
     act(() => void vi.advanceTimersByTime(150));
     expect(revealed()).toBe(true);
     act(() => void vi.advanceTimersByTime(100));
+    expect(revealed()).toBe(false);
+  });
+
+  // Only a CURSOR leaves. A finger's pointerleave fires the instant it lifts,
+  // so treating it as a cursor took the door away 200ms after the tap that
+  // asked for it — while CSS leaves the pill non-interactive until revealed,
+  // which left touch with no reliable way to reach Remix at all.
+  it("keeps the door up when a TOUCH pointer lifts, and puts it away on a press outside", () => {
+    vi.useFakeTimers();
+    mount();
+    fireEvent.pointerEnter(wrapper(), { pointerType: "touch" });
+    expect(revealed()).toBe(true);
+    fireEvent.pointerLeave(wrapper(), { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(400));
+    expect(revealed()).toBe(true);
+
+    // Touch dismisses the way every other ✦ mark does: a press outside it.
+    fireEvent.pointerDown(document.body);
     expect(revealed()).toBe(false);
   });
 
@@ -101,7 +137,7 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     // The door lands in the conversation the page already has, prefilled and
     // unsent: the person finishes the sentence where the agent can answer it.
     const panel = await screen.findByRole("dialog", { name: "Vendo assistant" });
-    await waitFor(() => expect(composerIn(panel).value).toBe(`Remix my ${SLOT}: `));
+    await waitFor(() => expect(composerIn(panel).value).toBe("Remix this view: "));
 
     // The inline wish form is GONE — not hidden, not behind a flag.
     expect(screen.queryByRole("textbox", { name: `What should your ${SLOT} do?` })).toBeNull();
@@ -116,9 +152,9 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     mount();
     fireEvent.click(remixDoor());
     const panel = await screen.findByRole("dialog", { name: "Vendo assistant" });
-    await waitFor(() => expect(composerIn(panel).value).toBe(`Remix my ${SLOT}: `));
+    await waitFor(() => expect(composerIn(panel).value).toBe("Remix this view: "));
 
-    fireEvent.change(composerIn(panel), { target: { value: `Remix my ${SLOT}: make it a chart` } });
+    fireEvent.change(composerIn(panel), { target: { value: "Remix this view: make it a chart" } });
     fireEvent.keyDown(composerIn(panel), { key: "Enter" });
 
     const sent = await waitFor(() => {

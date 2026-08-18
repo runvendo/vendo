@@ -11,8 +11,9 @@ import { vendoToast } from "./vendo-toasts.js";
 export const GRACE_MS = 200;
 
 /** Every ✦ popover dismisses like any menu: Escape, or pointer-down outside
- *  it. Returns the ref that marks "inside". */
-function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void) {
+ *  it. Returns the ref that marks "inside". Shared with `<Remixable>`
+ *  (remixable.tsx), where it is touch's only way to put the mark away. */
+export function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;

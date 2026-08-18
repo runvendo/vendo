@@ -36,7 +36,7 @@ test("the ✦ opens the chat about the component, and the remixed one wears the 
   await door.click();
   const panel = page.getByRole("dialog", { name: "Vendo assistant" });
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("textbox", { name: "Message" })).toHaveValue("Remix my PlainMerchants: ");
+  await expect(panel.getByRole("textbox", { name: "Message" })).toHaveValue("Remix this view: ");
   await expect(page.locator(".fl-remix-ask")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/3-chat-opened.png`, fullPage: true, animations: "disabled" });
 
@@ -60,4 +60,74 @@ test("the ✦ opens the chat about the component, and the remixed one wears the 
   await expect(panel.getByRole("textbox", { name: "Message" })).toHaveValue("Update RemixedMerchants: ");
   await expect(panel).not.toContainText("app_remix");
   await page.screenshot({ path: `${SHOTS}/5-edit-in-chat.png`, fullPage: true, animations: "disabled" });
+});
+
+/**
+ * The door has to land the person ON the thing they clicked. The first person
+ * to walk this cold got the generic landing instead — headline, five starter
+ * cards about other things, and their own intent reading as the React
+ * identifier `NetWorthView` — and could not tell whether the click had
+ * registered on the right component.
+ */
+test("the ✦ lands on the component, not on a generic assistant", async ({ page }) => {
+  await openScenario(page, "remixable");
+  const panel = page.getByRole("dialog", { name: "Vendo assistant" });
+  const composer = panel.getByRole("textbox", { name: "Message" });
+  // The host wires starter cards onto this panel's empty landing (StarterThread
+  // in the harness, exactly as the demo host does).
+  const starters = panel.locator(".fl-chips button, .fl-cards button");
+
+  const plain = page.locator('[data-vendo-remixable="PlainMerchants"]');
+  await plain.hover();
+  await plain.getByRole("button", { name: "Remix PlainMerchants with Vendo" }).click();
+  await expect(panel).toBeVisible();
+
+  // The person's own intent reads as words, never as the identifier sync
+  // captured the component under — the agent still gets that, out of sight.
+  await expect(composer).toHaveValue("Remix this view: ");
+  await expect(panel).not.toContainText("PlainMerchants");
+  // And nothing on screen argues against it: the starters are about other
+  // things, and the person has just said which thing they mean.
+  await expect(starters).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/6-door-landing.png`, fullPage: true, animations: "disabled" });
+
+  // The contrast, in the same panel: take the intent away and the host's
+  // starters are exactly where they always were.
+  await composer.fill("");
+  await expect(starters.first()).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/7-generic-landing.png`, fullPage: true, animations: "disabled" });
+});
+
+/**
+ * Touch has no hover, and a finger's `pointerleave` fires the instant it lifts
+ * — so the reveal's leave rule, written for a cursor, took the door away 200ms
+ * after the tap that asked for it while CSS left the pill non-interactive.
+ * jsdom cannot say this: it ships no PointerEvent, so it cannot tell a finger
+ * from a cursor. A real touchscreen context can.
+ */
+test.describe("on a touchscreen", () => {
+  test.use({ hasTouch: true });
+
+  test("a tap reveals the ✦ door, and the lift does not take it away", async ({ page }) => {
+    await openScenario(page, "remixable");
+    const plain = page.locator('[data-vendo-remixable="PlainMerchants"]');
+    const door = plain.getByRole("button", { name: "Remix PlainMerchants with Vendo" });
+
+    await plain.tap();
+    await expect(plain).toHaveAttribute("data-vendo-revealed", "");
+    // The finger is already off the glass. Well past the 200ms grace, the door
+    // is still there and still pressable.
+    await page.waitForTimeout(600);
+    await expect(plain).toHaveAttribute("data-vendo-revealed", "");
+    await expect(door).toHaveCSS("pointer-events", "auto");
+    await page.screenshot({ path: `${SHOTS}/8-touch-revealed.png`, fullPage: true, animations: "disabled" });
+
+    await door.tap();
+    await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
+
+    // And it still puts itself away — a press outside, the way every ✦ does.
+    await page.keyboard.press("Escape");
+    await page.locator("body").tap({ position: { x: 5, y: 5 } });
+    await expect(plain).not.toHaveAttribute("data-vendo-revealed", "");
+  });
 });
