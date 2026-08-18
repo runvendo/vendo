@@ -16,6 +16,9 @@ option groups — and twenty silent misbehaviors now speak up or behave. The
 screen agent's brief sheds the rules whose reasons died, gains worked examples,
 and tells the truth about the frame: everything the ask names must be visible.
 
-Breaking: `Money` takes `value=` (dollars) instead of `amount=`; `field=`,
+Breaking: the value-formatting tier is deleted — `Money`, `Percent`, `Num`,
+`DateTime` and the container `format` tokens are gone; screens format with the
+host-bridged Intl in their own code (chart axes keep a format token, the one
+place a value never passes through screen code). Also: `field=`,
 `semantic:`, `Percent whole` and the `percent` format token are gone — divide
 and scale where you prepare the data; slots accept elements or functions.
