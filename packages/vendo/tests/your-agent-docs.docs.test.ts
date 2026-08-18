@@ -215,14 +215,27 @@ describe("the documented arguments match the real schemas", () => {
     expect(schema).toContain('required: ["request"]');
   });
 
-  /** `slot` is the one argument both doors carry. If the pack ever loses it,
-   *  the two paths have silently diverged. */
-  it("the IN-PROCESS pack's vendo_make takes the same four arguments", async () => {
+  /** The registry's `vendo_make` is the source of truth, so the expected list is
+   *  READ FROM IT rather than repeated here. A literal on both sides is two
+   *  copies of one list that cannot disagree: this test was GREEN while the pack
+   *  was missing `component`, which is how the ✦ on a host component shipped
+   *  dead for every agent adopted via `vendoAiSdkTools`/`vendoMastraTools`. The
+   *  pack's schema is CLOSED, so an argument the door offers and the pack omits
+   *  is unreachable, not merely absent. */
+  it("the IN-PROCESS pack's vendo_make takes every argument the registry's does", async () => {
+    const door = await read(AGENT_TOOLS);
+    const properties = door.indexOf("properties: {", door.indexOf("name: VENDO_MAKE_TOOL"));
+    const offered = door.slice(properties, door.indexOf('required: ["request"]', properties));
+    const args = [...offered.matchAll(/(\w+): \{ type: "string"/g)].map(([, name]) => name);
+    // The derivation itself has to be checked, or a slice that silently matched
+    // nothing would pass this test forever.
+    expect(args, "the door's own argument list must be readable").toContain("request");
+
     const source = await read(PACK);
     const start = source.indexOf("function makeAppTool");
     expect(start, "makeAppTool must still exist").toBeGreaterThan(-1);
     const schema = source.slice(start, source.indexOf("function delegateTool", start));
-    for (const argument of ["request", "context", "app", "slot"]) {
+    for (const argument of args) {
       expect(schema, `the pack's vendo_make must accept \`${argument}\``).toContain(
         `${argument}: { type: "string"`,
       );
