@@ -14,6 +14,7 @@
 import {
   VendoError,
   type ApprovalId,
+  type AutomationId,
   type IsoDateTime,
   type StoreAdapter,
   type VendoRecord,
@@ -34,6 +35,10 @@ const ASK_COLLECTION = "vendo_channel_asks";
 /** An approval id IS the row id, and the guard mints them `apr_<uuid>`
  *  (guard.ts:205) — so a row that is not one was not written by this file. */
 const ASK_ID_PATTERN = /^apr_[0-9a-f-]+$/;
+/** How a grant-SET ask row is told apart from a card row in the one collection.
+ *  The prefix is what keeps `ids()` — which admits approval ids only — from ever
+ *  handing a set row to the card decider. */
+const SET_ID_PREFIX = "set_";
 
 /** Unambiguous alphabet: no O/0, no I/1/L. A person retypes this code from one
  *  message into another, on a phone keyboard. */
@@ -300,9 +305,67 @@ export class ChannelAskRepository {
     await this.records().delete(approvalId);
   }
 
+  /** Remember that this conversation was asked about one automation's whole set
+   *  of outstanding permissions, and which approvals that one text covers.
+   *
+   *  Keyed by the AUTOMATION, not by the engine's own `gset_` id: the engine
+   *  mints exactly one grant set per record — arming reuses the record's still
+   *  pending set and a fire-time miss joins it (automations `consent.ts`,
+   *  `captureGrants` and `needsPermission`) — so the automation names the same
+   *  set without this file reading the engine's private capture rows. The row
+   *  lives from the moment the text lands until a YES or NO settles it, which
+   *  makes it both what a bare reply routes to and the memory that stops a later
+   *  turn asking the same set twice. */
+  async addSet(
+    subject: string,
+    conversationId: string,
+    automationId: AutomationId,
+    approvals: readonly ApprovalId[],
+  ): Promise<void> {
+    await this.records().put({
+      id: `${SET_ID_PREFIX}${automationId}`,
+      data: { subject, conversationId, automationId, approvals: [...approvals] },
+      refs: { subject, conversation: conversationId },
+    });
+  }
+
+  /** The grant set ask this conversation is holding, if any. One at a time, like
+   *  the cards: whichever row the store lists first is the open question, and
+   *  nothing new goes out while one is here. */
+  async setAsk(conversationId: string): Promise<ChannelGrantSetAsk | null> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.records().list({
+        refs: { conversation: conversationId },
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      for (const record of page.records) {
+        if (!record.id.startsWith(SET_ID_PREFIX)) continue;
+        const data = record.data as Partial<ChannelGrantSetAsk> | null;
+        if (typeof data?.automationId === "string" && Array.isArray(data.approvals)) {
+          return { automationId: data.automationId as AutomationId, approvals: data.approvals };
+        }
+      }
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+    return null;
+  }
+
+  /** Spend the set row: its question has been answered, or answered elsewhere. */
+  async consumeSet(automationId: AutomationId): Promise<void> {
+    await this.records().delete(`${SET_ID_PREFIX}${automationId}`);
+  }
+
   private records(): ReturnType<StoreAdapter["records"]> {
     return this.store.records(ASK_COLLECTION);
   }
+}
+
+/** One automation's outstanding permissions, as this conversation was asked
+ *  about them. */
+export interface ChannelGrantSetAsk {
+  automationId: AutomationId;
+  approvals: readonly ApprovalId[];
 }
 
 /** The row id for a delivery: a digest, because the id is the vendor's string

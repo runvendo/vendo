@@ -39,6 +39,11 @@ export { automationsInternals, type AutomationsInternals } from "./engine.js";
  *  reached across the package boundary the dependency guard allows. */
 export { base64url, signedWebhookBytes, verifySignature } from "./webhook-signature.js";
 export type { ReconcileAutomations } from "./create-surface.js";
+/** What to CALL a record in a sentence a person reads. Exported because the text
+ *  channel names automations at someone too (`channel-turn.ts`), and design §3's
+ *  voice law only holds if every surface says the same name — a second spelling
+ *  is how one of them starts printing a tool identifier. */
+export { automationName } from "./messages.js";
 export { UNATTENDED_IRREVERSIBILITY_RULE, unattendedIrreversibilityCheck } from "./law.js";
 
 /** 07 §1 — createAutomations config. */

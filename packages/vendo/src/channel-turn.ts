@@ -8,16 +8,23 @@
  * `venue: "chat"`, `presence: "present"`, the subject from the link, and the
  * delivery's `eventId` as the conversation the guard scopes its cards by.
  */
+import { automationName, type AutomationsEngine } from "@vendoai/automations";
 import {
   AGENT_CONTEXT_MARK,
   type ApprovalRequest,
+  type AutomationId,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import { THREAD_ID_HEADER } from "@vendoai/harnesses";
 import type { UIMessage } from "ai";
-import type { ChannelAskRepository, ChannelLink, ChannelLinkRepository } from "./channel-links.js";
+import type {
+  ChannelAskRepository,
+  ChannelGrantSetAsk,
+  ChannelLink,
+  ChannelLinkRepository,
+} from "./channel-links.js";
 import type { ChannelsService, InboundTextEvent } from "./channels.js";
 import type { HarnessTurns } from "./harness-turn.js";
 
@@ -90,6 +97,9 @@ export interface ChannelTurnDeps {
   /** Which cards actually went out over this channel — see
    *  `ChannelAskRepository`, and why it is in the store and not in memory. */
   asks: ChannelAskRepository;
+  /** Read-only, and only to NAME an automation whose grant set is being asked
+   *  about: the asks themselves are read off the guard's pending feed. */
+  automations: Pick<AutomationsEngine, "get">;
 }
 
 /** A schema property description cut down to a label: everything before the
@@ -168,6 +178,119 @@ function approvalText(request: ApprovalRequest): string {
   ].join("\n");
 }
 
+/**
+ * The one text a whole grant set goes out as.
+ *
+ * Arming an automation captures a standing-permission ask per thing it will need
+ * (automations `consent.ts`), and those asks are approval ROWS the engine writes
+ * during the `vendo_automate` call — they never ride the turn's stream, so the
+ * mid-turn card watcher above cannot see them. Until this existed their only
+ * surface was the host app's web approvals feed, which a person who only ever
+ * texts can never reach: live 2026-08-18 a user armed "check my balance every 15
+ * minutes and text me" entirely over iMessage, the arming YES landed, and every
+ * firing then ran without the Text me permission while the agent told them
+ * "there are still some permissions pending approval".
+ *
+ * ONE text for the whole set, because the set exists precisely so one decision
+ * settles everything outstanding. The automation is named the way every other
+ * surface names it, and each line is the descriptor's own human title — never a
+ * tool identifier, which is design §3's voice law and the same rule
+ * `approvalText` follows.
+ */
+function grantSetText(name: string, titles: readonly string[]): string {
+  return [
+    `${name} — needs your permission to run on its own:`,
+    ...titles.map((title) => `- ${title}`),
+    "Reply YES to allow all of these, or NO to cancel it.",
+  ].join("\n");
+}
+
+/** What a decided set is answered with. A set ask has no parked turn behind it to
+ *  speak for itself — unlike a card, where the turn that was blocked delivers its
+ *  own reply — so these two sentences are the whole receipt. The NO wording says
+ *  what a bare no actually DOES: `handleDecision` disarms a consent moment that
+ *  ended with nothing granted (automations `consent.ts`). */
+const SET_ALLOWED = "Done — it can run on its own now.";
+const SET_CANCELLED = "Okay — I turned it off.";
+
+/** The automation grant asks this subject has outstanding, grouped by the
+ *  automation they belong to, oldest first.
+ *
+ *  Read off the guard's own pending feed rather than the engine's capture rows: a
+ *  pending `venue: "automation"` approval carrying an automation id is exactly
+ *  what a capture is the ask for, it is already scoped to this subject, and it
+ *  arrives with the descriptor whose title the text prints. A goal firing's own
+ *  away ask lands here too, and should — it settles into the same standing grant
+ *  through the same subscriber, and it is just as unanswerable over text. */
+function grantSetsByAutomation(pending: readonly ApprovalRequest[]): Map<AutomationId, ApprovalRequest[]> {
+  const sets = new Map<AutomationId, ApprovalRequest[]>();
+  for (const request of [...pending].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+    const automationId = request.ctx.venue === "automation" ? request.ctx.trigger?.automationId : undefined;
+    if (automationId === undefined) continue;
+    const group = sets.get(automationId);
+    if (group === undefined) sets.set(automationId, [request]);
+    else group.push(request);
+  }
+  return sets;
+}
+
+/** The set ask this conversation is still waiting on, or null.
+ *
+ *  A row whose approvals are all decided somewhere else — the web feed, the
+ *  guard's TTL sweep — is SPENT, not outstanding, so it is consumed here: one
+ *  abandoned set must never become a permanent block on every later one. */
+async function outstandingSet(
+  deps: Pick<ChannelTurnDeps, "asks">,
+  conversationId: string,
+  pending: readonly ApprovalRequest[],
+): Promise<ChannelGrantSetAsk | null> {
+  const row = await deps.asks.setAsk(conversationId);
+  if (row === null) return null;
+  const live = row.approvals.filter((id) => pending.some((request) => request.id === id));
+  if (live.length > 0) return { automationId: row.automationId, approvals: live };
+  await deps.asks.consumeSet(row.automationId);
+  return null;
+}
+
+/**
+ * After the turn: one automation's outstanding permissions, asked over the
+ * channel that armed it.
+ *
+ * ONE question at a time, the discipline the cards already keep: nothing goes out
+ * while this conversation is holding a card it has not answered, or a set ask it
+ * has not answered — the next turn picks up whatever is still outstanding then.
+ * And the row is written only AFTER the text lands, for the same reason
+ * `asks.add` is: a set nobody was shown must not be answerable, and a failed
+ * delivery should leave the ask to be made again rather than silently spent.
+ */
+async function offerGrantSet(
+  deps: Pick<ChannelTurnDeps, "asks" | "automations">,
+  input: { ctx: RunContext; conversationId: string; pending: readonly ApprovalRequest[] },
+  send: (text: string) => Promise<void>,
+): Promise<void> {
+  const { ctx, conversationId, pending } = input;
+  const sets = grantSetsByAutomation(pending);
+  if (sets.size === 0) return;
+  // A card this conversation was shown and has not decided — a park from an
+  // earlier turn whose ten-minute waiter is still running. Compared against the
+  // LIVE pending feed, never against the rows alone: a card row outlives its
+  // approval when something other than a reply decided it, and a stale row must
+  // not silence this ask forever.
+  const cards = await deps.asks.ids(conversationId);
+  if (pending.some((request) => cards.includes(request.id))) return;
+  if (await outstandingSet(deps, conversationId, pending) !== null) return;
+  for (const [automationId, asks] of sets) {
+    const record = await deps.automations.get(automationId, ctx);
+    // A record that is gone leaves asks nothing can name; the guard's TTL sweep
+    // is what closes those.
+    if (record === null) continue;
+    const titles = asks.map((ask) => ask.descriptor.title ?? ask.descriptor.name);
+    await send(grantSetText(automationName(record), titles));
+    await deps.asks.addSet(ctx.principal.subject, conversationId, automationId, asks.map((ask) => ask.id));
+    return;
+  }
+}
+
 /** The assistant's words for the turn, read back off the SSE the harness door
  *  answers with. Keepalives are comment frames and never match `data: `. */
 async function assistantText(response: Response): Promise<string> {
@@ -224,14 +347,34 @@ export async function runChannelTurn(
 
   const answer = event.text.trim();
   if (YES.test(answer) || NO.test(answer)) {
+    const pending = await deps.guard.approvals.pending(principal);
     const asked = await deps.asks.ids(event.conversationId);
-    const mine = (await deps.guard.approvals.pending(principal))
+    const mine = pending
       .filter((request) => asked.includes(request.id))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .at(-1);
     if (mine !== undefined) {
       await deps.guard.approvals.decide(mine.id, { approve: YES.test(answer) }, principal);
       await deps.asks.consume(mine.id);
+      return;
+    }
+    // No card to answer, but a grant set can be the open question instead. Cards
+    // come first on purpose: a card is a turn blocked right now, and one is never
+    // sent while a set ask is outstanding, so whichever of the two exists is the
+    // last thing this person was shown.
+    const set = await outstandingSet(deps, event.conversationId, pending);
+    if (set !== null) {
+      const approve = YES.test(answer);
+      // ONE batch decide, which is what the web feed sends for a grant set too:
+      // the guard treats a multi-id decide as a set decision — validated and
+      // committed all-or-none, never a half-granted set (guard.ts) — and then
+      // fans out to the automations engine's decision subscriber per approval,
+      // which is the one path that mints each standing grant. There is no
+      // settle-by-set verb on the server: `grantSetId` is a grouping label, and
+      // `handleDecision` reads the capture keyed by ONE approval id.
+      await deps.guard.approvals.decide([...set.approvals], { approve }, principal);
+      await deps.asks.consumeSet(set.automationId);
+      await send(approve ? SET_ALLOWED : SET_CANCELLED);
       return;
     }
   }
@@ -272,6 +415,16 @@ export async function runChannelTurn(
     if (effective !== null) await deps.links.rememberTurn(link, effective, event.conversationId);
     const text = await assistantText(response);
     await send(text === "" ? NOTHING_TO_SAY : text);
+    // AFTER the turn's own words, and only then: the standing-permission asks
+    // arming raises are approval rows, not stream parts, so nothing inside the
+    // turn could have offered them. The pending feed is the source of truth here
+    // rather than "did this turn arm something" — a set minted from the WEB gets
+    // asked on the next texted turn, which is exactly right.
+    await offerGrantSet(
+      deps,
+      { ctx, conversationId: event.conversationId, pending: await deps.guard.approvals.pending(principal) },
+      send,
+    );
   } finally {
     unsubscribe();
   }
