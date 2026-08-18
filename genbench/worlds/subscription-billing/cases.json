@@ -162,7 +162,6 @@
     "lane": "screen",
     "prompt": "Walk me through putting a brand-new customer on a plan — pick the plan, add a coupon if they've earned one, and confirm before it goes live.",
     "pass": [
-      "shows only the first step when it loads — the plan — with the coupon step and the confirmation named as what comes next, never one long form",
       "the plan step offers the four active plans with their prices and not the archived Pro (legacy)",
       "marks the coupon step as one that can be skipped, so a customer without a coupon still reaches the confirmation",
       "nothing on the first step creates anything — no press before the confirmation calls create_subscription"

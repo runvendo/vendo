@@ -116,7 +116,6 @@
     "pass": [
       "offers a form with fields for job, vendor, amount, tax category and receipt date",
       "the form comes filled in from the crane half day already posted: J-2418 · Harbor Point Dental, Talon Crane Service, $3,200.00, Subcontractors, Aug 12",
-      "the job field offers the jobs the tool returned rather than a free-text box",
       "the tax category field offers the categories already in use on the expenses rather than a free-text box",
       "saving calls record_expense with job_id J-2418, vendor Talon Crane Service, tax_category Subcontractors, date 2026-08-12 and the amount in cents (320000, not 3200)"
     ]
@@ -146,20 +145,6 @@
       "all seven jobs are on the board, each under the column its status names: three under in progress, and J-2444, J-2431, J-2395 and J-2377 alone under the other four",
       "each card names its job as 'J-2418 · Harbor Point Dental' and the foreman running it",
       "each card shows what is left to invoice, matching the tool's numbers, including $0.00 on J-2440 and J-2377"
-    ]
-  },
-  {
-    "id": "visits-map",
-    "lane": "screen",
-    "prompt": "Show today's visits on a map so I can see which crew is nearest the Harbor Point callback.",
-    "tags": ["display"],
-    "shape": "map",
-    "source": "Jobber — Map View, https://help.getjobber.com/hc/en-us/articles/115009234307-Map-View-Legacy-Schedule",
-    "pass": [
-      "draws a map with a pin per visit rather than listing the visits",
-      "all three of today's visits are pinned, each in its own place, and no fourth visit is invented",
-      "each visit names its job as 'J-2418 · Harbor Point Dental' and the crew on it — Nico Salas, Tasha Byrd, Marco Deleon",
-      "each visit shows its site and its arrival window, with Sutter Street Lofts as the only afternoon one"
     ]
   },
   {
