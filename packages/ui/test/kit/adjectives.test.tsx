@@ -90,9 +90,11 @@ describe("tone is a theme token, never a literal color", () => {
     }
   });
 
-  it("an untoned figure is untouched, and neutral is not a color of its own", () => {
+  it("an untoned figure inherits, and neutral is not a color of its own", () => {
+    // A figure declares no color of its own — the theme's text color reaches it
+    // from the text layer around it, so a toned sentence paints its figures too.
     const plain = kit(render(<Money value={2500} />).container, "Money").style.color;
-    expect(plain).toContain("var(--vendo-color-text");
+    expect(plain).toBe("inherit");
     expect(kit(render(<Money value={2500} tone="neutral" />).container, "Money").style.color).toBe(plain);
   });
 

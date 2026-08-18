@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
 import { font, numeric, seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
+import { EnumBadge, humanizeEnum, type EnumTone } from "../values.js";
 import { ChartEmpty, ChartFrame, slotTooltip, tooltipSurface } from "./sanitize.js";
 
 interface DonutChartOwnProps extends KitStyled {
@@ -13,6 +14,9 @@ interface DonutChartOwnProps extends KitStyled {
   valueKey: string;
   /** Value-tier format for tooltips. */
   format?: ValueFormat;
+  /** Slice value → tone, exactly as EnumBadge takes it — the pills the legend
+   *  gives a status ring. */
+  tones?: Record<string, EnumTone>;
   /** false renders a full pie. */
   donut?: boolean;
   /** Name + value under the ring, on by default; `false` takes it away, and Kit
@@ -34,11 +38,22 @@ interface DonutChartOwnProps extends KitStyled {
  *  there. A slice's own colour stays the `<Cell fill>` under it. */
 export type DonutChartProps = DonutChartOwnProps & KitEngine<ComponentProps<typeof Pie>, DonutChartOwnProps, "dataKey" | "nameKey" | "data">;
 
+/** Does the category field hold machine TOKENS rather than words a person wrote?
+ *  One word each, at least one carrying a separator or a camel hump — "past_due"
+ *  beside "active". It is the FIELD that is an enum or is not, so every slice
+ *  answers together: judged one at a time, a status ring showed a pill for
+ *  "past_due" and a bare word for "active". And it cannot be judged by casing
+ *  alone — humanizing "ACME Corp" lowercases a proper noun, which is why the
+ *  legend prints the data's own words for everything else. */
+const isEnumField = (names: readonly string[]): boolean =>
+  names.every((name) => /^\S+$/.test(name)) && names.some((name) => /[_-]|[a-z0-9][A-Z]/.test(name));
+
 export function DonutChart({
   data,
   categoryKey,
   valueKey,
   format = "number",
+  tones,
   donut = true,
   legend = true,
   height = 220,
@@ -83,6 +98,7 @@ export function DonutChart({
     return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
   const hovered = Array.isArray(tooltip) ? slices.map((slice) => tooltip[slice.at]) : tooltip;
+  const enums = isEnumField(slices.map((slice) => slice.name));
   return (
     <div
       data-kit="DonutChart"
@@ -108,7 +124,7 @@ export function DonutChart({
               ))}
             </Pie>
             <Tooltip
-              formatter={(v) => fmt(v)}
+              formatter={(v, name) => [fmt(v), enums ? humanizeEnum(String(name)) : String(name)]}
               content={tooltip === undefined ? undefined : slotTooltip(hovered, slices)}
               contentStyle={tooltipSurface}
             />
@@ -138,10 +154,11 @@ export function DonutChart({
                 aria-hidden="true"
                 style={{ width: 8, height: 8, flexShrink: 0, borderRadius: 999, background: seriesColor(i) }}
               />
-              {/* The name as the DATA spells it, which is what the slice's own
-                  tooltip shows: humanizing lowercased proper nouns ("ACME Corp"
-                  → "Acme corp") and made the two disagree. */}
-              <span>{slice.name}</span>
+              {/* An enum slice reads through EnumBadge — the same pill, label and
+                  tone the DataTable beside it gives the identical field, where
+                  the ring's own legend used to print the raw "past_due". A name
+                  the data spells in words stays exactly as written. */}
+              {enums ? <EnumBadge value={slice.name} tones={tones} /> : <span>{slice.name}</span>}
               <span style={{ ...numeric, color: t.muted }}>{fmt(slice.value)}</span>
             </li>
           ))}

@@ -27,6 +27,15 @@ function Placeholder({ style }: KitStyled): ReactNode {
   );
 }
 
+/** The Kit's face for a figure, with the COLOR LEFT TO THE PARENT. A figure is
+ *  part of the sentence around it — `<Text tone="danger">Balance: <Money/></Text>`
+ *  — and `font`'s own `t.text` repainted the number back to default in the one
+ *  place the color carried the meaning. The theme's text color still arrives by
+ *  inheritance, from the text layer holding the figure (a `Text`, a Card/Surface,
+ *  the surface body), so a figure standing on its own paints as it always did.
+ *  `tone` and `style` are spread after, so an explicit color still wins. */
+const valueFont: CSSProperties = { ...font, color: "inherit" };
+
 /** A tone's paint, or nothing at all — an absent (or neutral) tone leaves the
  *  component's own color exactly as it was. The catalog teaches "the figure that
  *  is bad news is `danger`", so every figure has to answer to it. */
@@ -48,7 +57,7 @@ export function Money({ value, currency, locale, tone, style }: MoneyProps) {
   const formatted = formatMoney(value, { currency, locale });
   if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="Money" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
+    <span data-kit="Money" style={{ ...valueFont, ...numeric, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
@@ -65,7 +74,7 @@ export function DateTime({ value, mode, locale, timeZone, compact, tone, style }
   const formatted = formatDateTime(value, { mode, locale, timeZone, compact });
   if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="DateTime" style={{ ...font, ...tonePaint(tone), ...style }}>
+    <span data-kit="DateTime" style={{ ...valueFont, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
@@ -85,7 +94,7 @@ export function Percent({ value, fractionDigits, tone, style }: PercentProps) {
   const formatted = formatPercent(value, { fractionDigits });
   if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="Percent" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
+    <span data-kit="Percent" style={{ ...valueFont, ...numeric, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );
@@ -94,6 +103,10 @@ export function Percent({ value, fractionDigits, tone, style }: PercentProps) {
 export interface NumProps extends KitStyled {
   value?: number;
   maximumFractionDigits?: number;
+  /** Keeps the trailing zeros a figure was written with — "8.0 hours" printed as
+   *  "8" until this was exposed, and a column that alternates "8" and "7.5" reads
+   *  as two different precisions. */
+  minimumFractionDigits?: number;
   notation?: "standard" | "compact";
   /** A unit written after the figure — "ms", "min", "h". */
   unit?: string;
@@ -101,12 +114,13 @@ export interface NumProps extends KitStyled {
   tone?: KitTone;
 }
 
-/** A grouped number. `<Num value={1234567}/>` → "1,234,567". */
-export function Num({ value, maximumFractionDigits, notation, unit, tone, style }: NumProps) {
-  const formatted = formatNum(value, { maximumFractionDigits, notation, unit });
+/** A grouped number. `<Num value={1234567}/>` → "1,234,567";
+ *  `<Num value={8} minimumFractionDigits={1} unit="hours"/>` → "8.0 hours". */
+export function Num({ value, maximumFractionDigits, minimumFractionDigits, notation, unit, tone, style }: NumProps) {
+  const formatted = formatNum(value, { maximumFractionDigits, minimumFractionDigits, notation, unit });
   if (formatted === null) return <Placeholder style={style} />;
   return (
-    <span data-kit="Num" style={{ ...font, ...numeric, ...tonePaint(tone), ...style }}>
+    <span data-kit="Num" style={{ ...valueFont, ...numeric, ...tonePaint(tone), ...style }}>
       {formatted}
     </span>
   );

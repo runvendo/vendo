@@ -200,9 +200,11 @@ export interface DurationOptions {
 }
 
 /**
- * A count of time as a duration: `268` → `"4m 28s"`, `46` → `"46s"`,
+ * A count of time as a duration: `268` → `"4m 28s"`, `46` → `"0m 46s"`,
  * `9480` → `"2h 38m"`. The two largest non-zero units and no more — "1h 5m 3s"
- * is three figures where a person reads one — and under half a second is `"0s"`.
+ * is three figures where a person reads one — with the MINUTE as the floor, so a
+ * sub-minute count reads as a duration and not as the raw second count the host
+ * stored. Under half a second is `"0s"`, the one figure with no floor to carry.
  *
  * Seconds unless `unit` says minutes. The `* 60` used to be the caller's job,
  * the way a cents field is `/ 100` — but hosts store `minutes_remaining` at
@@ -229,7 +231,9 @@ export function formatDuration(count: number | undefined, options: DurationOptio
   for (const [suffix, size] of DURATION_UNITS) {
     const units = Math.floor(rest / size);
     rest -= units * size;
-    if (units > 0) parts.push(`${units}${suffix}`);
+    // The minute is the floor a lone second count is written against: "0m 38s",
+    // never the bare "38s" that reads as the host's own field.
+    if (units > 0 || (suffix === "m" && parts.length === 0 && rest > 0)) parts.push(`${units}${suffix}`);
     if (parts.length === 2) break;
   }
   if (parts.length === 0) return "0s";

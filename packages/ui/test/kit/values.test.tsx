@@ -72,6 +72,14 @@ describe("Percent + Num", () => {
     const { container } = render(<Num value={842} unit="ms" />);
     expect(container.textContent).toBe("842 ms");
   });
+
+  // "8.0 hours" printed as "8": Intl has had the option all along, the component
+  // just never let a screen ask for it, and a column that alternates "8" and
+  // "7.5" reads as two different precisions.
+  it("keeps the trailing zeros the figure was written with", () => {
+    expect(render(<Num value={8} minimumFractionDigits={1} unit="hours" />).container.textContent).toBe("8.0 hours");
+    expect(render(<Num value={7.5} minimumFractionDigits={1} />).container.textContent).toBe("7.5");
+  });
 });
 
 describe("EnumBadge", () => {
@@ -136,6 +144,21 @@ describe("Text", () => {
     // sentence around them still carries the variant it was given.
     expect(container.querySelector('[data-kit="Money"]')).toBeTruthy();
     expect(container.querySelector('[data-kit="Text"]')!.getAttribute("data-variant")).toBe("caption");
+  });
+
+  // A toned sentence painted its words red and the FIGURE stayed default: Money
+  // re-declared `t.text` on itself, so the overdue balance — the one word in the
+  // sentence carrying the meaning — was the only word that lost it.
+  it("hands its color down to the figures inside it", () => {
+    const { container } = render(
+      <Text tone="danger">
+        Balance: <Money value={2500} />
+      </Text>,
+    );
+    expect(container.querySelector<HTMLElement>('[data-kit="Text"]')!.style.color).toContain("var(--vendo-color-danger");
+    // The figure declares no color of its own, which is what lets the cascade
+    // paint it — jsdom reports the declaration, a browser resolves it.
+    expect(container.querySelector<HTMLElement>('[data-kit="Money"]')!.style.color).toBe("inherit");
   });
 
   it("takes a plain string child", () => {

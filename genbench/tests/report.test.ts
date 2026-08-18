@@ -488,6 +488,34 @@ describe("the preview page", () => {
     );
   });
 
+  /**
+   * The same row, on the flow that has a SECOND step in the page rather than in a
+   * dialog. The probe walks the controls a press reveals, so that step's write is
+   * a path on the trace and never a binding — and read off the bindings alone the
+   * screens that had this right read as `none`, the worst reading on the row. The
+   * floor is the real grader's here, so the cell and its `acted` are two readings
+   * of one trace.
+   */
+  it("counts a write one press inside an inline reveal as a write, not as nothing", async () => {
+    const graded = pressed("vendo-sonnet", "cancel-transfer", [
+      {
+        label: "Cancel transfer",
+        changed: true,
+        calls: [],
+        revealed: [
+          { label: "Keep it", changed: true, calls: [] },
+          { label: "Confirm", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+        ],
+      },
+    ]);
+    const html = await preview([graded], { "cancel-transfer": world }, new Set(["cancel-transfer"]));
+
+    expect(graded.floor.wiredActions.acted).toBe("revealed");
+    expect(html).toContain(
+      `<tr><th>writes</th><td class="muted">action cases whose presses called a write tool</td><td>1/1</td></tr>`,
+    );
+  });
+
   /** The row needs to be told which cases asked, because no `result.json` says
    *  it — and a run whose world folder has moved since loses the row the way it
    *  loses the data panel, rather than reporting a zero nobody earned. */

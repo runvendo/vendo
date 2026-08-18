@@ -430,20 +430,28 @@ const livenessRow = (results: readonly CaseResult[], contenders: readonly string
  *
  * `wiredActions` says whether every press HELD; it never says whether any of
  * them reached the host's write side. A screen that opens a confirmation and a
- * screen that really calls `cancel_transfer` both clear that check — the probe
- * stops at a dialog on purpose, so the call behind it can never reach the trace
- * — and they are not the same product. This is that third reading: a WRITE is a
- * tool the world declares with no canned data (`riskOf` in `world.ts`), a
- * DIALOG is a press that opened a confirmation and called no write, and NONE is
- * neither. Nothing is probed, judged or scored again — the bindings and the
- * trace on disk are the whole evidence, which is why a saved run gets this for
- * free.
+ * screen that really calls `cancel_transfer` both clear that check — asking
+ * first is a product decision, not a failure — and they are not the same
+ * product. This is that third reading: a WRITE is a tool the world declares with
+ * no canned data (`riskOf` in `world.ts`), a DIALOG is a press that opened a
+ * confirmation and called no write, and NONE is neither. Nothing is probed,
+ * judged or scored again — the bindings and the trace on disk are the whole
+ * evidence, which is why a saved run gets this for free.
+ *
+ * A write one press inside an inline REVEAL is the screen's own write: "press
+ * Hand off, pick an assignee, press Confirm" is one flow, and since the probe
+ * walks what a press puts on the page (2026-08-18) those presses sit on the trace
+ * as PATHS rather than as bindings — so read off the bindings alone the whole
+ * flow counted as a dialog, or as nothing at all. Read the same way the dialog
+ * reading is read: off the trace, and only for a tool the world calls a write.
  */
 const reached = (result: CaseResult, world: World | undefined): "write" | "dialog" | "none" => {
   const writes = new Set(
     (world?.tools ?? []).filter((tool) => tool.descriptor.risk === "write").map((tool) => tool.name),
   );
-  if (result.floor.wiredActions.bindings.some((binding) => binding.tool !== undefined && writes.has(binding.tool))) {
+  const wrote = result.trace.some((probed) =>
+    (probed.revealed ?? []).some((path) => path.calls.some((call) => writes.has(call.name))));
+  if (wrote || result.floor.wiredActions.bindings.some((binding) => binding.tool !== undefined && writes.has(binding.tool))) {
     return "write";
   }
   return result.trace.some((probed) => probed.dialog !== undefined) ? "dialog" : "none";

@@ -346,7 +346,11 @@ const BASE_SPECS: KitComponentSpec[] = [
     summary: "A titled content block with an optional one-line description. Use it to label a region; Surface is the plain bordered container.",
     props: {
       title: copy(z.string(), "card heading"),
-      description: copy(z.string(), "one-line subheading under the title"),
+      // A word, or Kit marks — the same pair `hint` takes, for the same reason: a
+      // subheading is prose most of the time and a `branch·sha` pair some of the
+      // time, and the mono face of an identifier is a thing only a Kit mark can
+      // say. Written as a string it renders exactly as it always did.
+      description: copy(slot, "one-line subheading under the title — a word, or Kit marks"),
       header: config(slot, "elements beside the title"),
       footer: config(slot, "the buttons under the content"),
     },
@@ -369,7 +373,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     name: "Text",
     group: "values",
     takesChildren: true,
-    summary: "Themed text. Use variant=heading for section titles. A figure goes INSIDE the sentence, as children — never in a hand-built string — and takes this text's own colour, so a bad-news sentence is toned once, here, rather than on every figure in it.",
+    summary: "Themed text. Use variant=heading for section titles. A figure goes INSIDE the sentence, as children — never in a hand-built string — and takes this text's colour, so tone the sentence, not every figure in it.",
     props: {
       // string | number, matching the implementation (`text: ReactNode`, which
       // renders a number verbatim). The spec said `string` only, which never
@@ -667,12 +671,17 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. A zero KEEPS its place in the legend reading 0; an unrenderable value is dropped, and a negative one is refused outright — a share of a whole cannot be below zero. Every slice is named and valued in a legend under the ring, so set `format`.",
+    summary: "A donut/pie of category shares. A zero KEEPS its place in the legend reading 0; an unrenderable value is dropped, and a negative one is refused outright — a share of a whole cannot be below zero. Every slice is named and valued in a legend under the ring, so set `format`. A category field of enum tokens reads there as EnumBadge's own pills; one spelled in words prints verbatim.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
       valueKey: config(z.string(), "slice-value field", { required: true }),
       format: config(valueFormat, "legend + tooltip format"),
+      // Enum-ness is judged per FIELD, not per value: one pill beside one bare
+      // word in the same ring is worse than either reading alone, and a name field
+      // ("ACME Corp") must keep the data's own words — which is why the legend
+      // humanizes a token field and nothing else.
+      tones: config(z.record(z.string(), toneWord), "slice value → tone overrides, exactly as EnumBadge takes them"),
       donut: config(z.boolean(), "false renders a full pie"),
       legend: config(slot, "on by default; false hides it, elements replace it"),
       height: config(z.number().int().positive(), "chart height in px"),
@@ -1140,7 +1149,7 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   // No `at` on any of these pairs: a container reads its header and footer as
   // props of its own, the way Timeline reads `marker`.
   Surface: { header, footer },
-  Card: { header, footer },
+  Card: { header, footer, description: { doc: "the subheading under the title, as elements instead of text" } },
   Divider: { label: { doc: "a word centred in the rule" } },
   DataTable: {
     cell: { doc: "ONE row's cell, in place of the column's plain text — write it as (row) => elements", perRow: true, rows: "rows", at: "columns" },

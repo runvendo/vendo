@@ -293,7 +293,9 @@ export function Surface({ title, tone, density, header, footer, grow, style, chi
 
 export interface CardProps extends KitStyled {
   title?: string;
-  description?: string;
+  /** A subtitle under the title — a string, or Kit marks where the value needs
+   *  their type (a mono `branch·sha` pair rather than hand-rolled text). */
+  description?: ReactNode;
   tone?: KitTone;
   density?: KitDensity;
   /** Kit elements along the top edge, beside the title. */

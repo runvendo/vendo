@@ -5,11 +5,36 @@
 // on.
 import { act, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { SplitPane } from "../../src/kit/layout.js";
+import { Card, SplitPane } from "../../src/kit/layout.js";
 import { Text } from "../../src/kit/values.js";
 
 const split = (element: ReturnType<typeof render>): HTMLElement =>
   element.container.querySelector<HTMLElement>('[data-kit="SplitPane"]')!;
+
+/** A Card's description slot: with no title, header or footer it is the card's
+ *  only `div`, and there is no slot at all when nothing was put in it. */
+const description = (element: ReturnType<typeof render>): HTMLElement | null =>
+  element.container.querySelector<HTMLElement>('[data-kit="Card"] > div');
+
+describe("Card", () => {
+  /** THE FAILURE: `description` was typed `string`, so a screen whose subtitle
+   *  carried a VALUE — a mono `branch·sha` pair — had no way to put a Kit mark
+   *  there and hand-rolled unstyled text instead. Every card in the ecosystem
+   *  takes a node here (MUI `CardHeader.subheader`, AntD `Card.Meta.description`);
+   *  `tsc` over this file is half the test, the paint below is the other half. */
+  it("takes a Kit mark as its description, in the description slot", () => {
+    const slot = description(render(<Card description={<Text variant="code" text="main·9f2c1ab" />} />))!;
+    expect(slot.firstElementChild?.getAttribute("data-variant")).toBe("code");
+    expect(slot.style.fontSize).toBe("0.9em");
+  });
+
+  /** And a string is untouched, the empty one included: an unwritten description
+   *  paints no slot, so it still costs no row and no gap. */
+  it("paints a string in that same slot, and nothing at all for an empty one", () => {
+    expect(description(render(<Card description="main·9f2c1ab" />))!.textContent).toBe("main·9f2c1ab");
+    expect(description(render(<Card description="" />))).toBeNull();
+  });
+});
 
 /**
  * jsdom lays nothing out and ships no ResizeObserver, so a pane can never be

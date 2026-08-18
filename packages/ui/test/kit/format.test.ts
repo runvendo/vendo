@@ -113,7 +113,7 @@ describe("formatDuration (takes seconds unless told minutes)", () => {
     // say so. A declared unit cannot be forgotten.
     expect(formatDuration(200, { unit: "minutes" })).toBe("3h 20m");
     expect(formatDuration(200)).toBe("3m 20s");
-    expect(formatDuration(0.5, { unit: "minutes" })).toBe("30s");
+    expect(formatDuration(0.5, { unit: "minutes" })).toBe("0m 30s");
     expect(formatDuration(268, { unit: "seconds" })).toBe("4m 28s");
   });
 
@@ -136,9 +136,20 @@ describe("formatDuration (takes seconds unless told minutes)", () => {
   });
 
   it("drops a unit that would read as zero", () => {
-    expect(formatDuration(46)).toBe("46s");
     expect(formatDuration(300)).toBe("5m");
     expect(formatDuration(3600)).toBe("1h");
+  });
+
+  // A build stage's 38 seconds printed "38s", which is the host's own field read
+  // aloud, not a duration — the judge caught the whole sub-minute column while
+  // the 157-second stage beside it read "2m 37s". The minute is the floor.
+  it("floors a sub-minute count at the minute, so the pair still reads as one", () => {
+    expect(formatDuration(38)).toBe("0m 38s");
+    expect(formatDuration(46)).toBe("0m 46s");
+    expect(formatDuration(59.6)).toBe("1m");
+    // Nothing above the floor moves, and zero has no pair to carry.
+    expect(formatDuration(157)).toBe("2m 37s");
+    expect(formatDuration(0)).toBe("0s");
   });
 
   it("says 0s rather than nothing at all, and keeps a sign", () => {

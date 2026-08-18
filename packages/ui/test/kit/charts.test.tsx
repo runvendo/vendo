@@ -160,6 +160,25 @@ describe("DonutChart legend", () => {
     expect(screen.getByText("$340.00")).toBeTruthy();
   });
 
+  // The ring's legend printed the raw enum ("past_due") while a DataTable on the
+  // same screen humanized and toned the identical field through EnumBadge — the
+  // two halves of one screen reading the same value in two different languages.
+  it("reads an enum slice through EnumBadge — humanized, and toned as a table column is", () => {
+    const { container } = render(
+      <DonutChart
+        data={[{ status: "past_due", mrr: 12800 }, { status: "active", mrr: 41000 }]}
+        categoryKey="status"
+        valueKey="mrr"
+        format="money"
+        tones={{ past_due: "danger" }}
+      />,
+    );
+    const pills = [...container.querySelectorAll('[data-kit="EnumBadge"]')];
+    expect(pills.map((pill) => pill.textContent)).toEqual(["Past due", "Active"]);
+    expect(pills[0]!.getAttribute("data-tone")).toBe("danger");
+    expect(container.textContent).not.toContain("past_due");
+  });
+
   it("legend={false} leaves the bare ring", () => {
     const { container } = render(
       <DonutChart data={spend} categoryKey="label" valueKey="value" format="money" legend={false} />,
@@ -281,6 +300,60 @@ describe("chart series descriptors", () => {
 });
 
 
+/**
+ * The category axis had no format token at all — the only one the chart owned was
+ * the y-axis' — so a trend over days printed the raw "2026-07-30" the host stored
+ * under every tick, beside figures that read in the host's own words.
+ */
+describe("LineChart x-axis format", () => {
+  const ticks = (container: HTMLElement): string[] =>
+    [...container.querySelectorAll(".recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value")].map(
+      (tick) => tick.textContent ?? "",
+    );
+
+  it("reads a date axis in words, and leaves a plain category exactly as given", () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const dated = render(
+        <LineChart
+          data={[{ day: "2026-07-30", amount: 1200 }, { day: "2026-07-31", amount: 1450 }]}
+          xKey="day"
+          series={["amount"]}
+          format="money"
+          xFormat="date"
+        />,
+      );
+      expect(ticks(dated.container)).toEqual(["Jul 30, 2026", "Jul 31, 2026"]);
+      const plain = render(<LineChart data={[{ x: "Jan", v: 1 }, { x: "Feb", v: 2 }]} xKey="x" series={["v"]} />);
+      expect(ticks(plain.container)).toEqual(["Jan", "Feb"]);
+    } finally {
+      restore();
+    }
+  });
+
+  // The hovered point's heading is that same x value: formatted on the axis alone,
+  // the tooltip goes on quoting the ISO the tick no longer shows.
+  it("heads the hovered point in the words its own tick reads", async () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <LineChart
+          data={[{ day: "2026-07-30", amount: 1200 }, { day: "2026-07-31", amount: 1450 }]}
+          xKey="day"
+          series={["amount"]}
+          format="money"
+          xFormat="date"
+        />,
+      );
+      const tip = await hoveredTooltip(container);
+      expect(tip).toMatch(/Jul 3[01], 2026/);
+      expect(tip).not.toContain("2026-07");
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("Sparkline tone", () => {
   const stroke = (node: ReactElement): string | null =>
     render(node).container.querySelector(".recharts-area-curve")!.getAttribute("stroke");
@@ -317,7 +390,9 @@ describe("BarChart value labels", () => {
       const { container } = render(
         <BarChart data={builds} xKey="number" series={["duration_seconds"]} format="duration" />,
       );
-      expect(labels(container)).toEqual(["6m 52s", "46s"]);
+      // "0m 46s", not "46s": a duration is floored at the minute wherever it is
+      // printed (`format.ts` formatDuration), and a bar label is one more place.
+      expect(labels(container)).toEqual(["6m 52s", "0m 46s"]);
     } finally {
       restore();
     }

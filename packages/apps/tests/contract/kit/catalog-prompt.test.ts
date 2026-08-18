@@ -142,29 +142,34 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
   });
 
   /**
-   * THE BUDGET, re-measured 2026-08-18 after the capability pass: 54 bricks cost
-   * 26,618 characters (~6.7k tokens), against `kitPrompt`'s 39,496 for the same
-   * bricks as a section apiece.
+   * THE BUDGET, re-measured 2026-08-18 after the second capability pass: 54
+   * bricks cost 27,247 characters (~6.8k tokens) under a 3,878-character
+   * preamble, against `kitPrompt`'s 41,004 for the same bricks as a section
+   * apiece.
    *
-   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 500
+   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 510
    * characters a brick — heading, summary, props, slots AND example — the
-   * 55-brick kit still fits (27,500 plus the ~3,400-character preamble), while a
-   * brick that grew past 500 would break that promise long before the total
-   * noticed.
+   * 55-brick kit still fits (28,050 plus that preamble is 31,928), while a brick
+   * that grew past 510 would break that promise long before the total noticed.
    *
-   * Both numbers move DELIBERATELY, in a commit that says why. The move from 490
-   * to 500 is CAPABILITY: a table column now says `width`, `truncate`, `priority`
-   * and `header`, a duration says which unit it holds, a button takes an `icon`
-   * and a `loading`, and a series takes its own `format` — and every one of those
-   * is a word the model was already writing into a prop the floor refused. The
-   * compact type walked off each schema is what carries them, so the growth is in
-   * the derived half, not in prose; the ~7 characters of slack per brick are
-   * deliberate, because a bound with no room is a bound everyone learns to raise.
+   * Both numbers move DELIBERATELY, in a commit that says why. 490 → 500 was
+   * CAPABILITY — a table column that says `width`, `truncate`, `priority` and
+   * `header`, a duration that says which unit it holds, a button with an `icon`
+   * and a `loading`, a series with its own `format`. 500 → 510 is the same coin:
+   * a line chart formats its x axis (`xFormat`), a donut tones its own legend
+   * (`tones`), a figure keeps the zeros it was written with
+   * (`minimumFractionDigits`), a Card's description takes Kit marks, and `info`
+   * joined the tone vocabulary on every value, badge and surface that takes one.
+   * Each is a word the model was already writing into a prop the floor refused,
+   * and the compact type walked off each schema is what carries them — so the
+   * growth is in the derived half, not in prose. The ~5 characters of slack per
+   * brick are the whole margin left: the next capability pays for itself in words
+   * cut, because a bound with no room is a bound everyone learns to raise.
    */
   it("stays under the section-per-brick catalog, with room for the 55-brick kit", () => {
     const prompt = catalogPrompt();
     expect(prompt.length).toBeLessThanOrEqual(32_000);
     expect(prompt.length).toBeLessThan(kitPrompt().length);
-    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(500);
+    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(510);
   });
 });

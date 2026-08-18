@@ -49,6 +49,11 @@ interface LineChartOwnProps extends KitStyled {
   series: LineSeriesInput[];
   /** Value-tier format for y-axis ticks and tooltips. */
   format?: ValueFormat;
+  /** Value-tier format for the x-axis ticks and the tooltip's own heading. The
+   *  category axis had no format token at all, so a trend over days printed the
+   *  raw "2026-07-30" the host stored under every tick while the figures beside
+   *  it read in the host's own words. */
+  xFormat?: ValueFormat;
   height?: number;
   emptyState?: string;
   /** Kit elements shown in place of `emptyState` when there is nothing to plot. */
@@ -77,7 +82,7 @@ function normalize(series: LineSeriesInput[]) {
 
 const axisTick = { fill: t.muted, fontSize: 11 };
 
-export function LineChart({ data, xKey, series, format = "number", height = 220, emptyState = "No data to chart", empty, tooltip, legend, style, children, pending, ...engine }: LineChartProps & KitRendered) {
+export function LineChart({ data, xKey, series, format = "number", xFormat = "text", height = 220, emptyState = "No data to chart", empty, tooltip, legend, style, children, pending, ...engine }: LineChartProps & KitRendered) {
   const cols = normalize(series);
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
@@ -85,6 +90,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
     return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
+  const xfmt = (v: unknown) => applyFormat(v, xFormat) ?? "";
   return (
     <div
       data-kit="LineChart"
@@ -94,7 +100,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
         <ResponsiveContainer width="100%" height="100%">
           <RLineChart data={clean} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
             <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} />
+            <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} tickFormatter={xfmt} />
             <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
             <Tooltip
               // The ONE place a line's value is printed, so it is the only place a
@@ -106,6 +112,9 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
               // reads in THAT series' units and the chart's own `format` is the
               // default for the rest.
               formatter={(v, name) => applyFormat(v, cols.find((c) => c.label === name)?.format ?? format) ?? ""}
+              // The hovered point's HEADING is that same x value, so it reads in
+              // the words its own tick does.
+              labelFormatter={xfmt}
               // `clean` maps 1:1 over `data`, so it is the per-point slot's own
               // order — and it holds the objects recharts hands back on hover.
               content={tooltip === undefined ? undefined : slotTooltip(tooltip, clean)}
