@@ -52,11 +52,7 @@ const series = { data: points, xKey: "m", series: ["v"] };
  *  here renders on its defaults alone. */
 const PROPS: Readonly<Record<string, Record<string, unknown>>> = {
   Icon: { name: "check" },
-  // The value tier paints a placeholder, or nothing at all, with no value to show.
-  Money: { value: 42 },
-  DateTime: { value: "2026-01-01" },
-  Percent: { value: 0.42 },
-  Num: { value: 7 },
+  // The text tier paints a placeholder, or nothing at all, with no value to show.
   Text: { text: "Overdue" },
   EnumBadge: { value: "overdue" },
   Badge: { label: "Overdue" },

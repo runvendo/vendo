@@ -423,9 +423,9 @@ that declares `data` returns rows and is graded
 schemas are derived from `takes` (a name → type map), output schemas from the
 example rows.
 
-**Money is in integer cents**, as the Kit's `format="money"` and the demo host
-both expect. This is load-bearing: a world authored in dollars lets a 100×
-scale error slip past the honesty line. `tests/worlds.test.ts` lints every
+**Money is in integer cents**, as the demo host and every real host API do — a
+screen divides by 100 where it formats the amount itself. This is load-bearing:
+a world authored in dollars lets a 100× scale error slip past the honesty line. `tests/worlds.test.ts` lints every
 folder for it — and for empty reads, argument-less writes, dangling row ids,
 untagged cases and overrides naming fields no tool has — at collection time, so
 a world added tomorrow is linted the day it lands.

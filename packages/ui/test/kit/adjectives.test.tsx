@@ -10,10 +10,11 @@ import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Progress } from "../../src/kit/charts/progress.js";
 import { Badge } from "../../src/kit/data/badge.js";
+import { Stat } from "../../src/kit/data/stat.js";
 import { Callout } from "../../src/kit/feedback/callout.js";
 import { Card, Grid, Row, Stack, Surface } from "../../src/kit/layout.js";
 import { toneColor } from "../../src/kit/tokens.js";
-import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
 /** Every Kit component tags its own root, so that is the handle these use. */
 function kit(container: HTMLElement, name: string): HTMLElement {
@@ -75,27 +76,25 @@ describe("tone is a theme token, never a literal color", () => {
     expect(screen.getByText("Beta").style.color).toContain("var(--vendo-color-success");
   });
 
-  // The catalog teaches "the figure that is bad news is `danger`", i.e. exactly
-  // `<Money value={2500} tone="danger"/>` — which painted nothing at all while
-  // only Text and the pills read the adjective.
-  it("every figure in the value tier paints from the palette", () => {
-    const figures: Array<[string, ReactElement]> = [
-      ["Money", <Money value={2500} tone="danger" />],
-      ["DateTime", <DateTime value="2026-03-14" tone="danger" />],
-      ["Percent", <Percent value={42} tone="danger" />],
-      ["Num", <Num value={1234} tone="danger" />],
-    ];
-    for (const [name, node] of figures) {
-      expect(kit(render(node).container, name).style.color, name).toContain("var(--vendo-color-danger");
-    }
+  // The catalog teaches "the figure that is bad news is `danger`", and a figure
+  // is a Stat's value or a run of Text now that the screen formats its own — so
+  // the tile has to read the adjective on the FIGURE, not just on its frame.
+  it("a Stat paints its figure from the palette, rule and all", () => {
+    const tile = kit(render(<Stat label="Total overdue" value="$2,500.00" tone="danger" />).container, "Stat");
+    expect(tile.getAttribute("data-tone")).toBe("danger");
+    expect(tile.querySelector<HTMLElement>("strong")!.style.color).toContain("var(--vendo-color-danger");
+    expect(tile.style.borderLeft).toContain("var(--vendo-color-danger");
   });
 
-  it("an untoned figure inherits, and neutral is not a color of its own", () => {
-    // A figure declares no color of its own — the theme's text color reaches it
-    // from the text layer around it, so a toned sentence paints its figures too.
-    const plain = kit(render(<Money value={2500} />).container, "Money").style.color;
-    expect(plain).toBe("inherit");
-    expect(kit(render(<Money value={2500} tone="neutral" />).container, "Money").style.color).toBe(plain);
+  it("an untoned figure stays quiet, and neutral is not a tone of its own", () => {
+    const tile = (tone?: string): HTMLElement =>
+      kit(render(<Stat label="Balance" value="$2,500.00" tone={tone as never} />).container, "Stat");
+    const plain = tile();
+    expect(plain.getAttribute("data-tone")).toBe("neutral");
+    // A resting tile declares no rule at all: a near-black 3px bar on every tile
+    // is the opposite of quiet.
+    expect(plain.style.borderLeft).toBe("");
+    expect(tile("neutral").getAttribute("style")).toBe(plain.getAttribute("style"));
   });
 
   // The pill palette's own docblock promises every entry is a token or a mix of

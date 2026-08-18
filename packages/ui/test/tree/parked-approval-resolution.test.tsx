@@ -35,10 +35,12 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Card", "Text", "Money", "Button", "Input"];
+const CATALOG = ["Stack", "Card", "Text", "Button", "Input"];
 
 const TRANSFERS = `
-import { Button, Card, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending");
@@ -47,7 +49,7 @@ export default function PendingTransfers() {
       <Text text={"Pending: " + pending.data.length} />
       {pending.data.map((row) => (
         <Card key={row.id} title={row.recipient}>
-          <Money value={row.amount_cents / 100} />
+          <Text text={money(row.amount_cents)} />
           <Button label={"Cancel " + row.recipient} onClick={async () => {
             await tools.cancel_transfer({ id: row.id });
           }} />

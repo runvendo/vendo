@@ -26,7 +26,7 @@ beforeAll(async () => {
 
 const TRANSFERS = `
 import { useState } from "react";
-import { Button, Card, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Stack, Text, tools, useQuery } from "@vendo/screen";
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending");
@@ -37,7 +37,7 @@ export default function PendingTransfers() {
       {note === "" ? null : <Text text={note} />}
       {pending.data.map((row) => (
         <Card key={row.id} title={row.recipient}>
-          <Money amount={row.amount_cents / 100} />
+          <Text text={(row.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} />
           <Button label={"Cancel " + row.id} onClick={async () => {
             setNote("cancelling " + row.id);
             const answer = await tools.cancel_transfer({ id: row.id });
@@ -68,17 +68,17 @@ describe("bootScreen", () => {
       const tree = screen.tree();
 
       expect(tree.component).toBe("Stack");
+      // Props are DATA, at the type the component wrote them: a number stays a
+      // number, where setAttribute would have stringified it.
       expect(tree.props).toEqual({ gap: 12 });
       // A component's children are the components it wrote, with the keys it
       // wrote — a component of its own (Card) survives, a fragment and a
       // component wrapper would not, because the host has never heard of them.
       expect(tree.children.map((child) => typeof child === "string" ? child : `${child.component}:${child.key}`))
         .toEqual(["Text:undefined", "Card:tr_1", "Card:tr_2"]);
-      // Props are DATA, at the type the component wrote them: a number stays a
-      // number (setAttribute would have stringified it), and the arithmetic ran
-      // inside the VM.
-      expect(nodeOf(tree, "Money")?.props).toEqual({ amount: 42 });
-      expect(textsOf(tree)).toEqual(["Transfers waiting to go out"]);
+      // The screen formats its own figures, so both the arithmetic and the `Intl`
+      // call ran inside the VM and what reaches the host is finished text.
+      expect(textsOf(tree)).toEqual(["Transfers waiting to go out", "$42.00", "$9.00"]);
     } finally {
       screen.dispose();
     }

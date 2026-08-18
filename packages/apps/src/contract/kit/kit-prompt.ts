@@ -17,7 +17,7 @@ export const PREAMBLE = [
   "# The Kit",
   "",
   "Build the app from these components — you only fill props; they sort, filter,",
-  "paginate, and format themselves.",
+  "paginate, and theme themselves.",
   "",
   "- Every `data` prop must trace to a tool call — a `useQuery` result.",
   "- Hand-typed business data is illegal; if no tool backs the ask, `<Disclaimer>`",
@@ -27,28 +27,16 @@ export const PREAMBLE = [
   "",
   "- **config** tunes behavior · **copy** is text you may write · **data** must",
   "  come from a tool.",
-  "- Dates take ISO or epoch. Invalid numbers and dates never render.",
   "",
-  "## Units and formatting",
+  "## Formatting",
   "",
-  "- Every component FORMATS what you hand it and converts nothing.",
-  "- `<Money>` and `format=\"money\"` take DOLLARS, so divide a `_cents` field by",
-  "  100 where you prepare the data: `value={invoice.amount_cents / 100}`. Forget,",
-  "  and the screen is wrong by 100×.",
-  "- `<Percent>` prints the number it is given — `42.5` is \"42.5%\" — so a ratio is",
-  "  `* 100` where you read it, and nothing is rounded that you did not round.",
-  "- `format=\"duration\"` — a Stat, a column, a card or KeyValue field — reads a",
-  "  count of SECONDS: `268` → \"4m 28s\", with the MINUTE as the floor, so a",
-  "  sub-minute count reads as a duration and not as the stored figure: `38` →",
-  "  \"0m 38s\". A field stored in minutes says so beside it,",
-  "  `durationUnit=\"minutes\"`, rather than being multiplied at the read; and",
-  "  `durationSigned` phrases the sign for a deadline — \"3h 20m left\",",
-  "  \"overdue 1h 55m\" — instead of printing a bare minus.",
-  "- `unit` writes the word after a figure:",
-  "  `<Num value={svc.tail_latency_ms} unit=\"ms\"/>` → \"842 ms\".",
-  "- `<DateTime compact/>` drops the year — \"Aug 7\", not \"Aug 7, 2026\".",
-  "- Identifiers are mono: a sha, branch, id or code is `<Text variant=\"code\"/>`",
-  "  or a `format:\"code\"` column or field.",
+  "- YOU format every value, in your own code, with `Intl` — amounts, dates,",
+  "  percentages, durations, counts: `(row.amount_cents / 100).toLocaleString(\"en-US\",",
+  "  { style: \"currency\", currency: \"USD\" })`, `` `${pct}%` ``,",
+  "  `new Date(row.due).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" })`.",
+  "  Use the currency the briefing names. Components never format — they display",
+  "  and theme what you hand them, so a figure arrives as finished text.",
+  "- Identifiers are mono: a sha, branch, id or code is `<Text variant=\"code\"/>`.",
   "",
   "## Two adjectives",
   "",
@@ -63,8 +51,11 @@ export const PREAMBLE = [
   "## Rows, columns and layout",
   "",
   "- A per-row slot takes a FUNCTION of the row, and inside it you write that",
-  "  row's own values: `cell: (row) => <Money value={row.amount_cents / 100}/>`,",
+  "  row's own values — the formatting included:",
+  "  `cell: (row) => <Text text={money(row.amount_cents)}/>`,",
   "  `rowActions={(row) => <Button label=\"Cancel\" onClick={() => tools.cancel_transfer({ id: row.id })}/>}`.",
+  "  Define a `money`/`day` helper once at the top of the file and reuse it, rather",
+  "  than spelling `toLocaleString` out in every cell.",
   "- A status-like enum column is an EnumBadge, never a bare word.",
   "- Where a field needs nothing said about it, write the bare KEY:",
   '  `columns={["client.name","amount"]}` is the same list of descriptions, and the',
@@ -84,8 +75,8 @@ export const PREAMBLE = [
 /**
  * The prompt's own examples, for the components whose canonical spec example is
  * written in an idiom the screen no longer has — a value component naming a
- * `field`, a slot holding an element, `<Money amount>` — plus the few that spent
- * characters restating a shape the props above them already give.
+ * `field`, a slot holding an element — plus the few that spent characters
+ * restating a shape the props above them already give.
  *
  * The props are still rendered from `KIT_SPECS`, which is the half that must never
  * drift; an example is teaching prose, and a component absent from this map
@@ -97,18 +88,17 @@ export const PREAMBLE = [
  * one place to read what the model is actually shown.
  */
 const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
-  // Data off a `useQuery` result, never an inline call. The value the component
-  // shows is already in the units it formats.
-  Money: ["<Money value={invoice.amount_cents / 100}/>"],
-  Percent: ["<Percent value={(goal.saved / goal.target) * 100}/>"],
-  Stat: ['<Stat label="Total overdue" value={overdue.total_cents / 100} format="money" tone="danger"><Sparkline data={overdue.trend}/></Stat>'],
+  // Data off a `useQuery` result, never an inline call. The figure is FORMATTED in
+  // the screen's own code — `money` here is the one-line helper the screen defines
+  // once — and the component displays the finished text.
+  Stat: ['<Stat label="Total overdue" value={money(overdue.total_cents)} tone="danger"><Sparkline data={overdue.trend}/></Stat>'],
   Avatar: ['<Row gap={6} align="center"><Avatar name={client.name}/><Text text={client.name}/></Row>'],
-  // A per-row slot is a function of the row — the arithmetic and the control that
-  // a field binding could not hold.
-  DataTable: ['<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",align:"end",cell:(row) => <Money value={row.amount_cents / 100}/>},{key:"status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>}/>'],
-  TableRow: ['<TableRow key={row.id}><Text text={row.name}/><Money value={row.balance_cents / 100}/></TableRow>'],
-  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance_cents",label:"Balance",cell:(item) => <Money value={item.balance_cents / 100}/>},{key:"plan"}]}/>'],
-  KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",cell:(record) => <Money value={record.amount_cents / 100}/>}]} dividers/>'],
+  // A per-row slot is a function of the row — the formatting, the arithmetic and
+  // the control that a field binding could not hold.
+  DataTable: ['<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",align:"end",cell:(row) => <Text text={money(row.amount_cents)}/>},{key:"status",cell:(row) => <EnumBadge value={row.status} tones={{overdue:"danger"}}/>}]} rowActions={(row) => <Button label="Remind" onClick={() => tools.send_reminder({ id: row.id })}/>}/>'],
+  TableRow: ['<TableRow key={row.id}><Text text={row.name}/><Text text={money(row.balance_cents)}/></TableRow>'],
+  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance_cents",label:"Balance",cell:(item) => <Text text={money(item.balance_cents)}/>},{key:"plan"}]}/>'],
+  KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",cell:(record) => <Text text={money(record.amount_cents)}/>}]} dividers/>'],
   // A chart reads its numbers BY KEY, so there is no cell to divide in: the `/ 100`
   // moves into the data prep. Both of these used to hand tool rows straight to
   // `format="money"`, and a screen that copied one rendered cents as dollars.
@@ -190,7 +180,7 @@ function renderSpec(spec: KitComponentSpec): string {
 const GROUP_ORDER = ["layout", "values", "data", "charts", "forms", "feedback", "overlays"];
 const GROUP_TITLE: Record<string, string> = {
   layout: "Layout",
-  values: "Values (semantic — formatted for you)",
+  values: "Values (typography, pills and glyphs — you format the figure)",
   data: "Data",
   charts: "Charts",
   forms: "Forms & actions",

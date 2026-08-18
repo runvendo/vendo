@@ -3,17 +3,17 @@
  * DataTable, with the rows painted by the model.
  *
  * A whole row written by hand, where a `cell` function per column would be three
- * functions saying the same thing. The math runs where the record is in scope, so
- * these tests are about the two things that has to survive: the cells must land
- * under the headers they belong to, and everything the table already does —
- * sorting, search, the fold — must keep running on `rows` and still address the
- * right painted row.
+ * functions saying the same thing. The math AND the formatting run where the
+ * record is in scope, so these tests are about the two things that has to
+ * survive: the cells must land under the headers they belong to, and everything
+ * the table already does — sorting, search, the fold — must keep running on
+ * `rows` and still address the right painted row.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
 import { TableRow } from "../../src/kit/data/table-row.js";
-import { Money, Text } from "../../src/kit/values.js";
+import { Text } from "../../src/kit/values.js";
 import { Button } from "../../src/kit/forms/button.js";
 
 /** Cents, as a host's API really hands them over. */
@@ -22,6 +22,11 @@ const accounts = [
   { id: "a2", name: "Savings", balance_cents: 900_125 },
   { id: "a3", name: "Travel", balance_cents: 4_200 },
 ];
+
+/** The one-line helper a screen defines at the top of its own file: the ÷100 and
+ *  the currency both live here, where the row is written. */
+const money = (cents: number): string =>
+  (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 const COLUMNS = [
   { key: "name", label: "Account" },
@@ -34,7 +39,7 @@ const painted = (props: Partial<React.ComponentProps<typeof DataTable>> = {}, on
     {accounts.map((a) => (
       <TableRow key={a.id}>
         <Text text={a.name} />
-        <Money value={a.balance_cents / 100} />
+        <Text text={money(a.balance_cents)} />
         <Button label="Cancel" onClick={() => onCancel(a.id)} />
       </TableRow>
     ))}

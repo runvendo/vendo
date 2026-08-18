@@ -84,8 +84,8 @@ Those two imports are everything there is. Nothing else can be loaded.
 
 ## Components and plain HTML
 
-- Prefer the catalog: its components carry this product's theme and formatting,
-  and their props are checked.
+- Prefer the catalog: its components carry this product's theme, and their props
+  are checked.
 - Beside it you have plain display HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` — used the way you'd use
   it anywhere: headings, prose, lists, and any structure the catalog doesn't
   offer.
@@ -96,9 +96,9 @@ Those two imports are everything there is. Nothing else can be loaded.
   hard-coded values: a hard-coded color is your color, not the product's.
 - Every variable there is, and what each one means, is listed at the end of this
   file.
-- Figures in prose still go through the value components: an amount in a
-  sentence is an inline \`<Money>\`, never a \`$\` and a \`toFixed\` you typed —
-  those lose the grouping and the host's currency.
+- You format every figure yourself, with \`Intl\` — \`toLocaleString\`,
+  \`toLocaleDateString\` — in the units the host stores and the currency the brief
+  names. Components display and theme what you hand them; none of them formats.
 
 ## The sandbox
 
@@ -121,7 +121,10 @@ Those two imports are everything there is. Nothing else can be loaded.
 The ask: "let me cancel a transfer before it goes out."
 
 \`\`\`tsx
-import { Button, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
@@ -137,8 +140,8 @@ export default function PendingTransfers() {
           <Card key={transfer.id} title={transfer.recipient}>
             <Row justify="between" align="center">
               <Stack gap={4}>
-                <Money value={transfer.amount_cents / 100} />
-                <DateTime value={transfer.scheduled_for} mode="date" />
+                <Text text={money(transfer.amount_cents)} />
+                <Text text={day(transfer.scheduled_for)} variant="caption" />
               </Stack>
               <Button label="Cancel" tone="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
             </Row>
@@ -156,23 +159,26 @@ acts on it.
 
 \`\`\`tsx
 import { useState } from "react";
-import { Button, DataTable, Modal, Money, Num, Row, Stack, Stat, Text, tools, useQuery } from "@vendo/screen";
+import { Button, DataTable, Modal, Row, Stack, Stat, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 export default function BillsDue() {
   const bills = useQuery("list_open_bills");
   const [confirming, setConfirming] = useState(false);
-  const total = bills.data.reduce((sum, bill) => sum + bill.amount_cents, 0) / 100;
+  const totalCents = bills.data.reduce((sum, bill) => sum + bill.amount_cents, 0);
 
   return (
     <Stack gap={12}>
       <Row justify="between" align="center">
-        <Stat label="Due this month" value={total} format="money" />
+        <Stat label="Due this month" value={money(totalCents)} />
         <Button label="Pay all" onClick={() => setConfirming(true)} />
       </Row>
-      <DataTable rows={bills.data} columns={["payee", { key: "due_on", label: "Due", format: "date" }, { key: "amount_cents", label: "Amount", align: "end", cell: (bill) => <Money value={bill.amount_cents / 100} /> }]} />
+      <DataTable rows={bills.data} columns={["payee", { key: "due_on", label: "Due", cell: (bill) => <Text text={day(bill.due_on)} /> }, { key: "amount_cents", label: "Amount", align: "end", cell: (bill) => <Text text={money(bill.amount_cents)} /> }]} />
       <Modal open={confirming} onClose={() => setConfirming(false)} title="Pay every open bill?"
         footer={<Button label="Pay all" onClick={async () => { for (const bill of bills.data) await tools.pay_bill({ id: bill.id }); }} />}>
-        <Text>This pays <Num value={bills.data.length} /> bills, <Money value={total} /> in total.</Text>
+        <Text>This pays {bills.data.length} bills, {money(totalCents)} in total.</Text>
       </Modal>
     </Stack>
   );
@@ -183,7 +189,9 @@ The ask: "compare the plans side by side." An ask that names the things to compa
 gets a fixed \`columns\` — \`minChildWidth\` is for tiles whose count the data decides.
 
 \`\`\`tsx
-import { Button, Card, Grid, KeyValue, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Grid, KeyValue, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function ComparePlans() {
   const plans = useQuery("list_plans");
@@ -195,7 +203,7 @@ export default function ComparePlans() {
         {plans.data.map((plan) => (
           <Card key={plan.id} title={plan.name}>
             <Stack gap={6}>
-              <Money value={plan.price_cents / 100} />
+              <Text text={money(plan.price_cents)} variant="heading" />
               <KeyValue record={plan} items={[{ key: "seats", label: "Seats" }, { key: "support", label: "Support" }]} />
               <Button label="Switch" onClick={() => tools.switch_plan({ id: plan.id })} />
             </Stack>

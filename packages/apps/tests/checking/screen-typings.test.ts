@@ -60,17 +60,16 @@ describe("screenTypings", () => {
 
   it("carries the Kit's zod prop types, not just its prop names", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    // Money.amount is a number of DOLLARS (data class); currency an optional
-    // string. Every prop also admits VendoBinding — see the unresolvable-binding
-    // test below. `amount` is optional since the cell slots landed: a value
-    // component inside a cell takes its value from `field`, so a required
-    // `amount` would make the slot the catalog teaches unwritable.
-    expect(dts).toContain("declare const Money: (props: { value?: number | VendoBinding; currency?: string | VendoBinding;");
+    // Stat.value is the figure the screen already formatted, so it takes either a
+    // number or a string; `unit` is an optional string. Every prop also admits
+    // VendoBinding — see the unresolvable-binding test below.
+    expect(dts).toContain("declare const Stat: (props: { label: string | VendoBinding; value: number | string | VendoBinding; unit?: string | VendoBinding;");
     // Required is still required where it is load-bearing — a table with no rows
     // is nothing at all, and that is what pins the marker itself.
     expect(dts).toContain("declare const DataTable: (props: { rows: Array<Record<string, any>> | VendoBinding;");
-    // Stat.format is an enum — the literal union is what makes format=\"huge\" a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text"');
+    // A chart's axis format is the ONE format token left in the Kit, and it is an
+    // enum — the literal union is what makes xFormat=\"huge\" a type error.
+    expect(dts).toContain('xFormat?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text"');
     // A cell slot holds an ELEMENT, which no schema describes. A STORED
     // document's is a serialized one, so the wire's slot stays permissive — the
     // alias, not a shape — and without that the catalog's own DataTable example
@@ -98,7 +97,7 @@ describe("screenTypings", () => {
     // since the cell slots landed, where `field` supplies it instead).
     expect(dts).toContain("text?: string | number | VendoBinding");
     // An enum slot keeps its literal union — format="huge" is still a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | "code" | VendoBinding');
+    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | VendoBinding');
   });
 
   /**

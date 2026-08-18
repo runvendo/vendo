@@ -65,7 +65,7 @@ describe("useVendoState — the $state binding, in code-land", () => {
  * THE SEAM (§0): the store is the renderer's store. `useKeyedState` is the one
  * keyed-`$state` implementation, hoisted into `@vendoai/ui/kit` so
  * `StatefulTreeView` (the `.vendo` venue) and this provider (the code-land
- * venue) share it — the same move `fmt` made. Both are driven here with the
+ * venue) share it — the same move `reshape` made. Both are driven here with the
  * same writes and must hold the same state.
  */
 describe("the code-land store IS the renderer's keyed store", () => {

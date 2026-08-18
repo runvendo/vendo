@@ -52,18 +52,18 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
   });
 
   it("labels the example block for its count", () => {
-    // DateTime carries two examples, Money one; the model reads the label.
-    expect(kitPrompt({ only: ["DateTime"] })).toContain("Examples:");
-    const money = kitPrompt({ only: ["Money"], omitPreamble: true });
-    expect(money).toContain("Example:");
-    expect(money).not.toContain("Examples:");
+    // Text carries two examples, Stat one; the model reads the label.
+    expect(kitPrompt({ only: ["Text"] })).toContain("Examples:");
+    const stat = kitPrompt({ only: ["Stat"], omitPreamble: true });
+    expect(stat).toContain("Example:");
+    expect(stat).not.toContain("Examples:");
   });
 
   it("titles each group, in the reading order the model is taught", () => {
     const prompt = kitPrompt();
     const titles = [
       "# Layout",
-      "# Values (semantic — formatted for you)",
+      "# Values (typography, pills and glyphs — you format the figure)",
       "# Data",
       "# Charts",
       "# Forms & actions",
@@ -76,10 +76,10 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
   });
 
   it("drops the group headings when scoped — scoped output is a flat list", () => {
-    const scoped = kitPrompt({ only: ["Money", "DataTable"] });
-    expect(scoped).toContain("## <Money>");
+    const scoped = kitPrompt({ only: ["Text", "DataTable"] });
+    expect(scoped).toContain("## <Text>");
     expect(scoped).toContain("## <DataTable>");
-    expect(scoped).not.toContain("# Values (semantic — formatted for you)");
+    expect(scoped).not.toContain("# Values (typography, pills and glyphs — you format the figure)");
     expect(scoped).not.toContain("# Data\n");
   });
 
@@ -94,11 +94,13 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
    * Where a field's units are settled: ONE instruction, at the read site. The
    * `semantic:` token that used to divide for you is gone with the dialect, and so
    * is the reader's old name rule ("a `*_cents` key is money in minor units") —
-   * either would promise a conversion no component performs.
+   * either would promise a conversion no component performs. The preamble's own
+   * line is where the `money` helper the examples call gets its body, so the
+   * division and the formatting are taught as one move.
    */
   it("teaches the one money rule, and no conversion anything performs for you", () => {
     const prompt = kitPrompt();
-    expect(prompt).toContain("value={invoice.amount_cents / 100}");
+    expect(prompt).toContain("(row.amount_cents / 100).toLocaleString(");
     expect(prompt).toContain("converts nothing");
     expect(prompt).not.toContain('semantic:"money.cents"');
     expect(prompt).not.toContain("`*_cents` key is money in minor units");
@@ -109,19 +111,35 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
    * catalog can show — the spec's own and the prompt's correction, because either
    * one is what some component shows.
    *
-   * A chart reads its numbers BY KEY, so there is no `<Money value={row.x / 100}/>`
-   * to divide in; the example handed tool rows straight to `format="money"`, and a
-   * benched screen copied it faithfully and printed cents as dollars — $285,000 of
-   * housing spend — while dividing correctly everywhere the Stat example was the
-   * model it followed. An example is the strongest teaching in the prompt, so one
-   * that skips the `/ 100` is a bug the catalog ships to every generation.
+   * A chart reads its numbers BY KEY, so there is no per-row read to divide in; the
+   * example handed tool rows straight to `format="money"`, and a benched screen
+   * copied it faithfully and printed cents as dollars — $285,000 of housing spend —
+   * while dividing correctly everywhere the Stat example was the model it followed.
+   * An example is the strongest teaching in the prompt, so one that skips the
+   * `/ 100` is a bug the catalog ships to every generation.
+   *
+   * The detector names only the places a figure is DISPLAYED as money — a currency
+   * `toLocaleString`, a chart's axis token, a Calendar's amount field — so the
+   * `money` helper is never what makes an example count as one, and an example that
+   * hands a raw cents field to any of them fails.
    */
   it("divides in every example that formats money, so none teaches cents as dollars", () => {
-    const money = /format[=:]"money"|<Money |amountField=/;
+    const shown = /format[=:]"money"|amountField=|style: "currency"/u;
     for (const spec of KIT_SPECS) {
       for (const example of [...spec.examples, ...promptExamples(spec)]) {
-        if (!money.test(example)) continue;
-        expect(example, `${spec.name} formats money with no /100`).toContain("/ 100");
+        if (!shown.test(example)) continue;
+        // The division is written out, or it is the `money` helper — whose body the
+        // preamble gives as exactly that division (see the money-rule test above).
+        expect(example, `${spec.name} formats money with no /100`).toMatch(/\/ 100|money\(/u);
+      }
+    }
+    // …and every `money(…)` is handed a MINOR-UNIT field, because a helper that
+    // divides fed dollars is the same bug read backwards.
+    for (const spec of KIT_SPECS) {
+      for (const example of [...spec.examples, ...promptExamples(spec)]) {
+        for (const [, argument] of example.matchAll(/money\(([^)]*)\)/gu)) {
+          expect(argument, `${spec.name} hands money() a field that is not cents`).toMatch(/_[cC]ents$/u);
+        }
       }
     }
   });
@@ -142,7 +160,7 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
    */
   it("shows per-row slots as functions, and no `field=` binding anywhere", () => {
     const prompt = kitPrompt();
-    expect(prompt).toContain("cell:(row) => <Money value={row.amount_cents / 100}/>");
+    expect(prompt).toContain("cell:(row) => <Text text={money(row.amount_cents)}/>");
     expect(prompt).toContain("rowActions={(row) =>");
     expect(prompt).not.toContain("field=");
   });

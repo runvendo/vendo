@@ -218,14 +218,14 @@ export default function S() {
 
   it("gives every catalog name to the screen as a component it can render", () => {
     const screen = bootTsx(`
-import { Card, Money, Row, Stack, Text } from "@vendo/screen";
+import { Card, EnumBadge, Row, Stack, Text } from "@vendo/screen";
 export default function S() {
-  return <Stack><Row><Card title="c"><Money amount={1} /><Text text="t" /></Card></Row></Stack>;
+  return <Stack><Row><Card title="c"><EnumBadge value="paid" /><Text text="t" /></Card></Row></Stack>;
 }`);
     try {
       // A name from the catalog IS the component: the engine gives the screen the
       // string, and the host's renderer is what turns it into pixels.
-      expect(JSON.stringify(screen.tree())).toContain('"component":"Money"');
+      expect(JSON.stringify(screen.tree())).toContain('"component":"EnumBadge"');
     } finally {
       screen.dispose();
     }

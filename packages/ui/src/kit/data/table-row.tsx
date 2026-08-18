@@ -2,9 +2,11 @@
  * TableRow — one DataTable row the model painted itself.
  *
  * A whole row written by hand, where a `cell` function per column would be three
- * functions saying the same thing: the math runs in the screen VM before the
- * element is ever serialized — `<Money value={a.balance_cents / 100}/>` — and a
- * cell may hold a control with that row to act on.
+ * functions saying the same thing: the math and the formatting run in the screen
+ * VM before the element is ever serialized —
+ * `<Text>{(a.balance_cents / 100).toLocaleString("en-US", { style: "currency",
+ * currency: "USD" })}</Text>` — and a cell may hold a control with that row to
+ * act on.
  *
  * A row's children ARE its cells, one per column, exactly as a tab's child is
  * its panel (feedback/tabs.tsx) and a menu's child is one item (feedback/menu.tsx).

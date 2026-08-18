@@ -60,9 +60,9 @@ describe("screenTscFindings", () => {
     expect(check(`<App name="Overdue invoices">
   <Query id="invoices" tool="maple_invoices_list"/>
   <Stack gap={12}>
-    <Stat label="Total" value={invoices.data.reduce((total, row) => total + row.amount_cents, 0) / 100} format="money"/>
+    <Stat label="Total" value={invoices.data.reduce((total, row) => total + row.amount_cents, 0) / 100} unit="USD"/>
     <MapleNetWorthCard valueCents={invoices.total_cents} series={[1, 2, 3]}/>
-    <DataTable rows={invoices.data} columns={[{ key: "amount_cents", format: "money" }]}/>
+    <DataTable rows={invoices.data} columns={[{ key: "amount_cents", align: "end" }]}/>
   </Stack>
 </App>;
 `)).toEqual([]);

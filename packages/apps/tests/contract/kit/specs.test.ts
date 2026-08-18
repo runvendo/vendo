@@ -24,7 +24,7 @@ const READERS: Record<string, readonly string[]> = {
   // Button joined when `variant` was merged into the one tone vocabulary: `tone`
   // is the taught word on a button now, and `variant` is the deprecated alias the
   // renderer still maps onto the same three tones.
-  tone: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast", "Button"],
+  tone: ["Text", "EnumBadge", "Badge", "Icon", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout", "Toast", "Button"],
   density: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
   // The containers that stretch, and only those: `grow` is `flexGrow` on the
   // block's own root, so a component that draws no container of its own would
@@ -66,7 +66,7 @@ describe("the Kit specs", () => {
     // A Switch applies the moment it is flipped, so there is no submit for a
     // `required` to block — and `grow` on a value is a flex property on a span.
     expect(kitPropClasses("Switch")?.required).toBeUndefined();
-    expect(kitPropClasses("Money")?.grow).toBeUndefined();
+    expect(kitPropClasses("Text")?.grow).toBeUndefined();
   });
 
   it("admits the whole tone vocabulary, and the two spellings stored apps carry", () => {
@@ -95,27 +95,10 @@ describe("the Kit specs", () => {
     expect(validateProps(cards, { items: [], fields: [{ key: "plan", cell }] }).success).toBe(true);
   });
 
-  it("admits the props a screen needs to drop a year, read seconds, and name a unit", () => {
-    // By NAME for the two config props: zod strips an unknown key rather than
-    // failing it, so the allowed-prop set is what turns a prop the spec never
-    // declared into a blocking error instead of a silent drop at render.
-    expect(kitPropClasses("DateTime")?.compact).toBe("config");
-    expect(kitPropClasses("Num")?.unit).toBe("config");
-    expect(kitPropClasses("Stat")?.unit).toBe("config");
-    // …and by VALUE for the format token, which is a declared enum.
-    const stat = kitSpec("Stat")!;
-    expect(validateProps(stat, { label: "Build time", value: 268, format: "duration" }).success).toBe(true);
-    expect(validateProps(stat, { label: "Build time", value: 268, format: "fortnights" }).success).toBe(false);
-    const table = kitSpec("DataTable")!;
-    expect(validateProps(table, { rows: [], columns: [{ key: "duration_seconds", format: "duration" }] }).success)
-      .toBe(true);
-  });
-
-  // An identifier is a value with a FACE, not prose: the column token and the
-  // Text role are the two places a screen says so.
-  it("admits the code format on a column and the code role on Text", () => {
-    const table = kitSpec("DataTable")!;
-    expect(validateProps(table, { rows: [], columns: [{ key: "commit", format: "code" }] }).success).toBe(true);
+  // An identifier is a value with a FACE, not prose, and Text's code role is the
+  // one place a screen says so now that `ValueFormat` has lost its `code` member
+  // along with the rest of the container tokens.
+  it("admits the code role on Text", () => {
     const text = kitSpec("Text")!;
     expect(validateProps(text, { text: "9f2c1ab", variant: "code" }).success).toBe(true);
     expect(validateProps(text, { text: "9f2c1ab", variant: "monospace" }).success).toBe(false);
@@ -129,8 +112,9 @@ describe("the Kit specs", () => {
    * The per-row half is pinned by name because its function is the one that takes
    * arguments — and because the units a field is stored in are the screen's to
    * divide where it reads them, which is where the `semantic` token used to do it,
-   * invisibly, off a word the host copied across. `<Money value={row.compute_cost /
-   * 100}/>` says the same thing in the file, where a reader can see it.
+   * invisibly, off a word the host copied across. `cell: (row) => <Text
+   * text={(row.compute_cost / 100).toLocaleString(…)}/>` says the same thing in the
+   * file, where a reader can see it.
    */
   it("names every slot by the prop that arrives, and which of them map over rows", () => {
     expect(KIT_SLOT_PROPS.DataTable).toEqual({
@@ -200,21 +184,6 @@ describe("the Kit specs", () => {
     // …and the shapes stay typed: a width is a positive integer of pixels.
     expect(validateProps(table, { rows: [], columns: [{ key: "a", width: "wide" }] }).success).toBe(false);
     expect(kitPropClasses("DataTable")?.fold).toBe("config");
-  });
-
-  it("lets a duration say which unit it is stored in, everywhere a format token is written", () => {
-    // A minutes field used to be `* 60` at the read, and forgetting was a figure
-    // wrong by 60× that still formatted cleanly.
-    for (const [component, props] of [
-      ["Stat", { label: "Time left", value: 200, format: "duration", durationUnit: "minutes", durationSigned: true }],
-      ["DataTable", { rows: [], columns: [{ key: "sla_minutes", format: "duration", durationUnit: "minutes", durationSigned: true }] }],
-      ["CardList", { items: [], fields: [{ key: "sla_minutes", format: "duration", durationUnit: "minutes" }] }],
-      ["KeyValue", { record: {}, items: [{ key: "sla_minutes", format: "duration", durationSigned: true }] }],
-    ] as const) {
-      expect(validateProps(kitSpec(component)!, props).success, component).toBe(true);
-    }
-    expect(kitPropClasses("Stat")?.durationUnit).toBe("config");
-    expect(validateProps(kitSpec("Stat")!, { label: "x", value: 1, durationUnit: "fortnights" }).success).toBe(false);
   });
 
   it("lets a multiple Select hold the whole selection", () => {

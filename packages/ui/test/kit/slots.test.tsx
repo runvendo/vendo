@@ -8,7 +8,7 @@ import { DataTable } from "../../src/kit/data/data-table.js";
 import { Stat } from "../../src/kit/data/stat.js";
 import { Button } from "../../src/kit/forms/button.js";
 import { Divider, Stack } from "../../src/kit/layout.js";
-import { EnumBadge, Money, Text } from "../../src/kit/values.js";
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
 const rows = [
   { id: 1, client: { name: "Hartwell" }, number: "INV-1", status: "overdue" },
@@ -53,7 +53,7 @@ describe("cell slots", () => {
   });
 
   // The slot changes what a cell SHOWS, never what the column IS: sorting,
-  // filtering and search still run off `key` + `format`.
+  // filtering and search still run off `key`.
   it("still filters a slotted column on its key", () => {
     render(<DataTable rows={rows} columns={columns} filterableBy={["status"]} />);
     const filter = screen.getByRole("combobox", { name: "Filter by Status" });
@@ -91,7 +91,7 @@ describe("cell slots", () => {
 
   it("renders Stat's children under the value", () => {
     render(
-      <Stat label="Balance" value={2500} format="money" trend="+12% MoM">
+      <Stat label="Balance" value="$2,500.00" trend="+12% MoM">
         <Text text="last 30 days" variant="caption" />
       </Stat>,
     );
@@ -142,7 +142,12 @@ describe("what a slot promises beyond landing", () => {
     // matched by IDENTITY against the array the chart plotted — the same match a
     // DataTable row gets, per point.
     const plotted = [{ month: "Feb", amount: 400 }, { month: "Mar", amount: 1_250 }];
-    const Hover = slotTooltip(plotted.map((point) => <Money value={point.amount} />), plotted);
+    const Hover = slotTooltip(
+      plotted.map((point) => (
+        <Text text={point.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })} />
+      )),
+      plotted,
+    );
     render(<Hover payload={[{ graphicalItemId: "amount", payload: plotted[1] }]} />);
     expect(screen.getByText("$1,250.00")).toBeTruthy();
     expect(screen.queryByText("$400.00")).toBeNull();

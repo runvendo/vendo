@@ -1,21 +1,14 @@
 /**
- * The value tier — semantic, Intl-formatted, `$NaN`-proof (W2 §The Kit).
- * Money takes MAJOR units (dollars); dates take ISO/epoch/Date; a percentage is
- * the percentage itself. Nothing here converts anything.
- * Any unrenderable value collapses to a muted placeholder, never bad text.
+ * The text tier — themed prose, the enum pill, and the muted placeholder every
+ * container shows for a value it cannot print (W2 §The Kit).
+ *
+ * A screen formats its own figures with `Intl` now, so nothing here formats:
+ * what is left is DISPLAY — a face, a tone, and the one total coercion that
+ * turns an unrenderable value into a designed dash rather than bad text.
  */
 import { isValidElement, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
-import {
-  applyFormat,
-  formatDateTime,
-  formatMoney,
-  formatNum,
-  formatPercent,
-  type DateInput,
-  type DateTimeOptions,
-  type MoneyOptions,
-} from "./format.js";
-import { font, microLabel, mono, numeric, resolveTone, t, toneColor, toneStyle, type KitStyled, type KitTone } from "./tokens.js";
+import { applyFormat } from "./format.js";
+import { font, microLabel, mono, resolveTone, t, toneColor, toneStyle, type KitStyled, type KitTone } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -27,103 +20,13 @@ function Placeholder({ style }: KitStyled): ReactNode {
   );
 }
 
-/** The Kit's face for a figure, with the COLOR LEFT TO THE PARENT. A figure is
- *  part of the sentence around it — `<Text tone="danger">Balance: <Money/></Text>`
- *  — and `font`'s own `t.text` repainted the number back to default in the one
- *  place the color carried the meaning. The theme's text color still arrives by
- *  inheritance, from the text layer holding the figure (a `Text`, a Card/Surface,
- *  the surface body), so a figure standing on its own paints as it always did.
- *  `tone` and `style` are spread after, so an explicit color still wins. */
-const valueFont: CSSProperties = { ...font, color: "inherit" };
-
 /** A tone's paint, or nothing at all — an absent (or neutral) tone leaves the
  *  component's own color exactly as it was. The catalog teaches "the figure that
- *  is bad news is `danger`", so every figure has to answer to it. */
+ *  is bad news is `danger`", and a figure is painted by the `Text` around it, so
+ *  that tone has to land here. */
 function tonePaint(tone: KitTone | undefined): CSSProperties {
   const resolved = resolveTone(tone);
   return resolved === "neutral" ? {} : { color: toneColor(resolved) };
-}
-
-export interface MoneyProps extends MoneyOptions, KitStyled {
-  /** The amount in MAJOR units (dollars) — formatters never convert, so a cents
-   *  field is divided by 100 before it gets here. */
-  value?: number;
-  /** Paints the figure — an overdue amount is `danger`. */
-  tone?: KitTone;
-}
-
-/** Currency from a major-unit amount. `<Money value={1234.56}/>` → "$1,234.56". */
-export function Money({ value, currency, locale, tone, style }: MoneyProps) {
-  const formatted = formatMoney(value, { currency, locale });
-  if (formatted === null) return <Placeholder style={style} />;
-  return (
-    <span data-kit="Money" style={{ ...valueFont, ...numeric, ...tonePaint(tone), ...style }}>
-      {formatted}
-    </span>
-  );
-}
-
-export interface DateTimeProps extends DateTimeOptions, KitStyled {
-  value?: DateInput;
-  /** Paints the date — a date that is bad news is `danger`. */
-  tone?: KitTone;
-}
-
-/** A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14, 2026". */
-export function DateTime({ value, mode, locale, timeZone, compact, tone, style }: DateTimeProps) {
-  const formatted = formatDateTime(value, { mode, locale, timeZone, compact });
-  if (formatted === null) return <Placeholder style={style} />;
-  return (
-    <span data-kit="DateTime" style={{ ...valueFont, ...tonePaint(tone), ...style }}>
-      {formatted}
-    </span>
-  );
-}
-
-export interface PercentProps extends KitStyled {
-  /** The percentage itself, on a 0-100 scale — `46.1` prints "46.1%". A 0..1
-   *  ratio is `* 100` where the data is prepared; this never multiplies. */
-  value?: number;
-  fractionDigits?: number;
-  /** Paints the figure — a `danger` share is how a breach reads red. */
-  tone?: KitTone;
-}
-
-/** A percentage, as given. `<Percent value={46.1}/>` → "46.1%". */
-export function Percent({ value, fractionDigits, tone, style }: PercentProps) {
-  const formatted = formatPercent(value, { fractionDigits });
-  if (formatted === null) return <Placeholder style={style} />;
-  return (
-    <span data-kit="Percent" style={{ ...valueFont, ...numeric, ...tonePaint(tone), ...style }}>
-      {formatted}
-    </span>
-  );
-}
-
-export interface NumProps extends KitStyled {
-  value?: number;
-  maximumFractionDigits?: number;
-  /** Keeps the trailing zeros a figure was written with — "8.0 hours" printed as
-   *  "8" until this was exposed, and a column that alternates "8" and "7.5" reads
-   *  as two different precisions. */
-  minimumFractionDigits?: number;
-  notation?: "standard" | "compact";
-  /** A unit written after the figure — "ms", "min", "h". */
-  unit?: string;
-  /** Paints the figure — the count that is bad news is `danger`. */
-  tone?: KitTone;
-}
-
-/** A grouped number. `<Num value={1234567}/>` → "1,234,567";
- *  `<Num value={8} minimumFractionDigits={1} unit="hours"/>` → "8.0 hours". */
-export function Num({ value, maximumFractionDigits, minimumFractionDigits, notation, unit, tone, style }: NumProps) {
-  const formatted = formatNum(value, { maximumFractionDigits, minimumFractionDigits, notation, unit });
-  if (formatted === null) return <Placeholder style={style} />;
-  return (
-    <span data-kit="Num" style={{ ...valueFont, ...numeric, ...tonePaint(tone), ...style }}>
-      {formatted}
-    </span>
-  );
 }
 
 /** The pill vocabulary is the ONE tone vocabulary; the name stays because
@@ -204,8 +107,8 @@ export function Text({ text, variant = "body", tone, style, children }: PropsWit
   // as a React child throws ("Objects are not valid as a React child") and a
   // boolean renders as literally NOTHING, which is how `active: false` came out
   // blank. An element passes through as itself; every other value goes through
-  // the tier's total coercion — an object never reaching the formatter, which
-  // would spell it "[object Object]".
+  // the total text coercion — an object never reaching it, since it would spell
+  // the object "[object Object]".
   //
   // ABSENT is not the same as unrenderable, and only Text can tell them apart:
   // a binding whose query has not answered yet resolves to undefined, and a
@@ -217,13 +120,13 @@ export function Text({ text, variant = "body", tone, style, children }: PropsWit
     : text === undefined || text === null || text === ""
       ? null
       : (applyFormat(typeof text === "object" ? null : text, "text") ?? <Placeholder />);
-  // CHILDREN are the sentence form, and the whole point of them is that a Kit
-  // value element can sit INSIDE the sentence: `<Text variant="caption">Overdue:
-  // <Money value={x}/> across <Num value={n}/> invoices</Text>`. With `text` the
-  // only way in, a screen that wanted a figure in a phrase hand-rolled
-  // `` `Overdue: $${x.toFixed(2)}` `` — an unlocalised, uncurrencied, NaN-prone
-  // string that the value tier exists to make impossible. `text` still wins where
-  // both are given: it is the prop every stored screen carries.
+  // CHILDREN are the sentence form, and the whole point of them is that a
+  // formatted figure sits INSIDE the sentence: `<Text variant="caption">Overdue:
+  // {(cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+  // across {n} invoices</Text>`. With `text` the only way in, a phrase and its
+  // figures would have to be concatenated into one string before they got here,
+  // and nothing in it could be composed or painted on its own. `text` still wins
+  // where both are given: it is the prop every stored screen carries.
   const content = written ?? children;
   const rootStyle: CSSProperties = {
     ...font,

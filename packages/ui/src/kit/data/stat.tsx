@@ -1,23 +1,14 @@
-/** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
+/** Stat — a KPI/metric summary tile (W2 §The Kit). */
 import type { ReactNode } from "react";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat } from "../format.js";
 import { densityVars, font, hairline, microLabel, numeric, resolveTone, t, toneColor, type KitDensity, type KitStyled, type KitTone } from "../tokens.js";
 
 export interface StatProps extends KitStyled {
   /** Metric name. */
   label: string;
-  /** The figure. A number reads through `format` (money takes major units, never
-   *  cents); a string is text that was already formatted — `toLocaleString` — and
-   *  renders as given. */
+  /** The figure, DISPLAYED AS GIVEN — the screen formats it (`toLocaleString`)
+   *  and the tile does the typography. */
   value: number | string;
-  /** Value-tier format. */
-  format?: ValueFormat;
-  /** What one unit of a `format:"duration"` value IS — seconds (default) or
-   *  minutes. A `minutes_remaining` field read as seconds prints a plausible
-   *  duration off by 60×, so the unit is declared, never multiplied in. */
-  durationUnit?: "seconds" | "minutes";
-  /** Phrase a `format:"duration"` sign: "3h 20m left" / "overdue 1h 55m". */
-  durationSigned?: boolean;
   /** A unit written after the value — "ms", "min", "h". */
   unit?: string;
   /** A trend / delta caption, e.g. "+12% MoM". */
@@ -37,18 +28,14 @@ export interface StatProps extends KitStyled {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", durationUnit, durationSigned, unit, trend, tone, density, icon, style, children }: StatProps) {
+export function Stat({ label, value, unit, trend, tone, density, icon, style, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
-  // A token that cannot read the value falls back to the value ITSELF when that
-  // value is a string: the string is text somebody already formatted — the VM
-  // bridges Intl now, so `total.toLocaleString("en-US")` beside format="money" is
-  // the shape reaching this prop — and it used to paint the em dash meant for
-  // missing data. A number keeps the placeholder: one no formatter can print is
-  // data we do not have. The date tokens still PARSE a string, so an ISO value
-  // never reaches the fallback.
-  const shown = applyFormat(value, format, { unit: durationUnit, signed: durationSigned })
-    ?? (typeof value === "string" ? applyFormat(value, "text") : null);
+  // The value is text the screen already formatted (`total.toLocaleString(…)`),
+  // so the tile prints it. The coercion is still the total one: an absent or
+  // blank value answers `null`, which is what paints the em dash below instead
+  // of the word "undefined" in 27px type.
+  const shown = applyFormat(value, "text");
   const formatted = shown !== null && unit !== undefined ? `${shown} ${unit}` : shown;
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;

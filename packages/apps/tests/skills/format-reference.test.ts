@@ -177,8 +177,10 @@ describe("every screen the reference teaches passes the real save-time gauntlet"
 describe("the worked screens teach the shapes a screen is graded on", () => {
   it("computes a total the ask named off the rows, and repeats it where it is acted on", () => {
     expect(VENDO_FORMAT_REFERENCE).toContain(".reduce((sum, bill) => sum + bill.amount_cents, 0)");
-    // Twice: in the header, and again in the dialog that fires the batch.
-    expect([...VENDO_FORMAT_REFERENCE.matchAll(/value=\{total\}/g)]).toHaveLength(2);
+    // Twice: in the header, and again in the dialog that fires the batch — and
+    // through the screen's own `money` helper both times, because a reduced total
+    // is still cents and there is no component left that would divide it.
+    expect([...VENDO_FORMAT_REFERENCE.matchAll(/money\(totalCents\)/g)]).toHaveLength(2);
   });
 
   it("takes a fixed column count for an ask that names what to compare", () => {

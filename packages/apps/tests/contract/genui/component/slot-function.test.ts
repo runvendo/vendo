@@ -24,7 +24,7 @@ beforeAll(async () => {
 });
 
 const TABLE = `
-import { Button, DataTable, EnumBadge, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, DataTable, EnumBadge, Stack, Text, tools, useQuery } from "@vendo/screen";
 
 export default function Invoices() {
   const rows = useQuery("list_invoices");
@@ -34,7 +34,7 @@ export default function Invoices() {
         rows={rows}
         columns={[
           { key: "client" },
-          { key: "amount", cell: (row) => <Money value={row.amount_cents / 100} /> },
+          { key: "amount", cell: (row) => <Text text={(row.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} /> },
           { key: "status", cell: (row) => <EnumBadge value={row.status} /> },
         ]}
         rowActions={(row) => <Button label={"Cancel " + row.client} onClick={() => tools.cancel_invoice({ id: row.id })} />}
@@ -103,7 +103,7 @@ describe("a per-row slot written as a function", () => {
       expect(columns[0]).toEqual({ key: "client" });
       const amounts = columns[1]!.cell as NestedNode[];
       expect(columns[1]!.key).toBe("amount");
-      expect(amounts.map((node) => node.props.value)).toEqual([42, 9]);
+      expect(amounts.map((node) => node.props.text)).toEqual(["$42.00", "$9.00"]);
       // A slot element is sigilled wherever it lands, so the renderer builds a
       // component back out of it rather than reading it as data.
       expect(amounts.every((node) => (node as { $element?: unknown }).$element === true)).toBe(true);

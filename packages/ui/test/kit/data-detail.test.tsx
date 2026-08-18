@@ -6,67 +6,56 @@ import { CodeBlock } from "../../src/kit/data/code-block.js";
 import { KeyValue } from "../../src/kit/data/key-value.js";
 import { Timeline } from "../../src/kit/data/timeline.js";
 import { Row } from "../../src/kit/layout.js";
-import { EnumBadge, Money } from "../../src/kit/values.js";
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
 const invoice = { number: "INV-9", amountCents: 250_000, dueDate: "2026-03-14", status: "past_due", client: { name: "Maple" }, note: null };
 
 describe("KeyValue", () => {
-  it("labels each row from its key and formats the value", () => {
+  it("labels each row from its key and shows the value as it stands", () => {
     render(
       <KeyValue
         record={invoice}
-        items={[{ key: "client.name" }, { key: "amountCents", label: "Amount" }, { key: "dueDate", format: "date" }]}
+        items={[{ key: "client.name" }, { key: "amountCents", label: "Amount" }, { key: "dueDate" }]}
       />,
     );
     // The label defaults to the humanized LAST path segment, as a column's does.
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByText("Maple")).toBeTruthy();
     expect(screen.getByText("Amount")).toBeTruthy();
+    // Nothing here formats and nothing divides: a name that ends in "Cents" is
+    // not an instruction, and the stamp prints as the record holds it. A screen
+    // that wants either in words prepares it in its own code, or in a `cell`.
     expect(screen.getByText("250000")).toBeTruthy();
-    expect(screen.getByText(/Mar 14, 2026/)).toBeTruthy();
+    expect(screen.getByText("2026-03-14")).toBeTruthy();
   });
 
   /** An item written as the bare KEY. `items` given `string[]` was a whole class
    *  of looped repairs on unseen worlds; a string can only mean the key, so the
    *  component reads it as one. */
   it("takes an item written as its bare key, beside a described one", () => {
-    render(<KeyValue record={invoice} items={["client.name", { key: "amountCents", label: "Amount", format: "money" }]} />);
-    expect(screen.getByText("Name")).toBeTruthy();
-    expect(screen.getByText("Maple")).toBeTruthy();
-    // `format:"money"` says how the figure PRINTS, never what unit it is in.
-    // Nothing here divides: a name that ends in "Cents" is not an instruction,
-    // so 250000 is 250000 dollars. The ÷100 belongs in a `cell` function.
-    expect(screen.getByText("$250,000.00")).toBeTruthy();
-  });
-
-  it("reads a duration row in the unit its field is in, and phrases the sign", () => {
-    render(
-      <KeyValue
-        record={{ minutesLeft: 200, minutesLate: -115 }}
-        items={[
-          { key: "minutesLeft", format: "duration", durationUnit: "minutes", durationSigned: true },
-          { key: "minutesLate", format: "duration", durationUnit: "minutes", durationSigned: true },
-        ]}
-      />,
+    const { container } = render(
+      <KeyValue record={invoice} items={["client.name", { key: "status", label: "State" }]} />,
     );
-    expect(screen.getByText("3h 20m left")).toBeTruthy();
-    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
-  });
-
-  it("gives a code row the host's mono face", () => {
-    render(<KeyValue record={invoice} items={[{ key: "status", label: "Status", format: "code" }]} />);
-    expect(screen.getByText("past_due").getAttribute("style")).toContain("--vendo-mono-family");
+    expect([...container.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["Name", "State"]);
+    expect([...container.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["Maple", "past_due"]);
   });
 
   it("renders a cell slot in place of the row's own text", () => {
     // KeyValue's rows prop is ONE record, so a `cell` function is called once
     // and the slot holds a single element — there is no list to match. The ÷100
-    // ran where the record was in scope.
+    // and the currency both ran where the record was in scope.
     render(
       <KeyValue
         record={invoice}
         items={[
-          { key: "amountCents", cell: <Money value={invoice.amountCents / 100} /> },
+          {
+            key: "amountCents",
+            cell: (
+              <Text
+                text={(invoice.amountCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+              />
+            ),
+          },
           { key: "status", cell: <EnumBadge value={invoice.status} /> },
         ]}
       />,

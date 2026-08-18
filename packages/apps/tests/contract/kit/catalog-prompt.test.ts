@@ -20,12 +20,12 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
   // separated by mid-dots, the example jammed underneath) is exactly what a
   // partial assertion would let back in.
   it("renders a component as a heading, its summary, then typed props by class", () => {
-    expect(body({ only: ["Money"] })).toEqual([
-      "### <Money>",
-      kitSpec("Money")!.summary,
-      "- data: `value: number`",
-      "- config: `currency: string`",
-      `- example: \`${promptExamples(kitSpec("Money")!)[0]}\``,
+    expect(body({ only: ["Avatar"] })).toEqual([
+      "### <Avatar>",
+      kitSpec("Avatar")!.summary,
+      "- data: `name!: string`",
+      '- config: `size: "sm"|"md"|"lg"`',
+      `- example: \`${promptExamples(kitSpec("Avatar")!)[0]}\``,
     ]);
   });
 
@@ -45,13 +45,15 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
    * a vocabulary would fail here the moment the two disagreed. The literal beside
    * it is what makes a CHANGED enum go red rather than silently re-render — the
    * catalog is the model's whole idea of this prop, so its vocabulary moves
-   * deliberately.
+   * deliberately. A chart's axis token is the enum this is measured on because it
+   * is the LAST format token in the Kit: an axis tick is computed host-side off a
+   * numeric scale, so the chart is the one place still told what its figures mean.
    */
   it("renders a prop's type from its own schema, enum values and all", () => {
-    const mode = kitSpec("DateTime")!.props["mode"]!.schema as z.ZodEnum<[string, ...string[]]>;
-    const fromSchema = mode.options.map((value) => JSON.stringify(value)).join("|");
-    expect(entry("DateTime")).toContain(`\`mode: ${fromSchema}\``);
-    expect(fromSchema).toBe('"date"|"time"|"datetime"|"relative"');
+    const format = kitSpec("LineChart")!.props["format"]!.schema as z.ZodEnum<[string, ...string[]]>;
+    const fromSchema = format.options.map((value) => JSON.stringify(value)).join("|");
+    expect(entry("LineChart")).toContain(`\`format: ${fromSchema}\``);
+    expect(fromSchema).toBe('"money"|"date"|"datetime"|"time"|"number"|"duration"|"text"');
   });
 
   /** The shapes a name cannot carry: an object gives its FIELD names (the worked
@@ -61,7 +63,7 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
     // The union is part of the shape: a column may be the bare KEY the preamble
     // teaches, or the described object — printing only one half would send the
     // model writing the other into a prop it thinks is illegal.
-    expect(entry("DataTable")).toContain("`columns: (string|{key?, label?, header?, format?, durationUnit?, durationSigned?, align?, width?, truncate?, priority?, cell?})[]`");
+    expect(entry("DataTable")).toContain("`columns: (string|{key?, label?, header?, align?, width?, truncate?, priority?, cell?})[]`");
     expect(entry("Button")).toContain("`onClick: fn`");
     expect(entry("Surface")).toContain("`header: element`");
   });
@@ -71,7 +73,7 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
    *  prompts can never show the model different idioms. */
   it("carries exactly one worked example per component", () => {
     expect(body().filter((line) => line.startsWith("- example: "))).toHaveLength(KIT_SPECS.length);
-    expect(body({ only: ["Money"] }).at(-1)).toBe(`- example: \`${promptExamples(kitSpec("Money")!)[0]}\``);
+    expect(body({ only: ["Avatar"] }).at(-1)).toBe(`- example: \`${promptExamples(kitSpec("Avatar")!)[0]}\``);
   });
 
   it("leads with the data props — law 1 is the one an entry must not bury", () => {
@@ -117,7 +119,7 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
     // One list: the host entry sits among the Kit's entries, not under a heading.
     expect(lines.filter((line) => line.startsWith("### <"))).toHaveLength(KIT_SPECS.length + 1);
     // …and `only` scopes both halves the same way.
-    expect(body({ host, only: ["Money"] }).filter((line) => line.startsWith("### <"))).toHaveLength(1);
+    expect(body({ host, only: ["Avatar"] }).filter((line) => line.startsWith("### <"))).toHaveLength(1);
     expect(entry("AccountCard", { host })).toBe(
       "### <AccountCard> [host]\nA Maple account with its balance.",
     );
@@ -142,34 +144,37 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
   });
 
   /**
-   * THE BUDGET, re-measured 2026-08-18 after the second capability pass: 54
-   * bricks cost 27,247 characters (~6.8k tokens) under a 3,878-character
-   * preamble, against `kitPrompt`'s 41,004 for the same bricks as a section
+   * THE BUDGET, re-measured 2026-08-18 after the value tier's death: 50 bricks
+   * cost 25,629 characters (~6.4k tokens) under a 3,311-character preamble, for
+   * 28,940 in all, against `kitPrompt`'s 38,785 for the same bricks as a section
    * apiece.
    *
-   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 510
+   * The ceiling is 32,000, and the per-brick bound is the half that bites: at 520
    * characters a brick — heading, summary, props, slots AND example — the
-   * 55-brick kit still fits (28,050 plus that preamble is 31,928), while a brick
-   * that grew past 510 would break that promise long before the total noticed.
+   * 55-brick kit still fits (28,600 plus that preamble is 31,911), while a brick
+   * that grew past 520 would break that promise long before the total noticed.
    *
-   * Both numbers move DELIBERATELY, in a commit that says why. 490 → 500 was
-   * CAPABILITY — a table column that says `width`, `truncate`, `priority` and
-   * `header`, a duration that says which unit it holds, a button with an `icon`
-   * and a `loading`, a series with its own `format`. 500 → 510 is the same coin:
-   * a line chart formats its x axis (`xFormat`), a donut tones its own legend
-   * (`tones`), a figure keeps the zeros it was written with
-   * (`minimumFractionDigits`), a Card's description takes Kit marks, and `info`
-   * joined the tone vocabulary on every value, badge and surface that takes one.
-   * Each is a word the model was already writing into a prop the floor refused,
-   * and the compact type walked off each schema is what carries them — so the
-   * growth is in the derived half, not in prose. The ~5 characters of slack per
-   * brick are the whole margin left: the next capability pays for itself in words
-   * cut, because a bound with no room is a bound everyone learns to raise.
+   * Both numbers move DELIBERATELY, in a commit that says why. 490 → 500 → 510 was
+   * CAPABILITY, twice: a table column that says `width`, `truncate`, `priority`
+   * and `header`, a button with an `icon` and a `loading`, a line chart that
+   * formats its x axis (`xFormat`), a donut that tones its own legend (`tones`), a
+   * Card description that takes Kit marks, `info` in the tone vocabulary.
+   *
+   * 510 → 520 is not capability at all — it is SUBTRACTION landing on an average.
+   * `Money`, `Percent`, `Num` and `DateTime` went with the value-formatting tier,
+   * and a value component was the smallest entry the catalog had: one data prop, one
+   * config prop and a one-line example apiece. Deleting the four cheapest bricks
+   * takes more off the divisor than off the total, so the same catalog now reads
+   * 512.6 characters a brick where it read under 510 with them in it. No brick grew;
+   * the total FELL. The bound is re-derived the way it always was — the largest
+   * average at which a 55-brick kit still clears 32,000 — and the ~7 characters of
+   * slack per brick are the whole margin left, so the next capability pays for
+   * itself in words cut.
    */
   it("stays under the section-per-brick catalog, with room for the 55-brick kit", () => {
     const prompt = catalogPrompt();
     expect(prompt.length).toBeLessThanOrEqual(32_000);
     expect(prompt.length).toBeLessThan(kitPrompt().length);
-    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(510);
+    expect(body().join("\n").length / KIT_SPECS.length).toBeLessThanOrEqual(520);
   });
 });

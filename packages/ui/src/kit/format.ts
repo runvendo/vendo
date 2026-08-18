@@ -134,40 +134,6 @@ export function formatMoney(amount: number | undefined, options: MoneyOptions = 
   return formatter.format(amount);
 }
 
-export interface PercentOptions {
-  /** Digits after the decimal point; pins both ends when given. */
-  fractionDigits?: number;
-  locale?: string;
-}
-
-/**
- * Print a percentage AS GIVEN: `46.1` → `"46.1%"`, `7.25` → `"7.25%"`.
- *
- * Formatters never convert, and this one is where that law was being broken.
- * `Intl`'s own `style: "percent"` multiplies by 100, so the tier took a RATIO and
- * every host field named `*_pct` — already on a 0-100 scale, which is how hosts
- * store one — printed as "4,610%". The ×100 convention that was supposed to
- * prevent it just moved the same error into the screen, where a model had to
- * remember it. So: no multiply anywhere, and a 0..1 ratio is `* 100` where the
- * data is PREPARED, exactly as a cents field is `/ 100` there.
- *
- * The suffix is appended rather than left to `Intl` for that reason alone —
- * `style: "percent"` cannot be asked not to scale. `formatNum` appends its unit
- * the same way, and for a related reason: the short word a host uses is not
- * always one `Intl` has.
- *
- * And the tier never rounds a figure it was not asked to round: decimals show
- * only where the number has them, up to two, so 7.25% cannot print as "7%".
- * `fractionDigits` pins them. Returns `null` for non-finite input.
- */
-export function formatPercent(value: number | undefined, options: PercentOptions = {}): string | null {
-  if (!isRenderableNumber(value)) return null;
-  return `${new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
-    minimumFractionDigits: options.fractionDigits ?? 0,
-    maximumFractionDigits: options.fractionDigits ?? 2,
-  }).format(value)}%`;
-}
-
 export interface NumOptions {
   maximumFractionDigits?: number;
   minimumFractionDigits?: number;
@@ -195,42 +161,25 @@ const DURATION_UNITS: ReadonlyArray<readonly [string, number]> = [
   ["d", 86_400], ["h", 3_600], ["m", 60], ["s", 1],
 ];
 
-export interface DurationOptions {
-  /** What one unit of the count IS — seconds (default) or minutes. */
-  unit?: "seconds" | "minutes";
-  /** Phrase the sign instead of printing it: a positive count is time still
-   *  to come ("3h 20m left"), a negative one is time already past
-   *  ("overdue 1h 55m"). */
-  signed?: boolean;
-}
-
 /**
- * A count of time as a duration: `268` → `"4m 28s"`, `46` → `"0m 46s"`,
+ * A count of SECONDS as a duration: `268` → `"4m 28s"`, `46` → `"0m 46s"`,
  * `9480` → `"2h 38m"`. The two largest non-zero units and no more — "1h 5m 3s"
  * is three figures where a person reads one — with the MINUTE as the floor, so a
  * sub-minute count reads as a duration and not as the raw second count the host
  * stored. Under half a second is `"0s"`, the one figure with no floor to carry.
  *
- * Seconds unless `unit` says minutes. The `* 60` used to be the caller's job,
- * the way a cents field is `/ 100` — but hosts store `minutes_remaining` at
- * least as often as a seconds field, and a forgotten multiply here is INVISIBLE:
- * 200 minutes read as seconds printed "3m 20s", a plausible duration off by 60×.
- * A unit that is declared cannot be forgotten. Money keeps the caller's divide
- * because there the two units differ per currency, so there is no one token to
- * name; time's do not.
- *
- * `signed` phrases the sign instead of printing it. A bare "-1h 55m" in an SLA
- * column reads as a negative quantity of time, which is not a thing — the word
- * is what says which side of the deadline the row is on. Zero stays the plain
- * "0s" either way: everything under half a second rounds to it, and neither
- * "0s left" nor "overdue 0s" is a claim that count can support.
+ * A CHART AXIS is all this is left for, and it is the axis case exactly: an axis
+ * of build times is a numeric scale the host ticks itself, so the chart has to be
+ * able to say what its numbers mean. A screen that prints a duration in its own
+ * markup hand-rolls it, and the `unit`/`signed` adjectives went with the column
+ * tokens that carried them — a chart's `format` is a bare word with nowhere to
+ * write one, so a series stored in minutes multiplies where its data is prepared.
  *
  * Hand-rolled rather than `Intl.DurationFormat`: it is absent from engines this
  * still ships on, which is the same engine drift `MINOR_UNITS` exists for.
  */
-export function formatDuration(count: number | undefined, options: DurationOptions = {}): string | null {
-  if (!isRenderableNumber(count)) return null;
-  const seconds = options.unit === "minutes" ? count * 60 : count;
+export function formatDuration(seconds: number | undefined): string | null {
+  if (!isRenderableNumber(seconds)) return null;
   let rest = Math.round(Math.abs(seconds));
   const parts: string[] = [];
   for (const [suffix, size] of DURATION_UNITS) {
@@ -242,9 +191,7 @@ export function formatDuration(count: number | undefined, options: DurationOptio
     if (parts.length === 2) break;
   }
   if (parts.length === 0) return "0s";
-  const figure = parts.join(" ");
-  if (!options.signed) return `${seconds < 0 ? "-" : ""}${figure}`;
-  return seconds < 0 ? `overdue ${figure}` : `${figure} left`;
+  return `${seconds < 0 ? "-" : ""}${parts.join(" ")}`;
 }
 
 export type DateInput = string | number | Date;
@@ -279,7 +226,13 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 
 /**
  * Format a date/time. Accepts ISO strings, epoch millis, or `Date`. Returns
- * `null` for anything unparseable so `Invalid Date` can never ship.
+ * `null` for anything unparseable.
+ *
+ * KNOWN COST of the value tier's removal: this totality now covers only the
+ * places the KIT still formats — a chart's axis, the chrome. A screen writes
+ * `new Date(row.due).toLocaleDateString(…)` in its own code, and an unparseable
+ * stamp there renders the literal "Invalid Date" where the tier used to paint a
+ * muted dash. Accepted: the dash was worth less than one road for every figure.
  */
 export function formatDateTime(value: DateInput | undefined, options: DateTimeOptions = {}): string | null {
   const date = toDate(value);
@@ -319,59 +272,53 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
   return new Intl.DateTimeFormat(locale, { ...base, ...parts }).format(date);
 }
 
-/** The value-tier `format` union — the same tokens a DataTable column accepts.
- *  `code` is text with a FACE: an identifier (a sha, a branch, an id) reads in
- *  the host's mono, so there is nothing here to format and the face is applied
- *  where the cell is painted. */
-export type ValueFormat = "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | "code";
-
 /**
- * Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable.
+ * A CHART AXIS's format union — THE ONE EXCEPTION to the value tier's death, and
+ * the only `format` token left in the Kit.
  *
- * The third argument is the DURATION options and nothing else, because duration
- * is the only token that takes any: a count needs its unit and its sign named,
- * where a date or an amount reads correctly from the token alone. It is spelled
- * `duration` rather than `options` so the next reader grows a sibling argument
- * instead of a per-token grab-bag that every one of the dozen call sites would
- * then have to thread.
+ * Everywhere else a displayed value passes through the model's own code, so
+ * everywhere else formats itself with `Intl`. An axis tick cannot: the labels are
+ * computed HOST-SIDE off a numeric scale, from numbers the screen never holds a
+ * value of, so the chart is the one place that has to be told what its figures
+ * MEAN rather than being handed text. `duration` lives here for exactly that
+ * reason — an axis of build times ticks in seconds the host reduces itself.
+ *
+ * `text` is the union's floor: the total coercion the containers still read
+ * through it, which is what turns an absent field into a designed placeholder.
  */
-export function applyFormat(value: unknown, format: ValueFormat = "text", duration?: DurationOptions): string | null {
+export type ValueFormat = "money" | "date" | "datetime" | "time" | "number" | "duration" | "text";
+
+/** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
+export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
   switch (format) {
     case "money":
       return typeof value === "number" ? formatMoney(value) : null;
     case "number":
       return typeof value === "number" ? formatNum(value) : null;
     case "duration":
-      return typeof value === "number" ? formatDuration(value, duration) : null;
+      return typeof value === "number" ? formatDuration(value) : null;
     case "date":
     case "datetime":
     case "time":
       return typeof value === "string" || typeof value === "number" || value instanceof Date
         ? formatDateTime(value as DateInput, { mode: format })
         : null;
-    case "code":
     case "text":
     default: {
       if (value === null || value === undefined) return null;
       const text = String(value);
-      // An empty/whitespace field is unrenderable like NaN is: `null` here is
-      // what turns a bare "Bank:" label into "Bank: —" everywhere the data
-      // tier renders label/value pairs (Stat, CardList, DataTable cells).
+      // ABSENT is the totality that survives: `null` here is what turns a bare
+      // "Bank:" label into "Bank: —" everywhere a container renders label/value
+      // pairs (Stat, CardList, DataTable cells).
+      //
+      // KNOWN COST of the value tier's removal: a NaN no longer collapses with
+      // it. The numeric tokens screened one out and painted the dash; a container
+      // now coerces whatever it is handed, so a NaN that reaches a cell prints
+      // "NaN". Nothing is lost by it — a screen's own `(0/0).toLocaleString()`
+      // prints "NaN" too, so this is the same figure the model would have written
+      // — and the honest reading is that bad arithmetic is now visible rather
+      // than disguised as missing data.
       return text.trim() === "" ? null : text;
     }
   }
 }
-
-/**
- * The formatter bundle, as one object. Generated code reads a bare `fmt`
- * (`ISLAND_AMBIENT_HELPER_NAMES`) and this barrel exports this same object into
- * code-land, so both venues format through ONE implementation.
- */
-export const fmt = {
-  money: formatMoney,
-  percent: formatPercent,
-  num: formatNum,
-  duration: formatDuration,
-  dateTime: formatDateTime,
-  format: applyFormat,
-};

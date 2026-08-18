@@ -5,44 +5,31 @@ import { Badge } from "../../src/kit/data/badge.js";
 import { Calendar, type CalendarProps } from "../../src/kit/data/calendar.js";
 import { CardList } from "../../src/kit/data/card-list.js";
 import { Stat } from "../../src/kit/data/stat.js";
-import { Money } from "../../src/kit/values.js";
+import { Text } from "../../src/kit/values.js";
+
+/** The one-line helper a screen defines at the top of its own file, now that the
+ *  formatting is the screen's own job. */
+const money = (dollars: number): string =>
+  dollars.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 describe("Stat", () => {
-  it("formats a dollar value as money and shows a trend", () => {
-    render(<Stat label="Total overdue" value={2500} format="money" trend="+12% MoM" />);
+  it("shows the figure it was handed, and a trend beside it", () => {
+    render(<Stat label="Total overdue" value={money(2500)} trend="+12% MoM" />);
     expect(screen.getByText("$2,500.00")).toBeTruthy();
     expect(screen.getByText("Total overdue")).toBeTruthy();
     expect(screen.getByText("+12% MoM")).toBeTruthy();
   });
 
-  it("reads seconds as a duration, and writes a unit after the figure", () => {
-    render(
-      <>
-        <Stat label="Build time" value={268} format="duration" />
-        <Stat label="Tail latency" value={842} unit="ms" format="number" />
-      </>,
-    );
-    expect(screen.getByText("4m 28s")).toBeTruthy();
+  it("writes a unit after the figure, so a latency is never a bare number", () => {
+    render(<Stat label="Tail latency" value={842} unit="ms" />);
     expect(screen.getByText("842 ms")).toBeTruthy();
   });
 
-  it("reads a duration in the unit its field is in, and phrases the sign", () => {
-    // A `minutes_remaining` field used to need a `* 60` in the value expression,
-    // and forgotten it printed "3m 20s" for 200 minutes — off by 60× and
-    // plausible. The tile declares the unit instead.
-    render(
-      <>
-        <Stat label="Time left" value={200} format="duration" durationUnit="minutes" durationSigned />
-        <Stat label="Past due" value={-115} format="duration" durationUnit="minutes" durationSigned />
-      </>,
-    );
-    expect(screen.getByText("3h 20m left")).toBeTruthy();
-    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
-  });
-
-  it("renders a placeholder for an unrenderable value, never $NaN", () => {
-    render(<Stat label="Broken" value={Number.NaN} format="money" />);
-    expect(screen.queryByText(/NaN/)).toBeNull();
+  it("renders a placeholder for an absent value, never the word 'undefined'", () => {
+    render(<Stat label="Bank" value={undefined as never} />);
+    const dash = screen.getByText("—");
+    expect(dash.hasAttribute("data-empty")).toBe(true);
+    expect(screen.queryByText(/undefined/)).toBeNull();
   });
 
   it("renders an empty value as a compact em dash with a tooltip, never a bare tile", () => {
@@ -61,20 +48,19 @@ describe("Stat", () => {
     expect(capped.getAttribute("title")).toBe(prose);
   });
 
-  /** THE FAILURE: the VM bridges Intl now, so a screen writes the idiom it was
-   *  trained on — `total.toLocaleString("en-US")` — and a tile that ALSO named
-   *  its token turned that text into the em dash reserved for missing data,
-   *  because a token reads NUMBERS. A string is already the figure; there is
-   *  nothing left for the token to do. */
-  it("renders a value that was formatted upstream as given, whatever token was named", () => {
-    render(<Stat label="Total" value={(57_000).toLocaleString("en-US")} format="money" />);
+  /** THE FAILURE the tokens were deleted for: the VM bridges Intl, so a screen
+   *  writes the idiom it was trained on — `total.toLocaleString("en-US")` — and a
+   *  tile that ALSO named its token turned that text into the em dash reserved
+   *  for missing data, because a token read NUMBERS. There is no token left; the
+   *  figure arrives finished, whatever kind of figure it is. */
+  it("renders a value that was formatted upstream exactly as given", () => {
+    render(
+      <>
+        <Stat label="Total" value={(57_000).toLocaleString("en-US")} />
+        <Stat label="Renews" value="Mar 14, 2026" />
+      </>,
+    );
     expect(screen.getByText("57,000")).toBeTruthy();
-  });
-
-  /** And the fallback is what a token could NOT read, never a bypass: the date
-   *  tokens parse a string, so an ISO value still formats. */
-  it("still lets the date token parse a string value", () => {
-    render(<Stat label="Renews" value="2026-03-14" format="date" />);
     expect(screen.getByText("Mar 14, 2026")).toBeTruthy();
   });
 
@@ -103,7 +89,7 @@ describe("Stat", () => {
   // A money figure has no break opportunity of its own, so a tile narrower than
   // its number cut it off mid-number ("$1,113.1").
   it("lets a value too wide for its tile break rather than clip", () => {
-    render(<Stat label="Balance" value={1113.1} format="money" />);
+    render(<Stat label="Balance" value={money(1113.1)} />);
     expect(screen.getByText("$1,113.10").style.overflowWrap).toBe("anywhere");
   });
 });
@@ -122,12 +108,14 @@ describe("CardList", () => {
     { id: 2, name: "Acme", balance: 900, status: "paid" },
   ];
 
-  it("renders one card per item with formatted fields", () => {
+  it("renders one card per item, each field a label/value row", () => {
+    // What a screen does now: the figure is formatted where the items are
+    // PREPARED, and the card prints the finished text.
     render(
       <CardList
-        items={items}
+        items={items.map((item) => ({ ...item, balance: money(item.balance) }))}
         titleField="name"
-        fields={[{ key: "balance", label: "Balance", format: "money" }]}
+        fields={[{ key: "balance", label: "Balance" }]}
       />,
     );
     expect(screen.getByText("Hartwell")).toBeTruthy();
@@ -145,29 +133,6 @@ describe("CardList", () => {
     render(<CardList items={items} titleField="name" fields={["balance"]} />);
     expect(screen.getAllByText("balance")).toHaveLength(2);
     expect(screen.getByText("2500")).toBeTruthy();
-  });
-
-  it("reads a duration field in the unit it is in, and phrases the sign", () => {
-    render(
-      <CardList
-        items={[{ id: 1, name: "Hartwell", sla: -115 }, { id: 2, name: "Acme", sla: 200 }]}
-        titleField="name"
-        fields={[{ key: "sla", label: "SLA", format: "duration", durationUnit: "minutes", durationSigned: true }]}
-      />,
-    );
-    expect(screen.getByText("overdue 1h 55m")).toBeTruthy();
-    expect(screen.getByText("3h 20m left")).toBeTruthy();
-  });
-
-  it("gives a code field the host's mono face", () => {
-    render(
-      <CardList
-        items={[{ id: 1, name: "Hartwell", ref: "9f2c1ab" }]}
-        titleField="name"
-        fields={[{ key: "ref", label: "Ref", format: "code" }]}
-      />,
-    );
-    expect(screen.getByText("9f2c1ab").getAttribute("style")).toContain("--vendo-mono-family");
   });
 
   it("renders an em dash for an empty field value, never a bare label", () => {
@@ -204,9 +169,9 @@ describe("CardList", () => {
         fields={[{
           key: "balance",
           label: "Balance",
-          // The ÷100 ran where the item was in scope — what the retired
-          // field-name binding had nowhere to put.
-          cell: items.map((item) => <Money value={item.balance / 100} />),
+          // The ÷100 and the currency both ran where the item was in scope —
+          // what the retired field-name binding had nowhere to put.
+          cell: items.map((item) => <Text text={money(item.balance / 100)} />),
         }]}
       />,
     );

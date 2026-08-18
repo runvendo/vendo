@@ -42,7 +42,7 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Select", "Callout", "Accordion", "Badge", "DataTable", "EnumBadge"];
+const CATALOG = ["Stack", "Row", "Card", "Text", "Button", "Input", "Select", "Callout", "Accordion", "Badge", "DataTable", "EnumBadge"];
 
 /** The payload the server serves: the screen's FIRST paint, flattened, plus the
  *  interactive half that can produce the next one — built by the engine itself,
@@ -68,7 +68,9 @@ const payloadFor = (
 
 const TRANSFERS = `
 import { useState } from "react";
-import { Button, Card, Input, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Input, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending");
@@ -80,7 +82,7 @@ export default function PendingTransfers() {
       <Text text={"note: " + note} />
       {pending.data.map((row) => (
         <Card key={row.id} title={row.recipient}>
-          <Money value={row.amount_cents / 100} />
+          <Text text={money(row.amount_cents)} />
           <Button label={"Cancel " + row.recipient} onClick={async () => {
             await tools.cancel_transfer({ id: row.id });
             setNote("cancelled " + row.recipient);
