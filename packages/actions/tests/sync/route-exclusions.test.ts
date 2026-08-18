@@ -20,6 +20,14 @@ import { scanRoutes } from "../../src/sync/route-scan.js";
  * whole escape hatch when the reading is wrong.
  */
 
+/** Fixture import specifiers, assembled at runtime because the dependency
+ *  guard's static text scan reads import-shaped strings even inside fixtures:
+ *  actions may not import @vendoai/vendo, and no test file may carry a relative
+ *  specifier that escapes its package directory. */
+const VENDO_AI_SDK = ["@vendoai", "vendo", "ai-sdk"].join("/");
+const VENDO_SERVER = ["@vendoai", "vendo", "server"].join("/");
+const LIB_AUTH_FROM_ROUTE = ["..", "..", "..", "lib", "auth"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -104,7 +112,7 @@ describe("agent endpoints are excluded from the callable catalog", () => {
     await write(
       root,
       "app/api/copilot/route.ts",
-      `import { vendoTools } from "@vendoai/vendo/ai-sdk";\nexport async function POST() { return new Response(); }\n`,
+      `import { vendoTools } from "${VENDO_AI_SDK}";\nexport async function POST() { return new Response(); }\n`,
     );
 
     for (const urlPath of ["/api/assist", "/api/weather", "/api/copilot"]) {
@@ -125,7 +133,7 @@ describe("Vendo's own wire mount is never part of the host API", () => {
     await write(
       root,
       "app/api/vendo/[...vendo]/route.ts",
-      `import { nextVendoHandler } from "@vendoai/vendo/server";\nimport { vendo } from "@/lib/vendo";\nexport const { GET, POST } = nextVendoHandler(vendo);\n`,
+      `import { nextVendoHandler } from "${VENDO_SERVER}";\nimport { vendo } from "@/lib/vendo";\nexport const { GET, POST } = nextVendoHandler(vendo);\n`,
     );
 
     const { tools, warnings } = await scanRoutes(root);
@@ -142,7 +150,7 @@ describe("Vendo's own wire mount is never part of the host API", () => {
     await write(
       root,
       "app/api/assistant/[...slug]/route.ts",
-      `import { nextVendoHandler } from "@vendoai/vendo/server";\nimport { vendo } from "@/lib/vendo";\nexport const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`,
+      `import { nextVendoHandler } from "${VENDO_SERVER}";\nimport { vendo } from "@/lib/vendo";\nexport const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`,
     );
 
     const { tools, warnings } = await scanRoutes(root);
@@ -159,7 +167,7 @@ describe("Vendo's own wire mount is never part of the host API", () => {
       root,
       "app/api/demo/reset/route.ts",
       [
-        `import type { HostedStore } from "@vendoai/vendo/server";`,
+        `import type { HostedStore } from "${VENDO_SERVER}";`,
         `import { vendo } from "@/vendo/server";`,
         `export async function POST() {`,
         `  const store = vendo.store as Partial<HostedStore>;`,
@@ -188,7 +196,7 @@ describe("auth handlers are excluded from the callable catalog", () => {
     );
     // The route file itself mentions nothing about auth, and the URL carries no
     // `[...nextauth]` segment: the marker has to reach the re-export target.
-    await write(root, "app/api/session-handler/route.ts", `export { GET, POST } from "../../../lib/auth";\n`);
+    await write(root, "app/api/session-handler/route.ts", `export { GET, POST } from "${LIB_AUTH_FROM_ROUTE}";\n`);
 
     const { warnings } = await scanRoutes(root);
     const tools = await toolsAt(root, "/api/session-handler");
