@@ -61,9 +61,9 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   });
 
   const wrapper = () => document.querySelector<HTMLElement>(`[data-vendo-remixable="${SLOT}"]`)!;
-  const remixDoor = () => screen.getByRole("button", { name: `Remix ${SLOT} with Vendo` });
+  const remixDoor = () => screen.getByRole("button", { name: "Remix this view with Vendo" });
   /** The remixed component wears the PIN chrome's pill — same mark, same words. */
-  const managePill = () => screen.getByRole("button", { name: `Edit ${SLOT}` });
+  const managePill = () => screen.getByRole("button", { name: "Edit this view" });
   const revealed = () => wrapper().hasAttribute("data-vendo-revealed");
   // An instant remix carries no in-client approval, so the fork surface IS the
   // contained drop-back notice — the one venue a generated node has left.
@@ -190,7 +190,7 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     await waitFor(() => expect(screen.queryByText("Blue Bottle")).toBeNull(), { timeout: 2000 });
     // The pin chrome's pill replaced the door.
     expect(managePill()).toBeTruthy();
-    expect(screen.queryByRole("button", { name: `Remix ${SLOT} with Vendo` })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remix this view with Vendo" })).toBeNull();
   });
 
   it("the remixed ✦ menu IS the pin chrome: Edit in chat · Update · Revert, and nothing else", async () => {
@@ -198,12 +198,16 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     mount();
     await waitFor(() => expect(forkSurface()).toBeTruthy());
     fireEvent.click(managePill());
-    const menu = screen.getByRole("group", { name: SLOT });
+    const menu = screen.getByRole("group", { name: "this view" });
     expect(within(menu).getAllByRole("button").map(button => button.textContent))
       .toEqual(["Edit in chat", "Update", "Revert"]);
     // No bespoke status line: what the remix is doing, and what went wrong with
     // it, belong to the conversation that asked for it.
     expect(within(menu).queryByRole("status")).toBeNull();
+    // A screen reader hears the same words the pill shows — never `slot`, which
+    // is a name the person can neither see nor say to a voice control.
+    expect(wrapper().innerHTML).not.toContain(`aria-label="Edit ${SLOT}"`);
+    expect(managePill().getAttribute("aria-label")).toBe("Edit this view");
   });
 
   it("“Edit in chat” opens the conversation featuring the remix — prefilled, never sent", async () => {
@@ -214,10 +218,13 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     fireEvent.click(screen.getByRole("button", { name: "Edit in chat" }));
 
     const panel = await screen.findByRole("dialog", { name: "Vendo assistant" });
-    await waitFor(() => expect(composerIn(panel).value).toBe(`Update ${SLOT}: `));
-    // The prefill names the THING, never an id (spec §16 law 3).
+    await waitFor(() => expect(composerIn(panel).value).toBe("Update this view: "));
+    // The prefill names the THING, never an id (spec §16 law 3) — and `slot` is
+    // an id too: the React identifier sync captures under, which the person
+    // sees nowhere else on their page.
     expect(panel.textContent).not.toContain(forked.id);
     expect(panel.textContent).not.toMatch(/app_[A-Za-z0-9]{4,}/);
+    expect(panel.textContent).not.toContain(SLOT);
     expect(wire.requests.filter(r => r.method === "POST" && r.path === "/threads")).toHaveLength(0);
   });
 
@@ -243,7 +250,7 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     await waitFor(() => expect(forkSurface()).toBeNull());
     await waitFor(() => expect(screen.getByText("Blue Bottle")).toBeTruthy());
     // And the door is back — the component is unremixed again.
-    expect(screen.getByRole("button", { name: `Remix ${SLOT} with Vendo` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remix this view with Vendo" })).toBeTruthy();
   });
 
   // The founder's binding rule (2026-08-02): until a reviewer approves, the

@@ -19,7 +19,7 @@ test("the ✦ opens the chat about the component, and the remixed one wears the 
   const remixed = page.locator('[data-vendo-remixable="RemixedMerchants"]');
 
   // 1 — at rest: the 9px seed, and a pill nobody can press by accident.
-  const door = plain.getByRole("button", { name: "Remix PlainMerchants with Vendo" });
+  const door = plain.getByRole("button", { name: "Remix this view with Vendo" });
   await expect(plain.locator(".fl-remix-seed")).toHaveCSS("opacity", "0.32");
   await expect(door).toHaveCSS("opacity", "0");
   await expect(door).toHaveCSS("pointer-events", "none");
@@ -48,8 +48,8 @@ test("the ✦ opens the chat about the component, and the remixed one wears the 
   await expect(remixed).toContainText("Outstanding this week");
   await expect(remixed).not.toContainText("Recent payees");
   await remixed.hover();
-  await remixed.getByRole("button", { name: "Edit RemixedMerchants" }).click();
-  const menu = remixed.getByRole("group", { name: "RemixedMerchants" });
+  await remixed.getByRole("button", { name: "Edit this view" }).click();
+  const menu = remixed.getByRole("group", { name: "this view" });
   await expect(menu.getByRole("button")).toHaveText(["Edit in chat", "Update", "Revert"]);
   await expect(menu.getByRole("status")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/4-remixed-menu.png`, fullPage: true, animations: "disabled" });
@@ -57,8 +57,10 @@ test("the ✦ opens the chat about the component, and the remixed one wears the 
   // 5 — and its "Edit in chat" is the same door, about that remix.
   await menu.getByRole("button", { name: "Edit in chat" }).click();
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("textbox", { name: "Message" })).toHaveValue("Update RemixedMerchants: ");
+  await expect(panel.getByRole("textbox", { name: "Message" })).toHaveValue("Update this view: ");
   await expect(panel).not.toContainText("app_remix");
+  // `slot` is an id too — both sides of the ✦ say the same human words now.
+  await expect(panel).not.toContainText("RemixedMerchants");
   await page.screenshot({ path: `${SHOTS}/5-edit-in-chat.png`, fullPage: true, animations: "disabled" });
 });
 
@@ -79,7 +81,7 @@ test("the ✦ lands on the component, not on a generic assistant", async ({ page
 
   const plain = page.locator('[data-vendo-remixable="PlainMerchants"]');
   await plain.hover();
-  await plain.getByRole("button", { name: "Remix PlainMerchants with Vendo" }).click();
+  await plain.getByRole("button", { name: "Remix this view with Vendo" }).click();
   await expect(panel).toBeVisible();
 
   // The person's own intent reads as words, never as the identifier sync
@@ -111,7 +113,7 @@ test.describe("on a touchscreen", () => {
   test("a tap reveals the ✦ door, and the lift does not take it away", async ({ page }) => {
     await openScenario(page, "remixable");
     const plain = page.locator('[data-vendo-remixable="PlainMerchants"]');
-    const door = plain.getByRole("button", { name: "Remix PlainMerchants with Vendo" });
+    const door = plain.getByRole("button", { name: "Remix this view with Vendo" });
 
     await plain.tap();
     await expect(plain).toHaveAttribute("data-vendo-revealed", "");

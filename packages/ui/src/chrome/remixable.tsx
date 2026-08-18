@@ -182,7 +182,12 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
     <ChromeRoot>
       <PinChrome
         appId={appId}
-        title={slot}
+        // A PINNED APP arrives here with a name the person chose; a remix has
+        // only `slot`, the React identifier sync captures under, which appears
+        // nowhere else on their page. So this side says what the unremixed ✦
+        // says — and it matches the pill's own visible word, which is the name
+        // a voice-control user can actually speak.
+        title="this view"
         // The grounding rides `context` — a marked text part on the sent
         // message that no surface renders — so the prefill can name the THING
         // and never an id (spec §16 law 3).
@@ -294,7 +299,7 @@ export function Remixable({ review = false, children }: RemixableProps) {
             <button
               type="button"
               className="fl-remix-pill"
-              aria-label={`Remix ${slot} with Vendo`}
+              aria-label="Remix this view with Vendo"
               onClick={openChat}
             >
               <span aria-hidden="true" className="fl-remix-pill-mark">✦</span>
