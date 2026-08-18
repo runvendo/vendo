@@ -238,6 +238,19 @@ describe("the delivery log", () => {
     expect(await log.claim("evt_2", "conv_1")).toBe(true);
   });
 
+  it("still gives it to exactly one caller on an adapter with no guarded write", async () => {
+    // 01 §12 makes `atomic` optional, so a BYO adapter may omit it. The claim
+    // then reads-then-writes, exactly as it always did — slower, never different.
+    const store = await freshStore();
+    const bare = store.records("vendo_channel_events");
+    vi.spyOn(store, "records").mockImplementation((collection: string) =>
+      collection === "vendo_channel_events" ? { ...bare, atomic: undefined } : store.records(collection));
+    const log = new ChannelEventLog(store);
+
+    expect(await log.claim("evt_bare", "conv_bare")).toBe(true);
+    expect(await log.claim("evt_bare", "conv_bare")).toBe(false);
+  });
+
   it("keeps a vendor's event id out of the row id, so two ids never collide", async () => {
     const store = await freshStore();
     const log = new ChannelEventLog(store);

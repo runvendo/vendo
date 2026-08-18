@@ -1,4 +1,4 @@
-import type { ApprovalId } from "@vendoai/core";
+import { STORE_WIRE_PATHS, type ApprovalId } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { ChannelAskRepository, ChannelEventLog, ChannelLinkRepository } from "../src/channel-links.js";
 import { hostedStore } from "@vendoai/store";
@@ -24,11 +24,16 @@ import { fakeConsole } from "@vendoai/store/test-util";
  * `ENGINE_COLLECTIONS`, or this file goes red.
  */
 
-const hosted = () => hostedStore({
+const hosted = (mount = fakeConsole()) => hostedStore({
   apiKey: "vnd_secret",
   baseUrl: "https://cloud.test",
-  fetch: fakeConsole().handler as unknown as typeof fetch,
+  fetch: mount.handler as unknown as typeof fetch,
 });
+
+/** The wire ops a call spent, in order — one entry per ROUND TRIP, which is what
+ *  a person waiting on a reply actually waits through. */
+const roundTrips = (mount: ReturnType<typeof fakeConsole>): string[] =>
+  mount.requests.map((request) => new URL(request.url).pathname.replace("/api/v1/store", ""));
 
 const APPROVAL = "apr_33333333-3333-3333-3333-333333333333" as ApprovalId;
 
@@ -59,10 +64,23 @@ describe("the text channel on a Cloud-hosted store", () => {
     expect(await asks.ids("conv_hosted")).toEqual([]);
   });
 
-  it("claims a delivery through the engine door", async () => {
-    const log = new ChannelEventLog(hosted());
+  it("claims a delivery through the engine door, in ONE round trip", async () => {
+    const mount = fakeConsole();
+    const log = new ChannelEventLog(hosted(mount));
 
     expect(await log.claim("evt_hosted", "conv_hosted")).toBe(true);
+    // The claim is the first thing an inbound text waits on, so it is ONE
+    // guarded write rather than a read and then a write. The list behind it is
+    // the conversation's first delivery paying for its own sweep, once an hour.
+    expect(roundTrips(mount)).toEqual([
+      STORE_WIRE_PATHS["engine.insertIfAbsent"],
+      STORE_WIRE_PATHS["engine.list"],
+    ]);
+
+    // A retried delivery is still recognised as already claimed — and costs the
+    // same single call to say so.
+    mount.requests.length = 0;
     expect(await log.claim("evt_hosted", "conv_hosted")).toBe(false);
+    expect(roundTrips(mount)).toEqual([STORE_WIRE_PATHS["engine.insertIfAbsent"]]);
   });
 });
