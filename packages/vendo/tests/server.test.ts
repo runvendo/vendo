@@ -2007,14 +2007,14 @@ export default function DesignCheck() {
     // the DECLARED schema names. The type check is derived from that same schema,
     // so a screen reading a field the host never declared would not compile — which
     // is what makes the shape card the writer's only honest source.
-    const LEDGER_APP = `import { Money, Stack, Text, useQuery } from "@vendo/screen";
+    const LEDGER_APP = `import { Stack, Text, useQuery } from "@vendo/screen";
 
 export default function Ledger() {
   const ledger = useQuery("host_ledger");
   return (
     <Stack gap={12}>
       <Text text="Ledger" variant="heading" />
-      <Money value={ledger.amount / 100} />
+      <Text text={(ledger.amount / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} />
     </Stack>
   );
 }

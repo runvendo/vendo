@@ -88,7 +88,7 @@ const hostTools: ToolDefinition[] = [
 
 const TABLE = `<DataTable
         rows={bills.data}
-        columns={[{ key: "name", label: "Bill" }, { key: "amount_cents", format: "money", align: "end" }]}
+        columns={[{ key: "name", label: "Bill" }, { key: "amount_cents", align: "end" }]}
         emptyState="Nothing due"
       />`;
 
@@ -107,7 +107,7 @@ export default function UpcomingBills() {
   const total = [...bills.data, ...subs.data].reduce((sum, row) => sum + row.amount_cents, 0);
   return (
     <Stack gap={12}>
-      <Stat label="Due this month" value={total / 100} format="money" />
+      <Stat label="Due this month" value={total / 100} />
       ${TABLE}
     </Stack>
   );
@@ -122,7 +122,7 @@ export default function UpcomingBills() {
   const total = bills.data.reduce((sum, row) => sum + row.amount_cents, 0);
   return (
     <Stack gap={12}>
-      <Stat label="Due this month" value={total / 100} format="money" />
+      <Stat label="Due this month" value={total / 100} />
       ${TABLE}
     </Stack>
   );
