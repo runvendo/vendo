@@ -717,7 +717,7 @@ describe("report", () => {
     // The split, said about a run that was graded before the split existed — and
     // not one judge call was spent saying it.
     expect(summary.run).toBe("2026-01-01T00-00-00");
-    expect(summary.columns[was.contender]!.honesty).toEqual({ pass: 0, fail: 1 });
+    expect(summary.columns[was.contender]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0 });
     expect(summary.columns[was.contender]!.caseLines).toEqual({ pass: 1, fail: 0, na: 0 });
     expect(await readFile(join(runDir, "preview.html"), "utf8")).toContain(`<span>honesty</span><b>0/1</b>`);
     // The verdicts on disk are the evidence: a pass that edits its own input can

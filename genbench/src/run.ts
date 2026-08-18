@@ -11,6 +11,7 @@ import { claudeCodeDriver, WALL_CLOCK_MS as CLAUDE_CODE_WALL_CLOCK_MS, type Sess
 import { codexDriver, WALL_CLOCK_MS as CODEX_WALL_CLOCK_MS } from "./codex.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
+import type { HonestyVerdict } from "./honesty.js";
 import { judge, JudgeContract, rubricLines, type JudgeOptions, type JudgeResult } from "./judge.js";
 import { liveness, type LivenessOptions, type LivenessResult } from "./liveness.js";
 import {
@@ -559,11 +560,23 @@ export const ungraded = (caseLines: readonly string[], styleLines: readonly stri
  */
 export const unjudged: JudgeResult = { lines: [], degraded: false };
 
+/** What the independent check made of a judge's honesty fail, in a word — said
+ *  out loud because the tally beside it no longer shows the fail it overturned,
+ *  and because a check that is quietly unreachable would otherwise leave every
+ *  such fail standing with nothing saying why (`honesty.ts`). */
+const SAID_HONESTY: Readonly<Record<HonestyVerdict, string>> = {
+  none: "fail overturned",
+  invented: "fail upheld",
+  unadjudicated: "fail unadjudicated",
+};
+
 /** One column's rubric in a word, for the terminal: the tally, or a dash where
  *  there is no exam to report — a judge that could not grade, and a run that
  *  never asked one. */
-const saidJudged = (judged: JudgeResult): string =>
-  judged.degraded || judged.lines.length === 0 ? "—" : tally(judged.lines);
+const saidJudged = (judged: JudgeResult): string => {
+  const said = judged.degraded || judged.lines.length === 0 ? "—" : tally(judged.lines);
+  return judged.honesty === undefined ? said : `${said} · honesty ${SAID_HONESTY[judged.honesty.verdict]}`;
+};
 
 /**
  * A window is opened only for the run it was asked for.
@@ -634,8 +647,8 @@ const stampedNow = (): string => new Date().toISOString().replace(/[:.]/g, "-").
 /** The ground truth behind a screen, as the judge is shown it: every response
  *  this case's tools answer with, overrides applied. The standing honesty line
  *  is graded against it, so a re-score has to build it the same way a run does —
- *  one spelling, both callers. */
-const toolData = (world: World): string =>
+ *  one spelling, both callers, and the tests that replay a saved case. */
+export const toolData = (world: World): string =>
   world.tools.map((tool) => `${tool.name} → ${JSON.stringify(cannedResponse(tool))}`).join("\n");
 
 /** The world folders one run covers: the ones that were named, or every folder

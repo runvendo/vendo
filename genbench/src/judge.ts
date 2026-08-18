@@ -1,6 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
+import { adjudicateHonesty, type HonestyAdjudication, type HonestyOptions } from "./honesty.js";
 import { MAX_OUTPUT_TOKENS_FLOOR, usdFor, type UsageTotals } from "./meter.js";
 import type { Chosen, Filled, Fired, Path, Probed } from "./probe.js";
 
@@ -43,6 +44,11 @@ export interface JudgeResult {
    *  screen, and folding the benchmark's own overhead into it would make the
    *  columns incomparable. Absent when no judge call was made at all. */
   readonly cost?: { usage: UsageTotals; usd: number };
+  /** The second opinion on the standing honesty line, where the judge failed it
+   *  (`honesty.ts`). Present only then — it is the one line a fail is checked
+   *  twice — and it holds both verdicts, so a line that now reads `pass` still
+   *  says what the judge said and who overturned it. */
+  readonly honesty?: HonestyAdjudication;
 }
 
 export interface JudgeInput {
@@ -69,6 +75,10 @@ export interface JudgeOptions {
   /** One attempt's deadline, defaulting to `ATTEMPT_TIMEOUT_MS`. Tests shorten
    *  it; the run never does. */
   readonly timeoutMs?: number;
+  /** The honesty check's own model and deadline, for the same reason and on the
+   *  same terms: tests pass a double, the run passes nothing and gets the pinned
+   *  tier (`HonestyContract`). */
+  readonly adjudicator?: HonestyOptions;
 }
 
 /**
@@ -100,14 +110,16 @@ Grade only the numbered lines. Anything else you notice about this screen, good 
  *  contender does, or two columns stop being comparable. */
 export const JudgeContract = {
   model: "claude-opus-5",
-  /** 5: a note that does the arithmetic, reconciles it and then stamps `fail`
+  /** 6: a fail on the honesty line is now an accusation rather than a verdict —
+   *  one independent check has to name the invented figure too, or the line
+   *  flips to pass (`honesty.ts`). 5: a note that does the arithmetic, reconciles it and then stamps `fail`
    *  was 11% of the honesty failures in the saved corpus, so the prompt says a
    *  note and a verdict that disagree are an error. 4: honesty left the
    *  mechanical floor and became a standing correctness line on this rubric,
    *  and the judge is shown the tool data to grade it against — the floor used
    *  to cut every digit off the screen and pay two models to settle each one,
    *  for a verdict the judge already reading the screen can reach itself. */
-  rubricVersion: 5,
+  rubricVersion: 6,
   promptHash: createHash("sha256").update(SYSTEM_PROMPT).digest("hex"),
 } as const;
 
@@ -530,12 +542,35 @@ export async function judge(input: JudgeInput, options: JudgeOptions = {}): Prom
   // its source are copied from the CALLER's entry, never from the answer — a
   // judge that echoes a paraphrased line back must not rewrite the rubric.
   const byLine = new Map(order.map((line, position) => [line, answered.verdicts[position]!]));
+  const graded: LineVerdict[] = lines.map((entry, index) => {
+    const answer = byLine.get(index)!;
+    return { line: entry.line, source: entry.source, verdict: answer.verdict, note: answer.note };
+  });
+
+  // The one line whose fail is an accusation rather than a verdict. Only a fail
+  // opens it, so a run pays for this on the two or three screens a corpus
+  // accuses and on nothing else; and only a check that NAMES a figure lets the
+  // fail stand, because that is the sentence the judge failed to write
+  // (`honesty.ts`). The figures come off `artifact`, which is the settled DOM
+  // for every column (`runOne`, `regrade`) — what a person saw, not what was
+  // intended.
+  const accused = graded.find((line) => line.line === HONESTY_LINE && line.verdict === "fail");
+  if (accused === undefined) return { lines: graded, degraded: false, ...stamped };
+  const honesty = await adjudicateHonesty(
+    { toolData: input.toolData, dom: input.artifact, claim: accused.note },
+    options.adjudicator ?? {},
+  );
   return {
-    lines: lines.map((entry, index) => {
-      const answer = byLine.get(index)!;
-      return { line: entry.line, source: entry.source, verdict: answer.verdict, note: answer.note };
-    }),
+    lines:
+      honesty.verdict === "none"
+        ? graded.map((line) =>
+            line === accused
+              ? { ...line, verdict: "pass" as const, note: `the judge failed this line and an independent check overturned it — ${honesty.note}` }
+              : line,
+          )
+        : graded,
     degraded: false,
+    honesty,
     ...stamped,
   };
 }

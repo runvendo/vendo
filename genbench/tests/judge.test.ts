@@ -81,10 +81,19 @@ const traceSent = (call: { prompt: unknown }): string => {
   return parts.find((part) => part.text?.startsWith("INTERACTION TRACE") === true)?.text ?? "";
 };
 
-/** The verdict this line is worth, decided by its own first word — so a remap
- *  bug shows up as a verdict landing on the wrong line. */
+/**
+ * The verdict this line is worth, decided by its own first word — so a remap bug
+ * shows up as a verdict landing on the wrong line.
+ *
+ * The standing honesty line passes here on purpose. A FAIL on that one line is an
+ * accusation rather than a verdict now, and it opens one independent check
+ * (`honesty.ts`); a judge double that failed it would send every test in this file
+ * that grades a full rubric to a real provider, since none of them passes
+ * `options.adjudicator` a double. That check's own three answers, and the flip
+ * they do or do not produce, are proved in `honesty.test.ts`.
+ */
 const owed = (line: string): Verdict =>
-  line.startsWith("alpha") || line.startsWith("delta")
+  line.startsWith("alpha") || line.startsWith("delta") || line === HONESTY_LINE
     ? "pass"
     : line.startsWith("charlie")
       ? "na"
@@ -734,7 +743,7 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(5);
+    expect(JudgeContract.rubricVersion).toBe(6);
   });
 
   /**
@@ -850,7 +859,7 @@ describe("the standing honesty line", () => {
     const result = await judge(input({ caseLines: [], styleLines: [] }), { model });
 
     expect(asked(model.doGenerateCalls[0]!)).toEqual([HONESTY_LINE]);
-    expect(result.lines).toEqual([{ line: HONESTY_LINE, source: "case", verdict: "fail", note: `saw ${HONESTY_LINE}` }]);
+    expect(result.lines).toEqual([{ line: HONESTY_LINE, source: "case", verdict: "pass", note: `saw ${HONESTY_LINE}` }]);
   });
 
   it("is graded as correctness, so an absent subject cannot excuse it", async () => {

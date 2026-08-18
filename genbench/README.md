@@ -200,6 +200,7 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-gemini`,
 | `artifact.tsx` | the screen the contender actually saved — TSX bytes, hence the extension (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
 | `screenshot.png` | that page, shot once it has settled — the **viewport**, 480x900, which is the frame the harness contract promises and the only one the judge is shown |
+| `table-1.png` | one per table the screen can only show by scrolling sideways, in the order they appear on it and at most three: that table at its **full scroll width**, which is the only way the columns past the fold reach the judge. Absent for a screen with nothing to scroll, which is most of them |
 | `dom.html` | what the browser held once that screen settled, script bodies dropped: the judge's SOURCE evidence, saved because it is what lets the folder be scored again without painting anything |
 | `result.json` | the four floor verdicts, the judge's verdict for every rubric line, the contract the run graded under, the commit the harness ran at and the Agent SDK version, the click trace, console errors, timings, tokens and dollars. `cost.usage.reasoningTokens` splits out the part of the output the provider says was THINKING rather than written — a split of `outputTokens`, never an addend, so no dollar moves for it, and absent entirely where the provider itemises no such count, which is every first-party Anthropic call. `pipeline` is the vendo column's own review of the screen before anyone else graded it — every verdict the product's `validate` gate reached, with its findings, and whether anything painted after the last one — so a rubric line the judge failed can be read against what the product's reviewer said about the same screen. Absent where that gate was never reached, which is itself the reading: those bytes went out unreviewed |
 
@@ -862,6 +863,45 @@ from it — nothing is invented** (`HONESTY_LINE` in `src/judge.ts`). It is an
 ask line like any other, so an `na` on it scores as a fail, and it is
 graded against the TOOL DATA block — every response the case's tools answer with,
 overrides applied, which is the same panel the preview shows a reader.
+
+### A fail on that line is checked twice (2026-08-18)
+
+**A `fail` on the honesty line is an accusation, not yet a verdict.** It is the
+one line no case authors, it is graded against a whole world's tool data, and it
+is asked of a model that is answering a dozen questions about layout, wording and
+presses in the same breath — and that is where it breaks. The vendo column's
+`trades-accounting/chase-money-owed` note reconciled the buckets, reconciled the
+balances, reconciled the days late and ended *"so all figures reconcile except
+none — no invented number found"*, stamped `fail`. A screen was convicted by a
+note that acquitted it.
+
+So exactly one small independent check runs on a fail, and it is asked **nothing
+else**: here is the case's tool data with its overrides applied, here is every
+figure the settled DOM displays, here is the judge's own note — *name a displayed
+figure that is neither in the data nor honestly derivable from it, or say none*
+(`src/honesty.ts`). A fail **stands** only where that check names a figure too.
+Where it names none, the line **flips to pass** and says so in its own note. A
+check that cannot be reached, or that answers outside the two verdicts, comes
+back `unadjudicated` and the judge's fail stands untouched: a question nobody
+answered overturns nothing.
+
+It can only make a screen's score better, never worse, which is why it needs no
+retries and no blinding — nothing it is shown varies by who built the screen. The
+figures come off the same settled DOM the judge read, deduplicated and in
+document order, with the styles, the script bodies and the entities taken out: a
+stylesheet is numbers all the way down and displays none of them. That is
+thirty-odd short figures on a real screen, so one call is pennies, and only a
+screen the judge accused makes one — nought to four in a full corpus run.
+
+Both verdicts stay on the record. `judged.honesty` in `result.json` holds the
+judge's `fail`, its note verbatim, the check's verdict, its one-clause note, what
+deciding it cost and the stamp that decided it (`HonestyContract`: the cheapest
+Anthropic tier the meter prices, hashed prompt, pinned off the run's model table
+like the judge and the liveness adjudicator). `summary.json` counts the flips per
+column as `honesty.flipped`, because a flipped line is indistinguishable from a
+pass the judge reached itself — the count is how much of that line's score was
+the grader's noise, and a run where it climbs is a run whose judge is drifting.
+The terminal says which way each one went beside the tally.
 
 It grades **blind**. Nothing it is sent names the contender, its model or its
 run folder; the SOURCE channel is the DOM the browser holds once the screen has
