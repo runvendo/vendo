@@ -1,5 +1,5 @@
 /** Layout tier — themed containers (W2 §The Kit). */
-import type { CSSProperties, PropsWithChildren, ReactNode } from "react";
+import { Children, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
 import { densityVars, font, hairline, microLabel, resolveTone, t, toneColor, type KitDensity, type KitStyled, type KitTone } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
@@ -107,6 +107,53 @@ export function Grid({ columns = 2, minChildWidth = 0, gap, density, style, chil
       }}
     >
       {children}
+    </div>
+  );
+}
+
+export interface SplitPaneProps extends KitStyled {
+  /** The first pane's width: pixels, or a fraction of the split below 1. */
+  size?: number;
+}
+
+/**
+ * Two panes side by side, at any width.
+ *
+ * The one arrangement the Kit could not express: Row and Grid both WRAP, which
+ * is right for stats and buttons and wrong for a list beside the thing it opens
+ * — the pair a screen is asked for whenever the ask says "and". Asked for one on
+ * a narrow frame, a screen wrote raw CSS instead, or stacked the two and lost
+ * the layout the person described.
+ *
+ * So this one never wraps: the panes are grid TRACKS, and an extra child becomes
+ * another column rather than a second row. Each track is floored at 0 — the
+ * `minmax(0, …)` CodeBlock's block needs for the same reason — so a long line or
+ * a wide table inside one pane scrolls in ITS OWN pane instead of pushing the
+ * other one off the frame.
+ */
+export function SplitPane({ size = 320, style, children }: PropsWithChildren<SplitPaneProps>) {
+  // Below 1 it is a share of the split (0.4 → 40%), at or above it a width in
+  // px. Nothing else can be meant: a pane 0.4 pixels wide is not a layout.
+  const first = size > 0 && size < 1 ? `${size * 100}%` : `${Math.max(0, Math.floor(size))}px`;
+  return (
+    <div
+      data-kit="SplitPane"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `minmax(0, ${first}) minmax(0, 1fr)`,
+        gridAutoFlow: "column",
+        gridAutoColumns: "minmax(0, 1fr)",
+        alignItems: "stretch",
+        gap: "var(--vendo-density-content-gap, 10px)",
+        minHeight: 0,
+        ...style,
+      }}
+    >
+      {Children.map(children, (pane) => (
+        // Each pane owns its overflow, so the tall one scrolls while the short
+        // one stays put — and neither can widen the other.
+        <div style={{ minWidth: 0, minHeight: 0, overflow: "auto" }}>{pane}</div>
+      ))}
     </div>
   );
 }

@@ -96,7 +96,7 @@ describe("screenTypings", () => {
     // since the cell slots landed, where `field` supplies it instead).
     expect(dts).toContain("text?: string | number | VendoBinding");
     // An enum slot keeps its literal union — format="huge" is still a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text" | VendoBinding');
+    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text" | "code" | VendoBinding');
   });
 
   it("types host components from their derived JSON Schema", () => {

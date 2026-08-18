@@ -15,7 +15,7 @@ import {
   type MoneyOptions,
 } from "./format.js";
 import { useFieldValue } from "./row.js";
-import { font, microLabel, numeric, resolveTone, t, toneColor, toneStyle, type KitStyled, type KitTone } from "./tokens.js";
+import { font, microLabel, mono, numeric, resolveTone, t, toneColor, toneStyle, type KitStyled, type KitTone } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -199,7 +199,7 @@ export function EnumBadge({ value, labels, tones, tone, field, style }: EnumBadg
 
 export interface TextProps extends KitStyled {
   text?: ReactNode;
-  variant?: "body" | "heading" | "caption" | "label";
+  variant?: "body" | "heading" | "caption" | "label" | "code";
   /** Paints the text — a `danger` figure is how an overdue amount reads red. */
   tone?: KitTone;
   /** Inside a cell slot: the row field this text comes from. */
@@ -233,6 +233,9 @@ export function Text({ text, variant = "body", tone, field, style }: TextProps) 
     // a sentence costs more legibility than the rhythm buys.
     ...(variant === "label" ? microLabel : {}),
     ...(variant === "caption" ? { color: t.muted, fontSize: "var(--vendo-font-size-caption, 12.5px)" } : {}),
+    // `code` is the IDENTIFIER role — a sha, a branch, an id. Same text, the
+    // host's mono face, so it reads as a value to compare rather than prose.
+    ...(variant === "code" ? mono : {}),
     ...(variant === "heading"
       ? { fontFamily: t.headingFamily, fontWeight: t.weightEmphasis, lineHeight: t.lineHeightHeading }
       : {}),

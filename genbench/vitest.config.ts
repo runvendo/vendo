@@ -16,16 +16,19 @@ import { configDefaults, defineConfig } from "vitest/config";
  * unset, every suite runs exactly as it did before.
  *
  * `diy.test.ts` is here for ONE test (`the page answers the way the prompt
- * promised`); its fifteen model-boundary tests ride along. Splitting that file
- * would let them run in CI too.
+ * promised`); its fifteen model-boundary tests ride along. `regrade.test.ts` is
+ * here for one too — recovering a settled DOM out of a saved page, which is the
+ * one path in a re-score that paints anything. Splitting either file would let
+ * the rest of it run in CI.
  */
 const BROWSER_SUITES = [
   "tests/axis.test.ts",
   "tests/diy.test.ts",
-  "tests/extraction.test.ts",
   "tests/font.test.ts",
+  "tests/liveness.test.ts",
   "tests/mount.test.ts",
   "tests/probe.test.ts",
+  "tests/regrade.test.ts",
   "tests/render.test.ts",
   "tests/seam.test.ts",
   "tests/thesys.test.ts",

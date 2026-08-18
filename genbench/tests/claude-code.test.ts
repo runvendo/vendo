@@ -7,6 +7,7 @@
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { renderBriefingPack } from "@vendoai/apps/contract";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -14,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
 import { meteredModel, MODEL_IDS, usdFor, type Meter } from "../src/meter.js";
-import { worldBlock, worldBriefing } from "../src/vendo.js";
+import { TOOL_ACCESS, worldBlock, worldBriefing } from "../src/vendo.js";
 import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -104,17 +105,18 @@ describe("the world block", () => {
     expect(worldBlock(world)).toContain(brief);
   });
 
-  it("carries every derived tool schema and the response it answers with", () => {
+  it("carries every derived tool schema and none of the answers behind them", () => {
     const block = worldBlock(world);
 
     expect(world.tools.length).toBeGreaterThan(0);
     for (const tool of world.tools) {
-      // `cannedResponse`, not `tool.data`: a write returns a bare
-      // acknowledgement, and the session must be told the same thing the
-      // registry and the injected recorder actually answer with.
       expect(block).toContain(JSON.stringify(tool.descriptor, null, 2));
-      expect(block).toContain(`returns: ${JSON.stringify(cannedResponse(tool), null, 2)}`);
+      // `cannedResponse`, not `tool.data`: a write answers with a bare
+      // acknowledgement, and neither that nor a read's rows may be read out of a
+      // prompt. Every column calls for its data now.
+      expect(block).not.toContain(JSON.stringify(cannedResponse(tool), null, 2));
     }
+    expect(block).not.toContain("returns:");
   });
 });
 
@@ -147,6 +149,35 @@ describe("driving Claude Code", () => {
     });
     // No availability list at all: the session brings its own.
     expect(seen.options).not.toHaveProperty("tools");
+  });
+
+  /** The other half of the fairness correction: the prompt hands over no data, so
+   *  the column that has hands gets to CALL for it — the same look the vendo
+   *  column's loop has, and the same look an in-house team has at its own API. The
+   *  session really executes the file the driver wrote, so the exec bit and the
+   *  envelope are proved rather than described. */
+  it("puts the world's tools in the session's workspace, callable, answering what the page will get", async () => {
+    const seen: Seen = {};
+    let printed = "";
+    const sdk: AgentSdk = {
+      query({ prompt, options }) {
+        seen.prompt = prompt;
+        seen.options = options;
+        return {
+          async *[Symbol.asyncIterator]() {
+            const cwd = options["cwd"] as string;
+            printed = execFileSync(join(cwd, "world-tools"), ["list_transfers", '{"limit":20}'], { encoding: "utf8" });
+            await writeFile(join(cwd, "index.html"), "<p>done</p>");
+            yield { type: "result", subtype: "success", usage: {}, total_cost_usd: 0 };
+          },
+        };
+      },
+    };
+    await claudeCodeDriver({ sdk }).run({ world, testCase: caseFor("pending-transfers"), meter: clock() });
+
+    const transfers = world.tools.find((tool) => tool.name === "list_transfers")!;
+    expect(JSON.parse(printed)).toEqual({ status: "ok", output: cannedResponse(transfers) });
+    expect(seen.prompt).toContain(TOOL_ACCESS);
   });
 
   it("spells the subprocess environment out rather than handing over the operator's shell", async () => {

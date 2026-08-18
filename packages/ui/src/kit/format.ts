@@ -271,8 +271,11 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
   return new Intl.DateTimeFormat(locale, { ...base, ...parts }).format(date);
 }
 
-/** The value-tier `format` union — the same tokens a DataTable column accepts. */
-export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text";
+/** The value-tier `format` union — the same tokens a DataTable column accepts.
+ *  `code` is text with a FACE: an identifier (a sha, a branch, an id) reads in
+ *  the host's mono, so there is nothing here to format and the face is applied
+ *  where the cell is painted. */
+export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text" | "code";
 
 /** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
 export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
@@ -291,6 +294,7 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
       return typeof value === "string" || typeof value === "number" || value instanceof Date
         ? formatDateTime(value as DateInput, { mode: format })
         : null;
+    case "code":
     case "text":
     default: {
       if (value === null || value === undefined) return null;

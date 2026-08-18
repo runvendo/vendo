@@ -40,6 +40,7 @@ export const t = {
   shadowSmall: `var(--vendo-shadow-small, ${themeDefaults.shadow.small})`,
   fontFamily: `var(--vendo-font-family, ${d.typography.fontFamily})`,
   headingFamily: `var(--vendo-heading-family, var(--vendo-font-family, ${d.typography.fontFamily}))`,
+  monoFamily: `var(--vendo-mono-family, ${themeDefaults.typography.monoFamily})`,
   fontSize: `var(--vendo-font-size, ${d.typography.baseSize})`,
   weightNormal: `var(--vendo-font-weight-normal, ${themeDefaults.typography.weightNormal})`,
   weightEmphasis: `var(--vendo-font-weight-emphasis, ${themeDefaults.typography.weightEmphasis})`,
@@ -106,6 +107,12 @@ export const transitionFor = (...properties: string[]): string =>
 
 /** Figures line up by place value wherever the Kit prints one. */
 export const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+/** An IDENTIFIER's face — a sha, a branch, an id, a code. Mono because it is
+ *  read character by character and compared against another one, not read as
+ *  prose; a touch smaller because a mono glyph is wider than the prose it sits
+ *  beside. The host's own code font when it has one (`--vendo-mono-family`). */
+export const mono: CSSProperties = { fontFamily: t.monoFamily, fontSize: "0.92em" };
 
 /** The structural micro-label: a column header, a caption, a tile's metric name.
  *  Uppercase and letterspaced so it reads as chrome, never as content. */

@@ -422,7 +422,13 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     // assembled here and never read off the model's input. Both app-touching
     // verbs are owner-scoped behind it.
     validate: (input, ctx) => apps.validate(
-      input.appId === undefined ? {} : { appId: input.appId as AppId },
+      input.appId === undefined
+        ? {}
+        : {
+            appId: input.appId as AppId,
+            ...(input.request === undefined ? {} : { request: input.request }),
+            ...(input.viewport === undefined ? {} : { viewport: input.viewport }),
+          },
       ctx,
     ),
     schedule: async ({ appId, cron }, ctx) =>

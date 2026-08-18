@@ -3,9 +3,10 @@
  *
  * Product against product: this column is Thesys C1 (docs.thesys.dev), a hosted
  * generative-UI API, configured the way its own docs say to configure it. It is
- * handed the same `worldBlock` every other column gets and NOTHING else — no
- * harness contract, because none of the page's wiring is asked of the model
- * here. Their model answers in their own UI DSL and only their React renderer
+ * handed the same `worldBlock` every other column gets, and the world's tools to
+ * CALL while it builds ({@link worldToolSet}) — and NOTHING else: no harness
+ * contract, because none of the page's wiring is asked of the model here. Their
+ * model answers in their own UI DSL and only their React renderer
  * can read it, so this driver does the mechanical half — bundle the renderer,
  * inline the answer, wire the actions — exactly as `mount.tsx` does it for the
  * vendo column.
@@ -19,14 +20,14 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { VendoTheme } from "@vendoai/apps/contract";
 import type { JsonSchema } from "@vendoai/core";
-import { generateText } from "ai";
+import { generateText, jsonSchema, stepCountIs, tool, type ToolSet } from "ai";
 import { build } from "esbuild";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsonScript } from "./render.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
 import { worldBlock } from "./vendo.js";
-import type { World } from "./world.js";
+import { cannedResponse, type World } from "./world.js";
 
 /** Their OpenAI-compatible endpoint. The provider NAME is load-bearing:
  *  `@ai-sdk/openai-compatible` copies extra body fields off
@@ -49,7 +50,47 @@ export const THESYS_CALL_USD = 0.002;
  *  (docs.thesys.dev/guides/custom-actions). The same derived schemas the vendo
  *  registry serves and both baselines are shown. */
 export const customActions = (world: World): Record<string, JsonSchema> =>
-  Object.fromEntries(world.tools.map((tool) => [tool.name, tool.descriptor.inputSchema]));
+  Object.fromEntries(world.tools.map((entry) => [entry.name, entry.descriptor.inputSchema]));
+
+/**
+ * The world's tools as tools their model may CALL while it builds — the ordinary
+ * OpenAI tools array, which is exactly how their own guide says to hand a C1
+ * agent live data (docs.thesys.dev/guides/integrate-data/tool-calling: declare
+ * the functions, run the loop, append each result as a `tool` message, and the
+ * last turn is the C1 DSL).
+ *
+ * Without them this column was the one contender that could not see a single
+ * value. No contender is handed data in its prompt — a screen fetches its own
+ * (`worldBlock`) — and the two agentic columns get `world-tools` in their
+ * working directory to look with while they build. Their model has no working
+ * directory, so this is that same access through the door their product opens,
+ * and it is the difference between a screen built on the world's rows and one
+ * invented from the schemas.
+ *
+ * Answered with `cannedResponse` in the envelope `world-tools` prints, so a tool
+ * means the same thing to whoever asks it: the same rows the page's bridge will
+ * hand their DSL at render time, and a bare acknowledgement for a write.
+ * Arguments are accepted and ignored, exactly as every other door into this
+ * world ignores them.
+ */
+export const worldToolSet = (world: World): ToolSet =>
+  Object.fromEntries(
+    world.tools.map((entry) => [
+      entry.name,
+      tool({
+        description: entry.descriptor.description,
+        inputSchema: jsonSchema(entry.descriptor.inputSchema as Parameters<typeof jsonSchema>[0]),
+        execute: async () => ({ status: "ok", output: cannedResponse(entry) }),
+      }),
+    ]),
+  );
+
+/** How many turns of that loop this column buys: enough to gather from several
+ *  tools and then write the screen, and no more. The case's clock already stops
+ *  a driver nobody is waiting for; this stops one that is being answered and
+ *  keeps asking, because every step here is a billed call plus the vendor's flat
+ *  per-call fee ({@link THESYS_CALL_USD}) on top of it. */
+const MAX_STEPS = 6;
 
 /** Their font tokens are CSS `font` shorthands with the family baked into every
  *  one, and these twenty-one are the ones no other token falls back to
@@ -216,6 +257,10 @@ async function run({ world, testCase, meter, signal }: RunRequest): Promise<RunO
     model: meter.model,
     system: worldBlock(world),
     prompt: testCase.prompt,
+    tools: worldToolSet(world),
+    // Their loop, bounded: every step is a call this driver pays for, so the
+    // model gets `MAX_STEPS` of them and the last word is whatever it had.
+    stopWhen: stepCountIs(MAX_STEPS),
     providerOptions: {
       [PROVIDER]: {
         // `metadata.thesys` is a JSON STRING on the wire, not a nested object
@@ -241,13 +286,14 @@ async function run({ world, testCase, meter, signal }: RunRequest): Promise<RunO
     ...(artifact === undefined ? {} : { artifact }),
     blocking: [],
     snapshots: [],
-    // One generation and then a page: nothing paints until the whole answer is
-    // here, so first paint IS the settle — the same reading `diy` reports.
+    // The loop and then a page: nothing paints until the whole answer is here,
+    // so first paint IS the settle — the same reading `diy` reports.
     ...(artifact === undefined ? {} : { firstRenderMs: settledMs }),
     settledMs,
     // Their tokens pass through at the underlying provider's rates and the run's
     // meter already priced them; the platform's flat per-call fee is this
-    // product's alone, so it is added here rather than in the price table.
+    // product's alone, so it is added here rather than in the price table — once
+    // per call, which is once per step of the tool loop.
     usd: meter.usd() + THESYS_CALL_USD * meter.totals().calls,
     ...(artifact === undefined ? { failure: "the vendor answered without a screen" } : {}),
   };

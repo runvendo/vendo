@@ -5,11 +5,12 @@
  * `tools.tool_name(args)` inside handlers, and nothing imported but `react` and
  * `@vendo/screen`.
  *
- * Five stages, and the order is not a preference: a file that does not compile
+ * Six stages, and the order is not a preference: a file that does not compile
  * has no AST to scan; a scan that cannot name the queries has no plan to
- * type-check against; and a screen that does not type-check must never be
- * EXECUTED. So each stage is the next one's precondition and the first one that
- * finds something is the last one that runs.
+ * type-check against; a screen that does not type-check must never be EXECUTED;
+ * and a screen whose tree is not a tree has no controls worth pressing. So each
+ * stage is the next one's precondition and the first one that finds something is
+ * the last one that runs.
  *
  *   1. COMPILE   esbuild, once per form (the CJS the engine evaluates, the
  *                module form the scan reads).
@@ -22,8 +23,10 @@
  *                so `document`, `fetch` and `<div>` are errors because they
  *                genuinely do not exist here.
  *   4. RUN ONCE  execute the query plan for real, boot the screen on the answers,
- *                take its tree.
+ *                take its tree, and PRESS every control it drew.
  *   5. TREE      the tree validators the wire artifact already ships.
+ *   6. CONTROLS  the presses stage 4 took: a control that asked for no tool and
+ *                painted nothing new is a dead button, and it is refused.
  *
  * Every issue is written as a repair instruction. These messages are read by a
  * model, and a refusal that does not say what to write instead only costs a
@@ -39,7 +42,7 @@
  */
 import { parse } from "acorn";
 import type { Node, Program } from "acorn";
-import { VENDO_TREE_FORMAT, type TreeNode } from "@vendoai/core";
+import { isPlainObject, VENDO_TREE_FORMAT, type TreeNode } from "@vendoai/core";
 import {
   DISPLAY_TAG_NAMES,
   resolveIslandToolName,
@@ -52,7 +55,9 @@ import {
 // The screen engine, by its own path: the contract door does not carry it yet.
 import {
   SCREEN_TEXT_NODE,
+  type FlatNode,
   type FlatTree,
+  type InertControl,
   type ScreenErrorKind,
 } from "../../contract/genui/component/index.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
@@ -656,6 +661,9 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   const treeIssues = await treeCheckIssues(initialTree, names, opts.routes);
   if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
 
+  const deadIssues = deadControlIssues(initialTree, painted.inert);
+  if (deadIssues.length > 0) return refuse(deadIssues, { compiled, queryPlan, initialTree });
+
   return { ok: true, issues: [], compiled, queryPlan, initialTree, queries };
 }
 
@@ -723,20 +731,347 @@ const treeCheckIssues = async (
   ];
 };
 
-// ---- the reviewer's input -------------------------------------------------
+// ---- stage 6: the controls ------------------------------------------------
 
 /**
- * What the AI reviewer reads: the TSX itself, plus what each query really
- * returned, truncated by the same rule the wire reviewer uses (reviewer.ts) so
- * one long table cannot crowd the screen out of the prompt.
+ * How many dead controls are NAMED before the rest become a count.
+ *
+ * These sentences are read by a model with one screen to repair, and forty
+ * copies of one repair instruction crowd out the file they are about. A screen
+ * with forty dead buttons has them from one `.map`, so the first few name the
+ * defect and the count says how far it reaches.
+ */
+const MAX_NAMED_CONTROLS = 5;
+
+/** The props a control carries its own words in, in the order a person would
+ *  read them off it: a Button's `label`, a Form's `submitLabel`, then the
+ *  headings a clickable card or row is named by. */
+const LABEL_PROPS: readonly string[] = ["label", "submitLabel", "title", "text"];
+
+/** What to CALL this control in the refusal — the words on it, so the person
+ *  repairing the screen can find it without counting nodes. Its own label
+ *  first, then whatever text is printed inside it, and only failing both the
+ *  bare component name. */
+const controlName = (flat: FlatTree, id: string): string => {
+  const node = flat.nodes[id];
+  if (node === undefined) return "a control";
+  for (const prop of LABEL_PROPS) {
+    const value = node.props[prop];
+    if (typeof value === "string" && value.trim() !== "") return clip(value.trim(), MAX_NODE_TEXT);
+  }
+  const said = node.children
+    .map((child) => flat.nodes[child])
+    .filter((child): child is FlatNode => child?.component === SCREEN_TEXT_NODE)
+    .map((child) => String(child.props["text"] ?? ""))
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return said === "" ? `the ${node.component}` : clip(said, MAX_NODE_TEXT);
+};
+
+/**
+ * The controls the run pressed that did nothing, as refusals.
+ *
+ * This is the defect no other stage can see: the file compiles, the types are
+ * right, the tree is valid, and the screen paints a button that is scenery. The
+ * repair is one of three real things, so the sentence offers all three rather
+ * than only the one that happens to be most common.
+ */
+const deadControlIssues = (flat: FlatTree, inert: readonly InertControl[]): ComponentScreenIssue[] => {
+  const named = inert.slice(0, MAX_NAMED_CONTROLS).map(({ node, prop }) => issue(
+    "dead-control",
+    `pressing "${controlName(flat, node)}" calls nothing and changes nothing — wire it or remove it.`
+    + ` This check pressed every control on the screen as it first paints, and this one (${flat.nodes[node]?.component ?? "a component"} ${prop}) asked for no tool and painted nothing new.`
+    + ` Call the tool it is for inside the handler (${prop}={async () => { await tools.tool_name({ … }); }}), or make it change what the person sees — open a Modal, switch what the screen renders, set state the render reads.`
+    + ` If it is meant to do nothing yet, SAY so: set disabled where the control has it, or paint the reason (a Callout, a line under the field). A press that is silently refused reads as a broken button.`,
+  ));
+  const rest = inert.length - named.length;
+  return rest <= 0 ? named : [...named, issue(
+    "dead-control",
+    `and ${rest} more control(s) on this screen do nothing when pressed. The same repair applies to each: give it a tool to call, give it something to change, or take it off the screen.`,
+  )];
+};
+
+// ---- the reviewer's input -------------------------------------------------
+
+/** The first paint, and the surface it lands on. */
+export interface PaintedScreen {
+  /** Stage 4's tree — the screen rendered against the data its queries really
+   *  returned. */
+  tree: FlatTree;
+  /**
+   * The CSS pixels the screen renders into, as the host measured them.
+   *
+   * Its own fact, and it travels on its own: a FOLD cannot be judged against a
+   * frame nobody measured, so without one the paint outline is not written at
+   * all — but what the paint left unshown is true at every size, so the tree
+   * still comes through alone and {@link leftoversSection} still reads it.
+   */
+  viewport?: { width: number; height: number };
+}
+
+/** The outline's budget, one line of it, and one value on that line — the same
+ *  discipline {@link sampleLines} keeps over query data: a long screen must not
+ *  crowd the file it describes out of the prompt. */
+const MAX_PAINT_CHARS = 3_000;
+const MAX_PAINT_LINE = 200;
+const MAX_NODE_TEXT = 100;
+
+/** How many of a run of same-component siblings are written out before the rest
+ *  become a count. Three, so a short mixed stack survives whole and a forty-row
+ *  table still reads as three rows and a number. */
+const MAX_RUN_SHOWN = 3;
+
+const clip = (text: string, limit: number): string =>
+  (text.length > limit ? `${text.slice(0, limit)}…` : text);
+
+/**
+ * A prop as the outline says it: a scalar as itself, a list as its LENGTH, and
+ * everything else not at all.
+ *
+ * The length is the point. A Kit component carries its words in props rather
+ * than in children — `<Text text="Invoices" />`, `<Table rows={…} />` — so an
+ * outline of names alone says nothing about what is on the screen, and a table's
+ * row COUNT is the whole difference between a section that fits and one that
+ * pushes the next three below the fold. An object prop and a `{$handler}`
+ * reference say nothing either way, so they say nothing.
+ */
+const propNote = (name: string, value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    return value.trim() === "" ? undefined : `${name}=${JSON.stringify(clip(value, MAX_NODE_TEXT))}`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return `${name}=${String(value)}`;
+  if (Array.isArray(value)) return `${name}=[${value.length}]`;
+  return undefined;
+};
+
+/**
+ * The first paint as an indented outline, in paint order.
+ *
+ * The SOURCE says what the screen might draw; this says what it did. A branch the
+ * real data did not take, a wizard step behind a click, a table with forty rows
+ * where the file shows one `.map` — none of those are readable in the file, and
+ * all of them decide whether the person can see the thing they asked for.
+ *
+ * A run of same-component siblings collapses to the first few plus a count: forty
+ * rows are one fact about how TALL a table is, not forty lines of outline.
+ */
+const paintOutline = (flat: FlatTree): string => {
+  const lines: string[] = [];
+  let budget = MAX_PAINT_CHARS;
+  let cut = 0;
+  const emit = (line: string): void => {
+    if (budget <= 0) {
+      cut += 1;
+      return;
+    }
+    lines.push(line);
+    budget -= line.length + 1;
+  };
+  const walk = (id: string, depth: number): void => {
+    const node = flat.nodes[id];
+    if (node === undefined) return;
+    const children = node.children
+      .map((child) => flat.nodes[child])
+      .filter((child): child is FlatNode => child !== undefined);
+    // What this node SAYS, on its own line: its props, then any raw text under
+    // it. How a reader tells the third table from the first.
+    const said = children
+      .filter(({ component }) => component === SCREEN_TEXT_NODE)
+      .map(({ props }) => String(props["text"] ?? ""))
+      .join(" ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    const notes = Object.entries(node.props)
+      .map(([name, value]) => propNote(name, value))
+      .filter((note): note is string => note !== undefined);
+    emit(clip(
+      [`${"  ".repeat(depth)}${node.component}`, ...notes, ...(said === "" ? [] : [JSON.stringify(clip(said, MAX_NODE_TEXT))])]
+        .join(" "),
+      MAX_PAINT_LINE,
+    ));
+    const elements = children.filter(({ component }) => component !== SCREEN_TEXT_NODE);
+    for (let at = 0; at < elements.length;) {
+      const first = elements[at]!;
+      let run = 1;
+      while (elements[at + run]?.component === first.component) run += 1;
+      const shown = Math.min(run, MAX_RUN_SHOWN);
+      for (let index = 0; index < shown; index += 1) walk(elements[at + index]!.id, depth + 1);
+      if (run > shown) emit(`${"  ".repeat(depth + 1)}…and ${run - shown} more ${first.component}`);
+      at += run;
+    }
+  };
+  walk(flat.root, 0);
+  return cut === 0 ? lines.join("\n") : `${lines.join("\n")}\n…and ${cut} more nodes`;
+};
+
+/**
+ * What the person is actually shown, when the caller knows the surface.
+ *
+ * Nothing at all without a viewport, and that is the whole discipline: a paint
+ * with no surface to measure it against would leave the reader guessing the
+ * frame, which is the very mistake this block exists to end. Absent, the
+ * reviewer's prompt is byte for byte the one it always was.
+ */
+const paintedSection = (painted?: PaintedScreen): string => {
+  if (painted?.viewport === undefined) return "";
+  const { width, height } = painted.viewport;
+  return `\nPAINTED (what this screen really draws on first paint, in order, into ${width}×${height} CSS pixels`
+    + ` — only the first ${height}px is on the person's screen, anything after it is behind a scroll they may`
+    + ` never do, and anything behind a click or a later step is not on this screen at all):\n${paintOutline(painted.tree)}`;
+};
+
+// ---- fetched, and never shown ---------------------------------------------
+
+/**
+ * How deep into one answer the fields are read, how many rows of an array are
+ * read for them, how many leftovers one query names, and how long one sample
+ * value may be.
+ *
+ * More than one row, because a field that is null on the first row and set on the
+ * fourth is still a field the tool returned — and no more than a few, because the
+ * fields of a hundred rows are the fields of five and this runs on every save.
+ */
+const MAX_FIELD_DEPTH = 4;
+const MAX_ROWS_READ = 5;
+const MAX_LEFTOVERS_NAMED = 12;
+const MAX_LEFTOVER_VALUE = 60;
+
+/**
+ * Every leaf field of one query's answer, as a dot path, with one sample value.
+ *
+ * An array index is NOT a path segment: forty rows are one shape, and the reader
+ * is being told what the shape carried. The first non-null value wins, because
+ * `null` tells nobody what a field is for.
+ */
+const leafFields = (value: unknown, path: string, found: Map<string, unknown>, depth = 0): void => {
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, MAX_ROWS_READ)) leafFields(item, path, found, depth);
+    return;
+  }
+  if (isPlainObject(value)) {
+    if (depth >= MAX_FIELD_DEPTH) return;
+    for (const [key, child] of Object.entries(value)) {
+      leafFields(child, path === "" ? key : `${path}.${key}`, found, depth + 1);
+    }
+    return;
+  }
+  if (path === "") return;
+  if (!found.has(path) || found.get(path) === null) found.set(path, value ?? null);
+};
+
+/**
+ * The two ways a paint can account for a field, read off the tree once.
+ *
+ * `named` is every string the paint carries in its props at any depth, because
+ * that is how a Kit component says WHICH field it shows: a table's `columns`, a
+ * card's `fields`, a KeyValue's `items` are field KEYS, and the values behind them
+ * are never written out as text — they are handed over whole inside `rows`.
+ *
+ * `shown` is the other half: what the screen literally writes — a run of text, a
+ * scalar prop — as the whole value and as its separate words, so a field that
+ * arrives inside a sentence (`${build.author} shipped`) still counts as shown.
+ *
+ * They must stay two sets. Matching a value against every string in the tree would
+ * count the raw rows a table was HANDED as painted, and the failure this whole
+ * section exists for — eight fields fetched, three columns drawn — would be
+ * invisible.
+ */
+const paintedEvidence = (flat: FlatTree): { named: Set<string>; shown: Set<string> } => {
+  const named = new Set<string>();
+  const shown = new Set<string>();
+  const addNames = (value: unknown): void => {
+    if (typeof value === "string") {
+      named.add(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) addNames(item);
+      return;
+    }
+    if (isPlainObject(value)) {
+      for (const item of Object.values(value)) addNames(item);
+    }
+  };
+  for (const node of Object.values(flat.nodes)) {
+    for (const value of Object.values(node.props)) {
+      addNames(value);
+      if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue;
+      const text = String(value);
+      shown.add(text);
+      for (const word of text.split(/\s+/u)) shown.add(word);
+    }
+  }
+  return { named, shown };
+};
+
+/** A field's path and every dotted tail of it: a column keyed `client.name` shows
+ *  `data.client.name`, because a table's keys are written relative to its ROW. */
+const pathTails = (path: string): string[] => {
+  const parts = path.split(".");
+  return parts.map((_, index) => parts.slice(index).join("."));
+};
+
+/**
+ * What the queries returned and the paint never shows.
+ *
+ * Mechanical, and no model: a field counts as shown when the paint NAMES it or
+ * when one of its values is written out somewhere in the tree; everything else is
+ * a leftover. A tool returns rows carrying eight fields, the screen draws three
+ * columns, and nothing in this pipeline ever computed the other five — which is
+ * how a build list ships without the commit message and a route without its
+ * stop counts.
+ *
+ * It says they were not shown and stops there. WHICH of them the person was
+ * entitled to is judgment — the ask, the screen's purpose, an id nobody wants —
+ * and judgment is the reviewer's job, not this function's.
+ *
+ * Nothing without a tree, and nothing when everything was shown: the section is
+ * absent and the prompt is byte for byte the one it always was.
+ */
+const leftoversSection = (
+  queryResults: Readonly<Record<string, unknown>>,
+  painted?: PaintedScreen,
+): string => {
+  if (painted === undefined) return "";
+  const { named, shown } = paintedEvidence(painted.tree);
+  const lines: string[] = [];
+  for (const [query, result] of Object.entries(queryResults)) {
+    const fields = new Map<string, unknown>();
+    leafFields(result, "", fields);
+    const left = [...fields].filter(([path, sample]) =>
+      !pathTails(path).some((tail) => named.has(tail))
+      && !(sample !== null && shown.has(String(sample))));
+    if (left.length === 0) continue;
+    const listed = left.slice(0, MAX_LEFTOVERS_NAMED)
+      .map(([path, sample]) => `${path} (${clip(JSON.stringify(sample) ?? "null", MAX_LEFTOVER_VALUE)})`);
+    const rest = left.length - listed.length;
+    lines.push(`${query}: ${[...listed, ...(rest > 0 ? [`…and ${rest} more`] : [])].join(", ")}`);
+  }
+  return lines.length === 0 ? "" : "\nLEFTOVERS (fields these queries returned that the screen never shows,"
+    + ` one sample value each):\n${lines.join("\n")}`;
+};
+
+/**
+ * What the AI reviewer reads: the TSX itself, what the screen drew with it, what
+ * each query really returned — truncated by the same rule the wire reviewer uses
+ * (reviewer.ts) so one long table cannot crowd the screen out of the prompt — and
+ * which of those fields the screen never showed.
  *
  * The TSX comes FIRST and whole: it is the thing being judged, and unlike the
  * wire artifact there is nothing to print — the file the model wrote is the file
- * the reviewer reads.
+ * the reviewer reads. LEFTOVERS comes LAST, after the rows it is about: it names
+ * fields of the data the reader has just been shown, and the rows may have been
+ * cut short before reaching them.
  */
 export function reviewComponentScreenInput(input: {
   source: string;
   queryResults: Readonly<Record<string, unknown>>;
+  /** The paint, and the surface it lands on when the caller knows one. Absent,
+   *  this reads byte for byte as it always did. */
+  painted?: PaintedScreen;
 }): string {
-  return `SCREEN (the .tsx file this app renders):\n${input.source}${sampleLines(input.queryResults)}`;
+  return `SCREEN (the .tsx file this app renders):\n${input.source}`
+    + `${paintedSection(input.painted)}${sampleLines(input.queryResults)}`
+    + leftoversSection(input.queryResults, input.painted);
 }

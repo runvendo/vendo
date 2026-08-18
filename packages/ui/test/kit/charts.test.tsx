@@ -102,6 +102,32 @@ describe("Progress", () => {
     const { container } = render(<Progress value={Number.NaN} />);
     expect(container.textContent).not.toContain("NaN");
   });
+
+  /** The fill — Base UI's Indicator, the one child of the bar itself. */
+  const fill = (container: HTMLElement) =>
+    container.querySelector('[role="progressbar"] > *')!;
+
+  // The bar can only ever say "full", so past the cap the figure is the only
+  // honest reading of how far past it went — printing 100% at 1.2 is a wrong
+  // number. Whether over is BAD NEWS is a judgement, and the bar does not make
+  // it: the color moves only when the caller writes a `tone`.
+  it("prints the true figure past the cap, and does not repaint itself", () => {
+    const { container } = render(<Progress value={1.2} showValue />);
+    expect(screen.getByText("120%")).toBeTruthy();
+    expect(fill(container).getAttribute("style")).toContain("--vendo-color-accent");
+    expect(fill(container).getAttribute("style")).not.toContain("--vendo-color-danger");
+  });
+
+  it("leaves a bar under its cap in the brand's own color", () => {
+    const { container } = render(<Progress value={0.45} showValue />);
+    expect(screen.getByText("45%")).toBeTruthy();
+    expect(fill(container).getAttribute("style")).toContain("--vendo-color-accent");
+  });
+
+  it("paints the tone the caller wrote, past the cap as anywhere else", () => {
+    const { container } = render(<Progress value={1.2} tone="success" />);
+    expect(fill(container).getAttribute("style")).toContain("--vendo-color-success");
+  });
 });
 
 describe("DonutChart legend", () => {
@@ -186,5 +212,74 @@ describe("charts in a cell slot", () => {
     expect(screen.getByText("25%")).toBeTruthy();
     render(<Progress value={0.9} field="used" showValue />);
     expect(screen.getByText("90%")).toBeTruthy();
+  });
+});
+
+/**
+ * The figure ON the bar. A bar chart exists to compare magnitudes, and a reader
+ * who has to trace a bar back to an axis tick to learn one is reading the chart
+ * twice — "how long did 4191 take?" was a judge line the chart itself could not
+ * answer.
+ */
+describe("BarChart value labels", () => {
+  const builds = [
+    { number: "4191", duration_seconds: 412 },
+    { number: "4187", duration_seconds: 46 },
+  ];
+
+  const labels = (container: HTMLElement): string[] =>
+    [...container.querySelectorAll(".recharts-label-list text")].map((node) => node.textContent ?? "");
+
+  it("labels every bar with its value, in the chart's own format", () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <BarChart data={builds} xKey="number" series={["duration_seconds"]} format="duration" />,
+      );
+      expect(labels(container)).toEqual(["6m 52s", "46s"]);
+    } finally {
+      restore();
+    }
+  });
+
+  // A chart of two series in different units has no ONE chart-level token that
+  // reads both, so the series carries its own — and the chart used to drop it
+  // straight through to the engine, where it meant nothing.
+  it("reads a series in the format that series declared", () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <BarChart
+          data={[{ number: "4191", duration_seconds: 412, compute_cost: 18.7 }]}
+          xKey="number"
+          series={[{ key: "duration_seconds", format: "duration" }, { key: "compute_cost", format: "money" }]}
+          format="number"
+        />,
+      );
+      expect(labels(container)).toEqual(["6m 52s", "$18.70"]);
+    } finally {
+      restore();
+    }
+  });
+
+  // A horizontal bar's label sits past its right end, which is where the chart
+  // area stopped: at the default margin the longest bar's figure was clipped
+  // off the frame entirely.
+  it("keeps room past the end of a horizontal bar for the label to sit in", () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <BarChart data={builds} xKey="number" series={["duration_seconds"]} format="duration" horizontal />,
+      );
+      const surface = container.querySelector(".recharts-surface")!;
+      // The plotted area, which is where a bar STOPS: the gap between its right
+      // edge and the frame's is the room a label at the bar's end has to sit in.
+      // Every grid line carries that area's own box.
+      const plot = container.querySelector(".recharts-cartesian-grid line")!;
+      const right = Number(plot.getAttribute("x")) + Number(plot.getAttribute("width"));
+      expect(Number(surface.getAttribute("width")) - right).toBeGreaterThanOrEqual(40);
+    } finally {
+      restore();
+    }
   });
 });

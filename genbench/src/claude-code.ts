@@ -14,10 +14,10 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MODEL_IDS, usdFor, type ModelAlias, type UsageTotals } from "./meter.js";
+import { MODEL_IDS, usdFor, type ModelAlias, type UsageTally, type UsageTotals } from "./meter.js";
 import { HARNESS_CONTRACT } from "./render.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
-import { worldBlock } from "./vendo.js";
+import { installWorldTools, TOOL_ACCESS, worldBlock } from "./vendo.js";
 import type { Case, World } from "./world.js";
 
 /** The bits of the Agent SDK this driver uses. Narrow on purpose, exactly as
@@ -82,7 +82,7 @@ const PAGE = "index.html";
 const DELIVERY = `Write ONE file, \`${PAGE}\`, in the current directory. Nothing else is read.`;
 
 const brief = (world: World, testCase: Case): string =>
-  [worldBlock(world), "", DELIVERY, "", HARNESS_CONTRACT, "", `TASK: ${testCase.prompt}`].join("\n");
+  [worldBlock(world), "", DELIVERY, "", TOOL_ACCESS, "", HARNESS_CONTRACT, "", `TASK: ${testCase.prompt}`].join("\n");
 
 /** The subprocess's whole environment, spelled out rather than inherited. The
  *  SDK passes `process.env` through wholesale, so an `ANTHROPIC_BASE_URL`,
@@ -132,7 +132,7 @@ const numberOf = (value: unknown): number => (typeof value === "number" && Numbe
  *  `input_tokens` excludes both cache halves, exactly as the meter's `noCache`
  *  does, so both columns price the same fact. `calls` counts the SDK's turns —
  *  the model calls inside one are the engine's business and are not reported. */
-function record(totals: Record<keyof UsageTotals, number>, raw: unknown): void {
+function record(totals: UsageTally, raw: unknown): void {
   const usage = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   totals.inputTokens += numberOf(usage["input_tokens"]);
   totals.outputTokens += numberOf(usage["output_tokens"]);
@@ -141,7 +141,7 @@ function record(totals: Record<keyof UsageTotals, number>, raw: unknown): void {
   totals.calls += 1;
 }
 
-const clear = (totals: Record<keyof UsageTotals, number>): void => {
+const clear = (totals: UsageTally): void => {
   for (const key of Object.keys(totals) as Array<keyof UsageTotals>) totals[key] = 0;
 };
 
@@ -160,6 +160,9 @@ async function run(request: RunRequest, options: ClaudeCodeOptions): Promise<Cla
   const { world, testCase, meter } = request;
   const modelId = MODEL_IDS[options.model ?? "sonnet"];
   const workspace = await mkdtemp(join(tmpdir(), `genbench-${testCase.id}-`));
+  // The host's tools, callable, before the session opens: this column has hands,
+  // so it gets the same look at the data the vendo column's loop gets.
+  await installWorldTools(workspace, world);
   const page = join(workspace, PAGE);
   const writes: Array<{ atMs: number; html: string }> = [];
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 };

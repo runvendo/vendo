@@ -42,7 +42,7 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Callout", "Accordion", "EnumBadge"];
+const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Select", "Callout", "Accordion", "EnumBadge"];
 
 /** The payload the server serves: the screen's FIRST paint, flattened, plus the
  *  interactive half that can produce the next one — built by the engine itself,
@@ -184,6 +184,42 @@ export default function Reference() {
     expect(input.value).toBe("INV-14B");
     // Nothing reached the host: a keystroke is the screen's own business.
     expect(host.calls).toEqual([]);
+  });
+
+  it("hands a Select's change to the screen as an EVENT, whichever way the Kit reported it", async () => {
+    // `onChange={setAgent}` is the React reflex, and this is what it actually
+    // gets. The two ways a Kit Select can report a change CONVERGE: a controlled
+    // one (a `value` plus a screen handler) sends `{target:{value}}` itself
+    // (kit/forms/select.tsx), an uncontrolled one sends the bare string — and
+    // `makeEvent` in the VM wraps whatever arrives into the React-shaped event
+    // before the handler sees it (apps vm-program.ts). So a screen handler NEVER
+    // receives a bare value, and one that stores its argument stores the event.
+    const compiled = compile(`
+import { useState } from "react";
+import { Select, Stack, Text } from "@vendo/screen";
+
+export default function Handover() {
+  const [agent, setAgent] = useState("nobody");
+  return (
+    <Stack>
+      <Select label="Bound" value="theo" options={["theo", "priya"]} onChange={setAgent} />
+      <Select label="Loose" options={["june", "marco"]} onChange={setAgent} />
+      <Text text={"agent " + typeof agent + ": " + JSON.stringify(agent)} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
+    const asEvent = (value: string) =>
+      `agent object: {"target":{"value":"${value}"},"currentTarget":{"value":"${value}"},"value":"${value}"}`;
+
+    expect(screen.getByText('agent string: "nobody"')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Bound"), { target: { value: "priya" } });
+    await waitFor(() => expect(screen.getByText(asEvent("priya"))).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText("Loose"), { target: { value: "marco" } });
+    await waitFor(() => expect(screen.getByText(asEvent("marco"))).toBeTruthy());
   });
 
   it("routes a handler's tool call through the host pipe, then re-reads and re-boots", async () => {

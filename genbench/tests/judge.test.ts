@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { judge, JudgeContract, SYSTEM_PROMPT, VERDICTS, type JudgeInput, type Verdict } from "../src/judge.js";
+import { HONESTY_LINE, judge, JudgeContract, SYSTEM_PROMPT, VERDICTS, type JudgeInput, type Verdict } from "../src/judge.js";
 import { MAX_OUTPUT_TOKENS_FLOOR } from "../src/meter.js";
 import { probe, type Probed } from "../src/probe.js";
 import { authoredPage, openBrowser } from "../src/render.js";
-import { loadWorld } from "../src/world.js";
+import { cannedResponse, loadWorld } from "../src/world.js";
 
 // ------------------------------------------------------------------ fixtures
 
@@ -26,10 +26,17 @@ const TRACE: Probed[] = [
 const CASE_LINES = ["alpha shows every row", "bravo totals the rows", "charlie confirms deletions"];
 const STYLE_LINES = ["delta uses the theme colors", "echo formats money with two decimals"];
 
+/** Every line the judge is really asked: the case's own, the standing honesty
+ *  line every case carries, then the world's. */
+const ALL_LINES = [...CASE_LINES, HONESTY_LINE, ...STYLE_LINES];
+
+const TOOL_DATA = `get_spending → {"data":[{"category":"housing","amount":285000}]}`;
+
 const input = (over: Partial<JudgeInput> = {}): JudgeInput => ({
   screenshot: PNG,
   artifact: "<section><h1>Spending</h1><p>Housing 2850</p></section>",
   trace: TRACE,
+  toolData: TOOL_DATA,
   caseLines: CASE_LINES,
   styleLines: STYLE_LINES,
   caseHash: "9f1c0a2b3d4e5f60",
@@ -160,12 +167,16 @@ describe("blindness", () => {
     expect(sent).toContain("Housing 2850");
     expect(sent).toContain("cancel_transfer");
     expect(sent).toContain("Cancel");
-    for (const line of [...CASE_LINES, ...STYLE_LINES]) expect(sent).toContain(line);
+    // The ground truth behind the screen, without which the standing honesty
+    // line is a verdict reached on nothing.
+    expect(sent).toContain("TOOL DATA");
+    expect(sent).toContain("get_spending");
+    for (const line of ALL_LINES) expect(sent).toContain(line);
   });
 
-  /** The probe presses nothing inside a confirmation, so the dialog's own words
-   *  are the evidence that press left. They are quoted verbatim, because a line
-   *  like "asks before it cancels two transfers" is graded off them. */
+  /** The dialog's own words are the evidence only a reader can weigh, so they are
+   *  quoted verbatim: a line like "asks before it cancels two transfers" is
+   *  graded off them and off nothing else. */
   const DIALOG = "Cancel 2 transfers? This cannot be undone.";
 
   it("renders a confirmation as the text it showed, quoted", async () => {
@@ -193,6 +204,58 @@ describe("blindness", () => {
     );
   });
 
+  /**
+   * What the presses INSIDE the confirmation did, in the words the judge reads
+   * (2026-08-17).
+   *
+   * The record used to stop at the dialog's text, so "pressing approve fires
+   * approve_refund" was an unprovable line for any action behind a confirmation
+   * — the call the rubric asks about happened one press past where the evidence
+   * ended. Both paths are named now, with their arguments, and which of them is
+   * the approval is still the judge's to decide from the words.
+   */
+  it("renders what each control inside the confirmation called", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Cancel all",
+        dialog: DIALOG,
+        changed: true,
+        calls: [],
+        inside: [
+          { label: "Yes, cancel them", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+          { label: "Keep them", changed: true, calls: [] },
+        ],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `inside the confirmation, pressing "Yes, cancel them" called cancel_transfer({"id":"tr_1"});`
+        + ` pressing "Keep them" called nothing, and the screen moved`,
+    );
+  });
+
+  /** A dialog with one control has no decline to be read against, so the trace
+   *  says that plainly rather than letting the judge infer a missing half. */
+  it("says when a confirmation had only one control", async () => {
+    const model = answering();
+    const trace: Probed[] = [
+      {
+        label: "Cancel all",
+        dialog: DIALOG,
+        changed: true,
+        calls: [],
+        inside: [{ label: "OK", changed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] }],
+      },
+    ];
+    await judge(input({ trace }), { model });
+
+    expect(traceSent(model.doGenerateCalls[0]!)).toContain(
+      `inside the confirmation, it has ONE pressable control, so it is judged by that control alone`,
+    );
+  });
+
   it("keeps the artifact's format while taking its name — a tree still reads as a tree", async () => {
     const model = answering();
     await judge(input({ artifact: '{"format":"vendo/app@1","ui":"tree","nodes":[{"component":"Stat"}]}' }), { model });
@@ -215,7 +278,7 @@ describe("shuffled lines, remapped verdicts", () => {
       // Answers come back in the ORIGINAL order, each carrying its own line's
       // verdict — not the verdict of whatever sat in that slot when asked.
       expect(result.lines).toEqual([
-        ...CASE_LINES.map((line) => ({ line, source: "case", verdict: owed(line), note: `saw ${line}` })),
+        ...[...CASE_LINES, HONESTY_LINE].map((line) => ({ line, source: "case", verdict: owed(line), note: `saw ${line}` })),
         ...STYLE_LINES.map((line) => ({ line, source: "style", verdict: owed(line), note: `saw ${line}` })),
       ]);
       expect(result.degraded).toBe(false);
@@ -225,7 +288,7 @@ describe("shuffled lines, remapped verdicts", () => {
   it("asks about every line exactly once", async () => {
     const model = answering();
     await judge(input(), { model });
-    expect([...asked(model.doGenerateCalls[0]!)].sort()).toEqual([...CASE_LINES, ...STYLE_LINES].sort());
+    expect([...asked(model.doGenerateCalls[0]!)].sort()).toEqual([...ALL_LINES].sort());
   });
 
   /**
@@ -296,7 +359,7 @@ describe("schema", () => {
 // ------------------------------------------------------------------- degrade
 
 describe("degrade", () => {
-  const allLines = [...CASE_LINES, ...STYLE_LINES];
+  const allLines = ALL_LINES;
 
   it("fails every line and says why when the judge cannot be reached", async () => {
     const model = new MockLanguageModelV3({
@@ -311,7 +374,7 @@ describe("degrade", () => {
     expect(result.error).toContain("bad image");
     expect(result.lines.map((line) => line.line)).toEqual(allLines);
     expect(result.lines.every((line) => line.verdict === "fail")).toBe(true);
-    expect(result.lines.map((line) => line.source)).toEqual(["case", "case", "case", "style", "style"]);
+    expect(result.lines.map((line) => line.source)).toEqual(["case", "case", "case", "case", "style", "style"]);
   });
 
   it("never partially grades — a short answer degrades the whole screen", async () => {
@@ -386,7 +449,7 @@ describe("degrade", () => {
 
     const result = await judge(input(), { model });
     expect(result.lines.map((line) => line.line)).toEqual(allLines);
-    expect(result.lines.map((line) => line.source)).toEqual(["case", "case", "case", "style", "style"]);
+    expect(result.lines.map((line) => line.source)).toEqual(["case", "case", "case", "case", "style", "style"]);
   });
 
   it("degrades instead of throwing when there is no key and no model to fall back on", async () => {
@@ -454,7 +517,7 @@ describe("retry", () => {
 describe("JudgeContract", () => {
   it("pins the judge model independently of whoever is being graded", () => {
     expect(JudgeContract.model).toBe("claude-opus-5");
-    expect(JudgeContract.rubricVersion).toBe(3);
+    expect(JudgeContract.rubricVersion).toBe(4);
   });
 
   /**
@@ -467,7 +530,7 @@ describe("JudgeContract", () => {
    * it pass is to move `rubricVersion` on purpose and paste the new digest,
    * which is exactly the decision the stamp exists to force.
    */
-  const PROMPT_HASH = "aca0fe1fb3a9cfb79bba07b65541b312704c167ce62847da3894e4b86e160b9d";
+  const PROMPT_HASH = "01eb19a02febdd5ccc3709f7bb39ec9bb4c60a2aa6da40cdb9a4ccb986313083";
 
   it("hashes the prompt, so any edit to it changes the contract", () => {
     expect(JudgeContract.promptHash).toBe(PROMPT_HASH);
@@ -541,17 +604,25 @@ describe("what grading costs", () => {
   });
 });
 
-// ------------------------------------------------------------- empty rubric
+// ---------------------------------------------------------- the standing line
 
-describe("no lines", () => {
-  it("grades nothing and calls nobody", async () => {
+describe("the standing honesty line", () => {
+  /** A world and a case can both be authored with no lines at all, and the one
+   *  line every screen is answerable for is not theirs to leave out. */
+  it("is still asked of a case that authored no lines of its own", async () => {
     const model = answering();
     const result = await judge(input({ caseLines: [], styleLines: [] }), { model });
 
-    // No call, so no cost — a cost of $0.0000 would read as a call that was
-    // free rather than a call that never happened.
-    expect(result).toEqual({ lines: [], degraded: false });
-    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(asked(model.doGenerateCalls[0]!)).toEqual([HONESTY_LINE]);
+    expect(result.lines).toEqual([{ line: HONESTY_LINE, source: "case", verdict: "fail", note: `saw ${HONESTY_LINE}` }]);
+  });
+
+  it("is graded as correctness, so an absent subject cannot excuse it", async () => {
+    const model = answering();
+    await judge(input(), { model });
+    const sent = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+
+    expect(sent).toContain(`[correctness] ${HONESTY_LINE}`);
   });
 });
 
@@ -600,6 +671,7 @@ describe.runIf(LIVE)("live smoke", () => {
         screenshot: shot.png,
         artifact: FIXTURE,
         trace,
+        toolData: world.tools.map((tool) => `${tool.name} → ${JSON.stringify(cannedResponse(tool))}`).join("\n"),
         caseHash: "live-smoke",
         caseLines: [
           "shows every spending category the tool returned",
@@ -614,7 +686,7 @@ describe.runIf(LIVE)("live smoke", () => {
       }
 
       expect(result.degraded).toBe(false);
-      expect(result.lines).toHaveLength(7);
+      expect(result.lines).toHaveLength(8);
       for (const line of result.lines) {
         expect(VERDICTS).toContain(line.verdict);
         expect(line.note.length).toBeGreaterThan(0);

@@ -14,7 +14,10 @@ import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
-type BarSeriesInput = SeriesInput<ComponentProps<typeof Bar>>;
+/** Plus `format`: a bar carries its VALUE as a label, and a chart of two series
+ *  in different units (money and a count) has no one chart-level token that
+ *  reads both. The chart's own `format` is the default. */
+type BarSeriesInput = SeriesInput<ComponentProps<typeof Bar> & { format?: ValueFormat }>;
 
 interface BarChartOwnProps extends KitStyled {
   data: Array<Record<string, unknown>>;
@@ -42,7 +45,7 @@ interface BarChartOwnProps extends KitStyled {
 export type BarChartProps = BarChartOwnProps & KitEngine<ComponentProps<typeof Bar>, BarChartOwnProps, "dataKey" | "name">;
 
 function normalize(series: BarSeriesInput[]) {
-  return series.map((s) => (typeof s === "string" ? { key: s, label: s, color: undefined } : { ...s, label: s.label ?? s.key }));
+  return series.map((s) => (typeof s === "string" ? { key: s, label: s, color: undefined, format: undefined } : { ...s, label: s.label ?? s.key }));
 }
 
 const axisTick = { fill: t.muted, fontSize: 11 };
@@ -76,7 +79,10 @@ export function BarChart({
     >
       <ChartFrame height={height}>
         <ResponsiveContainer width="100%" height="100%">
-          <RBarChart data={clean} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+          {/* Room for the value label at the END of a bar — past the tallest
+              one going up, past the longest one going right. Without it the
+              figure the chart exists to state is the one thing clipped off. */}
+          <RBarChart data={clean} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: horizontal ? 8 : 20, right: horizontal ? 56 : 12, bottom: 4, left: 4 }}>
             <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={horizontal} horizontal={!horizontal} />
             {horizontal ? (
               <>
@@ -95,12 +101,24 @@ export function BarChart({
               contentStyle={tooltipSurface}
               cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }}
             />
-            {cols.map(({ key, label, color, ...seriesEngine }, i) => (
+            {cols.map(({ key, label, color, format: seriesFormat, ...seriesEngine }, i) => (
               <Bar
                 fill={color ?? seriesColor(i)}
                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
+                // The figure ON the bar. A bar chart's whole job is comparing
+                // magnitudes, and a reader who has to trace a bar back to an
+                // axis tick to learn one is reading the chart twice — every
+                // judge that asked "how long was 4191?" was asking for this.
+                // In the SERIES' own units: a duration series is "6m 52s"
+                // however the chart's other series reads.
+                label={{
+                  position: horizontal ? "right" : "top",
+                  formatter: (v: unknown) => applyFormat(v, seriesFormat ?? format) ?? "",
+                  fill: t.muted,
+                  fontSize: 11,
+                }}
                 {...given(engine)}
                 {...given(seriesEngine)}
                 key={key}

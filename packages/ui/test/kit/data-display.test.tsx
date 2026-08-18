@@ -108,6 +108,24 @@ describe("CardList", () => {
     expect(screen.getByText("No clients")).toBeTruthy();
   });
 
+  /** A field written as the bare KEY — the same shorthand a column takes. */
+  it("takes a field written as its bare key", () => {
+    render(<CardList items={items} titleField="name" fields={["balance"]} />);
+    expect(screen.getAllByText("balance")).toHaveLength(2);
+    expect(screen.getByText("2500")).toBeTruthy();
+  });
+
+  it("gives a code field the host's mono face", () => {
+    render(
+      <CardList
+        items={[{ id: 1, name: "Hartwell", ref: "9f2c1ab" }]}
+        titleField="name"
+        fields={[{ key: "ref", label: "Ref", format: "code" }]}
+      />,
+    );
+    expect(screen.getByText("9f2c1ab").getAttribute("style")).toContain("--vendo-mono-family");
+  });
+
   it("renders an em dash for an empty field value, never a bare label", () => {
     render(
       <CardList
@@ -118,6 +136,33 @@ describe("CardList", () => {
     );
     expect(screen.getByText("Bank")).toBeTruthy();
     expect(screen.getByText("—")).toBeTruthy();
+  });
+
+  /** No `fields` is "show me the record", the same default a table's columns
+   *  have. The title and the badge are already ON the card, so a bare list is
+   *  everything else and never the title printed twice. */
+  it("shows the item's own fields when it is given none, less the two already on the card", () => {
+    render(<CardList items={[{ name: "Hartwell", balance: 2500, status: "overdue" }]} titleField="name" badgeField="status" />);
+    expect(screen.getByText("balance")).toBeTruthy();
+    expect(screen.getByText("2500")).toBeTruthy();
+    expect(screen.getAllByText("Hartwell")).toHaveLength(1);
+    expect(screen.queryByText("status")).toBeNull();
+  });
+
+  /** The host's own word for a field, on a card. */
+  it("reads a declared minor-unit field in dollars, and a declared code field in mono", () => {
+    render(
+      <CardList
+        items={[{ id: 1, name: "4192", branch: "feat/timeline-brick", compute_cost: 620 }]}
+        titleField="name"
+        fields={[
+          { key: "compute_cost", label: "Cost", semantic: "money.cents" },
+          { key: "branch", label: "Branch", semantic: "code" },
+        ]}
+      />,
+    );
+    expect(screen.getByText("$6.20")).toBeTruthy();
+    expect(screen.getByText("feat/timeline-brick").getAttribute("style")).toContain("--vendo-mono-family");
   });
 });
 

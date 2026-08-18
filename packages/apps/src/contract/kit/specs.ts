@@ -9,12 +9,13 @@
  * `@vendoai/ui`'s `KIT_COMPONENTS`, keyed by these names (a ui drift test
  * pins the two in step).
  */
+import { SEMANTIC_TOKENS } from "@vendoai/core";
 import { z } from "zod";
 import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropClass, type PropSpec } from "./schema.js";
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
-const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "duration", "text"]);
+const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "duration", "text", "code"]);
 const align = z.enum(["start", "center", "end"]);
 /** A series descriptor stays OPEN: what is written beside `key`, `label` and
  *  `color` is passed to that one series' engine element, so per-line colors are a
@@ -55,22 +56,46 @@ export const ACTION_PROP_DESCRIPTION = "names a host tool";
  * refuses the closure ({@link SLOT_PROP_DESCRIPTION}).
  */
 const slot = z.unknown().describe(SLOT_PROP_DESCRIPTION);
-const tableColumn = z.object({
+/**
+ * A field description, or the bare KEY that stands for one.
+ *
+ * `columns={["client", "amount"]}` is what a screen writes when it only wants
+ * the fields named, and it is the shorthand `Select.options` has always taken
+ * (a raw string is a choice). A string can only mean the key — `label` defaults
+ * from it and the value prints as it stands — so there is no second reading to
+ * be wrong about, and the components normalize it at their own boundary
+ * (`ui` kit/row.ts `fieldItems`).
+ */
+/**
+ * What the HOST says a field IS, in the host's own words: the token its tool's
+ * shape card prints beside the field (`compute_cost: number:money.cents`).
+ *
+ * Copied across, never derived. The two cases that matter are the two nothing
+ * else can reach: `compute_cost` is minor units though its name never says so,
+ * and `feat/timeline-brick` is a ref though it is a plain string by every
+ * structural test. The vocabulary is core's own (`SEMANTIC_TOKENS`), printed by
+ * the same function that writes the card, so what a writer is shown is exactly
+ * what a field accepts.
+ */
+const semantic = z.enum(SEMANTIC_TOKENS);
+const tableColumn = z.union([z.string(), z.object({
   /** Optional, because an ACTION column has no field: giving it a fake key
    *  makes its header click-to-sort and its values globally searchable, on data
    *  that is not there. A keyless column sorts, filters and searches on nothing. */
   key: z.string().optional(),
   label: z.string().optional(),
   format: valueFormat.optional(),
+  semantic: semantic.optional(),
   align: align.optional(),
   cell: slot.optional(),
-});
-const cardField = z.object({
+})]);
+const cardField = z.union([z.string(), z.object({
   key: z.string(),
   label: z.string().optional(),
   format: valueFormat.optional(),
+  semantic: semantic.optional(),
   cell: slot.optional(),
-});
+})]);
 const action = z.string().describe(ACTION_PROP_DESCRIPTION);
 /** The one tone vocabulary. The two older spellings still parse, because stored
  *  apps carry them; only the five are taught. */
@@ -172,6 +197,16 @@ const BASE_SPECS: KitComponentSpec[] = [
     examples: ["<Grid minChildWidth={160}><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
   },
   {
+    name: "SplitPane",
+    takesChildren: true,
+    group: "layout",
+    summary: "Two panes SIDE BY SIDE, at any width — the list beside the thing it opens. Row and Grid both wrap; this one never does, and each pane scrolls its own content instead of widening the other.",
+    props: {
+      size: config(z.number().positive(), "the first pane's width in px, or a share of the split below 1 (0.4 → 40%); default 320"),
+    },
+    examples: ['<SplitPane size={280}><DataTable rows={tickets.data} columns={["subject","status"]}/><KeyValue record={open} items={["subject","status","opened"]}/></SplitPane>'],
+  },
+  {
     name: "Surface",
     takesChildren: true,
     group: "layout",
@@ -216,7 +251,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       // permissive `any` prop — retiring it (V4) made the over-tight schema
       // load-bearing and blocked the very common `<Text text={count}/>`.
       text: copy(z.union([z.string(), z.number()]), "the text to show"),
-      variant: config(z.enum(["body", "heading", "caption", "label"]), "text role"),
+      variant: config(z.enum(["body", "heading", "caption", "label", "code"]), "text role"),
     },
     examples: ['<Text text="This month" variant="heading"/>'],
   },
@@ -308,7 +343,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     takesChildren: true,
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token; cell is a slot; key is optional on an action column"),
+      columns: config(z.array(tableColumn), "column descriptions, or bare keys; key supports dot-paths like client.name; format is a value tier token; semantic is the host's own token for the field; cell is a slot; key is optional on an action column"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
@@ -342,7 +377,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       items: data(rows, "items from a tool call", { required: true }),
       titleField: config(z.string(), "field for each card title"),
       badgeField: config(z.string(), "field rendered as a status pill"),
-      fields: config(z.array(cardField), "label/value rows on each card; cell is a slot"),
+      fields: config(z.array(cardField), "label/value rows on each card, or bare keys; defaults to the item's own keys; cell is a slot"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
       empty: config(slot, "elements shown instead of that text"),
@@ -395,7 +430,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     summary: "ONE record's fields as label/value rows — the detail a table row expands into. A field takes a `cell` slot, exactly as a table column does.",
     props: {
       record: data(z.record(z.string(), z.unknown()), "the record from a tool call", { required: true }),
-      items: config(z.array(cardField), "the fields to show; key supports dot-paths; format is a value tier token; cell is a slot", { required: true }),
+      items: config(z.array(cardField), "the fields to show, or bare keys; defaults to the record's own keys; key supports dot-paths; format is a value tier token; cell is a slot"),
       dividers: config(z.boolean(), "hairline rule between rows"),
     },
     examples: [
@@ -464,12 +499,12 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "BarChart",
     group: "charts",
-    summary: "A bar chart. Set horizontal for ranked lists, stacked to combine series.",
+    summary: "A bar chart. Every bar is LABELLED with its own value, so the figure is on the chart and not only on the axis. Set horizontal for ranked lists, stacked to combine series.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
-      series: config(seriesInput, "value series (keys or {key,label,color})", { required: true }),
-      format: config(valueFormat, "axis + tooltip format"),
+      series: config(seriesInput, "value series (keys or {key,label,color,format}); a series' own format reads its bars and labels", { required: true }),
+      format: config(valueFormat, "axis + tooltip + bar-label format"),
       stacked: config(z.boolean(), "stack series into one bar"),
       horizontal: config(z.boolean(), "horizontal bars"),
       height: config(z.number().int().positive(), "chart height in px"),
@@ -512,7 +547,7 @@ const BASE_SPECS: KitComponentSpec[] = [
   {
     name: "Progress",
     group: "charts",
-    summary: "A progress bar from a ratio (0..1) or value/max. Clamps to 100%.",
+    summary: "A progress bar from a ratio (0..1) or value/max. The bar stops at 100%; past the cap `showValue` still prints the true figure. Colour it with `tone` — it never changes on its own.",
     props: {
       value: data(z.number(), "ratio 0..1, or a raw value with max"),
       max: data(z.number(), "denominator when value is raw"),
@@ -548,11 +583,16 @@ const BASE_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
       valueField: config(z.string(), "object field for the value"),
+      value: config(z.string(), "the chosen value (controlled), paired with onChange"),
       placeholder: copy(z.string(), "empty-choice text"),
       multiple: config(z.boolean(), "allow several values"),
       onChange: config(action, "called on change"),
     },
-    examples: ['<Select label="Client" options={clients.list({}).data} labelField="name" valueField="id"/>'],
+    // Controlled, like every other field: the screen holds the choice, so
+    // everything else on the screen can read it. What the state STARTS as is
+    // the screen's own business — an empty string until someone picks, a value
+    // the ask named — and nothing here says.
+    examples: ['<Select label="Client" options={clients.data} labelField="name" valueField="id" value={clientId} onChange={(e) => setClientId(e.target.value)}/>'],
   },
   {
     name: "DatePicker",

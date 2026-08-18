@@ -22,12 +22,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { FloorResult } from "../src/floor.js";
-import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import type { Shot } from "../src/render.js";
 import { writePreview } from "../src/report.js";
 import { writeCase, type CaseResult, type RunOutcome } from "../src/run.js";
-import { TriageContract } from "../src/triage.js";
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>genbench</title></head>
@@ -51,7 +49,6 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 1, found: 1 },
   wiredActions: { pass: true, pressed: 1, bindings: [] },
   pass: true,
 };
@@ -82,8 +79,6 @@ const RESULT: CaseResult = {
   caseHash: "case-hash",
   judged: JUDGED,
   judgeContract: JudgeContract,
-  triageContract: TriageContract,
-  auditorContract: AUDITOR_CONTRACT,
   gitSha: "0".repeat(40),
   agentSdkVersion: "0.0.0",
 };

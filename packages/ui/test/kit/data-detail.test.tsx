@@ -26,6 +26,24 @@ describe("KeyValue", () => {
     expect(screen.getByText(/Mar 14, 2026/)).toBeTruthy();
   });
 
+  /** An item written as the bare KEY. `items` given `string[]` was a whole class
+   *  of looped repairs on unseen worlds; a string can only mean the key, so the
+   *  component reads it as one. */
+  it("takes an item written as its bare key, beside a described one", () => {
+    render(<KeyValue record={invoice} items={["client.name", { key: "amountCents", label: "Amount", format: "money" }]} />);
+    expect(screen.getByText("Name")).toBeTruthy();
+    expect(screen.getByText("Maple")).toBeTruthy();
+    // `format:"money"` says how the figure PRINTS, never what unit it is in.
+    // A row divides only where the host declared `money.cents`; a name that
+    // ends in "Cents" is not a declaration, so 250000 is 250000 dollars.
+    expect(screen.getByText("$250,000.00")).toBeTruthy();
+  });
+
+  it("gives a code row the host's mono face", () => {
+    render(<KeyValue record={invoice} items={[{ key: "status", label: "Status", format: "code" }]} />);
+    expect(screen.getByText("past_due").getAttribute("style")).toContain("--vendo-mono-family");
+  });
+
   it("renders a slot's components against the record, not against a prop", () => {
     // The seam the cell slot exists for: the component names its FIELD and the
     // value arrives off RowContext, published by KeyValue.
@@ -59,6 +77,39 @@ describe("KeyValue", () => {
     const ruled = rows(true);
     expect(ruled[0]).toContain("border-bottom");
     expect(ruled[1]).not.toContain("border-bottom");
+  });
+
+  /** No `items` is "describe this record" — the same default a table's columns
+   *  have, for the one-record shape. A detail screen that names no fields is
+   *  asking for the record, not for an empty list. */
+  it("describes the whole record when it is given no items at all", () => {
+    render(<KeyValue record={{ number: "INV-9", status: "past_due" }} />);
+    expect(screen.getByText("Number")).toBeTruthy();
+    expect(screen.getByText("INV-9")).toBeTruthy();
+    expect(screen.getByText("Status")).toBeTruthy();
+  });
+});
+
+/** The host's own word for a field, on the shape a detail screen is made of.
+ *  A build's `$12.10` lives in exactly one place — a labelled field — and
+ *  `compute_cost` is 1210 with nothing in its name to say so. */
+describe("KeyValue — the format the HOST declared", () => {
+  const build = { branch: "feat/steps-brick", compute_cost: 1210, started: "2026-08-15 07:55" };
+
+  it("reads a declared minor-unit row in dollars", () => {
+    render(<KeyValue record={build} items={[{ key: "compute_cost", label: "Cost", semantic: "money.cents" }]} />);
+    expect(screen.getByText("$12.10")).toBeTruthy();
+    expect(screen.queryByText("1210")).toBeNull();
+  });
+
+  it("gives a declared code row the mono face, though it is nothing like a sha", () => {
+    render(<KeyValue record={build} items={[{ key: "branch", semantic: "code" }]} />);
+    expect(screen.getByText("feat/steps-brick").getAttribute("style")).toContain("--vendo-mono-family");
+  });
+
+  it("reads a declared date row as a date", () => {
+    render(<KeyValue record={build} items={[{ key: "started", semantic: "date.iso" }]} />);
+    expect(screen.getByText(/Aug 15, 2026/)).toBeTruthy();
   });
 });
 
@@ -167,5 +218,20 @@ describe("CodeBlock", () => {
   it("drops the chip when no language is named", () => {
     const { container } = render(<CodeBlock code="ok" />);
     expect(container.querySelector("span")).toBeNull();
+  });
+
+  it("scrolls a long line instead of widening the panel around it", () => {
+    const { container } = render(<CodeBlock code={"x".repeat(400)} />);
+    const block = container.querySelector('[data-kit="CodeBlock"]') as HTMLElement;
+    // The block asks for its longest line and accepts anything down to nothing:
+    // a track floored at 0. jsdom does no layout, so the browser half of this
+    // lives in the shot — but the floor is what the shot depends on.
+    expect(block.style.gridTemplateColumns).toBe("minmax(0, 1fr)");
+    expect(container.querySelector("pre")!.style.overflowX).toBe("auto");
+  });
+
+  it("still lets a caller override the layout it defaults to", () => {
+    const { container } = render(<CodeBlock code="ok" style={{ display: "block" }} />);
+    expect((container.querySelector('[data-kit="CodeBlock"]') as HTMLElement).style.display).toBe("block");
   });
 });

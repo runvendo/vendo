@@ -394,6 +394,16 @@ const componentScreenOf = (document: AppDocument): string | undefined => {
   return typeof text === "string" && text.trim() !== "" ? text : undefined;
 };
 
+/** The host's design rules as rubric lines — one per line of the block it wrote,
+ *  with a markdown bullet stripped so the rubric's own `- ` is not doubled.
+ *  Nothing, for a host that set none: the rubric section renders only when it has
+ *  lines, so a deployment without rules sends the reviewer the same prompt it
+ *  always sent. */
+const designRuleLines = (designRules?: string): string[] => (designRules ?? "")
+  .split("\n")
+  .map((line) => line.trim().replace(/^[-*]\s+/u, ""))
+  .filter((line) => line !== "");
+
 const createValidateDoor = (
   deps: Pick<AppsRuntimeContext, "config" | "caller" | "requireOwned" | "generationToolContext">,
 ): AppsRuntime["validate"] => {
@@ -432,10 +442,40 @@ const createValidateDoor = (
     // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
     // unchanged: silence, a refusal and a failed request all mean no findings.
     //
-    // `request` is empty because a verb call carries no user text — the checks
-    // that read it treat that as "no carve-out", which is the conservative
-    // direction.
+    // `request` is the PERSON's ask when the caller handed one over, and empty
+    // otherwise. Two of the reviewer's five things are written against it — a
+    // section nobody asked for, work quietly dropped — so a door that always
+    // passed "" was running those two rules against nothing. A bare verb call
+    // still carries no user text, and the checks that read it treat that as "no
+    // carve-out", which is the conservative direction.
+    //
+    // `input.viewport` travels the same way and for the same kind of reason: the
+    // reviewer judged a screen it could not see the SHAPE of. It read the source,
+    // which says what the screen might draw, and knew nothing about the surface —
+    // so a third table below a 900px fold, or a step nobody reaches without a
+    // click, read to it exactly like content on screen. Absent claims nothing and
+    // the prompt is unchanged.
+    const request = input.request ?? "";
     const plugged = config.checks ?? [];
+    /**
+     * The rubric the reviewer judges on: the packs' judgment rules, and THIS
+     * HOST'S OWN design rules after them.
+     *
+     * The rules reached the writer's brief and stopped there
+     * (`renderBriefingPack`'s `HOST DESIGN RULES:`), so the one thing that could
+     * enforce them was the writer remembering them — and `rubricSection`'s "ALSO
+     * REJECT anything that breaks one of these rules" rendered over an empty list
+     * on every deployment. They are a host's own sentences, which is exactly what
+     * a judgment rule is; the only reason they arrived by a different route is
+     * that they were written for a different reader.
+     *
+     * Appended, never woven in: a host rule can add a reason to reject and can
+     * never soften the five the reviewer already applies. A briefing that fails is
+     * silence, like every other way this door could not reach a rule — a rubric
+     * nobody could load must not be the reason a good screen dies.
+     */
+    const pack = await config.briefing?.(ctx).catch(() => undefined);
+    const rubric = [...judgmentRules(plugged), ...designRuleLines(pack?.designRules)];
     // A COMPONENT screen IS its `app.tsx`, so the gauntlet is its mechanical half
     // and the reviewer reads the file itself. Both run over the STORED screen,
     // which is the whole point of the row-scoped door — it judges what the person
@@ -468,19 +508,40 @@ const createValidateDoor = (
           reviewerCheck(
             deps,
             undefined,
-            judgmentRules(plugged),
-            reviewComponentScreenInput({ source: screen, queryResults: checked.queries ?? {} }),
+            rubric,
+            reviewComponentScreenInput({
+              source: screen,
+              queryResults: checked.queries ?? {},
+              // The paint stage 4 just took, which this door already holds and
+              // used to throw away — the one artifact that says what the screen
+              // DID rather than what it might do, and the only side on which
+              // "fetched but never shown" can be computed at all.
+              //
+              // The SURFACE is a separate fact and rides along only when the
+              // caller measured one: a fold cannot be judged against a frame
+              // nobody named, while what the paint left unshown is true at every
+              // size. So a deployment that cannot measure its surface still gets
+              // the leftovers, and is still shown no frame.
+              ...(checked.initialTree === undefined
+                ? {}
+                : {
+                  painted: {
+                    tree: checked.initialTree,
+                    ...(input.viewport === undefined ? {} : { viewport: input.viewport }),
+                  },
+                }),
+            }),
           ),
           ...plugged,
         ],
-      }).run({ document, request: "" });
+      }).run({ document, request });
       return { ok: !judged.some(({ severity }) => severity === "block"), findings: judged };
     }
     const findings = await createCheckingLayer({
       // The thorough door: the shared floor AND the reviewer. Off the
       // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-      checks: [screenTypesCheck(deps), reviewerCheck(deps, undefined, judgmentRules(plugged)), ...plugged],
-    }).run({ document, request: "" });
+      checks: [screenTypesCheck(deps), reviewerCheck(deps, undefined, rubric), ...plugged],
+    }).run({ document, request });
     return { ok: !findings.some(({ severity }) => severity === "block"), findings };
   };
 };

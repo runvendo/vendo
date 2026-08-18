@@ -19,7 +19,8 @@
  * The pieces: ./boot.ts runs the VM, ./vm-program.ts is what the VM runs,
  * ./preact-source.ts is the pinned Preact it runs it with, ./budget.ts is what
  * stops a screen that will not stop, ./flatten.ts turns a paint into addressable
- * nodes, ./types.ts is the vocabulary.
+ * nodes, ./press.ts activates what the paint drew to find the controls that do
+ * nothing, ./types.ts is the vocabulary.
  */
 export { bootScreen, warmScreenEngine, type ScreenEngineVariant } from "./boot.js";
 export {
@@ -32,6 +33,7 @@ export {
   type TurnLimit,
 } from "./budget.js";
 export { flattenTree } from "./flatten.js";
+export { pressControls } from "./press.js";
 export {
   isHandlerRef,
   SCREEN_FILE,
@@ -42,6 +44,7 @@ export {
   type FlatNode,
   type FlatTree,
   type HandlerRef,
+  type InertControl,
   type Intent,
   type NestedNode,
   type ScreenErrorKind,

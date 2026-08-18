@@ -88,6 +88,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
       <MapleNetWorthCard valueCents={cashflow.data.reduce((total, row) => total + row.in, 0)} series={[1, 2, 3]} initialRange="1M"/>
       <Card title="Detail" description="This period" tone="accent"><Divider/><Badge label="Live" tone="accent"/></Card>
     </Grid>
+    <SplitPane size={280}><Text text="Periods"/><Text text="This period"/></SplitPane>
     <DataTable rows={cashflow.data} sortBy="label asc" limit={20} searchable={true} paginate={10}
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>

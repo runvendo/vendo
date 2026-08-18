@@ -15,10 +15,11 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
+import type { SemanticToken } from "@vendoai/core";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat, formatDateTime, type ValueFormat } from "../format.js";
-import { readField, RowContext } from "../row.js";
-import { densityVars, font, hairline, microLabel, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
+import { fieldItems, readField, readValue, RowContext, semanticFormat } from "../row.js";
+import { densityVars, font, hairline, microLabel, mono, numeric, t, transitionFor, type KitDensity, type KitStyled } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -30,6 +31,10 @@ export interface DataTableColumn {
   label?: string;
   /** Value-tier format applied to every cell. */
   format?: ValueFormat;
+  /** What the HOST says this field is, copied off its tool's shape card
+   *  (`money.cents`, `date.iso`, `code`). It is the only thing besides `format`
+   *  that decides how the column reads and in what units. */
+  semantic?: SemanticToken;
   align?: "start" | "center" | "end";
   /** Kit elements rendered instead of the formatted text — once per row, with
    *  that row published on `RowContext` so the components inside can name their
@@ -40,8 +45,9 @@ export interface DataTableColumn {
 export interface DataTableProps extends KitStyled {
   /** Rows from a tool call. */
   rows: Array<Record<string, unknown>>;
-  /** Column descriptions; when omitted, inferred from the first row's keys. */
-  columns?: DataTableColumn[];
+  /** Column descriptions; a bare string is its key. Omitted, they are inferred
+   *  from the first row's keys. */
+  columns?: Array<DataTableColumn | string>;
   /** Initial sort, e.g. "dueDate asc" or "amountCents desc". */
   sortBy?: string;
   /** Hard cap on rows shown. */
@@ -102,7 +108,7 @@ function cellText(value: unknown, format: ValueFormat, compact: boolean): string
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn, compact: boolean): string {
   if (column.key === undefined) return "";
-  return cellText(readField(row, column.key), column.format ?? "text", compact) ?? "";
+  return cellText(readValue(row, { ...column, key: column.key }), column.format ?? "text", compact) ?? "";
 }
 
 /** The calendar year a date value lands in, read the way the cell shows it: a
@@ -175,14 +181,32 @@ export function DataTable(props: DataTableProps) {
     [rawRows],
   );
 
-  const columns = useMemo<DataTableColumn[]>(
-    () => props.columns ?? Object.keys(rows[0] ?? {}).map((key) => ({ key })),
+  // A column written as a bare key is the description it stands for, which is
+  // also the shape the inferred columns have always had.
+  const declared = useMemo<DataTableColumn[]>(
+    () => fieldItems<DataTableColumn>(props.columns ?? Object.keys(rows[0] ?? {})),
     [props.columns, rows],
   );
 
   const data = useMemo(
     () => (typeof limit === "number" && limit >= 0 ? rows.slice(0, limit) : rows),
     [rows, limit],
+  );
+
+  /** Every column, with the format the model left off filled in from the HOST's
+   *  declaration — the only thing that may fill it. Everything below reads
+   *  columns from HERE, so a declared format sorts, filters and folds exactly
+   *  like a written one. A column with its own `cell` is left alone: its slot
+   *  already decided how it reads. A column with neither prints its values as
+   *  they stand. */
+  const columns = useMemo<DataTableColumn[]>(
+    () =>
+      declared.map((col) =>
+        col.format === undefined && col.cell === undefined
+          ? { ...col, format: semanticFormat(col.semantic) }
+          : col,
+      ),
+    [declared],
   );
 
   const initialSorting = useMemo<SortingState>(() => {
@@ -219,7 +243,9 @@ export function DataTable(props: DataTableProps) {
           // No key, no accessor: tanstack's own `getCanSort` is `!!accessorFn`,
           // so an action column's header stops being click-to-sort by
           // construction, and its contents stay out of the search.
-          ...(col.key === undefined ? {} : { accessorFn: (row: Record<string, unknown>) => readField(row, col.key!) }),
+          ...(col.key === undefined
+            ? {}
+            : { accessorFn: (row: Record<string, unknown>) => readValue(row, { ...col, key: col.key! }) }),
           header: headerText(col),
           // A slot holds an ELEMENT, never a function (a function prop serializes
           // as a `$handler` door). The row it belongs to arrives on RowContext,
@@ -228,7 +254,9 @@ export function DataTable(props: DataTableProps) {
             if (col.cell !== undefined) return col.cell;
             const formatted = cellText(ctx.getValue(), col.format ?? "text", compact);
             if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
-            return formatted;
+            // The face rides on the VALUE, not the cell: a folded row's extra
+            // lines share this td and are prose.
+            return col.format === "code" ? <span style={mono}>{formatted}</span> : formatted;
           },
           // A dropdown lists the values that exist, so picking one means THIS
           // value — "includesString" here let a pick of "paid" list the "unpaid"

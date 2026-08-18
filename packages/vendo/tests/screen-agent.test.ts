@@ -44,6 +44,7 @@ import {
   textTurn,
   toolCallTurn,
   type ScriptedModel,
+  type StreamPart,
   type TestWorkspace,
 } from "../src/agent-doubles.test-util.js";
 
@@ -70,6 +71,53 @@ export default function Spending() {
 /** Not a TSX module at all, so the gauntlet's first stage refuses it — which is
  *  exactly what the seam declines to put on screen. */
 const BROKEN_APP = `not a document at all`;
+
+/** Two passages a repair can quote separately — the smallest screen that can
+ *  prove a batch of edits lands as one. */
+const TWO_TEXT_APP = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="This month" variant="heading" />
+      <Text text="Last month" />
+    </Stack>
+  );
+}
+`;
+
+/** The BLANK CELL class: a function written into an element slot. The gauntlet
+ *  refuses it, and its refusal already carries the corrected line — which is what
+ *  the gate applies rather than spending a turn asking for it. */
+const SLOT_FUNCTION_APP = `import { DataTable, Money } from "@vendo/screen";
+
+export default function Ledger() {
+  return (
+    <DataTable
+      rows={[{ id: "tr_1", amount: 4200 }]}
+      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
+    />
+  );
+}
+`;
+
+/** The OTHER class the gate can spell: a change handler written as the value's
+ *  own setter. A Kit control calls it with the event, so this screen stores
+ *  `{ target: { value } }` in `month` — and the checker prints the handler that
+ *  reads the value instead. */
+const CHANGE_HANDLER_APP = `import { useState } from "react";
+import { Select, Stack, Text } from "@vendo/screen";
+
+export default function Months() {
+  const [month, setMonth] = useState("jan");
+  return (
+    <Stack gap={8}>
+      <Select label="Month" options={["jan", "feb"]} onChange={setMonth} />
+      <Text text={month} />
+    </Stack>
+  );
+}
+`;
 
 /** A host read tool that DECLARES its result shape. It is EQUIPPED, so that shape
  *  reaches the model as the tool's own JSON Schema and the brief must not restate
@@ -121,11 +169,14 @@ const askUser: ToolDescriptor = { ...readTool("ask_user", "write") };
 const vendoMake: ToolDescriptor = { ...readTool("vendo_make") };
 
 interface Harness {
-  assemble(request: string): Promise<{ kind: string; why?: string }>;
+  assemble(request: string): Promise<{ kind: string; why?: string; say?: string }>;
   emitted: VendoViewPart[];
   workspace: TestWorkspace;
   model: ScriptedModel;
   invocations: Record<string, number>;
+  /** What each tool was CALLED WITH, in order — for the verbs whose arguments are
+   *  the thing under test (`validate` carries the person's ask). */
+  toolArgs: Record<string, Json[]>;
   /** The rows a PASSING screen earned — the floor's `delivered`, which is what
    *  `AppsRuntime.authoredScreen` fills in a composed deployment. */
   deliveredCalls: Array<{ appId: AppId; name: string }>;
@@ -151,10 +202,17 @@ function harness(options: {
 }): Harness {
   const guard = testGuard(options.guardPolicy);
   const descriptors = options.tools ?? [spendSummary, sendMoney, validate, askUser, vendoMake];
+  const toolArgs: Record<string, Json[]> = {};
   const registry = boundRegistry(
     Object.fromEntries(descriptors.map((descriptor) => [
       descriptor.name,
-      { descriptor, execute: (): Json => options.answers?.[descriptor.name] ?? { ok: true } },
+      {
+        descriptor,
+        execute: (args: Json): Json => {
+          (toolArgs[descriptor.name] ??= []).push(args);
+          return options.answers?.[descriptor.name] ?? { ok: true };
+        },
+      },
     ])),
     guard,
   );
@@ -214,6 +272,7 @@ function harness(options: {
     workspace,
     model,
     invocations: registry.invocations,
+    toolArgs,
     deliveredCalls,
     assemble: async (request: string) => await assembler.assemble(
       { appId: APP, request, onView: (part) => emitted.push(part) },
@@ -223,6 +282,26 @@ function harness(options: {
 }
 
 const saveApp = (content: string) => toolCallTurn(SAVE_APP_TOOL, { content });
+/** One edit hand call, however many passages it carries. */
+type Patch = { find: string; replace: string };
+const editApp = (edits: Patch[], id = "call_edit") => toolCallTurn(EDIT_APP_TOOL, { edits }, id);
+/** One turn that SAYS something and acts on it — the shape a provider really
+ *  sends when the model writes its closing words beside its last save. */
+const sayAndSave = (say: string, content: string): StreamPart[] => [
+  ...textTurn(say).slice(0, -1),
+  ...saveApp(content),
+];
+/** The same shape on the edit hand: the words and the patch in one breath. */
+const sayAndEdit = (say: string, edits: Patch[]): StreamPart[] => [
+  ...textTurn(say).slice(0, -1),
+  ...editApp(edits),
+];
+/** TWO hands in ONE step — a provider sends parallel tool calls, so this is a
+ *  shape the loop really receives, not a contrivance. */
+const bothAtOnce = (first: Patch[], second: Patch[]): StreamPart[] => [
+  ...editApp(first, "call_a").slice(0, -1),
+  ...editApp(second, "call_b"),
+];
 
 describe("the loadout (§4.2 — assembly tools only)", () => {
   it("equips the assembly verbs and the host's READ tools, and nothing else", async () => {
@@ -405,13 +484,75 @@ describe("assembly writes through the real path and the seam paints it", () => {
     await screen.assemble("show me my spending");
 
     // The note rides back as the save_app tool result, so it is in the next prompt.
-    // What it carries is the FLOOR's own refusal — the gauntlet's repair
-    // instruction, relayed verbatim — never a verdict from a gate that never ran.
+    // What it carries is the FLOOR's own refusal — the gauntlet's own findings,
+    // relayed verbatim — never a verdict from a gate that never ran.
     const note = JSON.stringify(screen.model.prompts[1] ?? "");
-    expect(note).toContain("`validate` does not pass");
     expect(note).toContain("does not compile as TSX");
     expect(note).not.toContain("validate found nothing to fix");
     expect(note).not.toContain("That save landed.");
+  });
+
+  /**
+   * The refusal spiral, closed at its most common turn: a function in an element
+   * slot is refused with the corrected line already computed off the AST
+   * (`screen-typecheck.ts`), and handing that back as prose cost a whole rewrite
+   * of a screen the person was already looking at — 13 seconds, then 8 more on the
+   * same error. The gate writes the line itself and lets the REAL gauntlet judge
+   * the result: nothing here is fixed that the checker did not already spell out.
+   */
+  it("writes the fix the checker already printed, and the screen paints on the same save", async () => {
+    const screen = harness({ turns: [saveApp(SLOT_FUNCTION_APP), textTurn("done")] });
+    const result = await screen.assemble("show me my ledger");
+
+    // The refusal never reached the model: one save_app call, one painted screen.
+    expect(result.kind).toBe("assembled");
+    expect(screen.emitted.map((part) => part.payload.streaming)).toEqual([false]);
+    expect(screen.deliveredCalls).toEqual([{ appId: APP, name: "Ledger" }]);
+    // The bytes in the workspace are the fixed ones — the element the checker
+    // named, and the import it needs, which the refused document never had.
+    const saved = await screen.workspace.readFile(`/user/apps/${APP}/${SCREEN_FILE}`);
+    expect(saved).toContain('cell: <Text field="amount"/>');
+    expect(saved).toContain('import { DataTable, Money, Text } from "@vendo/screen"');
+    // …and the model is TOLD, or its copy of the document is a lie the next
+    // `edit_app` quote would be written against.
+    const answer = JSON.stringify(screen.model.prompts[1] ?? "");
+    expect(answer).toContain("which was fixed for you");
+    expect(answer).toContain("cell: <Text field=");
+  });
+
+  /** The same door, for the change-handler class: the checker printed the whole
+   *  attribute, so the gate writes it rather than spending a turn asking for a
+   *  line it was already handed. */
+  it("writes the change handler the checker printed, on the same save", async () => {
+    const screen = harness({ turns: [saveApp(CHANGE_HANDLER_APP), textTurn("done")] });
+    const result = await screen.assemble("let me pick a month");
+
+    expect(result.kind).toBe("assembled");
+    expect(screen.deliveredCalls).toEqual([{ appId: APP, name: "Months" }]);
+    const saved = await screen.workspace.readFile(`/user/apps/${APP}/${SCREEN_FILE}`);
+    expect(saved).toContain("onChange={(e) => setMonth(e.target.value)}");
+    expect(saved).not.toContain("onChange={setMonth}");
+    const answer = JSON.stringify(screen.model.prompts[1] ?? "");
+    expect(answer).toContain("which was fixed for you");
+    expect(answer).toContain("onChange={(e) => setMonth(e.target.value)}");
+  });
+
+  it("falls back to a PATCH-ONLY refusal when its own fix does not paint either", async () => {
+    // Nothing here is of the one class the gate can spell, so the floor's own
+    // sentences travel — the FINDINGS, with the hand that fixes them named under
+    // them, and no word of the builder gate's own header. "Fix each of these, then
+    // write the file again" (`repairInstruction`) sat directly above the line that
+    // forbids exactly that, and the model obeyed the sentence it read first: a whole
+    // document re-emitted per refusal, which is what the 174-second tails were made
+    // of.
+    const screen = harness({ turns: [saveApp(BROKEN_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+    const note = JSON.stringify(screen.model.prompts[1] ?? "");
+    expect(note).toContain("does not compile as TSX");
+    expect(note).toContain("edit_app");
+    expect(note).toContain("Never save the whole document");
+    expect(note).not.toContain("write the file again");
+    expect(note).not.toContain("does not pass on the screen");
   });
 
   it("a commit that did not land is told to the model, not swallowed", async () => {
@@ -419,6 +560,84 @@ describe("assembly writes through the real path and the seam paints it", () => {
     const result = await screen.assemble("show me my spending");
     expect(screen.emitted).toHaveLength(0);
     expect(result.kind).toBe("unavailable");
+  });
+});
+
+describe("the edit hand (every edit in one call, all of them or none)", () => {
+  const APP_PATH = `/user/apps/${APP}/${SCREEN_FILE}`;
+
+  it("applies every edit in the call against the file as it stands, in ONE landing", async () => {
+    const screen = harness({
+      turns: [
+        saveApp(TWO_TEXT_APP),
+        editApp([
+          { find: '"This month"', replace: '"August"' },
+          { find: '"Last month"', replace: '"July"' },
+        ]),
+        textTurn("done"),
+      ],
+    });
+    await screen.assemble("show me my spending");
+
+    const saved = await screen.workspace.readFile(APP_PATH);
+    expect(saved).toContain('text="August"');
+    expect(saved).toContain('text="July"');
+    // One commit for the batch, so the person's screen repaints once rather than
+    // once per finding — and the second quote was written against the same bytes
+    // the first one was, which is the whole reason a batch is matched before any
+    // of it is spliced.
+    expect(screen.workspace.commits).toHaveLength(2);
+  });
+
+  it("names the edit that missed and changes NOTHING — not even the edits that matched", async () => {
+    const screen = harness({
+      turns: [
+        saveApp(TWO_TEXT_APP),
+        editApp([
+          { find: '"This month"', replace: '"August"' },
+          { find: '<Text text="Next month" />', replace: '<Text text="September" />' },
+        ]),
+        textTurn("done"),
+      ],
+    });
+    await screen.assemble("show me my spending");
+
+    // Untouched, and not even a commit: a half-applied batch would leave the model
+    // holding a document that no longer exists.
+    expect(await screen.workspace.readFile(APP_PATH)).toBe(TWO_TEXT_APP);
+    expect(screen.workspace.commits).toHaveLength(1);
+    // The refusal says WHICH edit — a model holding several cannot re-quote the
+    // right one otherwise — and echoes the file's real text at the divergence.
+    const note = JSON.stringify(screen.model.prompts[2] ?? "");
+    expect(note).toContain("Edit 2 of 2");
+    expect(note).toContain("Next month");
+    expect(note).toContain("NOTHING was changed");
+    expect(note).toContain("part company after");
+  });
+
+  /**
+   * The clobber, closed. Two edit calls in one step both read the file, both
+   * splice their own change into the bytes they read, and the second commit wins
+   * — so one of the two edits is silently gone while BOTH hands answer "That save
+   * landed" and the model has no way to tell from its own transcript.
+   */
+  it("lands two edits sent in the same step — the second does not throw the first away", async () => {
+    const screen = harness({
+      turns: [
+        saveApp(TWO_TEXT_APP),
+        bothAtOnce(
+          [{ find: '"This month"', replace: '"August"' }],
+          [{ find: '"Last month"', replace: '"July"' }],
+        ),
+        textTurn("done"),
+      ],
+    });
+    await screen.assemble("show me my spending");
+
+    const saved = await screen.workspace.readFile(APP_PATH);
+    expect(saved).toContain('text="August"');
+    expect(saved).toContain('text="July"');
+    expect(screen.workspace.commits).toHaveLength(3);
   });
 });
 
@@ -446,32 +665,243 @@ describe("the repair round the mandatory check triggers", () => {
     expect(screen.model.calls).toBe(2 + REPAIR_STEPS);
   });
 
-  it("tells the repair round the budget it actually has", async () => {
-    // The brief states the budget, and the repair round's is REPAIR_STEPS. It used
-    // to state SCREEN_STEPS on both drives, so a model given three steps was
-    // planning for ten.
+  it("tells the repair round the budget it actually has, and leaves the brief untouched", async () => {
+    // Two facts, and the second is why the first moved. The repair round's budget
+    // is REPAIR_STEPS — it once said SCREEN_STEPS on both drives, so a model given
+    // three steps was planning for ten. And the number now rides BEHIND the
+    // history: it used to be interpolated into the brief, which is the turn's
+    // cached prefix, so every repair round re-uploaded some sixteen thousand
+    // tokens to say `3` where it had said `10`.
     const screen = harness({
       turns: [saveApp(GOOD_APP), textTurn("done"), textTurn("fixed")],
       answers: findsSomething,
     });
     await screen.assemble("show me my spending");
 
-    expect(screen.model.systemPrompts[0] ?? "").toContain(`\`${SCREEN_STEPS}\` steps`);
-    const repair = screen.model.systemPrompts[2] ?? "";
+    expect(JSON.stringify(screen.model.prompts[0] ?? "")).toContain(`\`${SCREEN_STEPS}\` steps`);
+    const repair = JSON.stringify(screen.model.prompts[2] ?? "");
     expect(repair).toContain(`\`${REPAIR_STEPS}\` steps`);
     expect(repair).not.toContain(`\`${SCREEN_STEPS}\` steps`);
+    // Two budgets, one prefix: the brief is the same bytes on both drives.
+    expect(screen.model.systemPrompts[2]).toBe(screen.model.systemPrompts[0]);
   });
 
-  it("names the finding verbatim, with the document it must fix", async () => {
+  /** The reviewer used to queue BEHIND the closing words: it started only once the
+   *  whole drive had finished, so its model call waited on a turn that was writing
+   *  a sentence. It starts at the paint it judges now — same reviewer, same one
+   *  call, same repair round; only the moment it is asked has moved. */
+  it("is asked at the paint, not after the words — and its verdict is still acted on", async () => {
+    const screen = harness({
+      turns: [sayAndSave("Spending is on screen.", GOOD_APP), textTurn("fixed")],
+      answers: findsSomething,
+    });
+    await screen.assemble("show me my spending");
+
+    // Two calls: the save-and-say turn, then the repair round. No turn in between
+    // for the reviewer to have waited on.
+    expect(screen.model.calls).toBe(2);
+    expect(screen.invocations["validate"]).toBe(1);
+    expect(JSON.stringify(screen.model.prompts[1] ?? "")).toContain(FINDING);
+  });
+
+  /** The reviewer judges "sections that don't answer the ask" and "work quietly
+   *  dropped" against the person's own words, and the verb had no field to carry
+   *  them — so this gate asked for a judgement on an ask it never handed over, and
+   *  those two rules were dead text on every screen it ever judged. */
+  it("hands the reviewer the person's ask, verbatim", async () => {
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending by month");
+
+    expect(screen.toolArgs["validate"]).toEqual([{ appId: APP, request: "show me my spending by month" }]);
+  });
+
+  /** `ok` is "no blocker", and the ask rules and the host's own design rules are
+   *  graded `warn` for a person's eye — so a gate reading the verdict instead of
+   *  the findings spent the reviewer's model call and then changed nothing. */
+  it("repairs on a WARN too, in exactly one round", async () => {
+    const screen = harness({
+      turns: [
+        saveApp(GOOD_APP),
+        textTurn("done"),
+        // More turns than one repair round can spend, so a second round would show
+        // up as extra calls.
+        ...Array.from({ length: REPAIR_STEPS + 2 }, () => saveApp(GOOD_APP)),
+      ],
+      answers: {
+        validate: { ok: true, findings: [{ severity: "warn", message: "the ask named a monthly total; nothing on screen shows one" }] },
+      },
+    });
+    await screen.assemble("show me my spending by month");
+
+    // ONE judging call, and ONE repair round on top of the two turns that built
+    // the screen — never a second pass over the same verdict.
+    expect(screen.invocations["validate"]).toBe(1);
+    expect(screen.model.calls).toBe(2 + REPAIR_STEPS);
+    expect(JSON.stringify(screen.model.prompts[2] ?? "")).toContain("nothing on screen shows one");
+  });
+
+  /**
+   * THE VERDICT RIDES THE SAVE. The reviewer used to answer after the drive was
+   * already over: the closing save hung the loop up, the verdict was awaited, and
+   * a SECOND drive was spun that had to be handed the document back. Same one
+   * call and same one round now — but the findings come back inside the save's own
+   * tool result, so the fix is the next step of the drive that wrote the screen,
+   * with the document still in front of it.
+   */
+  it("hands the reviewer's findings back inside the closing save, and the fix lands on the next step", async () => {
+    const screen = harness({
+      turns: [
+        sayAndSave("Spending is on screen.", TWO_TEXT_APP),
+        editApp([{ find: '"This month"', replace: '"August"' }]),
+        textTurn("fixed"),
+      ],
+      answers: findsSomething,
+    });
+    await screen.assemble("show me my spending");
+
+    // The findings are part of the save's own answer — the message the model
+    // reads before its very next step.
+    const answer = JSON.stringify(screen.model.prompts[1] ?? "");
+    expect(answer).toContain("That save landed");
+    expect(answer).toContain(FINDING);
+    // …and nothing spun a second drive to carry them: no round in this run was
+    // ever handed the document back, because it never left the model's hands.
+    expect(JSON.stringify(screen.model.prompts)).not.toContain("This is the document you saved");
+    // The patch reached the screen the person is already looking at.
+    expect(await screen.workspace.readFile(`/user/apps/${APP}/${SCREEN_FILE}`)).toContain('text="August"');
+    expect(screen.invocations["validate"]).toBe(1);
+    expect(screen.model.calls).toBe(3);
+  });
+
+  it("judges ONCE, even when the repair patch speaks beside its own save", async () => {
+    // The repair is itself a save that paints and speaks, which is exactly the
+    // shape that summons the reviewer — so nothing but the run's own one-verdict
+    // flag stops a screen from being judged, repaired, judged, repaired.
+    const screen = harness({
+      turns: [
+        sayAndSave("Spending is on screen.", TWO_TEXT_APP),
+        sayAndEdit("Fixed the total.", [{ find: '"This month"', replace: '"August"' }]),
+        ...Array.from({ length: REPAIR_STEPS + 2 }, () => saveApp(TWO_TEXT_APP)),
+      ],
+      answers: findsSomething,
+    });
+    await screen.assemble("show me my spending");
+
+    expect(screen.invocations["validate"]).toBe(1);
+    // Two calls: the save that built it and the patch that fixed it. The patch
+    // hung up in its own turn, exactly as the first save would have on a clean
+    // verdict.
+    expect(screen.model.calls).toBe(2);
+  });
+
+  it("hangs up on a clean verdict, exactly as it always did", async () => {
+    const screen = harness({
+      turns: [sayAndSave("Spending is on screen.", GOOD_APP), textTurn("never asked for")],
+      answers: { validate: { ok: true, findings: [] } },
+    });
+    const result = await screen.assemble("show me my spending");
+
+    expect(result.say).toBe("Spending is on screen.");
+    expect(screen.invocations["validate"]).toBe(1);
+    // ONE call. Nothing to fix is no round, and no turn is spent saying so.
+    expect(screen.model.calls).toBe(1);
+  });
+
+  it("stays silent on an EMPTY verdict, exactly as it always did", async () => {
+    const screen = harness({
+      turns: [saveApp(GOOD_APP), textTurn("done"), textTurn("never asked for")],
+      answers: { validate: { ok: true, findings: [] } },
+    });
+    await screen.assemble("show me my spending");
+
+    // Two calls: the save and the closing words. Nothing to fix is no round.
+    expect(screen.model.calls).toBe(2);
+  });
+
+  it("names every finding verbatim, with the document it must fix and the hand that fixes it", async () => {
     const screen = harness({
       turns: [saveApp(GOOD_APP), textTurn("done"), textTurn("fixed")],
-      answers: findsSomething,
+      answers: {
+        validate: {
+          ok: false,
+          findings: [
+            { severity: "block", message: FINDING },
+            { severity: "warn", where: "line 3", message: "the ask named a monthly total; nothing shows one" },
+          ],
+        },
+      },
     });
     await screen.assemble("show me my spending");
     // The repair round's own first call — the drive after the review pass.
     const repair = JSON.stringify(screen.model.prompts[2] ?? "");
+    // Each finding, with its own locus: the reviewer's sentences are written to be
+    // repaired from, so they are the whole of what this round is told.
     expect(repair).toContain(FINDING);
+    expect(repair).toContain("line 3 the ask named a monthly total");
     expect(repair).toContain("This is the document you saved");
+    // …and the same treatment the save's own refusal gets, for the same reason: the
+    // patch hand, and none of the builder gate's "write the file again" above it.
+    expect(repair).toContain("edit_app");
+    expect(repair).toContain("Never save the whole document");
+    expect(repair).not.toContain("write the file again");
+    expect(repair).not.toContain("does not pass on the screen");
+  });
+});
+
+describe("the closing words ride the last save", () => {
+  /** Two model calls used to end every run that could have ended in one: the save,
+   *  then a turn whose only job was to say what had just been saved. A provider
+   *  can send prose and a tool call in the same message, so it does. */
+  it("takes the receipt from the save's own turn, and asks for no turn after it", async () => {
+    const screen = harness({ turns: [sayAndSave("Your ledger is up, with all 3 rows.", GOOD_APP)] });
+    const result = await screen.assemble("show me my spending");
+
+    expect(result.kind).toBe("assembled");
+    expect(result.say).toBe("Your ledger is up, with all 3 rows.");
+    // The whole point: ONE call. The scripted model has no second turn, and the run
+    // never asks for one.
+    expect(screen.model.calls).toBe(1);
+    expect(screen.emitted.map((part) => part.payload.streaming)).toEqual([false]);
+  });
+
+  it("still takes the words a run spoke on its own, when it spoke after acting", async () => {
+    // The merge is an instruction, not a requirement: a model that saves and then
+    // speaks is the run this loop has always had, and its receipt is unchanged.
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("Spending is on screen.")] });
+    const result = await screen.assemble("show me my spending");
+    expect(result.say).toBe("Spending is on screen.");
+    expect(screen.model.calls).toBe(2);
+  });
+});
+
+describe("what each turn thinks with", () => {
+  /**
+   * The screen is designed in ONE turn — step 0, where the whole document is
+   * written — and everything after it is a save, a patch, or the sentence about
+   * one. The provider's knob for that is `output_config.effort` (a thinking
+   * budget is a 400 on the models this runs on), and the loop's own per-step hook
+   * carries no provider options, so the seat itself is where it has to live.
+   */
+  it("leaves the write turn as configured and asks for LOW effort on every turn after it", async () => {
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+
+    // Nothing of this file's is on the write turn: a default it did not choose is
+    // the only honest "think as hard as you need to".
+    expect(screen.model.providerOptionsPerCall[0]?.["anthropic"]).toBeUndefined();
+    expect(screen.model.providerOptionsPerCall[1]?.["anthropic"]).toEqual({ effort: "low" });
+  });
+
+  it("spends the write turn once per run, so a repair round is all patch", async () => {
+    const screen = harness({
+      turns: [saveApp(GOOD_APP), textTurn("done"), textTurn("fixed")],
+      answers: { validate: { ok: false, findings: [{ severity: "block", message: "the total is wrong" }] } },
+    });
+    await screen.assemble("show me my spending");
+
+    // The repair drive starts a new turn, not a new run: it is a patch round from
+    // its first step, and the seat is already spent.
+    expect(screen.model.providerOptionsPerCall[2]?.["anthropic"]).toEqual({ effort: "low" });
   });
 });
 

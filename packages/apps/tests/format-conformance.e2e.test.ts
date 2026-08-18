@@ -53,7 +53,8 @@ const VOCABULARY = [
   "CodeBlock", "Combobox", "DataTable", "DatePicker", "DateRange", "DateTime", "Disclaimer", "Divider", "DonutChart",
   "EmptyState", "EnumBadge", "Form", "Grid", "Icon", "Input", "KeyValue", "LineChart", "Link", "Menu", "Modal",
   "Money", "Num", "Percent", "Progress", "Radio", "Row", "SegmentedControl", "Select", "Sheet", "Slider",
-  "Sparkline", "Stack", "Stat", "Steps", "Surface", "Switch", "TableRow", "Tabs", "Text", "Textarea", "Timeline", "Toast",
+  "Sparkline", "SplitPane", "Stack", "Stat", "Steps", "Surface", "Switch", "TableRow", "Tabs", "Text", "Textarea",
+  "Timeline", "Toast",
   "Tooltip",
 ];
 

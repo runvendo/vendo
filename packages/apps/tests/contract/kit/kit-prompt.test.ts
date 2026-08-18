@@ -79,4 +79,27 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
     const taught = [...prompt.matchAll(/^## <(\w+)>$/gm)].map((m) => m[1]);
     expect(taught.sort()).toEqual(KIT_SPECS.map((s) => s.name).sort());
   });
+
+  /**
+   * Where a field's units are settled: the two INSTRUCTIONS a writer can give —
+   * divide at the read site, or declare what the host says the field is. The
+   * preamble also taught the reader's old name rule ("a `*_cents` key is money
+   * in minor units, an ISO stamp is a date, a sha is mono"); the reader no
+   * longer has one, so teaching it would promise a conversion nothing performs.
+   */
+  it("teaches the two instruction paths for money, and no name-shaped rule", () => {
+    const prompt = kitPrompt();
+    expect(prompt).toContain("value={invoice.amount_cents / 100}");
+    expect(prompt).toContain('semantic:"money.cents"');
+    expect(prompt).not.toContain("`*_cents` key is money in minor units");
+    expect(prompt).not.toContain("a sha is mono");
+  });
+
+  // A prop the preamble forbade and the spec now declares is a prop taught two
+  // ways at once.
+  it("shows a Select paired with the screen state it reads", () => {
+    const prompt = kitPrompt({ only: ["Select"] });
+    expect(prompt).toContain("value={clientId}");
+    expect(prompt).not.toContain("No `value` prop on Select");
+  });
 });

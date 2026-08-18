@@ -114,6 +114,33 @@ describe("the writers' design brief", () => {
     expect(screen.model.systemPrompts[0] ?? "").not.toContain("HOST DESIGN RULES:");
   });
 
+  it("makes the writer put every value the ask names in TEXT on the screen", async () => {
+    // Judged 2026-08-17: screens that answered the shape of an ask while quietly
+    // dropping a value it named by name. The writer is the cheapest place to catch
+    // that — it is holding the ask — and the rule is what the reviewer grades on
+    // afterwards, so the two halves say the same thing.
+    //
+    // ONE sentence of it. Writing the list out and reading it back was a ritual
+    // the model performed in prose and the screen never felt, and the reviewer
+    // carries the ask itself now (`judgeScreen`), so the checklist was being paid
+    // for twice.
+    const screen = harness();
+    await screen.assemble();
+    const brief = (screen.model.systemPrompts[0] ?? "").replace(/\s+/g, " ");
+    expect(brief).toContain("READABLE AS TEXT on the screen");
+    expect(brief).not.toContain("take the ask apart");
+    expect(brief).not.toContain("Read the list again");
+  });
+
+  it("never names the app id — the hands take none, and the brief is a cached prefix", async () => {
+    // `save_app` and `edit_app` have no `appId` argument and no path argument, so
+    // the sentence naming this app taught the model nothing it could act on — and
+    // it was interpolated into the head of a ~16k-token cached prefix, which made
+    // the prefix a different one for every app.
+    const screen = harness();
+    await screen.assemble();
+    expect(screen.model.systemPrompts[0] ?? "").not.toContain(APP);
+  });
 });
 
 /** Everything a measured surface adds to the brief, byte for byte. One constant,
