@@ -38,7 +38,7 @@ afterEach(async () => {
     "the console was down exactly when the reply went out". */
 interface FakeConsole {
   baseUrl: string;
-  sent: Array<{ conversationId: string; text: string }>;
+  sent: Array<{ conversationId: string; text: string; final?: boolean }>;
   attempts: number;
   failSends: boolean;
 }
@@ -66,7 +66,7 @@ async function fakeConsole(): Promise<FakeConsole> {
           res.end(JSON.stringify({ error: { code: "unavailable", message: "carrier down" } }));
           return;
         }
-        state.sent.push(JSON.parse(body) as { conversationId: string; text: string });
+        state.sent.push(JSON.parse(body) as { conversationId: string; text: string; final?: boolean });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -156,7 +156,7 @@ interface Run {
 }
 
 describe.sequential("how a texted reply arrives", () => {
-  it("sends each text the moment its divider passes, and never sends the divider", async () => {
+  it("sends each text the moment its divider passes, and marks only the last one final", async () => {
     // THE POINT: a reply the model wrote as two texts has to LAND as two texts,
     // the first one while the second is still being written. Buffering the whole
     // turn and sending one message at the end is the behaviour this replaces —
@@ -197,12 +197,19 @@ describe.sequential("how a texted reply arrives", () => {
     // the second — this is the whole latency win, and it cannot be faked by a
     // buffered implementation.
     await waitFor(() => cloud.sent.length === 2);
-    expect(cloud.sent[1]).toEqual({ conversationId: CONVERSATION, text: "On it." });
+    // …and it says so: more of this reply is still being written, which is what
+    // lets the other side keep the typing indicator up instead of guessing.
+    expect(cloud.sent[1]).toEqual({ conversationId: CONVERSATION, text: "On it.", final: false });
 
     release();
 
     await waitFor(() => cloud.sent.length === 3);
-    expect(cloud.sent[2]).toEqual({ conversationId: CONVERSATION, text: "You spent $412 on food." });
+    // The last text carries the opposite claim — including here, where the model
+    // signed off with a divider and no newline after it, so the cut that
+    // delivered this text is only recognized once the stream has ended.
+    expect(cloud.sent[2]).toEqual({ conversationId: CONVERSATION, text: "You spent $412 on food.", final: true });
+    // The link ack is one whole message and nothing follows it.
+    expect(cloud.sent[0]?.final).toBe(true);
     // The divider is a cut point, not content: it is stripped from what goes
     // out, and a trailing one adds no fourth text of its own.
     await waitFor(() => warmed);

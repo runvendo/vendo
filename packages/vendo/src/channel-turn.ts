@@ -352,18 +352,30 @@ function frameText(frame: string): string {
  * lines anywhere, and a `---` that is still being typed might yet turn into
  * `----`. Answers how many texts went out, so the caller can tell a silent turn
  * from a delivered one.
+ *
+ * `final` is the same fact read the other way: a cut made while the stream is
+ * still open has more of the reply behind it, and one made after the reader is
+ * done does not. It cannot be decided at the divider itself — the segment goes
+ * out the moment its divider passes, and what follows may be a tool call that
+ * takes three seconds or nothing at all — so the end of the stream is what
+ * settles it, which is also why a reply signed off with a divider still marks
+ * its last text: that cut is only recognized once the stream has ended.
  */
-async function streamTexts(response: Response, send: (text: string) => Promise<void>): Promise<number> {
+async function streamTexts(
+  response: Response,
+  send: (text: string, final: boolean) => Promise<void>,
+): Promise<number> {
   if (response.body === null) return 0;
   let segment = "";
   let line = "";
   let sent = 0;
+  let ended = false;
   const flush = async (): Promise<void> => {
     const text = segment.trim();
     segment = "";
     if (text === "") return;
     sent += 1;
-    await send(text);
+    await send(text, ended);
   };
   const feed = async (delta: string): Promise<void> => {
     line += delta;
@@ -380,7 +392,10 @@ async function streamTexts(response: Response, send: (text: string) => Promise<v
   let buffer = "";
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      ended = true;
+      break;
+    }
     buffer += decoder.decode(value, { stream: true });
     for (let cut = buffer.indexOf("\n\n"); cut !== -1; cut = buffer.indexOf("\n\n")) {
       await feed(frameText(buffer.slice(0, cut)));
@@ -466,8 +481,12 @@ export async function runChannelTurn(
     channelLink: { channel: "text", linkedAt: link.linkedAt ?? new Date().toISOString() },
     ...(memberships === undefined ? {} : { memberships }),
   };
-  const send = (text: string): Promise<void> =>
-    deps.channel.send({ conversationId: event.conversationId, text });
+  // Every text this function sends by hand is the turn's last word: a card and a
+  // grant-set ask are questions the conversation then waits on, and the two set
+  // receipts end the turn. Only `streamTexts` has a mid-reply cut to declare, so
+  // it is the only caller that passes the flag.
+  const send = (text: string, final = true): Promise<void> =>
+    deps.channel.send({ conversationId: event.conversationId, text, final });
 
   const answer = event.text.trim();
   if (YES.test(answer) || NO.test(answer)) {
