@@ -30,7 +30,8 @@ import { createStore, hostedStore, storeFiles, type VendoStore } from "@vendoai/
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { declareAutomation, type OnOptions } from "./automations.js";
-import { startRun, type AgentRun, type RunOptions } from "./away.js";
+import { startRun, type RunOptions } from "./away.js";
+import { startChat, type ChatOptions, type Turn } from "./turn.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
 import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
@@ -94,20 +95,27 @@ export interface AgentConfig {
 export interface VendoAgent {
   readonly name: string;
   /**
-   * ONE lane per shape of caller. `respond` answers a person: one turn, an
-   * AI-SDK UI-message-stream `Response` to return from your route, with the
-   * conversation's id on `x-vendo-thread-id`. `run` answers code: no screen, a
-   * report at the end.
+   * ONE turn of a conversation — the answer, not a stream. Bare, the agent talks
+   * as itself; `as` names the user it is acting for. Venue "chat", presence
+   * "present", so it sees the whole present-user tool surface — and a call the
+   * guard wants a person for ENDS the turn as `interrupted` rather than blocking
+   * on it, with `resume()` to carry on once they answer.
+   */
+  chat(message: string, options?: ChatOptions): Turn;
+  /**
+   * `respond` answers a person over HTTP: one turn, an AI-SDK UI-message-stream
+   * `Response` to return from your route, with the conversation's id on
+   * `x-vendo-thread-id`.
    *
    * It is exactly `session(subject, options)` followed by `stream(message)` —
    * reach for `session()` when you want the object (approval events, several
    * turns on one thread), and this when you want the Response.
    */
   respond(subject: string, message: string | UIMessage, options?: RespondOptions): Promise<Response>;
-  /** One unattended run: no screen, an {@link AgentRun} whose report says what
-   *  happened. Venue "automation", presence "away", non-interactive — so a tool
-   *  the guard wants a person for parks, and `refs.approvals` is who to ask. */
-  run<T = never>(task: string, options?: RunOptions<T>): AgentRun<T>;
+  /** One unattended run: no screen, the same {@link Turn} `chat` answers with.
+   *  Venue "automation", presence "away" — so every ask parks and a run that
+   *  needed consent answers `interrupted`, carrying the cards to answer. */
+  run<T = void>(task: string, options?: RunOptions<T>): Turn<T>;
   /**
    * Declare an automation this agent runs unattended. A bare string is a cron
    * expression; the other four shapes are `{ every }`, `{ at }`, `{ event }` and
@@ -381,6 +389,7 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const built: VendoAgent = {
     name: config.name,
+    chat: (message, options) => startChat(deps, message, options),
     async respond(subject, message, options = {}) {
       await requireModel();
       const session = await createSession(deps, subject, options);

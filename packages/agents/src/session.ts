@@ -131,7 +131,7 @@ export interface SessionDeps {
   doorReady?: Promise<void>;
 }
 
-const toHeaderRecord = (
+export const toHeaderRecord = (
   headers: Record<string, string> | Headers | undefined,
 ): Record<string, string> | undefined => {
   if (headers === undefined) return undefined;
