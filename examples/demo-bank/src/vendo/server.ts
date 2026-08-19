@@ -10,6 +10,9 @@ import { authSecret, primaryMapleUser, resolveMapleSubject } from "@/server/user
 import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
 import { namedHarness } from "./proof-harness";
+// Written by `vendo sync` (the `prebuild`/`predev` step) and gitignored, so it
+// exists before anything imports it.
+import { remixWiring } from "../../.vendo/generated/remix-wiring";
 import { mapleRegistry } from "./registry";
 import { mapleRoutes } from "./routes";
 
@@ -137,6 +140,10 @@ export const vendo = createVendo({
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
+  // The ported slots' holes, so the checks floor types a ported screen against
+  // the same names the renderer paints it by. Without this the floor refuses
+  // every port with "@vendo/screen has no exported member 'AreaChart'".
+  remixWiring,
   // The same route map <VendoRoot> gives the provider — one registry, both sides.
   routes: mapleRoutes,
   // The Maple voice (03 §3) — rides the agent prompt every turn.
