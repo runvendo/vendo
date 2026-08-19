@@ -64,6 +64,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "agents",
   "sweep",
   "toolOutputCap",
+  "uploadMaxBytes",
   "maxInitialTools",
   "loadout",
   "apps",

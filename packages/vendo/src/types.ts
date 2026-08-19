@@ -417,6 +417,11 @@ export interface CreateVendoConfig {
       bridge, and the connector-discovery registry's own search results, and a
       harness cannot reach two of those three. */
   toolOutputCap?: number;
+  /** What one browser upload may carry through the drop door (`POST /files`),
+      in bytes. Default UPLOAD_MAX_BYTES (5 MiB). A DOOR cap, not a storage cap:
+      `vendo.putUserFile` is a trusted server caller and is bounded by whatever
+      backs `files:` instead. */
+  uploadMaxBytes?: number;
   /** ENG-252 — cap on the uncurated initial tool loadout; the rest stay
       discoverable via `find_tools`. Defaults to the agent block's
       DEFAULT_MAX_INITIAL_TOOLS. A discovery-rail knob, and the rail is built

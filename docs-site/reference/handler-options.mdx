@@ -46,6 +46,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `agents` | More agents built by `agent()`, registered by name so an automation they declared with `.on()` fires through them. Registration only; two agents sharing a name refuse to compose |
 | `sweep` | TTL-sweep cadence for expired parked calls and stranded approvals. See [below](#sweep) |
 | `toolOutputCap` | How much of one tool result reaches the model, in characters. Default `32000`; `0` disables |
+| `uploadMaxBytes` | What one browser upload may carry through `POST /files`, in bytes. Default `5242880` (5 MiB). A door cap, not a storage cap — `vendo.putUserFile` is bounded by whatever backs `files:` |
 | `maxInitialTools` | Cap on the uncurated initial tool loadout. Default `128`; the rest stay discoverable via `find_tools` |
 | `loadout` | Explicit curated initial loadout, by tool name. Names that do not exist are dropped |
 | `apps` | `false` unmounts app generation entirely. See [below](#apps) |
