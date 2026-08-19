@@ -33,6 +33,7 @@ import { declareAutomation, type OnOptions } from "./automations.js";
 import { startRun, type RunOptions } from "./away.js";
 import { startChat, type ChatOptions, type Turn } from "./turn.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
+import { agentHandler, type HandlerOptions } from "./handler.js";
 import { withEgress, type EgressConfig } from "./egress.js";
 import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
 import type { SystemPromptHook } from "./prompt.js";
@@ -134,6 +135,13 @@ export interface VendoAgent {
    */
   on(when: When, task: string, options?: OnOptions): void;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
+  /**
+   * This whole agent over HTTP, as ONE fetch handler for the host to mount —
+   * the chat turn, the thread lifecycle, and the door and permission planes
+   * below. See {@link agentHandler}, which is the same thing for a caller
+   * holding the options rather than the agent.
+   */
+  handler(options: HandlerOptions): (request: Request) => Promise<Response>;
   /**
    * This agent's MCP door, present exactly when its harness thinks outside this
    * process (`requires.toolDoor`). A library cannot add a route to the host's
@@ -398,6 +406,7 @@ export function agent(config: AgentConfig): VendoAgent {
       return session.stream(message, options.signal === undefined ? {} : { signal: options.signal });
     },
     run: (task, options) => startRun(deps, task, options),
+    handler: (options) => agentHandler(built, options),
     on: (when, task, options) => declareAutomation(built, when, task, options),
     async session(subject, options) {
       await requireModel();

@@ -18,7 +18,6 @@ import {
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
-  lastAssistantMessageIsCompleteWithApprovalResponses,
   type UIMessage,
 } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -76,10 +75,6 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
     ...(threadId === undefined ? {} : { id: threadId }),
     messages: [],
     transport,
-    // The parked turn resumes SERVER-side once every requested approval has an
-    // answer: the SDK sends the decided messages back, and the agent re-dispatches
-    // the approved call. That is why `resume` below only has to record answers.
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   const { setMessages } = chat;
@@ -119,19 +114,39 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
     return pending;
   }, [chat.messages]);
 
-  const { addToolApprovalResponse } = chat;
-  /** Answer what the turn is waiting on, keyed by {@link Interruption.id}. */
+  /**
+   * Answer what the turn is waiting on, keyed by {@link Interruption.id}.
+   *
+   * The decision goes to the mount's PERMISSION wire, not to the SDK's local
+   * approval channel, because the guard's decision is the thing that unblocks
+   * the turn: a parked call is sitting on a waiter that only
+   * `guard.approvals.decide` resolves. Flipping the part in the browser instead
+   * changes what the page draws and nothing about what the agent is doing, and
+   * the turn goes on to expire unanswered — which is exactly what the browser
+   * seam test caught. Once the guard is told, the turn carries on and its own
+   * stream reports the call's outcome, so nothing here has to patch the
+   * transcript.
+   *
+   * Two requests at most: the wire decides a BATCH, so the ids are grouped by
+   * verdict rather than answered one at a time.
+   */
   const resume = useCallback(
     async (decisions: Decisions): Promise<void> => {
-      for (const [id, decision] of Object.entries(decisions)) {
+      for (const approve of [true, false]) {
+        const verdict = approve ? "approve" : "deny";
         // v1 mints the approval arm only — `input` is wire-defined and unemitted
         // (packages/core/src/turn-result.ts) — so an `{ answers }` decision has
         // no interruption here to answer.
-        if (decision !== "approve" && decision !== "deny") continue;
-        await addToolApprovalResponse({ id, approved: decision === "approve" });
+        const ids = Object.entries(decisions).filter(([, decision]) => decision === verdict).map(([id]) => id);
+        if (ids.length === 0) continue;
+        await globalThis.fetch(`${base}/approvals/decide`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids, decision: { approve } }),
+        });
       }
     },
-    [addToolApprovalResponse],
+    [base],
   );
 
   return {
