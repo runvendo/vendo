@@ -10,6 +10,27 @@ import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
 
 Your agent picks the right setup for your repo. You confirm it.
 
+## Just want an agent?
+
+The smallest thing Vendo does needs no CLI, no init, and nothing moved around.
+Install one package and write one call:
+
+```ts
+import { agent } from "@vendoai/agents";
+
+const support = agent({
+  name: "support",
+  instructions: "Answer in the product's voice; never invent account numbers.",
+});
+
+console.log((await support.chat("Where is order A-1001?")).text);
+```
+
+Give it tools, put it on a route, or hand it a schedule from there:
+[backend quickstart](/backend/quickstart). Everything below is the rest of
+Vendo — the embedded surface and the generated screens — and `init` is how you
+get there.
+
 ## Quickstart
 
 No agent handy? Do it by hand. Three steps, about five minutes.

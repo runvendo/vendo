@@ -1,103 +1,67 @@
 ---
 title: "In your backend"
 sidebarTitle: "Quickstart"
-description: "Compose a governed agent with agent(), answer a waiting person with respond(), and drive unattended work with run(). The UI stays yours."
+description: "One package, one agent() call, one tool. Answer in a line with chat(), put the same agent on HTTP with handler(), and drive unattended work with run()."
 ---
 
-A governed agent in any Node backend. The UI stays yours.
-
-`vendo init` here is the same setup command as the [main quickstart](/): it
-reads your repo before it asks anything, then writes the wiring. Step 1 runs
-it.
+A governed agent in any Node backend, from an empty project. One package, no
+CLI, no `init`, no files moved around. The UI stays yours.
 
 <Steps>
 
 <Step title="Compose the agent">
 
-Install, sign in, and write one `agent()` call at module scope. Only `name` is
-required.
+Install one package and write one `agent()` call at module scope. Only `name`
+is required.
 
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/agents @vendoai/vendo ai@^6
-npx vendoai@latest login
-npx vendoai@latest init
+npm install @vendoai/agents ai@^6 zod
 ```
 
 ```bash pnpm
-pnpm add @vendoai/agents @vendoai/vendo ai@^6
-pnpm dlx vendoai@latest login
-pnpm dlx vendoai@latest init
+pnpm add @vendoai/agents ai@^6 zod
 ```
 
 </CodeGroup>
 
-`@vendoai/vendo` carries none of the code on this page. It is there because
-every file init writes imports `@vendoai/vendo/*`, and the `predev` and
-`prebuild` hooks init adds to your `package.json` run the `vendo` binary that
-package installs.
-
-`vendo login` mints a `VENDO_API_KEY` into `.env.local` and never prints it.
-Already have one in `.env.local`? Skip that line — init merges the key into its
-own run, uses it as it is, and never asks.
-`vendo init` writes `.vendo/tools.json`, your API read into tool definitions
-with a schema and a dispatch binding on each one. Extraction grades only what
-the protocol proves; `vendo sync` grades the rest, and until it runs an
-ungraded tool asks before every call.
-
-Answer the first question with **Through my own agent loop (AI SDK / Mastra)**.
-A backend agent is your own loop, and that answer is what tells `vendo doctor`
-to skip the mounted-UI checks — a `<VendoProvider>` and a visible surface —
-that a backend with no UI of Vendo's has nothing to satisfy.
-
-```ts lib/agent.ts focus={3-7}
-import { agent, api } from "@vendoai/agents";
+```ts lib/agent.ts focus={4-16}
+import { agent, tool } from "@vendoai/agents";
+import { z } from "zod";
 
 export const support = agent({
   name: "support",
   instructions: "Answer in the product's voice; never invent account numbers.",
-  tools: [api()],
+  tools: [
+    tool({
+      name: "order_status",
+      description: "Look up one order by id and return its shipping status and ETA.",
+      risk: "read",
+      inputSchema: z.object({ orderId: z.string() }),
+      execute: ({ orderId }) => lookupOrder(orderId),
+    }),
+  ],
 });
 ```
 
-<Note>
-  **`VENDO_BASE_URL` has to be set before the first turn — init asked you for
-  it.** `api()` tools are not in-process calls — each one is a real HTTP request
-  back at your own API, and `api()` reads this variable to know where to send
-  it. There is no Vendo route mounted on this path for it to learn the origin
-  from, so unset means the first tool call throws `Cannot execute … set
-  VENDO_BASE_URL, or pass baseUrl`.
+`description` is required, and it is the only thing the model reads when it
+decides whether to call the tool. `risk` is `read`, `write`, or `destructive`,
+and your label is final — leave it off and the tool is ungraded, which the
+guard asks about every time.
 
-  An interactive `vendo init` asks where your app runs in dev and writes the
-  answer for you, so the line is usually already there:
-
-  ```bash .env.local
-  VENDO_BASE_URL=http://localhost:3000
-  ```
-
-  Add it by hand (with the port your own server listens on) if init ran
-  unattended — a `--yes` or piped run never guesses an origin. In production
-  you set the same variable in your hosting platform's environment settings, to
-  the deployment's full public URL, path prefix included; `api({ baseUrl })`
-  overrides it, and `VENDO_HOST_API_URL` is the answer when your API answers on
-  another origin ([environment variables](/reference/environment-variables)).
-</Note>
-
-Skipping `vendo login`? Then nothing resolves a model for you, and the first
-turn throws. Install `@ai-sdk/anthropic@^3` and pass your own beside `name`:
-`model: anthropic("claude-sonnet-4-6")`. The store falls back to embedded on
-its own.
+Nothing else is configured. Left unset, the agent thinks in this process, and
+threads and audit rows go to an embedded database that needs no setup.
 
 <CardGroup cols={4}>
   <Card title="tools">
-    Your API, read by `api()` from `.vendo/tools.json`.
+    `tool()` for your own code, `api()` for your existing HTTP API.
   </Card>
   <Card title="guard">
     Risk grade, approval, and an audit row on every call.
   </Card>
   <Card title="store">
-    Threads and audit rows in your Cloud store.
+    Threads and audit rows. Embedded, your Postgres, or Cloud.
   </Card>
   <Card title="harness">
     `vendo()` by default, `claudeCode()` on request.
@@ -105,42 +69,78 @@ its own.
 </CardGroup>
 
 <Note>
-  No umbrella call and no client in your code. The composed agent has exactly
-  two verbs, and steps 2 and 3 are both of them.
+  **Already have an HTTP API?** `vendo init` reads it into tool definitions and
+  `tools: [api()]` hands the whole thing to the agent, graded, in one line. It
+  is an addition to this page, not a prerequisite for it — see
+  [API tools](/capabilities/api-tools).
 </Note>
 
 </Step>
 
-<Step title="Answer a person">
+<Step title="Ask it something">
 
-`respond()` is one turn for someone who is waiting. It hands back a streamed
-`Response` you return from the route unchanged.
+`chat()` is one turn and the answer, with no route and no stream in the way.
 
-```ts app/api/support/route.ts focus={13-17}
+```ts
+const turn = await support.chat("Where is order A-1001?");
+
+console.log(turn.text);
+```
+
+That is the whole hello world. The agent needs a model to think with, and the
+shortest way to give it one is `npx vendoai@latest login`, which mints a
+`VENDO_API_KEY` into `.env.local` and never prints it. To bring your own
+instead, install `@ai-sdk/anthropic@^3` and pass it beside `name`:
+`model: anthropic("claude-sonnet-4-6")`. Either way the credential is read at
+the first turn, never at build time — see
+[Model credentials](/production/model-credentials).
+
+`turn` is a `TurnResult`: read `status` once and everything you then touch is
+there. `ok` carries the typed `output`; `interrupted` carries the
+`interruptions` a person has to answer and a `resume()` that carries on from
+where the turn parked. [Converse](/backend/converse) covers both.
+
+</Step>
+
+<Step title="Put it on HTTP">
+
+`handler()` is the whole agent as one fetch handler — the chat turn, the thread
+list and transcript, and the approvals wire. Mount it on one catch-all route.
+
+```ts app/api/agent/[[...path]]/route.ts focus={4-11}
 import { support } from "@/lib/agent";
 import { auth } from "@/lib/auth";
 
-export async function POST(req: Request) {
-  const user = await auth(req);
-  if (user === null) return new Response("unauthorized", { status: 401 });
+const handle = support.handler({
+  basePath: "/api/agent",
+  // Your session, read per request. `null` answers 401.
+  resolveUser: async (request) => {
+    const user = await auth(request);
+    return user === null ? null : { subject: user.id };
+  },
+});
 
-  const { message, threadId } = (await req.json()) as {
-    message: string;
-    threadId?: string;
-  };
-
-  return support.respond(user.id, message, {
-    ...(threadId === undefined ? {} : { threadId }),
-    headers: req.headers,
-    user: { id: user.id },
-  });
-}
+export { handle as GET, handle as POST, handle as DELETE };
 ```
 
+In the browser, `useVendoChat` from `@vendoai/ui` speaks to that mount and
+keeps nothing of its own:
+
+```tsx app/support/page.tsx focus={3}
+import { useVendoChat } from "@vendoai/ui";
+
+const { messages, sendMessage, interruptions, resume } = useVendoChat({
+  api: "/api/agent",
+});
+```
+
+Render `messages` however your app renders anything else, and `interruptions`
+as approve/deny cards that call `resume`.
+
 <Note>
-  `headers: req.headers` forwards the caller's own credentials, so the tool
-  call reaches your API as the person signed in. The reply carries
-  `x-vendo-thread-id`; hand it back to continue the thread.
+  Prefer to own the route yourself? `respond()` is one turn as a streamed
+  `Response` you return unchanged, and it is not going anywhere.
+  [Converse](/backend/converse) has both.
 </Note>
 
 </Step>
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
 <Step title="Run unattended work">
 
 `run()` is work nobody is watching. The same object is awaitable and iterable,
-so `run.events` is the live feed and awaiting it is the report.
+so `run.events` is the live feed and awaiting it is the result.
 
 ```ts app/api/reports/route.ts focus={10,15-18,29}
 import { THREAD_ID_HEADER } from "@vendoai/agents";
@@ -168,9 +168,9 @@ export async function POST(req: Request) {
       for await (const event of run.events) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       }
-      const report = await run;
+      const result = await run;
       controller.enqueue(
-        encoder.encode(`event: report\ndata: ${JSON.stringify(report)}\n\n`),
+        encoder.encode(`event: result\ndata: ${JSON.stringify(result)}\n\n`),
       );
       controller.close();
     },
@@ -193,8 +193,8 @@ export async function POST(req: Request) {
 
 Away, the menu is already narrower: destructive and ungraded tools are never
 offered, and a read or write call still needs authority a person captured while
-they were present — a grant. Without one the call is denied and its approval id
-lands in `refs.approvals` for someone to answer later. [Run](/backend/run)
+they were present — a grant. Without one the call parks, and the run comes back
+`interrupted` carrying the cards for someone to answer. [Run](/backend/run)
 covers what an unattended run may touch.
 
 </Step>
@@ -222,7 +222,7 @@ right.
         <div><span style={{ color: "#4fc6b1" }}>tool-result</span> <span style={{ color: "#c6c1de" }}>38 rows</span></div>
         <div><span style={{ color: "#e6e2f5" }}>text</span> <span style={{ color: "#fff" }}>Three invoices are overdue.</span></div>
         <div style={{ marginTop: 8, paddingTop: 9, borderTop: "1px solid #2a2542" }}>
-          <span style={{ color: "#4fc6b1" }}>report</span> <span style={{ color: "#8ff0dc" }}>ok · 4 tool calls</span>
+          <span style={{ color: "#4fc6b1" }}>result</span> <span style={{ color: "#8ff0dc" }}>ok · 4 tool calls</span>
         </div>
       </div>
     </div>
@@ -273,22 +273,27 @@ right.
 
 ## Where to go next
 
-Both verbs in depth, and the surface you build around them.
+Every verb in depth, and the surface you build around them.
 
 <CardGroup cols={3}>
   <Card title="Converse" href="/backend/converse">
     Threads, forwarded credentials, and approvals with a person present.
 
-    `support.respond(user.id, message)`
+    `support.chat(message)`
   </Card>
   <Card title="Run" href="/backend/run">
     Typed output from a schema, plus the usage you meter on.
 
-    `await support.run(task, { as })`
+    `await support.run(task)`
   </Card>
   <Card title="Your own surface" href="/backend/your-own-surface">
-    Forward the event feed over SSE and end on the report.
+    Forward the event feed over SSE and end on the result.
 
     `for await (const e of run.events)`
   </Card>
 </CardGroup>
+
+The whole of this page as a project you can run is
+[`examples/standalone-agent`](https://github.com/runvendo/vendo/tree/main/examples/standalone-agent):
+one `agent()`, one `tool()`, `chat()` in the terminal, and `handler()` on a
+Node server.

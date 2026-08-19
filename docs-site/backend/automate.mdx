@@ -4,7 +4,7 @@ sidebarTitle: "Automate — .on()"
 description: ".on() declares an automation in code. Consent is the code itself, and every deploy reconciles what your source says against what is stored."
 ---
 
-`respond()` answers a person and `run()` answers your code. `.on()` answers
+`chat()` answers a person and `run()` answers your code. `.on()` answers
 neither: it declares work that should happen **without a caller at all**.
 
 ```ts lib/agent.ts
@@ -81,6 +81,12 @@ import { support, billing } from "@/lib/agent";
 
 export const vendo = createVendo({ agents: [support, billing] });
 ```
+
+{/* TODO(restack): `serve({ agents: [support] })` — the standalone lifecycle that
+    arms `.on()` without `createVendo` — is PR7 and is NOT on this branch; it is
+    not exported from `@vendoai/agents` here, so it is deliberately undocumented
+    rather than guessed at. Once PR7 lands, this section needs the standalone
+    half: declarations are inert until `serve()`. Verify at restack. */}
 
 `vendo.agent` — the embed's own composed agent — is registered for you, and
 `.on()` works on it too. Two agents claiming one name throw at startup. A record
