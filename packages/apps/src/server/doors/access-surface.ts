@@ -7,13 +7,14 @@
  * `config.appAccess` is set unconditionally from the composed store, so the
  * seam is always present under `createVendo`.
  */
-import { VendoError } from "@vendoai/core";
+import { VendoError, encodeGrantPrincipal, parseGrantPrincipal, type AppId, type RunContext } from "@vendoai/core";
+import { APPS_COLLECTION } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
 
-export type AccessSurfaceDeps = Pick<AppsRuntimeContext, "config" | "holds">;
+export type AccessSurfaceDeps = Pick<AppsRuntimeContext, "config" | "engine" | "holds">;
 
-export const createAccessSurface = ({ config, holds }: AccessSurfaceDeps): AppsRuntime["access"] => {
+export const createAccessSurface = ({ config, engine, holds }: AccessSurfaceDeps): AppsRuntime["access"] => {
   /** §9.4's posture in one place: what the caller cannot VIEW stays not-found;
       a proven viewer denied a stronger action gets forbidden. */
   const require = async (appId: Parameters<AppsRuntime["access"]["list"]>[0], ctx: Parameters<AppsRuntime["access"]["list"]>[1], level: "viewer" | "owner") => {
@@ -23,6 +24,37 @@ export const createAccessSurface = ({ config, holds }: AccessSurfaceDeps): AppsR
     }
     throw new VendoError("not-found", `app not found: ${appId}`);
   };
+  /**
+   * "Share implies promote" (ruled 2026-08-01, pinned at
+   * conformance/app-access.ts:181-201). Every create path stamps an app with the
+   * PERSON, and core refuses a tenant grant on a still-personal app — the app's
+   * documents live under the holder's own `/user` mount, so a share that skipped
+   * the move would hand the recipient an empty app. So the share moves it first,
+   * in `lifecycle.promote`'s one transaction.
+   *
+   * ORDER IS THE WHOLE POINT. The move restamps the row's subject as the org id,
+   * which retires the promoter's ownership fast path (access-checks.ts:65) — so
+   * an owner who is not a tenant ADMIN would lose the app she just shared. Her
+   * own owner grant is therefore minted BEFORE the flip, the deliberate
+   * exception pinned at store helpers/app-access.ts:186-188.
+   *
+   * With no `ops` (a store offering neither its own ops nor a SQL handle) there
+   * is nothing to move with, and core's own refusal below is the honest answer.
+   */
+  const promoteBeforeSharing = async (appId: AppId, principal: string, ctx: RunContext) => {
+    const target = parseGrantPrincipal(principal);
+    if (target === undefined || target.kind === "user" || config.ops === undefined) return;
+    const record = await engine.get(APPS_COLLECTION, appId);
+    if (record?.refs?.["subject"] === target.org) return;
+    await config.appAccess!.grant(
+      ctx,
+      appId,
+      encodeGrantPrincipal({ kind: "user", subject: ctx.principal.subject }),
+      "owner",
+    );
+    await config.ops.lifecycle.promote(appId, target.org);
+  };
+
   const access: AppsRuntime["access"] = {
     async levelFor(appId, ctx) {
       if (config.appAccess === undefined) {
@@ -40,6 +72,7 @@ export const createAccessSurface = ({ config, holds }: AccessSurfaceDeps): AppsR
     },
     async grant(appId, principal, level, ctx) {
       await require(appId, ctx, "owner");
+      await promoteBeforeSharing(appId, principal, ctx);
       await config.appAccess!.grant(ctx, appId, principal, level);
       return await access.list(appId, ctx);
     },
