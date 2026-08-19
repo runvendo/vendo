@@ -147,17 +147,28 @@ export function createUser(deps: AgentDeps, subject: string, options: UserOption
     chat: (message, callOptions) => startChat(deps, message, { ...callOptions, ...durable }),
 
     // `createTurns` verbatim — ONE implementation of list and resume, with this
-    // subject bound. A resume's authority is the RESUMING call's alone
-    // (interruptions.ts), which is why `headers` and `context` stay its own
-    // options and the facade binds neither into it.
+    // subject bound.
     turns: {
       list: async (listOptions) => {
         await migrated();
         return turns.list(listOptions);
       },
+      // The bound context rides a resume too. A resume's authority is the
+      // RESUMING call's alone (interruptions.ts), and this IS the resuming
+      // call's: the facade's standing context is alive right now, where the
+      // parked request's — which that rule is about, and which is still never
+      // replayed — is over. Without it a guard rule keyed on `tenantId` would
+      // decide the resumed turn differently from the chat turn that parked it,
+      // with nothing in the API to hint why. A per-call context wins over the
+      // bound one; HEADERS are absent here and always will be, because the
+      // facade holds none to carry.
       resume: async (turnId, decisions, resumeOptions) => {
         await migrated();
-        return turns.resume(turnId, decisions, resumeOptions);
+        const context = { ...durable.context, ...resumeOptions?.context };
+        return turns.resume(turnId, decisions, {
+          ...resumeOptions,
+          ...(Object.keys(context).length === 0 ? {} : { context }),
+        });
       },
     },
 

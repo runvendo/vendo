@@ -62,16 +62,23 @@ const speaker = () => defineHarness({
   },
 });
 
+/** What the approved call was handed when it finally ran. */
+interface Ran {
+  count: number;
+  context: Record<string, unknown> | undefined;
+}
+
 /** Ungraded/destructive is the one thing a guard with no rules at all still
  *  wants a person for — how a turn parks without a rule set standing in for the
  *  guard (interruptions.test.ts uses the same tool for the same reason). */
-const refundTool = (ran: { count: number }) => tool({
+const refundTool = (ran: Ran) => tool({
   name: "refund",
   description: "Refund an invoice",
   risk: "destructive",
   inputSchema: { type: "object" },
-  execute: () => {
+  execute: (_input, ctx: RunContext) => {
     ran.count += 1;
+    ran.context = ctx.context;
     return { refunded: true };
   },
 });
@@ -165,7 +172,7 @@ describe("a user's own conversations", () => {
 
 describe("a user's own parked turns", () => {
   it("are the ones createTurns lists, and only this user can answer them", async () => {
-    const ran = { count: 0 };
+    const ran: Ran = { count: 0, context: undefined };
     const support = agent({
       name: "support",
       harness: refunder(),
@@ -193,6 +200,33 @@ describe("a user's own parked turns", () => {
     // Hers runs the exact call she was asked about, once.
     expect(await dana.turns.resume(asked.turnId, decisions)).toMatchObject({ status: "ok", turnId: asked.turnId });
     expect(ran.count).toBe(1);
+  }, 30_000);
+
+  it("run in the context the facade is bound to, unless the resuming call names its own", async () => {
+    const ran: Ran = { count: 0, context: undefined };
+    const support = agent({
+      name: "support",
+      harness: refunder(),
+      tools: [refundTool(ran)],
+      store: freshStore(),
+    });
+    const user = support.forUser("u_dana", { context: { tenantId: "t_1" } });
+
+    // The bound context is the RESUMING caller's own standing context, alive at
+    // the moment of the resume — so the call the person approved runs in the
+    // tenant that parked it, not in none at all.
+    const first = await interrupted(user.chat("Refund invoice 7."));
+    await user.turns.resume(first.turnId, { [first.interruptions[0]!.id]: "approve" });
+    expect(ran.context).toMatchObject({ tenantId: "t_1" });
+
+    // And the resuming call still gets the last word.
+    const second = await interrupted(user.chat("Refund invoice 8."));
+    await user.turns.resume(
+      second.turnId,
+      { [second.interruptions[0]!.id]: "approve" },
+      { context: { tenantId: "t_2" } },
+    );
+    expect(ran.context).toMatchObject({ tenantId: "t_2" });
   }, 30_000);
 });
 
