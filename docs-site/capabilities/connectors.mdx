@@ -116,3 +116,19 @@ The resolver receives `principal`, `presence` (`present` or `away`), and `grant`
 </Warning>
 
 An MCP connector with a resolver also keeps one protocol session per subject, so a server that binds auth to the session can never mix two users up.
+
+## Which layer holds the credential
+
+Three separate things can put a credential on a call, and two of them are this page.
+
+| Layer | Who sets it up | Whose credential runs the call |
+| --- | --- | --- |
+| A connector's static `headers` | You, once, at boot | Yours — the whole deployment shares it |
+| A connector's [headers resolver](#one-credential-per-user) | You, once, at boot | Whatever you hand back for that principal |
+| [Connected accounts](/capabilities/connected-accounts) | Each user, through one OAuth popup | Theirs — the broker holds it and runs the call |
+
+The resolver is the per-user path for the connectors on this page: `openApiConnector` and `mcpConnector` both take one, it runs on every call with the acting principal in hand, and what it returns is that call's headers. So a host can send a different token for every user without a broker in the way.
+
+<Warning>
+  **[Tenant connectors](/capabilities/tenant-connectors) have no per-user path in this release.** The token an org pastes at registration is vaulted once for that org and rides static headers, so every member of that org calls with the same credential. The resolver above is not reachable from a tenant registration.
+</Warning>

@@ -113,8 +113,22 @@ it.
 Ask for a dashboard of a spreadsheet and the agent builds an app, copying what
 it needs — the rows of a table become the app's own saved items.
 
+Saved items are the app's **own** storage, not a second window onto the drawer.
+An app keeps only the collections it declares, each one apart from every other
+app's, and the agent is what reads and writes them. The drawer is untouched by
+any of it — the agent can list and read a user's files, and has no tool that
+writes one.
+
 That copy is a **snapshot, not a live link**. The app does not read the user's
 files afterwards, and nothing re-reads them on its behalf.
+
+Say a user drops `sales-2026.csv` — eleven rows, one per month through November
+— and asks for a dashboard. The agent builds one over those eleven. In December
+they upload `sales-2026.csv` again, now twelve rows: the drawer's copy is
+replaced, and the dashboard still holds the eleven it was built from. It holds
+them until the person asks for a refresh. The agent then reads the new file,
+rewrites the app's saved items to the twelve, and answers in words — the file
+was replaced, the app updated. What changed is the app and what it has saved.
 
 <Note>
   **Refresh is the agent's job, never a background sync.** Send a newer

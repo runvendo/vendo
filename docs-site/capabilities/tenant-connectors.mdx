@@ -68,6 +68,92 @@ await vendo.tenantConnectors.register({
 });
 ```
 
+## How you wire it
+
+The screen is yours and so is the route behind it. Vendo supplies the registration API and nothing else — who may administer an org is a question your own auth answers.
+
+Start with a form that has no `org` field, because the org is not the browser's to name:
+
+```tsx app/settings/connectors/page.tsx
+export default function AddConnector() {
+  return (
+    <form action="/api/tenant-connectors" method="post">
+      <input name="name" placeholder="billing" required />
+      <select name="kind">
+        <option value="mcp">MCP server</option>
+        <option value="openapi">OpenAPI spec</option>
+      </select>
+      <input name="url" placeholder="https://mcp.acme.example/sse" />
+      <textarea name="spec" placeholder="Paste an OpenAPI document" />
+      <input name="token" type="password" placeholder="Paste the token" />
+      <button type="submit">Add</button>
+    </form>
+  );
+}
+```
+
+The route behind it does three things, in this order: authorize the caller with your own auth, read the org off the session, then register.
+
+```ts app/api/tenant-connectors/route.ts
+import { auth } from "@/auth";
+import { vendo } from "@/vendo";
+
+export async function POST(request: Request) {
+  // Your auth, not ours: Vendo never decides who may administer an org.
+  const session = await auth();
+  if (!session?.user.orgAdmin) return new Response("forbidden", { status: 403 });
+
+  // The org is a fact about the session.
+  const org = session.user.orgId;
+
+  const form = await request.formData();
+  const url = form.get("url");
+  const spec = form.get("spec");
+  const token = form.get("token");
+
+  const result = await vendo.tenantConnectors.register({
+    org,
+    name: String(form.get("name")),
+    kind: form.get("kind") === "openapi" ? "openapi" : "mcp",
+    ...(url ? { url: String(url) } : {}),
+    ...(spec ? { spec: String(spec) } : {}),
+    ...(token ? { token: String(token) } : {}),
+  });
+
+  if (result.status === "error") {
+    return Response.json({ code: result.error.code, message: result.error.message }, { status: 400 });
+  }
+  return Response.json({ tools: result.tools.map((tool) => tool.name) });
+}
+```
+
+Render both branches. A refusal is the other half of this API: the org pasted a URL that does not answer, or a spec that is not usable, and the admin who pasted it is the only person who can fix either.
+
+<Warning>
+  **Take `org` from the session, never from the request body.** A body field any
+  signed-in user can set lets that user register a connector against an org they
+  do not belong to — the token they paste is then vaulted under that org and
+  handed to its members on their next request.
+</Warning>
+
+Nothing binds until your deployment asserts memberships: a registration reaches only a request whose `memberships` seam names the org that owns it.
+
+```ts app/api/vendo/[...vendo]/route.ts
+import { createVendo } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+
+export const vendo = createVendo({
+  auth: authJs({
+    memberships: async ({ subject }) => {
+      const rows = await db.membership.findMany({ where: { userId: subject } });
+      return rows.map((row) => ({ org: row.orgId }));
+    },
+  }),
+});
+```
+
+See [Orgs & memberships](/users-orgs/orgs-and-memberships) for the rest of that seam.
+
 ## Who sees what
 
 Visibility follows the orgs your host asserts for the request — the same `memberships` seam the rest of Vendo reads. A run that asserts `acme` is served a registry carrying your tools plus Acme's; a run that asserts nothing is served the shared registry, unchanged.
