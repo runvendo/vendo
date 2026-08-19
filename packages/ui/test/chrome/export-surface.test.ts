@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import * as chrome from "../../src/chrome/index.js";
 
 // Shelf-core Task 1 guard: the thread refactor (vendo-thread.tsx →
@@ -145,10 +146,21 @@ const packageDir = process.cwd(); // packages/ui
 const require = createRequire(join(packageDir, "package.json"));
 const tsc = require.resolve("typescript/bin/tsc");
 
-const fixtures: string[] = [];
-afterEach(() => {
-  for (const path of fixtures.splice(0)) rmSync(path, { force: true });
-});
+// Scratch files live OUTSIDE the package tree, and that is load-bearing rather
+// than tidiness. `packages/actions`' repo-wide guard (tests/sync/
+// protocol-facts.test.ts) lists every *.ts under packages/ and then reads each
+// one, so a fixture written into packages/ui and deleted a moment later made
+// that read die with ENOENT — a test in another package failing for no reason
+// of its own. Only `ai-dual` runs every package on one runner in one tree, so
+// it was the only job where the two could overlap, which made it a ~1-in-8
+// mystery that reddened unrelated PRs. One temp dir per worker also retires the
+// pid and random suffix the old names needed to stay unique in a shared dir.
+const scratch = mkdtempSync(join(tmpdir(), "vendo-chrome-surface-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+// The fixture imports the chrome entry from wherever it now sits.
+const chromeEntry = relative(scratch, join(packageDir, "src/chrome/index.js"));
+let written = 0;
 
 // AWAITED, never sync: each tsc spawn below takes ~30s, and `execFileSync` spent
 // that time blocking the vitest worker's event loop. birpc hard-codes a 60s RPC
@@ -161,9 +173,8 @@ const execFileAsync = promisify(execFile);
 /** Type-check a fixture that `import type`s `names` from the chrome entry.
  *  Returns tsc's combined output on failure, or null when it exits clean. */
 async function typecheckImports(names: string[]): Promise<string | null> {
-  const fixturePath = join(packageDir, `.chrome-surface.${process.pid}.${Math.random().toString(36).slice(2)}.ts`);
-  fixtures.push(fixturePath);
-  writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "./src/chrome/index.js";\n`);
+  const fixturePath = join(scratch, `surface-${written++}.ts`);
+  writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "${chromeEntry}";\n`);
   try {
     await execFileAsync(
       process.execPath,
@@ -199,4 +210,11 @@ describe("@vendoai/ui/chrome export surface", () => {
     expect(failure).not.toBeNull();
     expect(failure).toContain("TS2305");
   }, 120_000);
+
+  // The suites that read this repo's sources treat packages/ as immutable. This
+  // one writes files to do its job, so where it writes them is a contract with
+  // every one of them, not a private detail.
+  it("writes its scratch fixtures outside the package tree", () => {
+    expect(scratch.startsWith(packageDir)).toBe(false);
+  });
 });
