@@ -45,15 +45,24 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
    * a vocabulary would fail here the moment the two disagreed. The literal beside
    * it is what makes a CHANGED enum go red rather than silently re-render — the
    * catalog is the model's whole idea of this prop, so its vocabulary moves
-   * deliberately. A chart's axis token is the enum this is measured on because it
-   * is the LAST format token in the Kit: an axis tick is computed host-side off a
-   * numeric scale, so the chart is the one place still told what its figures mean.
+   * deliberately. A Button's `variant` is the enum this is measured on now that
+   * the charts' axis tokens are gone: their `format` was the last format token in
+   * the Kit, and it is a function the screen writes rather than a word it picks.
    */
   it("renders a prop's type from its own schema, enum values and all", () => {
-    const format = kitSpec("LineChart")!.props["format"]!.schema as z.ZodEnum<[string, ...string[]]>;
-    const fromSchema = format.options.map((value) => JSON.stringify(value)).join("|");
-    expect(entry("LineChart")).toContain(`\`format: ${fromSchema}\``);
-    expect(fromSchema).toBe('"money"|"date"|"datetime"|"time"|"number"|"duration"|"text"');
+    const variant = kitSpec("Button")!.props["variant"]!.schema as z.ZodEnum<[string, ...string[]]>;
+    const fromSchema = variant.options.map((value) => JSON.stringify(value)).join("|");
+    expect(entry("Button")).toContain(`\`variant: ${fromSchema}\``);
+    expect(fromSchema).toBe('"primary"|"secondary"|"danger"');
+  });
+
+  /** A FORMATTER prints as `fn`, not as `element`: it is a function the model
+   *  writes, and calling it an element would send it composing a component where a
+   *  chart wants one finished string. The tokens it replaced printed as an enum. */
+  it("offers a chart's formatter as a function, never as a token or an element", () => {
+    expect(entry("DonutChart")).toContain("`format: fn`");
+    expect(entry("LineChart")).toContain("`xFormat: fn`");
+    expect(entry("DonutChart")).not.toContain('"money"');
   });
 
   /** The shapes a name cannot carry: an object gives its FIELD names (the worked
@@ -188,6 +197,13 @@ describe("catalogPrompt() — the whole catalog, one entry per component", () =>
    * average at which a 55-brick kit still clears 32,000 — and the ~7 characters of
    * slack per brick are the whole margin left, so the next capability pays for
    * itself in words cut.
+   *
+   * And the next capability DID: the charts' `format` tokens became the screen's
+   * own per-row functions, which costs each chart a slot line the prop list cannot
+   * carry (the arity is the teaching). 512.6 → 519.8, paid for by cutting the three
+   * chart summaries back and by dropping from every new slot doc the `(row) =>`
+   * fragment its worked example already shows. The bound did not move; 0.2
+   * characters a brick is what is left of the margin.
    */
   it("stays under the section-per-brick catalog, with room for the 55-brick kit", () => {
     const prompt = catalogPrompt();

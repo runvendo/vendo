@@ -3,11 +3,13 @@
  *
  * The value-formatting tier is gone: a screen formats its own figures with
  * `Intl`, which the VM bridges (`genui/component/vm-program.ts`), so nothing here
- * is model-facing any more. What is left serves the two places a displayed value
- * never passes through the model's code — a chart's axis ticks, computed
- * host-side off a numeric scale, and the chrome's own rendering of tool
- * arguments — plus the total text coercion every container uses to turn an
- * absent field into a designed placeholder.
+ * is model-facing any more — the charts were the last holdout, and their `format`
+ * tokens are now the screen's own per-row functions (`charts/sanitize.tsx`).
+ * What is left serves the three places a displayed value never passes through the
+ * model's code at all: the chrome's own rendering of tool arguments, the digit
+ * grouping a chart falls back to on an axis the screen cannot reach, one form
+ * control's own affordance (DateRange) — plus the total text coercion every
+ * container uses to turn an absent field into a designed placeholder.
  *
  * Every formatter is still total: bad data (NaN, Infinity, unparseable dates)
  * returns `null`, never `$NaN` on an axis.
@@ -30,7 +32,8 @@ const FALLBACK_INTL: KitIntl = { currency: "USD", locale: "en-US" };
 
 /**
  * Ambient, because the Kit's formatters are PURE FUNCTIONS, not components:
- * `applyFormat` runs inside every chart's axis and the chrome's humanizer. React
+ * `formatNum` runs inside every chart's axis and `formatMoney` inside the
+ * chrome's humanizer. React
  * context cannot reach those call sites, so a host that bills in rupees would
  * otherwise be stuck with the hardcoded "$" no matter what its tool semantics
  * declare.
@@ -145,7 +148,15 @@ export interface NumOptions {
   locale?: string;
 }
 
-/** Format a plain number with thousands grouping. Returns `null` if non-finite. */
+/**
+ * Format a plain number with thousands grouping. Returns `null` if non-finite.
+ *
+ * A CHART AXIS is what this is left for inside the Kit, and it is the one figure
+ * a screen's own formatter cannot reach: recharts invents an axis tick off the
+ * scale, so it is a number the screen never held a row of. Grouping is all the
+ * Kit will do to one — 285000 reads "285,000" and never "$285,000", because what
+ * the number MEANS is the screen's to say and the chart is not told.
+ */
 export function formatNum(value: number | undefined, options: NumOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
   const text = new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
@@ -154,44 +165,6 @@ export function formatNum(value: number | undefined, options: NumOptions = {}): 
     minimumFractionDigits: options.minimumFractionDigits,
   }).format(value);
   return options.unit === undefined ? text : `${text} ${options.unit}`;
-}
-
-/** The duration units, largest first, and the seconds each one holds. */
-const DURATION_UNITS: ReadonlyArray<readonly [string, number]> = [
-  ["d", 86_400], ["h", 3_600], ["m", 60], ["s", 1],
-];
-
-/**
- * A count of SECONDS as a duration: `268` → `"4m 28s"`, `46` → `"0m 46s"`,
- * `9480` → `"2h 38m"`. The two largest non-zero units and no more — "1h 5m 3s"
- * is three figures where a person reads one — with the MINUTE as the floor, so a
- * sub-minute count reads as a duration and not as the raw second count the host
- * stored. Under half a second is `"0s"`, the one figure with no floor to carry.
- *
- * A CHART AXIS is all this is left for, and it is the axis case exactly: an axis
- * of build times is a numeric scale the host ticks itself, so the chart has to be
- * able to say what its numbers mean. A screen that prints a duration in its own
- * markup hand-rolls it, and the `unit`/`signed` adjectives went with the column
- * tokens that carried them — a chart's `format` is a bare word with nowhere to
- * write one, so a series stored in minutes multiplies where its data is prepared.
- *
- * Hand-rolled rather than `Intl.DurationFormat`: it is absent from engines this
- * still ships on, which is the same engine drift `MINOR_UNITS` exists for.
- */
-export function formatDuration(seconds: number | undefined): string | null {
-  if (!isRenderableNumber(seconds)) return null;
-  let rest = Math.round(Math.abs(seconds));
-  const parts: string[] = [];
-  for (const [suffix, size] of DURATION_UNITS) {
-    const units = Math.floor(rest / size);
-    rest -= units * size;
-    // The minute is the floor a lone second count is written against: "0m 38s",
-    // never the bare "38s" that reads as the host's own field.
-    if (units > 0 || (suffix === "m" && parts.length === 0 && rest > 0)) parts.push(`${units}${suffix}`);
-    if (parts.length === 2) break;
-  }
-  if (parts.length === 0) return "0s";
-  return `${seconds < 0 ? "-" : ""}${parts.join(" ")}`;
 }
 
 export type DateInput = string | number | Date;
@@ -241,7 +214,7 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
  * written for a reader ("Aug 15, 7:42 AM"), which the caller shows as it stands.
  *
  * KNOWN COST of the value tier's removal: this totality now covers only the
- * places the KIT still formats — a chart's axis, the chrome. A screen writes
+ * places the KIT still formats — the chrome, and DateRange's own range. A screen writes
  * `new Date(row.due).toLocaleDateString(…)` in its own code, and an unparseable
  * stamp there renders the literal "Invalid Date" where the tier used to paint a
  * muted dash. Accepted: the dash was worth less than one road for every figure.
@@ -285,33 +258,24 @@ export function formatDateTime(value: DateInput | undefined, options: DateTimeOp
 }
 
 /**
- * A CHART AXIS's format union — THE ONE EXCEPTION to the value tier's death, and
- * the only `format` token left in the Kit.
+ * What is left of the format union: `text`, and the one control that still reads
+ * a `date` for itself.
  *
- * Everywhere else a displayed value passes through the model's own code, so
- * everywhere else formats itself with `Intl`. An axis tick cannot: the labels are
- * computed HOST-SIDE off a numeric scale, from numbers the screen never holds a
- * value of, so the chart is the one place that has to be told what its figures
- * MEAN rather than being handed text. `duration` lives here for exactly that
- * reason — an axis of build times ticks in seconds the host reduces itself.
- *
- * `text` is the union's floor: the total coercion the containers still read
- * through it, which is what turns an absent field into a designed placeholder.
+ * There is NO model-facing token any more. The chart tokens were the last of them
+ * — `money`, `number`, `duration`, `datetime`, `time` all died with the charts'
+ * own `format`, which is a function the screen writes now — so this union is
+ * purely internal, and nothing outside `@vendoai/ui` names a member of it.
+ * `text` is its floor: the total coercion the containers read through it, which is
+ * what turns an absent field into a designed placeholder. `date` is `DateRange`'s
+ * own affordance — a date picker draws the range it holds, and the range is the
+ * control's state rather than a figure the screen handed it.
  */
-export type ValueFormat = "money" | "date" | "datetime" | "time" | "number" | "duration" | "text";
+export type ValueFormat = "date" | "text";
 
 /** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
 export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
   switch (format) {
-    case "money":
-      return typeof value === "number" ? formatMoney(value) : null;
-    case "number":
-      return typeof value === "number" ? formatNum(value) : null;
-    case "duration":
-      return typeof value === "number" ? formatDuration(value) : null;
     case "date":
-    case "datetime":
-    case "time":
       return typeof value === "string" || typeof value === "number" || value instanceof Date
         ? formatDateTime(value as DateInput, { mode: format })
         : null;

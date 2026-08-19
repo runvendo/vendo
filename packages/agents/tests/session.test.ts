@@ -222,6 +222,7 @@ describe("session", () => {
     let seen: RunContext | undefined;
     const probe = tool({
       name: "probe",
+      description: "Probe the run context",
       risk: "read",
       inputSchema: { type: "object" },
       execute: (_input, ctx) => {
@@ -324,6 +325,7 @@ describe("session", () => {
     const guard = createGuard({ store, policy: "cautious" });
     const writer = tool({
       name: "writer",
+      description: "Write something",
       risk: "write",
       inputSchema: { type: "object" },
       execute: () => ({ done: true }),

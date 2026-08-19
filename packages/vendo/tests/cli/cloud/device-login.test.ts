@@ -320,6 +320,31 @@ describe("runDeviceLogin", () => {
     expect(opened).toEqual([]);
   });
 
+  // The receipt is for whatever PARSES this run. `pnpm dlx vendoai@latest
+  // login` in a terminal has no parser, and the JSON block under the prose
+  // read as a crash to the human who ran it.
+  it("keeps the machine receipt off a terminal a human is watching", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root: await tempRoot(),
+      home: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: true,
+      openBrowser: () => {},
+    });
+    expect(exit).toBe(0);
+    // The numbered ceremony still reads as prose — the URL and the code are
+    // there. Only the JSON tail is gone.
+    expect(messages.logs.join("\n")).toContain("https://console.test/claim?code=BCDF-GHJK");
+    expect(messages.logs.join("\n")).not.toContain("deviceLogin");
+  });
+
   it("opens the browser at verification_uri_complete when a TTY human is watching", async () => {
     const opened: string[] = [];
     const { fetchImpl } = scriptedFetch([
@@ -339,11 +364,12 @@ describe("runDeviceLogin", () => {
     });
     expect(exit).toBe(0);
     expect(opened).toEqual(["https://console.test/claim?code=BCDF-GHJK"]);
-    // The browser is already opening, so the code IS the whole instruction:
-    // ONE line, no numbered list, no URL competing with it. The URL is not
-    // lost — the stall notice below carries it if the browser never came up.
-    expect(messages.logs[0]).toBe("Opening your browser — approve the code BCDF-GHJK there…");
-    expect(messages.logs.join("\n")).not.toContain("https://console.test/claim");
+    // ONE line, no numbered list — but it NAMES the URL. `defaultOpenBrowser`
+    // is fire-and-forget, so on a headless or remote box nothing opens and the
+    // human had no route to the approval page for the first 20 seconds.
+    expect(messages.logs[0]).toBe(
+      "Opening your browser — approve the code BCDF-GHJK at https://console.test/claim?code=BCDF-GHJK",
+    );
   });
 
   it("holds the expiry sentence back until the pretty ceremony has visibly stalled", async () => {

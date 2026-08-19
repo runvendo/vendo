@@ -5,11 +5,17 @@
  * share, and `vendo_delegate`'s motor.
  */
 import { awayRunner } from "@vendoai/agents";
-import { CONNECTOR_DISCOVERY_TOOLS, VENDO_MAKE_TOOL, type AgentRunner, type Harness } from "@vendoai/core";
+import {
+  CONNECTOR_DISCOVERY_TOOLS,
+  VENDO_AUTOMATE_TOOL,
+  VENDO_MAKE_TOOL,
+  type AgentRunner,
+  type Harness,
+} from "@vendoai/core";
 import { assertHarnessComposable, vendo } from "@vendoai/harnesses";
 import type { VendoComposition } from "./compose-context.js";
 import { storeServesHarnessTurns } from "./compose-store.js";
-import { MCP_MOUNT } from "./door-paths.js";
+import { basePathOf, MCP_MOUNT } from "./door-paths.js";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 import { assembleSystemPrompt, discoveryRail } from "./prompt.js";
 import { withAgentMenu } from "./surface-menu.js";
@@ -30,11 +36,21 @@ import { registerTurnSteer } from "./turn-liveness.js";
  *  Restoring the whole contract belongs to the loadout redesign; the one tool
  *  that broke production does not wait for it.
  *
+ *  `vendo_automate` joins it for the first reason AND the second. The text
+ *  channel's hidden grounding names the automation path on every single inbound
+ *  text — "to text the user later, set up an automation for it" (channel-turn.ts
+ *  TEXT_STYLE) — and arming is a write, so the same safest-first cut that buried
+ *  Text me made the one thing this channel advertises cost a `find_tools` round
+ *  on the first turn of every fresh thread. The exemption rides ON TOP of the
+ *  cap rather than raising it, so the offered set stays inside the 30-50 band
+ *  where selection accuracy is best (tool-search.ts).
+ *
  *  A name with nothing behind it costs nothing: `computeInitialLoadout` filters
  *  the turn's OWN listings through this set (tool-search.ts), so on a deployment
  *  that never opted into texts it simply never matches — no `channels` gate. */
 const PROMPT_TAUGHT_TOOLS: readonly string[] = [
   VENDO_MAKE_TOOL,
+  VENDO_AUTOMATE_TOOL,
   VENDO_TEXT_ME_TOOL,
   ...CONNECTOR_DISCOVERY_TOOLS,
 ];
@@ -167,7 +183,12 @@ const harnessTurnDoorSeams = (
       toolDoor: {
         get url(): string | undefined {
           const base = doorBase();
-          return base === undefined ? undefined : new URL(MCP_MOUNT, base).toString();
+          // The mount is ABSOLUTE, so it has to be re-prefixed by hand: `new
+          // URL("/api/vendo/mcp", base)` resolves against the base's ORIGIN and
+          // throws its path away, sending every deployment served under a prefix
+          // to a URL its own framework 404s. Same `basePathOf` the door uses to
+          // build its prefixed well-known spellings, so the two can't disagree.
+          return base === undefined ? undefined : new URL(`${basePathOf(base)}${MCP_MOUNT}`, base).toString();
         },
         // Which of the two mounts this is, stated rather than inferred. With no
         // origin the harness has to tell a host whose `mcp` cannot be reached

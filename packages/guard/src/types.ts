@@ -138,6 +138,19 @@ export interface VendoGuard extends Guard {
      *  with the rules that came in beside it. */
     parkedCallTtlMs: number;
     pending(principal: Principal): Promise<ApprovalRequest[]>;
+    /** ONE approval, whatever became of it — the read `pending` stops serving
+     *  the moment a row is decided. It exists so a caller that answered an ask
+     *  can still say WHAT it answered (`turns.resume` tells "this turn was
+     *  already resumed" from "no such turn" with it) instead of reaching into
+     *  the guard's own collection. Owner-scoped exactly as `pending` is: an
+     *  unknown or foreign id reads back as absent, never as forbidden.
+     *  Optional for the reason `sweepExpiredApprovals` is — `VendoGuard` is a
+     *  published interface and an implementation written before this method
+     *  must keep compiling; every guard this package builds has it. */
+    get?(
+      id: ApprovalId,
+      principal: Principal,
+    ): Promise<{ request: ApprovalRequest; status: "pending" | "approved" | "denied" } | undefined>;
     decide(
       ids: ApprovalId | ApprovalId[],
       decision: ApprovalDecision,

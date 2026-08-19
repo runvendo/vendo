@@ -404,174 +404,6 @@ const defaultComponent = (program: Program): { node?: Node; declared: boolean } 
   return { declared: true };
 };
 
-/**
- * THE LAST FORMATTING BOUNDARY: a chart told `format="money"` whose numbers come
- * from a field named in cents.
- *
- * Every other displayed value in a screen passes through the author's own code,
- * so the author divides there and hands the Kit finished text — that is what the
- * value tier's death bought (`specs.ts`, "Charts"). A chart is the ONE exception
- * left: its ticks, tooltips and bar labels are computed HOST-side off a numeric
- * scale, so the series stay numeric and `format` is how the chart is told what
- * they mean — and `money` means DOLLARS and converts nothing. So this is the only
- * place in a screen where a hundred-times invention can still ORIGINATE, and it
- * has originated twice on real screens: `maple/spend-overview` put six raw cent
- * values in a donut legend ($285,000.00 of housing against a host holding 285000
- * cents), and `buildlog/compute-spend` did the same to a chart of branch costs.
- *
- * Deliberately not a general cents heuristic, and it must not become one: one
- * boundary, one prop, one refusal. No other component, no other prop, no `Money`,
- * no `toLocaleString` — everywhere else the division is in code a compiler and a
- * reviewer can already read, and a naming rule applied there would refuse honest
- * screens by the dozen. The convention it reads is the one the write path already
- * reads units off (`amountUnitIssue` in server/persistence/call.ts): a field whose
- * name ends in `cents` is in minor units.
- *
- * It fails OPEN wherever the arithmetic is not plainly absent — any `/ 100` on the
- * way clears the field, and a data expression this cannot follow is admitted.
- * A false refusal costs a repair round; a miss ships a bill a hundred times too
- * big, but so does refusing every chart, and only the plain shape is worth
- * refusing mechanically. The reviewer still reads the rest (`reviewer-prompt.ts`).
- */
-const CENTS_FIELD = /cents$/i;
-
-/** The charts that take a `format` and look their numbers up BY KEY, and the prop
- *  that names those keys. Sparkline is absent because it has no `format` to lie
- *  with; `screen-money-charts.test.ts` keeps this list honest against `KIT_SPECS`,
- *  so a fourth chart cannot arrive unwatched. */
-const MONEY_CHARTS = new Map<string, "valueKey" | "series">([
-  ["LineChart", "series"],
-  ["BarChart", "series"],
-  ["DonutChart", "valueKey"],
-]);
-
-const stringLiteral = (node: Node | undefined): string | undefined => {
-  const value = node?.type === "Literal" ? (node as unknown as { value: unknown }).value : undefined;
-  return typeof value === "string" ? value : undefined;
-};
-
-/** A property's name, where it is written rather than computed. */
-const keyName = (node: Node): string | undefined => identifierName(node) ?? stringLiteral(node);
-
-/** What an object literal writes under one name, or undefined for anything else —
- *  a spread, a computed key, a getter, or an expression that is not an object. */
-const propOf = (node: Node | undefined, name: string): Node | undefined => {
-  if (node?.type !== "ObjectExpression") return undefined;
-  for (const property of (node as unknown as { properties: Node[] }).properties) {
-    if (property.type !== "Property") continue;
-    const entry = property as unknown as { key: Node; value: Node; computed: boolean; kind: string };
-    if (entry.computed || entry.kind !== "init") continue;
-    if (keyName(entry.key) === name) return entry.value;
-  }
-  return undefined;
-};
-
-/** The value fields a chart plots: `valueKey="cost"`, or a `series` of bare keys
- *  and `{ key, label }` entries. */
-const valueFields = (props: Node, names: "valueKey" | "series"): string[] => {
-  const written = propOf(props, names);
-  if (written === undefined) return [];
-  const one = stringLiteral(written);
-  if (one !== undefined) return [one];
-  if (written.type !== "ArrayExpression") return [];
-  return (written as unknown as { elements: Array<Node | null> }).elements.flatMap((element) => {
-    if (element === null) return [];
-    return stringLiteral(element) ?? stringLiteral(propOf(element, "key")) ?? [];
-  });
-};
-
-/** The cents-named thing a subtree reads, where it reads one: a bare identifier
- *  (`costCents`) or a property (`row.compute_cost_cents`, `row["amount_cents"]`). */
-const centsSource = (node: Node): string | undefined => {
-  const own = node.type === "Identifier"
-    ? identifierName(node)
-    : node.type === "MemberExpression"
-      ? keyName((node as unknown as { property: Node }).property)
-      : undefined;
-  if (own !== undefined && CENTS_FIELD.test(own)) return own;
-  for (const child of childNodes(node)) {
-    const found = centsSource(child);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-};
-
-/** Any `/ 100` under an expression. Not that the division lands on the cents
- *  field — this is the fail-open half: arithmetic on the way is what clears a
- *  field, and a screen that divides by a hundred here has thought about the unit. */
-const dividesByHundred = (node: Node): boolean => {
-  const binary = node as unknown as { operator?: string; right?: Node };
-  if (node.type === "BinaryExpression" && binary.operator === "/" && binary.right !== undefined) {
-    const right = literalValue(binary.right);
-    if (right.ok && right.value === 100) return true;
-  }
-  return childNodes(node).some(dividesByHundred);
-};
-
-/** The named key as an object literal writes it, anywhere under an expression. */
-const findProp = (node: Node, name: string): Node | undefined => {
-  const own = propOf(node, name);
-  if (own !== undefined) return own;
-  for (const child of childNodes(node)) {
-    const found = findProp(child, name);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-};
-
-/** Every name the module binds to an expression, so a chart's `data` can be read
- *  as the `.map` that built it rather than as the word standing in for it. */
-const boundNames = (program: Program): Map<string, Node> => {
-  const bound = new Map<string, Node>();
-  const visit = (node: Node): void => {
-    if (node.type === "VariableDeclarator") {
-      const entry = node as unknown as { id: Node; init?: Node | null };
-      const name = identifierName(entry.id);
-      if (name !== undefined && entry.init != null && !bound.has(name)) bound.set(name, entry.init);
-    }
-    for (const child of childNodes(node)) visit(child);
-  };
-  visit(program);
-  return bound;
-};
-
-const centsRefusal = (chart: string, field: string, source: string, repair: string): ComponentScreenIssue =>
-  issue("chart-money-cents", `plots "${field}" on <${chart}> with format="money", and "${field}" reads ${source} with nothing dividing it by 100 on the way — format="money" reads DOLLARS and converts nothing, so every tick, tooltip and label on this chart shows a hundred times the money the host holds. A chart reads its numbers BY KEY and has no cell to divide in: divide the cents field where you PREPARE the data — data={rows.map((row) => ({ ...row, ${field}: ${repair} }))}.`);
-
-/**
- * One chart's money fields, traced back to what fills them.
- *
- * The data prop is followed through one hop of naming — `data={byBranch}` is the
- * expression that built `byBranch` — and then the field is looked for as a key
- * written in an object literal anywhere under it, which is what a `.map` that
- * prepares rows always is. Where the field is written, its own initializer is the
- * arithmetic; where it is not, the chart is reading the row's own field straight
- * through, so the KEY is the source and its name is the whole evidence.
- */
-const chartMoneyIssues = (
-  chart: string | undefined,
-  props: Node,
-  bound: ReadonlyMap<string, Node>,
-): ComponentScreenIssue[] => {
-  const names = chart === undefined ? undefined : MONEY_CHARTS.get(chart);
-  if (chart === undefined || names === undefined) return [];
-  if (stringLiteral(propOf(props, "format")) !== "money") return [];
-  const written = propOf(props, "data");
-  const named = identifierName(written);
-  const data = (named === undefined ? undefined : bound.get(named)) ?? written;
-  return valueFields(props, names).flatMap((field) => {
-    const prepared = data === undefined ? undefined : findProp(data, field);
-    // Nothing prepared this field, so the chart reads the row's own — and the key
-    // it names is the source, in its own words.
-    if (prepared === undefined) {
-      return CENTS_FIELD.test(field) ? [centsRefusal(chart, field, field, `row.${field} / 100`)] : [];
-    }
-    if (dividesByHundred(prepared)) return [];
-    const source = centsSource(prepared);
-    return source === undefined ? [] : [centsRefusal(chart, field, source, `row.${source} / 100`)];
-  });
-};
-
 interface ScanResult {
   issues: ComponentScreenIssue[];
   queryPlan: QueryPlanEntry[];
@@ -646,21 +478,6 @@ const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo
     for (const child of childNodes(node)) visit(child, inner);
   };
   visit(program, undefined);
-
-  // (c) the last host-side formatting boundary. An element is a call with the
-  // component in the first argument and its props in the second — true of the
-  // classic transform this form is compiled with AND of the automatic one, so the
-  // rule does not move if that pin does.
-  const bound = boundNames(program);
-  const elements = (node: Node): void => {
-    const call = asCall(node);
-    const props = call?.arguments[1];
-    if (call !== undefined && props !== undefined) {
-      issues.push(...chartMoneyIssues(identifierName(call.arguments[0]), props, bound));
-    }
-    for (const child of childNodes(node)) elements(child);
-  };
-  elements(program);
 
   // The shipped literal-access scan, verbatim: computed access and aliasing are
   // violations, and its sentences already teach the repair.
@@ -1013,7 +830,7 @@ const deadControlIssues = (flat: FlatTree, inert: readonly InertControl[]): Comp
     `pressing "${controlName(flat, node)}" calls nothing and changes nothing — wire it or remove it.`
     + ` This check pressed every control on the screen as it first paints, and this one (${flat.nodes[node]?.component ?? "a component"} ${prop}) asked for no tool and painted nothing new.`
     + ` Call the tool it is for inside the handler (${prop}={async () => { await tools.tool_name({ … }); }}), or make it change what the person sees — open a Modal, switch what the screen renders, set state the render reads.`
-    + ` If it is meant to do nothing yet, SAY so: set disabled where the control has it, or paint the reason (a Callout, a line under the field). A press that is silently refused reads as a broken button.`,
+    + ` If it is meant to do nothing yet, PAINT THE REASON (a Callout, a line under the field) — and use disabled only where this row or this form genuinely cannot take the press, never for the action the person asked for. A press that is silently refused reads as a broken button.`,
   ));
   const rest = inert.length - named.length;
   return rest <= 0 ? named : [...named, issue(

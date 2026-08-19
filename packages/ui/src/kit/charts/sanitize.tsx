@@ -6,9 +6,55 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { TooltipContentProps } from "recharts";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
-import { isRenderableNumber } from "../format.js";
-import { rowSlot } from "../row.js";
+import { applyFormat, formatNum, isRenderableNumber } from "../format.js";
+import { rowSlot, type KitRow } from "../row.js";
 import { font, hairline, t, type KitStyled } from "../tokens.js";
+
+/**
+ * A chart's FORMATTER — the screen's own `Intl` helper, written as a function of
+ * the row.
+ *
+ * The Kit formats nothing. A figure a chart prints — a slice's legend line, a
+ * bar's label, a hovered point, an x tick — is the screen's own text, because the
+ * screen is the only place that knows what the host's numbers ARE: the `format`
+ * tokens that used to say it were the last thing in the Kit that could turn 285000
+ * cents into "$285,000.00" without anyone writing the division down.
+ *
+ * It is the per-row slot law at a text arity (`row.ts` `rowSlot`): the screen VM
+ * calls the function once per row and hands the component a LIST of strings in
+ * `data` order (apps `contract/kit/specs.ts` KIT_SLOT_PROPS), while a chart
+ * written by hand in React passes the function itself. Both arrive here, and both
+ * read the same in a screen's source.
+ *
+ * What no formatter can reach is a Y AXIS TICK: recharts invents those off the
+ * scale, so they are numbers the screen never held a row of. They read through
+ * {@link plainFigure} and nothing else — which is why the chart's own numbers must
+ * already be in the units a reader wants.
+ */
+export type ChartFormat = ((row: KitRow, index: number) => string) | readonly string[];
+
+/** This row's finished text, where the screen wrote a formatter for it. A row the
+ *  lookup could not place (`index` of -1) has no text, not the wrong row's. */
+export const chartText = (
+  format: ChartFormat | undefined,
+  row: KitRow | undefined,
+  index: number,
+): string | undefined =>
+  typeof format === "function"
+    ? (row === undefined ? undefined : format(row, index))
+    : format?.[index];
+
+/** The figure as it stands, with the host's own digit grouping — what every
+ *  unformatted number on a chart reads as, so a bare chart is still legible
+ *  (285000 → "285,000") without the Kit claiming to know what it means. */
+export const plainFigure = (value: unknown): string =>
+  formatNum(value as number) ?? applyFormat(value, "text") ?? "";
+
+/** The ROW behind a hovered point — recharts hands the plotted object back under
+ *  `payload`, and matching on it is what pairs a hover with the row whose
+ *  formatter wrote the figure (the same identity match `slotTooltip` makes). */
+export const hoveredRow = (item: unknown): unknown =>
+  (item as { payload?: unknown } | undefined)?.payload;
 
 /** Replace non-finite values in the given series keys with `null`. */
 export function sanitizeSeries<T extends Record<string, unknown>>(

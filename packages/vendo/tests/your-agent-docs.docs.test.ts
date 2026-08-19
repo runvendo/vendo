@@ -120,7 +120,7 @@ describe("the BYO on-ramp page is published", () => {
     const text = await read(PAGE);
     expect(text.startsWith("---\n")).toBe(true);
     expect(text).toMatch(/^title: "/m);
-    expect(text).toMatch(/^sidebarTitle: "Quickstart"$/m);
+    expect(text).toMatch(/^sidebarTitle: "Quickstart: your agent"$/m);
     expect(text).toMatch(/^description: "/m);
   });
 

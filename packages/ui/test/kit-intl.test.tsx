@@ -1,17 +1,22 @@
 // @vitest-environment jsdom
-// Currency threading. `tools.json` semantics have carried `currency` since the
-// enrich pass, but every Kit formatter hardcoded USD — so a Pakistani payments
-// host rendered "$107.68" no matter what its host tools declared. This suite pins
-// that a host's declared currency reaches the pure formatters, and through them
-// the one place the Kit still formats a figure ITSELF — a chart, whose ticks and
-// labels are computed host-side off a numeric scale — and that a per-value
-// currency still overrides it.
+// Currency and locale threading. `tools.json` semantics have carried `currency`
+// since the enrich pass, but every Kit formatter hardcoded USD — so a Pakistani
+// payments host rendered "$107.68" no matter what its host tools declared. This
+// suite pins that a host's declared config reaches the pure formatters, and
+// through them the figures the Kit still writes ITSELF.
+//
+// WHICH figures those are moved when the charts' `format` tokens died: a screen
+// writes its own money now, so the ambient CURRENCY is the chrome's affair
+// (`chrome/humanize.ts`) and nothing a Kit component renders reads it. What a
+// chart still writes is the one figure a screen cannot reach — a scale's tick,
+// and an unformatted value beside it — and that reads through the ambient
+// LOCALE's digit grouping.
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  applyFormat,
   currencyMinorUnits,
   formatMoney,
+  formatNum,
   getKitIntl,
   setKitIntl,
   BarChart,
@@ -62,9 +67,9 @@ describe("ambient Kit intl", () => {
     expect(formatMoney(107.68)).not.toContain("$");
   });
 
-  it("reaches applyFormat — the path a chart's axis and the chrome actually call", () => {
-    setKitIntl({ currency: "PKR" });
-    expect(applyFormat(107.68, "money")).not.toContain("$");
+  it("reaches formatNum — the path a chart's axis actually calls", () => {
+    setKitIntl({ locale: "de-DE" });
+    expect(formatNum(1_234_567)).toBe("1.234.567");
   });
 
   it("honours a zero-decimal currency's minor unit", () => {
@@ -131,31 +136,52 @@ describe("VendoProvider intl", () => {
     expect(seen).toBe("PKR");
   });
 
-  // A chart is the one component whose figures the Kit still formats itself, so
-  // it is the one place a host's declared currency has to reach a RENDERED figure
-  // rather than a formatter somebody called by hand.
-  it('drives a chart\'s own format="money" — the last format token there is', () => {
+  // A chart's UNFORMATTED figure is the last one the Kit writes itself — the axis
+  // scale and the bar label beside it — so it is the one place a host's declared
+  // locale has to reach a RENDERED figure rather than a formatter somebody called
+  // by hand. It is grouping and nothing else: the Kit never says what the number
+  // MEANS, which is why no currency appears here whatever the host declares.
+  it("drives a chart's own digit grouping", () => {
     const restore = stubChartSize(360, 220);
     try {
       const text = renderInProvider(
-        { currency: "PKR" },
-        <BarChart data={[{ month: "Jan", amount: 107.68 }]} xKey="month" series={["amount"]} format="money" />,
+        { locale: "de-DE" },
+        <BarChart data={[{ month: "Jan", amount: 285_000 }]} xKey="month" series={["amount"]} />,
       );
-      expect(text).toContain("107.68");
-      expect(text).not.toContain("$");
+      expect(text).toContain("285.000");
     } finally {
       restore();
     }
   });
 
-  it("falls back to USD when the host declares nothing", () => {
+  it("falls back to en-US grouping when the host declares nothing", () => {
     const restore = stubChartSize(360, 220);
     try {
       const text = renderInProvider(
         undefined,
-        <BarChart data={[{ month: "Jan", amount: 1234.56 }]} xKey="month" series={["amount"]} format="money" />,
+        <BarChart data={[{ month: "Jan", amount: 285_000 }]} xKey="month" series={["amount"]} />,
       );
-      expect(text).toContain("$1,234.56");
+      expect(text).toContain("285,000");
+    } finally {
+      restore();
+    }
+  });
+
+  // And a screen's OWN money is the screen's: the chart prints what the function
+  // returned, untouched by the host's declared currency, because the screen has
+  // already said which one it meant.
+  it("leaves a screen's own formatted figure exactly as the screen wrote it", () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const text = renderInProvider(
+        { currency: "PKR" },
+        <BarChart
+          data={[{ month: "Jan", amount_cents: 10_768 }]}
+          xKey="month"
+          series={[{ key: "amount_cents", format: (row) => `$${(Number(row.amount_cents) / 100).toFixed(2)}` }]}
+        />,
+      );
+      expect(text).toContain("$107.68");
     } finally {
       restore();
     }

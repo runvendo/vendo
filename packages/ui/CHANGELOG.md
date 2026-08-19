@@ -1,5 +1,104 @@
 # @vendoai/ui
 
+## 0.33.0
+
+### Minor Changes
+
+- 8c7b476: Vendo runs on both AI SDK majors. The peer range widens from `ai >=6 <7` to
+  `ai >=6 <8`, and the three things that made an `ai@7` host fail are gone: the
+  turn loop and the generation engine send their cacheable system block as
+  `system` instead of as a system-role message inside `messages` (ai@7 refuses the
+  latter with `AI_InvalidPromptError`, and both majors carry the same message form
+  — cache breakpoint and all — to the provider unchanged), and the spec-version
+  gates on provider failover and the screen agent's per-role seat now admit the
+  v4 spec that ai@7-era providers report instead of only v3.
+
+  `vendo doctor` follows: `ai@6` and `ai@7` both pass, a pre-v6 install still
+  fails on the peer floor, and E-DEP-001's ceiling moves to majors above the
+  supported pair. `vendo init` stops telling an `ai@7` host to downgrade, and the
+  "install your provider" line no longer names an `ai` major at all — `ai` is
+  already resolved by the time anyone can read it.
+
+  A new `ai-dual` CI lane pins the whole workspace to the ai@7 pairing and runs
+  the suites against it, so a peer range that claims two majors is checked rather
+  than asserted. This is the compat half of #478, whose short-term half was the
+  fail-fast this replaces.
+
+### Patch Changes
+
+- Updated dependencies [8c7b476]
+- Updated dependencies [9d3f0af]
+  - @vendoai/apps@0.33.0
+  - @vendoai/core@0.33.0
+
+## 0.32.0
+
+### Minor Changes
+
+- 88cf572: The model formats every figure now — the chart `format`/`xFormat` tokens are
+  gone, replaced by per-row formatter functions (`format={(row) => money(row.amount)}`),
+  resolved in the screen VM like every other per-row slot; axis ticks keep plain
+  digit grouping and never claim a unit. Timeline shows its time field as handed.
+  `info` is a real theme color, host-settable and derived from the accent where
+  unset — the Kit's hardcoded blue is gone. SegmentedControl speaks radio
+  semantics (`role=radiogroup`, `aria-checked`), so its live segment is readable
+  as selected rather than dead. The writer's manual teaches the Kit's real
+  handler shapes, verbatim ids, and always-pressable ask verbs; the reviewer
+  writes its reasoning before its verdict, so a finding can no longer contradict
+  itself into a wasted repair round.
+
+### Patch Changes
+
+- Updated dependencies [88cf572]
+  - @vendoai/apps@0.32.0
+  - @vendoai/core@0.32.0
+
+## 0.31.0
+
+### Patch Changes
+
+- @vendoai/core@0.31.0
+- @vendoai/apps@0.31.0
+
+## 0.30.1
+
+### Patch Changes
+
+- Updated dependencies [6bbc8e6]
+  - @vendoai/apps@0.30.1
+  - @vendoai/core@0.30.1
+
+## 0.30.0
+
+### Minor Changes
+
+- bd1d016: Screens are natural JavaScript now. Reads take inputs and resolve through a
+  supply loop that keeps the screen's state alive; per-row and plain slots take
+  real closures; the `field=`/`semantic:` dialect, the slot law, the nesting
+  whitelist and both auto-repair regexes are deleted. The sealed VM borrows the
+  host's Intl, so money, dates, durations and "2 hours ago" print what a browser
+  prints, pinned to the host's locale and zone. The Kit's surface answers the
+  ecosystem's conventions — `value=`, `name`/`header`/children accepted, column
+  `width`/`truncate`/`priority`, human durations, `grow`, icon/loading buttons,
+  option groups — and twenty silent misbehaviors now speak up or behave. The
+  screen agent's brief sheds the rules whose reasons died, gains worked examples,
+  and tells the truth about the frame: everything the ask names must be visible.
+
+  Breaking: the value-formatting tier is deleted — `Money`, `Percent`, `Num`,
+  `DateTime` and the container `format` tokens are gone; screens format with the
+  host-bridged Intl in their own code (chart axes keep a format token, the one
+  place a value never passes through screen code). Also: `field=`,
+  `semantic:`, `Percent whole` and the `percent` format token are gone — divide
+  and scale where you prepare the data; slots accept elements or functions.
+
+### Patch Changes
+
+- Updated dependencies [b3d92b2]
+- Updated dependencies [bd1d016]
+- Updated dependencies [56c81b5]
+  - @vendoai/apps@0.30.0
+  - @vendoai/core@0.30.0
+
 ## 0.29.1
 
 ### Patch Changes

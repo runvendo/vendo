@@ -1,17 +1,19 @@
 ---
 title: "Your own surface"
 sidebarTitle: "Your own surface"
-description: "Forward run.events to your own UI over SSE, tie cancellation to the request's own signal, and end the stream on the report."
+description: "Forward run.events to your own UI over SSE, tie cancellation to the request's own signal, and end the stream on the result."
 ---
 
-A long piece of work with a progress view is still `run()`. The `AgentRun` is
-awaitable and iterable: `run.events` is the live feed, and awaiting the same
-object gives you the report at the end.
+A long piece of work with a progress view is still `run()`. The `Turn` it hands
+back is awaitable and iterable: `run.events` is the live feed, and awaiting the
+same object gives you the `TurnResult` at the end.
 
 <Note>
   Vendo's chat UI is not handed over here, deliberately: this lane gives you an
-  event stream and a report, and the surface is yours to build. For Vendo's own
-  thread, overlay, and generated screens, see
+  event stream and a result, and the surface is yours to build. For a chat
+  surface with no work at all, [`handler()` plus
+  `useVendoChat`](/backend/converse) is one mount; for Vendo's own thread,
+  overlay, and generated screens, see
   [Vendo's Full-Stack Agent](/product/quickstart).
 </Note>
 
@@ -36,9 +38,9 @@ export async function POST(req: Request) {
       for await (const event of run.events) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       }
-      const report = await run;
+      const result = await run;
       controller.enqueue(
-        encoder.encode(`event: report\ndata: ${JSON.stringify(report)}\n\n`),
+        encoder.encode(`event: result\ndata: ${JSON.stringify(result)}\n\n`),
       );
       controller.close();
     },
@@ -60,8 +62,8 @@ Three details carry their weight.
   header goes out with the response rather than after it.
 - **`signal: req.signal`** ties the run to the connection. The browser closes
   the tab, the request aborts, the run stops.
-- **`await run` after the loop** is the report. Iterating the events does not
-  consume the result; the same object is both.
+- **`await run` after the loop** is the result. Iterating the events does not
+  consume it; the same object is both.
 
 <Warning>
   `run.events` has one reader. Attaching a second one while the first is
@@ -85,26 +87,29 @@ Forward them whole, as above, and branch in your UI. A new event type then
 reaches your client the day it ships, instead of being dropped by a server that
 only knew five.
 
-## Ending on the report
+## Ending on the result
 
-The report is the honest close: `status`, the model's `summary`, the
-`toolCalls` it made, `refs.threadId`, `refs.approvals`, and `usage`.
+The `TurnResult` is the honest close: `status`, the model's own `text`, the
+`toolCalls` it made, `threadId`, `turnId`, and `usage`. One `status` decides
+which of the four screens you draw.
 
-```ts app/reports-client.ts focus={4}
-source.addEventListener("report", (event) => {
-  const report = JSON.parse(event.data);
-  if (report.status === "stopped") showCancelled();
-  else if (report.refs.approvals.length > 0) showApprovals(report.refs.approvals);
-  else showDone(report.summary);
+```ts app/reports-client.ts focus={3-5}
+source.addEventListener("result", (event) => {
+  const result = JSON.parse(event.data);
+  if (result.status === "stopped") showCancelled(result.reason);
+  else if (result.status === "interrupted") showApprovals(result.interruptions);
+  else if (result.status === "error") showFailed(result.error.message);
+  else showDone(result.text);
 });
 ```
 
-Anything the run parked for a human is in `refs.approvals`. Acting on one of
-those is a fresh `run()`, not a resume of this one.
+A run that parked for a human comes back `interrupted`, and the cards are on
+`interruptions`. Carrying on is `resume(decisions)` on the server-side object,
+not a fresh `run()` — the turn picks up from where it stopped.
 
 <CardGroup cols={2}>
   <Card title="Run" href="/backend/run">
-    The report shape, typed output, and the usage you meter on.
+    The result shape, typed output, and the usage you meter on.
   </Card>
   <Card title="Telemetry" href="/production/telemetry">
     The same runs, seen from your Cloud console.

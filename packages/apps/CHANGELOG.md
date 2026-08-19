@@ -1,5 +1,128 @@
 # @vendoai/apps
 
+## 0.33.0
+
+### Minor Changes
+
+- 8c7b476: Vendo runs on both AI SDK majors. The peer range widens from `ai >=6 <7` to
+  `ai >=6 <8`, and the three things that made an `ai@7` host fail are gone: the
+  turn loop and the generation engine send their cacheable system block as
+  `system` instead of as a system-role message inside `messages` (ai@7 refuses the
+  latter with `AI_InvalidPromptError`, and both majors carry the same message form
+  — cache breakpoint and all — to the provider unchanged), and the spec-version
+  gates on provider failover and the screen agent's per-role seat now admit the
+  v4 spec that ai@7-era providers report instead of only v3.
+
+  `vendo doctor` follows: `ai@6` and `ai@7` both pass, a pre-v6 install still
+  fails on the peer floor, and E-DEP-001's ceiling moves to majors above the
+  supported pair. `vendo init` stops telling an `ai@7` host to downgrade, and the
+  "install your provider" line no longer names an `ai` major at all — `ai` is
+  already resolved by the time anyone can read it.
+
+  A new `ai-dual` CI lane pins the whole workspace to the ai@7 pairing and runs
+  the suites against it, so a peer range that claims two majors is checked rather
+  than asserted. This is the compat half of #478, whose short-term half was the
+  fail-fast this replaces.
+
+### Patch Changes
+
+- Updated dependencies [8c7b476]
+- Updated dependencies [9d3f0af]
+  - @vendoai/core@0.33.0
+
+## 0.32.0
+
+### Minor Changes
+
+- 88cf572: The model formats every figure now — the chart `format`/`xFormat` tokens are
+  gone, replaced by per-row formatter functions (`format={(row) => money(row.amount)}`),
+  resolved in the screen VM like every other per-row slot; axis ticks keep plain
+  digit grouping and never claim a unit. Timeline shows its time field as handed.
+  `info` is a real theme color, host-settable and derived from the accent where
+  unset — the Kit's hardcoded blue is gone. SegmentedControl speaks radio
+  semantics (`role=radiogroup`, `aria-checked`), so its live segment is readable
+  as selected rather than dead. The writer's manual teaches the Kit's real
+  handler shapes, verbatim ids, and always-pressable ask verbs; the reviewer
+  writes its reasoning before its verdict, so a finding can no longer contradict
+  itself into a wasted repair round.
+
+### Patch Changes
+
+- @vendoai/core@0.32.0
+
+## 0.31.0
+
+### Patch Changes
+
+- @vendoai/core@0.31.0
+
+## 0.30.1
+
+### Patch Changes
+
+- 6bbc8e6: A screen may write `key` on a display brick again. The screen typings declared
+  `key` once, on `JSX.IntrinsicAttributes` — but TypeScript intersects that into a
+  value-based element only, never into an intrinsic tag, which takes
+  `JSX.IntrinsicElements[tag]` verbatim. So `<Card key={id}>` compiled and
+  `<li key={id}>` was a hard TS2322, while the format skill was telling the model
+  to write `key={…}` on every row it maps: the product demanded exactly what its
+  own checker refused. The refusal was unreadable on top of being wrong — a
+  whole-attribute error attributed to the first attribute printed `prop "key" on
+  <li> takes string | number, but this value is string`, so a model repairing the
+  screen flipped `key={i}` and `key={String(i)}` until it ran out of rounds. The
+  display bricks now carry `key` in their own props type, beside `children` and
+  `style`.
+  - @vendoai/core@0.30.1
+
+## 0.30.0
+
+### Minor Changes
+
+- bd1d016: Screens are natural JavaScript now. Reads take inputs and resolve through a
+  supply loop that keeps the screen's state alive; per-row and plain slots take
+  real closures; the `field=`/`semantic:` dialect, the slot law, the nesting
+  whitelist and both auto-repair regexes are deleted. The sealed VM borrows the
+  host's Intl, so money, dates, durations and "2 hours ago" print what a browser
+  prints, pinned to the host's locale and zone. The Kit's surface answers the
+  ecosystem's conventions — `value=`, `name`/`header`/children accepted, column
+  `width`/`truncate`/`priority`, human durations, `grow`, icon/loading buttons,
+  option groups — and twenty silent misbehaviors now speak up or behave. The
+  screen agent's brief sheds the rules whose reasons died, gains worked examples,
+  and tells the truth about the frame: everything the ask names must be visible.
+
+  Breaking: the value-formatting tier is deleted — `Money`, `Percent`, `Num`,
+  `DateTime` and the container `format` tokens are gone; screens format with the
+  host-bridged Intl in their own code (chart axes keep a format token, the one
+  place a value never passes through screen code). Also: `field=`,
+  `semantic:`, `Percent whole` and the `percent` format token are gone — divide
+  and scale where you prepare the data; slots accept elements or functions.
+
+### Patch Changes
+
+- b3d92b2: Generated screens render in a production build again. The screen engine and
+  `$expr` rode the SINGLE-FILE QuickJS build, which carries its WebAssembly as a
+  raw binary string inside the JavaScript — and that string cannot survive a
+  modern minifier: the WASM bytes contain a backtick, SWC re-quotes the string
+  with backticks, and the chunk that comes out opens a template literal whose
+  `\0` bytes are illegal octal escapes. Turbopack's server, SSR and browser
+  chunks were all unparseable, so the VM never started and the checks floor
+  correctly refused every screen. The bytes now travel as a FILE: the wasmfile
+  build's ten-kilobyte loader, handed the module through `wasmBinary` — read off
+  disk on Node, fetched as a bundler-emitted asset everywhere else. `@vendoai/apps`
+  ships `quickjs.wasm` beside its `dist`, and the QuickJS it installs drops from
+  3.1MB to 1.2MB.
+
+  And the variant a host hands `warmScreenEngine` now WINS. It used to be
+  last-warm-wins, which meant `@vendoai/ui`'s own no-variant re-warm on the first
+  screen mount silently took the engine back — so the documented hatch existed and
+  never held, and a venue with no network and no asset URL (an offline
+  single-bundle page, workerd) could not run screens at all. An explicitly passed
+  variant is now kept: every later default warm is a no-op, and a default already
+  in flight lands nowhere.
+
+- Updated dependencies [56c81b5]
+  - @vendoai/core@0.30.0
+
 ## 0.29.1
 
 ### Patch Changes

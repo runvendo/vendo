@@ -1,5 +1,100 @@
 # @vendoai/agents
 
+## 0.33.0
+
+### Minor Changes
+
+- 8c7b476: Vendo runs on both AI SDK majors. The peer range widens from `ai >=6 <7` to
+  `ai >=6 <8`, and the three things that made an `ai@7` host fail are gone: the
+  turn loop and the generation engine send their cacheable system block as
+  `system` instead of as a system-role message inside `messages` (ai@7 refuses the
+  latter with `AI_InvalidPromptError`, and both majors carry the same message form
+  — cache breakpoint and all — to the provider unchanged), and the spec-version
+  gates on provider failover and the screen agent's per-role seat now admit the
+  v4 spec that ai@7-era providers report instead of only v3.
+
+  `vendo doctor` follows: `ai@6` and `ai@7` both pass, a pre-v6 install still
+  fails on the peer floor, and E-DEP-001's ceiling moves to majors above the
+  supported pair. `vendo init` stops telling an `ai@7` host to downgrade, and the
+  "install your provider" line no longer names an `ai` major at all — `ai` is
+  already resolved by the time anyone can read it.
+
+  A new `ai-dual` CI lane pins the whole workspace to the ai@7 pairing and runs
+  the suites against it, so a peer range that claims two majors is checked rather
+  than asserted. This is the compat half of #478, whose short-term half was the
+  fail-fast this replaces.
+
+### Patch Changes
+
+- Updated dependencies [8c7b476]
+- Updated dependencies [9d3f0af]
+  - @vendoai/apps@0.33.0
+  - @vendoai/core@0.33.0
+  - @vendoai/guard@0.33.0
+  - @vendoai/harnesses@0.33.0
+  - @vendoai/actions@0.33.0
+  - @vendoai/mcp@0.33.0
+  - @vendoai/store@0.33.0
+  - @vendoai/automations@0.33.0
+
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [88cf572]
+  - @vendoai/apps@0.32.0
+  - @vendoai/actions@0.32.0
+  - @vendoai/harnesses@0.32.0
+  - @vendoai/mcp@0.32.0
+  - @vendoai/store@0.32.0
+  - @vendoai/core@0.32.0
+  - @vendoai/guard@0.32.0
+  - @vendoai/automations@0.32.0
+
+## 0.31.0
+
+### Patch Changes
+
+- Updated dependencies [de24421]
+- Updated dependencies [457dfe3]
+  - @vendoai/automations@0.31.0
+  - @vendoai/core@0.31.0
+  - @vendoai/store@0.31.0
+  - @vendoai/actions@0.31.0
+  - @vendoai/guard@0.31.0
+  - @vendoai/apps@0.31.0
+  - @vendoai/harnesses@0.31.0
+  - @vendoai/mcp@0.31.0
+
+## 0.30.1
+
+### Patch Changes
+
+- Updated dependencies [6bbc8e6]
+  - @vendoai/apps@0.30.1
+  - @vendoai/actions@0.30.1
+  - @vendoai/harnesses@0.30.1
+  - @vendoai/mcp@0.30.1
+  - @vendoai/store@0.30.1
+  - @vendoai/core@0.30.1
+  - @vendoai/guard@0.30.1
+  - @vendoai/automations@0.30.1
+
+## 0.30.0
+
+### Patch Changes
+
+- Updated dependencies [b3d92b2]
+- Updated dependencies [bd1d016]
+- Updated dependencies [56c81b5]
+  - @vendoai/apps@0.30.0
+  - @vendoai/core@0.30.0
+  - @vendoai/actions@0.30.0
+  - @vendoai/harnesses@0.30.0
+  - @vendoai/mcp@0.30.0
+  - @vendoai/store@0.30.0
+  - @vendoai/guard@0.30.0
+
 ## 0.29.1
 
 ### Patch Changes

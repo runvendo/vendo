@@ -401,7 +401,13 @@ describe("the AI reviewer", () => {
     expect(schema.required).toEqual(["findings"]);
     expect(schema.properties.findings.type).toBe("array");
     expect(schema.properties.findings.items.additionalProperties).toBe(false);
-    expect(schema.properties.findings.items.required).toEqual(["severity", "where", "message"]);
+    // THE VERDICT IS WRITTEN LAST. This is the schema as the PROVIDER receives it
+    // — the object the model is decoded against — so the key order asserted here
+    // is the order that reaches the wire, and the order the finding is written in:
+    // the locus and the evidence, and only then the grade for them.
+    expect(schema.properties.findings.items.required).toEqual(["where", "message", "severity"]);
+    expect(Object.keys(schema.properties.findings.items.properties))
+      .toEqual(["where", "message", "severity"]);
     expect(schema.properties.findings.items.properties.severity.enum).toEqual(["block", "warn"]);
     // A TOOL DESCRIPTION IS PROMPT, and this one rides in the same call as the
     // rubric — it asked for "what is wrong AND the real alternative" for a while

@@ -377,6 +377,31 @@ export async function stackLines(
   ];
 }
 
+/** The read-back, before the first question. Owed to EVERY run a human
+    watches — the rail is only how it is dressed, and gating on the rail is
+    what let a `CI=`/`NO_COLOR` terminal open with a question about an app it
+    never said it had read. Detect first, print second: the banner's arrival
+    plays over the detection, and the reveal then narrates it — a beat per
+    fact, so the wave reads as detection time rather than a burst after it. */
+async function printStack(input: {
+  root: string;
+  options: InitOptions;
+  output: Output;
+  pretty: PrettyOutput | null;
+}): Promise<void> {
+  const { root, options, output, pretty } = input;
+  const stack = await stackLines(root, await resolveFramework(root, options));
+  if (pretty === null) {
+    for (const fact of stack) output.log(fact);
+    return;
+  }
+  const facts = stack.map((text, index) => ({
+    beat: index === 0 ? "Detecting your framework…" : index === 1 ? "Checking auth…" : undefined,
+    text,
+  }));
+  await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
+}
+
 /** Telemetry `router` enum (init_completed): app | pages | none, from the
     same directory evidence appDirectory rides. Express hosts are "none". */
 async function detectRouter(root: string, framework: Exclude<HostFramework, "unknown"> | "custom"): Promise<"app" | "pages" | "none"> {
@@ -2227,15 +2252,15 @@ export async function runInit(input: InitOptions): Promise<number> {
 
   /** A plan failure the HOST must fix (a manifest npm itself would refuse)
       exits with the CLI's normal one-line error instead of a raw stack. */
-  /** #478 short-term + FINDINGS F3 — the end-of-run summary warns on an `ai`
- *  outside the v6 peer contract instead of waiting for doctor's E-DEP-001:
- *  npm installs the ai@7 conflict without failing (every internal turn then
- *  throws AI_InvalidPromptError), and the re-read only sees a pre-v6 copy
- *  when ensureProviderDeps could not install over the hoisted one. */
+  /** #478 + FINDINGS F3 — the end-of-run summary warns on an `ai` outside the
+ *  peer contract instead of waiting for doctor's E-DEP-001. The contract admits
+ *  both live majors (6 and 7), so only the two edges warn: npm installs a peer
+ *  conflict without failing, and the re-read only sees a pre-v6 copy when
+ *  ensureProviderDeps could not install over the hoisted one. */
 async function warnOffContractAi(root: string, output: Output): Promise<void> {
   const aiVersion = await installedAiVersion(root);
-  if (aiVersion !== null && Number.parseInt(aiVersion, 10) >= 7) {
-    output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
+  if (aiVersion !== null && Number.parseInt(aiVersion, 10) >= 8) {
+    output.error(`warning: installed ai@${aiVersion} is a major Vendo has never been run against — Vendo speaks ai@6 and ai@7; pin one (npm install ai@^7 @ai-sdk/anthropic@^4 @ai-sdk/react@^4) or track github.com/runvendo/vendo/issues/478`);
   } else if (aiVersion !== null && aiBelowPeerFloor(aiVersion)) {
     output.error(`warning: installed ai@${aiVersion} predates the ai@6 peer contract — every turn fails at runtime until the app resolves its own ai@6 (E-DEP-001).`);
   }
@@ -2295,22 +2320,7 @@ const explainedPlanFailure = (error: unknown): boolean => {
     }
   }
 
-  // The read-back first: every fact below is already detected for other
-  // reasons, and showing it is the moment the tool proves it looked.
-  if (pretty !== null) {
-    // Detect FIRST, print second: the banner's arrival plays over this work.
-    // The reveal then narrates it — a beat of "Reading your app…" and the
-    // facts landing one by one — so the wave reads as detection time, and the
-    // section arrives as a rhythm instead of a burst after the arrival.
-    const stack = await stackLines(root, await resolveFramework(root, options));
-    // Each fact gets a labeled beat — the scan narrates what it is looking at
-    // while it lands the answer it already has.
-    const facts = stack.map((text, index) => ({
-      beat: index === 0 ? "Detecting your framework…" : index === 1 ? "Checking auth…" : undefined,
-      text,
-    }));
-    await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
-  }
+  await printStack({ root, options, output, pretty });
   const useCase = await resolveUseCase({ root, options, pretty, interactive });
 
   // (No stdin-TTY guard on these defaults: an unshown auth confirm resolving

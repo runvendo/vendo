@@ -385,6 +385,33 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
+  /** The landing prompt promises "read what it detects". Gating the read-back
+      on the pretty renderer meant a terminal with CI or NO_COLOR set — still a
+      human, still asked questions — opened on "How will people use your
+      agent?" with nothing above it to read. */
+  it("reads the detected stack back before it asks the first question", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
+    }));
+    const sink = output();
+    let readBack = "";
+    expect(await run(root, sink, {
+      interactive: true,
+      selectUseCase: async () => (readBack = sink.logs.join("\n"), "embedded"),
+      confirmAuth: async () => true,
+    })).toBe(0);
+    expect(readBack).toContain("Next.js · App Router · JavaScript · npm");
+    expect(readBack).toContain("Clerk auth (@clerk/nextjs)");
+  });
+
+  it("reads the detected stack back on a --yes run too", async () => {
+    const sink = output();
+    expect(await run(await fixture(), sink, { yes: true })).toBe(0);
+    expect(sink.logs.join("\n")).toContain("Next.js · App Router · JavaScript · npm");
+  });
+
   it("interactive decline + picking none keeps the composition anonymous and names the exact line to add later", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({

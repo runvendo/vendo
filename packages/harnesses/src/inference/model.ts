@@ -18,8 +18,9 @@ import {
  * ladder. It IS an ai-SDK LanguageModel (BYO seam unchanged, 03-agent §1),
  * resolving the credential lazily on first use:
  *
- * - env-key rungs delegate to the host-installed @ai-sdk provider (^3, spec
- *   v3) with full native tool calling — works in production too. Since the
+ * - env-key rungs delegate to the host-installed @ai-sdk provider (either live
+ *   spec, v3 or v4) with full native tool calling — works in production too.
+ *   Since the
  *   selection law they are reachable only through the internal
  *   VENDO_DEV_CREDENTIAL pin: a host's own provider key belongs in `models`,
  *   where it is a CHOICE (`models: { default: anthropic(key) }`), not in an env
@@ -84,6 +85,9 @@ interface ProviderSpec {
   model: string;
   /** Family fast pick (review/judge slots) when no name is given. */
   fast: string;
+  /** The paste, naming ONLY the provider: `ai` is already resolved by the
+   *  time anyone can read this line, and naming a major there told an ai@7 host
+   *  to downgrade a working install. */
   install: string;
 }
 
@@ -93,21 +97,21 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
     factory: "createAnthropic",
     model: "claude-sonnet-4-6",
     fast: "claude-haiku-4-5",
-    install: "npm install ai@^6 @ai-sdk/anthropic@^3",
+    install: "npm install @ai-sdk/anthropic@^3",
   },
   openai: {
     module: "@ai-sdk/openai",
     factory: "createOpenAI",
     model: "gpt-5",
     fast: "gpt-5-mini",
-    install: "npm install ai@^6 @ai-sdk/openai@^3",
+    install: "npm install @ai-sdk/openai@^3",
   },
   google: {
     module: "@ai-sdk/google",
     factory: "createGoogleGenerativeAI",
     model: "gemini-2.5-flash",
     fast: "gemini-2.5-flash-lite",
-    install: "npm install ai@^6 @ai-sdk/google@^3",
+    install: "npm install @ai-sdk/google@^3",
   },
 };
 
@@ -123,7 +127,7 @@ const CLOUD_MODEL: ProviderSpec = {
   factory: "createAnthropic",
   model: "vendo",
   fast: "vendo",
-  install: "npm install ai@^6 @ai-sdk/anthropic@^3",
+  install: "npm install @ai-sdk/anthropic@^3",
 };
 
 /** The console the Cloud rung dials, same default and same trailing-slash

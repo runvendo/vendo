@@ -100,15 +100,18 @@ const events = [
 ];
 
 describe("Timeline", () => {
-  it("marks one entry per record and formats its timestamp", () => {
+  it("marks one entry per record and shows its time field as it stands", () => {
+    // The Timeline formats NOTHING, like every other container: it used to parse
+    // this stamp and re-print it as "Mar 1, 2026", which was the last place a Kit
+    // component decided what a host value meant.
     const { container } = render(<Timeline entries={events} titleField="what" timeField="at" />);
     expect(container.querySelectorAll("li")).toHaveLength(2);
     expect(screen.getByText("Invoice issued")).toBeTruthy();
-    expect(screen.getByText(/Mar 1, 2026/)).toBeTruthy();
+    expect(screen.getByText("2026-03-01T10:00:00Z")).toBeTruthy();
   });
 
-  it("labels a date-only entry with the day alone, no midnight stamp", () => {
-    render(<Timeline entries={[{ id: "c", what: "Rent due", due_date: "2026-08-01" }]} titleField="what" timeField="due_date" />);
+  it("shows the day the screen prepared, and adds no clock to it", () => {
+    render(<Timeline entries={[{ id: "c", what: "Rent due", due_date: "Aug 1, 2026" }]} titleField="what" timeField="due_date" />);
     expect(screen.getByText("Aug 1, 2026")).toBeTruthy();
   });
 
@@ -149,8 +152,8 @@ describe("Timeline", () => {
     const text = (align: "start" | "end") =>
       render(<Timeline entries={[events[0]!]} titleField="what" timeField="at" timeAlign={align} />)
         .container.querySelector("li > div:last-child")!.textContent!;
-    expect(text("start")).toMatch(/^Mar 1, 2026.*Invoice issued$/);
-    expect(text("end")).toMatch(/^Invoice issued.*Mar 1, 2026/);
+    expect(text("start")).toMatch(/^2026-03-01T10:00:00Z.*Invoice issued$/);
+    expect(text("end")).toMatch(/^Invoice issued.*2026-03-01T10:00:00Z/);
   });
 
   it("fails soft on missing data with its own empty text", () => {

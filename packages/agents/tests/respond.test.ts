@@ -212,6 +212,7 @@ describe("respond()", () => {
       }),
       tools: [tool({
         name: "peek",
+        description: "Peek at the run context",
         risk: "read",
         inputSchema: { type: "object" },
         execute: (_input, ctx) => {

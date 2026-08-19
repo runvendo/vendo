@@ -1,4 +1,4 @@
-/** BarChart — recharts internals, data props only, formatted ticks (W2 §The Kit). */
+/** BarChart — recharts internals, data props only, the screen's own text (W2 §The Kit). */
 import {
   Bar,
   BarChart as RBarChart,
@@ -10,21 +10,20 @@ import {
   YAxis,
 } from "recharts";
 import type { ComponentProps, ReactNode } from "react";
-import { applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t, toneColor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
-import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
+import { ChartEmpty, ChartFrame, chartText, hoveredRow, plainFigure, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface, type ChartFormat } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
-/** Plus `format`: a bar carries its VALUE as a label, and a chart of two series
- *  in different units (money and a count) has no one chart-level token that
- *  reads both. The chart's own `format` is the default. */
-type BarSeriesInput = SeriesInput<ComponentProps<typeof Bar> & { format?: ValueFormat }>;
+/** Plus `format`: a bar carries its VALUE as a label, and the formatter lives on
+ *  the SERIES rather than on the chart, because two series in different units (an
+ *  amount and a count) have no one text a chart-level formatter could write for
+ *  both. */
+type BarSeriesInput = SeriesInput<Omit<ComponentProps<typeof Bar>, "format"> & { format?: ChartFormat }>;
 
 interface BarChartOwnProps extends KitStyled {
   data: Array<Record<string, unknown>>;
   xKey: string;
   series: BarSeriesInput[];
-  format?: ValueFormat;
   /** Stack the series into one bar per category. */
   stacked?: boolean;
   /** Horizontal bars (good for ranked lists). */
@@ -100,7 +99,6 @@ export function BarChart({
   data,
   xKey,
   series,
-  format = "number",
   stacked = false,
   horizontal = false,
   height = 220,
@@ -117,7 +115,6 @@ export function BarChart({
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
     return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
-  const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
     <div
       data-kit="BarChart"
@@ -130,19 +127,29 @@ export function BarChart({
               figure the chart exists to state is the one thing clipped off. */}
           <RBarChart data={clean} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: horizontal ? 8 : 20, right: horizontal ? 56 : 12, bottom: 4, left: 4 }}>
             <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={horizontal} horizontal={!horizontal} />
+            {/* The VALUE axis is the one place no formatter reaches: these ticks
+                are recharts' own, off the scale, so they read as the plotted
+                numbers are — which is why a screen plots the units it wants
+                read. */}
             {horizontal ? (
               <>
-                <XAxis type="number" tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} />
+                <XAxis type="number" tick={axisTick} tickLine={false} axisLine={false} tickFormatter={plainFigure} />
                 <YAxis type="category" dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} width={96} />
               </>
             ) : (
               <>
                 <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} />
-                <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
+                <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={plainFigure} width={56} />
               </>
             )}
             <Tooltip
-              formatter={(v) => fmt(v)}
+              // The hovered bar's own series and row: recharts names the series by
+              // the label the Kit gave it and hands the row back under `payload`,
+              // so the figure reads as that series' own function wrote it.
+              formatter={(v, name, item) => {
+                const at = clean.indexOf(hoveredRow(item) as Record<string, unknown>);
+                return chartText(cols.find((c) => c.label === name)?.format, clean[at], at) ?? plainFigure(v);
+              }}
               // `clean` maps 1:1 over `data`, so it is the per-row slot's own
               // order — and it holds the objects recharts hands back on hover.
               content={tooltip === undefined ? undefined : slotTooltip(tooltip, clean)}
@@ -160,11 +167,13 @@ export function BarChart({
                 // magnitudes, and a reader who has to trace a bar back to an
                 // axis tick to learn one is reading the chart twice — every
                 // judge that asked "how long was 4191?" was asking for this.
-                // In the SERIES' own units: a duration series is "6m 52s"
-                // however the chart's other series reads.
+                // In THIS series' own words: `valueAccessor` is the one label
+                // door that carries the entry's index, which is what pairs a bar
+                // with the row its formatter was written for.
                 label={{
                   position: horizontal ? "right" : "top",
-                  formatter: (v: unknown) => applyFormat(v, seriesFormat ?? format) ?? "",
+                  valueAccessor: (entry: { value?: unknown }, index: number) =>
+                    chartText(seriesFormat, clean[index], index) ?? plainFigure(entry?.value),
                   fill: t.muted,
                   fontSize: 11,
                 }}

@@ -26,12 +26,14 @@ export interface TimelineProps extends KitStyled {
   empty?: ReactNode;
 }
 
-/** A timestamp field is a date most of the time and a plain label the rest of
- *  it; a value the Kit will not parse reads as ITSELF rather than disappearing —
- *  and a stamp already written for a reader is exactly that case: "Aug 15,
- *  7:42 AM" names no year, and re-parsing it dated the entry 2001. */
+/** The time field AS IT STANDS — the Timeline formats nothing, like every other
+ *  container. It used to parse the field and re-print it as a datetime, which was
+ *  the last place a Kit component decided what a host's value meant: a screen that
+ *  had already written "Aug 15, 7:42 AM" got it re-read (and, before the ISO
+ *  guard, re-dated to 2001), and one that wanted the day alone got a clock it
+ *  never asked for. Format it where the entries are prepared, or in `cell`. */
 function timeText(value: unknown): string {
-  return applyFormat(value, "datetime") ?? (value === undefined || value === null ? "" : String(value));
+  return applyFormat(value, "text") ?? "";
 }
 
 export function Timeline({

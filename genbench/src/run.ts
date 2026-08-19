@@ -424,14 +424,26 @@ export function missingKey(row: readonly ContenderId[], env: NodeJS.ProcessEnv):
  */
 export async function pool<T>(jobs: readonly (() => Promise<T>)[], limit: number): Promise<T[]> {
   const done: T[] = [];
+  const failures: unknown[] = [];
   let next = 0;
   const worker = async (): Promise<void> => {
     while (next < jobs.length) {
       const index = next++;
-      done[index] = await jobs[index]!();
+      // A job that throws loses ITSELF, after every other job has run — a
+      // rejection that surfaced mid-pool tore the shared browser out from
+      // under every case still in flight (2026-08-19, 17 cases and the
+      // summary lost to one liveness timeout). "A column that dies takes
+      // down nothing but itself" is the whole file's doctrine, and the pool
+      // has to keep it too.
+      try {
+        done[index] = await jobs[index]!();
+      } catch (error) {
+        failures.push(error);
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker));
+  if (failures.length > 0) throw failures[0];
   return done;
 }
 
@@ -1279,7 +1291,11 @@ async function main(argv: readonly string[]): Promise<number> {
     // the person's wait. Only asked of a screen that really painted — a case
     // that timed out before it reached a browser has no page to move the data
     // under.
-    const alive = page === undefined || shot === undefined ? undefined : await liveness(shooter, page);
+    // `.catch`, because the instrument must never cost the case: a liveness
+    // paint that times out on a loaded machine is a reading nobody got, not a
+    // screen nobody built (2026-08-19 — one such timeout, unguarded, ended the
+    // whole run).
+    const alive = page === undefined || shot === undefined ? undefined : await liveness(shooter, page).catch(() => undefined);
 
     // Outside the contender's budget: the wait is the grader's, and charging it
     // to the column would report a timeout the contender never had. `judge`

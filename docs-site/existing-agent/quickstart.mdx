@@ -1,6 +1,6 @@
 ---
 title: "In your existing agent"
-sidebarTitle: "Quickstart"
+sidebarTitle: "Quickstart: your agent"
 description: "Spread Vendo's guarded tool pack into an AI SDK or Mastra loop you already run, and render what it returns in your own chat."
 ---
 
@@ -19,18 +19,18 @@ The pack takes the caller you already resolved, so it is built inside the handle
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/vendo ai@^6 @ai-sdk/react@^3 @ai-sdk/anthropic@^3
+npm install @vendoai/vendo ai @ai-sdk/react @ai-sdk/anthropic
 npx vendo init
 ```
 
 ```bash pnpm
-pnpm add @vendoai/vendo ai@^6 @ai-sdk/react@^3 @ai-sdk/anthropic@^3
+pnpm add @vendoai/vendo ai @ai-sdk/react @ai-sdk/anthropic
 pnpm exec vendo init
 ```
 
 </CodeGroup>
 
-Pin the majors. Vendo peers `ai` at 6 and `@ai-sdk/anthropic` at 3, and bare installs pull 7 and 4 today — npm accepts the conflict, then every turn fails at runtime and `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001).
+No pins needed. Vendo speaks both live AI SDK majors, so `ai@6` and `ai@7` are each supported — keep the pair together (`ai@7` with `@ai-sdk/*@4`, `ai@6` with `@ai-sdk/*@3`), which is what a bare install gives you. `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001) for an `ai` outside that pair of majors.
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
 
@@ -64,8 +64,8 @@ export const vendo = createVendo({ principal });
 
 Both sides have to resolve the SAME subject. Your loop and the wire route the embeds call are two different requests, and an app or approval created under one subject is invisible to a surface asking as another — the embed then polls a screen it will never be shown. Everything below stays as written: the demo resolver never returns `null`, so the 401 guard simply never fires.
 
-```ts AI SDK · app/api/chat/route.ts focus={13,15}
-import { convertToModelMessages, streamText } from "ai";
+```ts AI SDK · app/api/chat/route.ts focus={13,14,16}
+import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
 import { vendoModel } from "@vendoai/vendo/server";
 import { resolvePrincipal, vendo } from "@/lib/vendo";
@@ -77,6 +77,7 @@ export async function POST(req: Request) {
   return streamText({
     model: vendoModel(),
     messages: await convertToModelMessages(messages),
+    stopWhen: stepCountIs(5),
     system: "…your system prompt as it is",
     // your own tools spread in here too
     tools: { ...(await vendoTools(vendo, { principal: caller })) },
@@ -223,7 +224,7 @@ Run your own chat and ask for something behind your API. The answer comes back a
   *your* chat route, which is not one of them, so the variable is what names it:
 
   ```bash .env.local
-  VENDO_BASE_URL=http://localhost:3000
+  VENDO_BASE_URL=http://localhost:<your-dev-port>
   ```
 
   An interactive `vendo init` writes that line from your answer, prefilled with

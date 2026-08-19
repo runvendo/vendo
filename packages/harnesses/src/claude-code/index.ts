@@ -16,6 +16,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  VendoError,
   log,
   type BeatPhase,
   type Harness,
@@ -380,6 +381,28 @@ function warnNoOriginOnce(): void {
 }
 
 /**
+ * Is the door THERE? One request of exactly the shape the SDK's MCP client is
+ * about to make, and the two answers that mean it is not: no answer at all
+ * (refused, DNS failure, timeout — anything that makes `fetch` throw), or the
+ * origin itself saying this path does not exist.
+ *
+ * Any HTTP status other than 404 is the door WORKING. A 401 especially: the
+ * credential that authenticates it is not minted until further down, so an
+ * unauthenticated probe is supposed to be turned away.
+ *
+ * On the TURN's signal, because this is the first thing a turn does and a door
+ * that accepts the connection but never replies holds it open all the way to
+ * undici's 300s headers timeout — a cancelled turn would sit here long after
+ * the person who cancelled it was gone. The caller reads the signal again
+ * before blaming the door: "nothing answered" and "we stopped asking" are not
+ * the same fact, and only one of them is a misconfiguration.
+ */
+async function doorAnswers(url: string, signal: AbortSignal): Promise<boolean> {
+  const response = await fetch(url, { method: "POST", signal }).catch(() => undefined);
+  return response !== undefined && response.status !== 404;
+}
+
+/**
  * A runtime driven BARE — no composition filled the apps hooks and the host
  * passed none — loses the mid-turn hot-path sync (skeletons paint at turn end
  * instead of in seconds) and the end-of-turn validate gate. A deployment fact,
@@ -510,6 +533,24 @@ export function claudeCode(
       // because they are the only one who can change it and the user must
       // never be quietly under-served.
       if (doorPort !== undefined && doorUrl === undefined) warnNoOriginOnce();
+
+      // The other half of that refusal, and the one it could not see: a door
+      // that IS named and is not THERE. The SDK swallows a failed MCP connect,
+      // so a dead door here opens a session with zero host tools and lets the
+      // model answer anyway — the same polite-refusal-at-HTTP-200, reached
+      // through a url that merely looks configured. A typo'd host and a host
+      // that is down are the same failure to the customer as a wrong path, so
+      // all of them refuse. Both legs, before the machine exists, so a doomed
+      // turn never pays for a sandbox boot.
+      if (doorUrl !== undefined && !await doorAnswers(doorUrl, turn.signal) && !turn.signal.aborted) {
+        throw new VendoError(
+          "unavailable",
+          `claudeCode() found no MCP door at ${doorUrl}. Every one of this product's `
+          + "actions travels over that door, so the turn would run with none. Check that "
+          + "VENDO_BASE_URL (or `mcp: { baseUrl }`) names the FULL public base this "
+          + "deployment is served under — path prefix included.",
+        );
+      }
 
       const boxEnv = inferenceEnv();
 

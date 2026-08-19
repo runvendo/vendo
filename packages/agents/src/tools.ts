@@ -19,40 +19,78 @@ import {
   type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
+import { asSchema, type FlexibleSchema, type InferSchema } from "ai";
 
-export interface ToolConfig {
+/** What `execute` is handed. A zod (or any standard-schema) `inputSchema` types
+ *  it; a raw JSON Schema cannot, because JSON Schema is data — there is nothing
+ *  in it for TypeScript to read — so that branch stays `Json`, as it always was. */
+export type ToolInput<TSchema> = [InferSchema<TSchema>] extends [never] ? Json : InferSchema<TSchema>;
+
+export interface ToolConfig<TSchema = JsonSchema> {
   name: string;
-  description?: string;
+  /** What this tool does and when to reach for it. REQUIRED: it is the only
+   *  thing the model reads when deciding whether to call it. */
+  description: string;
   /** The dev's label is FINAL; unlabeled = ungraded = asks at call time. */
   risk?: RiskLabel;
-  inputSchema: JsonSchema;
+  /** A zod schema — which also types `execute`'s `input` — or a raw JSON
+   *  Schema for a host that has one already. */
+  inputSchema: TSchema;
   /** The tool's DECLARED result shape. Surfaces print it, so generated UI can
    *  bind to fields before any call; nothing validates a result against it, so a
    *  stale schema never fails a working tool. */
   outputSchema?: JsonSchema;
-  execute(input: Json, ctx: RunContext, call: ToolCall): Promise<Json> | Json;
+  execute(input: ToolInput<TSchema>, ctx: RunContext, call: ToolCall): Promise<Json> | Json;
 }
 
 /** One host-authored tool, ready for `agent({ tools: [...] })`. */
 export interface HostTool {
   descriptor: ToolDescriptor;
-  execute: ToolConfig["execute"];
+  execute(input: Json, ctx: RunContext, call: ToolCall): Promise<Json> | Json;
 }
 
 export type ToolSource = HostTool | ToolRegistry;
 
-export function tool(config: ToolConfig): HostTool {
+/**
+ * A descriptor carries JSON Schema and nothing else — it crosses the wire to a
+ * model, a box and a browser, none of which can run a validator — so a zod
+ * schema is converted ONCE, here, rather than at every reader.
+ *
+ * The two branches are told apart by what the AI SDK itself keys on: zod (v3.25+
+ * and v4 alike) and every standard schema carry `~standard`, an `asSchema`
+ * result carries `jsonSchema`, and a lazy schema is a function. A raw JSON
+ * Schema is a plain object with none of those, and is passed through untouched.
+ */
+const isJsonSchema = (schema: JsonSchema | FlexibleSchema): schema is JsonSchema =>
+  typeof schema === "object" && !("~standard" in schema) && !("jsonSchema" in schema);
+
+const toJsonSchema = (schema: JsonSchema | FlexibleSchema): JsonSchema =>
+  isJsonSchema(schema)
+    ? schema
+    // `asSchema`'s `jsonSchema` is only a promise for a DEFERRED schema; zod's
+    // is built synchronously, which is why a descriptor can be minted here.
+    : asSchema(schema).jsonSchema as JsonSchema;
+
+export function tool<TSchema extends JsonSchema | FlexibleSchema>(config: ToolConfig<TSchema>): HostTool {
   if (!TOOL_NAME_PATTERN.test(config.name)) {
     throw new VendoError(
       "validation",
       `tool name "${config.name}" must match ${String(TOOL_NAME_PATTERN)}`,
     );
   }
+  if ((config.description ?? "").trim() === "") {
+    throw new VendoError(
+      "validation",
+      `tool "${config.name}" needs a description. It is the only thing the model reads when it `
+      + "decides whether to call this tool, so without one the tool is effectively invisible — "
+      + "write a sentence saying what it does and when to use it.",
+    );
+  }
   return {
     descriptor: {
       name: config.name,
-      description: config.description ?? "",
-      inputSchema: config.inputSchema,
+      description: config.description,
+      inputSchema: toJsonSchema(config.inputSchema),
       ...(config.outputSchema === undefined ? {} : { outputSchema: config.outputSchema }),
       risk: config.risk ?? "ungraded",
     },

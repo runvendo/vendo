@@ -38,6 +38,8 @@ export function SegmentedControl({ items, value, disabled, onChange, style, chil
       data-kit="SegmentedControl"
       disabled={disabled}
       {...given(engine)}
+      // Single-choice is radio semantics: one of these is always the answer.
+      role="radiogroup"
       {...(screen === null ? { defaultValue: selected } : { value: selected ?? [] })}
       onValueChange={(next, details) => {
         // Pressing the LIVE segment again un-presses it, and this bar spelled
@@ -68,6 +70,12 @@ export function SegmentedControl({ items, value, disabled, onChange, style, chil
           key={`${segment.value}-${i}`}
           value={segment.value}
           disabled={segment.disabled}
+          // `aria-pressed` is a toggle's word, and on a single-choice bar it
+          // hides which segment is live from anything reading state — pressing
+          // the active one is a no-op BY DESIGN, and only radio semantics say
+          // so. Base UI stamps aria-pressed on the button it renders, so the
+          // swap happens here, on the rendered node.
+          render={(props, state) => <button {...props} role="radio" aria-checked={state.pressed} aria-pressed={undefined} />}
           // Base UI hands the state to `style`, so the selected look is painted
           // with no stylesheet to select `[data-pressed]` on.
           style={({ pressed }) => ({

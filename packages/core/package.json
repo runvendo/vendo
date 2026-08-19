@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/core",
-  "version": "0.29.1",
+  "version": "0.33.0",
   "description": "The shapes everything speaks: Vendo v0 contracts — types, zod schemas, format constants, pure validators, descriptor hashing, and seam conformance kits.",
   "keywords": [
     "ai",
@@ -55,7 +55,7 @@
     "zod": "^3.25.0"
   },
   "peerDependencies": {
-    "ai": ">=6.0.0 <7",
+    "ai": ">=6.0.0 <8",
     "just-bash": "^3.1.0",
     "zod": ">=3.25.0 <5"
   },

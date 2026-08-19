@@ -133,6 +133,21 @@ export interface RunContext {
    * org-policy load. Absent means "no turn", never "unknown turn".
    */
   turnId?: TurnId;
+  /**
+   * The agent this run belongs to, by its own name (`agent({ name })`).
+   *
+   * Two agents over one store share one approvals collection, and a park used to
+   * name only the subject, the thread and the turn — so a person's yes to `ops`
+   * could be spent inside `support`, whose same-named tool hashes identically.
+   * Carried here for the same reason `turnId` is: the ctx is what already
+   * reaches every guarded call, so the row a park writes can name the agent
+   * without a second parameter anywhere.
+   *
+   * Optional because a run can have no agent: a door-side check, a host driving
+   * a turn by hand. Absent means "no agent", and a consumer scoped to one fails
+   * closed on it.
+   */
+  agent?: string;
 }
 
 /** 01-core §3 */
@@ -157,4 +172,5 @@ export const runContextSchema = z.object({
   // in-process only, so no wire shape exists for it (`.passthrough()` keeps it
   // on a ctx that already carries one).
   turnId: turnIdSchema.optional(),
+  agent: z.string().optional(),
 }).passthrough() satisfies z.ZodType<RunContext>;

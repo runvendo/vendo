@@ -396,7 +396,10 @@ describe("3 — a refusal nobody was asked about leaves a transcript the next tu
         }),
         threadId: THREAD,
         messages: [userMessage("m1", "pay")],
-        ctx: ctx(),
+        // Presence follows the case: an unattended turn is one nobody is AT, and
+        // the refusal it speaks says so — a present turn that merely does not
+        // block gets a different sentence (turn-tools.ts).
+        ctx: ctx({ presence: options.interactive ? "present" : "away" }),
         workspace: testWorkspace(),
         models: unusedModels(),
         interactive: options.interactive,

@@ -35,7 +35,13 @@ const MAX_SAMPLE_CHARS = 4_000;
 
 /** The flat strict schema (Anthropic strict tool use: additionalProperties
  *  false, every property required, no recursion) — one array of findings in
- *  exactly the {@link Finding} shape. */
+ *  exactly the {@link Finding} shape.
+ *
+ *  THE VERDICT IS WRITTEN LAST. Property order here is the order the model writes
+ *  in — the object goes to `input_schema` by reference and JSON keeps insertion
+ *  order — so `where` and `message` come before `severity`: naming the locus and
+ *  the evidence first means the grade is chosen against a written-out fact rather
+ *  than the fact being written to justify a grade already picked. */
 const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
@@ -47,8 +53,16 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["severity", "where", "message"],
+        required: ["where", "message", "severity"],
         properties: {
+          where: {
+            type: "string",
+            description: 'The locus: the component and its label, the query name, or "document".',
+          },
+          message: {
+            type: "string",
+            description: "One sentence: what the screen does, and the evidence for it.",
+          },
           severity: {
             type: "string",
             enum: ["block", "warn"],
@@ -57,14 +71,6 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
             // here because a tool description is prompt, arriving in the same call.
             description:
               "block for dishonesty and invented data; warn for everything else, a broken house rule included.",
-          },
-          where: {
-            type: "string",
-            description: 'The locus: the component and its label, the query name, or "document".',
-          },
-          message: {
-            type: "string",
-            description: "One sentence: what the screen does, and the evidence for it.",
           },
         },
       },

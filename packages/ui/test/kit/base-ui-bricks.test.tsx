@@ -153,14 +153,14 @@ describe("SegmentedControl", () => {
     render(<Screen initial="Week" render={(value, fire) => (
       <SegmentedControl items={["Week", "Month", "Year"]} value={value} onChange={fire} />
     )} />);
-    const at = (name: string) => screen.getByRole("button", { name });
+    const at = (name: string) => screen.getByRole("radio", { name });
 
     fireEvent.click(at("Month"));
-    expect(at("Month").getAttribute("aria-pressed")).toBe("true");
-    expect(at("Week").getAttribute("aria-pressed")).toBe("false");
+    expect(at("Month").getAttribute("aria-checked")).toBe("true");
+    expect(at("Week").getAttribute("aria-checked")).toBe("false");
     // The second press is the freeze detector.
     fireEvent.click(at("Year"));
-    expect(at("Year").getAttribute("aria-pressed")).toBe("true");
+    expect(at("Year").getAttribute("aria-checked")).toBe("true");
   });
 
   it("takes {value,label} items and refuses a disabled segment", () => {
@@ -171,11 +171,11 @@ describe("SegmentedControl", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Week" }));
     expect(onChange).toHaveBeenCalledWith("w");
 
     onChange.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Month" }));
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -192,7 +192,7 @@ describe("SegmentedControl", () => {
   it("says nothing when the segment already pressed is pressed again", () => {
     const onChange = vi.fn();
     render(<SegmentedControl items={["Week", "Month"]} onChange={onChange} />);
-    const week = () => screen.getByRole("button", { name: "Week" });
+    const week = () => screen.getByRole("radio", { name: "Week" });
 
     fireEvent.click(week());
     expect(onChange).toHaveBeenCalledWith("Week");
@@ -200,15 +200,15 @@ describe("SegmentedControl", () => {
     onChange.mockClear();
     fireEvent.click(week());
     expect(onChange).not.toHaveBeenCalled();
-    expect(week().getAttribute("aria-pressed")).toBe("true");
+    expect(week().getAttribute("aria-checked")).toBe("true");
   });
 
   it("keeps a screen-bound bar on its choice through the same second press", () => {
     render(<Screen initial="Week" render={(value, fire) => (
       <SegmentedControl items={["Week", "Month"]} value={value} onChange={fire} />
     )} />);
-    fireEvent.click(screen.getByRole("button", { name: "Week" }));
-    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Week" }));
+    expect(screen.getByRole("radio", { name: "Week" }).getAttribute("aria-checked")).toBe("true");
   });
 });
 

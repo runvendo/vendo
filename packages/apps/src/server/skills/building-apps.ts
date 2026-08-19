@@ -81,6 +81,11 @@ that parses.
 - **A hole is a \`<Disclaimer>\`.** Where this product cannot serve part of the
   ask, say that in one sentence and build nothing around it. Never a placeholder
   part, never an empty card standing in for a feature, never a chart of zeros.
+- **A hole is a tool this host does not have — not a verb it does not spell.** If a
+  tool here does the thing they asked for under another name, wire it and label the
+  control with what that tool actually does ("Send back to In progress", not "Kick
+  back to author"). A disabled control explaining the gap is a placeholder part in
+  disguise.
 `;
 
 export const buildingAppsSkill: Skill = {

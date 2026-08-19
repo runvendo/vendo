@@ -22,7 +22,7 @@ import type { SessionMachine, SessionMessage } from "../../src/claude-code/machi
 import { emptyTree } from "../../src/materialize.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { provideHarnessAdapters } from "../../src/harness-sandbox.js";
-import { testAppsHooks, testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
+import { liveDoor, testAppsHooks, testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
 
 /** Every message the doubled local machine was sent, in order. */
 const sent: SessionMessage[] = [];
@@ -96,15 +96,26 @@ const doorWarnings = (): string[] => errors.filter((line) => line.includes("[ven
  */
 describe("machine: \"local\" and the MCP door's origin", () => {
   test("a REACHABLE door is handed over, and nothing is said", async () => {
-    const harness = claudeCode({ machine: "local", ...testAppsHooks() });
-    provideHarnessAdapters(harness, {
-      toolDoor: { url: "http://127.0.0.1:3000/api/vendo/mcp", mint: () => "vtk_ok", revoke: () => undefined },
-    });
+    // ⚠️ TEST EDIT — this fixture used to hardcode `http://127.0.0.1:3000`,
+    // which nothing in the test owned. The turn now probes the url it is handed,
+    // so "REACHABLE" has to be true rather than asserted: on a developer machine
+    // running Maple, port 3000 really does answer 404 on this path, and the test
+    // only passed in CI because nothing was listening there at all. A door this
+    // test starts itself is reachable everywhere.
+    const door = await liveDoor();
+    try {
+      const harness = claudeCode({ machine: "local", ...testAppsHooks() });
+      provideHarnessAdapters(harness, {
+        toolDoor: { url: door.url, mint: () => "vtk_ok", revoke: () => undefined },
+      });
 
-    await drain(harness, localTurn());
+      await drain(harness, localTurn());
 
-    expect(sent[0]?.toolDoor).toEqual({ url: "http://127.0.0.1:3000/api/vendo/mcp", token: "vtk_ok" });
-    expect(doorWarnings()).toEqual([]);
+      expect(sent[0]?.toolDoor).toEqual({ url: door.url, token: "vtk_ok" });
+      expect(doorWarnings()).toEqual([]);
+    } finally {
+      await door.close();
+    }
   });
 
   test("NO origin: the operator is warned ONCE, naming the fix, and the turn still runs", async () => {

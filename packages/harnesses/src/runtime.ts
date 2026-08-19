@@ -287,11 +287,15 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
 
   return {
     async run<Options>(started: TurnRunInput<Options>): Promise<Response> {
-      // The turn's identity, minted here because here is where a turn begins. It
-      // rides the CTX rather than a second parameter, so every guarded call,
-      // audit row and painted view below is joinable to this exchange for free —
-      // and the rest of this function reads `input` exactly as it always did.
-      const turnId = mintTurnId();
+      // The turn's identity, minted here because here is where a turn begins —
+      // unless the caller already named one, which is how a caller that hands the
+      // id out BEFORE the turn resolves (`agent.chat().turnId`) stays joinable to
+      // the rows this turn writes. There is still exactly one id per turn; the
+      // only question is who minted it. It rides the CTX rather than a second
+      // parameter, so every guarded call, audit row and painted view below is
+      // joinable to this exchange for free — and the rest of this function reads
+      // `input` exactly as it always did.
+      const turnId = started.ctx.turnId ?? mintTurnId();
       const input: TurnRunInput<Options> = { ...started, ctx: { ...started.ctx, turnId } };
       // §1.3: what the harness may remember depends on how the history moved.
       // A prefix truncation is a native rewind, so its session survives; an

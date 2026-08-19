@@ -1,7 +1,7 @@
 ---
 title: "From outside agents"
 description: "Your product, driven from your own agent, as one of your users."
-sidebarTitle: "Quickstart"
+sidebarTitle: "Quickstart: outside agents"
 ---
 
 ## Quickstart
@@ -183,6 +183,20 @@ stock MCP client, no Vendo import: the door's own listing is the tool set.
 
 That URL is your app's, derived from `VENDO_BASE_URL` and never from the
 broker. It does not move when the posture does.
+
+The client is the official MCP SDK, wherever your agent lives:
+
+<CodeGroup>
+
+```bash npm
+npm install @modelcontextprotocol/sdk
+```
+
+```bash pnpm
+pnpm add @modelcontextprotocol/sdk
+```
+
+</CodeGroup>
 
 ```js acme-agent.mjs focus={7}
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
