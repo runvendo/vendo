@@ -145,6 +145,30 @@ export interface ClaudeCodeDeps
 }
 
 /**
+ * Every env var the Agent SDK reads a MODEL ID from — the default, the small/fast
+ * step, subagent spawns, and the four family aliases.
+ *
+ * Taken from the SDK's own model-env array (`_Ne` in `sdk.mjs`,
+ * `@anthropic-ai/claude-agent-sdk@0.3.214`) rather than guessed. The rest of that
+ * array is display metadata (`_NAME`, `_DESCRIPTION`,
+ * `_SUPPORTED_CAPABILITIES`) and `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION`, none of
+ * which name a model to ask for.
+ *
+ * Pinning the default alone is what shipped, and it was not enough: a step on any
+ * other slot asked the Cloud gateway for the SDK's built-in `claude-opus-4-8` and
+ * the `400 Unknown model id` reached an end user's chat verbatim.
+ */
+const SDK_MODEL_SLOT_ENV = [
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+] as const;
+
+/**
  * The recorded v0 inference exception (design §9): a boxed harness must reach a
  * model to think, and that is the ONLY credential in the machine.
  *
@@ -187,11 +211,12 @@ export function inferenceEnv(): Record<string, string> {
     const base = (set("VENDO_CLOUD_URL") ?? "https://console.vendo.run").replace(/\/+$/, "");
     key = cloudKey;
     url = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
-    // The gateway serves the vendo model family as literal ids, so the DEFAULT
-    // model is pinned to the family name — the SDK's own default is a raw
-    // claude-* id the gateway would grace-remap. Only the default: an explicit
-    // `options.model` rides the session-open payload, which beats ANTHROPIC_MODEL.
-    env["ANTHROPIC_MODEL"] = "vendo";
+    // The gateway serves the vendo model family as literal ids, so EVERY slot is
+    // pinned to the family name — each one the SDK leaves unset falls back to a
+    // raw claude-* id, which this gateway answers `400 Unknown model id`. Env
+    // only: an explicit `options.model` rides the session-open payload, which
+    // beats ANTHROPIC_MODEL.
+    for (const slot of SDK_MODEL_SLOT_ENV) env[slot] = "vendo";
   }
   if (key === undefined || url === undefined) return env;
   env["ANTHROPIC_API_KEY"] = key;

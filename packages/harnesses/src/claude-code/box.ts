@@ -165,6 +165,9 @@ export interface BoxMachineOptions {
   template?: string;
   /** Test seam; production uses {@link BOX_IDLE_TTL_MS}. */
   idleTtlMs?: number;
+  /** Test seam; production uses {@link MESSAGE_BUDGET_MS}. Same seam the local
+   *  rung carries, so neither rung's budget can be exercised only in theory. */
+  messageBudgetMs?: number;
 }
 
 export async function boxMachine(options: BoxMachineOptions): Promise<SessionMachine> {
@@ -318,7 +321,8 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       // Addressable from here until the poll loop lets go: a steer names the
       // MESSAGE, and only the one being answered can take it.
       inFlight = messageId;
-      const deadline = Date.now() + MESSAGE_BUDGET_MS;
+      const budgetMs = options.messageBudgetMs ?? MESSAGE_BUDGET_MS;
+      const deadline = Date.now() + budgetMs;
       let cursor = 0;
 
       // Interrupt the TURN, not the conversation — and do it the moment Stop is
@@ -343,7 +347,14 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
           if (stopped) return;
           if (Date.now() > deadline) {
             await request(`/session/${messageId}/interrupt`, {}).catch(() => undefined);
-            throw new VendoError("sandbox-unavailable", "the box message outran its budget");
+            // NOT `sandbox-unavailable`: that code is this file's answer for a
+            // machine that refused the handshake or a control port that stopped
+            // answering, and a turn which merely ran long shares neither cause.
+            // Sending an operator to inspect a healthy box is a bug of its own.
+            throw new VendoError(
+              "unavailable",
+              `the turn outran its ${budgetMs}ms message budget`,
+            );
           }
           const polled = await request(`/session/${messageId}/poll`, { cursor, waitMs: POLL_WAIT_MS });
           for (const event of Array.isArray(polled["events"]) ? polled["events"] : []) {
