@@ -237,7 +237,9 @@ describe("what a model can put in a memory", () => {
     const alice = user("user_alice");
     const remember = rememberTool(memory);
     const args = { text: "\u0085" };
-    await remember.execute(args, ctxFor(alice), call(args)).catch(() => undefined);
+    // `HostTool.execute` is `Promise<Json> | Json` and `Json` is `unknown`, so the
+    // returned value has no `.catch` to tsc even though this one is a promise.
+    await Promise.resolve(remember.execute(args, ctxFor(alice), call(args))).catch(() => undefined);
     const prompt = await resolveSystem({ guard: guardSaying(), memory }, ctxFor(alice));
     expect(prompt).not.toContain("[Memory]");
   });
