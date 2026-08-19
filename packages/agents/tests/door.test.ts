@@ -13,6 +13,8 @@
  * the Agent SDK.
  */
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
@@ -219,7 +221,38 @@ describe("the door ladder", () => {
   });
 });
 
+/**
+ * ⚠️ TEST EDIT — every case below RUNS a turn, and `claudeCode()` now probes the
+ * door url before it boots a machine, refusing a turn no door answers. The
+ * fixture origin was `https://app.example.com`, a reserved domain that never
+ * resolved, so the box was handed nothing at all. These cases get a door that is
+ * really there; the ladder cases above never open a turn, never probe, and keep
+ * naming the plain `ORIGIN` they always did.
+ *
+ * A stub rather than a forwarder to `support.door`: what the probe needs to know
+ * is that something is listening, and this file already drives the REAL door
+ * handler directly in the assertions below.
+ */
 describe("what the box is actually handed", () => {
+  let live: { origin: string; url: string; close: () => Promise<void> };
+
+  beforeEach(async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(401);
+      response.end();
+    });
+    await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+    const { port } = server.address() as AddressInfo;
+    const origin = `http://127.0.0.1:${port}`;
+    live = {
+      origin,
+      url: `${origin}${DOOR_PATH}`,
+      close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }),
+    };
+  });
+
+  afterEach(async () => { await live.close(); });
+
   it("dials the door, lists the host's tools through it, and carries its hostname out of the box", async () => {
     let seen: BoxRun["toolDoor"];
     let listing = "";
@@ -244,13 +277,13 @@ describe("what the box is actually handed", () => {
       store: memoryStore(),
       tools: [refund],
       sandbox: adapter,
-      door: { baseUrl: ORIGIN },
+      door: { baseUrl: live.origin },
     });
     const session = await support.session("u_42");
     await (await session.stream("refund invoice 7")).text();
 
     // (1) A real port produced a real credential and a real URL.
-    expect(seen?.url).toBe(DOOR_URL);
+    expect(seen?.url).toBe(live.url);
     expect(seen?.token).toMatch(/^vtk_/);
 
     // (2) The `liveTurn` seam is wired, so that credential RESOLVES: publishing
@@ -260,7 +293,7 @@ describe("what the box is actually handed", () => {
 
     // (3) The door's hostname is on the box's outbound allowlist — a box that
     //     cannot reach the door has the tools and cannot call them.
-    expect(created[0]?.allowedDomains).toContain("app.example.com");
+    expect(created[0]?.allowedDomains).toContain("127.0.0.1");
   });
 
   it("that same credential is what becomes the SDK's `mcpServers` entry", async () => {
@@ -275,7 +308,7 @@ describe("what the box is actually handed", () => {
       store: memoryStore(),
       tools: [refund],
       sandbox: adapter,
-      door: { baseUrl: ORIGIN },
+      door: { baseUrl: live.origin },
     });
     await (await (await support.session("u_42")).stream("hi")).text();
     expect(handed).toBeDefined();
@@ -307,7 +340,7 @@ describe("what the box is actually handed", () => {
     expect(opened[0]?.["mcpServers"]).toEqual({
       [VENDO_MCP_SERVER]: {
         type: "http",
-        url: DOOR_URL,
+        url: live.url,
         headers: { Authorization: `Bearer ${handed!.token}` },
         alwaysLoad: true,
       },
@@ -326,7 +359,7 @@ describe("what the box is actually handed", () => {
       store: memoryStore(),
       tools: [refund],
       sandbox: adapter,
-      door: { baseUrl: ORIGIN },
+      door: { baseUrl: live.origin },
     });
     await (await (await support.session("u_42")).stream("hi")).text();
     expect(token).toMatch(/^vtk_/);
