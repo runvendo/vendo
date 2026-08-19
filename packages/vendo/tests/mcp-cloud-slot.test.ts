@@ -282,6 +282,23 @@ describe("the mcp seam's Cloud rung", () => {
     expect(body).not.toContain("upstream boom");
   });
 
+  it("never echoes a console body that is not the envelope, whatever it carries", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_live_SUPERSECRET");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/api/v1/mcp")) return new Response("{}", { status: 200 });
+      // A 4xx that is NOT the envelope — a gateway page, a proxy, a stack
+      // trace. Only `error.message` is ever repeated, so none of this can be.
+      return new Response("denied for key vk_live_SUPERSECRET at 10.0.0.4", { status: 403 });
+    });
+
+    const vendo = await compose(true);
+    const body = await (await vendo.handler(new Request(PRM))).text();
+    expect(body).not.toContain("vk_live_SUPERSECRET");
+    expect(body).not.toContain("10.0.0.4");
+    expect(body).not.toContain("denied for key");
+  });
+
   it("leaves the keyless BYO door local and offline", async () => {
     const calls = consoleFixture();
     const vendo = await compose(true);
