@@ -209,6 +209,16 @@ async function initCommand(args: string[]): Promise<number> {
   if ((posture !== undefined || serviceKey) && useCase !== "mcp") {
     problems.push(`${posture === undefined ? "--service-key" : "--posture"} only applies to --use-case mcp (pass --use-case mcp, or drop it)`);
   }
+  // …and the same rule inside the MCP path: a broker-fronted door's key is
+  // provisioned with the tenant, so taking one here would discard it and leave
+  // the caller — usually a coding agent relaying answers — believing it landed.
+  if (serviceKey && posture === "broker") {
+    problems.push(
+      "--service-key does not apply to --posture broker: a Cloud-fronted door's service key is provisioned "
+      + "with the tenant on first use, so this one would be discarded. Drop --service-key, or pass --posture "
+      + "local to declare your own (https://docs.vendo.run/outside-agents/service-keys-and-broker)",
+    );
+  }
   if (args.includes("--check") && args.includes("--no-check")) {
     problems.push("--check and --no-check answer the same question — pass one or the other");
   }

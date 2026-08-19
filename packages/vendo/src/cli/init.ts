@@ -1002,8 +1002,11 @@ async function planMcpScaffold(input: {
     posture = (await select("How should outside agents sign in?", POSTURE_OPTIONS)) as McpPosture;
   }
 
+  // Local doors only. A Cloud-fronted door's service key is provisioned with
+  // the tenant and listed, rotated and revoked in the console, so asking here
+  // would offer a decision init cannot act on.
   let serviceKey = options.serviceKey === true;
-  if (options.serviceKey === undefined && !ask) {
+  if (options.serviceKey === undefined && !ask && posture === "local") {
     const confirm = options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm);
     serviceKey = await confirm("Will your own backend call these tools machine-to-machine?", false);
   }
@@ -2156,7 +2159,7 @@ async function finishRun(input: {
     // A step is `headline\ndetail`: the pretty block numbers and indents it,
     // and a plain transcript keeps the detail on its own indented line.
     if (pretty === null) {
-      for (const line of [...mcp.steps, ...mcp.envLines]) output.log(`  ${line.replace(/\n/g, "\n    ")}`);
+      for (const line of mcp.steps) output.log(`  ${line.replace(/\n/g, "\n    ")}`);
     } else pretty.block("Steps that are yours", mcpStepLines(mcp), "◇");
   }
 
