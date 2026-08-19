@@ -175,10 +175,17 @@ export const EDIT_APP_TOOL = "edit_app";
  * A fresh build's app is the file the run is about to write, so opening it or
  * listing its saved records can only answer `not-found`: two entries on a
  * ten-step menu whose one possible use is a step spent learning that. An edit
- * starts the other way round — the document already on the person's screen is the
- * thing being changed, so reading it is the first move. Withheld from the brief's
- * button half too on a fresh build (`withheld` below): a screen cannot offer to
- * open an app nobody has made yet.
+ * starts the other way round — the app already on the person's screen is the
+ * thing being changed, so what it is showing is worth a step. Withheld from the
+ * brief's button half too on a fresh build (`withheld` below): a screen cannot
+ * offer to open an app nobody has made yet.
+ *
+ * NEITHER OF THESE READS THE SOURCE, and believing otherwise cost a whole
+ * investigation: `vendo_apps_open` is the client's render door
+ * (`apps` persistence/open.ts `paintedScreenSurface`) — it RE-RUNS the screen and
+ * answers with the flattened tree plus the compiled module, deliberately, because
+ * that is what a caller mounts. The `app.tsx` a run starts from reaches the model
+ * as {@link ScreenInput.source} instead, and only for a remix.
  */
 const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_data_list"];
 
@@ -294,6 +301,11 @@ export interface ScreenInput {
    *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
    *  sits with the job description rather than with the deployment's voice. */
   briefing?: string;
+  /** The `app.tsx` this run starts from — a REMIX's ported source, and nothing
+   *  else's ({@link ScreenAssemblerDeps.storedScreen} answers only for a seeded
+   *  row, `replayFrom` only for a re-seed). Absent on every other edit, whose
+   *  first message stays the ask alone. See {@link startingSource}. */
+  source?: string;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -615,6 +627,39 @@ const judgeScreen = async (
   if (output.ok && findings.length === 0) return undefined;
   return refusal(path, findings);
 };
+
+/**
+ * The screen this run starts from, IN FRONT OF THE MODEL — the remix's whole
+ * reason to exist, and the one thing it never had.
+ *
+ * A remix's first act is an edit of the host component's own ported code
+ * (`remix/seed-surface.ts` `seedFrom`), and the loop checks that code out into
+ * the workspace. But the workspace is not somewhere this loop can READ: the
+ * loadout carries no file hand, `edit_app` can only replace passages the model
+ * quotes back character for character, and `vendo_apps_open` answers with the
+ * render rather than the source ({@link EDIT_TOOLS}). So the port sat staged and
+ * invisible, and every remix wrote a replacement out of the catalog instead —
+ * guessing a host component's props, which the checks floor then refused. The
+ * ask alone could never have produced anything else.
+ *
+ * A message rather than a section of the brief: the brief heads a cached prefix
+ * shared by every assembly, and this is one app's file.
+ *
+ * REMIXES ONLY. `source` is filled from the source this run starts on, which
+ * exists for a seeded row and nothing else — an ordinary edit's first message is
+ * still the ask, byte for byte.
+ */
+const startingSource = (source: string | undefined): string =>
+  source === undefined ? "" : `This app already has a screen: the host's own component, ported into this dialect.
+It is below, and it is what the ask under it changes — edit THIS code, keep every
+part the ask does not name, and never replace it with something built from the
+catalog.
+
+\`\`\`tsx
+${source}
+\`\`\`
+
+`;
 
 /** How much room the screen has, when the host said. Said ONLY then: a screen
  *  cannot measure its own surface, so a width this file guessed would read to the
@@ -1131,7 +1176,11 @@ export async function assembleScreen(
   loadout.push(acting(saveApp), acting(editApp));
 
   const turn: Turn<VendoHarnessOptions> = {
-    messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
+    messages: [{
+      id: `screen_${input.appId}`,
+      role: "user",
+      parts: [{ type: "text", text: `${startingSource(input.source)}${input.request}` }],
+    }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
@@ -1477,7 +1526,8 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       // the loss happens a turn later. Proven: re-add the commit and
       // `remix-port-seed.e2e.test.ts`'s re-seed guarantee goes red on the
       // workspace half.
-      if (start !== undefined && start.trim() !== "") await base.writeFile(checkout, start);
+      const staged = start !== undefined && start.trim() !== "" ? start : undefined;
+      if (staged !== undefined) await base.writeFile(checkout, staged);
       /** The last SETTLED paint of this app, kept as it goes past on its way to the
        *  person's screen. It is the only place the resolved query answers exist —
        *  the seam spreads them beside the description on the final paint — so the
@@ -1530,6 +1580,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           request: request.request,
           ...(request.viewport === undefined ? {} : { viewport: request.viewport }),
           ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
+          ...(staged === undefined ? {} : { source: staged }),
         },
       );
       if (result.kind !== "assembled") return result;
