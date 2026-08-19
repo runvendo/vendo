@@ -35,7 +35,7 @@
  * resumes on the same session) and worse for cost (a parked write holds a
  * sandbox for up to 90s). Recorded in the lane's close note as a deviation.
  */
-import { log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError } from "@vendoai/core";
+import { log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError, WARM_THREAD_PREFIX } from "@vendoai/core";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 import { emptyTree } from "../materialize.js";
 import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
@@ -84,13 +84,17 @@ interface BoxEntry {
   token: string;
   /** Has this box been materialized and had its session opened? */
   warm: boolean;
+  /** Set on a CLAIMED spare, whose disk carries the warm probe's live session:
+   *  the next message must close it and open one that resumes nothing. */
+  reopen: boolean;
   /** What this box's disk holds — the sync-back baseline, per conversation. */
   tree: TreeState;
   idle?: ReturnType<typeof setTimeout>;
 }
 
-/** One box per THREAD, for as long as the conversation stays warm. Module-scoped
- *  because that is what "the box outlives the turn" means. */
+/** One box per THREAD, for as long as the conversation stays warm — plus, under
+ *  the spare key below, the box a WARM turn booted, waiting to be claimed.
+ *  Module-scoped because that is what "the box outlives the turn" means. */
 const boxes = new Map<string, BoxEntry>();
 
 const mintToken = (): string => `bxt_${globalThis.crypto.randomUUID()}`;
@@ -174,6 +178,21 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
   const idleTtlMs = options.idleTtlMs ?? BOX_IDLE_TTL_MS;
   const template = options.template ?? globalThis.process?.env?.["VENDO_BOX_TEMPLATE"];
 
+  // Where a WARM turn parks its box. Not under its thread id: `WARM_THREAD_PREFIX`
+  // says that id dies with the one-token probe, so a box parked under it is a real
+  // cloud machine — booted, hello'd, billed for the whole idle TTL — that the
+  // conversation it was warmed FOR can never find. That turn arrives under its own
+  // thread id, misses, and boots a second box, which is the entire cost the warm
+  // door exists to remove.
+  //
+  // The key is the CREATE SPEC, because that is what makes a spare interchangeable
+  // with the box a real turn would have booted. `\0` cannot appear in a thread id,
+  // so no conversation collides with it. `env` is deliberately not part of it: the
+  // claimer's own env lands on the box through the `hello` that claims it.
+  const spare = `\0spare ${JSON.stringify([template ?? null, options.allowedDomains])}`;
+  const warming = options.threadId.startsWith(WARM_THREAD_PREFIX);
+  const key = warming ? spare : options.threadId;
+
   /**
    * The credential handoff, and the only one. The box trusts the first hello
    * while it is unclaimed and refuses every other caller after.
@@ -213,34 +232,73 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
         "the workspace machine refused the session handshake",
       );
     }
-    const fresh: BoxEntry = { machine, token, warm: false, tree: emptyTree() };
-    boxes.set(options.threadId, fresh);
+    const fresh: BoxEntry = { machine, token, warm: false, reopen: false, tree: emptyTree() };
+    boxes.set(key, fresh);
     return fresh;
   };
 
-  const existing = boxes.get(options.threadId);
-  let entry: BoxEntry | undefined;
-  if (existing !== undefined) {
-    disarmIdle(existing);
-    // PROBE, never assume. A box can be gone without us having asked — a
-    // provider reap, an idle policy on their side, a host that slept. Handing
-    // that corpse out made the thread fail in a third of a second for the whole
-    // process lifetime; only a restart recovered it. `hello` re-presenting the
-    // SAME token is the cheapest round trip the box answers.
-    if (await hello(existing.machine, existing.token)) {
-      entry = existing;
-    } else {
-      log({
-        code: "harnesses.claude-code-box-stale",
-        level: "error",
-        message: "[vendo] claude-code: the box stopped answering; starting fresh",
-      });
-      boxes.delete(options.threadId);
-      await existing.machine.destroy().catch(() => undefined);
+  /** Take the box parked at `at`, if it is still there.
+   *
+   *  PROBE, never assume. A box can be gone without us having asked — a provider
+   *  reap, an idle policy on their side, a host that slept. Handing that corpse
+   *  out made the thread fail in a third of a second for the whole process
+   *  lifetime; only a restart recovered it. `hello` re-presenting the SAME token
+   *  is the cheapest round trip the box answers, and on a spare it doubles as the
+   *  claimer's env handoff.
+   *
+   *  `exclusive` empties the slot BEFORE that probe awaits — what a claim needs
+   *  and a thread key must not have. Two first messages arriving inside one hello
+   *  round trip would otherwise both be handed the same spare, and two
+   *  conversations would share one disk and one session. */
+  const adopt = async (at: string, exclusive = false): Promise<BoxEntry | undefined> => {
+    const held = boxes.get(at);
+    if (held === undefined) return undefined;
+    if (exclusive) boxes.delete(at);
+    disarmIdle(held);
+    if (await hello(held.machine, held.token)) return held;
+    log({
+      code: "harnesses.claude-code-box-stale",
+      level: "error",
+      message: "[vendo] claude-code: the box stopped answering; starting fresh",
+    });
+    boxes.delete(at);
+    await held.machine.destroy().catch(() => undefined);
+    return undefined;
+  };
+
+  const startedAt = Date.now();
+  let served: "thread-reuse" | "spare-claim" | "cold-boot" = "thread-reuse";
+  let entry = await adopt(key);
+  // THE CLAIM. A spare's disk holds the probe's workspace and its live session,
+  // neither of which is this conversation's, so it is handed over as a FRESH box
+  // is — `warm: false` and an empty tree, which is what makes the caller
+  // materialize and re-seed — plus the one thing a fresh box does not need:
+  // `reopen`, because the probe's session is live on that disk and must not be
+  // what the user's first message continues.
+  //
+  // Claimable only while PARKED, and an armed idle timer is exactly that fact:
+  // the warm turn ended and the box is waiting to be reaped. One still mid-probe
+  // is left alone — both turns would materialize over each other on the one disk.
+  if (entry === undefined && !warming && boxes.get(spare)?.idle !== undefined) {
+    entry = await adopt(spare, true);
+    if (entry !== undefined) {
+      served = "spare-claim";
+      boxes.set(key, entry);
+      entry.warm = false;
+      entry.reopen = true;
+      entry.tree = emptyTree();
     }
   }
+  if (entry === undefined) served = "cold-boot";
   entry ??= await bootBox();
   const box = entry;
+  // The one number that says whether warming is working: a cold boot here is a
+  // second of the user's first message, a claim is none of it.
+  log({
+    code: "harnesses.claude-code-box-ready",
+    level: "debug",
+    message: `[vendo] claude-code: box ready by ${served} in ${Date.now() - startedAt}ms`,
+  });
 
   const request = async (path: string, body?: unknown): Promise<Record<string, unknown>> => {
     const { status, json } = await control(box.machine, box.token, path, body);
@@ -309,7 +367,10 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
         effort: message.effort,
         maxTurns: message.maxTurns,
         resume: message.resume,
-        reopen: message.reopen,
+        // A claimed spare's live session is the warm probe's. Closing it and
+        // opening one that resumes nothing is what makes this message the user's
+        // FIRST rather than the probe's second.
+        reopen: message.reopen === true || box.reopen,
         pluginPath: message.pluginPath,
         skillNames: message.skillNames,
         toolDoor: message.toolDoor,
@@ -317,6 +378,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       // From here on the box holds a session, so a next message on this thread
       // neither re-materializes nor re-seeds.
       box.warm = true;
+      box.reopen = false;
       const messageId = String(started["messageId"] ?? "");
       // Addressable from here until the poll loop lets go: a steer names the
       // MESSAGE, and only the one being answered can take it.
@@ -391,7 +453,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       // The box stays up for the next message and is destroyed when the
       // conversation goes quiet. Nothing to carry in `turn.state`: recovery is a
       // fresh box plus the store, not a snapshot ref.
-      armIdle(options.threadId, box, idleTtlMs);
+      armIdle(key, box, idleTtlMs);
     },
   };
 }

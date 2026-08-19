@@ -22,6 +22,7 @@ import {
   isUnattended,
   situationPromptBlock,
   toVendoWirePart,
+  WARM_THREAD_PREFIX,
   type FilesAdapter,
   type Harness,
   type Membership,
@@ -887,7 +888,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       const system = await config.system(input.ctx, { discovery: rail });
       const response = await runtime.run<{ maxSteps: number; maxOutputTokens: number }>({
         harness: config.harness,
-        threadId: `thr_warm${globalThis.crypto.randomUUID().replaceAll("-", "")}` as ThreadId,
+        threadId: `${WARM_THREAD_PREFIX}${globalThis.crypto.randomUUID().replaceAll("-", "")}` as ThreadId,
         messages: [{
           id: "warm",
           role: "user",
