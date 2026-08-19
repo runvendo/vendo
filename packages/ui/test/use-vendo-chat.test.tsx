@@ -42,6 +42,9 @@ interface Mount {
   sent: Array<Record<string, unknown>>;
   /** Every approval decision the browser posted to the permission wire. */
   decided: Array<Record<string, unknown>>;
+  /** Make the permission wire refuse from here on — a 409, which is what the
+   *  wire answers for an approval already decided or long expired. */
+  refuse(): void;
   thread: UIMessage[];
   close(): Promise<void>;
 }
@@ -52,10 +55,11 @@ async function serveMount(): Promise<Mount> {
   const sent: Array<Record<string, unknown>> = [];
   const decided: Array<Record<string, unknown>> = [];
   const thread: UIMessage[] = [];
+  let refusing = false;
   const server: Server = createServer((incoming, outgoing) => {
     void (async () => {
       const url = new URL(incoming.url ?? "/", "http://127.0.0.1");
-      if (incoming.method === "GET" && url.pathname === `/threads/${THREAD_ID}`) {
+      if (incoming.method === "GET" && url.pathname.startsWith("/threads/")) {
         outgoing.writeHead(200, { "content-type": "application/json" });
         outgoing.end(JSON.stringify({ id: THREAD_ID, messages: thread }));
         return;
@@ -65,7 +69,7 @@ async function serveMount(): Promise<Mount> {
       const body = JSON.parse(Buffer.concat(chunks).toString() || "{}") as Record<string, unknown>;
       if (url.pathname === "/approvals/decide") {
         decided.push(body);
-        outgoing.writeHead(200, { "content-type": "application/json" });
+        outgoing.writeHead(refusing ? 409 : 200, { "content-type": "application/json" });
         outgoing.end("{}");
         return;
       }
@@ -91,6 +95,9 @@ async function serveMount(): Promise<Mount> {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     sent,
     decided,
+    refuse: () => {
+      refusing = true;
+    },
     thread,
     close: () =>
       new Promise<void>((resolve) => {
@@ -177,5 +184,34 @@ describe("useVendoChat", () => {
       { ids: ["apr_1"], decision: { approve: true } },
       { ids: ["apr_2", "apr_3"], decision: { approve: false } },
     ]);
+  });
+
+  it("raises a refused decision instead of reporting it as landed", async () => {
+    mount.thread.push(...parked);
+    mount.refuse();
+    const { result } = renderHook(() => useVendoChat({ api: mount.url, threadId: THREAD_ID }));
+    await waitFor(() => expect(result.current.interruptions).toHaveLength(1));
+
+    // A 409 is the wire saying this approval was already answered or has
+    // expired. Resolved as success it reads as "the approval landed" while the
+    // turn is still parked, waiting for a decision that never arrives.
+    await expect(result.current.resume({ apr_1: "approve" })).rejects.toThrow(/409/);
+  });
+
+  it("points the next turn at the thread it was switched to", async () => {
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) => useVendoChat({ api: mount.url, threadId: id }),
+      { initialProps: { id: THREAD_ID } },
+    );
+
+    rerender({ id: "thr_switched" });
+    await waitFor(() => expect(result.current.threadId).toBe("thr_switched"));
+    result.current.sendMessage({ text: "hello" });
+
+    // The transcript already reloads for the new thread; the outbound turn has
+    // to follow it, or the conversation on screen and the one being written to
+    // are two different threads.
+    await waitFor(() => expect(mount.sent).toHaveLength(1));
+    expect(mount.sent[0]?.["threadId"]).toBe("thr_switched");
   });
 });
