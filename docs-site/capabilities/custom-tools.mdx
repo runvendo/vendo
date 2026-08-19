@@ -37,6 +37,11 @@ it, guarded, audited, and projected like an extracted one.
   only the tools that menu lists. Vendo's own `vendo_*` tools bypass it; a tool
   you wrote does not. Add `host_refundOrder` to the menu, or the door will not
   offer it and a call to it answers the same not-found an unknown name answers.
+  Vendo warns once per surface per boot when an authored menu leaves out a tool
+  you registered in code, naming the ones it dropped — leaving out an extracted
+  tool is what a menu is for and passes silently, and Vendo's own `vendo_*`
+  plumbing is exempt. The warning does not change the menu; the tool still is
+  not offered until you add it.
   See [Curate the menu](/outside-agents/how-the-door-works#curate-the-menu).
 </Warning>
 
