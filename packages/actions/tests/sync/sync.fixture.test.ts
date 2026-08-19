@@ -95,5 +95,10 @@ describe("vendoSync host fixture", () => {
     // re-run still names its slots, because the hookup reminder rides on it.
     expect(second.pins).toEqual({ captured: [], drifted: [], ported: ["AliasedCard", "BarrelCard", "InvoiceCard", "NamespaceCard"] });
     expect(second.remixableErrors).toEqual([]);
-  });
+    // Two full syncs, each now also splitting four remixable cards: 10.8s on an
+    // idle box, against the 30s default this inherited by carrying no budget of
+    // its own. That margin does not survive a shared CI runner — it timed out at
+    // exactly 30000ms in 2 of 3 runs. The budget states the work rather than
+    // buying headroom: `composio.live.test.ts` beside it already does the same.
+  }, 120_000);
 });
