@@ -1,7 +1,8 @@
 import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { log, seedComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
+import { log, seedComponentName, type AppDocument, type AppId, type Json, type TreeNode } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
+import { useAppSharing } from "../hooks/use-app-sharing.js";
 import { useResource } from "../hooks/use-resource.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
@@ -194,6 +195,7 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
       ? { label: "Didn’t load", name: "This view didn’t load", status: "The remix didn’t load — the chat that asked for it says why." }
       : undefined;
   const Original = () => <>{original}</>;
+  const sharing = useAppSharing(appId as AppId);
   // "Update" REPLAYS the recorded wishes onto the host's new version — that is
   // what the seed is FOR, and the menu item said so while doing nothing but a
   // round trip. With no new version there is nothing to replay (the server
@@ -216,6 +218,7 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
         // a voice-control user can actually speak.
         title="this view"
         {...(state === undefined ? {} : { state })}
+        {...(sharing === undefined ? {} : { sharing })}
         // The grounding rides `context` — a marked text part on the sent
         // message that no surface renders — so the prefill can name the THING
         // and never an id (spec §16 law 3).

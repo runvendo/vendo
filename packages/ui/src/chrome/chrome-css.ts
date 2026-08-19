@@ -1474,6 +1474,15 @@ html[data-vendo-dock] {
 .fl-remix-menu button:hover { background: var(--vendo-accent-soft); }
 .fl-remix-menu button:disabled { color: var(--vendo-fg-muted); cursor: default; }
 .fl-remix-menu button.is-danger { color: var(--vendo-danger); }
+/* The share toggle's ON state. aria-pressed says it to a screen reader; the
+   check says it to an eye, because colour alone is never a state. The check
+   rides ::after (so the button's own text stays exactly its label) and its slot
+   is reserved in BOTH states — otherwise switching the share reflows the menu
+   and Revert moves out from under the cursor. */
+.fl-remix-menu button[aria-pressed] { display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; }
+.fl-remix-menu button[aria-pressed]::after { content: "✓"; visibility: hidden; }
+.fl-remix-menu button[aria-pressed="true"] { color: var(--vendo-accent); }
+.fl-remix-menu button[aria-pressed="true"]::after { visibility: visible; }
 
 /* ---- filled state ---- */
 .fl-slot-filled { position: relative; flex: 1; }

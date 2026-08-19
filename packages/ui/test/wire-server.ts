@@ -6,7 +6,9 @@ import {
 } from "ai";
 import {
   seedComponentName,
+  type AccessLevel,
   type AppDocument,
+  type AppGrantRecord,
   type ApprovalRequest,
   type AuditEvent,
   type PermissionGrant,
@@ -340,6 +342,11 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  screen, and "not ready yet" is the build window's pending, never a
      *  failure (persistence/open.ts, wire/apps.ts). */
     pendingScreens: new Map<string, number>(),
+    /** What `GET /apps/:id/grants` answers, by app id — the ✦ share toggle's
+     *  one round trip. An UNSEEDED app answers the empty truth (no level, no
+     *  grants, no memberships), so every other suite's ✦ menu stays exactly the
+     *  three items it has always been. */
+    appGrants: new Map<string, { level: AccessLevel | null; grants: AppGrantRecord[]; orgs: { org: string; display?: string }[] }>(),
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.
@@ -1247,6 +1254,29 @@ export async function createWireServer(options: WireServerOptions = {}) {
         if (!state.apps.some(item => item.id === id)) return wireError(response, "not-found", "App not found", 404);
         return json(response, { state: "awake" });
       }
+      // The ✦ share toggle's transport. The principal rides the path
+      // percent-encoded, because `org:acme` carries a ":" and a team a "/".
+      const grantsMatch = url.pathname.match(/^\/apps\/([^/]+)\/grants(?:\/(.+))?$/);
+      if (grantsMatch) {
+        const id = decodeURIComponent(grantsMatch[1] ?? "");
+        const seeded = state.appGrants.get(id) ?? { level: null, grants: [], orgs: [] };
+        if (method === "GET") return json(response, seeded);
+        const principal = decodeURIComponent(grantsMatch[2] ?? "");
+        const kept = seeded.grants.filter(row => row.principal !== principal);
+        seeded.grants = method === "PUT"
+          ? [...kept, {
+            id: `g_${kept.length + 1}`,
+            appId: id as AppDocument["id"],
+            orgId: principal.replace(/^org:/, "").split("/")[0] ?? "",
+            principal,
+            level: (parsedBody as { level: AccessLevel }).level,
+            createdBy: "user_1",
+            createdAt: NOW,
+          }]
+          : kept;
+        state.appGrants.set(id, seeded);
+        return json(response, { grants: seeded.grants });
+      }
       const appActionMatch = url.pathname.match(/^\/apps\/([^/]+)\/(open|call|edit|history|fork)$/);
       if (appActionMatch) {
         const id = decodeURIComponent(appActionMatch[1] ?? "");
@@ -1489,6 +1519,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
     url,
     state,
     requests,
+    setGrants: (appId: string, seed: { level: AccessLevel | null; grants: AppGrantRecord[]; orgs: { org: string; display?: string }[] }) =>
+      state.appGrants.set(appId, seed),
+    grantsOf: (appId: string) => state.appGrants.get(appId)?.grants ?? [],
     close: async () => {
       if (closed) return;
       closed = true;

@@ -1,8 +1,9 @@
-import { log, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { log, type AppId, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin } from "../pin-events.js";
 import { useApp } from "../hooks/use-app.js";
+import { useAppSharing } from "../hooks/use-app-sharing.js";
 import { useReportSlot } from "../hooks/use-placements.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
@@ -305,6 +306,8 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   const resolvesItself = appIdProp === undefined && pin === undefined;
   // The placed app's own build status — discovery's, and only discovery's.
   const status = resolvesItself ? discovery.status : undefined;
+  // The ✦ menu's share item — asked for only where the ✦ is actually worn.
+  const sharing = useAppSharing(appId as AppId, appId !== undefined && resolvesItself);
 
   // A slot id lives in the host's markup and nowhere else, so a surface that is
   // not on this page (the embed's "Add to…" picker) can only learn this slot
@@ -464,6 +467,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
             appId={appId}
             title={pinTitle}
             context={`The view being edited is the "${pinTitle}" app (${appId}), pinned in the "${id}" slot.`}
+            {...(sharing === undefined ? {} : { sharing })}
             onRefresh={() => setReload(n => n + 1)}
             onRevert={() => client.apps.unplace(appId, id).then(() => void discovery.refresh())}
           >
