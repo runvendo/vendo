@@ -1,4 +1,4 @@
-import { isVendoError, VendoError, type Json, type RunContext, type StoreOps } from "@vendoai/core";
+import { isVendoError, VendoError, type AccessLevel, type Json, type RunContext, type StoreOps } from "@vendoai/core";
 import { json, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
 /** What the ?pending=1 disambiguation learned about a record open() refused
@@ -177,6 +177,16 @@ async function handleHistory(wire: WireContext, appId: string, ctx: RunContext):
     repetitions of the triple. */
 const op = (wire: WireContext, method: string, operation: string, length = 3): boolean =>
   wire.request.method === method && wire.segments[2] === operation && wire.segments.length === length;
+
+/** Build contract §9.3 — the level vocabulary is CLOSED, so the wire refuses
+    anything outside it instead of letting a typo reach the store. */
+function accessLevel(value: unknown): AccessLevel {
+  const level = string(value, "level");
+  if (level !== "viewer" && level !== "editor" && level !== "owner") {
+    throw new VendoError("validation", "level must be viewer, editor, or owner");
+  }
+  return level;
+}
 
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
     ship-diff, seed drift/re-seed, the ✦ gesture (seed), export/import,
@@ -365,6 +375,29 @@ export const appRoutes: RouteEntry[] = [
     }
     if (op(wire, "POST", "fork")) {
       return json(await deps.apps.fork(appId, ctx));
+    }
+    // Build contract §9.2 — the ✦ share toggle's door. The LEVEL lives in the
+    // runtime, so the MCP door inherits the same rules. `orgs` is projected off
+    // the ctx the wire already resolved, so ONE round trip tells the menu which
+    // tenant to name and whether the share is on.
+    if (op(wire, "GET", "grants")) {
+      return json({
+        level: await deps.apps.access.levelFor(appId, ctx),
+        grants: await deps.apps.access.list(appId, ctx),
+        orgs: (ctx.memberships ?? []).map(({ org, display }) => ({
+          org,
+          ...(display === undefined ? {} : { display }),
+        })),
+      });
+    }
+    if (op(wire, "PUT", "grants", 4)) {
+      const body = await requestJson(request);
+      const principal = string(segments[3], "principal");
+      return json({ grants: await deps.apps.access.grant(appId, principal, accessLevel(body["level"]), ctx) });
+    }
+    if (op(wire, "DELETE", "grants", 4)) {
+      const principal = string(segments[3], "principal");
+      return json({ grants: await deps.apps.access.revoke(appId, principal, ctx) });
     }
     return undefined;
   }),
