@@ -16,8 +16,11 @@ description: "Give one person, one team, or a whole org access to an app — a g
 A tenant member the owner shared with sees the app through the same
 `grantedRecords` read every `org:` grant already used — no accept step. Leaving
 the tenant is the only revoke this share needs: membership lives in Cloud, so
-once someone is off the roster the grant stops matching them on their next
-request, with nothing for the owner to click.
+once someone is off the roster the grant stops matching them, with nothing for
+the owner to click. Unlike a membership your own host asserts per request, the
+directory answer is [cached 60 seconds per user](/users-orgs/tenants), so that
+lands on their next membership refresh — within a minute, not on the next
+request.
 
 ## A share is a grant
 
