@@ -9,7 +9,7 @@ import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
-import { mcpStepLines, planMcp, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
+import { mcpStepLines, planMcp, SERVICE_KEY_ON_BROKER, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
 import { initQuestions } from "./init-questions.js";
 import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
@@ -1000,6 +1000,14 @@ async function planMcpScaffold(input: {
   if (options.posture === undefined && cloudKey && !ask) {
     const select = options.selectUseCase ?? (pretty === null ? plainSelect : pretty.select);
     posture = (await select("How should outside agents sign in?", POSTURE_OPTIONS)) as McpPosture;
+  }
+
+  // `cli.ts` refuses the flag pair it can read off argv. A posture chosen at
+  // the SELECT never reaches argv, so the same mistake arrived here and the key
+  // was dropped in silence — the one path where a user could still believe it
+  // landed. Same explanation, same way out, one lead-in for each arrival.
+  if (options.serviceKey === true && posture === "broker") {
+    throw new VendoError("validation", `--service-key does not apply to the broker posture you chose: ${SERVICE_KEY_ON_BROKER}`);
   }
 
   // Local doors only. A Cloud-fronted door's service key is provisioned with

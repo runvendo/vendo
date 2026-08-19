@@ -2819,6 +2819,53 @@ describe("the five questions", () => {
       .toMatchObject({ status: "ok", message: expect.stringContaining("VENDO_BASE_URL is set") });
   });
 
+  // The flag pair is refused in cli.ts, which reads argv. A posture CHOSEN at
+  // the select never reaches argv, so the same mistake arrived here silently
+  // and the key was dropped — the one path where a user could still believe it
+  // landed. Same refusal, same words, whichever way they got here.
+  it("refuses a service key when the broker posture is chosen at the select, not only when it is a flag", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      auth: "clerk",
+      baseUrl: "http://localhost:3000",
+      interactive: true,
+      serviceKey: true,
+      cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
+      selectUseCase: async () => "broker",
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(1);
+
+    const errors = sink.errors.join("\n");
+    expect(errors).toContain("--service-key does not apply");
+    expect(errors).toContain("provisioned with the tenant on first use");
+    expect(errors).toContain("https://docs.vendo.run/outside-agents/service-keys-and-broker");
+    // It refuses INSTEAD of writing: no composition landed on the way out.
+    expect(await readdir(root)).not.toContain("lib");
+
+    // The control: the SAME broker posture with no key asked for is the
+    // recommended Cloud path and still writes. The guard fires on the key, not
+    // on the posture.
+    const cloudOnly = await fixture();
+    expect(await run(cloudOnly, output(), {
+      useCase: "mcp",
+      auth: "clerk",
+      baseUrl: "http://localhost:3000",
+      interactive: true,
+      cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
+      selectUseCase: async () => "broker",
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(0);
+    expect(await readdir(cloudOnly)).toContain("lib");
+  });
+
   it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {
     // A run that still owes the mount paste: doctor would grade that paste,
     // so offering the check would fail a run that did nothing wrong.

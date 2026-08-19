@@ -146,6 +146,16 @@ export function mcpStepLines(plan: Pick<McpPlan, "steps">): string[] {
   return lines;
 }
 
+/** Why a service key cannot ride the broker posture, in the ONE voice both
+    refusals speak: `cli.ts` catches the flag pair it can read off argv, and
+    init catches a posture chosen at the select, which never reaches argv. The
+    lead-in differs because the user did two different things; the explanation
+    and the way out must not. */
+export const SERVICE_KEY_ON_BROKER =
+  "a Cloud-fronted door's service key is provisioned with the tenant on first use, so this one would be "
+  + "discarded. Drop --service-key, or pass --posture local to declare your own "
+  + "(https://docs.vendo.run/outside-agents/service-keys-and-broker)";
+
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
     the answers call for it AND the host has none to reuse; this is separately
     callable so the shape can be asserted without a plan. */
