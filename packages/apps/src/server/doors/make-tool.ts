@@ -346,8 +346,13 @@ const remixComponent = async (
   // resolves after the fact: two gestures both find nothing, both mint, and the
   // loser is handed the WINNER's app with the loser's own wish deleted alongside
   // its app — an app that never existed for either caller to have seen.
+  // MEMBERSHIP, not recency: the seed door paints the port before the first
+  // edit now, and in a race the loser's wish can land on the winner DURING
+  // that window — `at(-1)` then reads the racer's wish and re-applies this
+  // one. The verbatim-repeat case never reaches this half: a repeat's app is
+  // in `before`, and the first half already routed it to the edit door.
   const applied = !before.some(({ id }) => id === seeded.id)
-    && seeded.seed?.wishes.at(-1) === request;
+    && (seeded.seed?.wishes.includes(request) ?? false);
   if (!applied) return await changeExistingApp(make, seeded.id);
   return receipt({
     id: seeded.id,

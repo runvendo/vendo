@@ -611,7 +611,7 @@ export function RangePicker() {
   return (
     <div className="picker">
       {["1W", "1M"].map((option) => (
-        <button key={option} type="button" className="chip" style={{ height: 28 }} onClick={() => setRange(option)}>
+        <button key={option} type="button" className="chip" style={{ height: 28, cursor: "pointer", background: "#FFF" }} onClick={() => setRange(option)}>
           {option}
         </button>
       ))}
@@ -625,8 +625,13 @@ export function RangePicker() {
     expect(result.warnings).toEqual([]);
 
     const picker = await baselineFor(root, "RangePicker");
+    // The host's inline style, mechanically narrowed to the paint allowlist —
+    // the same law as the tag rewrite: `background` becomes `backgroundColor`
+    // (a pure key rename; a value only a shorthand could smuggle is inert
+    // there), and a key the allowlist does not carry is removed, never guessed
+    // at. No value is ever inspected.
     expect(picker.ported?.source).toContain(
-      `<Button key={option} className="chip" style={{ height: 28 }} onClick={() => setRange(option)}>`,
+      `<Button key={option} className="chip" style={{ height: 28, backgroundColor: "#FFF" }} onClick={() => setRange(option)}>`,
     );
     expect(picker.ported?.source).toContain("</Button>");
     expect(picker.ported?.source).not.toContain("<button");

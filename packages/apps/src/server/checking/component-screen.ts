@@ -916,7 +916,13 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   const treeIssues = await treeCheckIssues(initialTree, names, opts.routes);
   if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
 
-  const deadIssues = deadControlIssues(initialTree, painted.inert);
+  // The press verdict is for screens a MODEL writes — a decorative "Book
+  // appointment" whose handler reaches nothing. A PORT is the host's own
+  // shipped component, and its controls do what the host built them to do: a
+  // range switcher's current option legitimately paints nothing new when
+  // pressed again. Refusing that refuses real production UI, so the ported
+  // dialect keeps the press observations and drops the verdict.
+  const deadIssues = opts.ported === true ? [] : deadControlIssues(initialTree, painted.inert);
   if (deadIssues.length > 0) return refuse(deadIssues, { compiled, queryPlan, initialTree });
 
   return { ok: true, issues: [], compiled, queryPlan, initialTree, queries };

@@ -204,7 +204,32 @@ const seedFrom = async (
         appRecordInput({ ...painted, name: minted.name }, ctx.principal.subject, false, "seed"),
       );
     }
-    const edited = await deps.runtime().edit(stored.id, input.instruction, ctx);
+    // A concurrent write to this row — the ✦ door landing a RACING gesture's
+    // wish is the common one, and seeding the port first widened that window —
+    // is not a failed build: the row moved, so run the instruction once more
+    // against it. A conflict that persists means someone is ACTIVELY editing
+    // this remix; the port stands and the row is alive, so hand it back as it
+    // is rather than marking a working remix `buildFailed` — the ✦ door
+    // re-lands its own wish whenever it finds it missing from the list.
+    const conflicted = (error: unknown): boolean => error instanceof VendoError && error.code === "conflict";
+    const attempt = () => deps.runtime().edit(stored.id, input.instruction, ctx);
+    let edited;
+    try {
+      edited = await attempt();
+      // A RETURNED failure is the same race in its other jacket: the edit door
+      // wraps "app changed under this save" as `failure` rather than throwing.
+      // Nothing persists on a failure, so one more try against the moved row
+      // is safe — a genuine refusal just fails twice and lands below.
+      if (edited.failure !== undefined) edited = await attempt();
+    } catch (error) {
+      if (!conflicted(error)) throw error;
+      try {
+        edited = await attempt();
+      } catch (secondError) {
+        if (!conflicted(secondError)) throw secondError;
+        return await deps.requireOwned(minted.id, ctx);
+      }
+    }
     if (edited.failure === undefined) return edited.app;
     reason = (edited.issues ?? []).join("; ") || edited.failure.message;
   } catch (error) {

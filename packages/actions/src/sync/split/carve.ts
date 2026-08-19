@@ -1,5 +1,5 @@
 import path from "node:path";
-import { DISPLAY_TAG_NAMES } from "@vendoai/apps/contract";
+import { DISPLAY_TAG_NAMES, SAFE_STYLE_PROPERTIES } from "@vendoai/apps/contract";
 import type TS from "typescript";
 import { parseModuleSource } from "../common.js";
 
@@ -479,6 +479,38 @@ export function carveModule(slot: string, source: string, file: string): CarveRe
       ts.isJsxAttribute(attribute) && ts.isIdentifier(attribute.name) && attribute.name.text === "type");
     if (typeAttribute !== undefined) edits.push({ start: typeAttribute.getFullStart(), end: typeAttribute.end, text: "" });
   }
+
+  // ---- the inline styles, narrowed to the paint allowlist -------------------
+
+  // The same law as the tag rewrite, applied to style KEYS: `background`
+  // becomes `backgroundColor` — a pure rename, and a value only the shorthand
+  // could smuggle (a url(), a gradient) is inert under the longhand — and a
+  // key the allowlist does not carry is REMOVED, never guessed at. No value is
+  // ever inspected. Only literal keys in the kept region are touched; anything
+  // computed is left for the gauntlet to refuse by name.
+  const SAFE_KEYS: ReadonlySet<string> = new Set(SAFE_STYLE_PROPERTIES);
+  walk(componentStatement, (node) => {
+    if (insideAny(node, cutRanges)) return false;
+    if (!ts.isJsxAttribute(node) || !ts.isIdentifier(node.name) || node.name.text !== "style") return;
+    const value = node.initializer;
+    if (value === undefined || !ts.isJsxExpression(value) || value.expression === undefined
+      || !ts.isObjectLiteralExpression(value.expression)) return;
+    const properties = value.expression.properties;
+    properties.forEach((property, index) => {
+      if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) return;
+      const key = property.name.text;
+      if (key === "background") {
+        edits.push({ start: property.name.getStart(sf), end: property.name.end, text: "backgroundColor" });
+        return;
+      }
+      if (SAFE_KEYS.has(key)) return;
+      const next = properties[index + 1];
+      edits.push(next !== undefined
+        ? { start: property.getStart(sf), end: next.getStart(sf), text: "" }
+        : { start: property.getFullStart(), end: property.end, text: "" });
+    });
+    return undefined;
+  });
 
   // ---- the home module's closure and imports --------------------------------
 
