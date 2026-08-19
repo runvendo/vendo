@@ -827,6 +827,11 @@ export async function assembleScreen(
    *  handed back inside a save or fetched by the fallback below — the repair round
    *  is capped at one, and nothing else bounds it. */
   let reviewed = false;
+  /** What the run said about the SCREEN, kept from the moment a verdict bought a
+   *  repair round. Everything the loop says from there answers the REVIEWER
+   *  ("Fixed the double count"), and the receipt is spoken to the PERSON
+   *  (`make-receipt.ts` §3.1). */
+  let described: string | undefined;
 
   /**
    * ONE writer at a time, over the whole read-apply-write.
@@ -977,7 +982,10 @@ export async function assembleScreen(
         ? undefined
         : await judgeScreen(surface, input.appId, `${directory}/${APP_FILE}`, input.request, input.viewport);
       reviewed = true;
-      if (findings !== undefined) return { ...answer, note: `${note}\n\n${findings}` };
+      if (findings !== undefined) {
+        described = spoken.trim();
+        return { ...answer, note: `${note}\n\n${findings}` };
+      }
       ended?.abort();
     }
     return { ...answer, note };
@@ -1271,10 +1279,13 @@ export async function assembleScreen(
      *  above narrowed `record.painted` to "not false" for the rest of this block,
      *  and the repair round below is the one thing that can still make it false. */
     const painted = (): boolean | undefined => record.painted;
-    /** What describes the screen the person is looking at, taken BEFORE the repair
-     *  round: the round may write bytes that never reach them, and a receipt is
-     *  about the screen, not about the last thing the model typed. */
-    let say = words();
+    /** What describes the screen the person is looking at, taken from before the
+     *  verdict on either route to a repair round: `described` where the closing
+     *  save carried the findings back and the same drive went on to repair, and
+     *  this drive's own words where it ended unjudged and the fallback below is
+     *  what asks. A receipt is about the screen, not about the last thing the
+     *  model typed. */
+    const say = described ?? words();
     let title = record.title;
     if (instruction !== undefined && !surface.signal.aborted) {
       // The document rides along: a drive starts from the messages it is given, so
@@ -1292,21 +1303,16 @@ export async function assembleScreen(
         }],
       }], { maxSteps: REPAIR_STEPS });
       /**
-       * A REPAIR THE FLOOR REFUSED DID NOT HAPPEN — so it does not get to describe
-       * the screen.
+       * A REPAIR THE FLOOR REFUSED DID NOT HAPPEN — so it does not get to NAME the
+       * screen either.
        *
        * Its bytes landed and nothing painted, which leaves the person looking at
-       * the screen from before the round. The round's own closing words are then
-       * "Fixed the date format." over a date that is still wrong, and its
-       * `record.title` is the name of a screen nobody ever saw. The screen itself
-       * STANDS — taking away a painted screen because a patch on it failed is the
-       * one thing worse than an unrepaired screen — so what changes here is only
-       * what is SAID about it.
+       * the screen from before the round, while its `record.title` is the name of a
+       * screen nobody ever saw. The screen itself STANDS — taking away a painted
+       * screen because a patch on it failed is the one thing worse than an
+       * unrepaired screen — so what a refused round costs it is only the new name.
        */
-      if (painted() !== false) {
-        say = words();
-        title = record.title;
-      }
+      if (painted() !== false) title = record.title;
     }
     return {
       kind: "assembled",
