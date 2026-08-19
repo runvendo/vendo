@@ -1,5 +1,55 @@
 # @vendoai/automations
 
+## 0.31.0
+
+### Minor Changes
+
+- de24421: A goal automation can see what fired it. The runner was handed
+  `record.task.prompt` and nothing else, so the delivery body behind a webhook
+  automation — and the payload of a `vendo.emit` — was persisted on the run row as
+  `__event`, was re-fired verbatim by `runs.rerun`, and was never shown to the
+  agent at all. A steps task reads the firing through its own expressions; a goal
+  task had no way to, which made "when this webhook lands, deal with THIS invoice"
+  impossible to write.
+
+  The payload now rides the prompt, under a label that says what it is: data from
+  the outside event, never more of the instruction. It is serialized with
+  `JSON.stringify`, which escapes every newline in it, so the whole of somebody
+  else's document stays on the one line under that label and cannot open a section
+  of its own; past 16 KiB it is cut and the block says how much it cut. The change
+  is at the engine, so every registered runner gets it. A schedule fires on the
+  clock the tick wrote and nothing else, so its prompt is byte for byte what the
+  author typed.
+
+  The label is a request, and a request is not a security boundary. Nothing here
+  treats it as one: a new full-stack suite sends a real signed delivery whose body
+  orders a destructive host tool, runs it through a harness that reads the tool
+  name out of the payload and obeys it, and pins that the call is never on an away
+  listing, never executes, and changes nothing at the host.
+
+### Patch Changes
+
+- 457dfe3: An interval schedule's cursor advances by the window that came DUE, not by the
+  clock the tick happened to read. `packages/automations/src/ingestion-surface.ts`
+  wrote `lastFiredAt = atIso` — an observed instant, read after `ready()`, auth and
+  a store round trip — so every fire re-anchored the NEXT window to itself and
+  added its own second-or-so of latency to the one behind it. Any interval that is
+  a multiple of the heartbeat period then walked out of phase until a window landed
+  just under due and slipped a whole cycle: `{ every: "1m" }` under a once-a-minute
+  heartbeat fired every OTHER minute against Vendo Cloud (observed gaps 2m, 2m, 2m,
+  1m). An `every` now advances by whole windows from the last scheduled fire.
+
+  Cron is untouched, because a cron cursor cannot drift this way: croner re-anchors
+  to the pattern's own grid, and an observed time always sits in the same gap
+  between occurrences as the window it fired, so it reads identically to that
+  window forever. Collapse is unchanged — a backlog of missed windows is still
+  exactly one run on the most recent window, never back-filled or rapid-fired to
+  catch up — as are the compare-and-swap claim and the `at` one-shot. The cursor row
+  keeps its shape, so rows in the wild carrying an observed timestamp are read as
+  before and land back on phase on their first fire.
+
+  - @vendoai/core@0.31.0
+
 ## 0.30.1
 
 ### Patch Changes

@@ -1,5 +1,94 @@
 # @vendoai/vendo
 
+## 0.31.0
+
+### Patch Changes
+
+- bf47c34: Every text this channel sends now says whether it is the last one. A reply the
+  model splits at a divider goes out in pieces, and until now each piece looked
+  exactly like a whole answer on the wire — so the far side could only guess
+  whether to keep the typing indicator up or take it down, and it guessed wrong in
+  both directions: dropped between "On it." and the answer, or left spinning after
+  the last word.
+
+  `ChannelsService.send` takes an optional `final`, and the Cloud adapter passes it
+  straight through to `/api/v1/channels/text/send`. Optional on purpose — a host
+  carrying its own texts keeps the implementation it already wrote, and a carrier
+  with nothing to do with the flag ignores it.
+
+  The flag scopes to one MESSAGE, never to the turn. It says "no more of this text
+  is coming", not "nothing else will arrive" — nothing could say the second one,
+  because `vendo_text_me` and an automation firing reach the same conversation at
+  any moment, and a turn's own grant-set question is decided from the live approval
+  feed only after the reply has gone out. A receiver reads it to stop showing a
+  reply as still-being-written, never as "stop listening".
+
+  The value is decided by what each send truthfully is, never by position. Only
+  `streamTexts` has a mid-reply cut to declare, and it reads finality off the
+  stream rather than off the divider: the segment goes out the moment its divider
+  passes, and what comes next may be a tool call that takes three seconds or
+  nothing at all, so the end of the stream is what settles it. That is also what
+  marks the last text of a reply signed off with a divider — that cut is only
+  recognized once the stream has ended. Everything else is one whole message with
+  nothing behind it: an approval card and a grant-set ask are questions the
+  conversation then waits on, the set receipts and the "you're linked" ack end
+  their exchange, and a `vendo_text_me` push has no stream behind it at all.
+
+- bf47c34: Three things a texted reply used to wait for, and now does not.
+
+  The host's memberships seam was asked FIRST, before the turn did anything else —
+  a round trip in front of somebody holding a phone, taken for a ctx that nothing
+  until `harness.stream` reads. It is now started at the top and awaited at the
+  ctx, so the guard and store reads a YES/NO costs overlap it instead of queueing
+  behind it, and a YES that settles an automation's grant set — which builds no
+  ctx at all — never waits for it.
+
+  The link write moved BEHIND the answer. It has two readers and only one of them
+  can run during the turn: `vendo_text_me` reads the conversation off that row
+  (text-me.ts) and nothing else writes it, so a turn that would change what it
+  reads — a phone's first ever, a conversation that has moved — still waits. The
+  other reader is the next text on this conversation, and the per-conversation
+  queue cannot start that turn until this one's promise settles, so awaiting the
+  write below the reply is early enough for it.
+
+  And `vendo_automate` joins the always-active set beside `vendo_text_me`. The
+  belt is cut safest-first at 24 tools, so on a surface with more reads than that
+  every WRITE is evicted — which is what buried Text me twice in two days. The
+  arming tool is a write too, and it is the ONE thing this channel's hidden
+  grounding tells the model to reach for on every inbound text ("to text the user
+  later, set up an automation for it"). A texted "text me when the rent clears"
+  was therefore a `find_tools` round on the first turn of every fresh thread, for
+  a capability the prompt had just promised.
+
+- 4b29796: Six mechanical install-DX fixes from a live run of the published CLI. A
+  generated `@/lib/vendo` import is a path alias, not the npm package `@/lib`, so
+  init no longer writes `"lib": "link:@/lib"` into your package.json and your next
+  `npm install` no longer dies on EUNSUPPORTEDPROTOCOL. The predev impact probe
+  knocks on the port init wrote to `.env.local` as `VENDO_BASE_URL` instead of
+  assuming 3000, so `pnpm dev` on any other port stops reporting "impact unknown".
+  `vendo login` keeps its machine-readable JSON receipt off a terminal a human is
+  watching, and its one-line pretty ceremony now names the approval URL up front —
+  the browser open is best-effort, and a headless box was left with a code and
+  nowhere to type it. Every rail row is cleared to end of line, so a select redraw
+  can no longer leave a longer line's tail behind. A failed AI brief polish says
+  the install is complete and valid with the default brief and names
+  `vendo sync --ai`, instead of printing a raw JSON parser error. And the detected
+  stack — framework, router, language, package manager, auth — is read back before
+  the first question on every run, not only the ones dressed in the rail.
+- Updated dependencies [de24421]
+- Updated dependencies [457dfe3]
+  - @vendoai/automations@0.31.0
+  - @vendoai/agents@0.31.0
+  - @vendoai/core@0.31.0
+  - @vendoai/store@0.31.0
+  - @vendoai/actions@0.31.0
+  - @vendoai/guard@0.31.0
+  - @vendoai/apps@0.31.0
+  - @vendoai/harnesses@0.31.0
+  - @vendoai/ui@0.31.0
+  - @vendoai/mcp@0.31.0
+  - @vendoai/knowledge@0.31.0
+
 ## 0.30.1
 
 ### Patch Changes
