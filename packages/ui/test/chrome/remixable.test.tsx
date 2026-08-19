@@ -116,6 +116,10 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   const chromeIn = (slot: string) =>
     document.querySelector(`[data-vendo-remixable="${slot}"] .fl-remixable-chrome`);
 
+  /** The ✦ mark itself, for a named slot and WITHOUT assuming what it says. */
+  const pillIn = (slot: string) =>
+    document.querySelector(`[data-vendo-remixable="${slot}"] .fl-remix-pill`);
+
   // The ✦ is an OFFER, and an offer nothing can honour must never be made. A
   // component the splitter could not port has no source for a fork to start
   // from; sync says so, loudly, in its report, and the wiring it writes simply
@@ -140,14 +144,14 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   // that stops porting a slot must not strand someone's remix on the page with
   // no way back. The management ✦ — status / open in panel / revert — stays.
   //
-  // `managePill()` is the file's own name for that mark, so this assertion
-  // tracks whatever the pin chrome currently calls it rather than pinning a
-  // sentence. On the integration base that is "Edit this view" (S2 retired the
-  // slot-name form with the identifier-leak fix); the helper moves with it.
+  // The mark, not its wording: what this test owns is that the mark is THERE,
+  // and the pin chrome has renamed it before. The sentence it carries is
+  // asserted where that rename lives, so pinning one here would only buy a
+  // second stale expectation.
   it("still mounts and manages an EXISTING remix on a slot that no longer ports", async () => {
     await client.apps.seedFrom({ component: "Unsplittable", instruction: "make it a chart" });
     mount(<Remixable><Unsplittable /></Remixable>);
-    await waitFor(() => expect(managePill()).toBeTruthy());
+    await waitFor(() => expect(pillIn("Unsplittable")).toBeTruthy());
   });
 
   it("blooms on hover and holds through the grace period on the way out", () => {

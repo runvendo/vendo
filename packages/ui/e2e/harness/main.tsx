@@ -956,6 +956,10 @@ function RemixHolesScenario() {
   return (
     <VendoProvider client={baseClient} remixWiring={holeWiring}>
       <VendoSlot id="spend-card" pin={{ payload: holePayload }} />
+    </VendoProvider>
+  );
+}
+
 /** Two host components, both wrapped in `<Remixable>`. `SpendCard` split;
  *  `LegacyCard` did not, and `vendo sync` said so in its report. */
 function SpendCard() {
