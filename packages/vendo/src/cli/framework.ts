@@ -156,6 +156,10 @@ export async function workspaceHostCandidates(root: string): Promise<string[]> {
     LEGACY_ROOT_IMPORT above). */
 export const SUPABASE_PRESET_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/auth\/supabase["']/;
 
+/** The clerk preset's specifier, both spellings — same shape, same reasons
+    (#1338 rides the same table E-AUTH-009 does). */
+export const CLERK_PRESET_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/auth\/clerk["']/;
+
 /** Both supported spellings of the server entry, for the same reason: an
     alias-wired host (`createVendo` imported from the unscoped package's
     /server) is WIRED, and reading it as bare misdiagnosed it E-WIRE-001/007. */
@@ -180,6 +184,10 @@ async function hostSourceMatches(root: string, marker: RegExp): Promise<boolean>
     a helper). */
 export async function wiresSupabaseAuth(root: string): Promise<boolean> {
   return hostSourceMatches(root, SUPABASE_PRESET_IMPORT);
+}
+
+export async function wiresClerkAuth(root: string): Promise<boolean> {
+  return hostSourceMatches(root, CLERK_PRESET_IMPORT);
 }
 
 /** Whether any host source reaches the tenant-connector API. A property read on

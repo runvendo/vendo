@@ -128,3 +128,48 @@ describe("supabase server-env advisory (ENG-422 / #1370)", () => {
     expect(auth.advice).toContain("SUPABASE_JWT_SECRET");
   });
 });
+
+// The same disease in the third preset (#1338): detection sees @clerk/* while
+// the preset verifies with CLERK_SECRET_KEY/CLERK_JWT_KEY — and post-#1338 the
+// keyless wire resolves signed-in users as ANONYMOUS (one loud warning), so
+// naming the gap at install time is the only thing standing between a
+// newcomer and a silently signed-out agent.
+describe("clerk server-env advisory (#1338)", () => {
+  const CLERK = { dependencies: { "@clerk/nextjs": "^6.5.0" } };
+
+  it("detection carries the advisory when neither key name is anywhere", async () => {
+    const root = await hostRoot(CLERK);
+    const detection = await detectAuthPreset(root, {});
+    expect(detection.wired?.preset).toBe("clerk");
+    expect(detection.wired?.advisory).toContain("CLERK_SECRET_KEY");
+    expect(detection.wired?.advisory).toContain("CLERK_JWT_KEY");
+  });
+
+  it("an env file carrying either name silences it", async () => {
+    const root = await hostRoot(CLERK);
+    await writeFile(join(root, ".env.local"), 'CLERK_SECRET_KEY="sk_test_x"\n', "utf8");
+    const detection = await detectAuthPreset(root, {});
+    expect(detection.wired?.preset).toBe("clerk");
+    expect(detection.wired?.advisory).toBeUndefined();
+  });
+
+  it("the process env carrying either name silences it", async () => {
+    const root = await hostRoot(CLERK);
+    const detection = await detectAuthPreset(root, { CLERK_JWT_KEY: "-----BEGIN PUBLIC KEY-----" });
+    expect(detection.wired?.advisory).toBeUndefined();
+  });
+
+  it("a publishable-key-only host still gets the advisory — the key the preset reads is server-side", async () => {
+    const root = await hostRoot(CLERK);
+    await writeFile(join(root, ".env"), 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_x"\n', "utf8");
+    const detection = await detectAuthPreset(root, {});
+    expect(detection.wired?.advisory).toContain("CLERK_SECRET_KEY");
+  });
+
+  it("the silent (non-interactive) path surfaces it as advice", async () => {
+    const root = await hostRoot(CLERK);
+    const auth = await resolveScaffoldAuth(root, COMPOSITION, undefined, undefined, undefined, {});
+    expect(auth.wired?.preset).toBe("clerk");
+    expect(auth.advice).toContain("CLERK_SECRET_KEY");
+  });
+});

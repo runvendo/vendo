@@ -341,10 +341,10 @@ describe("vendo init (zero-question)", () => {
       name: "host",
       dependencies: { next: "16.0.0", [dependency]: "1.0.0" },
     }));
-    // ENG-422: a supabase host with no server env would rightly carry the
-    // env advisory — a satisfied env keeps this test about SILENT wiring
-    // (the advisory has its own tests in init-auth.test.ts).
-    await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
+    // ENG-422 / #1338: a supabase or clerk host with no server env would
+    // rightly carry the env advisory — a satisfied env keeps this test about
+    // SILENT wiring (the advisories have their own tests in init-auth.test.ts).
+    await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\nCLERK_SECRET_KEY=sk_test_x\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");

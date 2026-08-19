@@ -66,6 +66,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-AUTH-007": "RETIRED — doctor no longer probes actAs",
   "E-AUTH-008": "RETIRED — doctor no longer probes actAs",
   "E-AUTH-009": "supabase() is wired but neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set",
+  "E-AUTH-010": "clerk() is wired but neither CLERK_SECRET_KEY nor CLERK_JWT_KEY is set",
   "E-MCP-001": "RETIRED — doctor no longer fetches MCP discovery documents",
   "E-MCP-002": "RETIRED — doctor no longer fetches MCP discovery documents",
   "E-MCP-003": "RETIRED — doctor no longer fetches the MCP server card",

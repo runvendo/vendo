@@ -24,6 +24,11 @@ const MISSING_CLERK_BACKEND_MESSAGE =
 const MISSING_KEY_MESSAGE =
   "clerk() has no verification key: set CLERK_SECRET_KEY (mirroring Clerk's own SDKs), optionally with CLERK_JWT_KEY (the instance's PEM public key) for networkless verification.";
 
+/** Once per process, like auth-js's v4-cookie hint: a configuration gap
+    belongs in the startup log exactly once, never in a request-path
+    exception (#1338). */
+let warnedMissingKey = false;
+
 type ClerkVerifyToken = (
   token: string,
   options: { secretKey?: string; jwtKey?: string },
@@ -64,7 +69,19 @@ export function clerk(options: HostAuthPresetOptions = {}): HostAuthPreset {
     const jwtKey = environment("CLERK_JWT_KEY");
     const secretKey = environment("CLERK_SECRET_KEY");
     if (jwtKey === undefined && secretKey === undefined) {
-      throw new Error(MISSING_KEY_MESSAGE);
+      // A missing local key means "no verified session" — a state the wire
+      // already handles — never an outage (#1338): Clerk hosts carry
+      // __session broadly, so the old throw 501'd the ENTIRE wire in exactly
+      // the state `vendo init --auth clerk` leaves you in, while a FORGED
+      // token nine lines below already answered null. A missing key must not
+      // answer worse than a forgery. (supabase's equivalent throw stays: its
+      // cookie exists only for signed-in sessions, so the blast radius is a
+      // signed-in turn, not every visitor's every request.)
+      if (!warnedMissingKey) {
+        warnedMissingKey = true;
+        console.warn(`[vendo] ${MISSING_KEY_MESSAGE} Signed-in users resolve as anonymous until a key lands.`);
+      }
+      return null;
     }
     const verifyToken = await loadVerifyToken();
     try {

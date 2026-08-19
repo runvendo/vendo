@@ -30,6 +30,7 @@ describe("doctor error-code registry", () => {
         "E-AUTH-007": "RETIRED — doctor no longer probes actAs",
         "E-AUTH-008": "RETIRED — doctor no longer probes actAs",
         "E-AUTH-009": "supabase() is wired but neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set",
+        "E-AUTH-010": "clerk() is wired but neither CLERK_SECRET_KEY nor CLERK_JWT_KEY is set",
         "E-CFG-001": "a required .vendo/ config file is missing",
         "E-CFG-002": ".vendo/data/.gitignore is missing",
         "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
