@@ -139,6 +139,11 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   // The gate is on the OFFER, never on a remix that already exists: a re-sync
   // that stops porting a slot must not strand someone's remix on the page with
   // no way back. The management ✦ — status / open in panel / revert — stays.
+  //
+  // `managePill()` is the file's own name for that mark, so this assertion
+  // tracks whatever the pin chrome currently calls it rather than pinning a
+  // sentence. On the integration base that is "Edit this view" (S2 retired the
+  // slot-name form with the identifier-leak fix); the helper moves with it.
   it("still mounts and manages an EXISTING remix on a slot that no longer ports", async () => {
     await client.apps.seedFrom({ component: "Unsplittable", instruction: "make it a chart" });
     mount(<Remixable><Unsplittable /></Remixable>);
