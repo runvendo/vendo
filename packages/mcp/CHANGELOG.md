@@ -1,5 +1,60 @@
 # @vendoai/mcp
 
+## 0.34.0
+
+### Minor Changes
+
+- 3f7740a: Zero-setup MCP over Vendo Cloud, and one method to mint a user's token.
+
+  The mcp seam gains its Cloud rung, in the shape every other Cloud-backed seam
+  already has (`selectConnections`): an explicit `mcp.remoteAs` wins verbatim, the
+  declared `VENDO_MCP_BROKER_URL` / `VENDO_MCP_FEDERATION_SECRET` pair wins next,
+  then `VENDO_API_KEY` lets the console provision the tenant's broker, federation
+  secret and service key, and a keyless deployment stays exactly the local door it
+  was. Provisioning is LAZY — composition still does no I/O, so a console outage
+  cannot stop a deployment booting; the first discovery hit, door hit or
+  `tokenFor` fetches the bundle and the process caches it. A deployment that
+  already sets `VENDO_API_KEY` and `mcp: true` moves from a local door to its
+  Cloud-brokered one on upgrade; declare the env pair (or pass `mcp.serviceAuth`)
+  to keep the door you have.
+
+  `vendo.tokenFor(request | userId)` is the whole new public API: one short-lived
+  MCP access token bound to one of your users, so a backend agent connects to your
+  door as them, under the same guard and audit trail as the in-product agent. Pass
+  the incoming `Request` and the user is read off its session cookie through the
+  same seam the door authenticates with; pass an id to mint headlessly. Where the
+  exchange happens is the deployment's posture, not the caller's problem — Cloud
+  exchanges at the provisioned broker, BYO at the door's own `/token` — so the
+  same agent code works against both. A blank or literal `"undefined"` subject is
+  now refused, at `tokenFor` and again at the door's token endpoint, naming the
+  fix: a token minted for a user nobody is would work perfectly and only fail much
+  later, as a tool call that finds no data.
+
+### Patch Changes
+
+- f7e0ff4: A long tools/call now survives an external MCP client's clock. The door emitted
+  no progress at all, so a stock SDK client abandoned `vendo_make` at its 60s
+  default while the door was still working. The door now beats
+  `notifications/progress` for the life of the call — immediately, then every 15
+  seconds — but only for a client that asked to be kept alive by sending a
+  `progressToken`. Beating is the half the door owns; the client owns the other,
+  because the SDK extends its deadline on a progress frame only when the caller
+  passed `resetTimeoutOnProgress`, which defaults to false. `your-own-agent` now
+  documents both. The beat rides the standalone stream rather than the request's
+  own, because the door answers POSTs with `enableJsonResponse` and the transport
+  drops a request-related notification when there is no SSE body to write it to.
+
+  Malformed arguments to the `vendo_apps_*` ride-along tools can no longer mint a
+  parked approval. Validation ran after the guard, so a call that could never
+  execute — `vendo_apps_call` with no `ref`, say — left an approval waiting in the
+  queue for a human to resolve. Arguments are now judged first, and a bad one
+  comes back as a `validation:` error with no approval and no audit row.
+
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [f7e0ff4]
+  - @vendoai/apps@0.34.0
+  - @vendoai/core@0.34.0
+
 ## 0.33.0
 
 ### Patch Changes

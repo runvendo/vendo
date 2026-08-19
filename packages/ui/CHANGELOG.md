@@ -1,5 +1,14 @@
 # @vendoai/ui
 
+## 0.34.0
+
+### Patch Changes
+
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [f7e0ff4]
+  - @vendoai/apps@0.34.0
+  - @vendoai/core@0.34.0
+
 ## 0.33.0
 
 ### Minor Changes
