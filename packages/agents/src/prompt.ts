@@ -14,7 +14,7 @@ import {
   type Json,
   type RunContext,
 } from "@vendoai/core";
-import { MEMORY_RECALL_LIMIT, type MemoryAdapter } from "./memory.js";
+import { MEMORY_RECALL_LIMIT, MEMORY_TEXT_MAX_CHARS, type MemoryAdapter } from "./memory.js";
 
 /** Who the agent is acting for. An unattended run often has no user at all, and
  *  "the user named below" with nobody below it is a dangling reference. */
@@ -32,7 +32,8 @@ export interface PromptInput {
   /** Session identity facts — server-trust, model-visible. */
   user?: Record<string, Json>;
   /** This user's remembered facts, oldest first — DATA the model reads, never
-   *  instruction. Already capped by the caller, whose prompt budget it is. */
+   *  instruction. Pass as many as you have: the cap is applied HERE, so a BYO
+   *  `MemoryAdapter` that ignores its `limit` still gets a bounded block. */
   memories?: readonly string[];
   /** The stream's context DATA. Function-valued entries are dropped here:
    *  they run at guard/tool check-time and never reach the model. */
@@ -61,7 +62,15 @@ export function assemblePrompt(input: PromptInput): string {
   // Beside `[User]` and before `[Situation]`: who they are, then what they asked
   // to be remembered about themselves, then what is on their screen now — and
   // the guard's directions after all three, where nothing above can reach.
-  const memory = memoryPromptBlock(input.memories);
+  // The cap is kept where the promise of a capped block is made, not asked of
+  // the adapter: `MemoryAdapter` is a BYO seam, and one that answers `recall`
+  // with a transcript must not be able to spend the whole prompt. Oldest first,
+  // so the newest facts are the ones that survive the count.
+  const memory = memoryPromptBlock(
+    (input.memories ?? [])
+      .slice(-MEMORY_RECALL_LIMIT)
+      .map((text) => [...text].slice(0, MEMORY_TEXT_MAX_CHARS).join("")),
+  );
   if (memory !== undefined) sections.push(memory);
   const situation = situationPromptBlock(input.situation);
   if (situation !== undefined) sections.push(situation);

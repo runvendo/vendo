@@ -87,19 +87,35 @@ const memoryFromRecord = (record: VendoRecord): Memory => {
  */
 export function storeMemory(store: VendoStore): MemoryAdapter {
   const records = store.records(COLLECTION);
-  const scope = (principal: Principal): Record<string, string> => ({ subject: principal.subject });
+
+  /**
+   * The subject axis, decided ONCE for all five verbs. Two principals cannot be
+   * scoped, and `undefined` is this function's word for both: a subject that is
+   * not a string at all (`Principal.subject` is required, so it took a
+   * host-side type violation to get here — but `JSON.stringify` drops the
+   * undefined value and the store's filter degrades to `refs @> '{}'`, which is
+   * every row in the collection and a `clear` over every user), and a subject
+   * carrying NUL, the one character a jsonb column refuses.
+   *
+   * Nobody is not everybody: an unscopable principal reads nothing and deletes
+   * nothing. The write door below is where it is said out loud, because there
+   * the row would have to be filed under someone.
+   */
+  const scope = (principal: Principal): Record<string, string> | undefined =>
+    typeof principal.subject === "string" && !principal.subject.includes("\u0000")
+      ? { subject: principal.subject }
+      : undefined;
 
   /** Newest first, paged to exhaustion: `list` hands back a complete array and
    *  `clear` must not leave a second page behind. A store that repeats a cursor
    *  ends the walk rather than spinning (`ThreadStore.list`'s rule). */
   const walk = async (principal: Principal): Promise<Memory[]> => {
+    const refs = scope(principal);
+    if (refs === undefined) return [];
     const found: Memory[] = [];
     let cursor: string | undefined;
     do {
-      const page = await records.list({
-        ...(cursor === undefined ? {} : { cursor }),
-        refs: scope(principal),
-      });
+      const page = await records.list({ ...(cursor === undefined ? {} : { cursor }), refs });
       found.push(...page.records.map(memoryFromRecord));
       if (page.cursor === undefined || page.cursor === cursor) break;
       cursor = page.cursor;
@@ -109,13 +125,30 @@ export function storeMemory(store: VendoStore): MemoryAdapter {
 
   return {
     async recall(principal, limit) {
-      const page = await records.list({ limit, refs: scope(principal) });
+      const refs = scope(principal);
+      if (refs === undefined) return [];
+      const page = await records.list({ limit, refs });
       return page.records.map(memoryFromRecord).reverse();
     },
     async remember(principal, text) {
+      const refs = scope(principal);
+      if (refs === undefined) {
+        throw new VendoError(
+          "validation",
+          "remember needs a principal to file the memory under: `subject` must be a plain-text string, with no NUL (U+0000).",
+        );
+      }
+      // The text has to survive jsonb too, and a `unsupported Unicode escape
+      // sequence` from Postgres is not something a model can act on.
+      if (text.includes("\u0000")) {
+        throw new VendoError(
+          "validation",
+          "remember cannot keep a NUL (U+0000) in `text` — send the fact as plain text.",
+        );
+      }
       const id = `mem_${randomUUID()}`;
       const kept = [...text.trim()].slice(0, MEMORY_TEXT_MAX_CHARS).join("");
-      const record = await records.put({ id, data: { text: kept }, refs: scope(principal) });
+      const record = await records.put({ id, data: { text: kept }, refs });
       return memoryFromRecord(record);
     },
     list: walk,
@@ -126,7 +159,9 @@ export function storeMemory(store: VendoStore): MemoryAdapter {
       // delete that follows is keyed on id alone, which is safe because a row's
       // owner is written once and nothing re-owns one: there is no window for it
       // to become someone else's between the two statements.
-      const { records: [found] } = await records.list({ ids: [id], refs: scope(principal) });
+      const refs = scope(principal);
+      if (refs === undefined) return;
+      const { records: [found] } = await records.list({ ids: [id], refs });
       if (found !== undefined) await records.delete(found.id);
     },
     async clear(principal) {

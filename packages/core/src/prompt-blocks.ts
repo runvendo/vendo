@@ -82,7 +82,10 @@ export function situationPromptBlock(facts: Record<string, unknown> | undefined)
  *  an empty memory cannot emit a bare bullet. */
 export function memoryPromptBlock(memories: readonly string[] | undefined): string | undefined {
   const lines = (memories ?? [])
-    .filter((memory) => memory.trim() !== "")
+    // Blank against the SAME terminator set the indent defence knows: `trim()`
+    // leaves U+0085 (NEL) standing, so a memory of nothing but one rendered a
+    // bare bullet and an indented blank line under the header.
+    .filter((memory) => memory.replace(LINE_TERMINATOR, "").trim() !== "")
     .map((memory) => indented(`- ${memory.trim()}`));
   return lines.length === 0
     ? undefined

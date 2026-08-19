@@ -34,7 +34,13 @@ export {
   type InterruptedTurn,
   type Turns,
 } from "./interruptions.js";
-export { storeMemory, type Memory, type MemoryAdapter } from "./memory.js";
+export {
+  MEMORY_RECALL_LIMIT,
+  MEMORY_TEXT_MAX_CHARS,
+  storeMemory,
+  type Memory,
+  type MemoryAdapter,
+} from "./memory.js";
 export { PERMISSIONS_PATH, type AgentPrincipal } from "./permissions.js";
 export { assemblePrompt, type PromptInput, type SystemPromptHook } from "./prompt.js";
 export type { AgentSession, ApprovalEvent, RespondOptions, SessionOptions } from "./session.js";
