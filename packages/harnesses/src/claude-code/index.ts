@@ -389,9 +389,16 @@ function warnNoOriginOnce(): void {
  * Any HTTP status other than 404 is the door WORKING. A 401 especially: the
  * credential that authenticates it is not minted until further down, so an
  * unauthenticated probe is supposed to be turned away.
+ *
+ * On the TURN's signal, because this is the first thing a turn does and a door
+ * that accepts the connection but never replies holds it open all the way to
+ * undici's 300s headers timeout — a cancelled turn would sit here long after
+ * the person who cancelled it was gone. The caller reads the signal again
+ * before blaming the door: "nothing answered" and "we stopped asking" are not
+ * the same fact, and only one of them is a misconfiguration.
  */
-async function doorAnswers(url: string): Promise<boolean> {
-  const response = await fetch(url, { method: "POST" }).catch(() => undefined);
+async function doorAnswers(url: string, signal: AbortSignal): Promise<boolean> {
+  const response = await fetch(url, { method: "POST", signal }).catch(() => undefined);
   return response !== undefined && response.status !== 404;
 }
 
@@ -535,7 +542,7 @@ export function claudeCode(
       // that is down are the same failure to the customer as a wrong path, so
       // all of them refuse. Both legs, before the machine exists, so a doomed
       // turn never pays for a sandbox boot.
-      if (doorUrl !== undefined && !await doorAnswers(doorUrl)) {
+      if (doorUrl !== undefined && !await doorAnswers(doorUrl, turn.signal) && !turn.signal.aborted) {
         throw new VendoError(
           "unavailable",
           `claudeCode() found no MCP door at ${doorUrl}. Every one of this product's `
