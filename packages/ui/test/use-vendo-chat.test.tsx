@@ -38,8 +38,10 @@ const parked: UIMessage[] = [
 
 interface Mount {
   url: string;
-  /** Every POST body the browser sent, in order. */
+  /** Every turn body the browser sent, in order. */
   sent: Array<Record<string, unknown>>;
+  /** Every approval decision the browser posted to the permission wire. */
+  decided: Array<Record<string, unknown>>;
   thread: UIMessage[];
   close(): Promise<void>;
 }
@@ -48,6 +50,7 @@ interface Mount {
  *  transcript read-back a reload does. */
 async function serveMount(): Promise<Mount> {
   const sent: Array<Record<string, unknown>> = [];
+  const decided: Array<Record<string, unknown>> = [];
   const thread: UIMessage[] = [];
   const server: Server = createServer((incoming, outgoing) => {
     void (async () => {
@@ -60,19 +63,16 @@ async function serveMount(): Promise<Mount> {
       const chunks: Buffer[] = [];
       for await (const chunk of incoming) chunks.push(chunk as Buffer);
       const body = JSON.parse(Buffer.concat(chunks).toString() || "{}") as Record<string, unknown>;
+      if (url.pathname === "/approvals/decide") {
+        decided.push(body);
+        outgoing.writeHead(200, { "content-type": "application/json" });
+        outgoing.end("{}");
+        return;
+      }
       sent.push(body);
-      // A real mount answers a decided approval by RUNNING the call it parked,
-      // so the turn's reply carries that call's output. Without it the approval
-      // stays pending forever and the SDK, correctly, keeps re-sending.
-      const decided = (body["message"] as UIMessage | undefined)?.parts.find(
-        (part) => "state" in part && part.state === "approval-responded",
-      ) as { toolCallId?: string } | undefined;
       const response = createUIMessageStreamResponse({
         stream: createUIMessageStream({
           execute: ({ writer }) => {
-            if (decided?.toolCallId !== undefined) {
-              writer.write({ type: "tool-output-available", toolCallId: decided.toolCallId, output: { ok: true } });
-            }
             writer.write({ type: "text-start", id: "t1" });
             writer.write({ type: "text-delta", id: "t1", delta: "done" });
             writer.write({ type: "text-end", id: "t1" });
@@ -90,6 +90,7 @@ async function serveMount(): Promise<Mount> {
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     sent,
+    decided,
     thread,
     close: () =>
       new Promise<void>((resolve) => {
@@ -149,16 +150,32 @@ describe("useVendoChat", () => {
     });
   });
 
-  it("resume answers the approval and the decided turn goes back to the server", async () => {
+  it("resume tells the GUARD, on the mount's own permission wire", async () => {
     mount.thread.push(...parked);
     const { result } = renderHook(() => useVendoChat({ api: mount.url, threadId: THREAD_ID }));
     await waitFor(() => expect(result.current.interruptions).toHaveLength(1));
 
     await result.current.resume({ apr_1: "approve" });
 
-    // The SDK sends the decided messages back on its own once every requested
-    // approval has an answer — that send IS the resume.
-    await waitFor(() => expect(mount.sent).toHaveLength(1));
-    await waitFor(() => expect(result.current.interruptions).toHaveLength(0));
+    // The guard's decision is what unblocks the parked turn; flipping the part
+    // in the browser instead moves nothing on the server, and the browser seam
+    // test caught exactly that. It is the APPROVAL id that is sent, not the
+    // tool call's.
+    expect(mount.decided).toEqual([{ ids: ["apr_1"], decision: { approve: true } }]);
+    // And no turn was started to carry it — the parked one is still running.
+    expect(mount.sent).toEqual([]);
+  });
+
+  it("groups a mixed decision map into one call per verdict", async () => {
+    mount.thread.push(...parked);
+    const { result } = renderHook(() => useVendoChat({ api: mount.url, threadId: THREAD_ID }));
+    await waitFor(() => expect(result.current.interruptions).toHaveLength(1));
+
+    await result.current.resume({ apr_1: "approve", apr_2: "deny", apr_3: "deny" });
+
+    expect(mount.decided).toEqual([
+      { ids: ["apr_1"], decision: { approve: true } },
+      { ids: ["apr_2", "apr_3"], decision: { approve: false } },
+    ]);
   });
 });

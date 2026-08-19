@@ -11,20 +11,29 @@
  * Three planes come off the one catch-all, in the order a request meets them:
  * the engine's dial-back door (always-on internal plumbing on its own fixed
  * path, answering a live turn's own credential and nothing else), the
- * approvals/grants wire the agent already builds, and then this mount's own
- * table — the chat turn, the thread lifecycle, the durable resume.
+ * approvals/grants wire under THIS mount, and then its own table — the chat
+ * turn, the thread lifecycle, the durable resume.
+ *
+ * The permission wire is mounted HERE, on this basePath and behind this mount's
+ * `resolveUser`, rather than forwarded to `agent.permissions` on its fixed
+ * `/api/vendo`. Two reasons, and the browser found both: deciding an approval
+ * is what UNBLOCKS a parked turn (the guard's decision resolves the waiter the
+ * turn is sitting on — packages/harnesses/src/turn-tools.ts:122,382), so a
+ * client that cannot reach this wire has a park it can never answer; and a
+ * standalone host configures identity once, in `resolveUser`, so the asks a
+ * person sees must be scoped to the same person the turns are.
  *
  * The table runs on `./http/router.js`, the SAME route runtime the umbrella's
  * wire runs on, so a standalone mount and the embed cannot drift into two
  * routers with two ideas of what `/threads/:id` means.
  *
- * MOUNTING NOTE: the door and the permission wire keep their own absolute paths
- * (`DOOR_PATH`, `PERMISSIONS_PATH`) because the box dials the first and
- * `@vendoai/ui`'s consent surfaces post to the second. A deployment whose engine
- * thinks outside this process therefore routes those paths here too — mounting
- * this handler at `/api/vendo` puts all three under one catch-all.
+ * MOUNTING NOTE: the door keeps its own absolute path (`DOOR_PATH`) because that
+ * is the address the box dials. A deployment whose engine thinks outside this
+ * process therefore routes that path here too — mounting this handler at
+ * `/api/vendo` puts it and everything else under one catch-all.
  */
 import { isVendoError, VendoError, type Json, type Principal, type ThreadId } from "@vendoai/core";
+import { handlePermissionRequest } from "@vendoai/guard";
 import { threadMessageStore, threadStore } from "@vendoai/store";
 import type { UIMessage } from "ai";
 import { agentComposition, type VendoAgent } from "./agent.js";
@@ -53,6 +62,17 @@ export interface HandlerUser {
   context?: Record<string, unknown>;
 }
 
+/**
+ * Two options the v1 spec names are deliberately ABSENT rather than forgotten.
+ *
+ * `publicOrigin` could not take effect: the door's origin is fixed when
+ * `agent()` composes, and `resolveDoor` already throws the boot error naming
+ * both ways out for a sandboxed engine with no origin (door.ts:96-107) — long
+ * before a mount exists. `mcp` governs a PUBLIC MCP/auth plane, which this
+ * package does not serve; the spec defaults it OFF, so omitting it and
+ * defaulting it off are the same behaviour. Both are additive the day either
+ * has something to do.
+ */
 export interface HandlerOptions {
   /** Where the host mounted this handler. */
   basePath: string;
@@ -146,10 +166,6 @@ export function agentHandler(
       // authenticates every request with the live turn's own credential, so it
       // owes this mount's `resolveUser` nothing and must not be challenged by it.
       if (agent.door !== undefined && url.pathname === DOOR_PATH) return await agent.door(request);
-      // The five permission routes, which answer `undefined` for every path they
-      // do not own — which is what lets them sit in front of this table.
-      const permissions = await agent.permissions(request);
-      if (permissions !== undefined) return permissions;
       const path = relativePath(mount, url);
       if (path === null) throw new VendoError("not-found", "unknown route");
       const user = await options.resolveUser(request);
@@ -164,6 +180,18 @@ export function agentHandler(
       // fresh entry door, and a virgin store must not answer the first request
       // with a missing relation.
       await composition.store.ensureSchema();
+      const principal: Principal = { kind: "user", subject: user.subject };
+      // The five permission routes, ahead of the table and sharing the identity
+      // already resolved above. The area check is what keeps the body unread for
+      // everything else — `POST /threads` needs its own.
+      if (["approvals", "grants"].includes(path.split("/").filter(Boolean)[0] ?? "")) {
+        const answered = await handlePermissionRequest(composition.guard, principal, {
+          method: request.method as "GET" | "POST" | "DELETE",
+          path,
+          ...(request.method === "POST" ? { body: await request.json().catch(() => undefined) } : {}),
+        });
+        if (answered !== undefined) return json(answered.body);
+      }
       const forwarded = options.headers === false ? undefined : options.headers ?? request.headers;
       const routed = await dispatchRoutes(ROUTES, {
         request,
@@ -173,7 +201,7 @@ export function agentHandler(
         agent,
         threads,
         transcript,
-        principal: { kind: "user", subject: user.subject },
+        principal,
         subject: user.subject,
         turn: {
           ...(user.profile === undefined ? {} : { user: user.profile }),

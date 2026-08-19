@@ -199,15 +199,17 @@ describe("the conversation", () => {
 });
 
 describe("the other two planes", () => {
-  it("serves the permission wire on its own mount", async () => {
+  it("serves the permission wire on its OWN mount, scoped to the resolved user", async () => {
     const handle = mount();
 
-    const response = await handle(request("GET", "/api/vendo/approvals"));
+    const response = await handle(request("GET", `${BASE}/approvals`));
 
-    // No `principal` was composed on this agent, so the wire's own answer for
-    // "a person's asks need a person" is what comes back — proof it ran, and
-    // that this handler did not answer not-found over it.
-    expect(response.status).toBe(401);
+    // Under this basePath and behind this mount's `resolveUser` — no second
+    // identity to configure, and reachable by a client that only knows `api`.
+    // Deciding an approval is what unblocks a parked turn, so a client that
+    // cannot reach this wire has a park it can never answer.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
   });
 
   it("hands the door its own path without ever asking who is calling", async () => {
