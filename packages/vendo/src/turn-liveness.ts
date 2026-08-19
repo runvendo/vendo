@@ -16,15 +16,31 @@
  * beatable after it.
  */
 
+import { log } from "@vendoai/core";
 import { environment } from "./wire/shared.js";
 
 const IDLE_ABORT_MS = 15_000;
+
+/** What the client is told when the watchdog ends its turn: the ai-SDK stream's
+ *  own terminal chunks. A turn the SERVER ended has to ARRIVE as an ending —
+ *  without one the bytes simply stop, `useChat` stays in `streaming`, and the
+ *  panel polls a turn that is never coming back. */
+const IDLE_ABORT_FRAME = new TextEncoder().encode(
+  `data: ${JSON.stringify({ type: "error", errorText: "This turn was stopped because the page stopped responding." })}\n\n`
+  + "data: [DONE]\n\n",
+);
+
+/** The idle race's winner when the watchdog fired rather than a chunk arriving. */
+const IDLE = Symbol("idle-abort");
 
 interface ActiveTurn {
   threadId: string;
   subject: string;
   abort: () => void;
   idleTimer?: ReturnType<typeof setTimeout>;
+  /** The model has spoken and only the turn's own closing work is left, so the
+   *  watchdog has stood down ({@link finishActiveTurn}). */
+  finished?: boolean;
 }
 
 const ACTIVE_TURNS_KEY = Symbol.for("vendoai.vendo.active-turns@1");
@@ -63,10 +79,18 @@ export function touchActiveTurn(threadId: string, subject: string): boolean {
     if (turn.threadId !== threadId || turn.subject !== subject) continue;
     active = true;
     if (turn.idleTimer !== undefined) clearTimeout(turn.idleTimer);
+    // Still in flight — its closing work is running — but past the point where
+    // a vanished client may end it. The beat is answered; nothing is re-armed.
+    if (turn.finished === true) continue;
     turn.idleTimer = setTimeout(() => {
-      console.warn(
-        `[vendo] turn on thread ${turn.threadId} lost its client heartbeat for ${idleAbortMs()}ms — aborting the abandoned turn.`,
-      );
+      // Through the log seam, not a bare console call: an idle abort is the one
+      // way a turn ends with a 200 and no trace, so the host's own
+      // observability has to be able to see it.
+      log({
+        code: "vendo.turn-idle-abort",
+        level: "warn",
+        message: `[vendo] turn on thread ${turn.threadId} lost its client heartbeat for ${idleAbortMs()}ms — aborting the abandoned turn.`,
+      });
       // Drop the entry now (idempotent with the stream-settled unregister):
       // an idle-aborted turn is over, and a late beat must see it inactive
       // even before the runtime drains the closing stream.
@@ -76,6 +100,36 @@ export function touchActiveTurn(threadId: string, subject: string): boolean {
     turn.idleTimer.unref?.();
   }
   return active;
+}
+
+/**
+ * The turn's thinker is done: from here it is only the turn's own closing work —
+ * the workspace commit that collects and syncs back what the agent built, then
+ * the transcript, the harness state and the audit row. The watchdog stands down
+ * at exactly this line.
+ *
+ * It exists because those two phases have opposite answers to "the client
+ * vanished". A client that leaves MID-STREAM is what the watchdog is for: nobody
+ * is waiting for the tokens still being generated. A client that leaves after
+ * the last token is not — the work is already done and paid for, and aborting it
+ * loses what the turn just made. That is the shipped failure: an abort landed
+ * during sync-back, the turn's app never reached the store, and the response was
+ * still a 200.
+ *
+ * Published from INSIDE the turn (`liveTurn`'s disposer, `harness-turn.ts`) for
+ * the same reason the steer sink is: the boundary is a moment in the runtime's
+ * loop, and the wire cannot see it — the response body stays open through the
+ * whole commit, so the bytes running out is far too late to mean this.
+ *
+ * The registration STAYS: the turn really is still in flight, and a beat should
+ * keep saying so until its stream ends.
+ */
+export function finishActiveTurn(threadId: string, subject: string): void {
+  for (const turn of activeTurns()) {
+    if (turn.threadId !== threadId || turn.subject !== subject) continue;
+    if (turn.idleTimer !== undefined) clearTimeout(turn.idleTimer);
+    turn.finished = true;
+  }
 }
 
 /**
@@ -130,8 +184,15 @@ export async function steerActiveTurn(
 
 /** Wrap a turn response so `onSettled` runs exactly once when its stream
  *  finishes, errors, or is cancelled — the turn's registry entry must not
- *  outlive the stream. Mirrors the wire's inflight-bracket wrapper. */
-export function trackTurnResponse(response: Response, onSettled: () => void): Response {
+ *  outlive the stream. Mirrors the wire's inflight-bracket wrapper.
+ *
+ *  `idle` is the watchdog's own abort (the wire holds one per turn, separate
+ *  from the client-disconnect fast path): when it fires, this client's stream
+ *  ENDS — terminal chunks, then close — because a turn the server ended must
+ *  read as an ending on the wire. Only this branch is ended; the recording
+ *  branch underneath keeps following the real turn, so a client that rejoins
+ *  through `GET /threads/:id/stream` still replays what actually happened. */
+export function trackTurnResponse(response: Response, onSettled: () => void, idle: AbortSignal): Response {
   if (response.body === null) {
     onSettled();
     return response;
@@ -143,10 +204,21 @@ export function trackTurnResponse(response: Response, onSettled: () => void): Re
     onSettled();
   };
   const reader = response.body.getReader();
+  const aborted = new Promise<typeof IDLE>((resolve) => {
+    idle.addEventListener("abort", () => resolve(IDLE), { once: true });
+  });
   const tracked = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
-        const { done, value } = await reader.read();
+        const next = await Promise.race([reader.read(), aborted]);
+        if (next === IDLE) {
+          controller.enqueue(IDLE_ABORT_FRAME);
+          settle();
+          controller.close();
+          void reader.cancel();
+          return;
+        }
+        const { done, value } = next;
         if (done) {
           settle();
           controller.close();

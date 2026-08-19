@@ -124,10 +124,18 @@ export const threadRoutes: RouteEntry[] = [
     });
     const threadId = turn.headers.get(THREAD_ID_HEADER);
     if (threadId === null) return turn;
+    // The watchdog's abort gets its own channel beside the fast path's: an idle
+    // abort is the SERVER ending the turn, so this client is told on its stream
+    // instead of being left on bytes that stop, while a client that aborted its
+    // own fetch is told nothing (it is gone).
+    const idleAbort = new AbortController();
     const unregister = registerActiveTurn({
       threadId,
       subject: ctx.principal.subject,
-      abort: () => turnAbort.abort(),
+      abort: () => {
+        idleAbort.abort();
+        turnAbort.abort();
+      },
     });
     // Stream resume (blueprint §4.1 item 5): the turn's bytes are recorded so a
     // client whose connection died can rejoin through `GET /threads/:id/stream`.
@@ -142,6 +150,7 @@ export const threadRoutes: RouteEntry[] = [
     return trackTurnResponse(
       recordResumableTurn(turn, { threadId, subject: ctx.principal.subject }),
       unregister,
+      idleAbort.signal,
     );
   }),
   // Prompt-cache warming (sub-1s shipment): the client fires this once when
