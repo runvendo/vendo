@@ -208,6 +208,7 @@
             "pages": [
               "users-orgs/your-users",
               "users-orgs/orgs-and-memberships",
+              "users-orgs/tenants",
               "users-orgs/sharing",
               "users-orgs/org-workspace",
               "users-orgs/org-policy",
