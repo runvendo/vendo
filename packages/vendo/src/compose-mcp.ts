@@ -127,7 +127,14 @@ const cloudBrokerage = (bundle: McpBundle, declared: Brokerage): Brokerage => ({
     around the latch. */
 const lazyDoor = (open: () => Promise<McpDoor>): McpDoor => {
   let opened: Promise<McpDoor> | undefined;
-  const door = (): Promise<McpDoor> => (opened ??= open());
+  const door = (): Promise<McpDoor> => (opened ??= open().catch((error: unknown) => {
+    // Only a SUCCESSFUL open is the cache. Holding the rejected promise would
+    // replay one console blip at every later request for the life of the
+    // process — the door would never reopen, and a restart would be the only
+    // cure — which is exactly what the bundle's own retry exists to prevent.
+    opened = undefined;
+    throw error;
+  }));
   return {
     handler: async (request) => (await door()).handler(request),
     revokeClient: async (subject, clientId) => (await door()).revokeClient(subject, clientId),

@@ -126,6 +126,69 @@ describe("the mcp seam's Cloud rung", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("retries after a console blip instead of wedging the door shut for the process", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.endsWith("/api/v1/mcp")) return new Response("{}", { status: 200 });
+      calls.push(url);
+      // The console is down for exactly one request, then well again.
+      if (calls.length === 1) return new Response("bad gateway", { status: 502 });
+      return new Response(JSON.stringify({
+        issuer: CLOUD_ISSUER,
+        audience: `${CLOUD_ISSUER}/mcp`,
+        federation_secret: "fed_0123456789abcdef",
+        service_key: "vsk_cloud_0123456789abcdef",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+
+    const vendo = await compose(true);
+    await vendo.handler(new Request(PRM)).catch(() => undefined);
+
+    // Only a SUCCESSFUL provisioning is the one-per-process cache, so the very
+    // next request provisions again and the door opens.
+    const second = await vendo.handler(new Request(PRM)).catch(() => undefined);
+    expect(calls, "the door never asked the console a second time").toHaveLength(2);
+    expect(second?.status).toBe(200);
+    expect(await authorizationServer(vendo)).toBe(CLOUD_ISSUER);
+  });
+
+  it("gives each composed deployment its own bundle, never a shared one", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    const calls = consoleFixture();
+
+    const first = await compose(true);
+    const second = await compose(true);
+    expect(await authorizationServer(first)).toBe(CLOUD_ISSUER);
+    expect(await authorizationServer(second)).toBe(CLOUD_ISSUER);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("provisions once when the door and tokenFor both need the tenant at the same moment", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === `${CLOUD_ISSUER}/token`) return Response.json({ access_token: "vmat_x" });
+      if (!url.endsWith("/api/v1/mcp")) return new Response("{}", { status: 200 });
+      calls.push(url);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return Response.json({
+        issuer: CLOUD_ISSUER,
+        audience: `${CLOUD_ISSUER}/mcp`,
+        federation_secret: "fed_0123456789abcdef",
+        service_key: "vsk_cloud_0123456789abcdef",
+      });
+    });
+
+    const vendo = await compose(true);
+    await Promise.all([authorizationServer(vendo), vendo.tokenFor(SUBJECT), authorizationServer(vendo)]);
+    expect(calls).toHaveLength(1);
+  });
+
   it("leaves the keyless BYO door local and offline", async () => {
     const calls = consoleFixture();
     const vendo = await compose(true);

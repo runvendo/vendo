@@ -96,6 +96,13 @@ describe("vendo.tokenFor, against a BYO door", () => {
     await expect(vendo.tokenFor("undefined")).rejects.toThrow(/vendo\.tokenFor\(user\.id\)/);
   });
 
+  it("refuses a null id with the same guidance, not a raw TypeError", async () => {
+    const vendo = await byoHost();
+    // `user.id` off a database row is `null`, not `undefined` — the commonest
+    // spelling of the very mistake the blank-id refusal exists to name.
+    await expect(vendo.tokenFor(null as unknown as string)).rejects.toThrow(/vendo\.tokenFor\(user\.id\)/);
+  });
+
   it("refuses to mint against a door that has no service key, naming both fixes", async () => {
     const vendo = await compose({ baseUrl: BASE });
     await expect(vendo.tokenFor(SUBJECT)).rejects.toThrow(/VENDO_API_KEY.*serviceAuth/s);

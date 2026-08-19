@@ -20,11 +20,11 @@ const DOCS = "https://docs.vendo.run/outside-agents/quickstart";
     stringified before it existed. The exchange would happily mint a valid
     token for a user nobody is, and the mistake would only surface much later,
     as a tool call that finds no data. It dies here instead. */
-const requireSubject = (subject: string | undefined): string => {
-  if (subject !== undefined && subject.trim() !== "" && subject !== "undefined") return subject;
+const requireSubject = (subject: unknown): string => {
+  if (typeof subject === "string" && subject.trim() !== "" && subject !== "undefined") return subject;
   throw new VendoError(
     "validation",
-    `vendo.tokenFor(${JSON.stringify(subject)}) has no user to mint for: a blank or "undefined" id means it was `
+    `vendo.tokenFor(${JSON.stringify(subject)}) has no user to mint for: a blank, null or "undefined" id means it was `
     + "interpolated before it existed. Pass the id you already have — vendo.tokenFor(user.id) — or pass the "
     + `incoming Request — vendo.tokenFor(request) — to mint for whoever is signed in. ${DOCS}`,
   );

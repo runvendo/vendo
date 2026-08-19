@@ -276,6 +276,11 @@ export class OAuthServer {
     if (this.#oauth.session === undefined) {
       const result = await this.#oauth.authorize!(req, { clientName: client.name, scopes });
       if (result instanceof Response) return result;
+      // The SAME refusal the prebuilt-session path makes below, because both
+      // hand their subject to the same `#approve`: without it an adapter that
+      // resolves nobody mints a real code, then a real access+refresh pair,
+      // for a user who does not exist.
+      if (!result.subject) return oauthJsonError("invalid_request", "Host session did not resolve a subject");
       return this.#approve(result.subject, authorization);
     }
 

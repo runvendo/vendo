@@ -3054,6 +3054,29 @@ describe("createMcpDoor first-party service auth", () => {
     expect(harness.audits).toEqual([]);
   });
 
+  it("refuses a blank subject from `authorize` too, not only from `session`", async () => {
+    // The prebuilt-session posture already dies on it (oauth/server.ts:284).
+    const fromSession = makeHarness({
+      oauth: {
+        async session() { return { subject: "" }; },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const sessionClient = await register(fromSession.door);
+    const refusedSession = await authorize(fromSession.door, sessionClient.body.client_id);
+    expect(refusedSession.status).toBe(400);
+    expect(await refusedSession.json()).toMatchObject({ error: "invalid_request" });
+
+    // The authorize-only posture hands the SAME blank subject to the SAME
+    // #approve, so it must die the same way rather than mint a code for nobody.
+    const fromAuthorize = makeHarness({ authorizeSubject: () => "" });
+    const authorizeClient = await register(fromAuthorize.door);
+    const refusedAuthorize = await authorize(fromAuthorize.door, authorizeClient.body.client_id);
+    expect(refusedAuthorize.headers.get("location"), "an authorization code was issued to nobody").toBeNull();
+    expect(refusedAuthorize.status).toBe(400);
+    expect(fromAuthorize.store.rows("vendo_mcp_grants")).toEqual([]);
+  });
+
   it("serves both keys through a rotation, and refuses one the door no longer lists", async () => {
     const rotating = makeHarness({ serviceAuth: { keys: [SERVICE_KEY, SERVICE_KEY_B] } });
     for (const [key, client] of [[SERVICE_KEY, SERVICE_CLIENT], [SERVICE_KEY_B, SERVICE_CLIENT_B]] as const) {
