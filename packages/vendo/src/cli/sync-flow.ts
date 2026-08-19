@@ -190,6 +190,14 @@ export function printSyncReport(report: SyncReportWithWarnings, output: Output):
     + (blind.length === 0
       ? ""
       : ` — blind: ${blind.slice(0, 6).join(", ")}${blind.length > 6 ? ` +${blind.length - 6} more` : ""}`));
+  if (blind.length > 0) {
+    // #1339: a blind tool is a method and a path with no parameters — the
+    // agent cannot use what it cannot see, and the file that fixes it was
+    // named nowhere. Field-measured on a Next host: one openapi.json took the
+    // catalog from 0/18 to 18/18 declared schemas.
+    output.log("tool schemas: blind tools take their parameters and output shapes from an openapi.json"
+      + " at the app root (public/ and docs/ are read too) — add one and re-run");
+  }
   output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
   for (const slot of report.pins.pruned ?? []) {
     output.log(`pruned: ${slot} — stale baseline deleted (no <Remixable> wrapper names this slot anymore)`);
