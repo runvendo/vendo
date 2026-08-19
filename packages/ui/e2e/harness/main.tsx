@@ -1853,24 +1853,38 @@ function PlainMerchants() {
 function RemixedMerchants() {
   return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Recent payees</h2><p style={{ margin: "6px 0 0" }}>Ritual · $88.00</p></section>;
 }
+
+/** The third case: a remix the build never produced. Its seed row exists, so
+ *  the ✦ is the remix's chrome — over the host's own untouched markup. */
+function FailedMerchants() {
+  return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Subscriptions</h2><p style={{ margin: "6px 0 0" }}>Netflix · $15.49</p></section>;
+}
 // A production bundle erases `Function.name`, so a wrapped component must carry
 // `displayName` for the affordance to exist at all (remixable.tsx `slotOf`) —
 // and this harness is built for real, which is how the browser gate catches it.
 PlainMerchants.displayName = "PlainMerchants";
 RemixedMerchants.displayName = "RemixedMerchants";
+FailedMerchants.displayName = "FailedMerchants";
 
 function remixClient(client: VendoClient): VendoClient {
   const remix = {
     format: "vendo/app@1", id: "app_remix", name: "Recent payees", ui: "tree" as const,
     seed: { component: "RemixedMerchants" },
   };
+  // The FAILED remix is not stubbed: its seed row and its terminal `failed`
+  // envelope both come from the wire fixture (vite.config.ts), so the wrapper
+  // discovers it and reads its dead end through the ordinary client — the same
+  // path a real build failure travels. Only the SUCCEEDING remix is canned,
+  // because the harness has no model to write one.
   return {
     ...client,
     apps: {
       ...client.apps,
-      get: async () => remix,
-      list: async () => [remix],
-      open: async () => ({ kind: "tree", payload: pinnedViewTree }),
+      get: async (id: string) => (id === remix.id ? remix : await client.apps.get(id)),
+      list: async () => [remix, ...(await client.apps.list()).filter(app => app.seed !== undefined)],
+      open: async (id: string, options?: { pending?: boolean }) => (id === remix.id
+        ? { kind: "tree", payload: pinnedViewTree }
+        : await client.apps.open(id, options)),
     } as VendoClient["apps"],
   };
 }
@@ -1890,6 +1904,7 @@ function RemixableScenario() {
       <div style={{ display: "grid", gap: 32, maxWidth: 560 }}>
         <Remixable><PlainMerchants /></Remixable>
         <Remixable><RemixedMerchants /></Remixable>
+        <Remixable><FailedMerchants /></Remixable>
       </div>
       <VendoOverlay launcher="none" thread={StarterThread} />
     </VendoProvider>

@@ -101,6 +101,35 @@ test("the ✦ lands on the component, not on a generic assistant", async ({ page
 });
 
 /**
+ * A remix that never built. The seed row is listable and `open` answers the
+ * terminal `failed` envelope, both from the wire fixture — the order a real
+ * failure arrives in — so the ✦ is the remix's chrome sitting over the host's
+ * own untouched markup. It read a settled "Edit", offering to edit a screen
+ * that does not exist, beside the agent's own "that remix failed" in the chat.
+ */
+test("the ✦ does not offer to edit a screen the build never produced", async ({ page }) => {
+  await openScenario(page, "remixable");
+  const failed = page.locator('[data-vendo-remixable="FailedMerchants"]');
+  const pill = failed.locator(".fl-remix-pill");
+
+  // The host's own component is still the content — that part was always right.
+  await expect(failed).toContainText("Netflix · $15.49");
+  await expect(pill).toHaveText(/Didn’t load/);
+  await expect(pill).toHaveAttribute("aria-label", "This view didn’t load");
+  await expect(pill).not.toHaveAttribute("aria-busy", "true");
+
+  await failed.hover();
+  await pill.click();
+  const menu = failed.getByRole("group", { name: "this view" });
+  // Announced, and it points at the chat rather than becoming a second place
+  // that explains — the developer sentence never reaches the page.
+  await expect(menu.getByRole("status")).toHaveText(/didn’t load/i);
+  await expect(failed).not.toContainText("sum(spending.data.amount)");
+  await expect(failed).not.toContainText("DataTable");
+  await page.screenshot({ path: `${SHOTS}/9-failed-remix.png`, fullPage: true, animations: "disabled" });
+});
+
+/**
  * Touch has no hover, and a finger's `pointerleave` fires the instant it lifts
  * — so the reveal's leave rule, written for a cursor, took the door away 200ms
  * after the tap that asked for it while CSS left the pill non-interactive.

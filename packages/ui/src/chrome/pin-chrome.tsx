@@ -55,12 +55,19 @@ export function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void)
  * tap that revealed it.
  */
 
-export function PinChrome({ appId, title, context, onRefresh, onRevert, children }: {
+export function PinChrome({ appId, title, context, state, onRefresh, onRevert, children }: {
   appId: string;
   /** What the app calls itself — the prefill names the THING, never an id. */
   title: string;
   /** The grounding "Edit in chat" hands the agent — never rendered. */
   context: string;
+  /** An app that is NOT a finished screen. The mark reads `label`, answers to
+   *  `name`, and the menu announces `status` — because the ✦ sits over the
+   *  host's own original in both of those states, and a settled "Edit" over one
+   *  is the page claiming a screen that is not there. Absent is the ordinary
+   *  settled app. Vocabulary belongs to the caller: a remix that never built and
+   *  a pinned app that will not load are not the same sentence. */
+  state?: { label: string; name: string; status: string; busy?: boolean };
   onRefresh(): void;
   /** Undo this app's presence on the page; rejecting keeps the popover open. */
   onRevert(): Promise<void>;
@@ -148,16 +155,22 @@ export function PinChrome({ appId, title, context, onRefresh, onRevert, children
         <button
           type="button"
           className="fl-remix-pill"
-          aria-label={`Edit ${title}`}
+          aria-label={state?.name ?? `Edit ${title}`}
           aria-haspopup="true"
           aria-expanded={open}
+          aria-busy={state?.busy === true || undefined}
           onClick={() => setOpen(!open)}
         >
           <span aria-hidden="true" className="fl-remix-pill-mark">✦</span>
-          Edit
+          {state?.label ?? "Edit"}
         </button>
         {open ? (
           <div className="fl-remix-menu" role="group" aria-label={title}>
+            {/* The state's own sentence, announced. The menu is where it lived
+                before the two ✦ marks converged, and it stays a LINE rather than
+                a surface: what went wrong, and what to do about it, belong to
+                the conversation that asked (remixable.tsx). */}
+            {state === undefined ? null : <span className="fl-remix-status" role="status">{state.status}</span>}
             <button type="button" onClick={edit}>Edit in chat</button>
             <button type="button" onClick={() => { setOpen(false); onRefresh(); }}>Update</button>
             <button type="button" className="is-danger" disabled={busy} onClick={revert}>

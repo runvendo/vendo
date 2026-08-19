@@ -1465,6 +1465,10 @@ html[data-vendo-dock] {
   border: 1px solid var(--vendo-border-strong); border-radius: 12px;
   background: var(--vendo-surface);
   box-shadow: var(--vendo-shadow-float); font-family: var(--vendo-font-family); }
+/* The unsettled app's one line, above the actions: quieter and smaller than
+   them, because it is what IS rather than something to do. */
+.fl-remix-status { padding: 6px 9px 7px; font: 500 11px/1.4 var(--vendo-font-family);
+  color: var(--vendo-fg-muted); border-bottom: 1px solid var(--vendo-border); margin-bottom: 3px; }
 .fl-remix-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font-family); padding: 7px 9px;
   border: 0; border-radius: 8px; background: transparent; color: var(--vendo-fg); cursor: pointer; }
 .fl-remix-menu button:hover { background: var(--vendo-accent-soft); }

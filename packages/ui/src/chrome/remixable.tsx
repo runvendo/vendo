@@ -177,6 +177,21 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
   // never builds gets NO surface of its own here: the wish was typed in the
   // chat, so the failure is the chat's to report (the thread's build-failed
   // beat), and a second error surface on the page is what S2 deleted.
+  //
+  // What the ✦ itself says is a different question, and deleting that surface
+  // took the answer with it. The provenance row lands the instant the remix is
+  // minted and its screen arrives tens of seconds later, so through the whole
+  // build — and forever, when the build terminally fails — the mark sat over
+  // the host's untouched original reading a settled "Edit", offering to edit a
+  // screen that does not exist. Read off the SAME open payload the mount waits
+  // on, so the mark and the page can never disagree.
+  const pending = surface === undefined && error === undefined;
+  const failed = surface?.kind === "failed" || (surface === undefined && error !== undefined);
+  const state = pending
+    ? { label: "Remixing…", name: "Remixing this view…", status: "Making your remix.", busy: true }
+    : failed
+      ? { label: "Didn’t load", name: "This view didn’t load", status: "The remix didn’t load — the chat that asked for it says why." }
+      : undefined;
   const Original = () => <>{original}</>;
   return (
     <ChromeRoot>
@@ -188,6 +203,7 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
         // says — and it matches the pill's own visible word, which is the name
         // a voice-control user can actually speak.
         title="this view"
+        {...(state === undefined ? {} : { state })}
         // The grounding rides `context` — a marked text part on the sent
         // message that no surface renders — so the prefill can name the THING
         // and never an id (spec §16 law 3).

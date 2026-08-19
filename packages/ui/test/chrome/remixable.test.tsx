@@ -64,6 +64,8 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   const remixDoor = () => screen.getByRole("button", { name: "Remix this view with Vendo" });
   /** The remixed component wears the PIN chrome's pill — same mark, same words. */
   const managePill = () => screen.getByRole("button", { name: "Edit this view" });
+  /** The same mark WITHOUT assuming what it says — the word is the state. */
+  const pill = () => wrapper().querySelector<HTMLButtonElement>(".fl-remix-pill")!;
   const revealed = () => wrapper().hasAttribute("data-vendo-revealed");
   // An instant remix carries no in-client approval, so the fork surface IS the
   // contained drop-back notice — the one venue a generated node has left.
@@ -258,7 +260,7 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   it("keeps the ORIGINAL rendered for a review-kind remix awaiting review", async () => {
     await seedRemix();
     mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
-    await waitFor(() => expect(managePill()).toBeTruthy());
+    await waitFor(() => expect(pill()).toBeTruthy());
     await waitFor(() => expect(opens().length).toBeGreaterThan(0));
     await new Promise(resolve => setTimeout(resolve, 60));
     expect(screen.getByText("Blue Bottle")).toBeTruthy();
@@ -283,19 +285,61 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     const forked = await seedRemix();
     wire.state.failedApps.set(forked.id, { reason: "the model ran out of quota" });
     mount();
-    await waitFor(() => expect(managePill()).toBeTruthy());
+    await waitFor(() => expect(pill()).toBeTruthy());
     await waitFor(() => expect(opens().length).toBeGreaterThan(0));
     await new Promise(resolve => setTimeout(resolve, 60));
 
     expect(screen.getByText("Blue Bottle")).toBeTruthy();
     expect(forkSurface()).toBeNull();
-    expect(wrapper().textContent).not.toMatch(/didn.t load|didn.t build|ran out of quota/i);
-    expect(within(wrapper()).queryByRole("status")).toBeNull();
+    // The REASON is the chat's, and nothing on the page repeats it.
+    expect(wrapper().textContent).not.toMatch(/ran out of quota/i);
     expect(within(wrapper()).queryByRole("alert")).toBeNull();
     // The recourse is the one door: the chat that asked for it.
-    fireEvent.click(managePill());
+    fireEvent.click(pill());
     expect(screen.getByRole("button", { name: "Edit in chat" })).toBeTruthy();
   });
+
+  // The other half of that rule, and the half deleting the error surface took
+  // with it: the ✦ must not CLAIM the screen it is offering to edit. A failed
+  // remix mounts nothing, so the mark sits over the host's untouched original —
+  // and it read a settled "Edit", beside a green "Did 1 thing" receipt, over a
+  // remix the agent had just said failed.
+  it("says the remix didn’t load rather than offering to edit a screen that isn’t there", async () => {
+    const forked = await seedRemix();
+    wire.state.failedApps.set(forked.id, { reason: "the model ran out of quota" });
+    mount();
+    await waitFor(() => expect(pill().textContent).toContain("Didn’t load"));
+
+    // The accessible name carries the same words the mark shows, so a screen
+    // reader is not told the remix is fine.
+    expect(pill().getAttribute("aria-label")).toBe("This view didn’t load");
+    expect(screen.queryByRole("button", { name: "Edit this view" })).toBeNull();
+    // Nothing is in flight, so nothing claims to be.
+    expect(pill().getAttribute("aria-busy")).toBeNull();
+    // And the state is ANNOUNCED, not merely drawn — without becoming the error
+    // surface S2 deleted: it says the chat has the reason, never the reason.
+    fireEvent.click(pill());
+    const status = within(screen.getByRole("group", { name: "this view" })).getByRole("status");
+    expect(status.textContent).toMatch(/didn’t load/i);
+    expect(status.textContent).not.toMatch(/ran out of quota/i);
+  });
+
+  it("says it is still working while the screen is still being built", async () => {
+    const forked = await seedRemix();
+    wire.state.pendingScreens.set(forked.id, 3);
+    mount();
+
+    await waitFor(() => expect(pill().textContent).toContain("Remixing…"));
+    // aria-busy is the half a screen reader gets: the mark is the only thing on
+    // the page that knows a build is running.
+    expect(pill().getAttribute("aria-busy")).toBe("true");
+    expect(pill().getAttribute("aria-label")).toBe("Remixing this view…");
+
+    // And it settles to the ordinary mark once the screen lands.
+    await waitFor(() => expect(forkSurface()).toBeTruthy(), { timeout: 30_000 });
+    expect(pill().textContent).toContain("Edit");
+    expect(pill().getAttribute("aria-busy")).toBeNull();
+  }, 30_000);
 
   it("waits out a generation far longer than the load retries, and mounts the screen with no reload", async () => {
     // The real model takes 9–38s to write the remix's screen. The load's three
@@ -303,7 +347,7 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     const forked = await seedRemix();
     wire.state.pendingScreens.set(forked.id, 3);
     mount();
-    await waitFor(() => expect(managePill()).toBeTruthy());
+    await waitFor(() => expect(pill()).toBeTruthy());
     expect(forkSurface()).toBeNull();
     // No remount, no reload — the same mounted wrapper picks the screen up.
     await waitFor(() => expect(forkSurface()).toBeTruthy(), { timeout: 30_000 });
