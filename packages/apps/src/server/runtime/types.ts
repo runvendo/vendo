@@ -10,6 +10,7 @@
 import type {
   AccessLevel,
   AppAccess,
+  AppGrantRecord,
   AppId,
   ApprovalId,
   ApprovalRequest,
@@ -636,11 +637,18 @@ export interface AppsRuntime {
    * host's own component, invisible to the server until it renders.
    */
   slots: SlotRegistry;
-  /** Build contract §9.3 — what level the CALLER holds. */
+  /** Build contract §9.2–§9.3 — what level the CALLER holds, and the grant
+   *  writes the ✦ share toggle needs. `list` is viewer-scoped (reading who
+   *  else can reach an app you can see); grant/revoke are owner-scoped. Every
+   *  write answers with the resulting list, so a surface never makes a second
+   *  round trip to learn what it just did. */
   access: {
     /** The caller's own level, or null when they cannot see the app at all —
      *  what the surface reads to decide between "Edit" and the fork offer. */
     levelFor(appId: AppId, ctx: RunContext): Promise<AccessLevel | null>;
+    list(appId: AppId, ctx: RunContext): Promise<AppGrantRecord[]>;
+    grant(appId: AppId, principal: string, level: AccessLevel, ctx: RunContext): Promise<AppGrantRecord[]>;
+    revoke(appId: AppId, principal: string, ctx: RunContext): Promise<AppGrantRecord[]>;
   };
   edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
   /**

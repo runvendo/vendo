@@ -10,7 +10,7 @@ import {
   type AppDocument,
 } from "../src/contract/index.js";
 import { appAccessConformance } from "@vendoai/core/conformance";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
 import { scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
@@ -404,3 +404,62 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
  *  the ONE unattended firing path is the automations engine, whose own
  *  `memberships` seam is proven in
  *  `packages/automations/src/sponsorship.test.ts`. */
+
+/** Build contract §9.2 — the grant write half, back for the ✦ toggle and
+    nothing else. `list` is viewer-gated; grant/revoke are owner-gated, and the
+    RUNTIME owns the level so the wire never re-derives it. */
+describe("§9.2 — the grant write surface", () => {
+  /** The app is held by the ORG, because sharing implies the org workspace —
+      core's app-access conformance kit refuses an org grant on a still-personal
+      app, and `promote` is not part of this restore. Alice administers acme, so
+      she is its owner without a grant row of her own. */
+  const shared = async (): Promise<{ runtime: AppsRuntime; access: AppAccess; alice: RunContext }> => {
+    const { runtime, store, access } = setup();
+    await seedAppRow(engineOverAdapter(store), doc("app_share"), "acme");
+    return { runtime, access, alice: { ...ctx("alice"), memberships: [{ org: "acme", admin: true }] } };
+  };
+  const bob: RunContext = { ...ctx("bob"), memberships: [{ org: "acme" }] };
+
+  it("an owner grants an org at viewer level and reads it back", async () => {
+    const { runtime, alice } = await shared();
+    const granted = await runtime.access.grant("app_share", "org:acme", "viewer", alice);
+    expect(granted).toEqual([expect.objectContaining({ principal: "org:acme", level: "viewer" })]);
+    expect(await runtime.access.list("app_share", alice)).toHaveLength(1);
+  });
+
+  it("a member of that org can now see the app, and can list its grants", async () => {
+    const { runtime, alice } = await shared();
+    await runtime.access.grant("app_share", "org:acme", "viewer", alice);
+    expect(await runtime.access.levelFor("app_share", bob)).toBe("viewer");
+    expect(await runtime.access.list("app_share", bob)).toHaveLength(1);
+  });
+
+  it("revoking leaves the grant list empty and the member outside", async () => {
+    const { runtime, alice } = await shared();
+    await runtime.access.grant("app_share", "org:acme", "viewer", alice);
+    expect(await runtime.access.revoke("app_share", "org:acme", alice)).toEqual([]);
+    expect(await runtime.access.levelFor("app_share", bob)).toBeNull();
+  });
+
+  it("a viewer may NOT grant — proven viewer, denied action, forbidden", async () => {
+    const { runtime, access, alice } = await shared();
+    await runtime.access.grant("app_share", "org:acme", "viewer", alice);
+    // The seam gates too, so the refusal alone cannot tell whose gate answered.
+    // The RUNTIME's is the one the MCP door inherits, and it is proven by the
+    // seam never being reached — mutate this gate to `viewer` and this is the
+    // assertion that goes red.
+    const seam = vi.spyOn(access, "grant");
+    await expect(runtime.access.grant("app_share", "user:kim", "viewer", bob))
+      .rejects.toMatchObject({ code: "forbidden" });
+    expect(seam).not.toHaveBeenCalled();
+  });
+
+  it("a stranger is told nothing at all — existence stays masked", async () => {
+    const { runtime, access } = await shared();
+    const seam = vi.spyOn(access, "grant");
+    await expect(runtime.access.list("app_share", ctx("kim"))).rejects.toMatchObject({ code: "not-found" });
+    await expect(runtime.access.grant("app_share", "org:acme", "viewer", ctx("kim")))
+      .rejects.toMatchObject({ code: "not-found" });
+    expect(seam).not.toHaveBeenCalled();
+  });
+});
