@@ -126,6 +126,55 @@ describe("the mcp seam's Cloud rung", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("keeps one flight per outcome across a failed open, and never clears a good one", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+    process.on("unhandledRejection", onUnhandled);
+    const calls: string[] = [];
+    let down = true;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.endsWith("/api/v1/mcp")) return new Response("{}", { status: 200 });
+      calls.push(url);
+      // A slow console is what makes the flights actually overlap.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (down) return new Response("bad gateway", { status: 502 });
+      return Response.json({
+        issuer: CLOUD_ISSUER,
+        audience: `${CLOUD_ISSUER}/mcp`,
+        federation_secret: "fed_0123456789abcdef",
+        service_key: "vsk_cloud_0123456789abcdef",
+      });
+    });
+
+    const vendo = await compose(true);
+    const burst = async (): Promise<void> => {
+      await Promise.all(Array.from({ length: 6 }, async () =>
+        vendo.handler(new Request(PRM)).catch(() => undefined)));
+    };
+
+    // Six concurrent FIRST uses against a console that is down: still one flight.
+    await burst();
+    expect(calls, "the failed open lost its single-flight latch").toHaveLength(1);
+
+    down = false;
+    // Six concurrent retries: exactly one more flight, and it succeeds.
+    await burst();
+    expect(calls).toHaveLength(2);
+
+    // The successful open must now be the cache — a `.catch` that cleared it
+    // would show up here as a third flight.
+    await burst();
+    expect(calls, "a good open was cleared by the rejection handler").toHaveLength(2);
+    expect(await authorizationServer(vendo)).toBe(CLOUD_ISSUER);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off("unhandledRejection", onUnhandled);
+    expect(unhandled, "the rejected open escaped as an unhandled rejection").toEqual([]);
+  });
+
   it("retries after a console blip instead of wedging the door shut for the process", async () => {
     vi.stubEnv("VENDO_API_KEY", "vk_test");
     vi.stubEnv("VENDO_BASE_URL", "https://host.test");

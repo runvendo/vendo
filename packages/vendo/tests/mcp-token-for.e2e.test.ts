@@ -103,6 +103,13 @@ describe("vendo.tokenFor, against a BYO door", () => {
     await expect(vendo.tokenFor(null as unknown as string)).rejects.toThrow(/vendo\.tokenFor\(user\.id\)/);
   });
 
+  it("refuses a BigInt id with the same guidance, not a serializer crash", async () => {
+    const vendo = await byoHost();
+    // Snowflake ids (Discord, X) and postgres int8 arrive as BigInt, and the
+    // guard now accepts `unknown` — so its own error path has to survive one.
+    await expect(vendo.tokenFor(123n as unknown as string)).rejects.toThrow(/vendo\.tokenFor\(user\.id\)/);
+  });
+
   it("refuses to mint against a door that has no service key, naming both fixes", async () => {
     const vendo = await compose({ baseUrl: BASE });
     await expect(vendo.tokenFor(SUBJECT)).rejects.toThrow(/VENDO_API_KEY.*serviceAuth/s);

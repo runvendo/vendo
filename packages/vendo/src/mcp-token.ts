@@ -20,11 +20,20 @@ const DOCS = "https://docs.vendo.run/outside-agents/quickstart";
     stringified before it existed. The exchange would happily mint a valid
     token for a user nobody is, and the mistake would only surface much later,
     as a tool call that finds no data. It dies here instead. */
+/** The guard takes `unknown`, so its own error path must survive every value it
+    can be handed: JSON.stringify refuses a BigInt outright (snowflake ids and
+    postgres int8 both arrive as one), and an object's `toString` is the
+    caller's code. Only primitives are invited to render themselves. */
+const show = (value: unknown): string =>
+  typeof value === "string" ? JSON.stringify(value)
+    : value !== null && (typeof value === "object" || typeof value === "function") ? typeof value
+      : String(value);
+
 const requireSubject = (subject: unknown): string => {
   if (typeof subject === "string" && subject.trim() !== "" && subject !== "undefined") return subject;
   throw new VendoError(
     "validation",
-    `vendo.tokenFor(${JSON.stringify(subject)}) has no user to mint for: a blank, null or "undefined" id means it was `
+    `vendo.tokenFor(${show(subject)}) has no user to mint for: a blank, null or "undefined" id means it was `
     + "interpolated before it existed. Pass the id you already have — vendo.tokenFor(user.id) — or pass the "
     + `incoming Request — vendo.tokenFor(request) — to mint for whoever is signed in. ${DOCS}`,
   );

@@ -3077,6 +3077,26 @@ describe("createMcpDoor first-party service auth", () => {
     expect(fromAuthorize.store.rows("vendo_mcp_grants")).toEqual([]);
   });
 
+  it("cannot turn a whitespace-only `authorize` subject into a working session", async () => {
+    // The door refuses a whitespace subject on the service-key exchange, but
+    // not from an adapter — it leans on `principal()` instead for every subject
+    // it does not itself refuse (oauth/server.ts:676-679). A realistic host
+    // resolves principals by lookup, and no user is called "  ".
+    const users = new Set(["user_1"]);
+    for (const nobody of ["  ", "undefined"]) {
+      const harness = makeHarness({
+        authorizeSubject: () => nobody,
+        principal: (subject) => (users.has(subject) ? { kind: "user", subject } : null),
+      });
+      const client = await register(harness.door);
+      const tokens = await issue(harness.door, client.body.client_id);
+
+      // Minted, but dead on arrival: the kill switch is what has to hold here.
+      const used = await harness.door.handler(mcpRequest(tokens.access_token));
+      expect(used.status, `a token minted for ${JSON.stringify(nobody)} opened a live MCP session`).toBe(401);
+    }
+  });
+
   it("serves both keys through a rotation, and refuses one the door no longer lists", async () => {
     const rotating = makeHarness({ serviceAuth: { keys: [SERVICE_KEY, SERVICE_KEY_B] } });
     for (const [key, client] of [[SERVICE_KEY, SERVICE_CLIENT], [SERVICE_KEY_B, SERVICE_CLIENT_B]] as const) {
