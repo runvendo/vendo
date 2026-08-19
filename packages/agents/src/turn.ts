@@ -59,6 +59,7 @@ import {
 } from "@vendoai/store";
 import { asSchema, type FlexibleSchema, type LanguageModel, type Schema, type UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import type { MemoryAdapter } from "./memory.js";
 import { resolveSystem, type SystemPromptHook } from "./prompt.js";
 import { asUserMessage, openThread, toHeaderRecord } from "./session.js";
 
@@ -120,6 +121,10 @@ export interface TurnDeps {
   files?: FilesAdapter;
   /** Projected into the read-only `/host/skills` mount, as in a session. */
   skills?: readonly Skill[];
+  /** Per-user memory. Declared here because `resolveSystem` below reads it off
+   *  this object to fill `[Memory]`: undeclared, the block worked only as long
+   *  as the caller happened to pass a wider object. */
+  memory?: MemoryAdapter;
   /** The host's prompt block. */
   instructions?: string;
   /**

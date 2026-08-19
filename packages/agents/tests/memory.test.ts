@@ -4,7 +4,7 @@
  * either, because both halves of "a memory of mine is unreachable by you" live
  * in what the store actually does with a query.
  */
-import type { Guard, Principal, RunContext, ToolCall } from "@vendoai/core";
+import type { Guard, Principal, RunContext, ToolCall, ToolResult } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
@@ -222,4 +222,41 @@ describe("agent({ memory })", () => {
     // The store-backed default was never constructed: nothing wrote its rows.
     expect((await store.records("vendo_memories").list()).records).toEqual([]);
   });
+});
+
+describe("memory through chat() — the verb the quickstart uses", () => {
+  it("puts turn one's remembered fact in the brief turn two ACTUALLY received", async () => {
+    // The seam: the tool writes through the real turn, and the block is read
+    // back off `Turn.system` — the string the harness was handed, not
+    // `resolveSystem`'s return value. Nothing is stubbed on either side, so the
+    // producer and the consumer can still disagree.
+    const briefs: string[] = [];
+    const wrote: string[] = [];
+    const support = agent({
+      name: "support",
+      harness: defineHarness({
+        name: "remembers",
+        async *run(turn) {
+          briefs.push(turn.system ?? "");
+          if (briefs.length === 1) {
+            const result: ToolResult = await turn.tools.call("remember", { text: "Prefers window seats" });
+            wrote.push(result.status);
+          }
+          yield { type: "text" as const, delta: "ok" };
+        },
+      }),
+      store: await freshStore(),
+      memory: true,
+    });
+
+    const first = support.chat("Remember that I prefer window seats.", { as: alice.subject });
+    expect(await first).toMatchObject({ status: "ok" });
+    await support.chat("Where should I sit?", { as: alice.subject, threadId: first.threadId });
+
+    expect(wrote).toEqual(["ok"]);
+    // Turn one had nothing to be told; turn two starts already knowing.
+    expect(briefs[0]).not.toContain("[Memory]");
+    expect(briefs[1]).toContain("[Memory]");
+    expect(briefs[1]).toContain("- Prefers window seats");
+  }, 30_000);
 });
