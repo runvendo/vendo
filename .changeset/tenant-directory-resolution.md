@@ -12,6 +12,11 @@ that already exists; on a store with no meter they simply do not compose, rather
 than refusing to boot. A directory outage serves the last answer, or none —
 never a failed turn.
 
+Caps reset on the calendar boundary in UTC, not on a rolling lookback:
+`messagesPerDay` refills at UTC midnight and `generationsPerMonth` on the first
+of the month, so a message sent at 23:59 does not spend the next day's
+allowance.
+
 `memberships` is now also a top-level `createVendo` key, the per-seam twin of
 `auth.memberships` for hosts on the `principal` trio — the same precedence
 `actAs` and `oauth` already have. Assert it and it wins outright: no Cloud
