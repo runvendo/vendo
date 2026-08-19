@@ -16,9 +16,11 @@
  * provenance: what the remix started from, and what a re-seed replays the
  * recorded wishes against.
  *
- * A baseline with no `ported` half was not provably splittable. It gets NO remix:
- * the gesture refuses, loudly, rather than falling back to regenerating the
- * component from scratch.
+ * A baseline with no `ported` half was not provably splittable. It gets NO remix
+ * and, upstream of here, no ✦ at all: the chrome offers the gesture only on the
+ * slots the generated wiring names. A direct call is refused at the lookup,
+ * before anything is minted — never a fallback that regenerates the component
+ * from scratch.
  */
 import {
   VendoError,
@@ -52,7 +54,19 @@ export type SeedSurfaceDeps = Pick<
   | "replaySources"
 >;
 
-const baselineFor = (deps: SeedSurfaceDeps, component: string): SeedBaseline => {
+/** A baseline with its ported half — the only kind a remix can start from, and
+ *  the type says so, so no path below can reach for a port that is not there. */
+type PortedBaseline = SeedBaseline & { ported: SeedPort };
+
+/** The one lookup, and the one refusal. A component the splitter could not port
+ *  has nothing for a fork to START from, so it is no more remixable than one
+ *  nobody captured — regenerating it from scratch would hand the person a
+ *  different component wearing this one's name. Both refusals land HERE, before
+ *  anything is minted, so a remix that cannot exist leaves no row behind. The
+ *  chrome never offers the ✦ on one of these (the generated wiring names only
+ *  the slots that ported), and sync already said why in its report; this is what
+ *  a direct API caller gets, as an ordinary reportable wire error. */
+const baselineFor = (deps: SeedSurfaceDeps, component: string): PortedBaseline => {
   const baseline = (deps.config.seedBaselines ?? []).find(({ slot }) => slot === component);
   if (baseline === undefined) {
     throw new VendoError(
@@ -60,14 +74,6 @@ const baselineFor = (deps: SeedSurfaceDeps, component: string): SeedBaseline => 
       `remixable component "${component}" has no captured baseline; wrap it in <Remixable> and run vendo sync`,
     );
   }
-  return baseline;
-};
-
-/** The ported half, or no remix at all. A component the splitter could not port
- *  has nothing for a fork to START from, and the honest answer is to say so —
- *  regenerating it from scratch would hand the person a different component
- *  wearing this one's name. */
-const portOf = (baseline: SeedBaseline): SeedPort => {
   if (baseline.ported === undefined) {
     throw new VendoError(
       "validation",
@@ -75,7 +81,7 @@ const portOf = (baseline: SeedBaseline): SeedPort => {
       + "run vendo sync and read its report for why this component could not be ported",
     );
   }
-  return baseline.ported;
+  return baseline as PortedBaseline;
 };
 
 /**
@@ -90,10 +96,10 @@ const portOf = (baseline: SeedBaseline): SeedPort => {
 const seedScreen = async (
   deps: SeedSurfaceDeps,
   appId: AppId,
-  baseline: SeedBaseline,
+  baseline: PortedBaseline,
   ctx: RunContext,
 ): Promise<void> => {
-  const painted = await deps.runtime().floor(ctx).component({ appId, source: portOf(baseline).source });
+  const painted = await deps.runtime().floor(ctx).component({ appId, source: baseline.ported.source });
   if (!painted.ok) {
     throw new VendoError(
       "validation",
@@ -114,10 +120,6 @@ const seedFrom = async (
   ctx: RunContext,
 ): Promise<AppDocument> => {
   const baseline = baselineFor(deps, input.component);
-  // No ported half, no ✦ — refused BEFORE anything is minted, because a remix of
-  // a component nothing could port has nothing to be a remix of, and a row that
-  // can only ever fail is worse than a refusal the chrome can read.
-  portOf(baseline);
   // Idempotent per (subject, component): the gesture dedupes SERVER-side, so a
   // double-tap can never mint two apps and the chrome's latch stays cosmetic.
   // The OLDEST matching row wins, which is the same winner the chrome's own
@@ -283,7 +285,7 @@ const reseed = async (
   // throwing, so rebasing ahead of it left the OLD screen claiming the host's
   // current version — no drift warning, and every retry refused as a conflict
   // above.
-  deps.replaySources.set(app.id, portOf(baseline).source);
+  deps.replaySources.set(app.id, baseline.ported.source);
   const unapplied: string[] = [];
   let replayed = app;
   try {

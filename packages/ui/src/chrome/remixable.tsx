@@ -245,6 +245,7 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
 }
 
 export function Remixable({ review = false, children }: RemixableProps) {
+  const { remixSlots } = useVendoProvider();
   const [revealed, setRevealed] = useState(false);
   const root = useMenuDismiss(revealed, setRevealed);
   const grace = useRef<number | undefined>(undefined);
@@ -322,6 +323,14 @@ export function Remixable({ review = false, children }: RemixableProps) {
           original={children}
           onReverted={refresh}
         />
+      ) : !remixSlots.has(slot) ? (
+        // No port, no offer. The generated wiring names the slots sync could
+        // split, and a slot it does not name has nothing for a fork to start
+        // from — sync already said why, loudly, in its report. So the host's
+        // own markup renders alone: not a disabled ✦, not a greyed one, none.
+        // The gate is on the OFFER only; the arm above still mounts and still
+        // manages a remix that already exists, because revert is the way back.
+        children
       ) : (
         <>
           {children}
