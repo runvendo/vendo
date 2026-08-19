@@ -63,9 +63,11 @@ const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<st
   Timeline: { props: { entries: [{ id: "1" }] } },
   "Timeline.empty": { props: { entries: [] } },
   Stat: { props: { label: "Open", value: 1 } },
-  LineChart: { props: { data: [{ x: "Jan", v: 1 }], xKey: "x", series: ["v"] } },
+  // `item` seeds the series descriptor a per-series formatter rides in, the way
+  // DataTable's seeds a column: without the key there is no line to label.
+  LineChart: { props: { data: [{ x: "Jan", v: 1 }], xKey: "x", series: ["v"] }, item: { key: "v" } },
   "LineChart.empty": { props: { data: [], xKey: "x", series: ["v"] } },
-  BarChart: { props: { data: [{ x: "Jan", v: 1 }], xKey: "x", series: ["v"] } },
+  BarChart: { props: { data: [{ x: "Jan", v: 1 }], xKey: "x", series: ["v"] }, item: { key: "v" } },
   "BarChart.empty": { props: { data: [], xKey: "x", series: ["v"] } },
   DonutChart: { props: { data: [{ k: "A", v: 1 }], categoryKey: "k", valueKey: "v" } },
   "DonutChart.empty": { props: { data: [], categoryKey: "k", valueKey: "v" } },
@@ -104,6 +106,14 @@ const CONTEXT: Record<string, { props: Record<string, unknown>; item?: Record<st
  *  test hovers exactly this way — a real `mouseenter` (Base UI listens for the
  *  native event, not React's delegated one) and then a move. */
 const RAISE: Record<string, (container: HTMLElement) => void> = {
+  // A line's value is printed in ONE place — the hovered point — so its series
+  // formatter is only on the page once the pointer is over the plot, exactly as
+  // the `tooltip` slot beside it is. Same move recharts asks for in
+  // `charts.test.tsx`: a move over the wrapper it measured.
+  LineChart: (container) => {
+    const wrapper = container.querySelector(".recharts-wrapper");
+    if (wrapper !== null) fireEvent.mouseMove(wrapper, { clientX: 120, clientY: 100 });
+  },
   Tooltip: (container) => {
     const trigger = container.querySelector('[data-kit="Tooltip"]');
     if (trigger === null) return;
@@ -111,6 +121,19 @@ const RAISE: Record<string, (container: HTMLElement) => void> = {
     fireEvent.mouseMove(trigger);
   },
 };
+
+/** What proves a slot renders. An element for almost all of them; for the ONE
+ *  shape that holds finished text — a chart's `format`, where the screen writes
+ *  the figure — a string, because an element put there is the very thing the text
+ *  arity exists to refuse. The marker is the slot's own `text` (apps
+ *  `contract/kit/schema.ts`), so a formatter added without it fails here on the
+ *  element probe rather than being quietly excused. */
+const PROBE_TEXT = "probe-text";
+const probeFor = (slot: KitSlotSpec): ReactNode =>
+  // The RESOLVED form, one string per row, because that is what the VM hands a
+  // component in production — the function the screen wrote never survives the
+  // wall (`kit-passthrough-seam.test.tsx`). Every chart context below holds one row.
+  slot.text === true ? [PROBE_TEXT] : <span data-testid="probe">probe</span>;
 
 /** The probe at the slot's DECLARED path: a nested slot sits in its prop's
  *  description objects, a top-level one is the prop itself. */
@@ -135,13 +158,15 @@ describe("every declared slot renders what it promises", () => {
       const context = CONTEXT[`${component}.${name}`] ?? CONTEXT[component];
       expect(context, `${at} is declared in SLOTS with no context here — implement the slot in @vendoai/ui and add one, or drop it from the table`).toBeTypeOf("object");
       const Implementation = KIT_COMPONENTS[component] as ComponentType<Record<string, unknown>>;
-      const { container } = render(<Implementation {...propsFor(context!, name, slot, <span data-testid="probe">probe</span>)} />);
+      const { container } = render(<Implementation {...propsFor(context!, name, slot, probeFor(slot))} />);
       RAISE[component]?.(container);
       // `findBy` rather than `queryBy` because a raised component arrives after
       // its own delay; a probe already painted resolves on the first look, and
       // only a REAL miss waits out the timeout — with the sentence intact,
       // which is what a bare `findBy` would throw away.
-      const painted = await screen.findByTestId("probe", {}, { timeout: 3000 }).catch(() => null);
+      const painted = slot.text === true
+        ? await screen.findByText(PROBE_TEXT, {}, { timeout: 3000 }).catch(() => null)
+        : await screen.findByTestId("probe", {}, { timeout: 3000 }).catch(() => null);
       expect(painted, `<${component}> declares its "${name}" slot at ${at} and does not render what is put there`).toBeTruthy();
       cleanup();
     }

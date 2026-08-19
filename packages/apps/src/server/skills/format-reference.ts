@@ -54,7 +54,9 @@ Those two imports are everything there is. Nothing else can be loaded.
 ## Data — \`useQuery(tool_name, input)\`
 
 - Synchronous, and it hands back the tool's result with the tool's own field
-  names on it — read them off the tool's schema.
+  names on it — read them off the tool's schema and COPY them. The shape is
+  closed: a field you inferred from a sibling's name (\`amount_cents\` where the
+  schema says \`amount\`) is a hard refusal, not an undefined value.
 - A read whose input you COMPUTE has no answer on the first paint: its \`data\` is
   undefined until the host supplies it, and then every \`useQuery\` re-runs with
   the real thing. So write the screen so an unanswered read draws its empty shell
@@ -63,11 +65,22 @@ Those two imports are everything there is. Nothing else can be loaded.
   field off another query.
 - Read the same tool twice with different inputs where the screen needs two
   answers.
+- An id is not a name: a field ending in \`_id\` points into another tool's rows
+  (\`release.owner_id\` → \`list_members\`), so read that tool and show the NAME. A
+  screen about ONE record shows that record's own fields — who owns it included —
+  not only the fields the ask spelled out.
 
 ## Actions — \`tools.<tool_name>(args)\`
 
 - Inside an event handler only, never during render. \`await\` it when you need
-  the result; the host runs the tool and answers.
+  the result — but only a READ answers straight away.
+- A WRITE is answered by the PERSON, not by the host: it comes back
+  \`pending-approval\`, and the code after your \`await\` does not run until they
+  answer — where nobody answers, it never runs at all. So a handler may FIRE
+  writes and finish; it must never wait on one to do the next thing.
+  \`for (const row of rows) await tools.remove({ id: row.id })\` sends the first
+  call and stops there, and \`await tools.pay({}); setOpen(false)\` leaves the
+  dialog standing. Fire every call in the one press, with no \`await\` between.
 - When an awaited call succeeds, every \`useQuery\` on the screen re-runs and the
   screen re-renders with fresh data, keeping the state it had — never patch state
   to mirror what the refresh will bring back.
@@ -85,6 +98,30 @@ Those two imports are everything there is. Nothing else can be loaded.
   host design rules in the brief name an action as confirm-first, that step is
   part of the app — build it. The guard's own ask counts where it fires; where
   it does not, yours is the one the rules asked for.
+- THE ACTION THE ASK NAMED IS ALWAYS PRESSABLE. Never paint it \`disabled\`
+  because the screen thinks the moment is wrong: someone who asked to cut a
+  release, kick a review back or cancel a queue and finds the control greyed out
+  has a screen that cannot do the job they asked for. Let the press land, and put
+  the risk where they will read it — in the confirmation ("3 issues are still
+  open; cutting now freezes them"), or in a Callout beside the control.
+- A CONTROL YOU DO DISABLE SAYS WHAT IT IS WAITING FOR, on the screen, naming
+  every missing piece — "Name it, and pick at least one condition" — and
+  \`required\` on the fields that are. A form still filling in is the ONLY thing
+  \`disabled\` is for. The ask's verb is never disabled — not on the screen, not
+  on one row of a table, not on the row already open or already holding that
+  status: a press that merely repeats is harmless, and a control that refuses
+  it reads as broken.
+- BUILD THE CONTROLS THE ASK ASKED FOR, AND NEVER A SECOND WAY TO DO THE SAME
+  THING. "One button that cancels all of them" is ONE button: a per-row Cancel
+  beside it is the same verb twice. A row action is for a verb the ask puts ON
+  the row — "let me cancel one", "kick one back".
+- A form that FILES a record shows a field for every argument the write takes —
+  including the ones the ask already fixed, prefilled and editable. "Open a bug
+  on the mobile team" arrives with Team reading \`mobile\`; hard-coding it in the
+  call and printing it as a sentence takes away their ability to change it.
+- An id argument carries the row's \`id\` field VERBATIM (\`bld_4188\`), never the
+  number a person says ("build #4188") — the host knows its own ids, not your
+  respelling of them.
 
 ## Components and plain HTML
 
@@ -103,6 +140,20 @@ Those two imports are everything there is. Nothing else can be loaded.
 - You format every figure yourself, with \`Intl\` — \`toLocaleString\`,
   \`toLocaleDateString\` — in the units the host stores and the currency the brief
   names. Components display and theme what you hand them; none of them formats.
+  Read the unit off what the tool SAYS, not off the field's name: a field called
+  plain \`amount\` whose description reads "\`amount\` is in CENTS: 285000 is
+  $2,850.00" is cents everywhere you print it.
+- A CHART IS NO EXCEPTION. It plots the raw numbers, and every figure it PRINTS —
+  a slice's legend line, a bar's label, a hovered point, an x tick — comes from a
+  \`format\` function you write, of the row:
+  \`format={(row) => money(row.amount)}\` on a DonutChart,
+  \`series={[{key:"amount",label:"Spend",format:(row) => money(row.amount)}]}\` on a
+  Bar or Line chart, \`xFormat={(row) => day(row.month)}\` for the x axis. It is the
+  same helper the table beside it uses.
+- The ONE figure you cannot write is a value-axis tick: the chart invents those
+  off the scale, and they read as the plotted numbers with digit grouping
+  (285000 → "285,000"). So plot the units you want read — divide where you
+  PREPARE the rows if the axis matters.
 
 ## The sandbox
 
@@ -113,9 +164,19 @@ Those two imports are everything there is. Nothing else can be loaded.
 
 ## State — \`useState\`
 
-- Inputs are controlled: \`value={x}\` with \`onChange={(e) => setX(e.target.value)}\`.
-- A handler receives a plain \`{ target: { value } }\` — a checkbox,
+- Inputs are controlled: \`value={x}\` with \`onChange={(e) => setX(e.target.value)}\`,
+  and \`value\` must read STATE you set in that same handler. A \`value\` taken off
+  query data — \`value={row.status}\` — with no \`setX\` behind it snaps back to the
+  old value the instant they pick something: the tool call goes out and the screen
+  shows nothing happened. Where the choice IS the action and you hold no state for
+  it, leave \`value\` off.
+- A handler receives a plain \`{ target: { value } }\` — a checkbox or a switch,
   \`{ target: { checked } }\`.
+- Two controls put something other than a string in \`value\`, and the state they
+  set has to match, so convert it in the handler:
+  - \`<Slider>\` gives a number — \`onChange={(e) => setPoints(Number(e.target.value))}\`.
+  - \`<Select multiple>\` gives the whole selection —
+    \`onChange={(e) => setPicked([...e.target.value])}\`, over \`useState([])\`.
 - There is no \`preventDefault\` to call: \`<Form>\` submits itself.
 
 ---
@@ -181,7 +242,7 @@ export default function BillsDue() {
       </Row>
       <DataTable rows={bills.data} columns={["payee", { key: "due_on", label: "Due", cell: (bill) => <Text text={day(bill.due_on)} /> }, { key: "amount_cents", label: "Amount", align: "end", cell: (bill) => <Text text={money(bill.amount_cents)} /> }]} />
       <Modal open={confirming} onClose={() => setConfirming(false)} title="Pay every open bill?"
-        footer={<Button label="Pay all" onClick={async () => { for (const bill of bills.data) await tools.pay_bill({ id: bill.id }); }} />}>
+        footer={<Button label="Pay all" onClick={() => { for (const bill of bills.data) tools.pay_bill({ id: bill.id }); setConfirming(false); }} />}>
         <Text>This pays {bills.data.length} bills, {money(totalCents)} in total.</Text>
       </Modal>
     </Stack>
@@ -221,7 +282,8 @@ export default function ComparePlans() {
 
 The ask: "let me work through the open tickets one at a time." Three habits: the
 selection starts on the FIRST row, never on nothing; the row action is on EVERY row,
-disabled with its reason where it does not apply; and the filter's choices are read
+and \`disabled\` only where THAT ROW has nothing to do (a ticket already closed), with
+the reason on it; and the filter's choices are read
 off the data rather than typed out, so they cannot disagree with it.
 
 \`\`\`tsx
@@ -273,6 +335,7 @@ export default function Tickets() {
 const VARIABLE_MEANINGS: Record<string, string> = {
   "--vendo-color-success": "a completed or positive state",
   "--vendo-color-warning": "something that needs attention, not yet wrong",
+  "--vendo-color-info": "a state in progress — neither good news nor bad",
   "--vendo-color-surface-raised": "a panel resting on a surface",
   "--vendo-color-background": "the page behind everything",
   "--vendo-color-surface": "a panel resting on the page",

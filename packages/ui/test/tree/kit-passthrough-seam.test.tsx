@@ -97,13 +97,49 @@ export default function Balances() {
   const series = COLORS.map((color, i) => ({ key: "acc_" + i, label: "Account " + i, color }));
   return (
     <Stack gap={12}>
-      <LineChart data={accounts.data} xKey="month" series={series} format="money" />
+      <LineChart data={accounts.data} xKey="month" series={series} />
+    </Stack>
+  );
+}
+`;
+
+/**
+ * The FORMATTER across the same four hands.
+ *
+ * A chart's figures are the screen's own text now, and a function written in a
+ * screen only reaches a component if the VM calls it: undeclared, it would cross
+ * as a `$handler` door — a callback where a figure belongs, returning nothing and
+ * firing a screen turn on every tick recharts painted. So this is the seam the
+ * whole change rests on, and neither side of it is stubbed.
+ */
+const FORMATTED = `
+import { LineChart, Stack, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const month = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+
+export default function Revenue() {
+  const revenue = useQuery("revenue");
+  return (
+    <Stack gap={12}>
+      <LineChart
+        data={revenue.data}
+        xKey="month"
+        series={[{ key: "amount_cents", label: "Revenue", format: (row) => money(row.amount_cents) }]}
+        xFormat={(row) => month(row.month)}
+      />
     </Stack>
   );
 }
 `;
 
 const ROWS = [{ month: "Jan", amount: 1_200 }, { month: "Feb", amount: 1_900 }];
+/** Cents, and an ISO day — the units a host really stores, so the text on screen
+ *  can only be there because the screen's own helpers ran. */
+const CENTS_ROWS = [
+  { month: "2026-01-31", amount_cents: 120_000 },
+  { month: "2026-02-28", amount_cents: 190_000 },
+];
 const PALETTE_ROWS = [
   { month: "Jan", acc_0: 1_200, acc_1: 900 },
   { month: "Feb", acc_0: 1_900, acc_1: 1_400 },
@@ -193,6 +229,33 @@ describe("a generated app's own colors survive the whole chain", () => {
       // And the renderer paints them: not one of these is a theme token.
       expect([...container.querySelectorAll(".recharts-line-curve")].map((line) => line.getAttribute("stroke")))
         .toEqual(["#e11d48", "#f97316"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("resolves a chart's formatters in the VM and paints the screen's own text", () => {
+    const restore = stubChartSize(360, 180);
+    try {
+      const { container, nodes } = paint(FORMATTED, CENTS_ROWS);
+
+      // What actually crossed: TEXT, one string per row, in `data` order. A
+      // `$handler` here would be the whole feature dead — the door that returns
+      // nothing and fires a screen turn per tick.
+      const chart = nodes.find((node) => node.component === "LineChart");
+      const props = chart?.props as { xFormat?: unknown; series?: Array<{ format?: unknown }> };
+      expect(props.xFormat).toEqual(["Jan", "Feb"]);
+      expect(props.series?.[0]?.format).toEqual(["$1,200.00", "$1,900.00"]);
+
+      // …and the WIRE gate keeps it, so a stored screen carries the same text.
+      expect(validateProps(kitSpec("LineChart")!, chart?.props).success).toBe(true);
+
+      // …and it is on the page: the x ticks read the screen's month, not the ISO
+      // day the host stored.
+      const ticks = [...container.querySelectorAll(".recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value")]
+        .map((tick) => tick.textContent);
+      expect(ticks).toEqual(["Jan", "Feb"]);
+      expect(container.textContent).not.toContain("2026-01-31");
     } finally {
       restore();
     }

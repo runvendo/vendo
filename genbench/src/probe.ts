@@ -116,10 +116,11 @@ const ON = "[aria-checked=true], :checked";
  *  it needs its own read: see `Look.chosen` below. */
 const SELECTS = `select${SHOWN}`;
 
-/** Joins the values `Look.chosen` reads off every select into one string. Not a
- *  character any option value would hold, so two selects' worth of values never
- *  read as one long one that happens to match. */
-const CHOSEN_SEP = String.fromCharCode(0);
+/** Joins a reading that is a LIST — the value every chooser holds, the places the
+ *  controls that are on sit in the document — into one string. Not a character
+ *  either of them could contain, so two entries never read as one long one that
+ *  happens to match, and a list of three never reads as a list of two. */
+const SEP = String.fromCharCode(0);
 
 /**
  * What a control ALREADY BEING the one showing looks like, on the control itself:
@@ -131,6 +132,13 @@ const CHOSEN_SEP = String.fromCharCode(0);
  * opens on, in two columns of one run. A checkbox and a switch are deliberately
  * absent, because pressing one FLIPS it and is never a no-op. `aria-current="false"`
  * is the spelling for "not the current one", so it says what it means here too.
+ *
+ * Both spellings of the radio already on are here and both are load-bearing
+ * (confirmed 2026-08-19): the Kit draws one as `<span role=radio aria-checked=true>`
+ * and `project-tracker/file-bug`'s already-selected priority was excused by it. Its
+ * `aria-hidden` proxy input is never the control pressed, so nothing here has to
+ * reach for one, and nothing widens: what is not detectable on the element itself
+ * stays ungraded rather than guessed at.
  */
 const ALREADY =
   "[aria-selected=true], [aria-current]:not([aria-current=false]), [role=radio][aria-checked=true], input[type=radio]:checked";
@@ -329,11 +337,29 @@ interface Look {
    *  press put there. */
   readonly body: string;
   readonly elements: number;
-  /** How many of the screen's controls are switched on. A toggle that flips
-   *  changes neither the text nor the element count, so by those two alone a
-   *  switch a person can see move was a control that did nothing — the false
-   *  failure that pressing toggles at all would otherwise have invented. */
-  readonly on: number;
+  /**
+   * WHICH of the screen's controls are switched on, by where each one sits in the
+   * document, joined in document order. A toggle that flips changes neither the
+   * text nor the element count, so by those two alone a switch a person can see
+   * move was a control that did nothing — which is why this reading exists at all.
+   *
+   * It was a COUNT, and that was the same false failure one species over
+   * (2026-08-19). A radio press moves the selection WITHIN its group — one comes on
+   * exactly as another goes off — so the count is the number it always was, and a
+   * radio a person can watch fill in read as a dead control:
+   * `project-tracker/file-bug` recorded "control 1" as `changed: false` on a screen
+   * whose priority group selects fine. Identity moves where the count could not,
+   * and still catches everything the count did: N places joined is a different
+   * string from M places joined, whatever the places are.
+   *
+   * The PLACE rather than the control's own words, because the Kit's radio has
+   * none — it is an empty `<span role=radio>` whose label is a sibling it points at
+   * with `aria-labelledby`, so all four spans of that group share `controlsOn`'s
+   * signature exactly and a signature-shaped reading would have read just as dead.
+   * A place shifting under a press is a page that moved, which is the answer this
+   * reading is for; a page that only re-paints keeps every place it had.
+   */
+  readonly on: string;
   /** How many of the screen's controls a person could press right now. Unlocking
    *  the button beside a chooser moves none of the three numbers above, so by
    *  those alone the choice that opens "Pick a category, then Save cap" did
@@ -366,11 +392,13 @@ const look = async (page: Page): Promise<Look> =>
       calls: window.vendo?.calls ?? [],
       body: document.body.innerText,
       elements: document.querySelectorAll("*").length,
-      on: document.querySelectorAll(what.on).length,
+      on: [...document.querySelectorAll("*")]
+        .flatMap((node, index) => (node.matches(what.on) ? [index] : []))
+        .join(what.sep),
       live: document.querySelectorAll(what.live).length,
       chosen: [...document.querySelectorAll<HTMLSelectElement>(what.selects)].map((select) => select.value).join(what.sep),
     }),
-    { on: ON, live: ACTIONABLE, selects: SELECTS, sep: CHOSEN_SEP },
+    { on: ON, live: ACTIONABLE, selects: SELECTS, sep: SEP },
   );
 
 /** The wait a press earns: until it asks the host for something it had not asked
@@ -390,7 +418,7 @@ const settle = async (page: Page, before: Look): Promise<void> => {
     onSelector: ON,
     liveSelector: ACTIONABLE,
     selectSelector: SELECTS,
-    sep: CHOSEN_SEP,
+    sep: SEP,
   };
   await page
     .waitForFunction(
@@ -398,7 +426,8 @@ const settle = async (page: Page, before: Look): Promise<void> => {
         window.vendo.calls.length > mark.calls
         || document.body.innerText.length !== mark.text
         || document.querySelectorAll("*").length !== mark.elements
-        || document.querySelectorAll(mark.onSelector).length !== mark.on
+        || [...document.querySelectorAll("*")].flatMap((node, index) => (node.matches(mark.onSelector) ? [index] : [])).join(mark.sep)
+          !== mark.on
         || document.querySelectorAll(mark.liveSelector).length !== mark.live
         || [...document.querySelectorAll<HTMLSelectElement>(mark.selectSelector)]
             .map((select) => select.value)

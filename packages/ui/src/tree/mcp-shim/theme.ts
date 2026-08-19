@@ -64,6 +64,7 @@ export function readThemeCssVariables(style: CssVariables): VendoTheme {
       border: value("--vendo-color-border", defaultVendoTheme.colors.border),
       ...override("success", "--vendo-color-success", themeDefaults.colors.success),
       ...override("warning", "--vendo-color-warning", themeDefaults.colors.warning),
+      ...override("info", "--vendo-color-info", themeDefaults.colors.info),
       ...override("surfaceRaised", "--vendo-color-surface-raised", themeDefaults.colors.surfaceRaised),
     },
     typography: {

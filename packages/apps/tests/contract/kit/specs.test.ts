@@ -6,6 +6,7 @@ import {
   KIT_SLOT_PROPS,
   KIT_SPECS,
   kitPropClasses,
+  kitSlotPath,
   kitSpec,
 } from "../../../src/contract/kit/specs.js";
 
@@ -132,10 +133,31 @@ describe("the Kit specs", () => {
       CardList: { fields: { rows: "items", field: "cell" } },
       KeyValue: { items: { rows: "record", field: "cell" } },
       Timeline: { cell: { rows: "entries" } },
-      LineChart: { tooltip: { rows: "data" } },
-      BarChart: { tooltip: { rows: "data" } },
-      DonutChart: { tooltip: { rows: "data" } },
+      // A chart's FORMATTERS are per-row slots for the same reason its tooltip is:
+      // the figure is the screen's own text, written once as a function of the row
+      // and resolved once per row. A series' formatter arrives inside `series`,
+      // exactly as a cell arrives inside `columns`.
+      LineChart: {
+        tooltip: { rows: "data" },
+        series: { rows: "data", field: "format" },
+        xFormat: { rows: "data" },
+      },
+      BarChart: { tooltip: { rows: "data" }, series: { rows: "data", field: "format" } },
+      DonutChart: { tooltip: { rows: "data" }, format: { rows: "data" } },
     });
+    // …and WHICH of them hold finished text rather than elements. `text` is what
+    // `ui`'s slot-drift sweep probes with a string instead of an element, so a
+    // formatter added without it is refused there rather than excused; the three
+    // charts are the only slots in the Kit that hold a figure.
+    const text = KIT_SPECS.flatMap((spec) => Object.entries(spec.slots ?? {})
+      .filter(([, slot]) => slot.text === true)
+      .map(([name, slot]) => `${spec.name}.${kitSlotPath(name, slot)}`));
+    expect(text).toEqual([
+      "LineChart.series[].format",
+      "LineChart.xFormat",
+      "BarChart.series[].format",
+      "DonutChart.format",
+    ]);
     // Every prop it keys, and every rows prop it names, is a prop that component
     // really has — a slot on a prop nobody passes is a slot nothing paints.
     for (const [component, slots] of Object.entries(KIT_SLOT_PROPS)) {

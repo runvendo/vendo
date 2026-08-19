@@ -604,6 +604,12 @@ const judgeScreen = async (
    * is on it, at no risk to the screen: the repair is the same bounded round a
    * blocker gets, and whatever survives it stands. Nothing but an EMPTY verdict is
    * silence.
+   *
+   * TRIED THE OTHER WAY ON 2026-08-19 AND MEASURED WORSE, so do not delete this
+   * again: gating the round on `block` alone saved the model spend and cost the
+   * product — over 40 cases, style fell 99%→90%, asks 96%→91%, honesty 40/40→38/40
+   * and the floor 100%→95.7%, with 21 screens shipping their warnings unrepaired.
+   * The warn rounds were doing real polishing work.
    */
   if (output.ok && findings.length === 0) return undefined;
   return refusal(path, findings);
