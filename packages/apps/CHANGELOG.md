@@ -1,5 +1,54 @@
 # @vendoai/apps
 
+## 0.30.0
+
+### Minor Changes
+
+- bd1d016: Screens are natural JavaScript now. Reads take inputs and resolve through a
+  supply loop that keeps the screen's state alive; per-row and plain slots take
+  real closures; the `field=`/`semantic:` dialect, the slot law, the nesting
+  whitelist and both auto-repair regexes are deleted. The sealed VM borrows the
+  host's Intl, so money, dates, durations and "2 hours ago" print what a browser
+  prints, pinned to the host's locale and zone. The Kit's surface answers the
+  ecosystem's conventions — `value=`, `name`/`header`/children accepted, column
+  `width`/`truncate`/`priority`, human durations, `grow`, icon/loading buttons,
+  option groups — and twenty silent misbehaviors now speak up or behave. The
+  screen agent's brief sheds the rules whose reasons died, gains worked examples,
+  and tells the truth about the frame: everything the ask names must be visible.
+
+  Breaking: the value-formatting tier is deleted — `Money`, `Percent`, `Num`,
+  `DateTime` and the container `format` tokens are gone; screens format with the
+  host-bridged Intl in their own code (chart axes keep a format token, the one
+  place a value never passes through screen code). Also: `field=`,
+  `semantic:`, `Percent whole` and the `percent` format token are gone — divide
+  and scale where you prepare the data; slots accept elements or functions.
+
+### Patch Changes
+
+- b3d92b2: Generated screens render in a production build again. The screen engine and
+  `$expr` rode the SINGLE-FILE QuickJS build, which carries its WebAssembly as a
+  raw binary string inside the JavaScript — and that string cannot survive a
+  modern minifier: the WASM bytes contain a backtick, SWC re-quotes the string
+  with backticks, and the chunk that comes out opens a template literal whose
+  `\0` bytes are illegal octal escapes. Turbopack's server, SSR and browser
+  chunks were all unparseable, so the VM never started and the checks floor
+  correctly refused every screen. The bytes now travel as a FILE: the wasmfile
+  build's ten-kilobyte loader, handed the module through `wasmBinary` — read off
+  disk on Node, fetched as a bundler-emitted asset everywhere else. `@vendoai/apps`
+  ships `quickjs.wasm` beside its `dist`, and the QuickJS it installs drops from
+  3.1MB to 1.2MB.
+
+  And the variant a host hands `warmScreenEngine` now WINS. It used to be
+  last-warm-wins, which meant `@vendoai/ui`'s own no-variant re-warm on the first
+  screen mount silently took the engine back — so the documented hatch existed and
+  never held, and a venue with no network and no asset URL (an offline
+  single-bundle page, workerd) could not run screens at all. An explicitly passed
+  variant is now kept: every later default warm is a no-op, and a default already
+  in flight lands nowhere.
+
+- Updated dependencies [56c81b5]
+  - @vendoai/core@0.30.0
+
 ## 0.29.1
 
 ### Patch Changes
