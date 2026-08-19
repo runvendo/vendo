@@ -46,12 +46,12 @@ if (result.status === "ok") {
 ```
 
 <Warning>
-  **Streamable HTTP only.** The connector POSTs every JSON-RPC message to the
-  one URL it was given, and reads a `text/event-stream` answer to that POST. It
-  speaks no legacy HTTP+SSE — there is no GET-opened stream and no second message
-  URL — so a `/sse` endpoint refuses the POST and the registration comes back
-  `unavailable`, carrying the server's own `MCP HTTP <status>` as its message.
-  Paste the server's Streamable HTTP URL, usually `/mcp`.
+  **Paste the server's Streamable HTTP URL — usually `/mcp`, never `/sse`.** The
+  connector POSTs every JSON-RPC message to that one URL and reads a
+  `text/event-stream` answer to that same POST. It speaks no legacy HTTP+SSE —
+  there is no GET-opened stream and no second message URL — so a `/sse` endpoint
+  refuses the POST and the registration comes back `unavailable`, carrying the
+  server's own `MCP HTTP <status>` as its message.
 </Warning>
 
 A refusal is typed, never a thrown string:

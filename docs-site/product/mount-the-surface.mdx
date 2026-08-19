@@ -231,11 +231,26 @@ which places exist. `label` is what a person reads when they pick one, and it
 defaults to the id read as words.
 
 A report ages out, though, and a product whose agent is the whole surface never
-renders a `<VendoSlot>` to make one. Declare those instead: `createVendo({ slots })`
-takes `{ id, label, description? }` — the same shape a mount reports, where
-`description` is the sentence an agent reads to pick between two slots a label
-alone cannot separate. A declared slot needs no render, never decays, and beats
-a page report of the same id, so no one's page can rewrite what you authored.
+renders a `<VendoSlot>` to make one. Declare those instead:
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+
+createVendo({
+  slots: [
+    {
+      id: "spend-breakdown",
+      label: "Spend breakdown",
+      description: "Where this month's spending broke down by category",
+    },
+  ],
+});
+```
+
+`description` is optional — it's the sentence an agent reads to pick between
+two slots a label alone can't separate. A declared slot needs no render, never
+decays, and beats a page report of the same id, so no one's page can rewrite
+what you authored.
 
 Declaring one makes it a destination, not a display. The pin lands, but a person
 sees what is pinned there only where some page renders a `<VendoSlot>` with that

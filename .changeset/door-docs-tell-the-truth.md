@@ -31,4 +31,10 @@ than its 60s default, which takes `onprogress` AND `resetTimeoutOnProgress`:
 the door's beats extend nobody's deadline unless the caller opted in.
 `mount-the-surface` says a declared slot is a destination, not a display — the
 pin lands, but nothing renders it until some page mounts a `<VendoSlot>` with
-that id.
+that id, now with the `createVendo({ slots })` call spelled out in full instead
+of left for the reader to assemble.
+
+Three passages tightened for the same reason the rest of this changeset exists:
+`tenant-connectors`' Streamable HTTP warning and `custom-tools`' menu warning
+now lead with the action (paste this URL; add this name) instead of the wire
+mechanics.
