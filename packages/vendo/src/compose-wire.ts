@@ -10,7 +10,7 @@ import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { VendoComposition } from "./compose-context.js";
 import { isLoopbackOrigin } from "./door-paths.js";
 import type { Vendo } from "./types.js";
-import { UPLOAD_MAX_BYTES } from "./wire/files.js";
+import { uploadCapOf } from "./user-files.js";
 import { VERSION, type WireDeps } from "./wire/shared.js";
 
 const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined => {
@@ -80,11 +80,10 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     channels: composition.channelDoor,
     channelInboundSecret: composition.channelInboundSecret,
     sandbox: sandbox.venue,
-    uploadMaxBytes: config.uploadMaxBytes ?? UPLOAD_MAX_BYTES,
-    // The same predicate the boot summary's `files` row prints, and it belongs
-    // to `config`, not to the resolved adapter: `selectFiles` returns one
-    // FilesAdapter either way, and the interface has no name to ask for.
-    files: config.files === undefined ? "store" : "byo",
+    // The cap and its backing, resolved where the drawer's law lives so this
+    // door and `vendo_user_files_put` refuse identically; `files` is the same
+    // predicate the boot summary's row prints.
+    ...uploadCapOf(config),
     model: inference.agent.venue,
     doctor,
     get mcp() { return composition.mcpPosture; },

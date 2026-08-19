@@ -1,30 +1,12 @@
 import { UPLOAD_HEADER, VendoError } from "@vendoai/core";
-import { FILES_STORE_MAX_BYTES } from "@vendoai/store";
-import { json, route, type FilesVenue, type RouteEntry } from "./shared.js";
+import { overCap } from "../user-files.js";
+import { json, route, type RouteEntry } from "./shared.js";
 
-/** What a browser may push through the drop door in one go by DEFAULT, and the
-    ONLY place it is enforced; `createVendo({ uploadMaxBytes })` moves it. It is
-    a DOOR cap, not a storage cap: `vendo.putUserFile` is a trusted server
-    caller and is bounded by whatever backs the `files:` adapter instead. There
-    is no 413 rung — an over-cap upload is a request the caller can fix, which
-    is what `validation` already means everywhere else on this wire. */
-export const UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
-
-/** Where the bytes this door ADMITS actually land, per backing. Named in the
-    refusal because raising the cap is only half a fix: past 5 MiB with no
-    `files:` adapter, the upload clears this door and dies at the store's own
-    blob cap instead. */
-const BACKING: Record<FilesVenue, string> = {
-  byo: "the FilesAdapter wired at createVendo({ files })",
-  store: `this deployment's store, which caps one file at ${FILES_STORE_MAX_BYTES} bytes`
-    + " — wire createVendo({ files }) with a FilesAdapter (s3Files) before raising the door past it",
-};
-
-const overCap = (name: string, bytes: number, max: number, venue: FilesVenue): VendoError => new VendoError(
-  "validation",
-  `${JSON.stringify(name)} is ${bytes} bytes and the upload door allows at most ${max}: send a smaller file,`
-    + ` or raise createVendo({ uploadMaxBytes }). These bytes land in ${BACKING[venue]}.`,
-);
+/** The drawer's law — its cap and the refusal that names it — lives with the
+    drawer, because `vendo_user_files_put` is a second door onto the same bytes
+    and the two must refuse identically. Still named here: this is the door the
+    default describes. */
+export { UPLOAD_MAX_BYTES } from "../user-files.js";
 
 /**
  * The drop door: one file, raw bytes, into the caller's own drawer.
