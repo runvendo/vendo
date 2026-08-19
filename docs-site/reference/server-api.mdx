@@ -204,10 +204,16 @@ Tool outputs are the versioned envelopes documented in [Embeds and envelopes](/e
 
 ## `@vendoai/agents`
 
-The standalone backend agent. Everything below is exported from `@vendoai/agents`.
+The standalone backend agent. Every value and option type below is exported
+from `@vendoai/agents`. The shared block types its signatures name are not:
+`Harness`, `Principal`, `SandboxAdapter`, `ThreadId`, `ToolCall`,
+`ToolOutcome`, `TurnId`, `VendoErrorCode`, `VendoStore` and `When` come from
+`@vendoai/vendo`, `GuardRules` from `@vendoai/vendo/server`, and
+`LanguageModel` and `UIMessage` from `ai`.
 
 ```ts
-import { agent, api, e2b, postgres, tool, THREAD_ID_HEADER } from "@vendoai/agents";
+import { agent, api, e2b, postgres, serve, tool, THREAD_ID_HEADER } from "@vendoai/agents";
+import { claudeCode } from "@vendoai/agents/claude-code";
 ```
 
 ### `agent(config)`
@@ -226,8 +232,9 @@ export function agent(config: AgentConfig): VendoAgent;
 | `guard` | `VendoGuard \| GuardRules` | A built guard wins verbatim; rules are completed with this composition's store |
 | `skills` | `readonly string[]` | Skill folders, boot-loaded and mounted read-only at `/host/skills` |
 | `egress` | `EgressConfig` | Outbound allowlist for the box. Unset is the harness's minimum |
+| `memory` | `MemoryAdapter \| true` | What the agent remembers about each of its users. Unset is no memory at all |
 | `store` | `VendoStore` | Unset with `VENDO_API_KEY` set, the Cloud hosted store fills the slot |
-| `sandbox` | `SandboxAdapter` | Unset with `VENDO_API_KEY` set, the Cloud pool fills the slot. Required by a harness declaring `requires.sandbox` |
+| `sandbox` | `SandboxAdapter` | The box a harness that thinks outside this process runs in. Required by a harness declaring `requires.sandbox` |
 | `door` | `DoorConfig` | Where a thinker running outside this process dials back for tools. Unset reads `VENDO_BASE_URL` |
 | `principal` | `(req) => Promise<Principal \| null>` | Resolves the identity behind a permissions request |
 | `instructions` | `string` | The host's prompt block |
@@ -239,20 +246,118 @@ The smallest useful composition is two keys:
 const support = agent({ name: "support", tools: [api()] });
 ```
 
+### Harness
+
+Unset, the agent thinks in this process. Swapping in the Claude Agent SDK on
+this server is one line:
+
+```ts
+import { claudeCode } from "@vendoai/agents/claude-code";
+
+agent({ name: "builder", harness: claudeCode({ machine: "local" }) });
+```
+
+`machine: "local"` is not a boundary, and it says so out loud: it prints a
+warning on the first turn because the SDK's Bash, Write and Edit are
+auto-allowed and are **not** confined to the workspace, and there is no egress
+allowlist on this path. It reads and writes what this OS user can.
+
+The boxed path is the confined one, and it is not one line. `claudeCode()`
+without `machine` needs a sandbox and a way back in — a `VENDO_API_KEY` alone
+will not fill either on a standalone install:
+
+```ts
+agent({
+  name: "builder",
+  harness: claudeCode(),
+  sandbox: e2b(),                                  // or any SandboxAdapter
+  door: { baseUrl: "https://app.example.com" },    // or VENDO_BASE_URL
+});
+```
+
+### Identity
+
+`as` on `chat()` and `run()` is the subject the turn acts for. Every thread, grant, workspace file and audit row is scoped to it; unset, the agent acts as itself (`vendo:agent:<name>`). Behind `handler()` the same thing is configured once, in `resolveUser`.
+
+`forUser(subject, { profile, context })` binds that identity once and returns a user-scoped view — `user.chat`, `user.turns`, `user.threads`, `user.memories` — instead of repeating it on every call.
+
+```ts
+const user = support.forUser("u_42", { profile: { plan: "pro" } });
+await user.chat("Where is my order?");
+
+const threads = await user.threads.list();                   // newest first
+const messages = await (await user.threads.get(threads[0]!.id)).messages();
+```
+
+`profile` and `context` are FACTS about a person, so they are bound here and ride every call — including a `turns.resume`, where the parked request's own context is gone and the facade's is the resuming caller's. `headers` are the authority of one request, so they stay per call and are never kept. A thread this user does not own reads back as `not-found`; `threads.get(id).messages()` is a separate read, so listing twenty conversations does not load twenty transcripts.
+
+`RunOptions.as` is deprecated in its favour, and `session()` is deprecated in favour of `forUser` plus threads. `respond()` is **not** deprecated: it stays the one-liner for a route you already own.
+
+### Memory
+
+`memory: true` on `agent()` gives the agent a durable memory of the person it is talking to. Reads are automatic: a capped `[Memory]` block goes into the prompt, read as the user's own words and never as instruction. Writes are a visible, guard-bound `remember` tool, so anything the agent keeps about someone is a tool call in the transcript and an audit row, never a silent write. A `MemoryAdapter` in the same slot is used verbatim.
+
+`user.memories` is `{ list, delete, clear }` over the same rows — the person's own view, which is why there is no `add`. On an agent with no memory configured all three **throw**, naming the line that turns it on, rather than answering empty: an empty list would read as "this person has no memories" when the truth is that nothing is remembering anything.
+
 ### `VendoAgent`
 
 ```ts
 export interface VendoAgent {
   readonly name: string;
+  chat(message: string, options?: ChatOptions): Turn;
+  run<T>(task: string, options?: RunOptions<T>): Turn<T>;
+  forUser(subject: string, options?: UserOptions): AgentUser;
   respond(subject: string, message: string | UIMessage, options?: RespondOptions): Promise<Response>;
-  run<T>(task: string, options?: RunOptions<T>): AgentRun<T>;
+  /** @deprecated `forUser(subject)` plus `user.threads`. */
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
+  on(when: When, task: string, options?: OnOptions): void;
+  handler(options: HandlerOptions): (request: Request) => Promise<Response>;
   readonly permissions: (request: Request) => Promise<Response | undefined>;
   readonly door?: (request: Request) => Promise<Response>;
+}
+
+export interface AgentUser {
+  chat(message: string, options?: UserChatOptions): Turn;
+  readonly turns: Turns;        // list({ status: "interrupted" }), resume(turnId, decisions, options?)
+  readonly threads: Threads;    // list(), get(id), delete(id)
+  readonly memories: Memories;  // list(), delete(id), clear()
 }
 ```
 
 `door` is present exactly when the harness thinks outside this process. Mount it at `DOOR_PATH`.
+
+### `chat`
+
+One turn of a conversation, and the answer. Bare, the agent talks as itself; `as` names the subject it acts for.
+
+| Option | Notes |
+| --- | --- |
+| `as` | The subject every thread, grant, workspace and audit row is scoped to |
+| `user` | Server-trusted identity facts, model-visible as `[User]` |
+| `context` | Guard and tool context. Functions run at check time, data survives parking |
+| `headers` | The request's own headers, forwarded so tool calls reach your API as the signed-in person |
+| `threadId` | Continue a conversation this subject already owns. Ownership-checked |
+| `signal` | Abort the turn |
+
+### `handler`
+
+The whole agent as one fetch handler: the chat turn, the thread lifecycle, the approvals and grants wire, and the engine's dial-back door. Mount it on one catch-all route.
+
+```ts
+const handle = support.handler({ basePath: "/api/agent", resolveUser });
+// Next:  export { handle as GET, handle as POST, handle as DELETE };
+// Hono:  app.all("/api/agent/*", (c) => handle(c.req.raw));
+```
+
+| Option | Notes |
+| --- | --- |
+| `basePath` | Where you mounted it |
+| `resolveUser` | `(request) => Promise<HandlerUser \| null>`. `null` is unauthenticated and answers 401 |
+| `headers` | What the turn's tools forward as the caller's authority. Unset forwards this request's own headers; `false` forwards nothing |
+
+`HandlerUser` is `{ subject, profile?, context? }` — `profile` is the server-trusted identity the model may read. The routes it serves are in [HTTP routes](/reference/http-routes); the browser half is `useVendoChat` from `@vendoai/ui`.
+
+The permission wire is mounted under this `basePath`, behind this mount's `resolveUser`, rather than on the fixed `PERMISSIONS_PATH` — deciding an approval is what unblocks a parked turn, so it has to be reachable by the same person the turns belong to.
 
 ### `respond`
 
@@ -282,54 +387,121 @@ One non-interactive run.
 | `signal` | The only way to cancel. There is no `cancel()` method |
 | `threadId` | Continue an existing thread, ownership-checked the same way |
 
+### `Turn` and `TurnResult`
+
+Both `chat()` and `run()` hand back a `Turn`. It is returned rather than awaited, so the ids are readable while the turn is still going.
+
 ```ts
-export interface AgentRun<T> extends PromiseLike<AgentReport<T>> {
-  readonly threadId: string;
+export interface Turn<T = void> extends PromiseLike<TurnResult<T>> {
+  readonly threadId: ThreadId;
+  readonly turnId: TurnId;
   readonly events: AsyncIterable<RunEvent>;
 }
 ```
 
-`threadId` is readable immediately, before the first event. Awaiting the run gives the report; iterating `events` does not consume it.
+The turn runs and persists whether or not you await it and whether or not you read `events`. `events` has ONE reader — attaching a second one while the first is reading throws.
 
 | `RunEvent.type` | What it marks |
 | --- | --- |
 | `text` | The model's own words, streaming |
-| `status` | Where the run is |
-| `tool-call` | A tool the run is about to use |
+| `status` | Where the turn is |
+| `tool-call` | A tool the turn is about to use |
 | `tool-result` | What that tool answered |
-| `error` | The run failed, with the harness's own sentence |
+| `error` | The turn failed, with the harness's own sentence |
+
+Awaiting the turn gives a `TurnResult`: four ends and no fifth, as a discriminated union, so reading `status` once types everything you then touch.
 
 ```ts
-export interface AgentReport<T> {
-  status: "ok" | "error" | "stopped";
-  summary: string;
-  toolCalls: readonly { call: ToolCall; outcome: ToolOutcome["status"] }[];
-  refs: { threadId: string; approvals: readonly string[] };
-  output?: T;
-  usage: UsageTotals;
+type TurnResult<T> =
+  | (TurnRun & { status: "ok"; output: T })
+  | (TurnRun & {
+      status: "interrupted";
+      interruptions: Interruption[];
+      resume(decisions: Decisions, options?: ResumeOptions): Turn<T>;
+    })
+  | (TurnRun & { status: "stopped"; reason: "aborted" | "maxToolCalls" })
+  | {
+      status: "error";
+      text: "";
+      threadId: ThreadId;
+      turnId: TurnId;
+      error: { code: VendoErrorCode; message: string };
+    };
+
+interface TurnRun {
+  text: string;
+  threadId: ThreadId;
+  turnId: TurnId;
+  toolCalls: Array<{ call: ToolCall; outcome: ToolOutcome["status"] }>;
+  usage: TurnUsage;
 }
 ```
 
-`"stopped"` covers an aborted run and one that spent its `maxToolCalls` budget. Both still return a full report.
+`text` is the assistant's own words. On the `error` arm it is empty, always: a turn that broke never spoke, and an internal failure does not get to wear the agent's voice.
 
-`summary` is the model's own closing account, never a sentence of Vendo's. `usage` is `{ inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, model? }`, and it is what you meter on.
+`usage` is `{ inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, model? }`, and it is what you meter on.
 
-### Approvals inside `run`
+### Approvals and `resume`
 
-An ask inside a non-interactive `run()` parks the approval durably, and the tool call returns denied with the approval's id. The run continues with that answer and finishes normally.
+A call the guard wants a person for PARKS, and parking ends the turn. Both lanes answer `interrupted` in the time the turn took, with an `Interruption` per card and `resume()` to carry on.
 
-There is no resume. `report.refs.approvals` is the list of ids to put in front of a human, and once someone has decided, re-entry is a fresh `run()`.
+`Interruption` is a two-arm union, so narrow on `type` before you read a card:
 
-The interactive lane is unchanged. A turn driven by `respond()` waits for the person to decide, and an approved call re-dispatches byte for byte.
-
-The follow-up to a `run()` is the same verb plus the thread id, never `respond()`:
-
-```ts {3}
-const next = await support.run("Now shorten it to five bullets.", {
-  as: "svc:nightly-digest",
-  threadId: first.refs.threadId,
-});
+```ts
+type Interruption =
+  | { id: string; type: "approval"; toolCall: ToolCall }
+  | { id: string; type: "input"; questions: Question[] };  // wire-defined, unemitted in v1
 ```
+
+```ts {4-7}
+const turn = await support.run("Refund the September duplicates.");
+
+if (turn.status === "interrupted") {
+  for (const ask of turn.interruptions) {
+    if (ask.type === "approval") renderApprovalCard(ask.toolCall);
+    else renderQuestions(ask.questions);
+  }
+  const done = await turn.resume({ [turn.interruptions[0]!.id]: "approve" });
+}
+```
+
+The `input` arm is frozen but unemitted: `ask_user` ends the turn in v1 and the answer arrives as the next message, so nothing mints one yet. It is in the union because `@vendoai/ui` and the resume route both parse this shape, and a shape added later is a shape two shipped readers reject.
+
+A `Decisions` map is keyed by `id`. An approval takes `"approve"` or `"deny"` — an `{ answers }` value type-checks against it and is refused at runtime, so a shape nobody meant never lands as a denial nobody made.
+
+`resume()` is not a rerun. The turn picks up byte for byte from where it parked, on the same `turnId`, and a denied call is a refusal the model reads and works around. `ResumeOptions` is `{ headers?, context? }` — a resume brings its own, because the parked turn's request-lifetime authority is gone.
+
+`respond()` and `session()` are the exception, and they are unchanged: they hold the stream open and wait 90 seconds for the person to decide.
+
+### `turns`
+
+`TurnResult.resume()` is a closure and dies with the process. The park does not, so `forUser(subject).turns` addresses one by id from anywhere over the same store.
+
+```ts
+export interface Turns {
+  list(options: { status: "interrupted" }): Promise<InterruptedTurn[]>;
+  resume(turnId: string, decisions: Decisions, options?: ResumeOptions): Promise<TurnResult>;
+}
+
+export interface InterruptedTurn {
+  turnId: TurnId;
+  threadId: ThreadId;
+  interruptions: Interruption[];
+}
+```
+
+`resume` hands back the **result**, not a `Turn`: it has to read the store before anything can start, and a `Turn` is itself a thenable, so awaiting the promise would unwrap the handle anyway. The answer is prose — a `run({ output })` schema belonged to the calling code and was never persisted, so resume through the result you are holding to keep the shape.
+
+| Rule | What it does |
+| --- | --- |
+| Every interruption, or none | A partial `Decisions` map is `validation`, naming the ids it is missing |
+| Already answered | `conflict`, so a client's retry learns its first attempt landed |
+| Not yours, or never parked | `not-found` — the ownership law's absent, never forbidden |
+| `PARKED_TURN_TTL_MS` | Seven days. Past it, `list` omits the turn and `resume` is a `conflict` naming the expiry |
+
+`list` reads the guard's own pending feed rather than a copy of it, so an ask answered anywhere is gone from this list in the same instant.
+
+`POST /turns/:turnId/resume` is mounted but still answers `not-implemented`; over HTTP an approval is decided on the mount's approvals wire, which is what `useVendoChat`'s `resume` posts to.
 
 ### `session`
 
@@ -346,13 +518,26 @@ export function tool(config: ToolConfig): HostTool;
 
 `api({ dir?, actAs?, baseUrl?, untrustedOriginPolicy?, fetch? })` serves `.vendo/tools.json` with layered overrides, present-header forwarding behind the origin gate, and `actAs` for away runs.
 
-`tool()` takes `{ name, description?, risk?, inputSchema, outputSchema?, execute }`. `risk` is your call and it is final: `read`, `write`, or `destructive`.
+`tool()` takes `{ name, description, risk?, inputSchema, outputSchema?, execute }`. `description` is required and validated non-empty at boot: it is the only thing the model reads when it decides whether to call the tool, so a tool without one is effectively invisible.
 
-Omit `risk` and the tool is ungraded, which the guard treats like `destructive` and asks about, which unattended means denied.
+`risk` is your call and it is final: `read`, `write`, or `destructive`.
+
+Omit `risk` and the tool is ungraded, which the guard treats like `destructive` and asks about — which unattended means the turn parks and answers `interrupted`.
 
 `outputSchema` is the tool's declared result shape in JSON Schema. Surfaces print it beside the tool, so the model knows what comes back before any call.
 
 Omit it and those surfaces say the result shape is unknown, which costs a throwaway call to learn the fields. It is advisory only: nothing checks a result against it.
+
+### `serve`
+
+```ts
+export function serve(options: { agents: readonly VendoAgent[] }): Promise<VendoRuntime>;
+// VendoRuntime is { close(): Promise<void> }
+```
+
+The standalone lifecycle. `.on()` only validates and stashes — a declaration is **inert** until `serve()` (or `createVendo`'s boot, which runs the same reconcile) arms it. The FIRST agent's composition is the deployment's: its store holds the records and the run ledger, its guard audits them. Every agent is registered under its own name, and two agents wearing one name throw here, at boot.
+
+`close()` stops the scheduler and nothing else — the records stay in the store, armed, because stopping a process is not a decision about what should fire.
 
 ### Adapters
 
@@ -372,6 +557,7 @@ export function e2b(options?: E2bOptions): SandboxAdapter;
 | `THREAD_ID_HEADER` | `"x-vendo-thread-id"`, set on every `respond()` and `session.stream()` response |
 | `DOOR_PATH` | `"/api/vendo/mcp"`, where to mount `agent.door` |
 | `PERMISSIONS_PATH` | `"/api/vendo"`, where to mount `agent.permissions` |
+| `PARKED_TURN_TTL_MS` | Seven days — how long a parked turn waits for its person |
 
 ### Credentials
 

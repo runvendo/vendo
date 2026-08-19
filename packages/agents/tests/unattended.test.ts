@@ -6,7 +6,8 @@
  * as "waiting on a person". Real embedded store, real guard, real runtime; only
  * the thinker is scripted (CLAUDE.md: test the SEAM).
  */
-import type { Guard, ToolDescriptor, ToolRegistry } from "@vendoai/core";
+import type { ToolDescriptor, ToolRegistry } from "@vendoai/core";
+import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, threadStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
@@ -49,13 +50,14 @@ describe("run() — the budget bounds a run whose calls PARK", () => {
       store,
     });
 
-    const report = await support.run("Loop.", { as: "u_42", maxToolCalls: 2 });
+    const result = await support.run("Loop.", { as: "u_42", maxToolCalls: 2 });
 
     // Two cards for two attempts the budget allowed — never one per attempt.
-    expect(report.refs.approvals).toHaveLength(2);
-    expect(report.toolCalls.map(({ outcome }) => outcome))
+    // The budget is what ENDED this run, so it stops rather than interrupts:
+    // answering the two cards would not give the run its budget back.
+    expect(result).toMatchObject({ status: "stopped", reason: "maxToolCalls" });
+    expect(result.status === "stopped" && result.toolCalls.map(({ outcome }) => outcome))
       .toEqual(["pending-approval", "pending-approval", "error", "error", "error"]);
-    expect(report.status).toBe("stopped");
   });
 });
 
@@ -118,9 +120,9 @@ describe("run() — an already-aborted signal", () => {
     controller.abort();
 
     const running = support.run("Stop me.", { as: "u_42", signal: controller.signal });
-    const report = await running;
+    const result = await running;
 
-    expect(report.status).toBe("stopped");
+    expect(result).toMatchObject({ status: "stopped", reason: "aborted" });
     expect(thought).toBe(false);
     expect(await threadStore(store).get({ kind: "user", subject: "u_42" }, running.threadId as never))
       .toBeNull();
@@ -140,20 +142,32 @@ describe("run() — a guard that fails while parking", () => {
   };
   /** Fails closed the way the shipped preview does: it wants a person, and it
    *  minted nothing for anyone to answer. */
-  const brokenGuard = (): Guard => ({
+  const brokenGuard = (): VendoGuard => ({
     check: async () => {
+      throw new Error("the guard is down");
+    },
+    previewCheck: async () => {
       throw new Error("the guard is down");
     },
     report: async () => {},
     directions: async () => [],
     onApprovalDecision: () => () => {},
     onApprovalRequested: () => () => {},
+    bind: (tools) => tools,
+    approvals: { parkedCallTtlMs: 0, pending: async () => [], decide: async () => {}, revoke: async () => {} },
+    freeze: async () => {},
+    unfreeze: async () => {},
+    frozen: async () => false,
+    grants: { list: async () => [], revoke: async () => {} },
+    audit: { query: async () => ({ events: [] }), export: async function* () {} },
+    status: () => ({ posture: "unconfigured" }),
   });
 
-  // "pending-approval" with `refs.approvals: []` tells the host to wait on a
-  // person who has nothing to answer — the run is stuck, silently, forever.
+  // "pending-approval" with nothing to answer tells the host to wait on a person
+  // who has no card — the run is stuck, silently, forever. So the turn is an
+  // ordinary finished one whose call ERRORED, never an interrupted one.
   it("reports the failure, not a card nobody has", async () => {
-    const report = await startRun({
+    const result = await startRun({
       name: "support",
       store: memoryStore(),
       guard: brokenGuard(),
@@ -161,8 +175,8 @@ describe("run() — a guard that fails while parking", () => {
       harness: looper(1),
     }, "read the invoices", { as: "u_42" });
 
-    expect(report.refs.approvals).toEqual([]);
-    expect(report.toolCalls.map(({ call, outcome }) => [call.tool, outcome]))
+    expect(result.status).toBe("ok");
+    expect(result.status === "ok" && result.toolCalls.map(({ call, outcome }) => [call.tool, outcome]))
       .toEqual([["invoices_list", "error"]]);
   });
 });

@@ -4,7 +4,7 @@ sidebarTitle: "Automate — .on()"
 description: ".on() declares an automation in code. Consent is the code itself, and every deploy reconciles what your source says against what is stored."
 ---
 
-`respond()` answers a person and `run()` answers your code. `.on()` answers
+`chat()` answers a person and `run()` answers your code. `.on()` answers
 neither: it declares work that should happen **without a caller at all**.
 
 ```ts lib/agent.ts
@@ -61,7 +61,7 @@ serves a single request.
 support.on("every monday", "summarize the week");
 // VendoError [validation]: "every monday" is not a cron expression — a cron
 // expression has exactly 5 fields. Did you mean "0 9 * * 1"?
-// See https://vendo.run/docs/capabilities/automations
+// See https://docs.vendo.run/capabilities/automations
 ```
 
 A cron nobody can run, an `every` outside `<n><s|m|h|d>`, an `at` that is not an
@@ -69,14 +69,34 @@ instant, an unnamed event or webhook — each one stops the boot, with the neare
 valid form to paste. An automation you cannot see failing is worse than a deploy
 that will not start.
 
-## Register the agent
+## Arm them
 
-An automation record stores the agent's **name**, never the agent. Your code is
-looked up under that name when the automation fires, so the agent has to be
-registered when your process boots:
+A declaration is **inert** until a lifecycle reconciles it. There are two, and
+they run the same reconcile.
+
+In a standalone backend, `serve()` is the lifecycle. It takes the agents whose
+declarations this process runs and hands back the handle that stops the
+scheduler:
+
+```ts
+import { serve } from "@vendoai/agents";
+import { support } from "./agent.js";
+
+const runtime = await serve({ agents: [support] });
+// …
+await runtime.close();
+```
+
+`close()` stops the scheduler and nothing else: the records stay in the store,
+armed, because stopping a process is not a decision about what should fire.
+
+Inside a Vendo deployment, `createVendo`'s own boot is the lifecycle, and
+registering the agent is what arms it. An automation record stores the agent's
+**name**, never the agent, and your code is looked up under that name when it
+fires:
 
 ```ts app/api/vendo/[...vendo]/route.ts
-import { createVendo } from "@vendoai/vendo";
+import { createVendo } from "@vendoai/vendo/server";
 import { support, billing } from "@/lib/agent";
 
 export const vendo = createVendo({ agents: [support, billing] });

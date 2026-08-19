@@ -539,8 +539,13 @@ ${SAFE_STYLE_PROPERTIES.map((property) => `  ${property}?: string | number;`).jo
  *  display bricks and NOTHING else — that is what keeps `<img>` and `<script>`
  *  errors while `<div>` compiles — and each one takes only children and an
  *  inline style, so `className`, `onClick` and `dangerouslySetInnerHTML` are
- *  type errors on the tag itself. `IntrinsicAttributes` carries `key`, because a
- *  list rendered with `.map()` writes one and it is React's, not the tag's.
+ *  type errors on the tag itself — plus `key`, because a list rendered with
+ *  `.map()` writes one on whatever it maps to. `IntrinsicAttributes` says the
+ *  same thing for a COMPONENT, and only for a component: TypeScript intersects
+ *  it into a value-based element's props and never into an intrinsic tag's,
+ *  which take `IntrinsicElements[tag]` verbatim. Declaring `key` in one place
+ *  only made `key={i}` on `<div>` a hard error while the format skill was
+ *  telling the model to write exactly that.
  *
  *  `Element` is BRANDED rather than empty. `{}` is the type every value is
  *  assignable to — a closure included — so an empty `Element` made
@@ -554,7 +559,7 @@ const JSX_FRAME = `declare namespace JSX {
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
   interface IntrinsicElements {
-${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE} };`).join("\n")}
+${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE}; key?: string | number };`).join("\n")}
   }
 }`;
 

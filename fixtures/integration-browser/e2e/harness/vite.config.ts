@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, type ViteDevServer } from "vite";
+import { startAgentBackend } from "./agent-backend.ts";
 import { startBackends } from "./backends.ts";
 
 const harnessRoot = fileURLToPath(new URL(".", import.meta.url));
@@ -8,6 +9,10 @@ const harnessRoot = fileURLToPath(new URL(".", import.meta.url));
  *  wire and the booted fixture host app (both started in-process here). */
 export default defineConfig(async () => {
   const backends = await startBackends();
+  // The standalone agent leg is its OWN mount on its own listener: it composes
+  // `agent()` directly, with no umbrella and no host app in the picture, which
+  // is exactly the deployment `agentHandler()` exists for.
+  const standalone = await startAgentBackend();
 
   return {
     root: harnessRoot,
@@ -23,12 +28,16 @@ export default defineConfig(async () => {
         // path, so the mount prefix must survive to the wire.
         "/api/vendo": { target: backends.wireUrl, changeOrigin: false },
         "/__test": { target: backends.wireUrl, changeOrigin: false },
+        // Same rule: `agentHandler` self-routes on the FULL path, so the mount
+        // prefix must survive to it.
+        "/api/agent": { target: standalone.url, changeOrigin: false },
+        "/__agent": { target: standalone.url, changeOrigin: false },
       },
     },
     plugins: [{
       name: "vendo-backends-lifecycle",
       configureServer(server: ViteDevServer) {
-        server.httpServer?.once("close", () => void backends.close());
+        server.httpServer?.once("close", () => void Promise.all([backends.close(), standalone.close()]));
       },
     }],
   };

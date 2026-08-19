@@ -34,6 +34,7 @@ import {
 } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import type { MemoryAdapter } from "./memory.js";
 import { resolveSystem, type SystemPromptHook } from "./prompt.js";
 
 export interface SessionOptions {
@@ -95,6 +96,11 @@ export interface ApprovalEvent {
   deny(): Promise<void>;
 }
 
+/** @deprecated The object a session hands back is request-lifetime, and the
+ *  THREAD is what outlives it — so hold the durable noun instead:
+ *  `agent.forUser(subject)` for the turns, `user.threads` for the
+ *  conversations. Reached only through `agent.session()`, which still works;
+ *  `respond()` is unchanged and is not deprecated. */
 export interface AgentSession {
   /** The conversation this session is on. Hand it back as
    *  `session(subject, { threadId })` to reopen the same conversation later. */
@@ -121,6 +127,8 @@ export interface SessionDeps {
   models?: SeatModels<LanguageModel>;
   /** The host's last word on the turn's prompt — see `AgentConfig.system`. */
   system?: SystemPromptHook;
+  /** Per-user memory; its `recall` is what fills `[Memory]` each turn. */
+  memory?: MemoryAdapter;
   /** Publish the turn in flight to the agent's own MCP door (`door.ts`). A
    *  harness that thinks outside this process mints a credential pointing at
    *  "the turn now live on thread T"; without this the pointer resolves to
@@ -131,7 +139,7 @@ export interface SessionDeps {
   doorReady?: Promise<void>;
 }
 
-const toHeaderRecord = (
+export const toHeaderRecord = (
   headers: Record<string, string> | Headers | undefined,
 ): Record<string, string> | undefined => {
   if (headers === undefined) return undefined;
