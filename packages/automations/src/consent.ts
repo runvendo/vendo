@@ -6,6 +6,7 @@
 import {
   approvalRecordRefs,
   descriptorHash,
+  projectableForRun,
   serviceToolPhrase,
   serviceToolSlug,
   USE_SERVICE_TOOL,
@@ -16,6 +17,7 @@ import {
   type AutomationRecord,
   type RunContext,
   type Step,
+  type ToolCall,
   type ToolDescriptor,
   type VendoRecord,
 } from "@vendoai/core";
@@ -38,6 +40,11 @@ import {
   type InternalRunRecord,
 } from "./types.js";
 
+/** One thing a person may have to allow, already graded the way the firing will
+ *  grade it and already carrying the synthetic call the grade was resolved from —
+ *  so nothing downstream re-derives either and gets a different answer. */
+export type ArmingPower = { item: ConsentItem; descriptor: ToolDescriptor; call: ToolCall };
+
 export type ConsentDeps = {
   base: EngineBase;
   automations: AutomationRowsAccess;
@@ -56,13 +63,24 @@ export interface ConsentAccess {
   spendApproval(record: VendoRecord): Promise<boolean>;
   /** The guard's decision subscriber: mint, clear, and disarm on a bare no. */
   handleDecision(approvalId: string, approved: boolean): Promise<void>;
-  /** The tools a consent moment covers. */
-  consentSurface(record: AutomationRecord, byName: Map<string, ToolDescriptor>): Promise<ConsentItem[]>;
+  /** Every tool a task could reach away, before policy has been consulted. */
+  candidateSurface(record: AutomationRecord, byName: Map<string, ToolDescriptor>): Promise<ConsentItem[]>;
+  /** 07 §3 — the tools this record's arming has to NAME to a person: graded as the
+   *  firing will grade them, minus everything policy runs away unasked. */
+  armingSurface(
+    record: AutomationRecord,
+    byName: Map<string, ToolDescriptor>,
+    ctx: RunContext,
+  ): Promise<ArmingPower[]>;
+  /** The same, for a GOAL arming whose record does not exist yet — the ask parks
+   *  before `vendo_automate` runs. */
+  goalArmingPowers(byName: Map<string, ToolDescriptor>, ctx: RunContext): Promise<ArmingPower[]>;
   /** 07 §3 — the asks arming has to raise for this subject. */
   captureGrants(
     record: AutomationRecord,
     byName: Map<string, ToolDescriptor>,
     ctx: RunContext,
+    armedBy?: ToolCall,
   ): Promise<{ missing: ApprovalRequest[]; grantSetId: string }>;
   /** A step met a permission nobody has granted. The run ends HERE, loudly. */
   needsPermission(
@@ -175,7 +193,27 @@ const createDecisionSubscriber = (
         if (await spendApproval(approval)) await grants.mintGrant(data.request, parsed.automationId);
       }
       await engine.delete(CAPTURES, approvalId);
-      if (!approved) {
+      // A MACHINE deny is not an answer. The guard stamps who said no on the row
+      // (`#decideApprovals`), and only `"human"` is a person: `"system"` is the
+      // hour-long TTL sweep or an abandoned ask. The decision callback carries just
+      // (id, approved), so the provenance can only be read here, off the row.
+      //
+      // Live 2026-08-18 on production Maple, automation atm_d50cd48e: 33 arming
+      // asks were created at 11:26 and all 33 were denied by the sweep at 12:27 —
+      // createdAt plus exactly the parked-call TTL — and the record flipped to
+      // armed=false at 12:27:37. Nobody ever decided anything. The person's
+      // automation turned itself off an hour after they set it up, silently,
+      // because an expiry read as a refusal. The guard already draws this exact
+      // line for standing denials (it enforces only `deniedBy: "human"`); this was
+      // the one place that did not, and it is the same hazard class the supersede
+      // path below is already careful about.
+      //
+      // A guard that stamps nothing keeps today's behaviour, so no BYO guard
+      // regresses; a human NO still disarms, so the channel's "Okay — I turned it
+      // off." stays true.
+      const deniedBySystem = approval !== null
+        && approvalRowSchema.safeParse(approval.data).data?.deniedBy === "system";
+      if (!approved && !deniedBySystem) {
         // Deny is transactional at the DECISION (criterion 19, deny half), but
         // disarms ONLY a consent moment that ended with NOTHING granted: no
         // capture asks left pending for the record and no live automation-source
@@ -226,10 +264,14 @@ const createDecisionSubscriber = (
 };
 
 /** What a consent moment COVERS, before anything is asked. */
-const createConsentSurface = (): Pick<ConsentAccess, "consentSurface"> => {
-  /** The tools a consent moment covers. Steps DECLARE their surface; a goal
-   *  declares nothing, so it falls back to every bound descriptor THE LAW would
-   *  still let it reach away.
+const createConsentSurface = (
+  deps: Pick<ConsentDeps, "base">,
+): Pick<ConsentAccess, "candidateSurface" | "armingSurface" | "goalArmingPowers"> => {
+  const { base: { config } } = deps;
+
+  /** Every tool a task could reach away, before policy has been consulted. Steps
+   *  DECLARE their surface; a goal declares nothing, so it falls back to every
+   *  bound descriptor THE LAW would still let it reach away.
    *
    *  The connector dispatcher never enters as ITSELF, whichever kind of task
    *  this is: a tool-wide grant on it would be consent to the broker's whole
@@ -237,21 +279,11 @@ const createConsentSurface = (): Pick<ConsentAccess, "consentSurface"> => {
    *  ACTION it names. Anything either one reaches beyond that parks at fire time
    *  like any ungranted away call, and its approval accretes the per-slug
    *  grant. */
-  const consentSurface = async (
+  const candidateSurface = async (
     record: AutomationRecord,
     byName: Map<string, ToolDescriptor>,
   ): Promise<ConsentItem[]> => {
-    if (record.task.kind === "goal") {
-      // The fallback is wide, but it is not DISHONEST: a tool §12 withholds from
-      // every unattended run can never be the thing this grant permits, so
-      // "allow this while you're away" is a question with no true answer. The
-      // predicate is core's own `withheldFromUnattended` — the SAME one
-      // `projectableForRun` filters the firing through — so the card and the run
-      // cannot disagree about what may never happen away.
-      return [...byName.values()]
-        .filter((descriptor) => descriptor.name !== USE_SERVICE_TOOL && !withheldFromUnattended(descriptor))
-        .map(({ name }) => ({ tool: name }));
-    }
+    if (record.task.kind === "goal") return goalCandidates(byName);
     const items = new Map<string, ConsentItem>();
     for (const tool of declaredSurface(record)) {
       if (tool !== USE_SERVICE_TOOL) items.set(tool, { tool });
@@ -265,16 +297,135 @@ const createConsentSurface = (): Pick<ConsentAccess, "consentSurface"> => {
     return [...items.values()];
   };
 
-  return { consentSurface };
+  /**
+   * The tools this record's arming COVERS: its candidates, graded the way the
+   * firing will grade them, minus the ones a standing grant could never satisfy.
+   *
+   * The surface itself is as wide as it has always been, and deliberately so —
+   * an automation runs on captured grants, so everything it may touch away has to
+   * be granted here or the firing meets a permission nobody holds. What changed
+   * on 2026-08-18 is not WHAT gets granted but what a person is made to do about
+   * it: live on production Maple, a user armed "check my checking balance every
+   * 15 minutes and text me" over iMessage, their YES to the job landed, and
+   * arming then minted FOUR more per-tool asks — `vendo_text_me`,
+   * `vendo_knowledge_search`, `request_connection`, `list_connections`. Three are
+   * reads nobody needs a second opinion about, and the fourth was literally in the
+   * sentence they typed. Consent was framed per-tool while the person was thinking
+   * per-job. So the whole surface is now named ONCE, on the arming ask itself
+   * (`powerTitles` groups it for reading), and one yes mints all of it.
+   *
+   * Graded through `withResolvedRisk` first, because that is the descriptor the
+   * guard will see at fire time: the dispatcher's own label is `ungraded` and the
+   * broker's per-slug tag arrives through the resolver. Grading here is what makes
+   * the card show the real grade, makes the minted grant's `descriptorHash` the one
+   * the guard recomputes on the away call, and keeps the card and the run from
+   * disagreeing.
+   *
+   * Two kinds never get a standing power, because a grant could not satisfy them
+   * anyway and the card would be promising what the run will not honour:
+   *  - `destructive` and `ungraded` (§12's pair). The guard refuses them away
+   *    regardless of any grant, so they park per fire. This is where the goal path
+   *    always filtered them and the other two never did: a STEPS record that
+   *    declares a destructive tool, and a connector slug the risk resolver grades
+   *    destructive, both used to receive a standing grant that could not work.
+   *  - `confirmEach`. Governance, not severity: it needs a person EVERY time and
+   *    no grant may suppress it (05 §2), so a standing power for one is dead on
+   *    arrival.
+   */
+  const armingSurface = async (
+    record: AutomationRecord,
+    byName: Map<string, ToolDescriptor>,
+    ctx: RunContext,
+  ): Promise<ArmingPower[]> => await graded(await candidateSurface(record, byName), byName, ctx);
+
+  /** The same, for a GOAL arming that has no record yet — the arming ask parks
+   *  before `vendo_automate` runs, so the powers it names are computed from the
+   *  bound surface alone. Sound because a goal's candidates never depended on the
+   *  record in the first place. */
+  const goalArmingPowers = async (
+    byName: Map<string, ToolDescriptor>,
+    ctx: RunContext,
+  ): Promise<ArmingPower[]> => await graded(goalCandidates(byName), byName, ctx);
+
+  const graded = async (
+    candidates: readonly ConsentItem[],
+    byName: Map<string, ToolDescriptor>,
+    ctx: RunContext,
+  ): Promise<ArmingPower[]> => {
+    const powers: ArmingPower[] = [];
+    for (const item of candidates) {
+      const { tool, slug } = item;
+      const authored = byName.get(tool);
+      if (authored === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
+      const call: ToolCall = { id: id("call_"), tool, args: slug === undefined ? {} : { slug } };
+      const descriptor = slug === undefined
+        ? authored
+        : withResolvedRisk(authored, await config.resolveRisk?.(call, authored, ctx));
+      // Never a standing power — see the block comment above.
+      if (withheldFromUnattended(descriptor) || descriptor.confirmEach === true) continue;
+      powers.push({ item, descriptor, call });
+    }
+    return powers;
+  };
+
+  return { candidateSurface, armingSurface, goalArmingPowers };
 };
+
+/**
+ * A goal's candidates: every bound descriptor THE LAW would really hand a firing,
+ * minus the dispatcher itself.
+ *
+ * Through `projectableForRun` — core's own §12 projection, the SAME function the
+ * firing's tool listing is filtered by — rather than a hand-rolled copy of half of
+ * it. The copy this replaces checked only `withheldFromUnattended` and so named
+ * powers a firing can never hold: the presence-only tools, whose whole effect is
+ * on a person's screen and which the projection drops from every unattended run.
+ * A card promising "Pin the app to your page" to an automation is a card that
+ * lies, and the person allowing it would never find out.
+ */
+const goalCandidates = (byName: Map<string, ToolDescriptor>): ConsentItem[] =>
+  projectableForRun([...byName.values()], { venue: "automation", presence: "away" })
+    .filter((descriptor) => descriptor.name !== USE_SERVICE_TOOL)
+    .map(({ name }) => ({ tool: name }));
 
 /** 07 §3's arming half: the asks enable() has to raise for this subject. */
 const createGrantCapture = (
   deps: Pick<ConsentDeps, "base" | "grants">
     & Pick<CaptureRows, "writeCapture" | "pendingCaptures">
-    & Pick<ConsentAccess, "consentSurface">,
+    & Pick<ConsentAccess, "armingSurface">,
 ): Pick<ConsentAccess, "captureGrants"> => {
-  const { base: { config, engine, iso }, grants, writeCapture, pendingCaptures, consentSurface } = deps;
+  const { base: { config, engine, iso }, grants, writeCapture, pendingCaptures, armingSurface } = deps;
+
+  /**
+   * Did a person actually SEE this arming and say yes?
+   *
+   * The arming ask is the guard's own ask about the authoring call, and it names
+   * the powers before anything is armed (`ApprovalRequest.powers`). So if the
+   * host's policy would ASK about that call, the call reaching us at all is proof
+   * the ask was answered yes — the guard does not let an unanswered ask through.
+   * That yes is what licenses minting the standing powers on the spot, with no
+   * second per-tool ceremony.
+   *
+   * If policy would RUN the authoring call, nobody was asked anything. That is
+   * not a theoretical case: `vendo_make` is read-graded (it arms the schedule half
+   * of "build me the board and refresh it every Monday"), so under an
+   * asks-on-writes policy it runs unasked. Minting standing away powers off a call
+   * nobody was asked about would be a silent consent regression, so those keep the
+   * per-tool captures they have always had, and the set ask delivers them.
+   */
+  const armingWasAsked = async (
+    armedBy: ToolCall | undefined,
+    byName: Map<string, ToolDescriptor>,
+    ctx: RunContext,
+  ): Promise<boolean> => {
+    if (armedBy === undefined) return false;
+    const descriptor = byName.get(armedBy.tool);
+    if (descriptor === undefined) return false;
+    // The ctx the authoring call was MADE in, unchanged: the question is whether
+    // policy asked a person there, in that venue, at that moment.
+    return await config.guard.policyOutcome?.(armedBy, descriptor, ctx) === "ask";
+  };
+
   /** The tools a consent moment has to ask THIS subject about: the automation's
    *  surface minus whatever they already hold a live standing grant for.
    *
@@ -284,10 +435,12 @@ const createGrantCapture = (
     record: AutomationRecord,
     byName: Map<string, ToolDescriptor>,
     ctx: RunContext,
+    armedBy?: ToolCall,
   ): Promise<{ missing: ApprovalRequest[]; grantSetId: string }> => {
     const automationId = record.id;
     const subject = ctx.principal.subject;
-    const surface = await consentSurface(record, byName);
+    const surface = await armingSurface(record, byName, ctx);
+    const consented = await armingWasAsked(armedBy, byName, ctx);
     // One grant SET per RECORD: re-enables reuse that record's still-pending
     // asks (and their set id) instead of minting duplicates for the same
     // (automation, tool); a fresh set id is minted only when nothing is pending.
@@ -301,22 +454,8 @@ const createGrantCapture = (
       .find((value) => value !== undefined) ?? id("gset_");
     const name = automationName(record);
     const missing: ApprovalRequest[] = [];
-    for (const item of surface) {
+    for (const { item, descriptor } of surface) {
       const { tool, slug } = item;
-      const authored = byName.get(tool);
-      if (authored === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
-      // The descriptor the GUARD will see at fire time, not the authored one:
-      // the dispatcher's own label is `ungraded` and the broker's per-slug tag
-      // arrives through the risk resolver. Grading it here is what makes the
-      // consent card show the real grade AND makes the minted grant's
-      // descriptorHash the one the guard recomputes on the away call — hash the
-      // authored label instead and the grant is invalidated on first use.
-      const descriptor = slug === undefined
-        ? authored
-        : withResolvedRisk(
-            authored,
-            await config.resolveRisk?.({ id: id("call_"), tool, args: { slug } }, authored, ctx),
-          );
       if (await grants.liveGrant(subject, automationId, descriptor, slug)) continue;
       const pending = pendingHere.get(consentKey(item));
       if (pending !== undefined) {
@@ -362,6 +501,15 @@ const createGrantCapture = (
         },
         createdAt: iso(),
       };
+      // ONE yes, already given. The arming ask named these powers and the person
+      // approved it, so the grant is minted here and now — no pending capture, no
+      // second ask, nothing left for any surface to chase. The request above is
+      // built either way because it is what `mintGrant` derives the grant's scope
+      // and descriptor hash from; it is simply never persisted as an ask.
+      if (consented) {
+        await grants.mintGrant(request, automationId);
+        continue;
+      }
       await engine.put(APPROVALS, {
         id: request.id,
         data: { request, status: "pending", sessionId: ctx.sessionId },
@@ -504,7 +652,7 @@ const createPermissionMiss = (
 
 export const createConsent = (deps: ConsentDeps): ConsentAccess => {
   const captures = createCaptureRows(deps);
-  const surface = createConsentSurface();
+  const surface = createConsentSurface(deps);
   return {
     ...captures,
     ...surface,

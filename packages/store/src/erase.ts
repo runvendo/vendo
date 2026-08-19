@@ -1,4 +1,9 @@
-import { encodeGrantPrincipal, engineAppHistory, type FilesAdapter } from "@vendoai/core";
+import {
+  encodeGrantPrincipal,
+  engineAppHistory,
+  tenantConnectorSecretPrefix,
+  type FilesAdapter,
+} from "@vendoai/core";
 import { escapeLike } from "./helpers/utils.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
@@ -6,9 +11,15 @@ import { invalid } from "./validate.js";
 /** 02-store §5 — every table in §2's public map. The erase API cascades the
  *  matching data across all of them; `vendo_meta` holds schema metadata (schema
  *  version, boot id), never user data, so no selector ever matches it and its
- *  count stays 0 — as does `vendo_secrets` (name-keyed host config, likewise
- *  never matched by a subject or app selector). Listed so the report provably
- *  covers the whole map.
+ *  count stays 0. Listed so the report provably covers the whole map.
+ *
+ *  `vendo_secrets` used to sit in that same class, and for a stated reason:
+ *  every row was name-keyed HOST config, which no subject or app selector can
+ *  reach. Tenant connectors broke that premise — their vault name CARRIES the
+ *  org that owns them (`tenantConnectorSecretPrefix`) — so the subject axis now
+ *  reaches those rows and only those rows. Deliberately not a blanket sweep: a
+ *  host's own `API_TOKEN` still belongs to the deployment, not to any person,
+ *  and erasing a subject must not disarm it.
  *
  *  `vendo_effects` used to be in that same never-matched class, because the
  *  frozen v1 shape had no subject column — its `outcome` holds real tool output
@@ -252,6 +263,15 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
         "namespace LIKE 'app:%' AND key LIKE $1 ESCAPE '\\'",
         [`${escapeLike(subject)}/%`],
       );
+      // The tenant connector tokens this subject owns. An ORG is a row subject
+      // (§9.7), and its connectors' vault names carry it, so erasing the org
+      // takes the live credentials with the registrations — without this, a
+      // deleted tenant's token outlived every row that pointed at it. Matched
+      // through core's ONE builder, so the sweep and the write side can never
+      // disagree about the shape (the `engineAppHistory` lesson above).
+      await del(report, "vendo_secrets", "name LIKE $1 ESCAPE '\\'", [
+        `${escapeLike(tenantConnectorSecretPrefix(subject))}%`,
+      ]);
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
       // Knowledge corpus rows the subject axis reaches carry the subject only as

@@ -15,6 +15,8 @@
 import {
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
+  encodeGrantPrincipal,
+  isGrantPrincipal,
   isVendoError,
   VendoError,
   log,
@@ -47,6 +49,26 @@ const DAY = 24 * HOUR;
 /** `UsageCountQuery.since` is required, so "all time" is the epoch. */
 const ALL_TIME = new Date(0);
 
+/** Every org the host ASSERTS is already a pool, so an org-wide cap costs the
+ *  host nothing to wire. Name and key are both §9.2's principal encoding — the
+ *  one an app grant naming that org spells the same way — so a policy counting
+ *  `org:<orgId>` and a grant addressing it are never two grammars.
+ *
+ *  Teams are deliberately absent: a team is a slice of an org's allowance, not a
+ *  bucket the host asked to meter. */
+const orgPools = (memberships: RunContext["memberships"]): Record<string, string> =>
+  Object.fromEntries((memberships ?? [])
+    // A JS host's seam can answer anything, and this runs OUTSIDE gate's try, so a
+    // malformed entry is skipped rather than thrown on: a TypeError here would be
+    // the turn rejecting instead of a verdict.
+    .filter((entry) => typeof entry?.org === "string")
+    .map(({ org }) => encodeGrantPrincipal({ kind: "org", org }))
+    // An id the grammar cannot parse BACK — empty, or carrying its own `/` — is a
+    // name no grant can be stored under either (`validate.ts` refuses the row), so
+    // it is no pool: a derived name is always one a grant could address.
+    .filter(isGrantPrincipal)
+    .map((pool) => [pool, pool]));
+
 /** The host's policy, bound to the meter it decides on.
  *
  *  `ops` is the usage family and not the whole `StoreOps` because a limiter
@@ -59,11 +81,17 @@ export function createLimiter({ callback, ops }: {
   return {
     async gate(action, ctx) {
       const { subject } = ctx.principal;
-      const pools = ctx.pools ?? {};
+      // Host-asserted LAST: an explicit pool of the same name wins over the
+      // derived one, so a host who meters its orgs by their own key still can.
+      const pools = { ...orgPools(ctx.memberships), ...ctx.pools };
+      const poolNames = Object.keys(pools);
       const user: LimitUser = {
         ...ctx.principal,
         ...(ctx.user === undefined ? {} : { facts: ctx.user }),
-        ...(ctx.pools === undefined ? {} : { pools: Object.keys(pools) }),
+        // A host that ANSWERED the pools seam said something even with `{}` — "in
+        // none" is not "not wired" — so the key is absent only when neither the
+        // seam nor a membership produced one.
+        ...(ctx.pools === undefined && poolNames.length === 0 ? {} : { pools: poolNames }),
       };
       // Pre-bound to THIS subject: a policy never names one, so it can never
       // read another person's usage by accident.
@@ -80,8 +108,9 @@ export function createLimiter({ callback, ops }: {
           throw new VendoError(
             "validation",
             `The limits policy counted the \`${window.pool}\` pool, which this user is not in `
-            + `(their pools: ${Object.keys(pools).map((name) => `\`${name}\``).join(", ") || "none"}). `
-            + "Pools come from the auth preset's `pools` seam — assert the pool there, or count a pool the user is in.",
+            + `(their pools: ${poolNames.map((name) => `\`${name}\``).join(", ") || "none"}). `
+            + "Pools come from the auth preset's `pools` seam, or an org the host asserted in `memberships` "
+            + "(each one is the pool `org:<orgId>`) — assert the pool there, or count a pool the user is in.",
           );
         }
         return ops.count({ action: counted, since, poolKey });
@@ -107,8 +136,10 @@ export function createLimiter({ callback, ops }: {
       }
       if (decision !== true) return decision === false ? { allow: false } : decision;
       // Awaited, not fire-and-forget: the next action's count has to see this
-      // one, and a dropped write is a limit that never arrives.
-      await ops.record({ subject, action, at: new Date(), poolKeys: Object.values(pools) });
+      // one, and a dropped write is a limit that never arrives. Keys DEDUPED: a
+      // host pool naming a derived org's own key is one bucket, stamped once.
+      const poolKeys = [...new Set(Object.values(pools))];
+      await ops.record({ subject, action, at: new Date(), poolKeys });
       return { allow: true };
     },
   };

@@ -1,6 +1,16 @@
 import type { LanguageModel } from "ai";
 import { SEATS, seatConflict, VendoError, type ResolvedModels, type Seat } from "@vendoai/core";
 import { vendoModel, type VendoModelOptions } from "#dev-creds/model";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
+
+/** Every seat this composition builds dials over the keep-alive pool the store
+ *  and host-API calls already ride: Node's stock dispatcher drops an idle
+ *  socket after ~4s, shorter than the gap between two turns, so the gateway was
+ *  re-handshaking on nearly every request. A host that brings its OWN model
+ *  passes an ai-SDK object, which never reaches here — its provider, its fetch
+ *  (adapter rule). */
+const ladderOptions = (slot: VendoModelOptions["slot"]): VendoModelOptions =>
+  ({ slot, fetch: keepAliveFetch });
 
 /**
  * The `models` block on createVendo (models spec 2026-07-22, DX surface 3):
@@ -82,9 +92,9 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
   if (conflict !== undefined) throw new VendoError("validation", conflict);
 
   const agent: ComposedModelSlots["agent"] = seats.default === undefined
-    ? { model: makeModel(undefined, { slot: "agent" }), venue: "ladder" }
+    ? { model: makeModel(undefined, ladderOptions("agent")), venue: "ladder" }
     : typeof seats.default === "string"
-      ? { model: makeModel(seats.default, { slot: "agent" }), venue: "ladder" }
+      ? { model: makeModel(seats.default, ladderOptions("agent")), venue: "ladder" }
       : { model: seats.default, venue: "custom" };
 
   const seat = (
@@ -92,9 +102,9 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
     slot: VendoModelOptions["slot"],
   ): LanguageModel =>
     typeof configured === "string"
-      ? makeModel(configured, { slot })
+      ? makeModel(configured, ladderOptions(slot))
       : configured
-        ?? (agent.venue === "ladder" ? makeModel(undefined, { slot }) : agent.model);
+        ?? (agent.venue === "ladder" ? makeModel(undefined, ladderOptions(slot)) : agent.model);
 
   return {
     agent,

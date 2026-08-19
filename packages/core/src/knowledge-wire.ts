@@ -148,6 +148,9 @@ export const KNOWLEDGE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   // untouched — a bare 5xx/429 here still degrades to "not-implemented",
   // unchanged by this slice.
   unavailable: 503,
+  // Table entry only, on the same rule: a schema proposal is a typed STORE's
+  // answer, and no knowledge mount has a table to propose.
+  "schema-proposal": 409,
 };
 
 /** 404 is deliberately absent: only an ENVELOPED `not-found` may become the

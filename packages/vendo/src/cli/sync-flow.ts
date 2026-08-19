@@ -62,10 +62,6 @@ export interface SyncFlowOptions {
   interactive: boolean;
   yes: boolean;
   ai?: boolean;
-  /** `vendo init --agent`: the caller is itself a coding agent, so judgment is
-      its work, not ours. Beats every other answer — even `--ai` — because
-      spawning an engine underneath one is the one thing agent mode may not do. */
-  delegated?: boolean;
   engine?: string;
   force?: boolean;
   themeRefresh?: boolean;
@@ -362,10 +358,6 @@ async function chooseEngine(
   note: (message: string) => void,
 ): Promise<{ skip: true } | { skip: false; engine?: AvailableEngine }> {
   const { output } = options;
-  if (options.delegated === true) {
-    output.log("Judgment: delegated to you. The receipt lists what the catalog still needs.");
-    return { skip: true };
-  }
   if (options.ai === false) {
     output.log("AI polish (descriptions, risk review, brief, theme): off (--no-ai) — extractor defaults stand.");
     return { skip: true };

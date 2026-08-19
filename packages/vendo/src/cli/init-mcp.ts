@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import { MCP_MOUNT } from "../door-paths.js";
 import type { AuthMatch } from "./init-auth.js";
-import { compositionModuleSource, routeSource, type ScaffoldModel } from "./init-scaffolds.js";
+import { compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
 
 /** Which authorization server fronts the door. DECLARED by the operator and
     nothing else (10-mcp §3.1) — init prints environment lines, it never
@@ -30,6 +30,13 @@ export interface McpPlanInput {
   root: string;
   /** The host's app directory (`app` or `src/app`), already resolved. */
   appDir: string;
+  /** The composition module the wire route already imports (`lib/vendo.ts`),
+      absolute — this path CHANGES what it holds rather than gaining a second
+      composition next to the route, and the discovery route imports the same
+      one. Resolved by the caller: this module stays fs-free. */
+  composition: string;
+  /** How the discovery route reaches it (`compositionSpecifier`). */
+  compositionSpecifier: string;
   framework: "next" | "express" | "custom";
   /**
    * The preset the fresh composition wired, or null. `mcp: true` is written
@@ -39,6 +46,18 @@ export interface McpPlanInput {
    * `jwt` and "none" do not, and both surface here as null.
    */
   authWired: AuthMatch | null;
+  /**
+   * Does the composition ALREADY on disk wire one of those presets? A re-run
+   * over an existing composition asks no auth question — init never rewrites a
+   * file it did not author — so `authWired` is null even for a host whose
+   * `lib/vendo.ts` says `auth: authJs()`, and refusing on that alone told a
+   * correctly wired host to "wire an auth preset" and wrote no door at all.
+   * Resolved by the caller (`composedAuthPreset`); this module stays fs-free.
+   *
+   * Never true at the same time as a non-null `authWired`: init only decides
+   * auth for a composition it is CREATING, and then there is nothing on disk.
+   */
+  authAlreadyWired?: boolean;
   /** Does the host have a live `"use server"` surface? The composition imports
       the generated registration map when it does. The map itself stays the
       caller's to plan: an EXISTING one is compared by the keys it registers,
@@ -52,8 +71,15 @@ export interface McpPlanInput {
   /** Did the user say yes to "will your own backend call these tools
       machine-to-machine?" */
   serviceKey: boolean;
-  /** The public origin captured earlier this run, or null when the user skipped
-      the question. */
+  /** A well-formed `VENDO_SERVICE_KEY` already in the host's env files, to
+      REUSE. Minting one unconditionally rotated the secret on every re-run and
+      the caller then overwrote .env.local with it, so every backend already
+      exchanging the old key started failing — the same reuse-don't-remint rule
+      `VENDO_API_KEY` follows. Read by the caller; this module stays fs-free. */
+  existingServiceKey?: string;
+  /** The origin captured earlier this run — the DEV one, which is what a client
+      config and doctor both want while the developer is still local. Null when
+      the run could not ask. */
   baseUrl: string | null;
   /** The provider key init found in the environment. This path's composition
       module is the ONLY place it may land: the thin route composes nothing, so
@@ -71,16 +97,17 @@ export interface McpChange {
 }
 
 export interface McpPlan {
-  /** The files the MCP path adds ALONGSIDE the route the caller already plans:
-      the composition module and the origin-root discovery route. */
+  /** The one file the MCP path ADDS: the origin-root discovery route. */
   changes: McpChange[];
-  /** The thin `route.ts` body. Separate from `changes` because the route is the
-      one file the caller may already have on disk, and a pure planner cannot
-      know that — the caller pushes it with the `before` it already read. Null
-      when the plan is `blocked`. */
-  routeSource: string | null;
+  /** The composition module's body, with the door opened. Separate from
+      `changes` because the composition is a file the caller may already have on
+      disk, and a pure planner cannot know that — the caller pushes it with the
+      `before` it already read. Null when the plan is `blocked`. */
+  compositionSource: string | null;
   /**
-   * The generated service key, for the caller to write to `.env.local`.
+   * The service key the composition wires, for the caller to write to
+   * `.env.local` — `existingServiceKey` when the host already has a well-formed
+   * one, else freshly minted.
    * Present on local posture with a yes, and NOWHERE else. `serviceAuth` is
    * local-door mechanics: the RFC 8693 exchange lives at the door's own
    * `/token`, which a broker-fronted door does not serve — and an explicit
@@ -127,10 +154,17 @@ export function mcpStepLines(plan: Pick<McpPlan, "steps" | "envLines">): string[
 }
 
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
-    the answers call for it; this is separately callable so the shape can be
-    asserted without a plan. */
+    the answers call for it AND the host has none to reuse; this is separately
+    callable so the shape can be asserted without a plan. */
 export function generateServiceKey(): string {
   return randomBytes(32).toString("hex");
+}
+
+/** Is the value already in the host's env a key this door can exchange? The
+    shape `generateServiceKey` mints, and nothing else: anything other than 32
+    hex bytes is not reusable, so it is replaced rather than trusted. */
+export function wellFormedServiceKey(value: string | null | undefined): boolean {
+  return value !== null && value !== undefined && /^[0-9a-f]{64}$/i.test(value.trim());
 }
 
 /**
@@ -152,13 +186,6 @@ export function wellKnownRouteSource(specifier: string): string {
     `export const { GET, POST } = wellKnownVendoHandler(vendo);\n`;
 }
 
-/** An import specifier from one generated directory to another, posix-style and
-    always explicitly relative. */
-function specifierBetween(fromDir: string, target: string): string {
-  const path = relative(fromDir, target).split(sep).join("/");
-  return path.startsWith(".") ? path : `./${path}`;
-}
-
 /** The keyless sign-in pointer — today's two lines of prose, kept exactly where
     they are useful. A run with no Cloud key is never shown the posture select,
     so this is the whole story it gets. */
@@ -168,29 +195,27 @@ const KEYLESS_SIGN_IN =
   + "same client URL either way.";
 
 export function planMcp(input: McpPlanInput): McpPlan {
-  const { root, appDir, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
+  const { root, appDir, composition, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
   const models = input.models ?? null;
-  const refuse = (why: string): McpPlan => ({ changes: [], routeSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
+  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
 
   if (framework !== "next") {
     return refuse(
       "MCP scaffolding is Next.js-only: the discovery documents live at origin-root paths, which only a "
       + "file-routed app directory can claim. Open the door by hand instead — pass `mcp: true` to createVendo "
-      + "and serve the well-known paths from your runtime: https://docs.vendo.run/existing-agents/mcp.",
+      + "and serve the well-known paths from your runtime: https://docs.vendo.run/outside-agents/quickstart.",
     );
   }
-  if (authWired === null) {
+  if (authWired === null && input.authAlreadyWired !== true) {
     return refuse(
       "The MCP door mints its own principals through an OAuth adapter and cannot open without one, so "
       + "nothing MCP was written. Wire an auth preset — auth: clerk(), authJs(), supabase() or auth0() all "
       + "carry it — then re-run `npx vendo init`. (jwt() and an anonymous composition do not carry the "
-      + "oauth half: https://docs.vendo.run/existing-agents/mcp.)",
+      + "oauth half: https://docs.vendo.run/outside-agents/quickstart.)",
     );
   }
 
-  const wiringDir = join(appDir, "api", "vendo", "[...vendo]");
   const wellKnownDir = join(appDir, ".well-known", "[...vendo]");
-  const composition = join(wiringDir, "vendo.ts");
   const change = (absolute: string, after: string): McpChange => ({
     absolute,
     path: relative(root, absolute).split(sep).join("/"),
@@ -199,16 +224,7 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   // `serviceAuth` is wired only under local posture: see McpPlan.serviceKeyValue.
   const serviceAuth = posture === "local" && serviceKey;
-  // The one file on this path that composes, so the one that may carry the
-  // models line — named here because the closing summary points at it.
-  const compositionChange = change(composition, compositionModuleSource({ serverActions, auth: authWired, serviceAuth, models }));
-  const changes: McpChange[] = [
-    compositionChange,
-    change(
-      join(wellKnownDir, "route.ts"),
-      wellKnownRouteSource(specifierBetween(wellKnownDir, join(wiringDir, "vendo"))),
-    ),
-  ];
+  const changes: McpChange[] = [change(join(wellKnownDir, "route.ts"), wellKnownRouteSource(input.compositionSpecifier))];
 
   // The client-facing URL is derived from the base URL and NEVER from the broker
   // URL, so it is the same in both postures — switching posture later invalidates
@@ -218,8 +234,8 @@ export function planMcp(input: McpPlanInput): McpPlan {
   // indents the detail lines, so a step never wraps mid-phrase into a wall.
   const steps = [
     baseUrl === null
-      ? "Set `VENDO_BASE_URL` in your deploy platform to this deployment's public origin\nwithout it, discovery points at the wrong origin and clients cannot find your server"
-      : `Set \`VENDO_BASE_URL\` in your deploy platform\n\`${baseUrl}\` — captured earlier, already in .env.example`,
+      ? "Set `VENDO_BASE_URL` to the origin this app answers on — .env.local in dev, your deploy platform in production\nwithout it, discovery points at the wrong origin and clients cannot find your server"
+      : `When you deploy, set \`VENDO_BASE_URL\` in your platform to the public origin\ndev is answered — \`${baseUrl}\` is in .env.local, and every discovery URL hangs off it`,
     `Point any MCP client at \`${clientBase}${MCP_MOUNT}\`\nyour users' setup page ships free at \`${MCP_MOUNT}/connect\` — copy for Claude · ChatGPT · Cursor included`,
     "Claude Code: `/plugin marketplace add runvendo/vendo` then `/plugin install vendo@vendo`",
   ];
@@ -232,10 +248,11 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   return {
     changes,
-    // No `models` on this arm, and never one: the thin route composes nothing.
-    routeSource: routeSource({ serverActions, auth: authWired, mcp: { serviceAuth } }),
-    ...(serviceAuth ? { serviceKeyValue: generateServiceKey() } : {}),
-    modelWritten: models === null ? null : { provider: models.provider, path: compositionChange.path },
+    compositionSource: compositionModuleSource({ serverActions, auth: authWired, models, mcp: { serviceAuth } }),
+    ...(serviceAuth
+      ? { serviceKeyValue: wellFormedServiceKey(input.existingServiceKey) ? input.existingServiceKey!.trim() : generateServiceKey() }
+      : {}),
+    modelWritten: models === null ? null : { provider: models.provider, path: relative(root, composition).split(sep).join("/") },
     steps,
     envLines: posture === "broker"
       ? [

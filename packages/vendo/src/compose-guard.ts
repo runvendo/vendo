@@ -4,7 +4,13 @@
  * layer), and the one-shot warning a present-mode host
  * tool call raises when its credentials cannot be forwarded.
  */
-import { RESERVED_SUBJECT_PREFIX, type RunContext, type ToolDescriptor } from "@vendoai/core";
+import {
+  RESERVED_SUBJECT_PREFIX,
+  VENDO_AUTOMATE_TOOL,
+  type RunContext,
+  type ToolCall,
+  type ToolDescriptor,
+} from "@vendoai/core";
 import {
   createGuard,
   isGuardInstance,
@@ -55,6 +61,31 @@ export const composeGuard = (composition: VendoComposition): Pick<VendoCompositi
   // label the guard never sees and is invalidated on first use.
   const resolveRisk: RiskResolver = async (call, _descriptor, ctx) =>
     (await composition.resolveAppToolRisk?.(call, ctx)) ?? await composition.serviceToolRisk(call);
+  /**
+   * 07 §3 — what ONE yes to a parked ask mints beyond the call in hand.
+   *
+   * Only `vendo_automate` has an answer: it is the ask whose yes authorizes calls
+   * nobody has made yet, so the powers the automation will hold are named on the
+   * ask itself (`ApprovalRequest.powers`) rather than asked for again per tool
+   * afterwards. Everything else answers `undefined` — an ordinary ask's call IS
+   * the whole of what is being allowed.
+   *
+   * Computed ONCE, here, and rendered by whichever surfaces know how: there is
+   * deliberately nothing channel-specific about it. The engine's own
+   * `armingPowers` is the single computation, shared with the mint that runs when
+   * the yes comes back, so the ask and the grants cannot name different tools.
+   *
+   * Late-bound through `composition`, the same way `resolveRisk` above reaches the
+   * apps runtime: the automations engine is composed after the guard, and this
+   * only ever runs inside a later park.
+   */
+  const describePowers = async (
+    call: ToolCall,
+    ctx: RunContext,
+  ): Promise<readonly string[] | undefined> => {
+    if (call.tool !== VENDO_AUTOMATE_TOOL) return undefined;
+    return await composition.automations?.armingPowers(ctx);
+  };
   // ADAPTER RULE, guard seam: a built VendoGuard is this deployment's choke
   // point verbatim; rules are completed here with the plumbing only a
   // composition can supply — the store, the app/service risk resolver, the
@@ -67,6 +98,7 @@ export const composeGuard = (composition: VendoComposition): Pick<VendoCompositi
     // route, not a downgrade.
     ...(ops === undefined ? {} : { ops }),
     resolveRisk,
+    describePowers,
     ...(guardRules.approvals === undefined ? {} : { approvals: guardRules.approvals }),
     ...(guardRules.breakers === undefined ? {} : { breakers: guardRules.breakers }),
     ...(configPolicy === undefined ? {} : { policy: configPolicy }),

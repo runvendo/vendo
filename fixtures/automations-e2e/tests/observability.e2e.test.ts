@@ -2,9 +2,46 @@
  * newest-first, owner-scoped on every door, plus dryRun — a preview that
  * executes nothing, on the store or on the live host.
  */
+import type { RunContext } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createStack, ownerCtx, resetFixture } from "../src/harness.js";
+import { createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
 import { ADA, BOB, approve, enableAndApprove, fixtureInvoices, tableCount } from "../src/support.js";
+
+/**
+ * The standing automation grant a yes can no longer mint, written directly.
+ *
+ * `host_invoices_send` is destructive, so arming captures nothing for it — THE
+ * LAW refuses a destructive away call whatever grant is held, and a card
+ * promising one would promise what no firing honours. A PREVIEW still has to
+ * say what a fully granted pipeline looks like, so the row is seeded here
+ * through the guard's own mint, off the very descriptor `dryRun` hashes its
+ * grant lookup against — a hand-built one would silently not match.
+ */
+async function grantStanding(
+  stack: Stack,
+  automationId: string,
+  tool: string,
+  ctx: RunContext,
+): Promise<void> {
+  const descriptor = (await stack.bound.descriptors(ctx)).find((entry) => entry.name === tool);
+  if (descriptor === undefined) throw new Error(`${tool} is not bound`);
+  // Optional on the `VendoGuard` seam, so feature-detected the way the engine
+  // itself detects it — this stack composes the real guard, which has it.
+  if (stack.guard.mintGrant === undefined) throw new Error("the composed guard offers no grant mint");
+  await stack.guard.mintGrant({
+    request: {
+      id: `apr_seed_${tool}`,
+      call: { id: `call_seed_${tool}`, tool, args: {} },
+      descriptor,
+      inputPreview: `Allow ${tool} while you're away`,
+      ctx: { principal: ctx.principal, venue: "automation", presence: "present" },
+      createdAt: new Date().toISOString(),
+    },
+    remember: { duration: "standing" },
+    source: "automation",
+    automationId,
+  });
+}
 
 describe("run observability and dry-run", () => {
   beforeEach(resetFixture);
@@ -91,6 +128,8 @@ describe("run observability and dry-run", () => {
       expect(await tableCount(stack, "vendo_approvals")).toBe(approvalsBefore);
 
       await approve(stack, enabled.missing);
+      // …and the one arming never asked about, seeded (see `grantStanding`).
+      await grantStanding(stack, created.id, "host_invoices_send", ctx);
       const postGrant = await stack.automations.dryRun(created.id, ctx, {
         items: [{ id: "inv_0002" }, { id: "inv_0005" }],
       });
@@ -159,6 +198,10 @@ describe("run observability and dry-run", () => {
         authoredBy: "chat",
       }, ctx);
       await enableAndApprove(stack, created.id, ctx);
+      // "even when granted" is the whole point of this preview, and the send is
+      // the half arming no longer captures — so its grant is seeded (see
+      // `grantStanding`) and the pipeline really is fully granted.
+      await grantStanding(stack, created.id, "host_invoices_send", ctx);
       const runsBefore = await tableCount(stack, "vendo_runs");
 
       const plan = await stack.automations.dryRun(created.id, ctx, {});

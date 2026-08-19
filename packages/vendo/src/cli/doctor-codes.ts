@@ -15,6 +15,11 @@ import { CLI_VERSION } from "./shared.js";
  *
  * This is the ONE module a CI check enumerates to assert every code has a
  * matching verify-page anchor (no registry rot).
+ *
+ * An AREA groups checks, not severities: E-MODEL-001 is a WARNING (doctor still
+ * exits 0 — a host may keep its key outside the files doctor can read), and it
+ * carries a code for the same reason every other finding does, so an agent can
+ * grep it and follow the fix_ref.
  */
 export const DOCTOR_ERROR_CODES = {
   "E-WIRE-001": "Express server is not wired with createVendo from @vendoai/vendo/server",
@@ -33,6 +38,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
   "E-CFG-004": "the Next host's next.config does not keep @vendoai/apps out of the server bundle (serverExternalPackages)",
   "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
+  "E-TENANT-001": "tenant connectors are wired but the store has no encryption key, so a tenant's pasted token has nowhere safe to live",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "RETIRED — doctor no longer reads a running wire's version",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
@@ -73,6 +79,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-TURN-001": "RETIRED — doctor no longer runs a model turn",
   "E-TURN-002": "RETIRED — doctor no longer runs a model turn",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
+  "E-MODEL-001": "no model credential resolves (the wire is wired, but the agent cannot answer a single turn)",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
   "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
@@ -85,14 +92,19 @@ export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;
 /** Complete list of every code doctor can emit, for CI enumeration. */
 export const doctorErrorCodes = Object.keys(DOCTOR_ERROR_CODES) as readonly DoctorErrorCode[];
 
-/** The verify playbook page the fix_ref URLs anchor into. The docs host
-    serves it directly — the marketing-site path 302s there, and some agent
-    HTTP clients refuse the hop (FINDINGS F7a). */
-export const VERIFY_URL = "https://docs.vendo.run/agents/verify";
+/** Where the per-code troubleshooting pages live: one page per code, named for
+    the lowercased code (the 1:1 contract doctor-codes.docs.test.ts enforces).
+    The docs host serves them directly — the marketing-site path 302s, and some
+    agent HTTP clients refuse the hop (FINDINGS F7a).
 
-/** Full fix URL for a code: the installed vendoai version rides as a query
- *  param BEFORE the fragment so the URL stays valid and the verify page can
- *  version-match its guidance. */
+    The retired `/agents/verify#<code>` spelling was a dead link twice over: the
+    page moved in the Cloud restructure, and a code in a URL FRAGMENT never
+    reaches the server, so every fix_ref landed on the same index and left the
+    reader to find their own code. */
+export const TROUBLESHOOTING_URL = "https://docs.vendo.run/production/troubleshooting";
+
+/** Full fix URL for a code: its own page, with the installed vendoai version as
+ *  a query param so the page can version-match its guidance. */
 export function doctorFixRef(code: DoctorErrorCode, version: string = CLI_VERSION): string {
-  return `${VERIFY_URL}?v=${encodeURIComponent(version)}#${code}`;
+  return `${TROUBLESHOOTING_URL}/${code.toLowerCase()}?v=${encodeURIComponent(version)}`;
 }

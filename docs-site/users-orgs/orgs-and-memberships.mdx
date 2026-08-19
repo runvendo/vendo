@@ -1,0 +1,163 @@
+---
+title: "Orgs & memberships"
+sidebarTitle: "Orgs & memberships"
+description: "Vendo keeps no roster. Your host answers who this caller works with, once per request, and that one answer unlocks sharing, the org workspace, org policy, and org limits."
+---
+
+Vendo has no org chart. There is no roster to sync, no invite table, no
+membership row of ours to keep in step with yours.
+
+On every request your host answers one question — which orgs is this caller in? —
+and Vendo believes the answer for exactly that request.
+
+## The seam
+
+```ts app/api/vendo/[...vendo]/route.ts highlight={3,4,5,6,7,8,9,10,11,12,13,14}
+export const vendo = createVendo({
+  auth: authJs({
+    memberships: async ({ subject }) => {
+      const rows = await db.membership.findMany({
+        where: { userId: subject },
+        include: { org: true },
+      });
+      return rows.map((row) => ({
+        org: row.orgId,
+        display: row.org.name,
+        teams: row.teamIds,
+        admin: row.role === "admin",
+      }));
+    },
+  }),
+});
+```
+
+One query against your own tables. It is keyed on the resolved principal rather
+than the request, which is what makes it answerable for an away run: a schedule
+firing has no session, and this callback is your server code in the same
+deployment.
+
+```ts Membership
+interface Membership {
+  org: string;
+  display?: string;
+  teams?: string[];
+  admin?: boolean;
+}
+```
+
+| Field | What it is |
+| --- | --- |
+| `org` | Your own org id, verbatim, and never empty. It becomes the owner of the workspace at `/orgs/<org>/**` and the row subject of an org-owned app, so it has to be stable in your tables |
+| `display` | The org's name in your product's voice, so a surface says "Acme" instead of `org_7f3` |
+| `teams` | Your team ids inside this org. A grant to `team:<org>/<id>` matches a member holding that id |
+| `admin` | `true` makes this member an implicit owner of every app the org holds |
+
+Return `[]` for a caller who belongs to nothing. Leave the seam off entirely and
+nothing is asserted: sharing degenerates to plain ownership, no org owns a
+workspace, and there are no org pools to count.
+
+---
+
+## Asserted, never stored
+
+This is the whole model, and the rules that fall out of it:
+
+- Resolved **once per request** and read by every door downstream, so one request
+  can never see two different answers.
+- **Never persisted.** There is no orgs table and no members table in the store.
+  Removing someone from an org in your tables removes them from Vendo on their
+  very next request — nothing to propagate, no cache to invalidate.
+- An **ephemeral visitor is not even asked.** A principal you marked
+  `ephemeral: true` belongs to no org by construction — your host issued them
+  nothing.
+- Your resolver mints **user principals only.** Org context is derived from
+  membership, so a resolver returning `kind: "org"`, or a subject in the reserved
+  `vendo:` namespace, is rejected at the wire.
+
+<Note>
+  Because the answer is asserted per request, your identity system stays the
+  single source of truth for who is in what. Vendo never disagrees with it,
+  because Vendo never has a second copy.
+</Note>
+
+---
+
+## One name, everywhere
+
+An org is spelled the same way wherever it appears. That string is the grant
+principal and it is the limits pool.
+
+| Principal | Matches |
+| --- | --- |
+| `user:<subject>` | That one person |
+| `team:<org>/<teamId>` | A member whose asserted `teams` includes that id |
+| `org:<org>` | Any member of that org |
+
+A grant is matched against the memberships this request asserted, so one row
+covers the whole org and never needs a per-user fan-out.
+
+---
+
+## What a membership unlocks
+
+Four things, all out of that one array.
+
+<CardGroup cols={2}>
+  <Card title="Sharing" href="/users-orgs/sharing">
+    A grant whose principal is `org:<org>` or `team:<org>/<id>` matches every
+    member you asserted. Share an app once, the org has it.
+
+    `org:acme`
+  </Card>
+  <Card title="The org workspace" href="/users-orgs/org-workspace">
+    Paths under `/orgs/<org>/**` are owned by the org, not the person who made
+    them. An `admin` member is an implicit owner of every app it holds.
+
+    `/orgs/acme/apps/…`
+  </Card>
+  <Card title="Org policy" href="/users-orgs/org-policy">
+    Guard rules that ride on top of your deployment's own policy for the members
+    of one org.
+
+    `vendo/org-policy@1`
+  </Card>
+  <Card title="Limits" href="/users-orgs/limits">
+    Every asserted org is automatically a shared meter named `org:<org>`, so one
+    line caps an org's spend.
+
+    `count(action, { pool })`
+  </Card>
+</CardGroup>
+
+---
+
+## Verify it
+
+`vendo doctor` reads files on disk, so it cannot see this seam. Run your app and
+make one real call as a member of an org.
+
+An org-shared app that a member cannot open means the seam returned no membership
+for them — log what your callback returned for that subject and compare the `org`
+string against the grant's.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Auth" href="/production/auth">
+    The preset this seam rides, and the principal it is keyed on.
+
+    `auth: authJs()`
+  </Card>
+  <Card title="Limits" href="/users-orgs/limits">
+    The org cap that needs nothing but the seam above.
+
+    `pool: "org:acme"`
+  </Card>
+  <Card title="Handler options" href="/reference/handler-options">
+    Where `memberships`, `facts`, and `pools` sit among every other key.
+
+    `createVendo`
+  </Card>
+</CardGroup>

@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
 import { consentAsk, toolPresentation } from "./build-beat.js";
-import { CardActions, CardLine, CardShell } from "./card-shell.js";
+import { CardActions, CardLine, CardShell, NOTE_SEPARATOR } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { fieldRows } from "./field-rows.js";
 
@@ -178,10 +178,14 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
         {/* One LINE to the eye, a LIST to a screen reader: the notes are a set
             of distinct facts (each remaining input, what approving does, who
             asked), and a joined paragraph gave a reader no way to step through
-            them — the field table it replaced was navigable. The " · " between
-            them is punctuation, so it is drawn in CSS rather than read out. */}
+            them — the field table it replaced was navigable. The " · " leads
+            every item but the first (`NOTE_SEPARATOR`), as real text: a CSS
+            `content` rule drew it for free, but generated content never reaches
+            the clipboard, so the copied line ran its facts together. */}
         <ul className="fl-approval-sub" aria-label="Request details">
-          {notes.map((note, index) => <li key={index}>{note}</li>)}
+          {notes.map((note, index) => (
+            <li key={index}>{index > 0 ? NOTE_SEPARATOR : null}{note}</li>
+          ))}
         </ul>
         {approval.invalidatedGrant ? (
           <div style={{ marginTop: "12px" }}>

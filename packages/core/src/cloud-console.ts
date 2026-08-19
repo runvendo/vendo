@@ -89,6 +89,11 @@ export function consoleSender(options: {
   timeoutMs: number;
   fetchImpl: typeof fetch;
   raise: (response: Response) => Promise<never>;
+  /** Headers this ONE wire adds to every request — the store wire's capability
+   * list, and nothing at all on the wires that declare none. Scoped here rather
+   * than folded into the identity headers because those ride every Cloud door
+   * alike, and a capability is a statement about one protocol. */
+  headers?: Record<string, string>;
 }): (path: string, init?: RequestInit) => Promise<Response> {
   return async (path, init = {}) => {
     const response = await options.fetchImpl(`${options.base}${options.mountPath}${path}`, {
@@ -97,6 +102,7 @@ export function consoleSender(options: {
         authorization: `Bearer ${options.apiKey}`,
         accept: "application/json",
         ...(await deploymentIdentityHeaders()),
+        ...options.headers,
         ...init.headers,
       },
       signal: AbortSignal.timeout(options.timeoutMs),

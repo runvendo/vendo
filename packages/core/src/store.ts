@@ -179,6 +179,24 @@ export const APP_DATA_COLLECTION_PATTERN = /^(box:)?[A-Za-z0-9_-]{1,64}$/;
     sanitised owner would map two people onto one drawer. */
 export const APP_DATA_OWNER_PATTERN = /^[^/]+$/;
 
+/** Every secret-vault name an ORG's tenant connectors are stored under, as a
+    LIKE-able prefix, and the name for one of them.
+
+    ONE builder, in the layer both sides depend on, because two of them is
+    exactly how a cascade and its writer drift apart (`engineAppHistory`'s
+    lesson): @vendoai/vendo composes the name when a connector is registered and
+    the store's erase cascade matches the prefix when the org is erased. If these
+    ever disagreed, a deleted org's live credential would sit in the vault
+    forever with nothing left pointing at it.
+
+    Both legs are percent-encoded, so a host-issued org id carrying the separator
+    can neither reach another org's drawer nor hide one of its own from the sweep. */
+export const tenantConnectorSecretPrefix = (org: string): string =>
+  `tenant-connector:${encodeURIComponent(org)}:`;
+
+export const tenantConnectorSecret = (org: string, name: string): string =>
+  `${tenantConnectorSecretPrefix(org)}${encodeURIComponent(name)}`;
+
 /** Where one appData op lands. */
 export interface AppDataTarget {
   appId: string;

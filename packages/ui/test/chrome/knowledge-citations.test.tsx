@@ -106,7 +106,7 @@ describe("knowledge citations in the thread (Knowledge K1)", () => {
 
     const line = document.querySelector("[data-vendo-knowledge-searched]");
     expect(line).toBeTruthy();
-    expect(line?.textContent).toContain("Searched the knowledge base — no matching documentation");
+    expect(line?.textContent).toContain("Searched the docs — no answer for this one");
     expect(document.querySelector("[data-vendo-citations]")).toBeNull();
     expect(document.querySelector("[data-vendo-knowledge-unavailable]")).toBeNull();
   });
@@ -116,7 +116,7 @@ describe("knowledge citations in the thread (Knowledge K1)", () => {
 
     const flag = document.querySelector("[data-vendo-knowledge-unavailable]");
     expect(flag).toBeTruthy();
-    expect(flag?.textContent).toContain("knowledge base is temporarily unreachable");
+    expect(flag?.textContent).toContain("I couldn't check the docs just now, so this isn't verified against them.");
     expect(document.querySelector("[data-vendo-knowledge-searched]")).toBeNull();
   });
 

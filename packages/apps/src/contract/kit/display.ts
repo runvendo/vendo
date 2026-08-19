@@ -47,3 +47,52 @@ export const DISPLAY_SPECS: readonly DisplayTagSpec[] = [
 
 /** The tags, as the renderer, the typings and the checks read them. */
 export const DISPLAY_TAG_NAMES: readonly string[] = DISPLAY_SPECS.map((spec) => spec.name);
+
+/**
+ * What a screen may paint with is a DEFAULT-DENY property allowlist and NOTHING
+ * ELSE: a declaration survives iff its property is named here, whatever its
+ * value. No value is ever inspected — so there is no CSS spelling for a model to
+ * bypass. The list holds only properties that cannot fetch: a `color` takes a
+ * URL nowhere, but `background`, `backgroundImage`, `filter`, `backdropFilter`
+ * and `cursor` all can (`url()`, `image-set()`), so they are simply absent and
+ * drop by default alongside `maskImage`, `borderImage` and `content`. Themed
+ * fills use `backgroundColor`; gradients/blur are not available to a screen (a
+ * host-controlled kit token could reintroduce them later, out of scope here).
+ * `position` is allowed: the surface box clips even `fixed`/`sticky` to itself,
+ * so no value check is needed to hold a screen inside its surface.
+ *
+ * It lives HERE, beside the tags, because BOTH sides read it and a second copy
+ * of a security boundary is the copy that drifts: `@vendoai/ui` filters every
+ * node's style through it at paint (`safeStyle`), and the component screen's
+ * typings print it as the `style` type, so a property this list does not name is
+ * a type error at check time rather than a declaration that silently vanishes.
+ */
+export const SAFE_STYLE_PROPERTIES: readonly string[] = [
+  // layout
+  "display", "flexDirection", "flexWrap", "flex", "flexGrow", "flexShrink", "flexBasis",
+  "alignItems", "alignSelf", "justifyContent", "justifyItems", "justifySelf",
+  "gap", "rowGap", "columnGap", "gridTemplateColumns", "gridTemplateRows",
+  "gridColumn", "gridRow", "gridAutoFlow", "position", "inset", "top", "right", "bottom", "left",
+  "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
+  "overflow", "overflowX", "overflowY", "boxSizing",
+  // spacing
+  "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
+  "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  // color
+  "color", "backgroundColor", "borderColor", "outlineColor",
+  // typography
+  "fontSize", "fontWeight", "fontStyle", "fontFamily", "lineHeight", "letterSpacing",
+  "textAlign", "textTransform", "textDecoration", "textOverflow", "whiteSpace",
+  "wordBreak", "textWrap", "fontVariantNumeric",
+  // border + shape (borderImage* is deliberately absent — it fetches)
+  "border", "borderWidth", "borderStyle", "borderRadius",
+  "borderTop", "borderRight", "borderBottom", "borderLeft",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+  "borderTopStyle", "borderRightStyle", "borderBottomStyle", "borderLeftStyle",
+  "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor",
+  "borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius",
+  "outline", "outlineWidth", "outlineStyle", "outlineOffset",
+  // effects
+  "opacity", "boxShadow", "transform", "transformOrigin",
+  "transition", "transitionProperty", "transitionDuration", "transitionTimingFunction",
+];

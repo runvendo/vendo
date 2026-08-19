@@ -7,8 +7,18 @@ sidebarTitle: "Quickstart"
 Vendo brings the loop, the model, and the chat surface. You paste three things
 into your own client.
 
-This picks up where [`vendo init`](/) left off: `VENDO_API_KEY` in
-`.env.local`, and `app/api/vendo/[...vendo]/route.ts` written.
+This picks up after the two commands on the [main quickstart](/) —
+`npm install @vendoai/vendo`, then `npx vendo init` (`pnpm add @vendoai/vendo`
+and `pnpm exec vendo init` on pnpm). Those leave you
+`app/api/vendo/[...vendo]/route.ts` written, and a model credential settled.
+
+Which credential depends on how you answered init's models question. **Vendo
+Cloud** ran the browser login and put a `VENDO_API_KEY` in `.env.local`.
+**Bring my own key** took your paste and put it in the same file, under
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`.
+**Decide later** wrote no key at all — the steps below still work, and
+`vendo login` (or your own key in `.env.local`) is what makes the first turn
+answer. [Model credentials](/production/model-credentials) covers all three.
 
 <Steps>
 
@@ -17,24 +27,23 @@ This picks up where [`vendo init`](/) left off: `VENDO_API_KEY` in
 Paste what init printed into your client layout. Your paths and theme are
 already filled in.
 
-```tsx app/layout.tsx focus={10}
+```tsx app/layout.tsx focus={7}
 import { VendoProvider } from "@vendoai/vendo/react";
 import type { VendoTheme } from "@vendoai/vendo";
-import type { ReactNode } from "react";
 import theme from "../.vendo/theme.json";
 
-export default function RootLayout({ children }: { children: ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
-          {children}
-        </VendoProvider>
-      </body>
-    </html>
-  );
-}
+// in your own RootLayout, props type untouched:
+<body>
+  <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+    {children}
+  </VendoProvider>
+</body>
 ```
+
+Leave that props type alone. Next already types `children` for you —
+create-next-app writes `Readonly<{ children: React.ReactNode }>`, and an app on
+typed routes has a generated props type of its own — so annotating it again as
+`{ children: ReactNode }` only throws away what your app already knows.
 
 `baseUrl` is where the route is mounted, path prefix included. An app served
 under `/maple` passes `baseUrl="/maple/api/vendo"`.
@@ -68,16 +77,17 @@ import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
 Put a slot where a card would go. A screen the agent builds can live there
 instead of in the panel.
 
-`VendoSlot` ships in `@vendoai/ui`, so add that package to the app.
+`VendoSlot` comes from the package you already installed — no second one.
 
-```bash
-npm install @vendoai/ui
-```
+The id and the file are both yours. `spend-breakdown` on a bank's overview page
+is this example's choice: pick any string, and put the slot on whichever page you
+want the surface to appear on. The one rule is that the same string appears in
+both places — on `VendoSlot` here, and on the provider's `pinSlot` below.
 
 ```tsx app/overview/page.tsx focus={3,9}
 "use client";
 
-import { VendoSlot } from "@vendoai/ui/chrome";
+import { VendoSlot } from "@vendoai/vendo/react";
 
 export default function Overview() {
   return (
@@ -116,9 +126,17 @@ in your grid and stays there.
 
 Start the app and click the launcher pill in the corner.
 
-```bash
+<CodeGroup>
+
+```bash npm
 npm run dev
 ```
+
+```bash pnpm
+pnpm dev
+```
+
+</CodeGroup>
 
 Ask for something you would otherwise click through to, like "Where did my
 money go?" The agent calls your own API as the person signed in, and answers

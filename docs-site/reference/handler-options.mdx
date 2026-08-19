@@ -31,7 +31,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `actAs` | Escape hatch supplying scoped auth material for away host API execution. Mutually exclusive with `auth` |
 | `serverActions` | The map `vendo sync` emits, keyed `"<module>#<exportName>"`. A missing key fails closed at execution |
 | `guard` | The deployment's choke point as one value. See [below](#guard) |
-| `limits` | Per-user limits in your own logic. See [below](#limits) |
+| `limits` | Per-user and per-org limits in your own logic. See [below](#limits) and [Limits](/users-orgs/limits) |
 | `secrets` | `{ get(name) }`. Default is environment-backed lookup |
 | `logger` | One structured event per line Vendo would have written to the console. Unset keeps those console lines |
 | `telemetry` | `boolean`. Wires the telemetry client. Unset is off |
@@ -105,6 +105,8 @@ createVendo({
 Return `false`, or `{ allow: false, message }` to say why in your own words, and the action is refused and never counted. Anything else allows it and the meter records it.
 
 A policy against a store with no usage meter is refused at composition. A callback that throws denies and logs `limits.callback_error`.
+
+[Limits](/users-orgs/limits) walks the per-user cap, the per-org pool, windows, and what a blocked user sees.
 
 ## `mcp`
 
@@ -229,4 +231,6 @@ createVendo({ principal: async () => ({ kind: "user", subject: "dev" }) });
 
 If you want logged-out visitors served, resolve them to a principal of your own choosing. Marking it `ephemeral: true` keeps it out of org membership and blocks it from connecting external accounts.
 
-The preset seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`.
+The preset seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`. Every asserted membership is already a pool named `org:<orgId>`, so an org cap needs no `pools` seam of its own.
+
+See [Your users](/users-orgs/your-users) for `facts` and [Orgs & memberships](/users-orgs/orgs-and-memberships) for `memberships`.

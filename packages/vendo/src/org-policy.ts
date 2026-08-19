@@ -20,7 +20,7 @@ const POLICY_TTL_MS = 30_000;
  *  ride the ctx and are never stored, so this is the only place to read them;
  *  a ctx without them (today's default, and every unkeyed deployment) simply
  *  has no orgs. */
-const assertedOrgs = (ctx: RunContext): string[] => {
+export const assertedOrgs = (ctx: RunContext): string[] => {
   const memberships = (ctx as RunContext & { memberships?: unknown }).memberships;
   if (!Array.isArray(memberships)) return [];
   return [...new Set(memberships

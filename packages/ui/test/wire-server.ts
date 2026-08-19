@@ -424,7 +424,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const contentType = request.headers["content-type"] ?? "";
-      const binary = method === "POST" && url.pathname === "/apps/import";
+      // The two doors whose body is BYTES under the payload's own media type,
+      // not JSON — an upload carries the file itself (`POST /files`), exactly as
+      // an app import carries the app.
+      const binary = method === "POST" && (url.pathname === "/apps/import" || url.pathname === "/files");
       const raw = method === "GET" ? new Uint8Array() : await bodyBytes(request);
       let parsedBody: unknown = undefined;
       if (raw.byteLength > 0) {
@@ -451,6 +454,19 @@ export async function createWireServer(options: WireServerOptions = {}) {
       if (failureIndex >= 0) {
         const [failure] = state.failures.splice(failureIndex, 1);
         wireError(response, failure!.code, failure!.message, failure!.status);
+        return;
+      }
+
+      // The drop door. The name rides the query string, the body is the file,
+      // and the answer names where it landed — the shape the real route's own
+      // seam test pins (`packages/vendo/tests/user-files-client.seam.test.ts`).
+      if (method === "POST" && url.pathname === "/files") {
+        const name = url.searchParams.get("name") ?? "";
+        if (name === "" || name === "." || name === ".." || /[/\\]/.test(name)) {
+          wireError(response, "validation", `${JSON.stringify(name)} is not a file name`, 400);
+          return;
+        }
+        json(response, { path: `/user/files/${name}`, bytes: raw.byteLength });
         return;
       }
 

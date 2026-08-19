@@ -61,8 +61,17 @@ Verifying
 // perform it", so reporting a miss and replying in prose read as compliance with
 // this section while the connect etiquette below was asking for the opposite. Two
 // instructions, one situation, and the model may satisfy either.
+//
+// Same defect, different pair (maple text channel 2026-08-18): a transfer ask
+// was reported as no-matching-tool off the equipped reads alone — with
+// host_transferMoney one find_tools call away — because this bullet offered a
+// compliant exit that never required the search the discovery section asks
+// for. The bullet now makes the search the only way to establish "no
+// available tool" on a surface that has one — in the same tool-name-free
+// voice as HOW_YOU_WORK's discovery bullet, because this section rides every
+// surface and must not promise a rail the turn does not carry.
 const CAPABILITY_MISS_PROMPT = `When the user's ask cannot be fulfilled:
-- If no available tool can perform it, call vendo_report_capability_miss with kind "no-matching-tool" before replying.
+- If no available tool can perform it, call vendo_report_capability_miss with kind "no-matching-tool" before replying — and when this surface offers discovery tools, only a search can establish that: never conclude no tool exists from your equipped set alone.
 - An outside service this user has not connected is not a capability miss: ask for it with request_connection instead of reporting one.
 - If you explicitly give up after trying available approaches, call vendo_report_capability_miss with kind "agent-give-up" before replying.
 - List only tool names you actually considered. Do not call the reporter for a pending approval or a policy-blocked call.
@@ -81,6 +90,29 @@ const PRESENTATION_PROMPT = `Presentation
 - Around a rendered view, reply with at most a sentence or two of insight the view does not already show.
 - Do not narrate surface mechanics ("the chart is loading above", "see the table below").
 - Match the product's voice. No emoji unless the user or the host's directions use them.`;
+
+// The user's own files. Venue-gated with the theme and the presentation rules:
+// dropping a file is a CHAT gesture, and an app venue turn can be asked about
+// one — an away automation run and the MCP door get neither.
+//
+// The three things the model cannot work out from the tool descriptors alone:
+// that the drawer OUTLIVES the conversation (so a reference to "the file I sent
+// you" is a listing away, not a dead end); that an app gets a COPY rather than a
+// live link (nothing re-reads the drawer on the app's behalf, so an app built
+// from stale bytes stays stale until someone acts); and that closing that gap is
+// the AGENT's job, on the turn the newer file arrives. There is deliberately no
+// automatic sync anywhere in this design, which is exactly why the refresh has
+// to be taught as behavior.
+//
+// It teaches only what the agent can actually do. Copying a table into an app's
+// saved items is a tool it has; putting a PDF into an app is not, and a prompt
+// that implied otherwise would buy an invented answer on the first attempt.
+const USER_FILES_PROMPT = `Files the user shares
+- A file the user sends is saved for them and stays available in EVERY later conversation, not only the one it arrived in. When they mention something they gave you and you cannot see it here, list their files and read it rather than asking them to send it again.
+- Read a file before answering questions about it. Never describe, summarise, or total up a file you have not read.
+- A long file arrives a window at a time — keep reading from the offset it hands back until you have the part you need. A file that is not text comes back as its type and size alone: say what it is, and never guess at what is inside it.
+- Building something from a file COPIES what it needs: rows from a table become the app's own saved items. The app does not read their files afterwards, so the copy is a snapshot, not a live link.
+- When they send a newer version of a file you have already built something from, say so plainly, then update what you built from the new contents. Nothing refreshes on its own — if you do not do it, it does not happen.`;
 
 // The connect etiquette, shared verbatim by both discovery sections below: it is
 // load-bearing on every surface that can reach a connector, and one copy is what
@@ -158,7 +190,7 @@ export async function assembleSystemPrompt(
   discovery: "find-tools" | "connectors" | false = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT, HOW_YOU_WORK_PROMPT];
-  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
+  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT, USER_FILES_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
   if (discovery !== false) {
     sections.push(discovery === "connectors" ? CONNECTORS_PROMPT : DISCOVERY_BUDGET_PROMPT);
@@ -179,7 +211,19 @@ export async function assembleSystemPrompt(
   const user = userPromptBlock(ctx.user);
   if (user !== undefined) sections.push(user);
 
-  const directions = (await guard.directions(ctx))
+  // The assembler's two waits, started TOGETHER: the guard's directions and the
+  // knowledge index ask different questions of different backends and neither
+  // reads the other, so awaiting them in turn made a turn pay the sum. `Promise.all`
+  // rather than two loose promises because the first rejection must not leave the
+  // other one unhandled — `directions` fails closed, and a host's own resolver may
+  // reject too. The BYTES cannot move: the section order is the `push` order below,
+  // not the order these settle in.
+  const [directionsRead, knowledgeRead] = await Promise.all([
+    guard.directions(ctx),
+    typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge,
+  ]);
+
+  const directions = directionsRead
     .map((direction) => direction.trim())
     .filter(Boolean);
   if (directions.length > 0) {
@@ -195,7 +239,7 @@ export async function assembleSystemPrompt(
   // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
   // venues whose turns go through this assembler with a knowledge-capable
   // surface (chat + app); automation and MCP rely on the tool descriptor.
-  const knowledge = (await (typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge))?.trim();
+  const knowledge = knowledgeRead?.trim();
   if (knowledge && TREE_VENUES.has(ctx.venue)) sections.push(knowledge);
 
   const instructions = system?.instructions?.trim();

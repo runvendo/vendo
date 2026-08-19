@@ -19,6 +19,29 @@ export const AUTH_PRESET_SPECIFIER: Record<AuthPresetName, string> = {
   auth0: "@vendoai/vendo/auth/auth0",
 };
 
+/** The oauth-carrying preset a composition ALREADY on disk wires, or null.
+ *
+ *  Read from the file's own source, because a re-run over an existing
+ *  composition never asks the auth question — so the run's `authWired` is null
+ *  even for a host whose `lib/vendo.ts` says `auth: authJs()`, and the MCP
+ *  planner used to refuse such a host with "wire an auth preset".
+ *
+ *  Both spellings of each preset's subpath (an aliased host is wired too),
+ *  comments stripped like every other source probe here, and the `auth: preset(`
+ *  call has to be there as well — an import on its own is not a wiring. `jwt()`
+ *  and an anonymous composition carry no oauth half, so neither is an answer. */
+export async function composedAuthPreset(compositionPath: string): Promise<AuthPresetName | null> {
+  const source = await readOptional(compositionPath);
+  if (source === null) return null;
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const presets = Object.keys(AUTH_PRESET_SPECIFIER) as AuthPresetName[];
+  return presets.find((preset) => {
+    const subpath = AUTH_PRESET_SPECIFIER[preset].replace("@vendoai/vendo", "");
+    return new RegExp(`["'](?:@vendoai/vendo|vendoai)${subpath}["']`).test(code)
+      && new RegExp(`\\bauth\\s*:\\s*${preset}\\s*\\(`).test(code);
+  }) ?? null;
+}
+
 export interface AuthMatch {
   preset: AuthPresetName;
   dependency: string;
@@ -199,7 +222,7 @@ export async function pickScaffoldAuth(
     return {
       wired: null,
       advice: `Auth: your own JWT — add one line in ${compositionPath}: auth: jwt({ secret: <your signing secret> }). ` +
-        "Options and the claim mapping: https://docs.vendo.run/connect/act-as-presets.",
+        "Options and the claim mapping: https://docs.vendo.run/production/auth.",
     };
   }
   const detectedMatch = detected.find((match) => match.preset === picked);

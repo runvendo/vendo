@@ -1,0 +1,68 @@
+---
+title: "E-MODEL-001"
+sidebarTitle: "E-MODEL-001"
+description: "No model credential resolves, so the agent cannot answer a turn."
+---
+
+# E-MODEL-001
+
+<Warning>
+**what doctor prints** (warning)
+
+model credential: none found — set a model key (ANTHROPIC_API_KEY /
+OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) or VENDO_API_KEY and select it
+in your composition's `models`, or the agent cannot answer
+</Warning>
+
+Every wiring check can pass and the agent can still answer nothing: no model
+credential resolves on this machine.
+
+`check model/credential` · `error_code E-MODEL-001` · `doctor exits 0` (warning only)
+
+## What you're seeing
+
+Doctor resolves the credential through the same ladder the runtime rides, over
+the environment plus `.env` and `.env.local`. Nothing on that ladder won.
+
+## Why
+
+A provider key on its own is a **credential**, not a selection — since the
+selection law, nothing picks a model off the environment. A host with
+`ANTHROPIC_API_KEY` set and no `models` line in its composition lands here, and
+so does a host with no key at all.
+
+This is a warning and never a failure: production keys legitimately live in a
+deploy platform's secret store, which doctor cannot read.
+
+## The fix
+
+Pick either rung.
+
+Your own provider key — put it in `.env.local` and **select the model in your
+composition** (`lib/vendo.ts`):
+
+```ts
+import { anthropic } from "@ai-sdk/anthropic";
+
+export const vendo = createVendo({
+  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key
+  // …
+});
+```
+
+Or a Vendo Cloud key, which needs no `models` line — the gateway resolves the
+family names server-side:
+
+```bash
+vendo login
+```
+
+The minted `VENDO_API_KEY` lands in `.env.local`. Restart your dev server
+afterwards so the app picks the key up.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-CLOUD-001" href="/production/troubleshooting/e-cloud-001">VENDO_API_KEY is set but not usable</Card>
+  <Card title="E-TOOLS-003" href="/production/troubleshooting/e-tools-003">part of the tool catalog is ungraded</Card>
+</CardGroup>

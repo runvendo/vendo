@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, type VendoWiring } from "./framework.js";
+import { composesOwnStore, detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
-import { importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
+import { compositionModulePath, importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
+import { readUseCase } from "./install-record.js";
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
 import { SUPABASE_ENV_GUIDANCE, supabaseServerEnvSatisfied } from "./init-auth.js";
 import type { DoctorRun } from "./doctor-report.js";
@@ -27,16 +28,18 @@ async function hasDependency(root: string): Promise<boolean> {
  *  failed E-WIRE-003/004 forever) — judge the wiring by the same bounded source
  *  scan init uses, never by another framework's file layout. The surface check
  *  in `checkWiring` still runs; it is source-generic. */
-function checkGenericWiring(run: DoctorRun, wiring: VendoWiring): void {
+function checkGenericWiring(run: DoctorRun, wiring: VendoWiring, mountedUi: boolean): void {
   if (wiring.server) run.pass("wiring/server", "createVendo server wiring found");
   else run.fail("wiring/server", "E-WIRE-007", "no createVendo server wiring found — import createVendo from @vendoai/vendo/server and mount vendo.handler on your runtime's request entry");
+  if (!mountedUi) return;
   if (wiring.client) run.pass("wiring/client", "<VendoProvider> wraps the client");
   else run.warn("wiring/client", "E-WIRE-008", "no <VendoProvider> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
 }
 
-function checkExpressWiring(run: DoctorRun, wiring: VendoWiring): void {
+function checkExpressWiring(run: DoctorRun, wiring: VendoWiring, mountedUi: boolean): void {
   if (wiring.server) run.pass("wiring/express-server", "Express server is wired");
   else run.fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
+  if (!mountedUi) return;
   if (wiring.client) run.pass("wiring/express-client", "<VendoProvider> wraps the client");
   else run.fail("wiring/express-client", "E-WIRE-002", "Express client is not wrapped in <VendoProvider>");
 }
@@ -63,7 +66,7 @@ async function checkServerActionsWiring(run: DoctorRun, routePath: string): Prom
   const { root } = run;
   const registrations = await requiredServerActions(root);
   if (registrations.length === 0) return;
-  const { path: compositionPath, source } = await compositionOf(routePath);
+  const { path: compositionPath, source } = await compositionOf(root, routePath);
   const wiring = serverActionsWiring(source);
   if (wiring === "unknown") {
     // No recognizable createVendo({ … }) — the same shape init declines to
@@ -76,7 +79,10 @@ async function checkServerActionsWiring(run: DoctorRun, routePath: string): Prom
     // map to grade against — so doctor says nothing rather than guessing.
     return;
   }
-  const mapPath = join(dirname(routePath), "vendo-actions.ts");
+  // The map sits beside the composition that imports it (`./vendo-actions`),
+  // which is where init writes it — the module for a current install, the route
+  // itself for one that still composes inline.
+  const mapPath = join(dirname(compositionPath), "vendo-actions.ts");
   const map = await readOptional(mapPath);
   const missing = map === null ? registrations : missingRegistrations(map, registrations);
   if (wiring === "wired" && missing.length === 0) {
@@ -94,17 +100,21 @@ async function checkServerActionsWiring(run: DoctorRun, routePath: string): Prom
   }
 }
 
-/** Which file holds this route's `createVendo({ … })`. The MCP path splits the
- *  composition into a sibling `vendo.ts` — a Next.js route module may export
- *  only route handlers, and the origin-root discovery route has to import the
+/** Which file holds this route's `createVendo({ … })`. Init splits it into a
+ *  composition module — a Next.js route module may export only route handlers,
+ *  and the discovery route and the host's own agent loop have to import the
  *  SAME instance — so a thin route.ts is WIRED, not unrecognized. Grading the
- *  thin file instead would go silent on a host that is correctly wired. */
-async function compositionOf(routePath: string): Promise<{ path: string; source: string }> {
+ *  thin file instead would go silent on a host that is correctly wired. Two
+ *  candidates, because both shapes are in the field: `lib/vendo.ts` (what init
+ *  writes) and the route's sibling `vendo.ts` (what earlier MCP installs got). */
+async function compositionOf(root: string, routePath: string): Promise<{ path: string; source: string }> {
   const source = await readFile(routePath, "utf8").catch(() => "");
   if (!importsSplitComposition(source)) return { path: routePath, source };
-  const split = join(dirname(routePath), "vendo.ts");
-  const splitSource = await readOptional(split);
-  return splitSource === null ? { path: routePath, source } : { path: split, source: splitSource };
+  for (const split of [await compositionModulePath(root), join(dirname(routePath), "vendo.ts")]) {
+    const splitSource = await readOptional(split);
+    if (splitSource !== null) return { path: split, source: splitSource };
+  }
+  return { path: routePath, source };
 }
 
 /** The mount may live in ANY layout, not just the root one (i18n/route-group
@@ -142,12 +152,12 @@ async function checkProviderMount(run: DoctorRun): Promise<void> {
   }
 }
 
-async function checkNextWiring(run: DoctorRun): Promise<void> {
+async function checkNextWiring(run: DoctorRun, mountedUi: boolean): Promise<void> {
   const routePath = await nextRoutePath(run.root);
   if (routePath !== null) run.pass("wiring/next-route", "catch-all handler is wired");
   else run.fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
   if (routePath !== null) await checkServerActionsWiring(run, routePath);
-  await checkProviderMount(run);
+  if (mountedUi) await checkProviderMount(run);
 }
 
 /** VendoRoot is gone in this release (spec 2026-08-06 §B2). A host that still
@@ -203,7 +213,7 @@ async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
   if (routePath === null) {
     wiresSupabase = await wiresSupabaseAuth(root);
   } else {
-    const { source } = await compositionOf(routePath);
+    const { source } = await compositionOf(root, routePath);
     wiresSupabase = SUPABASE_PRESET_IMPORT.test(source) || /[^\w.]supabase\s*\(/.test(source);
   }
   if (!wiresSupabase) return;
@@ -215,23 +225,73 @@ async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
   }
 }
 
+/** A tenant's pasted token is vaulted in the store's encrypted secrets, and the
+ *  store keeps a secret encrypted or not at all: in production a keyless write
+ *  is REFUSED (store/secrets.ts's `keyFor`), and in development it lands in the
+ *  clear. So a host that registers tenant connectors with no key ships a feature
+ *  whose every credentialed registration fails the moment it is deployed.
+ *
+ *  Static, like everything else doctor does: a source marker and two env names.
+ *  It never opens the store and never dials a tenant's server — the registration
+ *  rows live in a database doctor deliberately cannot reach (the CLI must not
+ *  pull the store's engine module, checkStorePersistence's note), and connecting
+ *  is `vendo.tenantConnectors.test`'s job, at runtime, where it belongs.
+ *
+ *  Cloud's hosted store holds the key server-side, so a keyed deployment is
+ *  satisfied by the key alone — but ONLY when Cloud is really the store. An
+ *  explicitly passed `createStore()` wins over VENDO_API_KEY (the adapter rule,
+ *  compose-store.ts's `selectStore`), so reading the key as proof of a vault
+ *  greened a deployment whose very next registration was refused. A check that
+ *  passes a broken deployment is worse than no check, so the key only counts
+ *  where nothing else claimed the seam. */
+async function checkTenantConnectorVault(run: DoctorRun): Promise<void> {
+  const { root, env } = run;
+  if (!await wiresTenantConnectors(root)) return;
+  // Deliberately the LOOSER `environment()` predicate composition uses, not the
+  // trimmed one — doctor and runtime must agree on what counts as set.
+  const ownKey = (env.VENDO_STORE_ENCRYPTION_KEY ?? "") !== "";
+  const cloudStore = (env.VENDO_API_KEY ?? "") !== "" && !await composesOwnStore(root);
+  if (ownKey || cloudStore) {
+    run.pass("wiring/tenant-connector-vault",
+      `tenant connector tokens have an encrypted vault to live in (${ownKey ? "VENDO_STORE_ENCRYPTION_KEY" : "the Cloud store"})`);
+    return;
+  }
+  run.warn("wiring/tenant-connector-vault", "E-TENANT-001",
+    "vendo.tenantConnectors is wired, but no store encryption key is set — a tenant's pasted token is stored in the "
+    + "clear in development and REFUSED outright in production, so every registration carrying one fails on deploy. "
+    + "Set VENDO_STORE_ENCRYPTION_KEY to a base64 32-byte key (openssl rand -base64 32)."
+    + ((env.VENDO_API_KEY ?? "") === ""
+      ? " Vendo Cloud's hosted store (VENDO_API_KEY) holds the key server-side instead."
+      : " VENDO_API_KEY does not cover it here: this host passes its own createStore(), and an explicitly passed store wins."));
+}
+
 /** The static half of doctor: is this host wired at all, does anything visible
  *  reach the agent, and is the dependency declared. No network. */
 export async function checkWiring(run: DoctorRun): Promise<void> {
   const { root } = run;
   const framework = await detectFramework(root);
   const wiring = await detectVendoWiring(root);
-  if (framework === "unknown") checkGenericWiring(run, wiring);
-  else if (framework === "express") checkExpressWiring(run, wiring);
-  else await checkNextWiring(run);
+  // The install's own answer to "how will people reach the agent?" (init writes
+  // it to .vendo/install.json). An agent-loop or MCP install mounts no Vendo UI
+  // by design, so grading the provider and the visible surface fails a host
+  // that is correct by construction — the shape that made doctor unusable as a
+  // gate for exactly those two paths. An install with no recorded answer is an
+  // old one: grade it exactly as before.
+  const useCase = await readUseCase(root);
+  const mountedUi = useCase !== "agent-loop" && useCase !== "mcp";
+  if (!mountedUi) {
+    run.pass("wiring/use-case", `use case ${useCase} — the mounted-UI checks (<VendoProvider>, a visible surface) do not apply: this install reaches the agent through ${useCase === "mcp" ? "the MCP door" : "your own agent loop"}`);
+  }
+  if (framework === "unknown") checkGenericWiring(run, wiring, mountedUi);
+  else if (framework === "express") checkExpressWiring(run, wiring, mountedUi);
+  else await checkNextWiring(run, mountedUi);
 
   // Visible surface (0.4.1 E2E cert B3): <VendoProvider> is a context provider
   // that renders NOTHING — two certified stacks ended doctor-green with no
   // way for a user to reach the agent. Green must mean visible.
-  if (wiring.surface) {
-    run.pass("wiring/surface", "a visible agent surface is mounted (<VendoOverlay /> or an equivalent)");
-  } else {
-    run.fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoProvider> renders nothing by itself; add <VendoOverlay /> (the launcher pill + panel) or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
+  if (mountedUi) {
+    if (wiring.surface) run.pass("wiring/surface", "a visible agent surface is mounted (<VendoOverlay /> or an equivalent)");
+    else run.fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoProvider> renders nothing by itself; add <VendoOverlay /> (the launcher pill + panel) or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
   }
 
   await checkLegacyRoot(run, wiring.legacyRoot);
@@ -239,6 +299,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   // when a missing base URL is still cheap to fix.
   await checkMcpBaseUrl(run);
   await checkSupabasePresetEnv(run);
+  await checkTenantConnectorVault(run);
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else run.fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");

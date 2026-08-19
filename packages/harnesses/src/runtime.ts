@@ -73,6 +73,44 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+/** Which phase of a turn a duration belongs to — `agent_run`'s flat breakdown,
+ *  and the whole vocabulary. */
+export type TurnTimingKey = "ttft" | "store" | "prompt" | "tools" | "guard";
+
+/**
+ * ONE turn's measurements, collected by whoever is standing where the time is
+ * spent: composition marks its store reads and its prompt assembly, the runtime
+ * marks the first output and the steps, the guard and the tool bridge mark
+ * theirs. DURATIONS AND COUNTS ONLY — a mark can never carry a prompt, an
+ * argument, or a name.
+ *
+ * `add` accumulates, because tool time and guard time are many calls and one
+ * number each. `elapsed` is ms since the turn began, which is what the
+ * time-to-first-output mark and the run's own `durationMs` are read from.
+ */
+export interface TurnTimings {
+  add(key: TurnTimingKey, ms: number): void;
+  /** One more model call. */
+  step(): void;
+  elapsed(): number;
+  readonly ms: Readonly<Partial<Record<TurnTimingKey, number>>>;
+  readonly steps: number;
+}
+
+/** A collector for the turn starting NOW. */
+export function createTurnTimings(): TurnTimings {
+  const startedAt = Date.now();
+  const ms: Partial<Record<TurnTimingKey, number>> = {};
+  let steps = 0;
+  return {
+    ms,
+    get steps() { return steps; },
+    add: (key, value) => { ms[key] = (ms[key] ?? 0) + value; },
+    step: () => { steps += 1; },
+    elapsed: () => Date.now() - startedAt,
+  };
+}
+
 /** Build contract §6 — lane D's `threadMessageStore(store)` return value. Typed
  *  structurally so this package never imports @vendoai/store: the store handle
  *  arrives as a composed value. */
@@ -144,6 +182,10 @@ export interface HarnessRuntimeDeps {
      */
     steer: (text: string, messageId: string) => Promise<boolean>;
   }) => () => void;
+  /** This turn's measurements ({@link TurnTimings}), for whoever reports them.
+   *  The runtime fills the marks only it can see — the first output on the wire
+   *  and the model calls. Unset, nothing is measured. */
+  timings?: TurnTimings;
   /**
    * Land this turn's three closing writes — the messages it produced, the
    * harness state to carry into the next one, and the run's audit row — in ONE
@@ -260,21 +302,33 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       let carried: string | undefined;
       try {
         before = await deps.transcript.list(input.ctx.principal, input.threadId);
-        // A client-sourced history is not trusted history. The shipped rule
-        // (`validateUpsert`) is the one that decides what a caller may change:
-        // fresh USER messages, and answering a pending approval. Anything else —
-        // an assistant message the client authored, a rewritten past turn — is a
-        // history-forging attempt and must not reach the model or the store.
-        const persisted = [...before];
-        for (const message of input.messages) {
-          validateUpsert(persisted, message);
-          const at = persisted.findIndex((candidate) => candidate.id === message.id);
-          if (at === -1) persisted.push(message);
-          else persisted[at] = message;
+        // The composed path RE-STATES its own transcript: `harness-turn.ts`
+        // answers `list` with the very array it passes as `messages`, having
+        // already applied the upsert rule to the one message the client
+        // contributed. One array cannot differ from itself, so both passes below
+        // are decided before they start — every upsert matches and the history is
+        // an append — and running them spends an O(n) double stringify per turn
+        // proving a tautology. Identity is the whole condition, which is what
+        // keeps the skip provable: any caller whose stored history is a
+        // different array still takes both checks in full.
+        const restated = before === input.messages;
+        if (!restated) {
+          // A client-sourced history is not trusted history. The shipped rule
+          // (`validateUpsert`) is the one that decides what a caller may change:
+          // fresh USER messages, and answering a pending approval. Anything else —
+          // an assistant message the client authored, a rewritten past turn — is a
+          // history-forging attempt and must not reach the model or the store.
+          const persisted = [...before];
+          for (const message of input.messages) {
+            validateUpsert(persisted, message);
+            const at = persisted.findIndex((candidate) => candidate.id === message.id);
+            if (at === -1) persisted.push(message);
+            else persisted[at] = message;
+          }
         }
         // Classified BEFORE our own flip below, or the runtime's housekeeping
         // would read as the user rewriting history and clear the session.
-        if (classifyHistory(before, input.messages) !== "arbitrary-edit") {
+        if (restated || classifyHistory(before, input.messages) !== "arbitrary-edit") {
           carried = await harnessState.get(input.threadId, input.harness.name);
         } else {
           // §1.3: the harness's session no longer describes our conversation.
@@ -411,10 +465,25 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           // here, in the loop, in the guarded-call path — is a map miss.
           const closeWorkbench = openWorkbench(turnId, (part) => writeDebug(writer, part));
           const text = new TextChannel(writer);
+          // The turn's first model call. Every ROUND of tool calls below is one
+          // more: the thinker asks, runs what it asked for, then asks again. A
+          // turn that used no tool still thought once.
+          deps.timings?.step();
+          /** Is the next `call` the start of a new round? True at the turn's
+           *  start (the first call opens one) and again after every result; a
+           *  step's parallel calls are all announced before any of them lands,
+           *  so they stay in the round they belong to. */
+          let newRound = true;
           const mirror = (event: MirrorEvent): void => {
-            // Close the open text part first, so a reply that spans tool calls
-            // renders as prose, tool, prose instead of collapsing into one block.
-            if (event.kind === "call") text.break();
+            if (event.kind === "call") {
+              if (newRound) {
+                newRound = false;
+                deps.timings?.step();
+              }
+              // Close the open text part first, so a reply that spans tool calls
+              // renders as prose, tool, prose instead of collapsing into one block.
+              text.break();
+            } else if (event.kind === "result") newRound = true;
             writeMirror(writer, event);
           };
           const tools = createTurnTools({
@@ -439,6 +508,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               onCall: mergeToolCallHooks(deps.bridge?.onCall, capabilityMiss?.onCall),
               writer,
               connectCards: new Set<string>(),
+              // The same collector the runtime's own marks go into: the bridge
+              // adds the two only it can see (the guard's evaluation, the tool's
+              // run).
+              timings: deps.timings,
             },
             ...(capabilityMiss === undefined ? {} : { capabilityMiss: capabilityMiss.reporter }),
             // §1 amendment 2026-08-03: the harness's own say over the surface —
@@ -540,6 +613,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               }
               switch (event.type) {
                 case "text":
+                  // Time to first output, marked HERE because here is where the
+                  // user's first word reaches the wire. Once per turn: the mark
+                  // is the FIRST one, and `add` would sum the rest.
+                  if (deps.timings?.ms.ttft === undefined) deps.timings?.add("ttft", deps.timings.elapsed());
                   text.delta(event.delta);
                   break;
                 case "status":

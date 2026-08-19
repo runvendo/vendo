@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import * as chrome from "../../src/chrome/index.js";
 
@@ -149,23 +150,31 @@ afterEach(() => {
   for (const path of fixtures.splice(0)) rmSync(path, { force: true });
 });
 
+// AWAITED, never sync: each tsc spawn below takes ~30s, and `execFileSync` spent
+// that time blocking the vitest worker's event loop. birpc hard-codes a 60s RPC
+// timeout (DEFAULT_TIMEOUT = 6e4, no config knob), so two blocking spawns in one
+// worker starved the `onTaskUpdate` heartbeat past it and the whole run exited 1
+// with `Timeout calling "onTaskUpdate"` while all 1370 tests passed. The
+// duration is unchanged — the event loop staying free is the fix.
+const execFileAsync = promisify(execFile);
+
 /** Type-check a fixture that `import type`s `names` from the chrome entry.
  *  Returns tsc's combined output on failure, or null when it exits clean. */
-function typecheckImports(names: string[]): string | null {
+async function typecheckImports(names: string[]): Promise<string | null> {
   const fixturePath = join(packageDir, `.chrome-surface.${process.pid}.${Math.random().toString(36).slice(2)}.ts`);
   fixtures.push(fixturePath);
   writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "./src/chrome/index.js";\n`);
   try {
-    execFileSync(
+    await execFileAsync(
       process.execPath,
       [tsc, fixturePath, "--noEmit", "--strict", "--target", "ES2022", "--module", "ESNext",
         "--moduleResolution", "Bundler", "--skipLibCheck", "--esModuleInterop", "--jsx", "react-jsx"],
-      { cwd: packageDir, stdio: "pipe" },
+      { cwd: packageDir },
     );
     return null;
   } catch (error) {
-    const err = error as { stdout?: Buffer; stderr?: Buffer };
-    return `${err.stdout?.toString() ?? ""}${err.stderr?.toString() ?? ""}`;
+    const err = error as { stdout?: string; stderr?: string };
+    return `${err.stdout ?? ""}${err.stderr ?? ""}`;
   }
 }
 
@@ -180,13 +189,13 @@ describe("@vendoai/ui/chrome export surface", () => {
     expect(Object.keys(chrome).sort()).toEqual([...VALUE_EXPORTS].sort());
   });
 
-  it("re-exports every chrome type from the source entry", () => {
-    const failure = typecheckImports(TYPE_EXPORTS);
+  it("re-exports every chrome type from the source entry", async () => {
+    const failure = await typecheckImports(TYPE_EXPORTS);
     expect(failure, failure ?? "").toBeNull();
   }, 120_000);
 
-  it("has teeth: a missing type re-export fails the tsc gate with TS2305", () => {
-    const failure = typecheckImports(["__DefinitelyNotAChromeExport"]);
+  it("has teeth: a missing type re-export fails the tsc gate with TS2305", async () => {
+    const failure = await typecheckImports(["__DefinitelyNotAChromeExport"]);
     expect(failure).not.toBeNull();
     expect(failure).toContain("TS2305");
   }, 120_000);

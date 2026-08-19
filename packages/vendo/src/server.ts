@@ -44,6 +44,7 @@ import {
   type WireDeps,
 } from "./wire/shared.js";
 import { slotRoutes } from "./wire/slots.js";
+import { fileRoutes } from "./wire/files.js";
 import { threadRoutes } from "./wire/threads.js";
 
 // 09-vendo §2 — the composition's own type surface, re-exported from the entry
@@ -147,6 +148,16 @@ export { chainSecrets, cloudSecrets, type CloudSecretsOptions } from "./cloud-se
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
 
+// The BYO connectors a host passes to createVendo({ connectors }), named from
+// here so bringing an MCP server or a third-party REST API in is one import
+// from the umbrella — no direct @vendoai/actions dependency.
+export {
+  mcpConnector,
+  openApiConnector,
+  type ConnectorAuthContext,
+  type ConnectorHeadersResolver,
+} from "@vendoai/actions";
+
 // The config resolution seam: per surface, a value passed in code → the local
 // `.vendo/<name>` file → unset. Nothing remote participates.
 export {
@@ -228,7 +239,11 @@ function jsonMutationRequired(request: Request, path: string): boolean {
   // no ambient credentials, curl-able from any language inside the box — so
   // the CSRF json gate doesn't apply; JSON-bodied box routes validate their
   // own content-type like the webhook surface does.
-  if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
+  // `/files` carries the dropped file's own bytes under its own media type, so
+  // it cannot be JSON either. It does NOT get the media-type toll `/apps/import`
+  // pays — an upload's Content-Type is the file's own, and `text/plain` is
+  // CORS-safelisted — so it requires the UPLOAD_HEADER instead (wire/files.ts).
+  if (path === "/apps/import" || path === "/files" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
   return true;
 }
 
@@ -268,6 +283,9 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   // /apps/:id/fn/:name resolves here, not through the grouped fall-through.
   ...boxRoutes,
   ...threadRoutes,
+  // The drop door sits beside the turns it feeds: a file is saved first, and
+  // the message that follows carries only where it landed.
+  ...fileRoutes,
   ...approvalRoutes,
   ...connectionRoutes,
   // The text channel: the link surface a person opens, Vendo Cloud's inbound

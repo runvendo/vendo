@@ -1,5 +1,120 @@
 # @vendoai/actions
 
+## 0.29.0
+
+### Minor Changes
+
+- 6bc5cc8: Any REST API with a spec becomes agent tools. `openApiConnector({ spec, baseUrl,
+headers, name })` takes an OpenAPI document — JSON or YAML text, or an
+  already-parsed object — and hands the agent one guarded tool per operation,
+  named `openapi_<name>_<operationId>`.
+
+  It brings nothing new to do it. The document goes through the SAME extractor
+  `vendo sync` runs over a spec in your repo, so path parameters, query
+  parameters, the JSON request body and the declared response schema arrive
+  exactly as they would from `.vendo/tools.json` — and risk comes from the method,
+  `DELETE` destructive and everything else `ungraded` until something authorized
+  grades it. The call then executes through the SAME HTTP dispatch a host tool
+  executes through. A spec behaves identically whichever door it comes in, which
+  is the point: there is no second code path to keep in step.
+
+  `spec` is the document, never a path and never a URL. Reading and fetching stay
+  the caller's business, so the connector works on every runtime and no argument
+  of it can be steered into a request.
+
+  Two factorings paid for that sharing, and together they delete far more than
+  they add. `extractOpenApi`'s document half is the pure `openapi-document.ts`
+  now, with `sync/openapi.ts` keeping node:fs and the spec-file entry points — the
+  connector could not import from `sync/`, whose graph carries the TypeScript
+  compiler the portability gate forbids in a Worker bundle outright. And
+  `registry.ts`'s HTTP leg — argument binding, path substitution, the tRPC
+  envelope, the fetch, the JSON envelope — is `runtime/http-dispatch.ts`, used by
+  the registry and the connector both.
+
+  `headers` takes static headers or a per-call resolver, the shape `mcpConnector`
+  already had. That resolver's context was never MCP's, so it is
+  `ConnectorAuthContext` now; `McpAuthContext` and `McpHeadersResolver` keep
+  working as deprecated aliases of the connector-wide names.
+
+  Both connectors are exported from `@vendoai/vendo/server` — and so from
+  `vendoai/server` — so bringing an outside API in is one import from the
+  umbrella, and both are documented at `/capabilities/connectors`, which is
+  `mcpConnector`'s first page.
+
+### Patch Changes
+
+- 1dce317: Route extraction recognises Vendo's own backend library as an agent loop.
+
+  The exclusion that keeps a host's agent endpoint out of the callable catalog knew
+  every OTHER framework — `ai`, `@ai-sdk/*`, `@mastra/*`, the umbrella's own
+  ai-sdk and mastra entries — and missed `@vendoai/agents`. Its call marker was
+  anchored on the literal receiver `vendo.respond(`, which nobody writes when their
+  agent is called `support`. So a route running `agent()` or `support.respond(…)`
+  became a callable tool and was handed back to the agent hosted in it.
+
+  `@vendoai/agents` joins the recognised imports, and `.respond(` / `.run(` now
+  match on any receiver. The escape hatch is unchanged: the tool is emitted
+  `disabled: true` with the reason on it, and one `"disabled": false` in
+  `.vendo/overrides.json` puts it back. The predicate is exported so `vendo init`
+  can recommend the agent-loop use case off the same evidence rather than a second
+  copy of the regex.
+
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [ebf101a]
+- Updated dependencies [0484a15]
+- Updated dependencies [df0b4cb]
+- Updated dependencies [7e78031]
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [f06b033]
+  - @vendoai/core@0.29.0
+  - @vendoai/apps@0.29.0
+
+## 0.28.0
+
+### Patch Changes
+
+- b9392b9: Security: a route tool argument of `.` or `..` can no longer climb above the
+  tool's declared path. `withPathArgs` substituted call args with
+  `encodeURIComponent`, which leaves dot-segments intact (and the array branch
+  joins with a raw `/`), so an arg like `id: ".."` or `id: ["..","..","admin"]`
+  resolved through `new URL` to escape the route (e.g. `/users/{id}` → `/admin`).
+  Args are never validated against `inputSchema` and are steerable by end-user
+  chat, so each substituted segment is now rejected with a `validation` error
+  before any request is made (#988).
+- c2805b4: The agent is not one of its own tools. Route extraction was cataloging the
+  endpoints that RUN the agent — the host's own `/api/chat` loop, a Vendo wire
+  mount branded onto the host's own path, Auth.js's sign-in catch-all — so a
+  synced host handed the model a tool that calls the model, a catch-all whose
+  blast radius is everything Vendo exposes, and a callable `host_auth_create`.
+
+  Vendo's own wire mount is now recognized by the `nextVendoHandler(` call, not
+  only by the `/api/vendo` path convention, so a host that mounted the handler
+  somewhere else no longer ships a live catch-all onto Vendo itself. It yields no
+  tool, exactly as before — but the drop is no longer silent: sync prints a line
+  naming the route.
+
+  Routes the HOST owns are treated differently, because the reading can be wrong.
+  A handler that runs a model loop (`ai`, `@anthropic-ai/sdk`, `@ai-sdk/*`,
+  `@mastra/*`, `@vendoai/vendo/ai-sdk`, `/mastra`, or a `streamText` /
+  `generateText` / `vendoTools` / `vendo.respond` call) and an authentication
+  handler (`[...nextauth]`, `next-auth`, `@auth/core`, `NextAuth(`) still produce
+  their tools — with their real bindings and risk, `disabled: true`, and the
+  reason on the tool. Sync prints one line per excluded route naming the route,
+  the reason, and the way back: set that tool's `"disabled": false` in
+  `.vendo/overrides.json` and it is callable again. No new flag, no new question.
+
+  Markers are read from every module the verb walk already reads, so the
+  `export { GET, POST } from "@/auth"` shape Auth.js's own docs scaffold is caught
+  with the rest. Ordinary CRUD routes are untouched, including one that imports a
+  type from `@vendoai/vendo/server`.
+
+- Updated dependencies [650e5eb]
+- Updated dependencies [0143c4e]
+- Updated dependencies [62c8630]
+- Updated dependencies [0143c4e]
+  - @vendoai/core@0.28.0
+  - @vendoai/apps@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes

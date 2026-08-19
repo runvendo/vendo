@@ -56,6 +56,10 @@ export interface VendoModelOptions {
    *  `vendo-judge` → judge, `vendo-extract` → extract, anything else → agent);
    *  createVendo passes it explicitly when composing internal slots. */
   slot?: VendoModelSlot;
+  /** The `fetch` the resolved provider dials with. Unset leaves the provider
+   *  on its own default; createVendo passes the keep-alive pool, so a turn's
+   *  inference does not re-handshake the gateway after every idle gap. */
+  fetch?: typeof fetch;
 }
 
 interface LanguageModelV3Like {
@@ -263,6 +267,7 @@ export class DevModelController {
   private readonly importModule: (root: string, specifier: string) => Promise<Record<string, unknown>>;
   private readonly slot: VendoModelSlot;
   private readonly name: string | undefined;
+  private readonly fetch: typeof fetch | undefined;
   private resolution: Promise<Resolution> | null = null;
   private announced = false;
   /** Per-instance slot config bound by createVendo (bindVendoModelSlots). */
@@ -274,6 +279,7 @@ export class DevModelController {
     this.importModule = options.importModule ?? importHostModule;
     this.name = nonBlank(options.name);
     this.slot = options.slot ?? inferSlot(this.name);
+    this.fetch = options.fetch;
   }
 
   /** Bind createVendo's `models` slot config to THIS instance (see
@@ -355,10 +361,12 @@ export class DevModelController {
       return { mode: "unavailable", message };
     }
     const factory = loaded[spec.factory] as (
-      config: { apiKey: string; baseURL?: string },
+      config: { apiKey: string; baseURL?: string; fetch?: typeof fetch },
     ) => (model: string) => LanguageModelV3Like;
     const modelId = this.modelId(spec);
-    const model = factory(config)(modelId);
+    // Omitted when unset, never passed as undefined: an ai-SDK provider that
+    // is handed no `fetch` uses its own, which is where every caller started.
+    const model = factory(this.fetch === undefined ? config : { ...config, fetch: this.fetch })(modelId);
     this.announce(`${describeDevCredential(credential)} → ${modelId}${announceSuffix}`);
     return { mode: "delegate", model, credential };
   }

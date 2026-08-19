@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOCTOR_ERROR_CODES, VERIFY_URL, doctorErrorCodes, doctorFixRef } from "../../src/cli/doctor-codes.js";
+import { DOCTOR_ERROR_CODES, TROUBLESHOOTING_URL, doctorErrorCodes, doctorFixRef } from "../../src/cli/doctor-codes.js";
 import { CLI_VERSION } from "../../src/cli/shared.js";
 
 describe("doctor error-code registry", () => {
@@ -56,8 +56,10 @@ describe("doctor error-code registry", () => {
         "E-MCP-007": "the local MCP registry auth challenge is malformed",
         "E-MCP-008": "RETIRED — doctor no longer fetches the live registry auth challenge",
         "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
+        "E-MODEL-001": "no model credential resolves (the wire is wired, but the agent cannot answer a single turn)",
         "E-SCHED-001": "RETIRED — doctor no longer reads machines and schedules off a running app",
         "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
+        "E-TENANT-001": "tenant connectors are wired but the store has no encryption key, so a tenant's pasted token has nowhere safe to live",
         "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
         "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
         "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
@@ -81,15 +83,17 @@ describe("doctor error-code registry", () => {
     `);
   });
 
-  it("builds a URL-valid fix_ref with the version param before the fragment", () => {
+  it("builds a URL-valid fix_ref that lands on the code's own page", () => {
     const ref = doctorFixRef("E-AUTH-001", "1.2.3");
-    // docs.vendo.run serves the verify playbook directly; the marketing-site
-    // path 302s (FINDINGS F7a) and some agents refuse to follow the hop.
-    expect(ref).toBe("https://docs.vendo.run/agents/verify?v=1.2.3#E-AUTH-001");
+    // docs.vendo.run serves the troubleshooting pages directly; the
+    // marketing-site path 302s (FINDINGS F7a) and some agents refuse the hop.
+    // The code is in the PATH, not a fragment — a fragment never reaches the
+    // server, so it could not select a page.
+    expect(ref).toBe("https://docs.vendo.run/production/troubleshooting/e-auth-001?v=1.2.3");
     const url = new URL(ref);
     expect(url.searchParams.get("v")).toBe("1.2.3");
-    expect(url.hash).toBe("#E-AUTH-001");
-    expect(`${url.origin}${url.pathname}`).toBe(VERIFY_URL);
+    expect(url.hash).toBe("");
+    expect(`${url.origin}${url.pathname}`).toBe(`${TROUBLESHOOTING_URL}/e-auth-001`);
   });
 
   it("defaults the version param to the installed CLI version", () => {

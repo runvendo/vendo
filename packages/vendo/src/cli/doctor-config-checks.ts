@@ -5,6 +5,7 @@ import { applyJudgment, disabledReason, judgmentsFileSchema, overridesFileSchema
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
+import { UPLOAD_MAX_BYTES } from "../wire/files.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
@@ -107,6 +108,20 @@ export async function checkStorePersistence(run: DoctorRun): Promise<void> {
     + "or pass url: \"postgres://…\" to createVendo");
 }
 
+/** The drop door's own line on the itinerary: a deployment now has a place a
+ *  user's files LIVE, and the two facts an operator needs about it are what
+ *  bounds one upload and where the bytes end up. Both are readable without
+ *  touching the deployment — doctor makes no requests — because the cap is a
+ *  constant and the store is chosen by the same key `checkStorePersistence`
+ *  reads. A wired `files:` adapter is invisible from here for the reason stated
+ *  there: no doctor check can see a programmatic override, and the boot block's
+ *  own `files` row names it at runtime. */
+export async function checkUserFiles(run: DoctorRun): Promise<void> {
+  const backing = (run.env.VENDO_API_KEY ?? "") !== "" ? "the Cloud store" : "this deployment's store";
+  run.pass("files/drawer",
+    `chat uploads land in each user's own files, at most ${UPLOAD_MAX_BYTES} bytes each, kept in ${backing}`);
+}
+
 /** Spec 2026-08-06 §B1 — the deployment's path prefix has exactly one home:
  *  VENDO_BASE_URL. A spec that declares a DIFFERENT relative server mount is the
  *  #914 shape by another route: every page renders and every tool call 404s.
@@ -164,7 +179,15 @@ export async function checkModelResolution(run: DoctorRun): Promise<void> {
   if (modelCredential.rung !== "none") {
     run.pass("model/credential", `model credential: ${describeDevCredential(modelCredential)}`);
   } else {
-    run.note("model credential: none found — set a model key or VENDO_API_KEY, or the agent cannot answer");
+    // A WARNING, not a note: an install with no model answers nothing, and an
+    // invisible line (notes are suppressed under --json) is how an agent
+    // reported a green doctor on a host that could not take a single turn.
+    // Not a failure either — production keys legitimately live outside the
+    // files doctor reads — so doctor still exits 0.
+    run.warn("model/credential", "E-MODEL-001",
+      "model credential: none found — set a model key (ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+      + "GOOGLE_GENERATIVE_AI_API_KEY) or VENDO_API_KEY and select it in your composition's `models`, "
+      + "or the agent cannot answer");
   }
   const activePins = Object.values(SLOT_PIN_ENV)
     .map((name) => ({ name, value: env[name]?.trim() }))
@@ -233,7 +256,9 @@ function checkSchemaCoverage(run: DoctorRun, tools: ExtractedTool[]): void {
       "tools/schemas",
       "E-TOOLS-004",
       `catalog: ${coverage} — blind: ${blind.slice(0, 8).join(", ")}${blind.length > 8 ? ` +${blind.length - 8} more` : ""};`
-      + " declare them in your OpenAPI/tRPC contract, or run `vendo sync` with a model key so the judge reads the handlers",
+      // `--ai`, not the bare command: doctor's audience is largely agents and
+      // CI, and there the judgment pass skips itself unless the flag says so.
+      + " declare them in your OpenAPI/tRPC contract, or run `vendo sync --ai` with a model key so the judge reads the handlers",
     );
   } else if (total > 0) {
     run.pass("tools/schemas", `catalog: ${coverage}`);
@@ -270,7 +295,7 @@ export async function checkToolCatalog(run: DoctorRun): Promise<void> {
       run.pass("tools/live-surface", `${live} live host tool${live === 1 ? "" : "s"}`);
     }
     if (ungraded > 0) {
-      run.warn("tools/graded", "E-TOOLS-003", `catalog: ${ungraded}/${toolsFile.tools.length} tools ungraded — each one asks on every call; run \`vendo sync\` with a model key to grade`);
+      run.warn("tools/graded", "E-TOOLS-003", `catalog: ${ungraded}/${toolsFile.tools.length} tools ungraded — each one asks on every call; run \`vendo sync --ai\` with a model key to grade`);
     } else {
       run.pass("tools/graded", `catalog: all ${toolsFile.tools.length} tools graded`);
     }

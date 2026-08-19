@@ -3,9 +3,9 @@
  * The centered overlay modal is a fine conversation surface but a cramped one
  * for microapps: the generated view competes with the transcript inside one
  * ~620px column. Expanding animates the modal into a near-fullscreen
- * workspace — the FEATURED microapp renders large in a left stage (~2/3
- * width) while the conversation docks as a right-hand rail (~1/3, min
- * 360px) with the composer at its bottom. Collapse animates back; the
+ * workspace — the conversation docks as a left-hand rail (~1/3, min 360px)
+ * with the composer at its bottom while the FEATURED microapp renders large
+ * in a right stage (~2/3 width). Collapse animates back; the
  * conversation NEVER remounts across the flip (same rule as close/reopen —
  * the DOM hierarchy around the thread is identical in both states, only CSS
  * changes).
@@ -182,7 +182,7 @@ export interface MorphRect {
 /** MUST mirror the chrome-css split-view constants — update together:
  *  `.fl-overlay-panel[data-vendo-expanded] { width: min(1500px, 96vw);
  *  height: min(940px, 94vh); }` (centered fixed panel, 1px border) and
- *  `.fl-split-rail { flex-basis: max(360px, 33.5%); }`. */
+ *  `--vendo-rail-w: max(360px, 33.5%);`. */
 const EXPANDED = {
   panelMaxW: 1500,
   panelVw: 0.96,
@@ -197,7 +197,8 @@ const EXPANDED = {
  *  target rect for the embed's FLIP ghost. Computed (not measured) because a
  *  CSS transition interpolates: at flight time the DOM still reports the
  *  compact layout, and suppressing the transitions to measure would kill the
- *  panel spring the ghost rides alongside. */
+ *  panel spring the ghost rides alongside. The stage is the RIGHT pane, so
+ *  its left edge sits past the rail. */
 export function expandedStageRect(viewport: { width: number; height: number }): MorphRect {
   const panelWidth = Math.min(EXPANDED.panelMaxW, viewport.width * EXPANDED.panelVw);
   const panelHeight = Math.min(EXPANDED.panelMaxH, viewport.height * EXPANDED.panelVh);
@@ -205,7 +206,7 @@ export function expandedStageRect(viewport: { width: number; height: number }): 
   const railWidth = Math.max(EXPANDED.railMin, contentWidth * EXPANDED.railFraction);
   return {
     top: (viewport.height - panelHeight) / 2 + EXPANDED.border,
-    left: (viewport.width - panelWidth) / 2 + EXPANDED.border,
+    left: (viewport.width - panelWidth) / 2 + EXPANDED.border + railWidth,
     width: contentWidth - railWidth,
     height: panelHeight - 2 * EXPANDED.border,
   };

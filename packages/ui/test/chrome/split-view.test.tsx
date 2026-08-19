@@ -111,22 +111,24 @@ describe("splitViewReducer (state machine)", () => {
 
   it("expandedStageRect mirrors the chrome-css split-view constants (the FLIP ghost's target)", async () => {
     // 1440×1100 viewport: panel = min(1500, .96·1440)=1382.4 × min(940, .94·1100)=940,
-    // centered; rail = max(360, .335·(1382.4−2)); stage pane = the rest inside the border.
+    // centered; rail = max(360, .335·(1382.4−2)) on the LEFT; stage pane = the
+    // rest inside the border, starting past the rail.
     const rect = expandedStageRect({ width: 1440, height: 1100 });
     const panelW = Math.min(1500, 1440 * 0.96);
     const panelH = Math.min(940, 1100 * 0.94);
     const rail = Math.max(360, (panelW - 2) * 0.335);
-    expect(rect.left).toBeCloseTo((1440 - panelW) / 2 + 1, 5);
+    expect(rect.left).toBeCloseTo((1440 - panelW) / 2 + 1 + rail, 5);
     expect(rect.top).toBeCloseTo((1100 - panelH) / 2 + 1, 5);
     expect(rect.width).toBeCloseTo(panelW - 2 - rail, 5);
     expect(rect.height).toBeCloseTo(panelH - 2, 5);
     // Small viewport: the 360px rail floor holds.
     const small = expandedStageRect({ width: 900, height: 700 });
     expect(small.width).toBeCloseTo(900 * 0.96 - 2 - 360, 5);
+    expect(small.left).toBeCloseTo((900 - 900 * 0.96) / 2 + 1 + 360, 5);
     // And the constants the math mirrors are still the ones the stylesheet ships.
     const { CHROME_CSS } = await import("../../src/chrome/chrome-css.js");
     expect(CHROME_CSS).toContain("width: min(1500px, 96vw); height: min(940px, 94vh);");
-    expect(CHROME_CSS).toContain("flex-basis: max(360px, 33.5%);");
+    expect(CHROME_CSS).toContain("--vendo-rail-w: max(360px, 33.5%);");
   });
 
   it("the plan hint's auto-stage shot is recorded ONCE per BUILD, open or not (G1)", () => {

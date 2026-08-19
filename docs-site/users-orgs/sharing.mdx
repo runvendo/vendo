@@ -1,0 +1,167 @@
+---
+title: "Sharing"
+sidebarTitle: "Sharing"
+description: "Give one person, one team, or a whole org access to an app — a grant row written from your own server code, matched against the memberships your host asserted."
+---
+
+<Note>
+  Sharing is a **server-side call** today. There is no HTTP route, no MCP tool,
+  and no CLI command for it — the Share dialog that used to front it was removed,
+  and the grant seam it wrote through stayed. You mount your own UI, or share from
+  your own backend logic.
+</Note>
+
+## A share is a grant
+
+One row: who may reach an app, and how far.
+
+| Level | What it allows |
+| --- | --- |
+| `viewer` | Open and run the app |
+| `editor` | Change it |
+| `owner` | Everything, including sharing it further |
+
+They are ranked, `viewer` < `editor` < `owner`, so a check for `editor` is
+satisfied by an owner.
+
+---
+
+## The three principals
+
+The "who" is a string, and there are exactly three shapes:
+
+| Principal | Matches |
+| --- | --- |
+| `user:<subject>` | That one person, by the subject your resolver minted |
+| `team:<orgId>/<teamId>` | A member whose asserted `teams` includes that id |
+| `org:<orgId>` | Any member of that org |
+
+`user:` is compared against the caller's subject. `team:` and `org:` are matched
+only against the memberships [your host asserted](/users-orgs/orgs-and-memberships)
+on that request — Vendo consults no org chart of its own.
+
+So one `org:` row covers everybody in the org, today and after the next hire, with
+no fan-out and nothing to re-run when your roster changes. Take someone out of the
+org in your own tables and the row stops matching them on their next request.
+
+---
+
+## Granting from your own code
+
+`appAccess` ships on `@vendoai/store`, which a host installs directly — it is not
+re-exported by the umbrella.
+
+```bash
+npm install @vendoai/store
+```
+
+```ts app/api/share/route.ts highlight={5}
+import { appAccess } from "@vendoai/store";
+
+const access = appAccess(vendo.store);
+
+await access.grant(ctx, appId, "org:acme", "viewer");
+```
+
+`ctx` is the `RunContext` of the person doing the sharing, and only an `owner` may
+grant or revoke. A caller who holds viewer or editor is told they need owner; a
+caller who cannot see the app at all gets not-found instead, which is the same
+answer a nonexistent app gives.
+
+Two refusals are worth knowing before you build a share UI, because both are about
+where the app lives rather than who you named:
+
+- **An `org:` or `team:` grant naming a different org than the app's** is refused.
+  Move the app into that org first.
+- **A still-personal app shared with anyone but its holder** is refused. Move it
+  into a team first, or fork a copy for them.
+
+A principal string that does not parse is refused too, naming the three shapes.
+
+---
+
+## Reading access back
+
+```ts highlight={1,2}
+const level = await access.levelFor(ctx, appId);   // "viewer" | "editor" | "owner" | null
+const allowed = await access.can(ctx, "editor", { app: appId });
+const rows = await access.list(ctx, appId);        // needs viewer
+```
+
+When a caller matches several grants, **the strongest one wins** — a personal
+viewer row plus a team editor row is editor.
+
+`can` also answers for a workspace path, `{ path }`, which is how the
+[org workspace](/users-orgs/org-workspace) defers to an app's grants inside that
+app's subtree.
+
+---
+
+## The admin shortcut
+
+A member you asserted with `admin: true` reads as **owner of every app that org
+holds**, with no grant row at all.
+
+That is what makes an org's apps administrable without Vendo keeping a role system
+of its own: you already know who your admins are, and you say so per request.
+
+Membership alone is not access. An ordinary member of the org reaches an org-held
+app only through a grant.
+
+---
+
+## Revoking
+
+```ts
+await access.revoke(ctx, appId, "org:acme");
+```
+
+The row is deleted outright — no tombstone. Granting a principal that already has
+a row updates that row in place instead of adding a second one, so a downgrade is
+a real downgrade.
+
+The other way to revoke is to change nothing here at all: drop the person from the
+org in your own tables and the `org:` row stops matching them on their next
+request.
+
+Access is re-checked at commit time against live rows, so a revoke lands mid-session
+rather than at the next sign-in.
+
+---
+
+## Not this: `share` and `publish`
+
+`AppsRuntime.share` and `AppsRuntime.publish` are a **different verb**, and the
+names invite exactly the wrong reach.
+
+| | What it does |
+| --- | --- |
+| `appAccess(...).grant` | Gives a principal access to **the live app**, in your deployment |
+| `AppsRuntime.share` | Sends a **frozen copy** of the document to Vendo Cloud and returns a snapshot |
+| `AppsRuntime.publish` | Sends a copy to the Cloud **registry** as a published version |
+
+Both copy-outs require an owner and a `VENDO_API_KEY`, and both refuse with
+cloud-required without one. Neither writes a grant, names a principal, or consults
+a membership.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Orgs & memberships" href="/users-orgs/orgs-and-memberships">
+    The asserted array every `team:` and `org:` grant is matched against.
+
+    `memberships`
+  </Card>
+  <Card title="The org workspace" href="/users-orgs/org-workspace">
+    Where an org's apps live, and the subtree that defers to these grants.
+
+    `/orgs/<orgId>/apps/…`
+  </Card>
+  <Card title="Erasing a user" href="/users-orgs/erasing-a-user">
+    What happens to a leaver's grants, and to the ones they wrote.
+
+    `bySubject`
+  </Card>
+</CardGroup>

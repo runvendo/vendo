@@ -9,6 +9,7 @@ import type { ConsentAccess } from "./consent.js";
 import type { EngineBase } from "./engine-context.js";
 import type { GrantsAccess } from "./grants.js";
 import type { AutomationsEngine, RunPlan } from "./index.js";
+import { powerTitles } from "./messages.js";
 import { currentIntentHash, declaredSurface, markSponsored, writeSponsorship } from "./sponsorship.js";
 import { evaluate, stepArgs, validateForEachItems } from "./steps.js";
 
@@ -20,14 +21,17 @@ export type ArmingSurfaceDeps = {
 };
 
 /** 07 §3's arm/disarm pair. */
-const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enable" | "disable"> => {
+const createArmDoors = (
+  deps: ArmingSurfaceDeps,
+): Pick<AutomationsEngine, "enable" | "disable" | "armingPowers"> => {
   const { base: { engine, iso }, automations, grants, consent } = deps;
-  const enable: AutomationsEngine["enable"] = async (automationId, ctx) => {
+  const enable: AutomationsEngine["enable"] = async (automationId, ctx, options) => {
     const found = await automations.owned(automationId, ctx);
     const { missing, grantSetId } = await consent.captureGrants(
       found.row,
       await grants.descriptors(ctx),
       ctx,
+      options?.armedBy,
     );
     // §9.9 — enabling is what names the sponsor: the person arming an automation
     // is the person it runs as, bound to the intent they just saw. A re-enable
@@ -66,7 +70,13 @@ const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enabl
     await automations.write({ ...found.row, armed: false, disarmedBy: "user", updatedAt: iso() });
   };
 
-  return { enable, disable };
+  /** 07 §3 — the powers an arming would hold, named for a person, before any
+   *  record exists to read them off. Titles, never identifiers (design §3's voice
+   *  law): the whole point is that a surface renders them verbatim. */
+  const armingPowers: AutomationsEngine["armingPowers"] = async (ctx) =>
+    powerTitles(await consent.goalArmingPowers(await grants.descriptors(ctx), ctx));
+
+  return { enable, disable, armingPowers };
 };
 
 /** Preview: what a record would run, nothing executes. */
@@ -135,5 +145,5 @@ const createDryRunDoor = (
 
 export const createArmingSurface = (
   deps: ArmingSurfaceDeps,
-): Pick<AutomationsEngine, "enable" | "disable" | "dryRun"> =>
+): Pick<AutomationsEngine, "enable" | "disable" | "dryRun" | "armingPowers"> =>
   ({ ...createArmDoors(deps), ...createDryRunDoor(deps) });

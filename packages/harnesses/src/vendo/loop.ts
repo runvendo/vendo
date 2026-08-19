@@ -597,12 +597,23 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   /** The step the loop is on and when it began — the workbench's only state. */
   let step = 0;
   let stepStartedAt = Date.now();
+  const { activeTools } = options;
+  // What the model may pick this turn, read ONCE: the prompt about to be built
+  // and the call about to be made have to agree about the same moment, and
+  // `prepareStep` re-reads it per step for the steps after this one anyway.
+  const active = activeTools?.();
   const { messages: modelMessages, compacted } = await turnModelMessages({
     messages: options.messages,
     system: options.system,
-    // The live toolset, because the trigger has to count what the prompt
-    // actually carries and the tools block is most of it on a curated surface.
-    tools: options.tools,
+    // The tools the prompt actually CARRIES, because the trigger has to count
+    // what is sent and the tools block is most of it on a curated surface. That
+    // is the ACTIVE set, not the equipped one: `activeTools` is what reaches the
+    // provider, so a tool the loadout withholds costs the window nothing.
+    // Billing the whole catalog charged a curated surface for tools it never
+    // sent, and the shed floor was then handed a figure the prompt never reached.
+    tools: active === undefined
+      ? options.tools
+      : Object.fromEntries(Object.entries(options.tools).filter(([name]) => active.includes(name))),
     historyWindow: options.context?.historyWindow,
     tokenBudget: options.context?.contextTokenBudget,
     ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
@@ -611,7 +622,6 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     workbench: debug,
   });
-  const { activeTools } = options;
   const result = streamText({
     model: turnModel(options),
     messages: modelMessages,
@@ -625,7 +635,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     // equips mid-turn (e.g. via vendo()'s `find_tools` hand) becomes choosable
     // on the very next step. This gates the model's CHOICE only — every tool
     // still executes through the guard-bound registry; there is no unguarded path.
-    ...(activeTools === undefined ? {} : { activeTools: activeTools() }),
+    ...(active === undefined ? {} : { activeTools: active }),
     // One hook, two rails. `prepareStep` used to be built only when a loadout
     // existed, which is why a step's growing tool results were never cached —
     // the turn with the most to cache had no hook at all. It is returned on

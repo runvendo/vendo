@@ -20,10 +20,22 @@ export type VendoUsageEvent =
    *  itself. */
   | { name: "deployment_boot"; adapters: string[]; blocks: string[]; framework: string | null }
   /** One agent turn ended. `tools` are NAMES; `modelFamily` is the model id the
-   *  thinking seat resolved to, never a key or a URL. */
+   *  thinking seat resolved to, never a key or a URL.
+   *
+   * The breakdown is DURATIONS, and durations are the whole of it: `ttftMs` is
+   * how long the person waited for the first word, and the five phase marks say
+   * where the turn's wall time went — never what was read, prompted, thought,
+   * called or judged. `modelMs` is what the other four leave over, so the split
+   * always adds up to `durationMs`. */
   | {
       name: "agent_run";
       durationMs: number;
+      ttftMs: number;
+      storeMs: number;
+      promptMs: number;
+      modelMs: number;
+      toolsMs: number;
+      guardMs: number;
       steps: number;
       toolCalls: number;
       tools: string[];

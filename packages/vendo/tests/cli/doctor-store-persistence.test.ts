@@ -43,7 +43,9 @@ describe("store/persistence (E-STORE-001)", () => {
     const check = doctor.checks.find((candidate) => candidate.id === "store/persistence");
     expect(check?.status).toBe("warning");
     expect(check?.error_code).toBe("E-STORE-001");
-    expect(check?.fix_ref).toContain("#E-STORE-001");
+    // The code is in the PATH, not a fragment: a fragment never reaches the
+    // server, so it could not select the code's own page.
+    expect(check?.fix_ref).toContain("/production/troubleshooting/e-store-001");
     expect(check?.message).toContain(join(root, ".vendo", "data"));
     expect(check?.message).toContain("wipes it on every redeploy");
     expect(doctor.failures).toBe(0); // ephemeral disk is a warning, never a block

@@ -55,6 +55,9 @@ describe("display bricks", () => {
       transform: "translateX(4px)",
     });
     expect(safeStyle(undefined)).toBeUndefined();
+    // The wire is Json, so a node can carry `"style": null` — and the door reads
+    // every node's style now, not just a brick's.
+    expect(safeStyle(null)).toBeUndefined();
   });
 
   it("drops the fetch-capable properties whatever their value", () => {
@@ -83,6 +86,27 @@ describe("display bricks", () => {
     // the value passes through and the box, not a string scan, holds it in.
     expect(safeStyle({ position: "fixed" })).toEqual({ position: "fixed" });
     expect(safeStyle({ position: "relative" })).toEqual({ position: "relative" });
+  });
+
+  it("filters a Kit component's style through the same allowlist", () => {
+    // A Kit root MERGES the model's `style` onto its own, so an unfiltered one
+    // smuggles through `Card` exactly what a `<div>` may not paint.
+    render(
+      <TreeView
+        tree={tree([{
+          id: "root",
+          component: "Card",
+          props: { title: "Spending", style: { padding: "8px", backgroundImage: "url(https://evil/x)", filter: "blur(4px)" } },
+        }])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    const card = document.querySelector<HTMLElement>('[data-kit="Card"]')!;
+    expect(card.style.padding).toBe("8px");
+    expect(card.style.backgroundImage).toBe("");
+    expect(card.style.filter).toBe("");
   });
 
   it("paints the surface inside its own box", () => {

@@ -1,6 +1,7 @@
-import type { Json, PermissionGrant, Principal, RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
+import type { Json, PermissionGrant, RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
 import type { Connector, ConnectorAccountIdentity } from "./connector.js";
 import { normalizeToolName } from "./names.js";
+import type { ConnectorAuthContext, ConnectorHeadersResolver } from "./openapi.js";
 
 interface JsonRpcResponse {
   jsonrpc?: unknown;
@@ -22,20 +23,12 @@ interface McpContent {
   text?: unknown;
 }
 
-/** 04-actions §3 — what a per-principal MCP headers resolver sees: the acting
- * principal plus the presence/grant context of the execution. Descriptor
- * listing resolves WITHOUT a principal (a system context). */
-export interface McpAuthContext {
-  principal?: Principal;
-  presence?: RunContext["presence"];
-  grant?: PermissionGrant;
-}
+/** @deprecated Every connector's headers resolver sees the same context — use
+ * {@link ConnectorAuthContext}. */
+export type McpAuthContext = ConnectorAuthContext;
 
-/** Async per-principal credential resolution for the MCP connector. Shared
- * static headers remain the simple default. */
-export type McpHeadersResolver = (
-  auth: McpAuthContext,
-) => Promise<Record<string, string>> | Record<string, string>;
+/** @deprecated Use {@link ConnectorHeadersResolver}. */
+export type McpHeadersResolver = ConnectorHeadersResolver;
 
 function mcpError(message: string): ToolOutcome {
   return { status: "error", error: { code: "mcp-error", message } };

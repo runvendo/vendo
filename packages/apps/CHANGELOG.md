@@ -1,5 +1,118 @@
 # @vendoai/apps
 
+## 0.29.0
+
+### Patch Changes
+
+- 0484a15: The approval ask words its schedule and survives a verb-phrase title. Live
+  2026-08-18, arming a balance check over text asked as "Set this to run on its
+  own needs your approval: - when: _/15 _ \* \* _" — a sentence collision for a
+  header and a cron expression as the one thing the person must understand
+  before saying yes. The header gains an em dash ("Set this to run on its own —
+  needs your approval:"), a schedule-shaped value is worded beside its verbatim
+  self ("every 15 minutes (_/15 \* \* \* \*)" — beside, never instead: the ask is
+  the consent boundary), argument labels cut at the first comma as well as the
+  first period, and the automate tool's `when` property leads with the label
+  consent surfaces show ("When it runs") while keeping its format teaching.
+- 7e78031: Arming an automation is ONE page and ONE yes. Live 2026-08-18 on production
+  Maple: a user armed "check my checking balance every 15 minutes and text me"
+  entirely over iMessage, their YES to the job landed — and arming then minted four
+  MORE per-tool asks (Text me, knowledge search, request a connection, list
+  connections). Three were reads nobody needs a second opinion about, and the
+  fourth was literally in the sentence they had just typed. Consent was framed
+  per-tool while the person was thinking per-job.
+
+  The authoring call's own approval now NAMES what the automation will hold, and
+  that one yes mints all of it. The powers ride on the approval record
+  (`ApprovalRequest.powers`, additive and optional, human titles only), computed
+  once at park time by the composition and rendered verbatim by whoever reads it —
+  the text channel today, any other surface without further work. They are grouped
+  the way a person reads them: the tools that DO something named one by one, and
+  every read folded into a single trailing "Read-only access to your data", because
+  naming reads individually is exactly what turned a yes to a job into a wall of
+  tool names.
+
+  What an automation is granted has NOT changed, and neither has how it runs. The
+  surface is as wide as it ever was, every away call is still grant-backed, and 05
+  §6's away authority is untouched — the guard's law suites pass unmodified. Two
+  kinds are excluded from standing powers because a grant could never satisfy them
+  and the card would be promising what the run will not honour: `destructive` and
+  `ungraded` (§12's pair, now closed on the two branches that leaked — a steps
+  record's declared destructive tool, and a connector slug the risk resolver grades
+  destructive), and `confirmEach`, which needs a person every time.
+
+  Minting is gated on a person having actually been asked. `enable()` takes the
+  authoring call (`armedBy`); when the host's policy would have asked about it, the
+  call reaching the engine proves the ask was answered, so the powers are minted on
+  the spot. When policy would have run it unasked — `vendo_make` is read-graded —
+  nobody saw a powers page, so nothing is minted and each power is captured as a
+  pending ask exactly as before, delivered by the grant-set text.
+
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [ebf101a]
+- Updated dependencies [df0b4cb]
+- Updated dependencies [7e78031]
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [f06b033]
+  - @vendoai/core@0.29.0
+
+## 0.28.0
+
+### Minor Changes
+
+- 0143c4e: The stored `tree` leaves the app document. The model never writes layout and no
+  production door mints a tree-only app — an app IS its `app.tsx`, and its tree is
+  what RENDERING that produces — so the field, the branch that served it, the paint
+  path gated on it and the fact checks that walked it are all deleted.
+
+  What changes for a host: `AppDocument.tree` is gone from the type and the schema,
+  and `.vendoapp` no longer carries it. A row written before this still opens — the
+  field is STRIPPED on the way out of the store and on the way in, never refused —
+  because such a document opens on its `source` like any other. A document with no
+  usable source at all now RESOLVES as `{kind:"failed"}` with a reason naming why,
+  instead of throwing and leaving an embed to poll to its deadline; importing a
+  `.vendoapp` that holds a layout and no source is refused in the same words rather
+  than minting a row that can never open.
+
+  BREAKING for a host's own checks: a check that read `document.tree` reads
+  `undefined` now and will never see a tree there again. The rendered tree moves
+  onto `CheckInput.renderedTree`, beside `document` and `request`, where it belongs —
+  it is what the person is about to see, not something a document carries — and
+  every such check must move to that field.
+
+  The tree as a RENDER language is untouched — `UIPayload`/`TreeNode`, the
+  renderer, the streamed view parts, the render seam, and `ui: "tree"` as the
+  surface kind all stay exactly as they were.
+
+- 0143c4e: An embed watching a code-first build now paints the app TAKING SHAPE instead of a
+  bar. `GET /apps/:id/open?pending=1` carries the `tree` it always had room for, and
+  what fills it is the render the build already made: a code-first build renders its
+  half-written `app.tsx` on every landed commit to decide whether anything may paint
+  at all, and that render's SHAPE is now offered to the build-window poll.
+
+  Geometry only, through the same whitelist that shipped with the wire field — node
+  ids, component names and nesting, tagged `streaming`. No props, no resolved data,
+  no interactive VM, no component sources: a build's draft carries figures its repair
+  round is about to correct, and nobody may be shown a number the build is about to
+  change.
+
+  The renderer paints that shape node by node. A node the build has not filled in
+  yet — a name and a place, no props — now holds its own silhouette instead of
+  nothing, so a screen written from layout and text grows across paints rather than
+  sitting behind one skeleton until it lands.
+
+  Nothing is persisted. No document keeps a tree; the shape lives in the serving
+  process's memory for the length of the build and nowhere else, so a poll served
+  before the first paint — or by another process — finds nothing and the embed reads
+  its beat bar, exactly as it did before.
+
+### Patch Changes
+
+- Updated dependencies [650e5eb]
+- Updated dependencies [0143c4e]
+- Updated dependencies [62c8630]
+  - @vendoai/core@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes

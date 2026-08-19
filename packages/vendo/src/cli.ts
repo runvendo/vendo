@@ -39,7 +39,7 @@ Options:
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --use-case <name>          Init only: how people will use the agent (embedded, agent-loop, mcp)
-  --base-url <url>           Init only: this deployment's public URL — written to .env.example, never .env.local
+  --base-url <url>           Init only: where the app runs in dev — written to .env.local as VENDO_BASE_URL (production is set where you deploy)
   --posture <name>           Init only, --use-case mcp: how outside agents sign in (local, broker)
   --service-key              Init only, --use-case mcp: set up a machine-to-machine service key
   --check / --no-check       Init only: run vendo doctor at the end (offered only when no paste is outstanding)
@@ -182,12 +182,10 @@ async function initCommand(args: string[]): Promise<number> {
   if (initAi && args.includes("--no-ai")) {
     problems.push("--ai and --no-ai answer the same question — pass one or the other");
   }
-  // Agent mode delegates judgment to the caller, so an engine can never run on
-  // it. Saying so beats dropping the flag: silently ignoring one is exactly how
-  // the "--agent writes nothing" promise broke in the field.
-  if (args.includes("--agent") && (initAi || engine !== undefined)) {
-    problems.push(`${initAi ? "--ai" : "--engine"} has no effect with --agent: judgment is delegated to you and the receipt names what it left. Drop it, or drop --agent to let init judge`);
-  }
+  // Agent mode GRADES (2026-08-18): the pass is a scripted, skeptic-checked
+  // engine run, and every agent install used to ship an ungraded catalog whose
+  // every tool asked on each call. `--ai` is the mode's own default there, so
+  // both flags mean what they always meant and neither is rejected.
   const themePairs = options(args, "--theme");
   const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));
   if (badTheme !== undefined) {
@@ -199,7 +197,7 @@ async function initCommand(args: string[]): Promise<number> {
   }
   const baseUrl = option(args, "--base-url");
   if (baseUrl !== undefined && !/^https?:\/\/\S+$/.test(baseUrl)) {
-    problems.push(`--base-url must be this deployment's full public URL (example: vendo init --base-url https://app.acme.com), got ${JSON.stringify(baseUrl)}`);
+    problems.push(`--base-url must be the full origin this app answers on in dev, scheme included (example: vendo init --base-url http://localhost:3000), got ${JSON.stringify(baseUrl)}`);
   }
   const posture = option(args, "--posture");
   if (posture !== undefined && !INIT_POSTURE_VALUES.includes(posture)) {

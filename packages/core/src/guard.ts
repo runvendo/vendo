@@ -92,4 +92,33 @@ export interface Guard extends GuardLike {
    *  the one caller today; packages/agent tools.ts). Callers feature-detect;
    *  a guard that omits it is used exactly as `check()` always was. */
   previewCheck?(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): Promise<GuardDecision>;
+  /**
+   * What the host POLICY alone says about this call — its ordered rules, then
+   * `policy.code`, then the guard's own default posture — with NO grant lookup,
+   * no judge, no breaker spend, no parked approval, and no audit row. Nothing
+   * about asking it changes any state, which is what separates it from
+   * `previewCheck`: an "ask" there PARKS a real approval, so it cannot be used
+   * to ask a hypothetical question.
+   *
+   * ONE caller (07 §3): the automations engine asking, about the AUTHORING call
+   * that armed an automation, "was a person actually asked about this?". A call
+   * the policy would ASK about can only have reached the engine by being
+   * approved — the guard does not let an unanswered ask through — and that yes is
+   * what licenses minting the automation's standing powers on the spot instead of
+   * asking again per tool. A call the policy RUNS was never put to anybody, so
+   * nothing may be minted off it.
+   *
+   * The judge is deliberately NOT consulted: it is a per-call judgment with a
+   * model behind it, and the question here is about the host's stated posture, not
+   * about one call's circumstances.
+   *
+   * Callers feature-detect. A guard without it is read as "nobody was asked",
+   * which is the conservative answer — the powers fall back to being captured as
+   * pending asks, exactly as they were before this existed.
+   */
+  policyOutcome?(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<GuardDecision["action"]>;
 }

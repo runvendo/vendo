@@ -17,17 +17,39 @@ it.
 Install, sign in, and write one `agent()` call at module scope. Only `name` is
 required.
 
-```bash terminal
-npm install @vendoai/agents ai@^6
+<CodeGroup>
+
+```bash npm
+npm install @vendoai/agents @vendoai/vendo ai@^6
 npx vendoai@latest login
 npx vendoai@latest init
 ```
 
+```bash pnpm
+pnpm add @vendoai/agents @vendoai/vendo ai@^6
+pnpm dlx vendoai@latest login
+pnpm dlx vendoai@latest init
+```
+
+</CodeGroup>
+
+`@vendoai/vendo` carries none of the code on this page. It is there because
+every file init writes imports `@vendoai/vendo/*`, and the `predev` and
+`prebuild` hooks init adds to your `package.json` run the `vendo` binary that
+package installs.
+
 `vendo login` mints a `VENDO_API_KEY` into `.env.local` and never prints it.
+Already have one in `.env.local`? Skip that line — init merges the key into its
+own run, uses it as it is, and never asks.
 `vendo init` writes `.vendo/tools.json`, your API read into tool definitions
 with a schema and a dispatch binding on each one. Extraction grades only what
 the protocol proves; `vendo sync` grades the rest, and until it runs an
 ungraded tool asks before every call.
+
+Answer the first question with **Through my own agent loop (AI SDK / Mastra)**.
+A backend agent is your own loop, and that answer is what tells `vendo doctor`
+to skip the mounted-UI checks — a `<VendoProvider>` and a visible surface —
+that a backend with no UI of Vendo's has nothing to satisfy.
 
 ```ts lib/agent.ts focus={3-7}
 import { agent, api } from "@vendoai/agents";
@@ -38,6 +60,29 @@ export const support = agent({
   tools: [api()],
 });
 ```
+
+<Note>
+  **`VENDO_BASE_URL` has to be set before the first turn — init asked you for
+  it.** `api()` tools are not in-process calls — each one is a real HTTP request
+  back at your own API, and `api()` reads this variable to know where to send
+  it. There is no Vendo route mounted on this path for it to learn the origin
+  from, so unset means the first tool call throws `Cannot execute … set
+  VENDO_BASE_URL, or pass baseUrl`.
+
+  An interactive `vendo init` asks where your app runs in dev and writes the
+  answer for you, so the line is usually already there:
+
+  ```bash .env.local
+  VENDO_BASE_URL=http://localhost:3000
+  ```
+
+  Add it by hand (with the port your own server listens on) if init ran
+  unattended — a `--yes` or piped run never guesses an origin. In production
+  you set the same variable in your hosting platform's environment settings, to
+  the deployment's full public URL, path prefix included; `api({ baseUrl })`
+  overrides it, and `VENDO_HOST_API_URL` is the answer when your API answers on
+  another origin ([environment variables](/reference/environment-variables)).
+</Note>
 
 Skipping `vendo login`? Then nothing resolves a model for you, and the first
 turn throws. Install `@ai-sdk/anthropic@^3` and pass your own beside `name`:
@@ -60,8 +105,8 @@ its own.
 </CardGroup>
 
 <Note>
-  No umbrella and no client here. The composed agent has exactly two verbs, and
-  steps 2 and 3 are both of them.
+  No umbrella call and no client in your code. The composed agent has exactly
+  two verbs, and steps 2 and 3 are both of them.
 </Note>
 
 </Step>

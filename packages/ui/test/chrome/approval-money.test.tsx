@@ -63,9 +63,15 @@ function cardOf(approval: ApprovalRequest): { question: string; notes: string[] 
   );
   return {
     question: container.querySelector(".fl-approval-ask")!.textContent!,
-    // One note per list item — the " · " between them is CSS punctuation, so
-    // the items are also the exact set, with no split heuristic in the middle.
-    notes: Array.from(container.querySelectorAll(".fl-approval-sub li")).map(li => li.textContent!),
+    // One note per list item, with no split heuristic in the middle. ⚠️ TEST
+    // EDIT (clipboard separator): the " · " is real text leading every item but
+    // the first now, so it is stripped HERE rather than written into every
+    // expectation below — this file's subject is the money value, and a
+    // separator in front of a label is exactly the noise that hides one.
+    // `approval-notes-copy.test.tsx` owns the separator itself, in both
+    // directions; a doubled one would survive this strip and fail these.
+    notes: Array.from(container.querySelectorAll(".fl-approval-sub li"))
+      .map(li => li.textContent!.replace(/^ · /, "")),
   };
 }
 

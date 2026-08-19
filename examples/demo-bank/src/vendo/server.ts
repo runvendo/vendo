@@ -1,6 +1,6 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
-import type { Principal } from "@vendoai/core";
+import type { LimitsCallback, Principal } from "@vendoai/core";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { vendoAutoJudge } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
@@ -40,9 +40,9 @@ const mapleAuthJs = authJs({
   // Build contract §9.1 — Maple's OWN identity tables answer "which orgs?".
   // One query against what the host already knows; Vendo stores nothing about
   // it. Keyed on the Principal, not the request, so an unattended automation
-  // fire resolves the same orgs an attended click does. Both seeded staff are
-  // in `maple`; Yousef is the org admin (implicit owner of every org app),
-  // Mia is an ordinary member who reaches an app only through a grant.
+  // fire resolves the same orgs an attended click does. All four seeded staff
+  // are in `maple`; Yousef is the org admin (implicit owner of every org app),
+  // and the rest are ordinary members who reach an app only through a grant.
   memberships: async (principal) => {
     const user = resolveMapleSubject(principal.subject);
     if (!user) return [];
@@ -67,6 +67,32 @@ const MAPLE_GUEST: Principal = { kind: "user", subject: "maple_guest", ephemeral
 export const mapleAuth: HostAuthPreset = {
   ...mapleAuthJs,
   principal: async (request) => (await mapleAuthJs.principal(request)) ?? MAPLE_GUEST,
+};
+
+// Vendo counts, Maple decides. All four seeded staff are members of `maple`, so
+// the `org:maple` pool exists without Maple wiring one: the branch shares one
+// rolling monthly allowance, and no single person can spend it all.
+//
+// Guarded on `user.pools`: Maple serves identities it asserts no membership for —
+// the signed-out guest, an inbound text, a deployment with no password env — and
+// counting a pool they are not in is an error, so an unguarded count would refuse
+// every one of those turns instead of falling through to the per-person cap.
+export const mapleLimits: LimitsCallback = async ({ user, action, count }) => {
+  if (action !== "message") return true;
+  if (user.pools?.includes("org:maple")
+    && await count("message", { days: 30, pool: "org:maple" }) >= 200) {
+    return {
+      allow: false,
+      message: "Maple Bank has used its 200 shared messages for this month. They free up as the last 30 days roll past.",
+    };
+  }
+  if (await count("message", { days: 1 }) >= 50) {
+    return {
+      allow: false,
+      message: "That's your 50 messages for today. The branch's allowance is shared, so this picks back up tomorrow.",
+    };
+  }
+  return true;
 };
 
 export const vendo = createVendo({
@@ -151,6 +177,7 @@ export const vendo = createVendo({
     policy: { file: ".vendo/policy.json" },
     judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
   }),
+  limits: mapleLimits,
   mcp: mapleMcpConfig(),
   // Maple's customers can text the assistant: they link their phone from the
   // "Text with Maple" card on /settings (components/settings/text-channel-card.tsx

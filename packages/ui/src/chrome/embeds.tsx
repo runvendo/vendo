@@ -34,7 +34,7 @@ import {
 } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
-import { fieldRows } from "./field-rows.js";
+import { resultRows } from "./field-rows.js";
 import { buildFailureNotice } from "./thread/message-data.js";
 
 /**
@@ -137,10 +137,12 @@ function ResolvedApprovalCard({ summary, ok, line, detail }: {
 function executedCard(summary: string, outcome: ToolOutcome): ReactNode {
   if (outcome.status === "ok") {
     // The result reads as the shell's ONE body — field rows, never the raw JSON
-    // dump this used to print at an end user (spec §16.2).
-    const rows = outcome.output !== null && typeof outcome.output === "object"
-      ? fieldRows(outcome.output)
-      : [];
+    // dump this used to print at an end user (spec §16.2). `resultRows`, not
+    // `fieldRows`: what came BACK is a result, and rows that came back labelled
+    // "Input" read as the call's arguments. It answers any shape (law 1 — the
+    // body is not chosen by its data), so a bare value is one row too, where the
+    // object-only guard this replaces showed a person nothing at all.
+    const rows = resultRows(outcome.output);
     const detail = rows.length > 0 ? <CardFields rows={rows} label="Result" /> : undefined;
     return <ResolvedApprovalCard summary={summary} ok line="Approved — ran" detail={detail} />;
   }

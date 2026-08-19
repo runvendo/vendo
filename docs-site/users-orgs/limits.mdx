@@ -1,0 +1,241 @@
+---
+title: "Limits"
+sidebarTitle: "Limits"
+description: "Cap what one user spends, cap what a whole org spends, in your own logic. Vendo counts; your policy decides."
+---
+
+One callback is asked once before each metered action, and its answer is
+honored.
+
+Two things are metered. A `message` is one user turn; a `generation` is one app
+the agent built. Both are things a person does — never tokens, never calls — so
+you write the policy in the units you sell in.
+
+## Cap one user
+
+```ts app/api/vendo/[...vendo]/route.ts highlight={6,7,8,9}
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({
+  auth: authJs(),
+  limits: async ({ action, count }) => {
+    if (action !== "message") return true;
+    return (await count("message", { days: 30 })) < 500;
+  },
+});
+```
+
+Five hundred messages a rolling month, per person. That is the whole feature for
+most hosts.
+
+`count(action, window?)` is already bound to the user this request resolved to. A
+policy never names a subject, so it can never read another person's usage by
+accident.
+
+Return `true` and the action runs and is counted. Return `false` and it is
+refused and never counted.
+
+---
+
+## Cap a whole org
+
+Every org your host asserts for a request is already a shared meter, named
+`org:<orgId>`. There is nothing to wire.
+
+```ts app/api/vendo/[...vendo]/route.ts highlight={4}
+export const vendo = createVendo({
+  auth: authJs({ memberships }),
+  limits: async ({ user, action, count }) => {
+    const org = user.pools?.find((pool) => pool.startsWith("org:"));
+    if (org === undefined) return true;
+    return (await count(action, { days: 30, pool: org })) < 5_000;
+  },
+});
+```
+
+`pool` counts the whole bucket instead of the one person, so five members
+spending a thousand messages each reach a five-thousand-message org cap
+together.
+
+`user.pools` lists the pools this caller draws from. One `org:<orgId>` entry
+arrives for every org your `memberships` seam asserted, which is the only wiring
+an org cap needs — see [Orgs & memberships](/users-orgs/orgs-and-memberships).
+
+<Note>
+  The pool name is the same string a grant uses for that org — `org:acme` is the
+  sharing principal and the meter. An org is spelled one way everywhere.
+</Note>
+
+<Warning>
+  A `pools` entry of your own wins on a name collision, so you can meter an org by
+  your own key — but if you do, do it for every member of that org. Half an org on
+  `org:acme` and half on your key is one allowance split across two meters, and
+  each one under-counts.
+</Warning>
+
+The Maple demo in `examples/demo-bank` wires exactly this: one `memberships`
+seam, one org cap, and a refusal worded in Maple's own voice.
+
+---
+
+## Both at once
+
+Per-user and per-org are one callback, and the first `false` ends it, so the
+tighter cap wins.
+
+```ts limits highlight={4,13}
+limits: async ({ user, action, count }) => {
+  if (action !== "message") return true;
+
+  if ((await count("message", { days: 1 })) >= 50) {
+    return {
+      allow: false,
+      message: "You've used today's 50 messages. They reset at midnight UTC.",
+    };
+  }
+
+  const org = user.pools?.find((pool) => pool.startsWith("org:"));
+  if (org !== undefined) {
+    if ((await count("message", { days: 30, pool: org })) >= 5_000) {
+      return {
+        allow: false,
+        message: "Your workspace used this month's 5,000 messages — ask an admin.",
+      };
+    }
+  }
+
+  return true;
+},
+```
+
+Each `count` is one live read of the meter, which is why it is a callback and
+not a number handed to you: most policies read one window, and pre-computing
+every window a policy might ask about would be a query per action per call.
+Order the cheap branch first and a policy that returns early does less work.
+
+Tiers are a branch on your own data. `user.facts` is the bag your auth preset
+asserted — plan, role, seat count, tenure — so a Pro user and a Free user read
+different numbers out of the same policy.
+
+```ts limits highlight={2,3}
+limits: async ({ user, action, count }) => {
+  const cap = user.facts?.plan === "pro" ? 5_000 : 200;
+  return (await count(action, { days: 30 })) < cap;
+},
+```
+
+---
+
+## Windows
+
+The three durations are summed into one lookback. `since` names an instant floor
+instead. Omit all four and the count is all-time.
+
+| Window | What it counts |
+| --- | --- |
+| `{ days: 30 }` | The last 30 days, rolling |
+| `{ hours: 12, minutes: 30 }` | The last twelve and a half hours |
+| `{ since: periodStart }` | Everything since that instant — a billing period, not a rolling window |
+| omitted | All time |
+| `{ days: 30, pool: "org:acme" }` | The org's last 30 days, not this user's |
+
+A billing period is the `since` case, and the date is yours:
+
+```ts limits highlight={2,3}
+limits: async ({ user, action, count }) => {
+  const since = new Date(user.facts?.periodStart as string);
+  return (await count(action, { since })) < 2_000;
+},
+```
+
+<Warning>
+  Set a duration and a `since` together and the duration wins. Pass one or the
+  other, never both.
+</Warning>
+
+---
+
+## What a blocked user sees
+
+A refused message never reaches the model. The check runs before the thread is
+even read, so a refused turn costs no read, no write, and no model call — and
+the surface renders one notice in the thread, where the answer would have been.
+
+Return the object form to write that sentence yourself:
+
+```ts limits highlight={1,2,3,4}
+return {
+  allow: false,
+  message: "You've used this month's 500 messages. Upgrade to Pro for 5,000.",
+};
+```
+
+| You return | The card reads |
+| --- | --- |
+| `{ allow: false, message }` | **You’ve reached your limit** — your sentence, verbatim |
+| `false` | **You’ve reached your limit** — "This request wasn’t run — nothing was changed." |
+| the meter could not be read | **Couldn’t check your limit** — "Vendo Cloud is busy right now, so this limit could not be checked — this is temporary, not a cap." |
+
+A reached cap is a status, not a failure, so the notice carries no alert mark.
+
+There is deliberately no `{ allow: true }`. Allowing has nothing to say.
+
+A refused _generation_ reads differently on purpose: the turn carries on, because
+the agent can talk about a build that did not happen. It is told the facts — that
+nothing was built, your sentence when you wrote one, and that calling again gets
+the same answer.
+
+---
+
+## The fail-closed rule
+
+A policy that throws denies.
+
+A limits system that fails open stops limiting silently: you keep believing you
+have a cap while every user is unlimited. A turn that was refused and said so is
+strictly better. Every such denial logs `limits.callback_error`.
+
+- Counting a `pool` this user is not in throws, and therefore denies. Answering
+  `0` for a meter that was never resolved would silently under-count every limit
+  written against it. The error names the pools the user does have.
+- A meter that cannot be read _right now_ still denies, but never dressed as a
+  cap they reached — nothing was counted, so the notice says the check failed and
+  that it is temporary.
+- A store with no usage meter is refused at composition, not at request time.
+  `createVendo({ limits })` throws naming the gap, because every count would read
+  `0` and no limit would ever be reached.
+
+---
+
+## What is not metered
+
+Automation firings. A schedule fire or a webhook delivery is nobody's request and
+has no per-user meter to spend, so an app built inside one is not gated by your
+policy.
+
+What a person does in front of the product is: the message they send, and the app
+the agent builds for them. Those are the two chokes, and there is nothing to
+configure — setting `limits` arms both.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Orgs & memberships" href="/users-orgs/orgs-and-memberships">
+    The one seam an org cap needs, and the three other things it unlocks.
+
+    `memberships`
+  </Card>
+  <Card title="Your users" href="/users-orgs/your-users">
+    Where `facts` comes from, and what a tier branch may read.
+
+    `user.facts`
+  </Card>
+  <Card title="Handler options" href="/reference/handler-options">
+    Every `createVendo` key, including this one in one table row.
+
+    `limits`
+  </Card>
+</CardGroup>

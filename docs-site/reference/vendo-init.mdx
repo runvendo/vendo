@@ -23,7 +23,8 @@ Init never writes to a file you authored. Every file it creates is new and Vendo
 | `.vendo/overrides.json` `.vendo/policy.json` `.vendo/brief.md` | all | stubs you own |
 | `.vendo/theme.json` `.vendo/theme.extracted.json` | all | the extracted theme, and the scan output it was merged from |
 | `.vendo/data/` | all | the local database, with its own `.gitignore` |
-| `.env.example` | all | `VENDO_BASE_URL`, plus commented `VENDO_HOST_API_URL`, `VENDO_LOGIN_URL`, and `ANTHROPIC_API_KEY` lines. The append is idempotent |
+| `.env.example` | all | the `VENDO_BASE_URL` block — the dev shape for reference, and the instruction to set the real value in your hosting platform when you deploy — plus commented `VENDO_HOST_API_URL`, `VENDO_LOGIN_URL`, and `ANTHROPIC_API_KEY` lines. The append is idempotent |
+| `.env.local` | all | `VENDO_BASE_URL`, from the dev-URL question, on interactive runs and with `--base-url`. Never a deployed URL |
 | `.claude/skills/vendo-setup/` | all | the setup skill, when a `.claude/` directory exists and the skill does not |
 
 It also adds idempotent `predev` and `prebuild` hooks to `package.json`:
@@ -105,6 +106,7 @@ Init never fails on a Cloud error. `vendo cloud login <email>` is the email-OTP 
 There is no interview. An interactive run stops only for Enter-to-accept decisions:
 
 - the detected auth preset
+- where the app runs in dev, prefilled from your `dev` script's port — Enter accepts it, and the answer lands in `.env.local` as `VENDO_BASE_URL`
 - the Vendo Cloud key offer
 - consent for the AI judgment pass
 - one aggregated review, if that pass proposes a loosening
@@ -138,7 +140,7 @@ The `status` field tells the two runs apart, so an agent never has to guess whet
 | `questions` | `detected` (framework and any auth preset), and `questions`: each one a chat-ready `prompt` with its `options` |
 | `written` | `wrote` (every file of the install), `pasteEdits` (the mount and any other paste), `tools`, `riskRecommendations`, and `judgment`, whose `checklist` names the four calls only a reader of the code can make |
 
-The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud-key` or `--byo`, and on the MCP path `--posture` and `--service-key`. Nothing else is asked. `--base-url`, the `zod` bump, uncertain theme slots, and the closing live check never surface in agent mode. They take exactly the defaults `--yes` takes.
+The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud-key` or `--byo`, `--base-url`, and on the MCP path `--posture` and `--service-key`. Nothing else is asked. The `zod` bump, uncertain theme slots, and the closing live check never surface in agent mode. They take exactly the defaults `--yes` takes.
 
 ## Every flag
 
@@ -151,7 +153,7 @@ The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud
 | `--cloud-key <key>` | a `vnd_` key | writes an existing Vendo Cloud key to `.env.local` |
 | `--byo` | | declines the Cloud key offer |
 | `--ai` / `--no-ai` | | force the AI judgment and theme pass on or off |
-| `--base-url <url>` | a full `http(s)` URL | where this deploys |
+| `--base-url <url>` | a full `http(s)` URL | where the app runs in dev |
 | `--theme <slot=value>` | repeatable | answers an uncertain theme slot |
 | `--framework <name>` | `next`, `express`, `custom` | overrides framework detection |
 | `--engine <name>` | `claude`, `codex`, `npx` | pins the AI-pass engine instead of first-available |
@@ -167,7 +169,7 @@ The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud
 `--posture` or `--service-key` without `--use-case mcp` exits `1` rather than being silently ignored. `--ai-polish` is the older spelling of `--ai`.
 
 <Warning>
-  `--base-url` is written to `.env.example` only, replacing init's own localhost placeholder. It never touches `.env.local`, where a production URL would repoint local dev's discovery, callbacks, and credential forwarding at the deployed origin.
+  `--base-url` is a DEV URL: it lands in `.env.local` as `VENDO_BASE_URL`, which is what your own agent loop, any backend process, and the MCP door need before their first tool call. Production is never set here — set `VENDO_BASE_URL` in your hosting platform's environment settings when you deploy. A deployed URL in `.env.local` would repoint local dev's discovery, callbacks, and credential forwarding at the deployed origin.
 </Warning>
 
 Init rejects an option it does not recognize and exits `1` before doing anything. A flag an older CLI does not support can never be silently dropped.

@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
+import { runsAgentLoop } from "@vendoai/actions/sync";
 import { exists, stripBom } from "./shared.js";
 import { walk } from "./theme/walk.js";
 
@@ -160,19 +161,80 @@ export const SUPABASE_PRESET_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/auth\/su
     /server) is WIRED, and reading it as bare misdiagnosed it E-WIRE-001/007. */
 const SERVER_ENTRY_IMPORT = /["'](?:@vendoai\/vendo|vendoai)\/server["']/;
 
-/** Whether any host source imports the Supabase auth preset. Import marker
-    only, comments stripped: outside a known Vendo composition file a bare
-    `supabase(` call is the host's OWN Supabase client, not the preset
-    (expense.fyi defines exactly such a helper). Same bounded walk as
-    `detectVendoWiring`, so a host too big to scan is judged consistently. */
-export async function wiresSupabaseAuth(root: string): Promise<boolean> {
+/** Whether any host source matches `marker`, comments stripped, over the SAME
+    bounded walk `detectVendoWiring` takes — so a host too big to scan is judged
+    consistently whichever marker asked. */
+async function hostSourceMatches(root: string, marker: RegExp): Promise<boolean> {
   const files = await walk(root, (relativePath) => SOURCE_FILE.test(relativePath), SOURCE_SCAN_MAX_FILES);
   for (const file of files) {
     const source = await readFile(file, "utf8").catch(() => "");
     const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    if (SUPABASE_PRESET_IMPORT.test(code)) return true;
+    if (marker.test(code)) return true;
   }
   return false;
+}
+
+/** Whether any host source imports the Supabase auth preset. Import marker
+    only: outside a known Vendo composition file a bare `supabase(` call is the
+    host's OWN Supabase client, not the preset (expense.fyi defines exactly such
+    a helper). */
+export async function wiresSupabaseAuth(root: string): Promise<boolean> {
+  return hostSourceMatches(root, SUPABASE_PRESET_IMPORT);
+}
+
+/** Whether any host source reaches the tenant-connector API. A property read on
+    the Vendo handle is unambiguous evidence — the name exists nowhere else — so
+    unlike the Supabase marker this needs no composition-file narrowing. */
+export async function wiresTenantConnectors(root: string): Promise<boolean> {
+  return hostSourceMatches(root, /\.tenantConnectors\b/);
+}
+
+/** Whether the host builds its OWN store. Load-bearing for anything that reads
+    a key as evidence of a Cloud seam: an explicitly passed store always wins
+    over VENDO_API_KEY (the adapter rule, compose-store.ts's `selectStore`), so
+    a host that calls this has a local store no matter what its environment
+    says. */
+export async function composesOwnStore(root: string): Promise<boolean> {
+  return hostSourceMatches(root, /\bcreateStore\s*\(/);
+}
+
+/** An API route file: an app-router `route.*` under an `api` segment, or
+    anything under `pages/api`. The agent-loop probe below is deliberately
+    narrower than the whole source tree — a lib module that happens to call
+    `generateText` is not a loop the host serves. */
+const API_ROUTE_FILE = /(?:^|\/)api\/(?:.*\/)?route\.[cm]?[jt]sx?$|(?:^|\/)pages\/api\//;
+
+/** The host's own agent-loop route, as a posix-style root-relative directory
+ *  (`app/api/chat`), or null.
+ *
+ *  This is what makes "through your own agent loop" the RECOMMENDED use case for
+ *  a host that already has one, instead of a third option nobody reads. The
+ *  evidence is the route scanner's own marker (`runsAgentLoop`), which is also
+ *  what excludes that route from the callable catalog — so the recommendation
+ *  and the exclusion can never disagree about what a loop is.
+ *
+ *  Not `hostSourceMatches`: that one walks every source file and answers a
+ *  boolean, and this needs both the narrower route filter and the PATH — the
+ *  route's directory is what the recommendation shows the developer.
+ *
+ *  Same bounded walk and comment-stripping as `detectVendoWiring`, so a host too
+ *  big to scan is judged consistently. First match wins: one loop is the whole
+ *  answer, and the directory is what a human recognises. */
+export async function detectAgentLoopRoute(root: string): Promise<string | null> {
+  const files = await walk(
+    root,
+    (relativePath) => SOURCE_FILE.test(relativePath) && API_ROUTE_FILE.test(relativePath.split(sep).join("/")),
+    SOURCE_SCAN_MAX_FILES,
+  );
+  for (const file of files) {
+    const source = await readFile(file, "utf8").catch(() => "");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    if (runsAgentLoop(code)) {
+      const parts = relative(root, file).split(sep);
+      return parts.slice(0, -1).join("/");
+    }
+  }
+  return null;
 }
 
 /** Bounded source scan shared by init and doctor so their wiring verdicts

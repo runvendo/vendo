@@ -121,8 +121,14 @@ function executionError(): ToolOutcome {
   };
 }
 
-/** One human-readable line describing what is waiting — the tool descriptor
- *  plus the guard's inputPreview vocabulary (`<tool> <canonical args>`). */
+/** One human-readable line describing WHAT is waiting — the tool descriptor
+ *  plus the guard's inputPreview vocabulary (`<tool> <canonical args>`).
+ *
+ *  State-free on purpose. This line is minted ONCE, and `<VendoApprovalEmbed>`
+ *  titles the card with it for the rest of the request's life — so a lifecycle
+ *  claim baked in here outlives the lifecycle: it read "Awaiting user approval:
+ *  …" over "Approved — ran" on every settled receipt. The state belongs to
+ *  whoever knows it at render time (the embed's own resolution line). */
 function approvalSummary(descriptor: ToolDescriptor, args: unknown): string {
   let preview: string;
   try {
@@ -130,7 +136,7 @@ function approvalSummary(descriptor: ToolDescriptor, args: unknown): string {
   } catch {
     preview = "";
   }
-  const summary = `Awaiting user approval: ${descriptor.description || descriptor.name} — ${descriptor.name} ${preview}`
+  const summary = `${descriptor.description || descriptor.name} — ${descriptor.name} ${preview}`
     .replace(/\s+/g, " ")
     .trim();
   return summary.length > SUMMARY_CAP ? `${summary.slice(0, SUMMARY_CAP - 1)}…` : summary;

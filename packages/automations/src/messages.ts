@@ -58,3 +58,37 @@ export const IDENTITY_UNAVAILABLE = (name: string): string =>
  *  named and nobody would ever find out. */
 export const NO_SUCH_RUNNER = (name: string): string =>
   `stopped: no agent named "${name}" is registered in this deployment — nothing ran`;
+
+/**
+ * The one phrase every read an automation may make is named by, together.
+ *
+ * Reads are the bulk of any automation's surface and the least interesting thing
+ * about it: naming them one by one is what turned a person's yes to a JOB into a
+ * wall of tool names they could not act on (live 2026-08-18 — three of the four
+ * follow-up asks were reads). They still get granted, they are simply not worth a
+ * line each. Deliberately generic and deliberately not a list: it says what the
+ * automation can SEE, in the words someone would use about their own account,
+ * with no tool identifier anywhere near it.
+ */
+export const READ_ONLY_POWER = "Read-only access to your data";
+
+/**
+ * What a person is told an automation will hold, in the order they should read
+ * it: the tools that DO something, each by its own human title, then every read
+ * folded into {@link READ_ONLY_POWER}.
+ *
+ * Titles, never identifiers (design §3's voice law) — a descriptor with no title
+ * falls back to its name, which is the same fallback every other consent surface
+ * makes. The list is what rides on the arming approval (`ApprovalRequest.powers`),
+ * so it is a plain array of finished phrases: every surface renders it verbatim
+ * and none of them has to know this rule.
+ */
+export const powerTitles = (
+  powers: ReadonlyArray<{ descriptor: { name: string; title?: string; risk: string } }>,
+): string[] => {
+  const acts = powers
+    .filter(({ descriptor }) => descriptor.risk !== "read")
+    .map(({ descriptor }) => descriptor.title ?? descriptor.name);
+  const reads = powers.some(({ descriptor }) => descriptor.risk === "read");
+  return reads ? [...acts, READ_ONLY_POWER] : acts;
+};

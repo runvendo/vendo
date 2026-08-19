@@ -44,7 +44,7 @@ import { themeCssVariables } from "../theme.js";
 import type { ApprovalResolution } from "../wire-types.js";
 import { refusalCopy } from "./approval-card.js";
 import { consentAsk, toolPresentation } from "./build-beat.js";
-import { CARD_EYEBROWS, CardFields } from "./card-shell.js";
+import { CARD_EYEBROWS, CardFields, NOTE_SEPARATOR } from "./card-shell.js";
 import { ensureChromeStyles } from "./chrome-root.js";
 import { fieldRows } from "./field-rows.js";
 import { inertBehind } from "./inert-behind.js";
@@ -302,9 +302,11 @@ export function ApprovalModal({ approvalId, onClose }: {
               <>
                 <h2 className="fl-apmodal-ask">{detail.ask.question}</h2>
                 {/* One line to the eye, a LIST to a screen reader — the card's
-                    own treatment, so the " · " stays CSS punctuation. */}
+                    own treatment, `NOTE_SEPARATOR` and all. */}
                 <ul className="fl-approval-sub fl-apmodal-notes" aria-label="What approving does">
-                  {detail.ask.notes.map((note, index) => <li key={index}>{note}</li>)}
+                  {detail.ask.notes.map((note, index) => (
+                    <li key={index}>{index > 0 ? NOTE_SEPARATOR : null}{note}</li>
+                  ))}
                 </ul>
                 <CardFields rows={detail.rows} />
               </>

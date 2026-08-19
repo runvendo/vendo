@@ -57,6 +57,9 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   // parses a status code back into one, so there is no STATUS_TO_CODE here
   // to extend.
   unavailable: 503,
+  // Same: a schema proposal is a typed store's answer to its own client, and
+  // this wire has no table to propose.
+  "schema-proposal": 409,
 };
 
 export interface WireDeps {
@@ -97,7 +100,7 @@ export interface WireDeps {
       §3.3/§6), and a store that offers neither a SQL handle nor a StoreOps
       surface refuses THAT TURN, loudly, naming both options — where the old
       probe silently routed the whole deployment onto the legacy door. */
-  harness: Pick<HarnessTurns, "stream" | "threads">;
+  harness: Pick<HarnessTurns, "stream" | "threads" | "putUserFile">;
   guard: VendoGuard;
   /** Which optional subsystems this deployment mounted (`createVendo({ apps:
       false })` / `{ automations: false }`). An unmounted subsystem's routes are

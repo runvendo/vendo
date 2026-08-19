@@ -23,6 +23,8 @@
         "path": "/api/auth/{nextauth}",
         "argsIn": "body"
       },
+      "disabled": true,
+      "note": "it is an authentication handler; excluded from the callable catalog; overrides.json can flip disabled/risk",
       "inputSchemaSource": "unknown",
       "outputSchemaSource": "unknown",
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
@@ -49,6 +51,8 @@
         "path": "/api/auth/{nextauth}",
         "argsIn": "query"
       },
+      "disabled": true,
+      "note": "it is an authentication handler; excluded from the callable catalog; overrides.json can flip disabled/risk",
       "inputSchemaSource": "unknown",
       "outputSchemaSource": "unknown",
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"

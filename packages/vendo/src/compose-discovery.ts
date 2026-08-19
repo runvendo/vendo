@@ -35,14 +35,20 @@ const connectedToolkits = (composition: VendoComposition): Pick<VendoComposition
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
   // Shared by the loadout seed AND the pre-guard connect gate above.
   const CONNECTED_TOOLKITS_TTL_MS = 60_000;
+  /** How long a NEGATIVE answer is trusted (see subjectHasToolkit). Sized to
+   *  span one tool call's two connect checks and nothing more: the clock starts
+   *  at the lookup that told the user they are not connected, and nobody
+   *  completes a provider OAuth round trip and issues another call inside a
+   *  second. */
+  const UNCONNECTED_TTL_MS = 1_000;
   const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
   function cacheConnectedToolkits(subject: string, toolkits: string[]): void {
     if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
     connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
   }
-  function cachedConnectedToolkits(subject: string): string[] | undefined {
+  function cachedConnectedToolkits(subject: string, ttlMs = CONNECTED_TOOLKITS_TTL_MS): string[] | undefined {
     const cached = connectedToolkitsCache.get(subject);
-    return cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS
+    return cached !== undefined && Date.now() - cached.at < ttlMs
       ? cached.toolkits
       : undefined;
   }
@@ -54,11 +60,15 @@ const connectedToolkits = (composition: VendoComposition): Pick<VendoComposition
   }
   /** The connect gate's lookup. A cached HIT rules the call in without a
       round-trip; a cached MISS refetches fresh before ruling it out — a user
-      who just finished OAuth must never be blocked by a 60s-old entry.
+      who just finished OAuth must never be blocked by a 60s-old entry. It IS
+      ruled out off an entry seconds old, because the gate runs twice for one
+      tool call (the tool-bridge preflight and the gate-wrapped registry), and
+      without that a refusal cost two broker round trips to say the same no.
       Lookup failure returns undefined: the gate fails OPEN and the
       broker-side connect-required outcome still catches the call. */
   async function subjectHasToolkit(toolkit: string, ctx: RunContext): Promise<boolean | undefined> {
     if (cachedConnectedToolkits(ctx.principal.subject)?.includes(toolkit)) return true;
+    if (cachedConnectedToolkits(ctx.principal.subject, UNCONNECTED_TTL_MS) !== undefined) return false;
     try {
       return (await fetchConnectedToolkits(ctx.principal)).includes(toolkit);
     } catch {

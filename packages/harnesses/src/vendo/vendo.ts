@@ -17,7 +17,14 @@
  *   business — that is the dividing line, and orchestration is thinking.
  */
 import { z } from "zod";
-import { modelToolDescription, type Harness, type Json, type Turn } from "@vendoai/core";
+import {
+  CONNECTOR_DISCOVERY_TOOLS,
+  modelToolDescription,
+  type Harness,
+  type Json,
+  type ToolListing,
+  type Turn,
+} from "@vendoai/core";
 import { readCompactionState, writeCompactionState, type CompactionState } from "./compaction.js";
 import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
 import { contextWindowTokens, rememberResolvedModelId, resolvedModelId } from "./model-windows.js";
@@ -198,9 +205,24 @@ export interface HarnessHand {
 const NO_INPUT_SCHEMA = { type: "object", properties: {}, additionalProperties: false };
 
 /**
+ * The calls that can change what `turn.tools.list()` answers.
+ *
+ * Only the connector door can: connecting an outside service, or using one, is
+ * what brings that service's tools within reach of the next projection. A host
+ * tool cannot add a tool to the registry — the descriptor set behind
+ * `descriptors()` is fixed once its source has loaded — so re-projecting the
+ * whole catalog after EVERY call spent the projection once per tool call to
+ * learn nothing. `find_tools`, the other thing that genuinely changes the set,
+ * never rode this rail: it is the harness's own hand and re-lists inside its own
+ * `execute`, below.
+ */
+const SURFACE_CHANGING_CALLS = new Set<string>(CONNECTOR_DISCOVERY_TOOLS);
+
+/**
  * Refresh the live toolset from `turn.tools.list()` — the ONE discovery surface
- * (contract §1.1: "currently-equipped tools, post-curation"). Returns the names
- * the model may pick this step.
+ * (contract §1.1: "currently-equipped tools, post-curation"). Returns the listing
+ * it projected, so a caller that needs the same surface again reads it from here
+ * instead of asking the registry to build it a second time.
  *
  * Two things make this the whole discovery rail. The set is re-read rather than
  * captured once, so a tool searched in mid-turn through `find_tools` is offered on
@@ -211,11 +233,12 @@ const NO_INPUT_SCHEMA = { type: "object", properties: {}, additionalProperties: 
 async function refreshEquipped(
   turn: Turn<unknown>,
   tools: ToolSet,
-  /** Re-read the listing after every call. A `find_tools` call is what changes
-   *  the equipped set, and `prepareStep` reads the snapshot synchronously, so the
-   *  re-read has to happen while we are still inside the call that changed it. */
+  /** Re-read the listing after a call that can CHANGE it
+   *  ({@link SURFACE_CHANGING_CALLS}). `prepareStep` reads the snapshot
+   *  synchronously, so the re-read has to happen while we are still inside the
+   *  call that changed it. */
   afterCall: () => Promise<void>,
-): Promise<string[]> {
+): Promise<ToolListing[]> {
   const listings = await turn.tools.list();
   for (const listing of listings) {
     tools[listing.name] ??= tool({
@@ -229,12 +252,12 @@ async function refreshEquipped(
       // `call()`.
       execute: async (input: unknown) => {
         const result = await turn.tools.call(listing.name, input as Json);
-        await afterCall();
+        if (SURFACE_CHANGING_CALLS.has(listing.name)) await afterCall();
         return result;
       },
     });
   }
-  return listings.map((listing) => listing.name);
+  return listings;
 }
 
 /**
@@ -526,15 +549,19 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         });
       };
       if (deps.tools === undefined) {
+        let listings: ToolListing[] = [];
         const refresh = async (): Promise<void> => {
-          equipped = await refreshEquipped(turn, residentTools, refresh);
+          listings = await refreshEquipped(turn, residentTools, refresh);
+          equipped = listings.map((listing) => listing.name);
         };
         await refresh();
         residentTools[HIRE_SUBAGENT] = hireSubagent;
         if (searchCfg !== undefined) {
-          // The starting toolbelt, computed once per turn over the projected
-          // listing; everything past it stays reachable through `find_tools`.
-          const initial = computeInitialLoadout(await turn.tools.list(), searchCfg);
+          // The starting toolbelt, computed once per turn over the listing the
+          // wrappers were just built from; everything past it stays reachable
+          // through `find_tools`. Re-listing here asked the registry to project
+          // the whole catalog a second time to answer the same question.
+          const initial = computeInitialLoadout(listings, searchCfg);
           residentTools[FIND_TOOLS_TOOL_NAME] = tool({
             description: FIND_TOOLS_DESCRIPTION,
             inputSchema: z.object({

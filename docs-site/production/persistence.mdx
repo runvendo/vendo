@@ -92,25 +92,42 @@ than as a silent no-op.
 
 ## Erasing a user
 
-`eraseStore` is the deletion path for right-to-erasure requests, for tearing
-down a test app, and for purging old runs. It cascades across every store
-table.
+Erasure is the deletion path for right-to-erasure requests, for tearing down a
+test app, and for purging old runs. It cascades across every store table, and
+which call you make depends on which store this deployment composed.
+
+A LOCAL store — the default, or your own Postgres — runs the SQL cascade through
+`eraseStore`, which takes the `files` adapter so rows and objects go together:
 
 ```ts highlight={4}
 import { eraseStore } from "@vendoai/vendo/server";
 
 // Everything this subject owns, across every table.
-const report = await eraseStore(vendo.store).bySubject(subjectId);
+const report = await eraseStore(vendo.store, { files }).bySubject(subjectId);
 
 // Everything one app owns.
-const byApp = await eraseStore(vendo.store).byApp(appId);
+const byApp = await eraseStore(vendo.store, { files }).byApp(appId);
 ```
 
-Each call returns per-table deleted counts, so you can log the cascade or
-assert on it.
+The HOSTED store carries its own erase door with the same two methods and no
+`files` — the console cascades its own storage server-side. `eraseStore` cannot
+be handed that store: it throws `Unknown VendoStore handle` before any request
+goes out.
+
+```ts highlight={3}
+import type { HostedStore } from "@vendoai/vendo/server";
+
+const hosted = (vendo.store as HostedStore).erase;
+const report = await hosted.bySubject(subjectId);
+const byApp = await hosted.byApp(appId);
+```
+
+Either way the call returns per-table deleted counts, so you can log the cascade
+or assert on it. [Erasing a user](/users-orgs/erasing-a-user) has the one branch
+that serves both postures — the branch the Maple demo ships.
 
 <Warning>
-  Against Vendo Cloud, `eraseStore` needs an **admin-scoped** `VENDO_API_KEY`.
+  Against Vendo Cloud, the erase door needs an **admin-scoped** `VENDO_API_KEY`.
   A runtime-scoped key is refused with HTTP 403 and the `blocked` code before
   the request body is read.
 

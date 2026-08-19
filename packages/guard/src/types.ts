@@ -237,6 +237,20 @@ export interface CreateGuardConfig extends GuardRules {
    *  record doors, which is what a host's BYO `StoreAdapter` gets. */
   ops?: StoreOps;
   resolveRisk?: RiskResolver;
+  /**
+   * The standing powers one yes to a parked ask would mint, for
+   * `ApprovalRequest.powers`.
+   *
+   * Composition supplies it because the guard cannot know: arming an automation
+   * is the one ask whose yes authorizes calls NOBODY HAS MADE YET, and which
+   * tools those are is a question only the automations engine can answer. Asked
+   * once per park, for every ask — an implementation that has nothing to say
+   * about this call answers `undefined` and the request carries no `powers`.
+   *
+   * A throw or a rejection is swallowed: an ask that a person needs to see must
+   * never fail to park because a label could not be computed.
+   */
+  describePowers?: (call: ToolCall, ctx: RunContext) => Promise<readonly string[] | undefined>;
   /** Build contract §9.10 — the org-admin policy layer, resolved per check from
    *  the caller's asserted orgs (composition reads `/orgs/<orgId>/policy.json`
    *  and unions the rules). Applied as a post-pipeline strictness clamp that can

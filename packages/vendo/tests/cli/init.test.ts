@@ -6,6 +6,7 @@ import type { RunContext, ToolDescriptor } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { runDoctor } from "../../src/cli/doctor.js";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
 import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE } from "../../src/cli/framework.js";
 import { firstSentence, prettyThemeReview, runInit, type InitReceipt } from "../../src/cli/init.js";
@@ -87,10 +88,14 @@ async function customFixture(): Promise<string> {
   return root;
 }
 
-/** How the generated map reaches `app/actions/*` out of the route dir.
-    Assembled rather than written literally: an escaping relative specifier
-    spelled inline reads to the dependency guard as a real import. */
-const ACTION_SPECIFIER = ["..", "..", "..", "actions", "later"].join("/");
+/** How a generated or pasted file reaches the composition module. Assembled
+    rather than written literally, for the same reason as ACTION_SPECIFIER. */
+const LIB_VENDO = (up: number): string => [...Array<string>(up).fill(".."), "lib", "vendo"].join("/");
+
+/** How the generated map reaches `app/actions/*` out of the composition dir
+    (`lib/`). Assembled rather than written literally: an escaping relative
+    specifier spelled inline reads to the dependency guard as a real import. */
+const ACTION_SPECIFIER = ["..", "app", "actions", "later"].join("/");
 
 function output(): { output: Output; logs: string[]; errors: string[] } {
   const logs: string[] = [];
@@ -122,13 +127,21 @@ function run(root: string, sink: { output: Output }, extra: Partial<Parameters<t
 
 /** An --agent run with every question already answered: the WRITE pass, whose
     last line is the receipt. Leaving any one of them off makes it the ask
-    pass instead. */
+    pass instead.
+
+    `harnesses: []` because agent mode GRADES now (2026-08-18): without an empty
+    ladder these runs would probe the developer's own machine and, where Claude
+    Code is installed, spend a real model call per test. A test that wants the
+    pass to run supplies its own scripted harness. */
 function agentRun(
   root: string,
   sink: { output: Output },
   extra: Partial<Parameters<typeof runInit>[0]> = {},
 ): Promise<number> {
-  return run(root, sink, { agent: true, useCase: "embedded", auth: "none", byo: true, ...extra });
+  return run(root, sink, {
+    agent: true, useCase: "embedded", auth: "none", byo: true, baseUrl: "http://localhost:3000",
+    extract: { harnesses: [] }, ...extra,
+  });
 }
 
 const receiptOf = (logs: string[]): InitReceipt => JSON.parse(logs.at(-1)!) as InitReceipt;
@@ -155,15 +168,26 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
 
-    // The generated code file: a model-less createVendo (model is optional).
-    // No client file is generated at all — the host writes its own.
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";');
+    // The generated code file: a model-less createVendo (model is optional),
+    // in the ONE module `@/lib/vendo` every docs page already imports. No
+    // client file is generated at all — the host writes its own.
+    const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
+    expect(composition).toContain('import { createVendo, guard } from "@vendoai/vendo/server";');
+    expect(composition).toContain("export const vendo = createVendo({");
     // The anonymous principal matches the docs' chat-route demo principal —
     // a null wire principal makes chat-created apps invisible to the embeds
     // (0.4.1 E2E cert B4).
-    expect(route).toContain('principal: async () => ({ kind: "user" as const, subject: "demo-user" })');
-    expect(route).not.toContain("model");
+    expect(composition).toContain('principal: async () => ({ kind: "user" as const, subject: "demo-user" })');
+    expect(composition).not.toContain("model");
+    // …and the route is a thin handler over it: a Next route module may export
+    // only route handlers, so createVendo can never live in one.
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain(`import { vendo } from ${JSON.stringify(LIB_VENDO(4))};`);
+    expect(route).toContain("export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);");
+    expect(route).not.toMatch(/\bcreateVendo\b/);
+    // The install records the answer doctor grades against.
+    expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8")))
+      .toEqual({ format: "vendo/install@1", useCase: "embedded" });
     await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(root, "vendo", "vendo-root.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     // The host's own layout is NOT touched: mounting the provider is the
@@ -194,8 +218,9 @@ describe("vendo init (zero-question)", () => {
 
     // The summary lists what changed; nothing is left to paste.
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("Wired (3 files):");
+    expect(logs).toContain("Wired (4 files):");
     expect(logs).toContain("+ " + join("app", "api", "vendo", "[...vendo]", "route.ts"));
+    expect(logs).toContain("+ " + join("lib", "vendo.ts"));
     expect(logs).toContain("+ next.config.mjs");
     expect(logs).not.toContain("~ " + join("app", "layout.tsx"));
     expect(logs).toContain("~ package.json");
@@ -227,16 +252,16 @@ describe("vendo init (zero-question)", () => {
       "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
     const sink = output();
     expect(await run(root, sink, {
-      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "https://app.acme.com",
+      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "http://localhost:3000",
     })).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain(
-      "  Set `VENDO_BASE_URL` in your deploy platform\n"
-      + "    `https://app.acme.com` — captured earlier, already in .env.example",
+      "  When you deploy, set `VENDO_BASE_URL` in your platform to the public origin\n"
+      + "    dev is answered — `http://localhost:3000` is in .env.local, and every discovery URL hangs off it",
     );
     // The headline of a step is never indented past two spaces, so a reader
     // (and a grep) can still tell a step from its detail.
-    expect(logs).toContain("  Point any MCP client at `https://app.acme.com/api/vendo/mcp`\n    your users' setup page");
+    expect(logs).toContain("  Point any MCP client at `http://localhost:3000/api/vendo/mcp`\n    your users' setup page");
   });
 
   it("is idempotent: a re-run changes nothing and says so", async () => {
@@ -286,6 +311,9 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain("nextVendoHandler");
+    // The composition follows the app directory under src/ — appDirectory's own
+    // rule, so the two can never land on different bases.
+    await expect(readFile(join(root, "src", "lib", "vendo.ts"), "utf8")).resolves.toContain("createVendo({");
     expect(await readdir(root)).not.toContain("app");
   });
 
@@ -319,16 +347,16 @@ describe("vendo init (zero-question)", () => {
     await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     // The preset comes from its own subpath — never "@vendoai/vendo/server" —
     // so importing it never resolves the other presets' optional peer deps
     // (corpus-triage Task 9).
     expect(route).toContain(`import { ${preset} } from "${specifier}";`);
-    expect(route).toContain('import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";');
+    expect(route).toContain('import { createVendo, guard } from "@vendoai/vendo/server";');
     expect(route).toContain(`auth: ${preset}(),`);
     // The detected line carries its escape hatch, and the preset owns the
     // principal seam — no hand-wired anonymous resolver remains.
-    expect(route).toContain("https://docs.vendo.run/connect/act-as-presets");
+    expect(route).toContain("https://docs.vendo.run/production/auth");
     expect(route).not.toContain("principal");
     // Detection is silent: no question, no advisory.
     expect(sink.logs.join("\n")).not.toContain("Auth:");
@@ -352,7 +380,7 @@ describe("vendo init (zero-question)", () => {
     // The question says what is being DECIDED — whether the agent acts as the
     // person at the keyboard — not the mechanism it wires.
     expect(asked).toEqual([{ question: "Should the agent act as your signed-in Auth.js user?", defaultYes: true }]);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
@@ -369,7 +397,7 @@ describe("vendo init (zero-question)", () => {
       confirmAuth: async () => false,
       selectAuth: async () => "none",
     })).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).not.toContain("auth:");
     expect(route).toContain('principal: async () => ({ kind: "user" as const, subject: "demo-user" })');
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
@@ -377,7 +405,7 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain("left anonymous");
     expect(advisories[0]).toContain("@clerk/nextjs");
     expect(advisories[0]).toContain("auth: clerk()");
-    expect(advisories[0]).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
+    expect(advisories[0]).toContain(join("lib", "vendo.ts"));
   });
 
   it("--yes never asks even in an interactive run: the detected default is accepted, no picker either", async () => {
@@ -402,7 +430,7 @@ describe("vendo init (zero-question)", () => {
     })).toBe(0);
     expect(askedCount).toBe(0);
     expect(pickedCount).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
   });
 
@@ -433,11 +461,11 @@ describe("vendo init (zero-question)", () => {
 
     // clerk() is wired exactly like a detection-accept, with an honest
     // lead-in: it was picked, not detected.
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: clerk(),");
     expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
     expect(route).not.toContain("Detected");
-    expect(route).toContain("https://docs.vendo.run/connect/act-as-presets");
+    expect(route).toContain("https://docs.vendo.run/production/auth");
     expect(route).not.toContain("principal");
     // …plus one install hint, since @clerk/backend is not in package.json.
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
@@ -458,13 +486,13 @@ describe("vendo init (zero-question)", () => {
       confirmAuth: async () => false,
       selectAuth: async () => "jwt",
     })).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).not.toContain("auth:");
     expect(route).toContain('principal: async () => ({ kind: "user" as const, subject: "demo-user" })');
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
     expect(advisories).toHaveLength(1);
     expect(advisories[0]).toContain("auth: jwt({ secret:");
-    expect(advisories[0]).toContain("https://docs.vendo.run/connect/act-as-presets");
+    expect(advisories[0]).toContain("https://docs.vendo.run/production/auth");
   });
 
   it("ambiguous detection offers the picker with detected families first (after none)", async () => {
@@ -499,7 +527,7 @@ describe("vendo init (zero-question)", () => {
     expect(askedSelects[0]![2]).toMatchObject({ hint: "detected @auth0/nextjs-auth0" });
 
     // The detected pick wires like a detection-accept: no advisory at all.
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: supabase(),");
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
@@ -512,7 +540,7 @@ describe("vendo init (zero-question)", () => {
     }));
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).not.toContain("auth:");
     expect(route).toContain('principal: async () => ({ kind: "user" as const, subject: "demo-user" })');
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
@@ -536,7 +564,7 @@ describe("vendo init (zero-question)", () => {
       confirmAuth: async () => { throw new Error("prompted"); },
       selectAuth: async () => { throw new Error("prompted"); },
     })).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: clerk(),");
     expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
     const advisories = sink.logs.filter((line) => line.includes("Auth:"));
@@ -554,7 +582,7 @@ describe("vendo init (zero-question)", () => {
     await writeFile(join(detected, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
     const detectedSink = output();
     expect(await run(detected, detectedSink, { yes: true, auth: "supabase" })).toBe(0);
-    const detectedRoute = await readFile(join(detected, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const detectedRoute = await readFile(join(detected, "lib", "vendo.ts"), "utf8");
     expect(detectedRoute).toContain("auth: supabase(),");
     expect(detectedRoute).toContain("Detected @supabase/supabase-js");
     expect(detectedSink.logs.join("\n")).not.toContain("Auth:");
@@ -567,7 +595,7 @@ describe("vendo init (zero-question)", () => {
     }));
     const declinedSink = output();
     expect(await run(declined, declinedSink, { yes: true, auth: "none" })).toBe(0);
-    const declinedRoute = await readFile(join(declined, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const declinedRoute = await readFile(join(declined, "lib", "vendo.ts"), "utf8");
     expect(declinedRoute).toContain('subject: "demo-user"');
     expect(declinedSink.logs.join("\n")).toContain("left anonymous");
 
@@ -575,7 +603,7 @@ describe("vendo init (zero-question)", () => {
     const jwt = await fixture();
     const jwtSink = output();
     expect(await run(jwt, jwtSink, { yes: true, auth: "jwt" })).toBe(0);
-    const jwtRoute = await readFile(join(jwt, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const jwtRoute = await readFile(join(jwt, "lib", "vendo.ts"), "utf8");
     expect(jwtRoute).toContain('subject: "demo-user"');
     expect(jwtSink.logs.join("\n")).toContain("auth: jwt({ secret:");
   });
@@ -609,6 +637,30 @@ describe("vendo init (zero-question)", () => {
     // The one line after it is the outstanding-paste echo: with a mount still
     // pending, the run's LAST word is the step the human owns (audit F5).
     expect(sink.logs[sink.logs.length - 1]).toBe(`\n→ Don't forget the paste in ${join("app", "layout.tsx")} (frame above)`);
+  });
+
+  /** Every fix-it text that reaches a NON-INTERACTIVE audience has to name the
+      command that actually works there: a bare `vendo sync` skips the judgment
+      pass unless a human answers the consent prompt, so an agent or a CI job
+      following that advice runs it and nothing changes. */
+  it("tells an agent to run `vendo sync --ai`, never the bare command that would skip", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "api", "customers"), { recursive: true });
+    await writeFile(join(root, "app", "api", "customers", "route.ts"),
+      "export async function GET() { return Response.json({ customers: [] }); }\n");
+    const sink = output();
+    expect(await agentRun(root, sink)).toBe(0);
+
+    // The keyless run's judgment line…
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("run `vendo sync --ai` to grade the catalog");
+    // …and the per-tool risk advice the receipt hands back.
+    const ungraded = receiptOf(sink.logs).riskRecommendations.filter((entry) => entry.risk === "ungraded");
+    expect(ungraded.length).toBeGreaterThan(0);
+    for (const entry of ungraded) expect(entry.recommendation).toContain("run `vendo sync --ai` with a model key");
+    // The bare form never appears as advice (the sync hooks still use it with
+    // their own explicit --no-ai, so scope the check to the advice lines).
+    expect(logs).not.toContain("run `vendo sync` ");
   });
 
   // A tool the run extracted and then left off WITHOUT being asked to is the one
@@ -671,7 +723,7 @@ describe("vendo init (zero-question)", () => {
     expect(await run(anonymous, anonymousSink)).toBe(0);
     const anonymousTail = anonymousSink.logs.join("\n").split("Agent tail:")[1]!;
     expect(anonymousTail).toContain("auth: none wired");
-    expect(anonymousTail).toContain(`edit ${join("app", "api", "vendo", "[...vendo]", "route.ts")} — `);
+    expect(anonymousTail).toContain(`edit ${join("lib", "vendo.ts")} — `);
     // The advisory count stays exact: the tail never repeats the "Auth:" line.
     expect(anonymousSink.logs.filter((line) => line.includes("Auth:"))).toHaveLength(1);
 
@@ -725,8 +777,7 @@ describe("vendo init (zero-question)", () => {
     // The flag answers it: the same host scaffolds as the named framework.
     const answered = output();
     expect(await run(root, answered, { yes: true, framework: "next" })).toBe(0);
-    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
-      .resolves.toContain("createVendo");
+    await expect(readFile(join(root, "lib", "vendo.ts"), "utf8")).resolves.toContain("createVendo");
   });
 
   it("interactive init on an undetectable framework scaffolds the runtime-neutral module, never the Next layout", async () => {
@@ -935,14 +986,14 @@ describe("vendo init (zero-question)", () => {
       installProvider: async () => 0,
     })).toBe(0);
 
-    const routePath = join("app", "api", "vendo", "[...vendo]", "route.ts");
-    const route = await readFile(join(root, routePath), "utf8");
-    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
-    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
-    expect(route.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
-    expect(route.match(/models:/g)).toHaveLength(1);
+    const compositionPath = join("lib", "vendo.ts");
+    const composition = await readFile(join(root, compositionPath), "utf8");
+    expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(composition.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+    expect(composition.match(/models:/g)).toHaveLength(1);
 
-    expect(sink.logs.join("\n")).toContain(`models: anthropic — written into ${routePath}`);
+    expect(sink.logs.join("\n")).toContain(`models: anthropic — written into ${compositionPath}`);
   });
 
   /** A key that only ever lived in .env.local counts the same way — it is the
@@ -953,7 +1004,7 @@ describe("vendo init (zero-question)", () => {
     await writeFile(join(root, ".env.local"), 'ANTHROPIC_API_KEY="sk-ant-local"\n');
     const sink = output();
     expect(await run(root, sink, { installProvider: async () => 0 })).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain(`models: { default: anthropic("claude-sonnet-4-6") }`);
   });
 
@@ -981,14 +1032,14 @@ describe("vendo init (zero-question)", () => {
     expect(installs).toEqual([{ args: ["install", "ai@^6", "@ai-sdk/anthropic@^3"] }]);
 
     expect(await readFile(join(root, ".env.local"), "utf8")).toContain("ANTHROPIC_API_KEY=sk-ant-api03-pasted");
-    const routePath = join("app", "api", "vendo", "[...vendo]", "route.ts");
-    const route = await readFile(join(root, routePath), "utf8");
-    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
-    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    const compositionPath = join("lib", "vendo.ts");
+    const composition = await readFile(join(root, compositionPath), "utf8");
+    expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
     // Exactly once, and the run says where — never the dead-end advice.
-    expect(route.match(/models:/g)).toHaveLength(1);
+    expect(composition.match(/models:/g)).toHaveLength(1);
     const logs = sink.logs.join("\n");
-    expect(logs).toContain(`models: anthropic — written into ${routePath}`);
+    expect(logs).toContain(`models: anthropic — written into ${compositionPath}`);
     expect(logs).not.toContain("No model key yet");
   });
 
@@ -1027,7 +1078,7 @@ describe("vendo init (zero-question)", () => {
       },
     })).toBe(0);
 
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain(`import { ${provider} } from "@ai-sdk/${provider}";`);
     // The import is written AND the dependency that satisfies it is installed.
     expect(installs).toEqual([{ args: ["install", "ai@^6", spec] }]);
@@ -1037,7 +1088,7 @@ describe("vendo init (zero-question)", () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).not.toContain("@ai-sdk/");
     expect(route).not.toContain("models:");
     const logs = sink.logs.join("\n");
@@ -1045,11 +1096,11 @@ describe("vendo init (zero-question)", () => {
     expect(logs).toContain("No model key yet");
   });
 
-  /** The MCP arm replaces the route this planned for with the thin handler over
-      ./vendo, so the line moves into that path's composition module — and the
-      summary must name THAT file. Naming route.ts here would send the reader
-      to a file with no `models:` in it (the bug this pins). */
-  it("moves the models line into the MCP composition module, and names that file", async () => {
+  /** The MCP arm re-renders the SAME composition module the wire route already
+      imports, so the line lands there — and the summary must name THAT file.
+      Naming route.ts here would send the reader to a file with no `models:` in
+      it (the bug this pins). */
+  it("keeps the models line in the composition the MCP arm re-renders, and names that file", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-models-"));
     cleanup.push(root);
     await mkdir(join(root, "app"), { recursive: true });
@@ -1072,21 +1123,24 @@ describe("vendo init (zero-question)", () => {
     const wiringDir = join(root, "app", "api", "vendo", "[...vendo]");
     const route = await readFile(join(wiringDir, "route.ts"), "utf8");
     // The thin route carries neither half — it composes nothing at all.
-    expect(route).toContain(`import { vendo } from "./vendo";`);
+    expect(route).toContain(`import { vendo } from ${JSON.stringify(LIB_VENDO(4))};`);
     expect(route).not.toContain("@ai-sdk/");
     expect(route).not.toContain("models:");
 
-    const composition = await readFile(join(wiringDir, "vendo.ts"), "utf8");
+    const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
     expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(composition).toContain("mcp: true,");
     // One selection per host, across BOTH files init wrote on this path.
     expect(`${route}${composition}`.match(/models:/g)).toHaveLength(1);
     expect(`${route}${composition}`.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+    // The discovery route reaches the SAME module (instance identity is how
+    // wellKnownVendoHandler resolves its path set).
+    await expect(readFile(join(root, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
+      .resolves.toContain(`import { vendo } from ${JSON.stringify(LIB_VENDO(3))};`);
 
-    // The summary names the composition module, not the route it replaced.
-    expect(sink.logs.join("\n")).toContain(
-      `models: anthropic — written into ${join("app", "api", "vendo", "[...vendo]", "vendo.ts")}`,
-    );
+    // The summary names the composition module, not the route that imports it.
+    expect(sink.logs.join("\n")).toContain(`models: anthropic — written into ${join("lib", "vendo.ts")}`);
   });
 
   /** A Cloud key is not a provider key: its models resolve through the
@@ -1098,7 +1152,7 @@ describe("vendo init (zero-question)", () => {
       env: { VENDO_API_KEY: `vnd_${"c".repeat(40)}` },
       installProvider: async () => 0,
     })).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).not.toContain("@ai-sdk/");
     expect(route).not.toContain("models:");
     expect(sink.logs.join("\n")).not.toContain("written into");
@@ -1151,13 +1205,39 @@ describe("vendo init (zero-question)", () => {
     const example = await readFile(join(root, ".env.example"), "utf8");
     expect(example).toContain("HOST_FLAG=1");
     expect(example).toContain("VENDO_BASE_URL=http://localhost:3000");
-    // Post server-wiring semantics: dev trusts its own origin; production
-    // fails loud without the variable — no silent credential drop.
-    expect(example).toContain("Dev trusts the request's own");
-    expect(example).toContain("fails loud without this set");
+    // The line is an INSTRUCTION now, not a value to fill in at init: dev was
+    // answered into .env.local, production is set where the app deploys, and a
+    // public URL belongs in neither this file nor .env.local. The security
+    // phrasing is unchanged — the behaviour it describes did not change.
+    expect(example).toContain("Dev is already done");
+    expect(example).toContain("wrote your");
+    expect(example).toContain("platform's environment settings to the public URL");
+    expect(example).toContain("in neither a committed file nor .env.local");
+    expect(example).toContain("Production fails loud without it");
     expect(example).not.toContain("disabled without it");
     expect(await run(root, output())).toBe(0);
-    expect((await readFile(join(root, ".env.example"), "utf8")).match(/VENDO_BASE_URL/g)).toHaveLength(1);
+    // The ASSIGNMENT, not the name: the block's comment names the variable too,
+    // and what must never double is the line.
+    expect((await readFile(join(root, ".env.example"), "utf8")).match(/^VENDO_BASE_URL=/gm)).toHaveLength(1);
+  });
+
+  /** The illustrative line used to name :3000 on every host, so a dev on
+      another port read a base URL that pointed at nothing. */
+  it("names the host's OWN dev port in .env.example, and no answer ever rewrites that file", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0" },
+      scripts: { dev: "next dev -p 4000" },
+    }));
+    expect(await run(root, output())).toBe(0);
+    expect(await readFile(join(root, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4000");
+
+    // The dev answer lands in .env.local. .env.example is documentation now, so
+    // a run that captures an answer leaves it byte for byte.
+    expect(await run(root, output(), { baseUrl: "http://localhost:4100" })).toBe(0);
+    expect(await readFile(join(root, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4000");
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4100");
   });
 
   it("merges the sync hooks into existing scripts without clobbering them", async () => {
@@ -1182,18 +1262,19 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
 
-    const actions = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
+    // The map lives NEXT TO the composition that imports it.
+    const actions = await readFile(join(root, "lib", "vendo-actions.ts"), "utf8");
     expect(actions).toContain("createInvoice");
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { serverActions } from "./vendo-actions";');
-    expect(route).toContain("serverActions,");
+    const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
+    expect(composition).toContain('import { serverActions } from "./vendo-actions";');
+    expect(composition).toContain("serverActions,");
   });
 
-  it("never regenerates an existing route.ts or vendo-actions.ts — it prints the paste instead", async () => {
-    const routeDir = join("app", "api", "vendo", "[...vendo]");
+  it("never regenerates an existing composition or vendo-actions.ts — it prints the paste instead", async () => {
+    const libDir = "lib";
     const root = await fixture();
     expect(await run(root, output())).toBe(0);
-    const routePath = join(root, routeDir, "route.ts");
+    const routePath = join(root, libDir, "vendo.ts");
     const routeBefore = await readFile(routePath, "utf8");
 
     // Actions appear AFTER the route was generated: the wiring the route now
@@ -1205,14 +1286,14 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, second)).toBe(0);
     expect(await readFile(routePath, "utf8")).toBe(routeBefore);
     const secondLogs = second.logs.join("\n");
-    expect(secondLogs).toContain(`File: ${join(routeDir, "route.ts")}`);
+    expect(secondLogs).toContain(`File: ${join(libDir, "vendo.ts")}`);
     expect(secondLogs).toContain('import { serverActions } from "./vendo-actions";');
     expect(secondLogs).toContain("… then add inside createVendo({ … }): serverActions,");
 
     // The map that run CREATED now exists, so a surface change afterwards is a
     // printed paste of ONLY the missing entries — the file stays byte-identical,
     // and the alias continues the file's own numbering (action0 is taken).
-    const mapPath = join(root, routeDir, "vendo-actions.ts");
+    const mapPath = join(root, libDir, "vendo-actions.ts");
     const mapBefore = await readFile(mapPath, "utf8");
     expect(mapBefore).toContain("later");
     await writeFile(join(root, "app", "actions", "later.ts"),
@@ -1224,7 +1305,7 @@ describe("vendo init (zero-question)", () => {
     const thirdLogs = third.logs.join("\n");
     // The outstanding layout mount, the route wiring, and the unregistered action.
     expect(thirdLogs).toContain("3 STEPS LEFT — paste these yourself (init never edits your files)");
-    expect(thirdLogs).toContain(`File: ${join(routeDir, "vendo-actions.ts")}`);
+    expect(thirdLogs).toContain(`File: ${join(libDir, "vendo-actions.ts")}`);
     expect(thirdLogs).toContain(`import { renamed as action1 } from ${JSON.stringify(ACTION_SPECIFIER)};`);
     expect(thirdLogs).toContain("… then add inside the serverActions map:");
     expect(thirdLogs).toContain('"app/actions/later.ts#renamed": action1,');
@@ -1240,7 +1321,7 @@ describe("vendo init (zero-question)", () => {
   // its action surface is unchanged, or every existing install nags forever
   // with a "the surface moved" message that is simply false.
   it("says nothing about a map whose surface is unchanged, however far its text has drifted", async () => {
-    const routeDir = join("app", "api", "vendo", "[...vendo]");
+    const routeDir = "lib";
     const root = await fixture();
     await mkdir(join(root, "app", "actions"), { recursive: true });
     await writeFile(join(root, "app", "actions", "later.ts"),
@@ -1276,7 +1357,7 @@ describe("vendo init (zero-question)", () => {
   // runtime will never dispatch, so demanding its registration is a nag for
   // work that buys nothing. Init and doctor resolve the same live set.
   it("does not demand registration of an action disabled in overrides.json", async () => {
-    const routeDir = join("app", "api", "vendo", "[...vendo]");
+    const routeDir = "lib";
     const root = await fixture();
     await mkdir(join(root, "app", "actions"), { recursive: true });
     await writeFile(join(root, "app", "actions", "later.ts"),
@@ -1312,7 +1393,7 @@ describe("vendo init (zero-question)", () => {
   });
 
   it("carries the pastes it will not write into the receipt", async () => {
-    const routeDir = join("app", "api", "vendo", "[...vendo]");
+    const routeDir = "lib";
     const root = await fixture();
     expect(await run(root, output())).toBe(0);
     await mkdir(join(root, "app", "actions"), { recursive: true });
@@ -1320,10 +1401,10 @@ describe("vendo init (zero-question)", () => {
       '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
     const sink = output();
     expect(await agentRun(root, sink)).toBe(0);
-    const edit = receiptOf(sink.logs).pasteEdits.find((paste) => paste.file === join(routeDir, "route.ts"));
+    const edit = receiptOf(sink.logs).pasteEdits.find((paste) => paste.file === join(routeDir, "vendo.ts"));
     expect(edit?.lines).toContain('import { serverActions } from "./vendo-actions";');
     expect(edit?.why).toContain("fails closed");
-    expect(sink.logs.join("\n")).toContain(`File: ${join(routeDir, "route.ts")}`);
+    expect(sink.logs.join("\n")).toContain(`File: ${join(routeDir, "vendo.ts")}`);
   });
 
   it("leaves a hand-customized route that passes its own serverActions untouched (no conflicting import)", async () => {
@@ -1381,7 +1462,7 @@ describe("vendo init (zero-question)", () => {
   it("activates the init-written policy file in both scaffolds: destructive asks, reads run", async () => {
     const root = await fixture();
     expect(await run(root, output())).toBe(0);
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("guard: guard({ policy: {} }),");
 
     const express = await expressFixture(false);
@@ -1805,17 +1886,21 @@ describe("vendo init --agent (ask first, then write)", () => {
     const asked = questionsOf(sink.logs);
     expect(asked.status).toBe("questions");
     expect(asked.detected.framework).toBe("next");
-    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "models"]);
+    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "models", "dev-url"]);
     // The prompts are chat copy, relayed verbatim: each option carries the
     // literal thing the agent does to pick it.
     expect(asked.questions[0]?.prompt).toContain("real working screens from your data");
     expect(asked.questions[0]?.options[0]).toMatchObject({ flag: "--use-case embedded", recommended: true });
     expect(asked.questions[2]?.options[0]?.command).toBe("npx vendo login --wait 90");
     expect(asked.questions[2]?.options[1]?.flag).toBe("--byo");
+    // The dev URL travels like the rest: the recommended option carries the
+    // host's own dev port, so relaying it costs the reader one word.
+    expect(asked.questions[3]?.prompt).toContain("Vendo writes it to .env.local as VENDO_BASE_URL");
+    expect(asked.questions[3]?.options[0])
+      .toMatchObject({ flag: "--base-url http://localhost:3000", recommended: true });
     // The mechanical answers never surface: they default like --yes and show
     // up in the diff.
     const ids = asked.questions.map((question) => question.id).join(" ");
-    expect(ids).not.toContain("base-url");
     expect(ids).not.toContain("theme");
     expect(ids).not.toContain("check");
     expect(await tree(root)).toEqual(before); // the ask pass wrote nothing
@@ -1847,7 +1932,9 @@ describe("vendo init --agent (ask first, then write)", () => {
       },
     });
     expect(receipt.wrote).toContain(".vendo/tools.json");
+    expect(receipt.wrote).toContain(".vendo/install.json");
     expect(receipt.wrote).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
+    expect(receipt.wrote).toContain(join("lib", "vendo.ts"));
     // Every named path is one the caller can open: this rejects the plan's
     // static list, which promises a fonts.css only an embedded font creates.
     await Promise.all(receipt.wrote.map((path) => readFile(join(root, path), "utf8")));
@@ -1857,8 +1944,9 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(Array.isArray(receipt.riskRecommendations)).toBe(true);
     // The retired plan dump's fields are gone with it.
     expect(sink.logs.join("\n")).not.toContain("codeChanges");
-    // Agent mode never spawns a judgment engine and never asks to.
-    expect(sink.logs.join("\n")).toContain("Judgment: delegated to you");
+    // Agent mode asks for the judgment pass now; no engine resolves in a test
+    // fixture, so the checklist comes back as the caller's required work.
+    expect(sink.logs.join("\n")).not.toContain("Judgment: delegated to you");
   });
 
   it("asks MCP's two extra questions on the re-run that picked mcp", async () => {
@@ -1867,11 +1955,15 @@ describe("vendo init --agent (ask first, then write)", () => {
     const sink = output();
     expect(await run(root, sink, { agent: true, useCase: "mcp", auth: "clerk" })).toBe(0);
     const asked = questionsOf(sink.logs);
-    expect(asked.questions.map((question) => question.id)).toEqual(["posture", "service-key"]);
-    expect(asked.questions[0]?.prompt).toContain("yourcompany.mcp.vendo.run");
-    expect(asked.questions[0]?.options[0]?.flag).toBe("--posture broker");
-    expect(asked.questions[1]?.prompt).toContain("machine to machine");
-    expect(asked.questions[1]?.options[0]?.flag).toBe("--service-key");
+    // The dev URL rides along on every path, MCP included — the door's own
+    // discovery derives from it.
+    expect(asked.questions.map((question) => question.id)).toEqual(["dev-url", "posture", "service-key"]);
+    const byId = (id: string): InitQuestions["questions"][number] | undefined =>
+      asked.questions.find((question) => question.id === id);
+    expect(byId("posture")?.prompt).toContain("yourcompany.mcp.vendo.run");
+    expect(byId("posture")?.options[0]?.flag).toBe("--posture broker");
+    expect(byId("service-key")?.prompt).toContain("machine to machine");
+    expect(byId("service-key")?.options[0]?.flag).toBe("--service-key");
   });
 
   /** A keyless run cannot reach a broker, so posture is not a decision — the
@@ -1882,10 +1974,10 @@ describe("vendo init --agent (ask first, then write)", () => {
     const sink = output();
     expect(await run(root, sink, { agent: true, useCase: "mcp", auth: "clerk", byo: true })).toBe(0);
     const asked = questionsOf(sink.logs);
-    expect(asked.questions.map((question) => question.id)).toEqual(["service-key"]);
+    expect(asked.questions.map((question) => question.id)).toEqual(["dev-url", "service-key"]);
     expect(JSON.stringify(asked)).not.toContain("broker");
     // Both answers carry the settled posture, so the SAME gate closes.
-    expect(asked.questions[0]?.options.map((option) => option.flag))
+    expect(asked.questions.find((question) => question.id === "service-key")?.options.map((option) => option.flag))
       .toEqual(["--posture local --service-key", "--posture local"]);
   });
 
@@ -1919,27 +2011,43 @@ describe("vendo init --agent (ask first, then write)", () => {
     await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"a".repeat(40)}\n`);
     const after = output();
     expect(await run(root, after, { agent: true })).toBe(0);
-    expect(questionsOf(after.logs).questions.map((question) => question.id)).toEqual(["use-case", "auth"]);
+    expect(questionsOf(after.logs).questions.map((question) => question.id)).toEqual(["use-case", "auth", "dev-url"]);
   });
 
-  /** `--ai` cannot buy an engine here: the caller IS one. The harness below
-      throws the moment the ladder probes it, so reaching it fails the test. */
-  it("stays delegated under --ai and never probes an engine", async () => {
+  /** Agent mode GRADES (2026-08-18, Yousef's direction): the pass is a scripted,
+      skeptic-checked engine run, so "delegated to you" meant every agent install
+      shipped an ungraded catalog whose every tool asked on each call. It never
+      ASKS for consent — the mode is the consent — and the delegated receipt is
+      the one fallback left, for a machine with no engine at all. */
+  it("grades under --agent with an available engine, and never asks for consent", async () => {
     const root = await fixture();
     const sink = output();
+    let ran = 0;
     expect(await agentRun(root, sink, {
-      ai: true,
       extract: {
         harnesses: [{
-          id: "never",
-          availability: async () => { throw new Error("probed an engine"); },
-          run: async () => { throw new Error("ran an engine"); },
+          id: "scripted",
+          availability: async () => "a scripted harness",
+          run: async () => { ran += 1; return "```json\n" + JSON.stringify({ tools: [] }) + "\n```"; },
         }],
         confirm: async () => { throw new Error("asked for AI consent"); },
       },
     })).toBe(0);
-    expect(sink.logs.join("\n")).toContain("Judgment: delegated to you");
-    expect(receiptOf(sink.logs).judgment.status).toBe("delegated");
+    expect(ran).toBeGreaterThan(0);
+    expect(sink.logs.join("\n")).not.toContain("Judgment: delegated to you");
+    expect(receiptOf(sink.logs).judgment.status).toBe("graded");
+  });
+
+  /** …and with NO engine on the machine, the checklist comes back as REQUIRED
+      work rather than as a default nobody chose. */
+  it("hands the grading back as required work when no engine resolves", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await agentRun(root, sink, { extract: { harnesses: [] } })).toBe(0);
+    expect(sink.logs.join("\n")).toContain("judgment: REQUIRED, not done");
+    const receipt = receiptOf(sink.logs);
+    expect(receipt.judgment.status).toBe("delegated");
+    expect(receipt.judgment).toHaveProperty("checklist");
   });
 
   it("writes and receipts the agent-loop and mcp arms too", async () => {
@@ -1974,7 +2082,7 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(await run(root, sink, { agent: true, env: { ANTHROPIC_API_KEY: "sk-ant-test" } })).toBe(0);
     const asked = questionsOf(sink.logs);
     expect(asked.detected.auth).toBe("clerk");
-    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth"]);
+    expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "dev-url"]);
     expect(asked.questions[1]?.prompt)
       .toBe("It detected Clerk. Should the assistant act as your signed-in Clerk user?");
     expect(asked.questions[1]?.options).toEqual([
@@ -2555,6 +2663,27 @@ describe("the five questions", () => {
     expect(asked).toEqual(asks ? ["How will people use your agent?"] : []);
   });
 
+  /** Doctor grades against the recorded answer now, so an unattended re-run
+      must not silently re-answer the question this project already settled —
+      that would turn an MCP install's doctor green into two false failures. */
+  it("records the answer, and an unattended re-run keeps it instead of falling back to embedded", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    expect(await run(root, output(), { useCase: "mcp", yes: true, auth: "clerk", baseUrl: "https://app.acme.com" })).toBe(0);
+    const recorded = join(root, ".vendo", "install.json");
+    expect(JSON.parse(await readFile(recorded, "utf8"))).toEqual({ format: "vendo/install@1", useCase: "mcp" });
+
+    expect(await run(root, output(), { yes: true })).toBe(0);
+    expect(JSON.parse(await readFile(recorded, "utf8"))).toMatchObject({ useCase: "mcp" });
+
+    // An explicit answer still wins over the record.
+    expect(await run(root, output(), { yes: true, useCase: "embedded" })).toBe(0);
+    expect(JSON.parse(await readFile(recorded, "utf8"))).toMatchObject({ useCase: "embedded" });
+  });
+
   it("--use-case agent-loop adds the snippet for the loop package.json already names", async () => {
     const aiSdk = await fixture();
     await writeFile(join(aiSdk, "package.json"), JSON.stringify({
@@ -2564,8 +2693,14 @@ describe("the five questions", () => {
     const aiSink = output();
     expect(await run(aiSdk, aiSink, { useCase: "agent-loop" })).toBe(0);
     const aiLogs = aiSink.logs.join("\n");
-    expect(aiLogs).toContain("2 STEPS LEFT");
+    // ONE step, not two: an agent-loop install mounts no Vendo UI by design, so
+    // the <VendoProvider> paste is not a step it owes (the rule doctor grades by).
+    expect(aiLogs).toContain("ONE STEP LEFT");
+    expect(aiLogs).not.toContain("VendoOverlay");
     expect(aiLogs).toContain('import { vendoTools } from "@vendoai/vendo/ai-sdk";');
+    // The `vendo` the snippet calls has to COME from somewhere: a second
+    // createVendo in the loop shares no state with the wire the embeds call.
+    expect(aiLogs).toContain(`import { vendo } from ${JSON.stringify(LIB_VENDO(3))};`);
 
     // Mastra's principal step is a step of its own — a call without one fails
     // closed, so an install that skips it looks broken at the first tool call.
@@ -2577,25 +2712,111 @@ describe("the five questions", () => {
     const mastraSink = output();
     expect(await run(mastra, mastraSink, { useCase: "agent-loop" })).toBe(0);
     const mastraLogs = mastraSink.logs.join("\n");
-    expect(mastraLogs).toContain("3 STEPS LEFT");
+    expect(mastraLogs).toContain("2 STEPS LEFT");
     expect(mastraLogs).toContain("vendoMastraTools");
     expect(mastraLogs).toContain("VENDO_PRINCIPAL_KEY");
   });
 
-  it("--base-url replaces init's own .env.example placeholder and never touches .env.local", async () => {
+  /** The dev URL is a QUESTION now, and its answer is WRITTEN. An agent loop, a
+      backend process and the MCP door each send real HTTP requests back at the
+      host's own API, and none of them sees a wire request to learn the origin
+      from — so every one of those installs used to meet "Cannot execute … set
+      VENDO_BASE_URL" on its first turn. One Enter now settles it. */
+  it("asks where the app runs in dev, prefilled with the host's own port, and writes the answer to .env.local", async () => {
     const root = await fixture();
-    expect(await run(root, output(), { baseUrl: "https://app.acme.com" })).toBe(0);
-    const example = await readFile(join(root, ".env.example"), "utf8");
-    expect(example).toContain("VENDO_BASE_URL=https://app.acme.com");
-    expect(example).not.toContain("VENDO_BASE_URL=http://localhost:3000");
-    // A production URL in .env.local would repoint local dev's discovery,
-    // callbacks and forwarding at the deployed origin.
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0" },
+      scripts: { dev: "next dev --port 4000" },
+    }));
+    const asked: Array<{ question: string; hint?: string; prefill?: string }> = [];
+    const sink = output();
+    // A bare Enter is resolved by the prompt itself — the seam stands in for a
+    // terminal, so it answers with the default it was handed.
+    expect(await run(root, sink, {
+      interactive: true,
+      askText: async (question, hint, prefill) => {
+        asked.push({ question, hint, prefill });
+        return prefill ?? "";
+      },
+    })).toBe(0);
+
+    expect(asked).toEqual([{
+      question: "Where does this app run in dev?",
+      hint: "Enter to accept http://localhost:4000",
+      prefill: "http://localhost:4000",
+    }]);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4000");
+    expect(sink.logs.join("\n")).toContain("Wrote VENDO_BASE_URL=http://localhost:4000 to .env.local");
+    // The question that used to live here is gone: production is told at deploy
+    // time, never asked at init.
+    expect(sink.logs.join("\n")).not.toContain("Where will this deploy?");
+  });
+
+  /** Writing the prefill unasked would be a GUESS wearing an answer's clothes:
+      unset, dev still learns the request's own origin and production fails
+      loud, so silence is the honest outcome. */
+  it("never asks and never writes .env.local on an unattended run", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      yes: true,
+      askText: async () => { throw new Error("prompted"); },
+    })).toBe(0);
     await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
 
-    // Enter declines: the placeholder stands, byte for byte.
-    const skipped = await fixture();
-    expect(await run(skipped, output(), { interactive: true, askText: async () => "" })).toBe(0);
-    expect(await readFile(join(skipped, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:3000");
+    // --base-url is the same answer arriving as a flag, and it writes.
+    const answered = await fixture();
+    expect(await run(answered, output(), { yes: true, baseUrl: "http://localhost:5173" })).toBe(0);
+    expect(await readFile(join(answered, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:5173");
+  });
+
+  /** The MCP arm's own question, answered from the same prompt — and then graded
+      by the OTHER side of the seam: a REAL `vendo doctor` run over the repo init
+      just wrote, with no env override, so E-MCP-009 reads the same .env.local
+      init produced. Nothing is stubbed on either end. Local posture in dev is
+      the point: the door's client URL and its discovery both want the origin the
+      developer is looking at. */
+  it("MCP: the dev answer opens the door locally, and a real doctor run greens E-MCP-009", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-dev-url-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "mcp-host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+      scripts: { dev: "next dev -p 4300" },
+    }));
+    await writeFile(join(root, "app", "layout.tsx"),
+      'import { VendoProvider } from "@vendoai/vendo/react";\n'
+      + "export default function Layout({ children }) { return <VendoProvider>{children}<VendoOverlay /></VendoProvider>; }\n");
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      auth: "clerk",
+      interactive: true,
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      selectUseCase: async () => "local",
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(0);
+
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4300");
+    // The client URL a user pastes into Claude is the dev origin, not a guess.
+    expect(sink.logs.join("\n")).toContain("Point any MCP client at `http://localhost:4300/api/vendo/mcp`");
+
+    // The read-back: doctor over the repo init just wrote. No env override, so
+    // it loads .env.local itself — the file this run produced. (Only this check
+    // is this test's business; the fixture owes other things doctor grades.)
+    const doctorLogs: string[] = [];
+    await runDoctor({
+      targetDir: root,
+      json: true,
+      output: { log: (message) => doctorLogs.push(message), error: () => {} },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    const report = JSON.parse(doctorLogs[0]!) as { checks: Array<{ id: string; status: string; message: string }> };
+    expect(report.checks.find((check) => check.id === "mcp/base-url"))
+      .toMatchObject({ status: "ok", message: expect.stringContaining("VENDO_BASE_URL is set") });
   });
 
   it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {

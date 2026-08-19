@@ -636,6 +636,41 @@ describe("host HTTP execution", () => {
     )).resolves.toMatchObject({ status: "ok" });
     expect((request.mock.calls[0]?.[0] as URL).pathname).toBe("/files/folder%20one/child%2Fname");
   });
+
+  // #988: a route tool's declared path is its boundary. Tool-call args are
+  // described to the model but never validated against inputSchema, and the
+  // value can be steered by end-user chat text — so a "."/".." arg must never
+  // substitute as a literal dot-segment that `new URL` then normalizes to climb
+  // above the route. encodeURIComponent leaves "." and ".." intact, and the
+  // array branch joins with a raw "/", so both forms are exploitable.
+  it("rejects a `..`/`.` path argument instead of climbing above the tool's route (#988)", async () => {
+    const requested: string[] = [];
+    const actions = createActions({
+      tools: [routeTool("host_user", {
+        binding: { kind: "route", method: "GET", path: "/users/{id}", argsIn: "query" },
+      })],
+      baseUrl: "https://api.example.com",
+      fetch: async (input) => {
+        requested.push(String(input));
+        return Response.json({ ok: true });
+      },
+    });
+
+    // Scalar: a bare ".." climbs out of the /users boundary (→ the origin root).
+    const scalar = await actions.execute({ id: "1", tool: "host_user", args: { id: ".." } }, ctx);
+    // Array catch-all: ["..","..","admin"] joins to `../../admin` → /admin.
+    const array = await actions.execute(
+      { id: "2", tool: "host_user", args: { id: ["..", "..", "admin"] } },
+      ctx,
+    );
+
+    // The guard refuses BEFORE the outbound fetch, so the host never sees a
+    // climbed request. Unpatched, this array holds the escaped URLs
+    // (https://api.example.com/ and https://api.example.com/admin).
+    expect(requested).toEqual([]);
+    expect(scalar).toMatchObject({ status: "error", error: { code: "validation" } });
+    expect(array).toMatchObject({ status: "error", error: { code: "validation" } });
+  });
 });
 
 describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", () => {

@@ -1,11 +1,12 @@
 /**
  * The rest of the ONE registry: the connector-discovery pair (only as far as an
- * adapter backs it), the knowledge tool, and the capability-miss surface the
- * agent reports an unfulfillable ask through.
+ * adapter backs it), the knowledge tool, the user's file-drawer reads, and the
+ * capability-miss surface the agent reports an unfulfillable ask through.
  */
 import type { Connector } from "@vendoai/actions";
 import { consoleLogger, emitUsage, setLogger, setUsageSink, type Json } from "@vendoai/core";
 import { createKnowledgeTools, knowledgeIndexResolver } from "@vendoai/knowledge";
+import { workspaceStore } from "@vendoai/store";
 import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
@@ -20,6 +21,7 @@ import {
 import { connectorDiscoveryRegistry } from "./connector-discovery.js";
 import { dotVendoFile } from "./dot-vendo.js";
 import { createSdkEvents, sdkRuntime, withSdkErrorReporting } from "./sdk-events.js";
+import { createUserFilesTools } from "./user-files.js";
 import { environment } from "./wire/shared.js";
 
 /** The discovery tools' ports. Each body only runs on a real tool call, long
@@ -166,6 +168,20 @@ export const composeTools = (composition: VendoComposition): Pick<VendoCompositi
       { toolOutputCap },
     ));
   }
+  // The user's file drawer, on the SAME registry as everything else — guarded,
+  // audited and searchable, with no privileged side door. Unconditional: every
+  // deployment has a workspace, so every deployment has a drawer to read.
+  //
+  // The workspace door is opened LAZILY, for the reason harness-turn.ts opens
+  // its own that way: `workspaceStore` wants a backend and throws for a store
+  // that offers neither a SQL handle nor StoreOps, and `createVendo` must stay
+  // I/O-free at module init (the portability gate). Built from the SAME store
+  // and the SAME resolved `files` adapter the harness writes through, so a read
+  // and a write can never resolve to different blobs.
+  let drawer: ReturnType<typeof workspaceStore> | undefined;
+  actions.add(createUserFilesTools(async (principal) =>
+    await (drawer ??= workspaceStore(store, { files: composition.files })).open(principal)));
+
   // Knowledge K1 — the tool exists exactly when an adapter is configured;
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.
   const knowledge = selectKnowledge(config.knowledge, store);
