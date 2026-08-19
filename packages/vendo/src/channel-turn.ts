@@ -29,7 +29,7 @@ import type {
   ChannelLinkRepository,
 } from "./channel-links.js";
 import type { ChannelsService, InboundTextEvent } from "./channels.js";
-import type { HarnessTurns } from "./harness-turn.js";
+import { SERVER_AUTHORED, type HarnessTurns } from "./harness-turn.js";
 
 /** Texting humans reply on a human clock — they put the phone down, they drive,
  *  they come back. The web's 90s wait is a closed-tab bound and would time out
@@ -521,7 +521,12 @@ export async function runChannelTurn(
       parts: [{ type: "text", text: event.text }, { type: "text", text: TEXT_STYLE }],
     } as UIMessage;
     const response = await deps.harness.stream({
-      ...(threadId === undefined ? {} : { threadId }),
+      // Vouched for in the same breath as the thread id, because the two facts
+      // are one fact: a rolling thread exists only because a turn already ran on
+      // it, and `message` above was built HERE from a delivery Cloud
+      // authenticated — never posted by a client. Without a rolling thread there
+      // is nothing to vouch for, so the door reads before it writes as usual.
+      ...(threadId === undefined ? {} : { threadId, [SERVER_AUTHORED]: true as const }),
       message,
       ctx,
       approvalWaitMs: CHANNEL_APPROVAL_WAIT_MS,

@@ -188,6 +188,24 @@ const withFileReferences = (messages: readonly UIMessage[]): UIMessage[] =>
     )),
   })) as UIMessage[];
 
+/**
+ * Composition's word that this turn's opening WRITE needs nothing from its
+ * opening read — which is what lets the two go out together instead of one
+ * behind the other.
+ *
+ * It asserts two things at once, and both have to hold: the message was authored
+ * by THIS process rather than posted by a client (so `validateUpsert` has no
+ * history to protect), and `threadId` came off a row that only carries one
+ * because a turn already ran on it (so the thread exists and already holds the
+ * title the append would otherwise have to derive from the read).
+ *
+ * A SYMBOL, and not exported from the package, because those two claims can only
+ * be made by code that watched them become true. `JSON.parse` cannot produce a
+ * symbol key, so no request body can carry it however a door is later written,
+ * and no host can reach it. The one caller is `runChannelTurn`.
+ */
+export const SERVER_AUTHORED = Symbol("vendo.turn.serverAuthored");
+
 export interface HarnessTurns {
   /** One turn. Mirrors `VendoAgent.stream`'s signature so the wire route reads
    *  the same either way — including the `x-vendo-thread-id` response header. */
@@ -200,6 +218,7 @@ export interface HarnessTurns {
      *  frozen APPROVAL_WAIT_MS (a web tab's bound); a turn served over a
      *  channel where the person answers on a human clock passes its own. */
     approvalWaitMs?: number;
+    readonly [SERVER_AUTHORED]?: true;
   }): Promise<Response>;
   /** Prompt-cache warming (sub-1s shipment): ONE degenerate turn through the
    *  normal assembly — same registry projection, same system prompt, same
@@ -511,6 +530,20 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // workspace to read. Unbatched, `resolve` mints exactly as it always did
       // — a fresh id must not cost a read for a row that cannot exist.
       const threadId = given ?? mintThreadId();
+      // The opening WRITE, in flight WITH the opening read rather than behind
+      // it. It is only ever sent here because SERVER_AUTHORED says the two
+      // things that make the read's answer irrelevant to it: no title to derive
+      // (the thread already has one) and no history to guard (nothing came from
+      // a client). The append itself still enforces ownership in its own
+      // statement, so a link pointing at another subject's thread is refused
+      // here exactly as it always was. Below the turn level there is no round
+      // trip worth saving, so the old order stands.
+      const opening = input[SERVER_AUTHORED] === true && given !== undefined && batched
+        ? sqlDoors().transcript.upsertMany?.(input.ctx.principal, given, [input.message], {})
+        : undefined;
+      // A rejection is delivered where it is awaited below; this only keeps a
+      // slow read from turning it into an unhandled one first.
+      void opening?.catch(() => {});
       const loaded = batched
         ? await config.store.ops!.turn!.load({
           thread: { id: threadId },
@@ -543,7 +576,11 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // found no row, and persist's first attempt can skip re-reading that
       // absence (its insert is guarded either way).
       const fresh = thread.messages.length === 0;
-      validateUpsert(thread.messages, input.message);
+      // Skipped only where it can protect nothing: an already-sent opening write
+      // carries a message this process authored, so there is no client copy to
+      // check it against — and a gate run after the write could only report a
+      // rewrite it had already let through.
+      if (opening === undefined) validateUpsert(thread.messages, input.message);
       upsertMessage(thread.messages, input.message);
 
       // Before the FIRST write, not after it. `threads.persist` goes through the
@@ -596,7 +633,9 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // existed, and unlike a bare `upsert` it still refreshes the listing
         // title and `updated_at`. So a turn on an older store is slower, not
         // broken.
-        fresh || batchAppend === undefined
+        // Already in flight since before the read, where it was allowed to be.
+        opening
+        ?? (fresh || batchAppend === undefined
           ? threads.persist(thread, [input.message], { fresh })
           // No position is passed: the store assigns one while it holds the
           // thread row, so two turns racing on this conversation cannot claim
@@ -607,7 +646,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
             thread.id,
             [input.message],
             { title: deriveTitle(thread.messages) },
-          ),
+          )),
         // §9.7 — the turn's façade mounts every org the wire asserted for this
         // request, so an agent turn can read and write the team's files at all.
         workspaces.open(input.ctx.principal, {
