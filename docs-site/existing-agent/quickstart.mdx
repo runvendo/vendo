@@ -19,18 +19,18 @@ The pack takes the caller you already resolved, so it is built inside the handle
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/vendo ai@^6 @ai-sdk/react@^3 @ai-sdk/anthropic@^3
+npm install @vendoai/vendo ai @ai-sdk/react @ai-sdk/anthropic
 npx vendo init
 ```
 
 ```bash pnpm
-pnpm add @vendoai/vendo ai@^6 @ai-sdk/react@^3 @ai-sdk/anthropic@^3
+pnpm add @vendoai/vendo ai @ai-sdk/react @ai-sdk/anthropic
 pnpm exec vendo init
 ```
 
 </CodeGroup>
 
-Pin the majors. Vendo peers `ai` at 6 and `@ai-sdk/anthropic` at 3, and bare installs pull 7 and 4 today — npm accepts the conflict, then every turn fails at runtime and `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001).
+No pins needed. Vendo speaks both live AI SDK majors, so `ai@6` and `ai@7` are each supported — keep the pair together (`ai@7` with `@ai-sdk/*@4`, `ai@6` with `@ai-sdk/*@3`), which is what a bare install gives you. `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001) for an `ai` outside that pair of majors.
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
 

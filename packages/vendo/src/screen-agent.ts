@@ -131,7 +131,7 @@ const PATCH_EFFORT = "low";
  * run is exactly what it was.
  */
 const seatByRole = (model: LanguageModel): LanguageModel => {
-  if (typeof model === "string" || model.specificationVersion !== "v3") return model;
+  if (typeof model === "string" || model.specificationVersion === "v2") return model;
   let writeTurn = true;
   return wrapLanguageModel({
     model,

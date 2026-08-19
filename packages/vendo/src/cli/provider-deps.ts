@@ -448,8 +448,9 @@ export async function ensureGeneratedImports(options: {
 }
 
 /** True when an installed ai predates the v6 peer contract (FINDINGS F3).
-    v7+ is E-DEP-001's downgrade story, and an unparseable version is not
-    evidence of an old ai — only a plain pre-6 major is below the floor. */
+    v7 is inside the contract and never below it; the majors above the pair are
+    E-DEP-001's ceiling story, and an unparseable version is not evidence of an
+    old ai — only a plain pre-6 major is below the floor. */
 export function aiBelowPeerFloor(version: string): boolean {
   const major = Number.parseInt(version, 10);
   return Number.isNaN(major) ? false : major < 6;

@@ -84,7 +84,7 @@ describe("the keyless model failure", () => {
     expect(error.code).toBe("validation");
     expect(error.message).toBe(
       "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app; "
-      + "install it (`npm install ai@^6 @ai-sdk/anthropic@^3`).",
+      + "install it (`npm install @ai-sdk/anthropic@^3`).",
     );
   });
 });
