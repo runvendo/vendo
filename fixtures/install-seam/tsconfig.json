@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "noEmit": true
+  },
+  // `app/` is the stranger's OWN source. It compiles against the tarballs the
+  // suite installs into a temp dir, never against this workspace — typechecking
+  // it here would resolve `@vendoai/*` through the monorepo, which is exactly
+  // the shortcut this fixture exists to rule out. Its real typecheck is
+  // assertion 3, run inside the scaffold after init.
+  "include": ["src", "tests", "vitest.config.ts"]
+}

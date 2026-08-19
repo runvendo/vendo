@@ -127,4 +127,5 @@ packages/vendo/.wire-parity.*
 # Harness/test run outputs — write-only sinks, never committed
 corpus/reports/
 fixtures/existing-agents-e2e/.artifacts/
+fixtures/install-seam/.artifacts/
 genbench/runs/

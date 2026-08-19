@@ -35,7 +35,7 @@ concurrency:
 #                     per-package coverage floors (they cannot be enforced on a
 #                     single shard — see the comment on that job)
 #   ci                aggregate; KEEPS the required-check name `ci`
-#   integration-legs  the e2e fleet in 4 duration-balanced legs
+#   integration-legs  the e2e fleet in 5 duration-balanced legs
 #   integration       aggregate; KEEPS the required-check name `integration`
 #   conformance       the three-package conformance suite
 #   audit             supply-chain gate
@@ -519,7 +519,7 @@ jobs:
           fi
           echo "all lanes green"
 
-  # The integration suites, split four ways.
+  # The integration suites, split five ways.
   #
   # This job WAS the whole run's critical path: 493s of a 507s full-suite wall
   # on main run 31930304532, nine suites end to end on one runner while eleven
@@ -599,6 +599,25 @@ jobs:
             guarded: ""
             build: "--filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^..."
             suites: "@vendoai-corpus/express-host @vendoai-examples/ai-sdk-agent @vendoai-examples/mastra-agent @vendoai-fixtures/existing-agents-e2e"
+          # The install seam: pack the publish set, `pnpm add` the tarballs into
+          # a stranger app in a temp dir, run the real CLI, boot it, and drive
+          # one deterministic turn. Its own leg rather than a passenger on
+          # `orphans` because it is the slowest of the always-on suites and a
+          # leg of its own costs wall time only when it is the longest.
+          #
+          # UNGUARDED, for a sharper version of the orphans leg's reason: this
+          # suite declares NO workspace dependency at all — it discovers the
+          # publishable packages on disk and packs them — so `--affected` can
+          # never mark it, and a probe would skip every PR including the one
+          # that breaks the install.
+          #
+          # `vendoai...` is the whole publish set in one filter: the alias
+          # depends on the umbrella, which depends on every other block. All
+          # fourteen must carry a real dist/ before they are packed.
+          - name: install-seam
+            guarded: ""
+            build: "--filter=vendoai..."
+            suites: "@vendoai-fixtures/install-seam"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
