@@ -1,20 +1,19 @@
 ---
 title: "From outside agents"
-description: "Your product, driven from your own agent, as one of your users."
+description: "Turn your app into an MCP server that Claude, ChatGPT, Cursor and your own backend drive as one of your users."
 sidebarTitle: "Quickstart: outside agents"
 ---
 
 ## Quickstart
 
-A door, a token, and your agent. `npx vendo init` writes the door, and the
-console holds the key.
+`npx vendo init` turns your app into an MCP server. Outside agents connect
+through your own login; your own backend gets a token from one method.
+
+Four steps, each with a checkpoint. Do not move on until the checkpoint passes.
 
 <Steps>
 
-<Step title="Install and run init">
-
-One package, then the setup command from the [quickstart](/): it reads your
-repo, then asks.
+<Step title="Run init">
 
 <CodeGroup>
 
@@ -30,204 +29,221 @@ pnpm exec vendo init
 
 </CodeGroup>
 
-Its first question is **How will people use your agent?** — answer **From
-outside agents over MCP**, and it writes everything this page walks through.
+Answer the first question — *How will people use your agent?* — with **From
+outside agents over MCP — Claude, ChatGPT, Cursor, or any MCP agent
+(experimental)**. That option is labelled experimental; the door itself is what
+this page proves.
 
-That answer is also what adds init's MCP-only questions. There is always one:
-whether your own backend will call these tools machine to machine, which is the
-service key. The posture question — who runs the OAuth plumbing — joins it only
-when a Vendo Cloud key is already in hand, because a keyless run cannot reach a
-broker, so init settles on the local posture and asks about the service key
-alone.
+Next it confirms the auth preset it detected — *Should the agent act as your
+signed-in … user?* — which is what wires `actAs`, and then asks where your model
+key comes from.
 
-</Step>
+Then *Where does this app run in dev?* — the origin your dev server actually
+prints, `http://localhost:3000` or whatever port it names.
 
-<Step title="Open the door">
+<Warning>
+**This answer decides which sign-in postures are open to you.** Vendo Cloud
+registers this origin as your tenant's forwarding address and refuses one that
+is not `https`, so a `localhost` answer and the Cloud broker cannot go together
+— init refuses the pair rather than writing a door that dies on its first
+request. On `localhost`, take **Local** at the posture question below. To run
+the Cloud broker in dev, give an https tunnel's origin here instead.
+</Warning>
 
-`mcp` turns your app into an MCP server. With a Cloud account, `init` offers
-the **broker** posture: keys managed in the console, a stable tenant URL, and
-the OAuth surface off your domain.
+After the posture question below, init asks a few more that are not this page's
+business — the AI judgment pass, and any theme slots it could not read
+confidently. Their defaults are fine; press Enter through them.
 
-Is the agent your own, driven from your own backend with no browser in the loop
-— or is your stack one the broker posture does not fit? Take the **local**
-posture instead:
+Init writes the wiring: `mcp: true` into the composition it creates, the
+origin-root discovery route beside it, `VENDO_BASE_URL` into `.env.local`, and a
+`.vendo/` directory holding the tool catalog, judgments, policy, overrides and
+theme. It adds two package scripts — `predev` and `prebuild`, both running
+`vendo sync` so the catalog cannot drift from your code — and installs `ai` and
+`@ai-sdk/anthropic`. The closing line counts the files it wrote.
 
-```bash
-npx vendo init --use-case mcp --posture local --service-key
-```
+```ts lib/vendo.ts focus={5}
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 
-Everything then stays on your origin — no broker, no console, no browser — and
-the token exchange in the next step is served by your own app. Both flags answer
-questions init asks only on the MCP use case, so `--use-case mcp` has to ride
-along; without it init stops and says so.
-
-Otherwise, take the broker. The door then trusts that broker.
-
-```ts src/vendo/server.ts focus={3}
 export const vendo = createVendo({
   auth: authJs(),
   mcp: true,
 });
 ```
 
-Two things have to be true before the door opens.
+`auth` has to be a preset that carries the oauth half — `clerk()`, `authJs()`,
+`supabase()` or `auth0()`. Plain `jwt()` does not, and init refuses to write the
+door without one. [Auth](/production/auth) lists them.
 
-`auth` must be a preset that carries the oauth half: `clerk()`, `authJs()`,
-`supabase()`, or `auth0()`. Plain `jwt()` does not, and `init` writes nothing
-without one.
-
-`VENDO_BASE_URL` must name the public origin your agent actually reaches.
-Discovery, issuer, and token audience all derive from it.
-
-Two more values name the broker. They are the operator's, set where you deploy
-and never in the composition.
-
-```bash .env focus={3-4}
-VENDO_BASE_URL=https://app.maple.com
-# both values live on the console's MCP page
-VENDO_MCP_BROKER_URL=https://maple.mcp.vendo.run/mcp
-VENDO_MCP_FEDERATION_SECRET=<secret>
-```
-
-Two routes come with it, both written by `init`.
-
-| Route | What it is |
-| --- | --- |
-| `/api/vendo/mcp` | the door your agent connects to |
-| `/.well-known/oauth-*` | discovery, at your origin root, naming your broker |
-
-A broker-fronted door serves no token endpoint of its own. The exchange lives
-in the broker, in the next step.
+<Note>
+**Checkpoint.** `lib/vendo.ts` says `mcp: true`,
+`app/.well-known/[...vendo]/route.ts` exists, and `.env.local` has a
+`VENDO_BASE_URL` line. If init refused instead, the message names the reason and
+the way out — a missing auth preset, or the http-origin-with-Cloud pair above.
+</Note>
 
 </Step>
 
-<Step title="Mint a user-bound token">
+<Step title="Check the door answers">
 
-The key is made once, in the console, under **Keys → Service keys**. It lives
-in the broker, so that is where your backend spends it.
+Start your app and ask the door who it is. It should refuse you, and say where
+to go and sign in.
 
-No browser to bounce through. Your backend trades that key plus one of *your
-own* user ids for a short-lived token, RFC 8693, at your tenant's `/token`.
-
-```bash your-backend.sh focus={5}
-curl -s https://maple.mcp.vendo.run/token \
-  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-  -d client_id=vendo-service \
-  -d client_secret="$SERVICE_KEY" \
-  -d subject_token=user_1904 \
-  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
+```bash
+curl -si http://localhost:3000/api/vendo/mcp | head -3
 ```
 
-```json response focus={4}
-{
-  "access_token": "vmat_…",
-  "token_type": "Bearer",
-  "expires_in": 600,
-  "scope": "read write"
+```http response focus={1,3}
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+www-authenticate: Bearer resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource/api/vendo/mcp"
+```
+
+That `401` is the door working. The `www-authenticate` header is how every MCP
+client discovers your sign-in without being told about it.
+
+<Note>
+**Checkpoint.** A `401` with a `www-authenticate` header naming your own origin.
+A `404` means the app is not serving `/api/vendo/mcp` — check that init's wire
+route landed. A `200` means something else is answering that path.
+
+If you are on the Cloud posture, two more answers are worth knowing. A `400`
+with `"code":"validation"` is Vendo Cloud refusing to provision your tenant, and
+it repeats the console's own reason and docs link — read the message, it names
+the fix. A `503` with `"code":"unavailable"` is Cloud itself failing, not your
+wiring.
+</Note>
+
+</Step>
+
+<Step title="Connect an outside agent">
+
+Your users' setup page ships with the door. Open it in a browser:
+
+```
+http://localhost:3000/api/vendo/mcp/connect
+```
+
+It carries the copy-paste config for Claude, ChatGPT and Cursor. Paste one in,
+sign in with your app's own login when the client bounces you there, and ask it
+to do something.
+
+For Claude Code, the plugin is one command:
+
+```
+/plugin marketplace add runvendo/vendo
+/plugin install vendo@vendo
+```
+
+<Note>
+**Checkpoint.** The client lists your tools, and a call runs and comes back with
+*your own* data. Reads and writes both execute — nothing parks, and that is
+correct on a fresh install. The policy init writes to `.vendo/policy.json` asks
+on one thing only, `risk: destructive`, and a young app often has no tool graded
+that way. Approvals are a policy you opt into, not a default the door imposes:
+edit that file when you want a call to wait for a person.
+
+If a tool answers `not-implemented`, that means a missing `actAs` — the door has
+no auth material to call your API with. A Cloud problem never looks like this;
+it answers `400` or `503` with its own reason, per Step 2.
+[How the door works](/outside-agents/how-the-door-works) explains `actAs`.
+</Note>
+
+</Step>
+
+<Step title="Mint a token for your own backend">
+
+A backend agent has no browser to bounce through, so it asks your composition
+for a token instead. One method, two ways to call it.
+
+It exchanges a service key to do that. On Vendo Cloud the key is provisioned
+with your tenant and there is nothing to do. On the zero-key posture you declare
+one — `npx vendo init --service-key` writes it, and
+[Service keys](/outside-agents/service-keys-and-broker) is the whole story.
+Without one, `tokenFor` says so and names the variable to set.
+
+Inside a request, pass the request — `tokenFor` reads who is signed in from the
+session cookie, the same way your own pages do:
+
+```ts app/api/agent/route.ts focus={6}
+import { vendo } from "@/lib/vendo";
+
+export async function POST(request: Request) {
+  const accessToken = await vendo.tokenFor(request);
+  // …hand it to your agent
+  return Response.json({ ok: true });
 }
 ```
 
-Ten minutes, bound to `user_1904`, with no refresh token to rotate or revoke.
-When it lapses, exchange again.
+Headless — a cron job, a queue worker, anything with no request in hand — pass
+the user id your own product spells:
 
-Every call your agent makes with it runs *as that user*, through the same
-guard, policy, and audit your own UI answers to.
+```ts jobs/nightly.ts focus={3}
+import { vendo } from "@/lib/vendo";
 
-A subject your product has never heard of is not rejected here. It dies at the
-first real tool call, the same kill switch every other grant answers to.
-
-<Warning>
-  **On Auth.js v5, `session.user.id` is `undefined` until you add a callback.**
-  The subject the door resolves for an Auth.js session is the session token's
-  `sub`, but a v5 session hands your own code only `name`, `email`, and `image`.
-  A backend that reads `session.user.id` for `subject_token` therefore posts
-  `undefined`, the exchange mints a token happily, and the first tool call
-  401s. Copy `sub` across once, in the `NextAuth({ … })` config your
-  `auth.ts` exports:
-
-  ```ts auth.ts
-  callbacks: {
-    session({ session, token }) {
-      session.user.id = token.sub!;
-      return session;
-    },
-  },
-  ```
-
-  That is the JWT session strategy, which is the default without a database
-  adapter. With an adapter the session callback gets `user` instead, and
-  `user.id` is already the subject.
-</Warning>
-
-On the **local** posture — the branch in the step above — none of this lives in
-the console. Init writes the key into your own composition, and the door serves
-the exchange itself:
-
-```ts src/vendo/server.ts focus={3}
-export const vendo = createVendo({
-  auth: authJs(),
-  mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } },
-});
+const accessToken = await vendo.tokenFor("user_1904");
 ```
 
-Same RFC 8693 body as above, posted to `https://app.maple.com/api/vendo/mcp/token`.
-A key is any opaque string, and rotation is listing both until the old one is
-out of use.
+The token lasts ten minutes, is bound to that one person, and has no refresh
+path. Every call made with it runs *as that user*, through the same guard,
+policy and audit your own UI answers to. Under the hood it is an RFC 8693
+`urn:ietf:params:oauth:grant-type:token-exchange`, which you never have to spell
+yourself.
 
-</Step>
+A subject that is not a real id — blank, `null`, `undefined`, or not a string at
+all — is refused at mint rather than handing you a token that dies on the first
+tool call.
 
-<Step title="Wire it into your agent">
-
-Streamable HTTP at the door's URL, the token on the `authorization` header. A
-stock MCP client, no Vendo import: the door's own listing is the tool set.
-
-That URL is your app's, derived from `VENDO_BASE_URL` and never from the
-broker. It does not move when the posture does.
-
-The client is the official MCP SDK, wherever your agent lives:
-
-<CodeGroup>
-
-```bash npm
-npm install @modelcontextprotocol/sdk
-```
-
-```bash pnpm
-pnpm add @modelcontextprotocol/sdk
-```
-
-</CodeGroup>
-
-```js acme-agent.mjs focus={7}
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-
-const client = new Client({ name: "acme-agent", version: "1.0.0" });
-await client.connect(new StreamableHTTPClientTransport(
-  new URL("https://app.maple.com/api/vendo/mcp"),
-  { requestInit: { headers: { authorization: `Bearer ${accessToken}` } } },
-));
-```
-
-From here the loop is ordinary: list the tools, hand them to your model, call
-them. What is not ordinary is who the calls belong to.
-
-A write still stops at your guard and waits for the person. The audit row names
-the key that acted.
-
-Words go back to your agent. The change lands in your product, under the user
-you named.
-
-Full client wiring, including sessions and retries, is in
-[Your own agent](/outside-agents/your-own-agent).
+<Note>
+**Checkpoint.** `tokenFor` returns a token string. Its shape tells you which
+posture minted it: `vmat_…` from your own door on the local posture, a raw JWT
+(`eyJhbG…`) from the broker on Vendo Cloud. Both are correct — feed it to a stock MCP
+client — [Your own agent](/outside-agents/your-own-agent) is the whole loop —
+and the call lands in your product under the user you named.
+</Note>
 
 </Step>
 
 </Steps>
 
-## Where to go next
+## Who runs the sign-in
 
-The door is set. These three go deeper on it.
+The door needs an OAuth authorization server in front of it. There are two
+answers, and the door's URL is the same either way — it derives from
+`VENDO_BASE_URL` and never from a broker, so switching later invalidates nothing
+your users already configured.
+
+**Local — your app serves its own OAuth (default, no key).** Everything above
+already did this. Your app is the authorization server, your login is the
+sign-in, and nothing leaves your origin. Zero config, and it works on `http`, so
+this is the posture for local development.
+
+**Vendo Cloud broker (one answer).** With a `VENDO_API_KEY` in hand, init asks
+one more question — *How should outside agents sign in?* — and answering **Vendo
+Cloud broker** moves the OAuth surface off your domain to a stable
+`yourcompany.mcp.vendo.run` tenant that Vendo provisions on first use. There is
+nothing to copy: no console visit, no environment values, no keys. It needs an
+https `VENDO_BASE_URL`, per the warning in Step 1.
+
+To front the door with a broker you run yourself, set both values where you
+deploy. An explicit override always wins over the Cloud default.
+
+```bash .env
+VENDO_MCP_BROKER_URL=https://broker.example.com/mcp
+VENDO_MCP_FEDERATION_SECRET=…
+```
+
+Upgrading a deployment that already has `VENDO_API_KEY` and `mcp: true` moves
+its door from local to Cloud-brokered — declare those two variables yourself, or
+pass `mcp.serviceAuth`, to keep it where it is.
+
+## When you deploy
+
+Set `VENDO_BASE_URL` on your platform to the public origin your app answers on.
+Discovery, issuer and token audience all derive from it, and a door pointed at
+the wrong origin surfaces hours later as *"Claude can't find my server"*.
+
+## Where to go next
 
 <CardGroup cols={3}>
   <Card title="How the door works" href="/outside-agents/how-the-door-works">
@@ -235,14 +251,14 @@ The door is set. These three go deeper on it.
 
     `mcp + oauth + actAs`
   </Card>
-  <Card title="Service keys & broker" href="/outside-agents/service-keys-and-broker">
-    Rotating keys, the audit's `svc:` attribution, and the hosted broker.
+  <Card title="Your own agent" href="/outside-agents/your-own-agent">
+    The stock MCP client, one session per conversation, and the whole loop.
 
-    `grant_type=token-exchange`
+    `tokenFor`
   </Card>
-  <Card title="API tools" href="/capabilities/api-tools">
-    The menu your agent sees, and the risk grade behind each call.
+  <Card title="Service keys & broker" href="/outside-agents/service-keys-and-broker">
+    Where the key lives, the audit's `svc:` attribution, and rotation.
 
-    `.vendo/overrides.json`
+    `svc:<hash8>`
   </Card>
 </CardGroup>

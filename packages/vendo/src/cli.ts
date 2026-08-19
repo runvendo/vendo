@@ -7,6 +7,7 @@ import { runConfig } from "./cli/config.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
 import { runInit, type InitOptions } from "./cli/init.js";
+import { SERVICE_KEY_ON_BROKER } from "./cli/init-mcp.js";
 import { runKnowledge } from "./cli/knowledge/index.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { CLI_VERSION } from "./cli/shared.js";
@@ -208,6 +209,12 @@ async function initCommand(args: string[]): Promise<number> {
   const serviceKey = args.includes("--service-key");
   if ((posture !== undefined || serviceKey) && useCase !== "mcp") {
     problems.push(`${posture === undefined ? "--service-key" : "--posture"} only applies to --use-case mcp (pass --use-case mcp, or drop it)`);
+  }
+  // …and the same rule inside the MCP path: a broker-fronted door's key is
+  // provisioned with the tenant, so taking one here would discard it and leave
+  // the caller — usually a coding agent relaying answers — believing it landed.
+  if (serviceKey && posture === "broker") {
+    problems.push(`--service-key does not apply to --posture broker: ${SERVICE_KEY_ON_BROKER}`);
   }
   if (args.includes("--check") && args.includes("--no-check")) {
     problems.push("--check and --no-check answer the same question — pass one or the other");

@@ -285,6 +285,44 @@ describe("ensureProviderDeps", () => {
  *  pnpm's strict node_modules that package sits inside the alias's own nested
  *  resolution and the host cannot resolve the `@vendoai/vendo/*` imports every
  *  scaffold writes — the wired route fails to compile and 500s. */
+describe("ensureGeneratedImports", () => {
+  /** A tsconfig path alias is bare by every other test — no leading dot, slash
+      or `node:` — so it reached the installer as if it were a package. `@/lib`
+      has an EMPTY scope, which no npm name may have, and `pnpm add @/lib` wrote
+      `"lib": "link:@/lib"` into the host's dependencies. A live proof found it
+      there; doctor reports green over it. */
+  it("never installs a tsconfig path alias, and still installs the real packages beside it", async () => {
+    const root = await tempRoot();
+    await installModule(root, "next");
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { next: "16.0.0" } }));
+    const calls: Array<{ args: string[] }> = [];
+    const messages = output();
+    await ensureGeneratedImports({
+      root,
+      sources: [
+        'import { vendo } from "@/lib/vendo";\n'
+        + 'import { streamText } from "ai";\n'
+        + 'import { anthropic } from "@ai-sdk/anthropic";\n'
+        + 'import { createVendo } from "@vendoai/vendo/server";\n',
+      ],
+      output: messages.sink,
+      run: async (_command, args) => {
+        calls.push({ args });
+        return 0;
+      },
+    });
+
+    const installed = calls.flatMap((call) => call.args);
+    // The alias never becomes a package specifier, under any spelling.
+    expect(installed.some((arg) => arg.includes("@/lib"))).toBe(false);
+    expect(installed).not.toContain("lib");
+    // …and the real imports beside it are still declared.
+    expect(installed).toContain("ai@^6");
+    expect(installed).toContain("@ai-sdk/anthropic@^3");
+    expect(installed).toContain(VENDO_PACKAGE_SPEC);
+  });
+});
+
 describe("ensureVendoPackage", () => {
   it("adds the package the wiring imports when only the alias resolves", async () => {
     const root = await tempRoot();

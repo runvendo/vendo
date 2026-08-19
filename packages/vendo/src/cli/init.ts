@@ -9,7 +9,7 @@ import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
-import { mcpStepLines, planMcp, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
+import { BROKER_NEEDS_HTTPS, mcpStepLines, planMcp, SERVICE_KEY_ON_BROKER, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
 import { initQuestions } from "./init-questions.js";
 import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
@@ -1027,8 +1027,25 @@ async function planMcpScaffold(input: {
     posture = (await select("How should outside agents sign in?", POSTURE_OPTIONS)) as McpPosture;
   }
 
+  // `cli.ts` refuses the flag pair it can read off argv. A posture chosen at
+  // the SELECT never reaches argv, so the same mistake arrived here and the key
+  // was dropped in silence — the one path where a user could still believe it
+  // landed. Same explanation, same way out, one lead-in for each arrival.
+  if (options.serviceKey === true && posture === "broker") {
+    throw new VendoError("validation", `--service-key does not apply to the broker posture you chose: ${SERVICE_KEY_ON_BROKER}`);
+  }
+  // The other pair that cannot work, caught HERE because this is the first
+  // point where both answers are known: the origin was captured before the
+  // posture was asked. Silence cost a live proof a dead door and a `Wired`.
+  if (posture === "broker" && baseUrl !== null && !baseUrl.startsWith("https://")) {
+    throw new VendoError("validation", `The Vendo Cloud broker cannot front a door at ${baseUrl}: ${BROKER_NEEDS_HTTPS}`);
+  }
+
+  // Local doors only. A Cloud-fronted door's service key is provisioned with
+  // the tenant and listed, rotated and revoked in the console, so asking here
+  // would offer a decision init cannot act on.
   let serviceKey = options.serviceKey === true;
-  if (options.serviceKey === undefined && !ask) {
+  if (options.serviceKey === undefined && !ask && posture === "local") {
     const confirm = options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm);
     serviceKey = await confirm("Will your own backend call these tools machine-to-machine?", false);
   }
@@ -2181,7 +2198,7 @@ async function finishRun(input: {
     // A step is `headline\ndetail`: the pretty block numbers and indents it,
     // and a plain transcript keeps the detail on its own indented line.
     if (pretty === null) {
-      for (const line of [...mcp.steps, ...mcp.envLines]) output.log(`  ${line.replace(/\n/g, "\n    ")}`);
+      for (const line of mcp.steps) output.log(`  ${line.replace(/\n/g, "\n    ")}`);
     } else pretty.block("Steps that are yours", mcpStepLines(mcp), "◇");
   }
 

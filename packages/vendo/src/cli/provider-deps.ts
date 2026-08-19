@@ -355,12 +355,22 @@ export async function ensureVendoPackage(options: { root: string; output: Output
   }
 }
 
+/** npm's grammar for a publishable package name. The last gate before a
+    specifier becomes something to install, and the one a tsconfig PATH ALIAS
+    fails: `@/lib/vendo` is bare by every other test — no leading dot, slash or
+    `node:` — but its scope is EMPTY, and no npm name may have that. Without
+    this, init derived `@/lib` from its own generated import and `pnpm add`
+    wrote `"lib": "link:@/lib"` into the host's dependencies, where nothing
+    downstream flagged it. Checking the NAME rather than listing aliases is what
+    makes the next alias (`@/components`, `@/server`) fail here too. */
+const PACKAGE_NAME = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
 /** Every BARE package a generated module imports, deduped: `@scope/name` or
  *  `name`, subpath dropped. Relative and absolute specifiers are not packages,
- *  and neither are node builtins — nor `@/…`, the tsconfig path alias whose
- *  empty scope segment makes it no package name at all (installing it wrote
- *  `"lib": "link:@/lib"` into the host manifest and npm then died on
- *  EUNSUPPORTEDPROTOCOL). */
+ *  neither are node builtins, and neither is anything npm could not name — nor
+ *  `@/…`, the tsconfig path alias whose empty scope segment makes it no package
+ *  name at all (installing it wrote `"lib": "link:@/lib"` into the host manifest
+ *  and npm then died on EUNSUPPORTEDPROTOCOL). */
 function importedPackages(source: string): string[] {
   const found = new Set<string>();
   const specifiers = /(?:^|[\s;}])(?:import|export)\s[^;]*?from\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']/g;
@@ -368,7 +378,8 @@ function importedPackages(source: string): string[] {
     const specifier = match[1] ?? match[2] ?? "";
     if (specifier === "" || specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("node:") || specifier.startsWith("@/")) continue;
     const parts = specifier.split("/");
-    found.add(specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!);
+    const name = specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!;
+    if (PACKAGE_NAME.test(name)) found.add(name);
   }
   return [...found];
 }
