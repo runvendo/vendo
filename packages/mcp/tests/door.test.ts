@@ -1733,6 +1733,82 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("refuses malformed apps-tool args before the guard can park an approval", async () => {
+    const apps: AppsRideAlong = {
+      async list() { return []; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
+      async call() { return { status: "ok", output: { done: true } }; },
+    };
+    // `check` is where an approval is MINTED, so the calls it sees are exactly
+    // the approvals this door could leave parked for a human to resolve.
+    const asked: string[] = [];
+    const harness = makeHarness({
+      apps,
+      check: async (call, descriptor, ctx) => {
+        asked.push(call.tool);
+        return {
+          action: "ask",
+          decidedBy: "rule",
+          approval: {
+            id: `apr_${asked.length}`,
+            call,
+            descriptor,
+            inputPreview: call.tool,
+            ctx: { principal: ctx.principal, venue: ctx.venue, presence: ctx.presence },
+            createdAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    const refused = await connected.client.callTool({ name: "vendo_apps_call", arguments: { appId: "app_1" } });
+    expect(refused).toMatchObject({ isError: true, content: [{ text: "validation: ref is required" }] });
+    expect(asked).toEqual([]);
+    expect(harness.audits.filter((event) => event.kind === "tool-call")).toEqual([]);
+
+    // The same tool, well formed, DOES park — so it is the args that were
+    // refused and not the tool.
+    const parked = await connected.client.callTool({
+      name: "vendo_apps_call",
+      arguments: { appId: "app_1", ref: "host_write", args: {} },
+    });
+    expect(parked).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("apr_1") }] });
+    expect(asked).toEqual(["vendo_apps_call"]);
+    await connected.client.close();
+  });
+
+  it("beats notifications/progress at a client that sent a progressToken", async () => {
+    let beat!: (progress: { progress: number }) => void;
+    const firstBeat = new Promise<{ progress: number }>((resolve) => { beat = resolve; });
+    const apps: AppsRideAlong = {
+      // The call returns only once the beat has landed AT THE CLIENT, so a door
+      // that emits nothing — or emits where `enableJsonResponse` drops it —
+      // hangs here instead of passing.
+      async list() { await firstBeat; return []; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
+      async call() { return { status: "ok", output: { done: true } }; },
+    };
+    const harness = makeHarness({ apps });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+    // One round trip first, so the SDK's unawaited background GET — the stream
+    // the beat is written to — is registered before the call goes out.
+    await connected.client.listTools();
+
+    const result = await connected.client.callTool(
+      { name: "vendo_apps_list", arguments: {} },
+      undefined,
+      { onprogress: beat, resetTimeoutOnProgress: true },
+    );
+    expect((await firstBeat).progress).toBe(1);
+    expect(result.isError).toBeUndefined();
+    await connected.client.close();
+  });
+
   it("returns the executed apps-tool result even when the audit write fails", async () => {
     const apps: AppsRideAlong = {
       async list() { return []; },
