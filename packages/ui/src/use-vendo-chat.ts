@@ -84,6 +84,10 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
   // state to have lost.
   useEffect(() => {
     if (threadId === undefined) return undefined;
+    // Switching conversations moves the live id too — after the early return, so
+    // a server-minted id is never clobbered by the prop that never carried one.
+    activeThreadId.current = threadId;
+    setEffectiveThreadId(threadId);
     let active = true;
     void globalThis
       .fetch(`${base}/threads/${encodeURIComponent(threadId)}`)
@@ -139,11 +143,16 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
         // no interruption here to answer.
         const ids = Object.entries(decisions).filter(([, decision]) => decision === verdict).map(([id]) => id);
         if (ids.length === 0) continue;
-        await globalThis.fetch(`${base}/approvals/decide`, {
+        const response = await globalThis.fetch(`${base}/approvals/decide`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ids, decision: { approve } }),
         });
+        // A refusal — 409 for an approval already answered or long expired — has
+        // to reach the caller: swallowed, the page draws the decision as landed
+        // while the turn stays parked until it expires, which is the very thing
+        // going to the guard at all was meant to prevent.
+        if (!response.ok) throw new Error(`Vendo could not record the ${verdict} decision (${response.status}).`);
       }
     },
     [base],

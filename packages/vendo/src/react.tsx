@@ -27,6 +27,9 @@ export {
   // routes.ts
   useVendoNavigate,
   useVendoRoutes,
+  // use-vendo-chat.ts
+  useVendoChat,
+  type UseVendoChatOptions,
   // chrome/discoverability.ts
   defaultVendoGreeting,
   type VendoDiscoverability,
