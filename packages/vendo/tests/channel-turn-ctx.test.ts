@@ -48,6 +48,65 @@ describe("bubbles", () => {
     }
   });
 
+  it("cuts a formatted reply without reformatting it", () => {
+    // A reply the model laid out itself — against TEXT_STYLE's "no lists", which
+    // it ignores as readily as it ignores the divider. Cutting it is fine; RE-
+    // INDENTING it is not, and trimming each line did exactly that.
+    const laid = [
+      "Here is where everything stands this morning:",
+      "  Checking — $412.08, nothing pending on it",
+      "  Savings — $8,200.00, up $50 since last month",
+      "  Joint with Dana — $1,140.55",
+      "  Credit card — -$318.20, due on the 14th",
+      "  Travel card — -$64.00",
+      "  Emergency fund — $15,000.00, untouched",
+    ].join("\n");
+    const pieces = bubbles(laid);
+
+    expect(pieces.length).toBeGreaterThan(1);
+    // Byte for byte what the model wrote, only cut — indentation included.
+    expect(pieces.join("\n")).toBe(laid);
+  });
+
+  it("rebuilds a piece from the model's own separators, not canonical ones", () => {
+    // The other half of not reformatting: the bytes BETWEEN the parts of one
+    // bubble are the model's too. A blank line that carries spaces and a double
+    // space after a full stop both used to be rewritten to a canonical separator.
+    const spaced = "Everything is settled for the month, and nothing else needs a decision from you today.   \n"
+      + "  \nChecking sits at $412.08 and savings at $8,200.00, which is up fifty dollars.   \n"
+      + "  \nThe travel card is the only one still carrying a balance, at -$64.00 as of tonight.";
+    const pieces = bubbles(spaced);
+
+    expect(pieces.length).toBeGreaterThan(1);
+    // Every piece is the model's own bytes, in order, and the only thing dropped
+    // between two of them is the whitespace boundary that was the cut point. A
+    // piece rebuilt with a canonical separator would not be a substring at all.
+    let at = 0;
+    for (const piece of pieces) {
+      const found = spaced.indexOf(piece, at);
+      expect(found, piece).toBeGreaterThanOrEqual(at);
+      expect(spaced.slice(at, found)).toMatch(/^\s*$/);
+      at = found + piece.length;
+    }
+    expect(at).toBe(spaced.length);
+  });
+
+  it("does not mistake an abbreviation for the end of a sentence", () => {
+    // Both shapes a bank reply actually produces. "acc. 1234" is followed by a
+    // digit and "Dr. Smith" by a title, and a cut after either leaves a bubble
+    // ending mid-thought — the exact thing the sentence rung exists to avoid.
+    const reply = "Your acc. 1234 is overdrawn by $18.40 as of this morning and the fee has not posted yet. "
+      + "Dr. Smith called about the standing order on it and wants it moved to the joint account instead. "
+      + "I can move $50 across from savings to clear the overdraft right now if that suits you.";
+    const pieces = bubbles(reply);
+
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces.join(" ")).toBe(reply);
+    // No bubble ends on an abbreviation, and none begins mid-name or mid-number.
+    for (const piece of pieces) expect(piece).not.toMatch(/\b(?:acc|no|Dr|Mr|Mrs|Ms|St)\.$/);
+    for (const piece of pieces) expect(piece).not.toMatch(/^(?:Smith|1234)\b/);
+  });
+
   it("leaves alone what it cannot cut honestly", () => {
     const short = "Your checking balance is $412.08. Anything else?";
     expect(bubbles(short)).toEqual([short]);

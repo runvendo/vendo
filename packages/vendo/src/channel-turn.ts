@@ -338,11 +338,20 @@ const BUBBLE_TARGET = 160;
 const BUBBLE_CAP = 3;
 
 /** The places a person would have broken a long text, in falling preference —
- *  and there is deliberately no rung below a sentence end. */
-const BUBBLE_BOUNDARIES: readonly (readonly [RegExp, string])[] = [
-  [/\n[ \t]*\n/, "\n\n"],
-  [/\n/, "\n"],
-  [/(?<=[.!?])[ ]+/, " "],
+ *  and there is deliberately no rung below a sentence end. Each one CAPTURES the
+ *  whitespace it matched, so a bubble can be rebuilt out of the model's own bytes
+ *  rather than a separator this file invented.
+ *
+ *  The sentence rung is the fussy one, because in a bank reply a period is not a
+ *  sentence end half the time it appears. It fires only where the next sentence
+ *  visibly starts — a capital or an opening quote, which is what leaves "acc.
+ *  1234" and "no. 5" alone — and never straight after a title, the one kind of
+ *  abbreviation a capital does follow ("Dr. Smith"). Everything it is unsure of
+ *  stays joined, because an uncut wall beats a bubble that stops mid-thought. */
+const BUBBLE_BOUNDARIES: readonly RegExp[] = [
+  /(\n[ \t]*\n)/,
+  /(\n)/,
+  /(?<!\b(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\.)(?<=[.!?])([ ]+)(?=[A-Z"'(])/,
 ];
 
 /**
@@ -364,18 +373,21 @@ const BUBBLE_BOUNDARIES: readonly (readonly [RegExp, string])[] = [
  */
 export function bubbles(text: string): string[] {
   if (text.length <= BUBBLE_MIN) return [text];
-  for (const [boundary, join] of BUBBLE_BOUNDARIES) {
-    const units = text.split(boundary).map((unit) => unit.trim()).filter((unit) => unit !== "");
-    if (units.length < 2) continue;
+  for (const boundary of BUBBLE_BOUNDARIES) {
+    // One capture group, so `split` alternates piece, separator, piece — and a
+    // bubble that keeps two parts together keeps the separator that stood between
+    // them. Nothing is trimmed: the caller already trimmed the whole reply, and
+    // trimming again is what re-indented a listing the model laid out itself.
+    const [head, ...rest] = text.split(boundary);
+    if (head === undefined || rest.length === 0) continue;
+    const pieces = [head];
     // Greedy, and once the cap is reached everything left joins the last piece.
-    return units.reduce<string[]>((pieces, unit) => {
-      const last = pieces.at(-1);
-      if (last !== undefined
-        && (pieces.length >= BUBBLE_CAP || `${last}${join}${unit}`.length <= BUBBLE_TARGET)) {
-        pieces[pieces.length - 1] = `${last}${join}${unit}`;
-      } else pieces.push(unit);
-      return pieces;
-    }, []);
+    for (let at = 0; at + 1 < rest.length; at += 2) {
+      const grown = `${pieces[pieces.length - 1]}${rest[at]}${rest[at + 1]}`;
+      if (pieces.length >= BUBBLE_CAP || grown.length <= BUBBLE_TARGET) pieces[pieces.length - 1] = grown;
+      else pieces.push(rest[at + 1]!);
+    }
+    return pieces;
   }
   return [text];
 }

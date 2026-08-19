@@ -32,3 +32,10 @@ certain the model cut nothing. The boundaries are a blank line, then a line end,
 then a sentence end, grouped to about one text each and capped at three; there is
 deliberately no rung below a sentence, so a long unbroken clause comes back
 whole rather than broken mid-thought. Only the true last piece carries `final`.
+
+Cutting never reformats: each boundary captures the whitespace it matched, so a
+bubble that holds two parts together holds the bytes that stood between them, and
+a listing the model indented itself arrives indented. And the sentence rung knows
+a period is not a sentence end half the time a bank reply uses one — it fires
+only where the next sentence visibly starts, and never straight after a title, so
+"your acc. 1234" and "Dr. Smith" stay whole.
