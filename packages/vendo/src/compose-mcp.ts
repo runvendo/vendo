@@ -12,7 +12,9 @@ import {
   type McpDoorConfig,
   type TurnCredentials,
 } from "@vendoai/mcp";
+import { cloudMcpBundle, type McpBundle } from "./cloud-mcp.js";
 import type { VendoComposition } from "./compose-context.js";
+import { cloudKeyOptions } from "./compose-selection.js";
 import { basePathOf, doorWellKnownPaths, MCP_MOUNT } from "./door-paths.js";
 import { VENDO_USER_FILES_LIST_TOOL, VENDO_USER_FILES_READ_TOOL } from "./user-files.js";
 import { environment } from "./wire/shared.js";
@@ -67,34 +69,28 @@ const declaredRemoteAs = (value: string | undefined): { issuer: string; audience
   return { issuer: url.origin, audience: canonicalUri(value) };
 };
 
-/** The `mcp:` arm: the full door, broker-fronted or local. */
-const openDoor = (
-  composition: VendoComposition,
-  mcpOptions: NonNullable<VendoComposition["mcpOptions"]>,
-  doorBaseUrl: string | undefined,
-  turnCredentials: TurnCredentials,
-): { door: McpDoor; posture: "local" | "broker" } => {
-  const { boundTools, guard, store, ops, oauthSeam, actions, membershipsSeam, theme } = composition;
-  if (oauthSeam === undefined) {
-    throw new VendoError(
-      "validation",
-      "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
-    );
-  }
-  // ADAPTER RULE, mcp seam (cloned from selectConnections): an explicit
-  // `mcp.remoteAs` wins verbatim; else a declared `VENDO_MCP_BROKER_URL` fronts the
-  // door with that broker; else the local door. Broker mode is DECLARED by the
-  // operator and nothing else — the app registers no address anywhere, so no
-  // boot-time call can repoint a live deployment or swap its authentication
-  // architecture behind its back.
-  //
-  // An explicit `mcp.serviceAuth` is itself a LOCAL authorization-server choice:
-  // the RFC 8693 exchange it opens exists only at the door's own `/token`, which
-  // a `remoteAs` door does not serve (`packages/mcp/src/door.ts`). So it fills
-  // the same slot the env default fills, and the env default does not displace
-  // it — the deployment variable is a default, and a default never overrides
-  // what the host passed. The broker URL is still PARSED either way, so a
-  // malformed one keeps failing loudly instead of dropping to a local door.
+/** The authorization-server half of the door's config: which external server
+    (if any) fronts it, and the secret its login federation is signed with. */
+type Brokerage = Pick<McpDoorConfig, "remoteAs" | "federation">;
+
+/** ADAPTER RULE, mcp seam (cloned from selectConnections): an explicit
+    `mcp.remoteAs` wins verbatim; else a declared `VENDO_MCP_BROKER_URL` fronts
+    the door with that broker; else — in `composeMcp` below, because it is the
+    only rung that cannot answer synchronously — Vendo Cloud; else the local
+    door. The env pair is the operator's own DECLARATION and outranks Cloud for
+    the same reason an explicitly passed adapter outranks it everywhere else.
+    An address the app never registers anywhere is also why no boot-time call
+    can repoint a live BYO deployment or swap its authentication architecture
+    behind its back.
+
+    An explicit `mcp.serviceAuth` is itself a LOCAL authorization-server choice:
+    the RFC 8693 exchange it opens exists only at the door's own `/token`, which
+    a `remoteAs` door does not serve (`packages/mcp/src/door.ts`). So it fills
+    the same slot the env default fills, and neither the env default nor Cloud
+    displaces it — a default never overrides what the host passed. The broker
+    URL is still PARSED either way, so a malformed one keeps failing loudly
+    instead of dropping to a local door. */
+const declaredBrokerage = (mcpOptions: NonNullable<VendoComposition["mcpOptions"]>): Brokerage => {
   const declaredBroker = declaredRemoteAs(environment("VENDO_MCP_BROKER_URL"));
   const remoteAs = mcpOptions.remoteAs
     ?? (mcpOptions.serviceAuth === undefined ? declaredBroker : undefined);
@@ -113,7 +109,42 @@ const openDoor = (
     );
   }
   return {
-    door: createMcpDoor({
+    ...(remoteAs === undefined ? {} : { remoteAs }),
+    ...(federation === undefined ? {} : { federation }),
+  };
+};
+
+/** The Cloud rung's brokerage: the provisioned tenant's broker, and its
+    federation secret for a deployment that declared none of its own. */
+const cloudBrokerage = (bundle: McpBundle, declared: Brokerage): Brokerage => ({
+  remoteAs: { issuer: bundle.issuer, audience: bundle.audience },
+  federation: declared.federation ?? { secret: bundle.federationSecret },
+});
+
+/** A door opened on FIRST USE. Composition is sync and does no I/O, so the
+    Cloud tenant is provisioned by the request that first needs it — and every
+    McpDoor member is one of these two calls, so nothing can reach the door
+    around the latch. */
+const lazyDoor = (open: () => Promise<McpDoor>): McpDoor => {
+  let opened: Promise<McpDoor> | undefined;
+  const door = (): Promise<McpDoor> => (opened ??= open());
+  return {
+    handler: async (request) => (await door()).handler(request),
+    revokeClient: async (subject, clientId) => (await door()).revokeClient(subject, clientId),
+  };
+};
+
+/** The `mcp:` arm: the full door, broker-fronted or local. */
+const openDoor = (
+  composition: VendoComposition,
+  mcpOptions: NonNullable<VendoComposition["mcpOptions"]>,
+  doorBaseUrl: string | undefined,
+  turnCredentials: TurnCredentials,
+  { remoteAs, federation }: Brokerage,
+  oauth: NonNullable<VendoComposition["oauthSeam"]>,
+): McpDoor => {
+  const { boundTools, guard, store, ops, actions, membershipsSeam, theme } = composition;
+  return createMcpDoor({
       tools: boundTools,
       guard,
       store,
@@ -122,7 +153,7 @@ const openDoor = (
       // door then serves the same verbs off the adapter itself, so an unset
       // slot is a route, not a downgrade.
       ...(ops === undefined ? {} : { ops }),
-      oauth: oauthSeam,
+      oauth,
       apps: appsPortFor(composition),
       // The host's curated door menu (`surfaces.mcp`). Passed as a provider
       // because composition is sync and resolving the authored file is not; the
@@ -157,14 +188,12 @@ const openDoor = (
       ...(federation === undefined ? {} : { federation }),
       ...(mcpOptions.serviceAuth === undefined ? {} : { serviceAuth: mcpOptions.serviceAuth }),
       ...(theme === undefined ? {} : { theme }),
-    }),
-    posture: remoteAs === undefined ? "local" : "broker",
-  };
+  });
 };
 
 /** 10-mcp §1 — the door, its posture, and the origin-root paths it owns. */
 export const composeMcp = (composition: VendoComposition): Pick<VendoComposition,
-  "turnCredentials" | "door" | "mcpPosture" | "doorWellKnown"> => {
+  "turnCredentials" | "door" | "mcpPosture" | "doorWellKnown" | "mcpBundle"> => {
   const { mcpOptions, internalDoorOnly, configuredBaseUrl, boundTools, guard, store } = composition;
   /**
    * 10-mcp §3b — the process's own turn-credential registry.
@@ -187,10 +216,37 @@ export const composeMcp = (composition: VendoComposition): Pick<VendoComposition
   // surface, "broker" when an external authorization server fronts it —
   // declared by VENDO_MCP_BROKER_URL or configured explicitly.
   let mcpPosture: "local" | "broker" | false = false;
+  // The Cloud tenant's bundle, for the door AND for `vendo.tokenFor` — one
+  // provisioning shared by both, so a minted token can never name a broker the
+  // door does not trust.
+  let mcpBundle: (() => Promise<McpBundle>) | undefined;
   if (mcpOptions !== undefined) {
-    const opened = openDoor(composition, mcpOptions, doorBaseUrl, turnCredentials);
-    door = opened.door;
-    mcpPosture = opened.posture;
+    const { oauthSeam } = composition;
+    if (oauthSeam === undefined) {
+      throw new VendoError(
+        "validation",
+        "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
+      );
+    }
+    const declared = declaredBrokerage(mcpOptions);
+    // The Cloud rung of the seam above: it fills the brokerage slot only when
+    // nothing explicit and nothing declared already has.
+    const cloud = declared.remoteAs === undefined && mcpOptions.serviceAuth === undefined
+      ? cloudKeyOptions()
+      : undefined;
+    if (cloud === undefined) {
+      door = openDoor(composition, mcpOptions, doorBaseUrl, turnCredentials, declared, oauthSeam);
+      mcpPosture = declared.remoteAs === undefined ? "local" : "broker";
+    } else {
+      const bundle = cloudMcpBundle(cloud, doorBaseUrl);
+      mcpBundle = bundle;
+      door = lazyDoor(async () => openDoor(
+        composition, mcpOptions, doorBaseUrl, turnCredentials, cloudBrokerage(await bundle(), declared), oauthSeam,
+      ));
+      // Known without the fetch: the key decided the posture, the console only
+      // supplies the address — so /status never has to wait on the network.
+      mcpPosture = "broker";
+    }
   } else if (internalDoorOnly) {
     // The INTERNAL half alone. It answers one live turn's credential and
     // nothing else, so it is handed only what that leg reads: the credential
@@ -213,5 +269,5 @@ export const composeMcp = (composition: VendoComposition): Pick<VendoComposition
   // Resolved AFTER the door: `createMcpDoor` is what validates the base URL, so
   // a malformed one still fails with its message rather than a bare `new URL`.
   const doorWellKnown = doorWellKnownPaths(door === undefined ? "" : basePathOf(doorBaseUrl));
-  return { turnCredentials, door, mcpPosture, doorWellKnown };
+  return { turnCredentials, door, mcpPosture, doorWellKnown, mcpBundle };
 };

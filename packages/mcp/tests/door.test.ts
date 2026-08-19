@@ -3018,6 +3018,9 @@ describe("createMcpDoor first-party service auth", () => {
       ["no client_secret", { client_secret: null }, "invalid_request"],
       ["no subject_token", { subject_token: null }, "invalid_request"],
       ["an empty subject_token", { subject_token: "" }, "invalid_request"],
+      ["a whitespace-only subject_token", { subject_token: "   " }, "invalid_request"],
+      // The one a template string leaves behind when the id was not loaded yet.
+      ["a subject_token that is the literal \"undefined\"", { subject_token: "undefined" }, "invalid_request"],
       ["no subject_token_type", { subject_token_type: null }, "invalid_request"],
       ["a subject_token_type this door does not speak", { subject_token_type: "urn:ietf:params:oauth:token-type:jwt" }, "invalid_request"],
       ["another server's resource", { resource: "https://other.example/mcp" }, "invalid_target"],
@@ -3035,6 +3038,12 @@ describe("createMcpDoor first-party service auth", () => {
     // carry it: a description that named the failing half would be an oracle
     // while every assertion above still passed. The BODIES must be identical.
     expect(new Set(refusals).size, refusals.join("\n")).toBe(1);
+
+    // A subject nobody is, on the other hand, MUST be an oracle: it is the
+    // caller's own bug, and only this refusal is positioned to name the fix.
+    const blank = await serviceExchange(harness.door, { subject_token: "undefined" });
+    expect((await blank.json() as { error_description: string }).error_description)
+      .toContain("vendo.tokenFor(user.id)");
 
     const wrongType = await serviceExchange(harness.door, {}, "application/json");
     expect(wrongType.status).toBe(400);

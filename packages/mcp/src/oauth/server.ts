@@ -681,8 +681,20 @@ export class OAuthServer {
   async #exchangeServiceKey(form: URLSearchParams, resource: string, keys: readonly string[]): Promise<Response> {
     const secret = form.get("client_secret");
     const subject = form.get("subject_token");
-    if (!secret || !subject) {
+    if (!secret) {
       return oauthJsonError("invalid_request", "client_secret and subject_token are required");
+    }
+    // A blank subject_token, or the literal "undefined" a template string leaves
+    // behind, is a user id that was stringified before it existed. Minting for it
+    // would succeed and the token would work — as nobody — so the mistake would
+    // only surface much later as a tool call that finds no data. It dies here,
+    // naming the fix, because this is the last place that can still see it.
+    if (!subject || subject.trim() === "" || subject === "undefined") {
+      return oauthJsonError(
+        "invalid_request",
+        `subject_token must be one of your own user ids, got ${JSON.stringify(subject)}: pass the id you `
+        + "already have (vendo.tokenFor(user.id)) rather than one interpolated before it was loaded",
+      );
     }
     if (form.get("subject_token_type") !== SERVICE_SUBJECT_TOKEN_TYPE) {
       return oauthJsonError("invalid_request", `subject_token_type must be ${SERVICE_SUBJECT_TOKEN_TYPE}`);

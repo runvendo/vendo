@@ -9,6 +9,7 @@ import { VendoError } from "@vendoai/core";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { VendoComposition } from "./compose-context.js";
 import { isLoopbackOrigin } from "./door-paths.js";
+import { composeTokenFor } from "./mcp-token.js";
 import type { Vendo } from "./types.js";
 import { VERSION, type WireDeps } from "./wire/shared.js";
 
@@ -133,6 +134,7 @@ export const vendoInstance = (
   const { tenantConnectors } = composition;
   return {
     handler,
+    tokenFor: composeTokenFor(composition, handler),
     async usage(query) {
       // Loud, not silent, exactly like `emit` below: a store with no meter
       // recorded nothing and never will, so an empty tally would read as "this

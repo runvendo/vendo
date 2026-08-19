@@ -52,6 +52,21 @@ import type { TenantConnectors } from "./tenant-connectors.js";
 
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
+  /** One short-lived MCP access token bound to one of YOUR users — what a
+      backend agent connects to this deployment's door with, so it acts as that
+      user under the same guard and the same audit trail as the in-product one.
+
+      Pass the incoming `Request` and the signed-in user is read off its session
+      cookie through the same seam the door authenticates with; pass a user id
+      to mint headlessly (a cron, a queue worker). A blank or `"undefined"` id
+      is refused rather than minted — a token for a user nobody is would only
+      fail much later, as a tool call that finds no data.
+
+      Where the exchange happens is the deployment's posture, not the caller's
+      problem: a Vendo Cloud deployment exchanges at its provisioned broker, a
+      BYO one at its own door (`mcp.serviceAuth`). The same agent code works
+      against both. */
+  tokenFor(who: Request | string): Promise<string>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
   /** Push a file into one user's own drawer from host code — the programmatic
       half of the chat drop, through the SAME server-side write, so the agent
