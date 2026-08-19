@@ -51,7 +51,9 @@ pool all read the same `memberships` they always did.
 
 ## Caps
 
-Each tenant gets messages/day and generations/month, set in the console. Every
+Each tenant gets messages/day and generations/month, set in the console. Both
+reset on the calendar boundary in UTC — the start of the current UTC day and of
+the current UTC month — not on a rolling lookback, so "for today" is true. Every
 cap carries a **scope**:
 
 | Scope | Counts |
