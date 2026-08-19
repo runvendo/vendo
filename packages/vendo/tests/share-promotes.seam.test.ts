@@ -8,7 +8,7 @@ import {
   type Principal,
   type ToolRegistry,
 } from "@vendoai/core";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, createStoreOps, type VendoStore } from "@vendoai/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -67,6 +67,10 @@ afterEach(async () => {
 async function tempStore(): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-share-promotes-"));
   const store = createStore({ dataDir });
+  // The very ops surface compose would build over this store anyway
+  // (compose-store.ts:118-120 takes `store.ops` when there is one), held here so
+  // a test can watch whether `lifecycle.promote` ran.
+  store.ops = createStoreOps(store);
   cleanups.push(async () => {
     await store.close().catch(() => undefined);
     await rm(dataDir, { recursive: true, force: true });
@@ -143,6 +147,24 @@ describe("the ✦ share toggle's write, over the real composition", () => {
     expect(await subjectOf(store, "app_kim")).toBe(ORG);
     expect(shared.body.grants.map((row: { principal: string; level: string }) => [row.principal, row.level]))
       .toContainEqual([`org:${ORG}`, "viewer"]);
+  });
+
+  it("refuses a tenant the sharer does not belong to, and moves nothing", async () => {
+    await seedPersonalApp(store, seeded("app_stranger", "Kim's tracker"), "kim");
+    const promote = vi.spyOn(store.ops!.lifecycle, "promote");
+
+    // Kim owns this app outright, so the owner gate lets her through. `acme` is
+    // somebody else's workspace — she is a member of Maple and nowhere else.
+    const refused = await call(vendo, kim, "PUT", `/apps/app_stranger/grants/${encodeURIComponent("org:acme")}`, {
+      level: "viewer",
+    });
+
+    expect(refused.status).toBe(403);
+    expect(promote).not.toHaveBeenCalled();
+    // Nothing moved and nothing was written — not even the owner row the flip is
+    // preceded by. Her app is still hers, and acme's admins never saw it.
+    expect(await subjectOf(store, "app_stranger")).toBe("kim");
+    expect((await call(vendo, kim, "GET", "/apps/app_stranger/grants")).body.grants).toEqual([]);
   });
 
   it("the promoter KEEPS her app — she is an ordinary member, not a tenant admin", async () => {

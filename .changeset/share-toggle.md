@@ -17,3 +17,10 @@ holder's own `/user` mount — so `AppsRuntime.access.grant` mints the sharer's 
 owner grant, runs `ops.lifecycle.promote`, and only then writes the tenant grant.
 The order is load-bearing: the move restamps the row's subject as the org id, so
 a sharer who is not a tenant admin would otherwise lose the app she just shared.
+
+Because that move is what makes the grant legal, naming the tenant is now an
+authorization claim of its own: `grant` refuses a `team:`/`org:` principal with
+`forbidden` unless the caller holds an asserted membership in that org. Owning
+the app is not enough — without this an owner could name any org id and have her
+app moved into a workspace she does not belong to. Revoking is unchanged, so a
+sharer who has since left the tenant can still un-share.
