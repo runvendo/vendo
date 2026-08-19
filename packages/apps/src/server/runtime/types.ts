@@ -58,7 +58,7 @@ import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
 import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { ShipDiff } from "../remix/ship-diff.js";
-import type { SlotRegistry } from "../persistence/slots.js";
+import type { SlotDescriptor, SlotRegistry } from "../persistence/slots.js";
 
 /**
  * What this block may ask of the automations engine — four verbs, no more.
@@ -211,6 +211,9 @@ export interface AppsConfig {
    *  umbrella can back it with a first-request cloud read without doing I/O at
    *  compose time. */
   catalog: NormalizedCatalog;
+  /** Slots the host declared in its own config (`CreateVendoConfig.slots`),
+   *  merged into the page-reported registry on every read (slots.ts). */
+  slots?: readonly SlotDescriptor[];
   /** The pages a generated `<Link to>` may name (`CreateVendoConfig.routes`),
    *  for the FLOOR: a screen naming a route the host never registered is refused
    *  at generation, not left to render as dead text. What a WRITER is told about
@@ -630,10 +633,13 @@ export interface AppsRuntime {
    * The slot REGISTRY — which slots this caller's surfaces mount, as opposed to
    * which app sits in one (`placements` above).
    *
-   * Written by the surfaces themselves: a slot exists because a page renders
-   * it, so every render reports it and the read ages out whatever stopped being
-   * reported (slots.ts). Nothing else can know the list — a slot is a prop on a
-   * host's own component, invisible to the server until it renders.
+   * Two sources, merged on read (slots.ts). A REPORTED slot is written by the
+   * surface itself: it exists because a page renders it, so every render
+   * reports it again and the read ages out whatever stopped being reported. A
+   * DECLARED slot comes from the host's `slots` config — it never decays and
+   * needs no render, which is the only thing an agent-only product, where no
+   * page of ours renders a <VendoSlot>, has to pin to. Declared wins: a
+   * reported slot of the same id is dropped.
    */
   slots: SlotRegistry;
   /** Build contract §9.3 — what level the CALLER holds. */

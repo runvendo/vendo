@@ -14,7 +14,7 @@ import type {
   OverridesFile,
   ServerActionHandler,
 } from "@vendoai/actions";
-import type { AppsConfig, SandboxAdapter, AppsRuntime } from "@vendoai/apps";
+import type { AppsConfig, SandboxAdapter, AppsRuntime, SlotDescriptor } from "@vendoai/apps";
 import type { VendoAgent as ComposedAgent } from "@vendoai/agents";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
@@ -180,6 +180,12 @@ export interface CreateVendoConfig {
       and loads on demand. Names are global as authored and a collision with
       another contributor fails at boot naming both. */
   skills?: readonly Skill[];
+  /** Slots this deployment ALWAYS has, declared here instead of reported by a
+      page render. The registry is otherwise page-reported and ages out
+      (`SLOT_DECAY_MS`), which leaves an agent-only product — no page of ours
+      renders a <VendoSlot> — with nowhere to pin. A declared slot never
+      decays and needs no render. */
+  slots?: readonly SlotDescriptor[];
   /** Host components available to generated apps: the name-keyed registry
       object (01 §14 — the same object serves <VendoProvider>; the server ignores
       each entry's `component` reference) or the array form. Entry names must

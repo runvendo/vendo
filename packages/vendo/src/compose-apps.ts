@@ -158,6 +158,7 @@ const machineEnvFor = (
 const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
   const { store, ops, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
   const { access } = seams;
+  const { slots } = composition.config;
   return {
     store,
     // Adapter rule — the SAME ops surface the deployment selected, so app data
@@ -175,6 +176,10 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     // flagship rates for it.
     reviewModel: inference.seats.review,
     catalog,
+    // The host's ALWAYS-ON slots, merged into the page-reported registry on
+    // every read — the one seam every consumer (the agent tool, GET /slots,
+    // the picker, the pin bar) already reads through.
+    ...(slots === undefined ? {} : { slots }),
     seedBaselines,
     // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one
     // `selectFiles` answer, above), so an app's source past the inline cap uses the

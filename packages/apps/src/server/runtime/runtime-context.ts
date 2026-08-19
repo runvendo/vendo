@@ -260,7 +260,7 @@ const createStores = (
   | "parkedActions" | "inClientApprovals"> => {
   const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
-  const slots = createSlotRegistry(engine);
+  const slots = createSlotRegistry(engine, config.slots);
   const data = createAppData({ ops: config.ops, store: config.store });
   const history = createAppHistory(engine);
   // Lane E — parked egress approvals (approved state lives on the document's
