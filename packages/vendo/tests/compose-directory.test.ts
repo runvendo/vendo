@@ -41,6 +41,19 @@ describe("the memberships seam's Cloud default", () => {
     expect(composed.directory).toBeUndefined();
     vi.unstubAllEnvs();
   });
+
+  // The per-seam twin of `auth.memberships`, exactly like `actAs` and `oauth`.
+  // Without it a raw-`principal` host — which cannot carry an `auth` preset —
+  // had NO way to refuse the Cloud directory, which made it a mandate rather
+  // than a default. Asserting an empty list is how such a host says "no orgs".
+  it("lets a raw-principal host decline the directory by asserting its own seam", () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    const memberships = async () => [];
+    const composed = composeConfig(base({ memberships }));
+    expect(composed.membershipsSeam).toBe(memberships);
+    expect(composed.directory).toBeUndefined();
+    vi.unstubAllEnvs();
+  });
 });
 
 import { composeLimits } from "../src/limits.js";

@@ -1081,6 +1081,11 @@ describe("09 §3 public wire", () => {
       // the Cloud tools connector, whose /status-triggered descriptor fetch
       // would land in consoleCalls.
       connectors: [],
+      // …and from the memberships seam, for the same reason and in the same
+      // way: with the key stubbed, an unset memberships slot would compose the
+      // Cloud tenant directory, whose per-request GET would land in
+      // consoleCalls. This deployment asserts it has no orgs.
+      memberships: async () => [],
       ...config,
     });
 
