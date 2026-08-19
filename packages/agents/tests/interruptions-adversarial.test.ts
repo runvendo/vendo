@@ -370,6 +370,38 @@ describe("the seven days", () => {
     expect(ran.count).toBe(0);
   }, 60_000);
 
+  it("answers the live ask of a turn whose other ask expired", async () => {
+    const store = keep(memoryStore());
+    const ran = { count: 0 };
+    const support = agent({
+      name: "support",
+      harness: refunder(2),
+      tools: [refundTool(ran)],
+      store,
+      guard: { approvals: { parkedCallTtlMs: 60_000 } },
+    });
+    const turns = turnsOf(support, "u_42");
+    const asked = await interrupted(support.chat("Refund invoice 7 and invoice 8.", { as: "u_42" }));
+    expect(asked.interruptions).toHaveLength(2);
+    const stale = asked.interruptions[0]!.id;
+    const live = asked.interruptions[1]!.id;
+
+    // Two asks parked minutes apart; a week later only the elder is past its
+    // deadline. Nothing sweeps, so the dead row is still on the pending feed.
+    await rewriteCreatedAt(store, stale, new Date(Date.now() - 60_000).toISOString());
+
+    // `list` offers this turn with ONE ask on it, so that ask has to be
+    // answerable and answering exactly it has to be enough. Demanding the
+    // expired one too made a listed turn unanswerable both ways — and there is
+    // no sweeper to clear it afterwards.
+    const listed = await turns.list({ status: "interrupted" });
+    expect(listed[0]!.interruptions.map((one) => one.id)).toEqual([live]);
+
+    const answered = await turns.resume(asked.turnId, { [live]: "approve" });
+    expect(answered).toMatchObject({ status: "ok", turnId: asked.turnId });
+    expect(ran.count).toBe(1);
+  }, 60_000);
+
   it("cannot be handed an unreadable createdAt in the first place", async () => {
     const store = keep(memoryStore());
     const ran = { count: 0 };
@@ -446,7 +478,85 @@ describe("the decision map", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. WHAT THE SPEC CUT
+// 5. TWO TURNS ON ONE THREAD
+// ---------------------------------------------------------------------------
+
+describe("two turns running at once on one thread", () => {
+  /** Both turns reach the tool call — and are therefore both subscribed to the
+   *  guard — before either parks. The overlap is the point of the probe, so it
+   *  is arranged rather than left to the machine's timing. */
+  const barrier = (count: number): (() => Promise<void>) => {
+    let arrived = 0;
+    let release!: () => void;
+    const all = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return async () => {
+      arrived += 1;
+      if (arrived === count) release();
+      await all;
+    };
+  };
+
+  const paired = (arrive: () => Promise<void>) => {
+    let invoice = 0;
+    return defineHarness({
+      name: "paired",
+      async *run(turn) {
+        const last = JSON.stringify(turn.messages.at(-1)?.parts ?? []);
+        if (last.includes("[Resumed]")) {
+          yield { type: "text" as const, delta: "The refund went through." };
+          return;
+        }
+        if (!last.includes("efund")) {
+          yield { type: "text" as const, delta: "Your balance is fine." };
+          return;
+        }
+        await arrive();
+        // Its own invoice, so neither turn's card can be mistaken for the
+        // other's by anything but the id it was collected under.
+        invoice += 1;
+        await turn.tools.call("refund", { invoice });
+        yield { type: "text" as const, delta: "I have asked for approval." };
+      },
+    });
+  };
+
+  it("keeps each turn's approval to itself, and refuses to spend the sibling's yes", async () => {
+    const ran = { count: 0 };
+    const support = agent({
+      name: "support",
+      harness: paired(barrier(2)),
+      tools: [refundTool(ran)],
+      store: keep(memoryStore()),
+    });
+    // One thread, opened by a turn that asks for nothing.
+    const opened = await support.chat("What is my balance?", { as: "u_42" });
+    const { threadId } = opened;
+
+    const [seven, eight] = await Promise.all([
+      interrupted(support.chat("Refund invoice 7.", { as: "u_42", threadId })),
+      interrupted(support.chat("Refund invoice 8.", { as: "u_42", threadId })),
+    ]);
+
+    // Nothing serialises a thread, and the guard's own run key IS the thread —
+    // so each turn used to collect both cards and report the other's ask as its
+    // own.
+    expect(seven.interruptions).toHaveLength(1);
+    expect(eight.interruptions).toHaveLength(1);
+    expect(seven.interruptions[0]!.id).not.toBe(eight.interruptions[0]!.id);
+
+    // And a decision named on the wrong turn decides nothing: one ask, answered
+    // once, by the turn that asked it.
+    await Promise.resolve(seven.resume({ [eight.interruptions[0]!.id]: "approve" }))
+      .catch(() => undefined);
+    expect(ran.count).toBe(0);
+    expect(await turnsOf(support, "u_42").list({ status: "interrupted" })).toHaveLength(2);
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+// 6. WHAT THE SPEC CUT
 // ---------------------------------------------------------------------------
 
 describe("nothing the spec cut crept back in", () => {

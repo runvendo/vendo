@@ -135,6 +135,9 @@ async function nothingWaiting(
   for (const id of Object.keys(decisions)) {
     const answered = await deps.guard.approvals.get?.(id as ApprovalId, principal);
     if (answered === undefined || answered.status === "pending") continue;
+    // Scoped the way `parkedByTurn` scopes the feed: another agent's answered
+    // ask is not this agent's conflict, it is a turn this agent never had.
+    if (deps.agent === undefined || answered.request.ctx.agent !== deps.agent) continue;
     if (answered.request.ctx.turnId !== turnId) continue;
     return new VendoError(
       "conflict",
@@ -184,7 +187,15 @@ export function createTurns(deps: AgentDeps, subject: string): Turns {
     },
 
     resume: async (turnId, decisions, options) => {
-      const parked = await mine(turnId);
+      const all = await mine(turnId);
+      // The SAME deadline `list` applies, so both faces agree on what is
+      // answerable. A turn holding one expired ask beside a live one used to be
+      // offered as actionable and be answerable neither way: decide what the
+      // list showed and it demanded an id nobody was shown, decide both and the
+      // expired one refused the pair. Kept whole when EVERY ask is expired, so
+      // that turn is still refused as expired rather than reported missing.
+      const live = all.filter((request) => !expired(request, deps.guard.approvals.parkedCallTtlMs, Date.now()));
+      const parked = live.length > 0 ? live : all;
       const first = parked[0];
       if (first === undefined) throw await nothingWaiting(deps, principal, turnId, decisions);
 

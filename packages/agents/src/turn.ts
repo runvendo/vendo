@@ -638,7 +638,16 @@ export async function runTurn(deps: TurnDeps, input: TurnInput): Promise<TurnRec
   // teardown would leak one — and a foreign `threadId` is a rejection a caller
   // can repeat at will.
   const unsubscribe = deps.guard.onApprovalRequested?.((request) => {
-    if (runKey !== undefined && (request.ctx.trigger?.runId ?? request.ctx.sessionId) === runKey) {
+    // The run key alone is the THREAD for a chat turn, and nothing serialises a
+    // thread: two turns running at once each collected the other's cards, so a
+    // resume of one decided and re-dispatched the other's call. The turn that
+    // asked is on the row (guard.ts, `#parkApproval`) — matched on it, a turn's
+    // interruptions are its own.
+    if (
+      runKey !== undefined
+      && (request.ctx.trigger?.runId ?? request.ctx.sessionId) === runKey
+      && request.ctx.turnId === input.turnId
+    ) {
       parked.push(request);
     }
     // A parked call never reaches `onCall`, so this is the only moment the turn
