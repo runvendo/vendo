@@ -107,6 +107,20 @@ describe("bubbles", () => {
     for (const piece of pieces) expect(piece).not.toMatch(/^(?:Smith|1234)\b/);
   });
 
+  it("keeps the abbreviations a title list would never have caught", () => {
+    // The predictable leak in a list of titles: a month and an initialism are
+    // both followed by a capital and neither is Mr or Dr. The initialism family
+    // is closed structurally (an internal period), the months by name.
+    const reply = "I sent the statement over on Jan. The copy sitting in the app is the very same one. "
+      + "Some fees are waived below $25, e.g. The overdraft charge from Tuesday, which is already credited. "
+      + "Tell me if you would rather I posted a paper copy out to you instead this month.";
+    const pieces = bubbles(reply);
+
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces.join(" ")).toBe(reply);
+    for (const piece of pieces) expect(piece).not.toMatch(/\b(?:Jan|e\.g|i\.e|a\.m|p\.m|etc|vs|No)\.$/);
+  });
+
   it("leaves alone what it cannot cut honestly", () => {
     const short = "Your checking balance is $412.08. Anything else?";
     expect(bubbles(short)).toEqual([short]);

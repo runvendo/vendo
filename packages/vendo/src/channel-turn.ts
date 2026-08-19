@@ -337,21 +337,38 @@ const BUBBLE_TARGET = 160;
 /** Three texts is somebody talking; more is a notification storm. */
 const BUBBLE_CAP = 3;
 
+/** The short forms a CAPITAL can legitimately follow, which is what makes them
+ *  indistinguishable from a sentence end by shape alone. The `e.g.` family is not
+ *  here because it is closed structurally below — an internal period — rather
+ *  than one entry at a time.
+ *
+ *  Bounded on purpose, and this is the last word on it: sentence segmentation has
+ *  no exact small rule, so the honest question is what a wrong guess costs. Here
+ *  it costs one bubble breaking a sentence a few words early. That is survivable,
+ *  it decides nothing, and it is not worth chasing every abbreviation in English —
+ *  so this list covers what a bank reply writes and stops. */
+const NOT_A_SENTENCE_END = [
+  "Mr", "Mrs", "Ms", "Dr", "Prof", "St", "Jr", "Sr",
+  "Inc", "Ltd", "Co", "No", "no", "acc", "ref", "approx", "dept", "est", "etc", "vs",
+  "Jan", "Feb", "Mar", "Apr", "Jun", "Jul", "Aug", "Sep", "Sept", "Oct", "Nov", "Dec",
+].join("|");
+
 /** The places a person would have broken a long text, in falling preference —
  *  and there is deliberately no rung below a sentence end. Each one CAPTURES the
- *  whitespace it matched, so a bubble can be rebuilt out of the model's own bytes
- *  rather than a separator this file invented.
+ *  whitespace it matched, so a bubble that holds two parts together holds the
+ *  bytes that stood between them rather than a separator this file invented. The
+ *  separator at a CUT is dropped, because that is what cutting is.
  *
  *  The sentence rung is the fussy one, because in a bank reply a period is not a
  *  sentence end half the time it appears. It fires only where the next sentence
  *  visibly starts — a capital or an opening quote, which is what leaves "acc.
- *  1234" and "no. 5" alone — and never straight after a title, the one kind of
- *  abbreviation a capital does follow ("Dr. Smith"). Everything it is unsure of
- *  stays joined, because an uncut wall beats a bubble that stops mid-thought. */
+ *  1234" and "no. 5" alone — and never after an internal-period initialism
+ *  ("e.g.", "i.e.", "a.m.") or one of the short forms above. Everything it is
+ *  unsure of stays joined: an uncut wall beats a bubble that stops mid-thought. */
 const BUBBLE_BOUNDARIES: readonly RegExp[] = [
   /(\n[ \t]*\n)/,
   /(\n)/,
-  /(?<!\b(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\.)(?<=[.!?])([ ]+)(?=[A-Z"'(])/,
+  new RegExp(`(?<![A-Za-z]\\.[A-Za-z]\\.)(?<!\\b(?:${NOT_A_SENTENCE_END})\\.)(?<=[.!?])([ ]+)(?=[A-Z"'(])`),
 ];
 
 /**
