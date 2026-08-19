@@ -34,6 +34,7 @@ import { startRun, type RunOptions } from "./away.js";
 import { startChat, type ChatOptions, type Turn } from "./turn.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
+import { PARKED_TURN_TTL_MS } from "./interruptions.js";
 import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
 import type { SystemPromptHook } from "./prompt.js";
 import {
@@ -319,7 +320,15 @@ export function agent(config: AgentConfig): VendoAgent {
   // completed with this composition's store.
   const guard = isGuardInstance(config.guard)
     ? config.guard
-    : createGuard({ store, ...config.guard });
+    : createGuard({
+      store,
+      ...config.guard,
+      // An agent's parked turn waits for a PERSON, not for a BYO loop that
+      // will retry in the hour the guard defaults to (interruptions.ts). The
+      // host's own number still wins — this fills the slot, it does not take
+      // it — and a guard INSTANCE passed in is taken verbatim, TTL included.
+      approvals: { parkedCallTtlMs: PARKED_TURN_TTL_MS, ...config.guard?.approvals },
+    });
   const tools = mergeSources(config.tools ?? [], config.mcp ?? []);
   const bound = guard.bind(tools);
   const skills: Skill[] = loadSkillFolders(config.skills);

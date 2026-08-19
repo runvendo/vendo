@@ -26,6 +26,14 @@ export { awayRunner, type AwayRunnerDeps, type RunOptions } from "./away.js";
 /** The turn a verb hands back, and the two shapes a caller writes against it. */
 export type { ChatOptions, RunEvent, Turn } from "./turn.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
+/** Interrupted turns, addressed by id — the same park a caller holding the
+ *  result answers through `TurnResult.resume()`, from any other process. */
+export {
+  createTurns,
+  PARKED_TURN_TTL_MS,
+  type InterruptedTurn,
+  type Turns,
+} from "./interruptions.js";
 export { PERMISSIONS_PATH, type AgentPrincipal } from "./permissions.js";
 export { assemblePrompt, type PromptInput, type SystemPromptHook } from "./prompt.js";
 export type { AgentSession, ApprovalEvent, RespondOptions, SessionOptions } from "./session.js";
