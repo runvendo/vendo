@@ -86,6 +86,9 @@ export interface ScreenPaintInput {
   readonly queries: Record<string, unknown>;
   readonly catalog: readonly string[];
   readonly now?: number;
+  /** The component's props — a PORT's paint can depend on its host call site.
+   *  JSON only; they cross into the VM by serialization, like every value. */
+  readonly props?: Record<string, unknown>;
   /** What this SCREEN is, stamped on every node the paint emits — see
    *  {@link flattenTree}. `"ported"` is the splitter's port of a host component,
    *  and it is what lets a brick paint the host's own class. Set by the gauntlet

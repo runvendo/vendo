@@ -570,6 +570,16 @@ export const createBuildSurface = (
         // remixes ever renders, least of all on the read half (`saves: false`).
         ported: async (appId) => (config.seedBaselines ?? []).length > 0
           && (await deps.runtime().get(appId, ctx))?.seed !== undefined,
+        // The props a port paints with, off the SAME row: the seed names the
+        // component, and the component's baseline carries the host's own
+        // captured sampleProps. Consulted by the floor only after `ported`
+        // answered yes, so an authored screen costs no extra read.
+        props: async (appId) => {
+          const component = (await deps.runtime().get(appId, ctx))?.seed?.component;
+          return component === undefined
+            ? undefined
+            : (config.seedBaselines ?? []).find((candidate) => candidate.slot === component)?.sampleProps;
+        },
         ...rowHalf,
       });
     },

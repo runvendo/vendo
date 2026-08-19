@@ -31,6 +31,10 @@ export interface ScreenInteractive {
   /** Resolved query results, keyed by the tool that produced them, as of the
    *  served paint. The refetch rebuilds this record with the same keys. */
   queries: Record<string, unknown>;
+  /** A PORTED screen's mount props — the values the served paint rendered
+   *  with. The bridge's own VM must boot with the SAME props, or the first
+   *  click that moves the screen paints the component's no-props branch. */
+  props?: Record<string, unknown>;
   /**
    * How to read that data again. A mutation the screen fires makes the served
    * numbers stale — the cancelled transfer is still in the list — so the whole
@@ -78,6 +82,8 @@ export interface ScreenBoot {
   catalog: readonly string[];
   /** The screen's clock at boot; the VM has no `Date` of its own. */
   now?: number;
+  /** Mount props for the component — see {@link ScreenInteractive.props}. */
+  props?: Record<string, unknown>;
 }
 
 export interface ScreenEngine {

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { PORTED_SCREEN_DIALECT, checkComponentScreen } from "@vendoai/apps";
+import type { Json } from "@vendoai/core";
 import type { SeedPort } from "@vendoai/apps/contract";
 import type TS from "typescript";
 import { defaultExportOf } from "../capture.js";
@@ -31,6 +32,11 @@ export interface SplitInput {
   root: string;
   /** Where the wiring file will sit — the paths it imports are relative to it. */
   generatedDir: string;
+  /** The host's own declared sample props for this component, when a
+   *  registration carries them — what the gauntlet paints a props-dependent
+   *  port with. Never invented: absent, the port is graded with none, and one
+   *  that paints nothing without props is refused. */
+  sampleProps?: Record<string, Json>;
 }
 
 export type SplitOutcome =
@@ -365,6 +371,9 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
     // its first paint: none. A port that cannot draw itself empty is a port an
     // end user would meet mid-crash.
     runQuery: async () => null,
+    // The host's own declared sample props, when the registration carries
+    // them — the same values the runtime floor will grade this port with.
+    ...(input.sampleProps === undefined ? {} : { props: input.sampleProps }),
   });
   if (!check.ok) return { ok: false, issues: check.issues.map((issue) => issue.message) };
 

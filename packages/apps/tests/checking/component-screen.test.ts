@@ -662,6 +662,38 @@ export default function S() {
     expect(codes).toEqual(["types"]);
   });
 
+  /**
+   * THE PROPS SLOT. A ported component's paint can depend on the props its host
+   * call site passes — and a query runs before the screen renders, so nothing
+   * in the source can carry them. The check paints with the props it is HANDED
+   * (the host's own captured sampleProps; never invented), and a component
+   * that paints nothing without props still refuses loudly rather than
+   * shipping a screen that opens blank.
+   */
+  const PROPPED = `export default function S({ total }: { total?: number }) {
+  if (total === undefined) return null;
+  return <p>{total}</p>;
+}
+`;
+
+  it("paints a props-dependent PORTED screen with the props it is handed", async () => {
+    const passing = await checkComponentScreen({
+      source: PROPPED, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+      props: { total: 7 },
+    });
+    expect(passing.issues).toEqual([]);
+    expect(passing.ok).toBe(true);
+    expect(JSON.stringify(passing.initialTree)).toContain("7");
+  });
+
+  it("still refuses the same screen loudly when no props arrive", async () => {
+    const refused = await checkComponentScreen({
+      source: PROPPED, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues.map(({ message }) => message).join("\n")).toContain("painted nothing");
+  });
+
   it("still refuses a prop no display tag has, in either dialect", async () => {
     const idProp = `import { Text } from "@vendo/screen";
 export default function S() { return <div id="card"><Text text="x" /></div>; }

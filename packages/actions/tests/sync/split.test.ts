@@ -629,6 +629,32 @@ export function RangePicker() {
     expect(picker.ported?.holes).toEqual([]);
   }, 120_000);
 
+  it("grades a props-dependent port with the host's own sample props, and lands them on the baseline", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import { StatCard } from "../components/StatCard";
+      export default function Page() { return <Remixable><StatCard total={7} /></Remixable>; }
+    `);
+    // The NetWorthView shape at its smallest: the paint depends on a prop, and
+    // the host's own guard renders nothing without one. The gauntlet paints
+    // with the registration's declared sample props — the host's own, never
+    // invented — and they land on the baseline for the seed door to reuse.
+    await write(root, "src/components/StatCard.tsx", `export function StatCard({ total }: { total?: number }) {
+  if (total === undefined) return null;
+  return <section><p>{total}</p></section>;
+}
+`);
+
+    const result = await capturePins(root, path.join(root, ".vendo"), new Set(), undefined,
+      (_file, slot) => (slot === "StatCard" ? { total: 7 } : undefined));
+    expect(result.warnings).toEqual([]);
+
+    const card = await baselineFor(root, "StatCard");
+    expect(card.sampleProps).toEqual({ total: 7 });
+    expect(card.ported).toBeDefined();
+  }, 120_000);
+
   it("regrades on the next sync: a component that stops being clean loses its port", async () => {
     const root = await dataHookRoot();
     await capturePins(root, path.join(root, ".vendo"));

@@ -329,11 +329,11 @@ const ENGINE = `(function () {
       });
     })([]),
 
-    mount: function (loaded) {
+    mount: function (loaded, props) {
       component = loaded;
       root = new Node("#root");
       eventPhase = false;
-      preact.render(preact.createElement(component, null), root);
+      preact.render(preact.createElement(component, props || null), root);
     },
 
     fire: function (id, event) {
@@ -463,6 +463,9 @@ ${ENGINE}`;
 export interface InstallInput {
   compiledSource: string;
   queries: Record<string, unknown>;
+  /** Mount props for the component — a PORT's paint can depend on its host
+   *  call site. Serialized into the program, so JSON-only by construction. */
+  props?: Record<string, unknown>;
   catalog: readonly string[];
 }
 
@@ -478,6 +481,7 @@ export interface InstallInput {
 export function installSource(input: InstallInput): string {
   return `(function () {
   var queries = JSON.parse(${JSON.stringify(JSON.stringify(input.queries))});
+  var props = ${input.props === undefined ? "null" : `JSON.parse(${JSON.stringify(JSON.stringify(input.props))})`};
   var names = JSON.parse(${JSON.stringify(JSON.stringify(input.catalog))});
   var screen = {
     useQuery: function (tool) {
@@ -504,7 +508,7 @@ ${input.compiledSource}
   if (typeof loaded !== "function") {
     throw new Error("this screen exports no component — a screen is one default-exported React component");
   }
-  __vendo.mount(loaded, queries);
+  __vendo.mount(loaded, props);
 })();
 0`;
 }

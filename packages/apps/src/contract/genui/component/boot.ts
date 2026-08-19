@@ -299,6 +299,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
         compiledSource: options.compiledSource,
         queries: options.queries,
         catalog: options.catalog,
+        ...(options.props === undefined ? {} : { props: options.props }),
       }), "boot");
       drain();
       checkFailure();

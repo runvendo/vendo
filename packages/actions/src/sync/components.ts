@@ -84,7 +84,7 @@ function entryExport(
 /** The first declared example that parses to a JSON object of props. A
  *  malformed or non-object entry is stepped over rather than failing the
  *  component. */
-function declaredSample(examples: readonly string[] | undefined): Record<string, unknown> | null {
+export function declaredSample(examples: readonly string[] | undefined): Record<string, unknown> | null {
   for (const example of examples ?? []) {
     let parsed: unknown;
     try {

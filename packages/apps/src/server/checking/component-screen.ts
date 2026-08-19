@@ -131,6 +131,13 @@ export interface ComponentScreenOptions {
    *  ({@link PORTED_SCREEN_DIALECT}); a screen that could spell its own dialect
    *  would unlock `className` for itself. */
   ported?: boolean;
+  /** The props the screen's component renders with — a PORT's paint can depend
+   *  on what its host call site passed, and a query resolves before the render,
+   *  so nothing in the source can carry them. JSON only, by the same law as
+   *  every value that crosses into the VM, and never invented: the caller hands
+   *  the host's own captured sampleProps or nothing — a screen that paints
+   *  nothing without props is refused, not blessed on made-up data. */
+  props?: Record<string, unknown>;
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
@@ -662,6 +669,7 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
       catalog: names,
       now: Date.now(),
       ...(opts.ported === true ? { source: "ported" } : {}),
+      ...(opts.props === undefined ? {} : { props: opts.props }),
     });
   } catch (error) {
     // A paint answers a screen that failed with a verdict, so a THROW is the

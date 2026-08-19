@@ -95,6 +95,10 @@ export interface BootScreenOptions {
   compiledSource: string;
   /** Query results, keyed by tool name, resolved BEFORE the screen boots. */
   queries: Record<string, unknown>;
+  /** The props the component mounts with — a PORT's paint can depend on what
+   *  its host call site passed. JSON only, enforced by construction: they
+   *  reach the VM as serialized text, so nothing callable can ride them. */
+  props?: Record<string, unknown>;
   /** The component names the screen may name. */
   catalog: readonly string[];
   /**

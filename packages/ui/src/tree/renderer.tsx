@@ -195,6 +195,8 @@ const readInteractive = (payload: UIPayload): ScreenInteractive | undefined => {
     compiledSource: value.compiledSource,
     queries: isPlainRecord(value.queries) ? value.queries : {},
     ...(plan.length === 0 ? {} : { queryPlan: plan }),
+    // JSON by the wire's nature; a malformed value simply doesn't ride.
+    ...(isPlainRecord(value.props) ? { props: value.props } : {}),
   };
 };
 

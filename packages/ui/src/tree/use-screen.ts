@@ -111,6 +111,9 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
             queries: now.interactive?.queries ?? {},
             catalog: now.catalog,
             now: Date.now(),
+            // The served paint's own mount props — without them a ported
+            // screen's first click paints the component's no-props branch.
+            ...(now.interactive?.props === undefined ? {} : { props: now.interactive.props }),
           }),
         };
       } catch (error) {
@@ -177,7 +180,10 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
     contained(nodeId, () => {
       // Boot BEFORE disposing: a boot that throws leaves the screen it replaces
       // alive and still interactive, showing the tree it already had.
-      const next = instance.engine.bootScreen({ compiledSource: source, queries, catalog, now: Date.now() });
+      const next = instance.engine.bootScreen({
+        compiledSource: source, queries, catalog, now: Date.now(),
+        ...(interactive?.props === undefined ? {} : { props: interactive.props }),
+      });
       instance.screen.dispose();
       booted.current = { engine: instance.engine, screen: next };
       paint(instance.engine, next.tree());

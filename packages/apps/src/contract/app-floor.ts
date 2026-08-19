@@ -47,6 +47,11 @@ export type ComponentPaintResult =
       compiledSource: string;
       queries: Record<string, unknown>;
       queryPlan: readonly { tool: string; input?: unknown }[];
+      /** A PORTED screen's mount props — the baseline's own sampleProps, the
+       *  values the floor just painted with. The client's VM boots from this
+       *  half, and a ported screen that lost them there would paint blank on
+       *  the first click. */
+      props?: Record<string, unknown>;
     };
   };
 export interface CheckInput {

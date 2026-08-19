@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { sha256Hex } from "@vendoai/core";
+import { sha256Hex, type Json } from "@vendoai/core";
 import {
   seedBaselineSchema,
   type SeedBaseline,
@@ -416,6 +416,10 @@ export async function capturePins(
   out: string,
   ignoreSlots: ReadonlySet<string> = new Set(),
   budgetBytes?: number,
+  /** The host's own DECLARED sample props for a component, by (file, slot) —
+   *  read off the catalog scan's registrations, never generated: a grade that
+   *  passes on invented data is worse than a refusal. */
+  samplePropsFor?: (file: string, slot: string) => Record<string, Json> | undefined,
 ): Promise<PinCaptureResult> {
   const result: PinCaptureResult = { captured: [], drifted: [], ported: [], pruned: [], errors: [], warnings: [], styles: [] };
   const realRoot = await fs.realpath(root);
@@ -490,8 +494,12 @@ export async function capturePins(
       continue;
     }
     const { sourceImports, subSources } = walked.closure;
+    const sampleProps = samplePropsFor?.(primary.realFile, slot);
     const ported = await portFor(
-      { slot, source: primary.source, file: primary.realFile, root, generatedDir },
+      {
+        slot, source: primary.source, file: primary.realFile, root, generatedDir,
+        ...(sampleProps === undefined ? {} : { sampleProps }),
+      },
       wiring,
       homes,
       result.warnings,
@@ -508,6 +516,9 @@ export async function capturePins(
       ...(review ? { review: true } : {}),
       ...(Object.keys(sourceImports).length === 0 ? {} : { sourceImports }),
       ...(Object.keys(subSources).length === 0 ? {} : { subSources }),
+      // On the baseline so the seed door grades the port with the SAME values
+      // sync just did — two graders, one source of props.
+      ...(sampleProps === undefined ? {} : { sampleProps }),
       ...(styles.length === 0 ? {} : { styles }),
       ...ported,
     };
