@@ -557,6 +557,19 @@ export const createBuildSurface = (
         // earns, and the reason a refused one earned none. All three are this
         // runtime's own doors, bound to this caller's ctx.
         runQuery: screenQueryRunner(deps.caller, ctx),
+        // The dialect, off the ROW — a remix is the one app whose screen the loop
+        // did not write, and `seed` is what says so (the same discriminator the
+        // assembler's checkout reads, `compose-apps.ts` `storedScreen`). The
+        // splitter grades its port `ported` too, so the two grades agree by
+        // construction rather than by two hands writing the same option twice.
+        //
+        // The baselines are checked FIRST because they cost nothing and they
+        // settle it: a deployment that captured no `<Remixable>` has no baseline
+        // to seed from, so it can hold no remix and no port — and a paint here
+        // must not go asking the store about a row on every screen a host without
+        // remixes ever renders, least of all on the read half (`saves: false`).
+        ported: async (appId) => (config.seedBaselines ?? []).length > 0
+          && (await deps.runtime().get(appId, ctx))?.seed !== undefined,
         ...rowHalf,
       });
     },

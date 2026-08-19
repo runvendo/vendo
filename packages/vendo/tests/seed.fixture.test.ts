@@ -129,6 +129,11 @@ export default function Page() {
       models: { default: model },
       principal: async () => ctx.principal,
       store,
+      // The one-line hookup `vendo sync` prints, written out. The port renders
+      // MapleTrendBadge as a HOLE, and that name has to be in the same catalog
+      // the floor types the ported screen against — a host that synced and never
+      // wired the file up gets a loud refusal instead, which is the honest answer.
+      remixWiring: { MapleNetWorthCard: { holes: { MapleTrendBadge: () => null } } },
     });
 
     // The ✦ gesture is a CREATE that starts from something: it records where the

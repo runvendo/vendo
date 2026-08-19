@@ -708,14 +708,6 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
   // unforgeable: a brick paints a class off a PORTED node and off nothing else
   // (display-bricks.tsx), whatever a node's own props say.
   //
-  // UNREACHABLE TODAY — this test is always false, so the line below always
-  // passes `undefined`. Nothing stamps `source: "ported"` on a node:
-  // `flattenTree(root, source?)` is the only thing that could, and the engine
-  // door it goes through takes ONE argument (`tree/screen-engine.ts:85`), as do
-  // all three of its production callers (`apps` checking/toolchain.ts:182,
-  // `apps` edge/paint.ts:72, use-screen.ts:148). Kept as the starting point if
-  // this is ever funded; the exposure below is what it would then cost.
-  //
   // KNOWN EXPOSURE, and it holds only while a remix is SINGLE-PLAYER. The class
   // lands in the host's own light DOM — that is how a port inherits the host's
   // stylesheet — so a class the model borrowed from elsewhere in the host renders

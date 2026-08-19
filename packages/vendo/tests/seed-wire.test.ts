@@ -41,6 +41,10 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
       hash: "sha256:seed-wire-baseline",
       exportable: false,
       capturedAt: "2026-08-02T00:00:00.000Z",
+      // The splitter's half. This component binds nothing and renders one
+      // display tag, so its port is the component itself — and without a port
+      // there is no ✦ at all, which is a different route's answer.
+      ported: { source, tools: [], holes: [] },
     }));
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());

@@ -51,10 +51,11 @@ const payloadFor = (
   compiledSource: string,
   queries: Record<string, unknown>,
   queryPlan?: Array<{ tool: string; input?: Json }>,
+  source?: "ported",
 ): UIPayload => {
   const first = bootScreen({ compiledSource, queries, catalog: CATALOG, now: Date.UTC(2026, 1, 1) });
   try {
-    const flat = flattenTree(first.tree());
+    const flat = flattenTree(first.tree(), source);
     return {
       formatVersion: VENDO_TREE_FORMAT,
       root: flat.root,
@@ -184,6 +185,41 @@ export default function Reference() {
     expect(input.value).toBe("INV-14B");
     // Nothing reached the host: a keystroke is the screen's own business.
     expect(host.calls).toEqual([]);
+  });
+
+  /**
+   * A PORTED screen keeps the host's own classes across a repaint.
+   *
+   * The served paint says what the screen IS on every node it carries, and a
+   * brick paints a host class for a `"ported"` node and for no other. A repaint
+   * comes from the VM, which emits elements and no provenance — so the bridge has
+   * to carry the served paint's own forward or the class silently disappears on
+   * the first click, leaving a correct screen that looks like a different
+   * component.
+   */
+  it("keeps a ported screen's host classes when a click repaints it", async () => {
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack } from "@vendo/screen";
+
+export default function Ported() {
+  const [total, setTotal] = useState("$1.2M");
+  return (
+    <Stack>
+      <article className="maple-card">{total}</article>
+      <Button label="Grow" onClick={() => setTotal("$1.3M")} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView payload={payloadFor(compiled, {}, undefined, "ported")} components={{}} onAction={host.onAction} />,
+    );
+    expect(screen.getByText("$1.2M").getAttribute("class")).toBe("maple-card");
+
+    fireEvent.click(screen.getByRole("button", { name: "Grow" }));
+    await waitFor(() => expect(screen.getByText("$1.3M")).toBeTruthy());
+    expect(screen.getByText("$1.3M").getAttribute("class")).toBe("maple-card");
   });
 
   it("routes a handler's tool call through the host pipe, then re-reads and re-boots", async () => {

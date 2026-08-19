@@ -188,6 +188,7 @@ export type { ComponentScreenIssue } from "./checking/component-screen.js";
  * port nothing checked is a port nobody can trust.
  */
 export {
+  PORTED_SCREEN_DIALECT,
   checkComponentScreen,
   type ComponentScreenCheck,
   type ComponentScreenOptions,

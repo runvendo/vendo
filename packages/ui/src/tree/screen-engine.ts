@@ -82,7 +82,10 @@ export interface ScreenBoot {
 
 export interface ScreenEngine {
   bootScreen(input: ScreenBoot): ScreenInstance;
-  flattenTree(root: NestedNode): { nodes: Record<string, TreeNode>; root: string };
+  /** `source` is what the SERVED paint said this screen is, carried onto every
+   *  node of a repaint. Without it a ported screen loses the host's classes on
+   *  the first click that moves it. */
+  flattenTree(root: NestedNode, source?: TreeNode["source"]): { nodes: Record<string, TreeNode>; root: string };
 }
 
 export const loadScreenEngine = async (): Promise<ScreenEngine> => {

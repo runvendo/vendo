@@ -19,13 +19,9 @@ export interface DisplayBrickProps {
    *  the renderer writes `hostClass` itself, after the props it binds and only
    *  for a `source: "ported"` node, so neither a model nor a slot can spell it.
    *
-   *  UNREACHABLE TODAY — nothing ever arrives here. Nothing stamps
-   *  `source: "ported"` on a node: `flattenTree`'s second argument is the only
-   *  thing that could, and the engine door it is called through takes ONE
-   *  argument (`tree/screen-engine.ts:85`), as do all three production callers.
-   *  So the renderer's test is always false and every brick paints
-   *  `className={undefined}`. Kept as the starting point if this is ever
-   *  funded; do not read it as working. */
+   *  Only the gauntlet stamps that source, and only off the DIALECT it graded the
+   *  screen in (`apps` checking/component-screen.ts) — which a screen has no way
+   *  to name. */
   hostClass?: string;
   children?: ReactNode;
 }
@@ -87,6 +83,7 @@ export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactN
   div: ({ style, hostClass, children }) => <div style={safeStyle(style)} className={hostClass}>{children}</div>,
   span: ({ style, hostClass, children }) => <span style={safeStyle(style)} className={hostClass}>{children}</span>,
   section: ({ style, hostClass, children }) => <section style={safeStyle(style)} className={hostClass}>{children}</section>,
+  article: ({ style, hostClass, children }) => <article style={safeStyle(style)} className={hostClass}>{children}</article>,
   header: ({ style, hostClass, children }) => <header style={safeStyle(style)} className={hostClass}>{children}</header>,
   footer: ({ style, hostClass, children }) => <footer style={safeStyle(style)} className={hostClass}>{children}</footer>,
   aside: ({ style, hostClass, children }) => <aside style={safeStyle(style)} className={hostClass}>{children}</aside>,

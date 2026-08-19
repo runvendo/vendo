@@ -69,7 +69,7 @@ export const edgePaint = async (
   let instance: ScreenInstance | undefined;
   try {
     instance = bootScreen({ ...input, budget });
-    return { ok: true, tree: flattenTree(instance.tree()) };
+    return { ok: true, tree: flattenTree(instance.tree(), input.source) };
   } catch (error) {
     return error instanceof ScreenError
       ? { ok: false, kind: error.kind, message: error.message }

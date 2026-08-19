@@ -24,6 +24,7 @@ import {
   flattenTree,
   ScreenError,
   warmScreenEngine,
+  type FlatNode,
   type FlatTree,
   type ScreenErrorKind,
   type ScreenInstance,
@@ -85,6 +86,11 @@ export interface ScreenPaintInput {
   readonly queries: Record<string, unknown>;
   readonly catalog: readonly string[];
   readonly now?: number;
+  /** What this SCREEN is, stamped on every node the paint emits — see
+   *  {@link flattenTree}. `"ported"` is the splitter's port of a host component,
+   *  and it is what lets a brick paint the host's own class. Set by the gauntlet
+   *  off the dialect it graded in, never by the screen. */
+  readonly source?: FlatNode["source"];
 }
 
 /** A failed paint is DATA, not a throw: `ScreenError`'s two fields are what the
@@ -179,7 +185,7 @@ export const nodeToolchain = (): ScreenToolchain => ({
     let instance: ScreenInstance | undefined;
     try {
       instance = bootScreen(input);
-      return { ok: true, tree: flattenTree(instance.tree()) };
+      return { ok: true, tree: flattenTree(instance.tree(), input.source) };
     } catch (error) {
       // A throw that is not a `ScreenError` has no kind of its own. `boot` is
       // where it happened, and — like every kind but `render` and `budget` — it

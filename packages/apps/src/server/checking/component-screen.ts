@@ -127,8 +127,9 @@ export interface ComponentScreenOptions {
   routes?: VendoRouteMap;
   /** This source is the splitter's PORT of a host component, not a screen a model
    *  authored — the one dialect whose display tags take the host's `className`.
-   *  Only the hand that RAN the splitter may set it; it is never read off an app's
-   *  own record, because a remix's first act is a model edit of the port. */
+   *  Set from OUTSIDE the source in both places that grade a port
+   *  ({@link PORTED_SCREEN_DIALECT}); a screen that could spell its own dialect
+   *  would unlock `className` for itself. */
   ported?: boolean;
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
@@ -138,6 +139,12 @@ export interface ComponentScreenOptions {
    *  ({@link defaultToolchain}); the floor names it one layer up. */
   toolchain?: ScreenToolchain;
 }
+
+/** The dialect a PORT is graded in, spelled ONCE: `vendo sync` grades a port
+ *  with it and the runtime floor grades the same bytes with it again, and two
+ *  hand-assembled copies is exactly how a port sync blessed came to be refused
+ *  on its first save. */
+export const PORTED_SCREEN_DIALECT = { ported: true } as const;
 
 const issue = (code: string, message: string): ComponentScreenIssue => ({ code, message });
 
@@ -646,7 +653,16 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   try {
     // A clock IS given: the surface renders with one, and a gate that is
     // stricter than production blocks screens that work.
-    painted = await toolchain.paint({ compiledSource: compiled, queries, catalog: names, now: Date.now() });
+    // `source` off the DIALECT this screen was type-checked in, which is the only
+    // thing that decides whether a brick may paint a host class — so the two can
+    // never disagree, and no screen can name its own provenance.
+    painted = await toolchain.paint({
+      compiledSource: compiled,
+      queries,
+      catalog: names,
+      now: Date.now(),
+      ...(opts.ported === true ? { source: "ported" } : {}),
+    });
   } catch (error) {
     // A paint answers a screen that failed with a verdict, so a THROW is the
     // engine itself never starting — this deployment's third machine missing,

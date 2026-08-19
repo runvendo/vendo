@@ -1,5 +1,5 @@
 import path from "node:path";
-import { checkComponentScreen } from "@vendoai/apps";
+import { PORTED_SCREEN_DIALECT, checkComponentScreen } from "@vendoai/apps";
 import type { SeedPort } from "@vendoai/apps/contract";
 import type TS from "typescript";
 import { defaultExportOf } from "../capture.js";
@@ -18,9 +18,8 @@ import {
  *
  * The verdict is `checkComponentScreen` and nothing else — the same gauntlet the
  * runtime runs when a remix persists, so there is no cheaper pre-filter here on
- * purpose. It is not yet the same CONFIGURATION of that gauntlet, which is why a
- * port sync blessed is not always a port a remix can save: see
- * `portedScreenDialect` below for the bug and its fix.
+ * purpose, and in the same DIALECT ({@link PORTED_SCREEN_DIALECT}), which the
+ * floor derives off the row rather than assembling a second copy of.
  */
 export interface SplitInput {
   slot: string;
@@ -44,35 +43,6 @@ function relativeSpecifier(fromDirectory: string, file: string): string {
   const relative = path.relative(fromDirectory, withoutExtension(file)).split(path.sep).join("/");
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
-
-/**
- * THE DIALECT A PORT IS GRADED IN — which is NOT the one the runtime grades it
- * in. KNOWN UNFIXED BUG; read this before trusting a green sync.
- *
- * A port is not a model-authored screen. It is real host source, so it carries
- * the host's own classes, and `ported` is what puts `className` in the typings
- * (`screen-typings.ts` `jsxFrame`). Omit it and sync refuses every component
- * that has ever been styled — which is all of them.
- *
- * The runtime cannot pass the flag: `AppFloorOptions`
- * (`apps/src/server/checking/floor.ts:71`) has no dialect slot, so the floor's
- * own `checkComponentScreen` call (`floor.ts:174`) always runs the UNPORTED
- * dialect. The two configurations are assembled twice and they DO drift. A port
- * carrying a `className` passes here with no issues and is then refused by the
- * real floor with `prop "className" on <section> takes a different type, but
- * this value is any`; the byte-identical port without the class passes both.
- * Both doors that put a port through the floor are affected — the seed door
- * (`apps/src/server/remix/seed-surface.ts:93`) and the edit door
- * (`apps/src/server/generation/render-seam.ts:195`).
- *
- * THE FIX, for whoever picks this up: give `AppFloorOptions` a dialect resolver
- * and fill it at `apps/src/server/doors/build-surface.ts:538`, which already
- * holds the runtime handle, so the floor DERIVES the dialect once. Then delete
- * this constant and spread a value exported from `@vendoai/apps` — ideally one
- * options builder that both `floor.ts:174` and the call below use, which closes
- * the catalog dimension of the same drift along with it.
- */
-const portedScreenDialect = { ported: true } as const;
 
 /** One parameter of a host function, as the generated tool will accept it. */
 interface HostParameter { name: string; schema: { type: string }; required: boolean }
@@ -348,7 +318,7 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
       ({ name: tool, description: writeToolDescription(input.slot, binding.name), risk: "write" })),
   ];
   const check = await checkComponentScreen({
-    ...portedScreenDialect,
+    ...PORTED_SCREEN_DIALECT,
     source,
     hostTools,
     // The catalog the RUNTIME will have for this screen: the names the wiring
