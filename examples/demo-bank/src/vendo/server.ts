@@ -15,6 +15,35 @@ import { mapleRoutes } from "./routes";
 
 const composioApiKey = process.env.COMPOSIO_API_KEY;
 
+// Maple's two honest routes. With a Cloud key, Maple lets Vendo's tenant
+// directory answer "which companies?" and enforce the caps set in the console —
+// which is the whole point of the feature, and the host assertion below would
+// otherwise win over it. Without one, Maple asserts its own orgs and its own
+// policy, exactly as it always did.
+//
+// Truthy, not merely present — the same predicate the SDK's own `environment()`
+// applies (wire/shared.ts), so "keyed" means one thing on both sides of the
+// seam and an exported-but-blank VENDO_API_KEY does not make Maple stand down
+// for a directory that will never answer.
+const cloudDirectoryInUse = !!process.env.VENDO_API_KEY;
+
+// Build contract §9.1 — Maple's OWN identity tables answer "which orgs?".
+// One query against what the host already knows; Vendo stores nothing about
+// it. Keyed on the Principal, not the request, so an unattended automation
+// fire resolves the same orgs an attended click does. All four seeded staff
+// are in `maple`; Yousef is the org admin (implicit owner of every org app),
+// and the rest are ordinary members who reach an app only through a grant.
+const mapleMemberships = async (principal: Principal) => {
+  const user = resolveMapleSubject(principal.subject);
+  if (!user) return [];
+  return [{
+    org: "maple",
+    display: "Maple Bank",
+    teams: ["support"],
+    admin: user.subject === primaryMapleUser().subject,
+  }];
+};
+
 // One preset fills all three identity seams (09-vendo §2.1): the
 // request→Principal resolver, the away/MCP actAs seam, and the door's
 // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
@@ -37,22 +66,7 @@ const mapleAuthJs = authJs({
       },
     };
   },
-  // Build contract §9.1 — Maple's OWN identity tables answer "which orgs?".
-  // One query against what the host already knows; Vendo stores nothing about
-  // it. Keyed on the Principal, not the request, so an unattended automation
-  // fire resolves the same orgs an attended click does. All four seeded staff
-  // are in `maple`; Yousef is the org admin (implicit owner of every org app),
-  // and the rest are ordinary members who reach an app only through a grant.
-  memberships: async (principal) => {
-    const user = resolveMapleSubject(principal.subject);
-    if (!user) return [];
-    return [{
-      org: "maple",
-      display: "Maple Bank",
-      teams: ["support"],
-      admin: user.subject === primaryMapleUser().subject,
-    }];
-  },
+  ...(cloudDirectoryInUse ? {} : { memberships: mapleMemberships }),
 });
 
 // Vendo mints no principals, so a logged-out visitor has no identity unless
@@ -177,7 +191,7 @@ export const vendo = createVendo({
     policy: { file: ".vendo/policy.json" },
     judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
   }),
-  limits: mapleLimits,
+  ...(cloudDirectoryInUse ? {} : { limits: mapleLimits }),
   // The 24-tool default belt is sized for a 600-tool catalog (tool-search.ts):
   // past it, everything is one `find_tools` away. Maple's whole surface is ~31
   // tools, comfortably inside the 30-50 band that file cites as the accurate
