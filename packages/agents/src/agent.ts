@@ -159,9 +159,10 @@ export interface VendoAgent {
    *
    * Returns void because it is a DECLARATION: it is validated here and now — a
    * bad cron throws at module load, with what, why, a did-you-mean and the docs
-   * — and reconciled against the store when `createVendo` boots. The code is the
-   * consent, so deleting the call disarms the automation on the next deploy;
-   * `disable()` by a person outlives every redeploy.
+   * — and reconciled against the store by a lifecycle, `serve({ agents })` or
+   * `createVendo`'s boot. INERT until one of them runs. The code is the consent,
+   * so deleting the call disarms the automation on the next deploy; `disable()`
+   * by a person outlives every redeploy.
    */
   on(when: When, task: string, options?: OnOptions): void;
   /** @deprecated A session is request-lifetime and the THREAD is what outlives
