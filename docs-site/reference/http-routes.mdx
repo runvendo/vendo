@@ -178,6 +178,12 @@ With `createVendo({ mcp: true, oauth })`, the door serves its transport under th
 
 Both well-known OAuth paths are also served at their base-path-prefixed spelling. The set is matched as six exact paths, never as a prefix, so a host's own OAuth metadata is never shadowed.
 
+`/authorize` requires PKCE, and `S256` is the only method it accepts. A missing `code_challenge`, one that is not a 43-character base64url digest, or any `code_challenge_method` other than the literal `S256` — including an omitted one — all redirect back with `invalid_request` and `PKCE with code_challenge_method=S256 is required`. RFC 8414 metadata advertises exactly that: `code_challenge_methods_supported: ["S256"]`.
+
+<Warning>
+  A code is claimed the moment it is presented, before its verifier is checked. A `code_verifier` that does not match answers `invalid_grant` and `PKCE verification failed`, and retrying the same code then answers `invalid_grant` and `Authorization code is invalid or expired`. Codes live 60 seconds.
+</Warning>
+
 A revocation that lands, including one naming a token that no longer exists, answers an empty `200`. Five paths answer `400` with an OAuth `{ error, error_description }` body instead: a non-form content type, a missing `token` or `client_id`, an unresolvable `client_id`, a token issued to a different client, and a store whose records do not support atomic claims.
 
 With `remoteAs` configured, `/authorize`, `/token`, `/revoke`, `/register`, and the RFC 8414 metadata all answer `404`. The external issuer owns those endpoints and RFC 9728 metadata advertises it.

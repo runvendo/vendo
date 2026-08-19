@@ -49,15 +49,24 @@ persists grants and audit rows, so it needs a durable subject.
 
 ## What the agent sees
 
-`tools/list` answers with your merged, enabled tools whose `audience` is
-`end-user` or unset. Operator and internal tools stay off it.
+With no menu authored, `tools/list` answers with your merged, enabled tools
+whose `audience` is `end-user` or unset. Operator and internal tools stay off
+it. Author a `surfaces.mcp` menu and that list is the menu instead — see
+[Curate the menu](#curate-the-menu) below.
 
 Names, descriptions, and input schemas are served verbatim from your registry.
 A tool's `title` is what a client shows a person instead of the wire name.
 
-Vendo's own `vendo_*` tools ride along: `vendo_make` for a generated screen,
-and the saved-apps viewer, which is `vendo_apps_list`, `vendo_apps_open`, and
-`vendo_apps_call`. They are runtime plumbing and are never curated away.
+Vendo's own `vendo_*` tools ride along: `vendo_make` for a generated screen; the
+saved-apps viewer, which is `vendo_apps_list`, `vendo_apps_open`, and
+`vendo_apps_call`; and the caller's own files, which is
+`vendo_user_files_list`, `vendo_user_files_read`, and `vendo_user_files_put`.
+They are runtime plumbing and are never curated away — a `surfaces.mcp` menu
+filters your tools, and the `vendo_*` prefix bypasses it.
+
+The file tools are scoped to the bearer's subject and take no subject argument,
+so a token for `user_1904` reaches that person's files and no one else's. See
+[User data](/customize/user-data) for what saves, what reads back, and the cap.
 
 Each listing carries MCP `annotations` derived from the tool's Vendo risk
 label, so a client can warn before a write without re-reading prose.

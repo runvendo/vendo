@@ -23,7 +23,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `theme` | Programmatic override for `.vendo/theme.json`. Resolved once at compose, so unlike design rules it is not re-read live |
 | `instructions` | The prose this deployment puts in front of the agent every turn. Override for `.vendo/brief.md`; a non-blank string wins, blank falls through |
 | `store` | Unset with `VENDO_API_KEY` set, the Cloud hosted store fills the slot |
-| `files` | Where workspace file content lives past 5 MiB. Unset, the store's own blobs back it and the first over-cap write fails naming this key |
+| `files` | Where every workspace file's content lives — one backing, no tiering. Set, `s3Files` or your own `FilesAdapter` holds all of them. Unset, the store's own blobs back it, capped at 5 MiB each, and the first over-cap write fails naming this key |
 | `sandbox` | Unlocks machine-backed apps. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
 | `harness` | Who thinks. Default `vendo()`, also `claudeCode()`, or your own via `defineHarness`. A harness declaring `requires: { sandbox: true }` with no sandbox is a boot error |
 | `knowledge` | Composes the `vendo_knowledge_search` tool. Unset, that tool does not exist |

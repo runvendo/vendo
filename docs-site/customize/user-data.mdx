@@ -93,26 +93,57 @@ and the user reaches it the next time they chat.
 
 ## What the agent does with it
 
-Two tools come with every deployment — no adapter, no key, no configuration:
+Three tools come with every deployment — no adapter, no key, no configuration:
 
-| Tool | What it does |
-| --- | --- |
-| `vendo_user_files_list` | What this user has shared, with each file's size and type |
-| `vendo_user_files_read` | Reads one of them, by name |
+| Tool | Risk | What it does |
+| --- | --- | --- |
+| `vendo_user_files_list` | `read` | What this user has shared, with each file's size and type |
+| `vendo_user_files_read` | `read` | Reads one of them, by name |
+| `vendo_user_files_put` | `write` | Saves one, by name. Text as `content`; anything else base64 with `encoding: "base64"` |
 
-Both are `read` risk and run through the same guard, audit trail and approval
-rules as every other tool. Neither takes a path — only a **file name** — so
-nothing they are asked for can address anything outside that one user's files.
+All three run through the same guard, audit trail and approval rules as every
+other tool, so on the `cautious` preset the write parks for the person. None of
+them takes a path — only a **file name** — so nothing they are asked for can
+address anything outside that one user's files. There is no subject argument
+either: each call opens the drawer of the principal that made it and no other.
 
-A long file is read a window at a time (200 lines per call), so a spreadsheet
-gets walked rather than truncated. Files that are not text answer with their
-type and size and no content: the agent will tell your user it received a PDF
-rather than guess at what is inside it.
+A long file is read a window at a time — 200 lines, or 12,000 characters,
+whichever comes first — so a spreadsheet gets walked rather than truncated. The
+result says `truncated` and hands back a `nextOffset` to pass as `offset` on the
+next call. `offset` counts lines, never characters.
 
 Because the tools are on the ordinary registry, the listing is also how the
 agent finds a file in a **later** conversation. Nothing about last month's
 upload is in this conversation's history — the agent looks, finds it, and reads
-it.
+it. Being on the ordinary registry is also why they are at the
+[MCP door](/outside-agents/how-the-door-works): an outside agent holding a
+user-bound token gets the same three tools against that same user's files.
+
+## What reads back
+
+Any file can be **saved**. Only these read back as text:
+
+`csv` · `tsv` · `txt` · `log` · `sql` · `md` · `json` · `ndjson` · `xml` ·
+`html` · `yaml` · `yml`
+
+Anything else — a PDF, an image, an `.xlsx` workbook, a `.parquet` export, or
+any extension Vendo does not recognize — comes back with its name, size and
+media type, `readable: false`, and this:
+
+> `sales.parquet` is saved, but its contents cannot be read back yet. Only these
+> read back as text: csv, tsv, txt, log, sql, md, json, ndjson, xml, html, yaml,
+> yml. Tell the user what the file is and ask them for one of those if you need
+> what is inside it.
+
+That is an `ok`, not an error. The bytes are safe, and the sentence tells the
+agent what to ask the person for instead of leaving it to narrate an empty
+result.
+
+<Warning>
+  **The extension is the whole evidence.** Nothing stores a media type, so a
+  perfectly good text file saved as `notes.dat` does not read back. Renaming it
+  `notes.txt` is what fixes it.
+</Warning>
 
 ## Building on a file
 
@@ -136,7 +167,7 @@ The whole flow, as your user experiences it:
 
 What *is* yours to wire is already above on this page: the upload door
 (`POST /files`), `client.files.upload` in your UI, and `putUserFile` from your
-backend. The agent's two read tools ship with every deployment.
+backend. The agent's three file tools ship with every deployment.
 
 <Warning>
   In this release a PDF or an image **lands in the drawer and can be read about,
@@ -146,21 +177,62 @@ backend. The agent's two read tools ship with every deployment.
 
 ## Size
 
-An upload through `POST /files` is capped at **5 MB**. That is a cap on the
-*door* — on what a browser may push in one request — and it is enforced there,
-so an over-cap upload comes back as a `400` before anything is written.
+An upload is capped at **5 MiB** (`5242880` bytes), and
+`createVendo({ uploadMaxBytes })` moves it. That is a cap on the *door* — on
+what one browser request through `POST /files`, or one `vendo_user_files_put`
+call, may carry. Both doors read the same number, so a file refused in chat
+cannot be admitted by asking over MCP instead.
 
-`putUserFile` is a trusted caller and the door's cap does not apply to it. What
-bounds it instead is storage: with no `files:` adapter configured, files are kept
-in your store's own blobs, up to 5 MB each. Wire your own bucket to raise that:
+An over-cap upload is a `validation` refusal — a `400` on `POST /files`, before
+anything is written — and it names both the knob and where the bytes would have
+landed:
+
+> "sales-2026.csv" is 8388608 bytes and the upload door allows at most 5242880:
+> send a smaller file, or raise createVendo({ uploadMaxBytes }). These bytes land
+> in this deployment's store, which caps one file at 5242880 bytes — wire
+> createVendo({ files }) with a FilesAdapter (s3Files) before raising the door
+> past it.
+
+`putUserFile` is a trusted server caller and the door's cap does not apply to
+it. What bounds it instead is the backing: with no `files:` adapter configured,
+files are kept in your store's own blobs, up to 5 MiB each. Raising
+`uploadMaxBytes` past that without a bucket only moves the failure one step
+later.
+
+## Your own bucket
+
+`s3Files` is the ready-made `files:` adapter. It signs SigV4 itself over
+WebCrypto, so it runs on an edge target, and it talks to anything S3-compatible:
+Cloudflare R2, AWS S3, Supabase Storage, MinIO.
 
 ```ts
+import { createVendo, s3Files } from "@vendoai/vendo/server";
+
 createVendo({
-  files: myS3Bucket, // any FilesAdapter: put / get / delete
+  files: s3Files({
+    endpoint: "https://<account>.r2.cloudflarestorage.com",
+    bucket: "vendo-files",
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    },
+  }),
+  uploadMaxBytes: 50 * 1024 * 1024,
 });
 ```
 
-That is the same BYO seam every other Vendo capability has — anything
-S3-compatible works, and nothing about it requires a Vendo Cloud key. `vendo
-doctor` prints where a deployment's uploads land, and the boot block adds a
-`files` row when you have wired an adapter of your own.
+`endpoint` is the origin your provider's dashboard gives you — R2
+`https://<account>.r2.cloudflarestorage.com`, AWS `https://s3.<region>.amazonaws.com`,
+Supabase `https://<ref>.supabase.co/storage/v1/s3`, MinIO your own. `region`
+defaults to `"auto"`, which is what R2 requires and MinIO ignores; AWS and
+Supabase need their real one. `prefix` scopes keys inside the bucket so one
+bucket can hold several deployments, and `credentials` takes an optional
+`sessionToken` for temporary credentials.
+
+The adapter reads no environment of its own: which credentials reach it is your
+composition's question. There is one backing for every file — no tiering, no
+spillover. Unset, files are store blobs; set, every file is in your bucket.
+
+Nothing about this requires a Vendo Cloud key. `vendo doctor` prints where a
+deployment's uploads land, and the boot block adds a `files` row when you have
+wired an adapter of your own.
