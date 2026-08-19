@@ -136,7 +136,16 @@ you.
 owns the sign-in surface and your app owns the users, and that shared secret is
 how the two agree on an answer.
 
-A broker reaches your door over the public internet, so `VENDO_BASE_URL` has to
-name a deployed HTTPS origin. Everything else about the door is unchanged by the
-posture, the client URL included — see the
+`VENDO_BASE_URL` has to name an HTTPS origin either way — Vendo Cloud refuses to
+register a forwarding address that is not https, and init refuses that pair
+before it writes.
+
+Who has to *reach* that origin depends on the path. Signing a person in is a
+browser redirect: the broker sends the user's own browser to your door's
+`/federate`, and the door reads their session cookie there, so the door has to
+be reachable by whoever signs in — public for a public agent's users. The
+backend-agent path reaches nothing inward: `tokenFor` calls the broker outbound
+from your own backend, so a private HTTPS origin your backend and agent can
+already reach is enough for it. Everything else about the door is unchanged by
+the posture, the client URL included — see the
 [quickstart](/outside-agents/quickstart) for both postures end to end.
