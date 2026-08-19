@@ -61,8 +61,10 @@ const createTickDoor = (deps: IngestionSurfaceDeps): Pick<AutomationsEngine, "ti
         const next = new Cron(record.when.cron, { timezone, paused: true }).nextRun(new Date(cursor.lastFiredAt));
         if (next !== null && next.getTime() <= at.getTime()) scheduledFor = next.toISOString();
       } else if (record.when.every !== undefined) {
-        const due = Date.parse(cursor.lastFiredAt) + (durationMs(record.when.every) as number);
-        if (due <= at.getTime()) scheduledFor = new Date(due).toISOString();
+        const every = durationMs(record.when.every) as number;
+        const last = Date.parse(cursor.lastFiredAt);
+        const windows = Math.floor((at.getTime() - last) / every);
+        if (windows >= 1) scheduledFor = new Date(last + windows * every).toISOString();
       } else if (
         record.when.at !== undefined
         && cursor.firedAt === undefined
@@ -76,7 +78,13 @@ const createTickDoor = (deps: IngestionSurfaceDeps): Pick<AutomationsEngine, "ti
       }
       const nextCursor = {
         ...cursor,
-        lastFiredAt: atIso,
+        // An interval advances by the window that came DUE, never by the clock
+        // this tick read: an observed time re-anchors the next window to itself,
+        // so every fire's own latency lands on the one after it until a window
+        // slips under the heartbeat and a whole cycle is lost. A cron cursor
+        // needs no such care — the observed time and the window it fired always
+        // sit in the same gap between occurrences, so croner reads them alike.
+        lastFiredAt: record.when.every === undefined ? atIso : scheduledFor,
         ...(record.when.at === undefined ? {} : { firedAt: atIso }),
       };
       // THE claim, and the whole reason a duplicate tick fires nothing: two ticks
