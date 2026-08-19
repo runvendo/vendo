@@ -2,7 +2,7 @@
  * The chart calibration.
  *
  * A chart has to invent numbers to measure with: recharts picks a scale and
- * draws "$0.00 / $750.00 / $1,500.00 / $3,000.00" down the axis, and not one of
+ * draws "0 / 75,000 / 150,000 / 225,000 / 300,000" down the axis, and not one of
  * those is a value a tool returned, so the axis containers are cut out of the
  * text the harness extracts from a settled screen.
  *
@@ -19,8 +19,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
-/** The spending case's own rows, plotted. `format="money"` is what turns the
- *  scale into dollars, which is what makes the tick labels look like data. */
+/** The spending case's own rows, plotted — cents, the unit the host stores. The
+ *  scale recharts picks off them is five-figure, which is what makes the tick
+ *  labels look like data. */
 const SPEND = [
   { category: "housing", amount: 285000 },
   { category: "groceries", amount: 61245 },
@@ -30,13 +31,32 @@ const SPEND = [
   { category: "coffee", amount: 6130 },
 ];
 
+/** The screen's own helper, as a generated screen writes one: the Kit formats
+ *  nothing, so a chart's figures are the screen's text and the division out of
+ *  the host's minor units happens here. */
+const money = (cents: number): string =>
+  (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
 const charted = (headline: string): UIPayload => ({
   formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Stack", props: { gap: 12 }, children: ["headline", "chart"] },
     { id: "headline", component: "Text", props: { text: headline } },
-    { id: "chart", component: "BarChart", props: { data: SPEND, xKey: "category", series: ["amount"], format: "money" } },
+    // The series formatter in its RESOLVED form — one string per row in `data`
+    // order, which is what the screen VM hands a component across the wire
+    // (`ui/test/tree/kit-passthrough-seam.test.tsx`). It prints on the bars. The
+    // value axis is the one place no formatter reaches, so those ticks read as
+    // the plotted cents with plain digit grouping and nothing else.
+    {
+      id: "chart",
+      component: "BarChart",
+      props: {
+        data: SPEND,
+        xKey: "category",
+        series: [{ key: "amount", format: SPEND.map((row) => money(row.amount)) }],
+      },
+    },
   ],
 });
 
@@ -70,10 +90,14 @@ async function seen(headline: string): Promise<{ shot: Shot; raw: string; ticks:
 describe("chart axis ticks are measuring marks, not data", () => {
   it("drops the scale labels the chart drew, and only those", async () => {
     const { shot, raw, ticks } = await seen("Total spent $4,243.11");
-    const scale = ticks.filter((tick) => tick.startsWith("$"));
+    // The scale, in the digit grouping the axis falls back to where no formatter
+    // reaches (`ui` charts/sanitize.tsx `plainFigure`). The GROUPED ticks are the
+    // ones worth looking for: the bare "0" the scale starts at is a substring of
+    // the screen's own "$2,850.00", so it would prove nothing either way.
+    const scale = ticks.filter((tick) => tick.includes(","));
 
-    // The control: the chart really did draw money labels, and they really are
-    // in the text the page reports for itself.
+    // The control: the chart really did draw five-figure labels, and they really
+    // are in the text the page reports for itself.
     expect(scale.length).toBeGreaterThan(1);
     expect(scale.filter((tick) => raw.includes(tick))).toEqual(scale);
 

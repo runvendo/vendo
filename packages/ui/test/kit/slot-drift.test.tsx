@@ -17,7 +17,7 @@
  * render. Neither can reach a user.
  */
 import type { ComponentType, ReactNode } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { KIT_COMPONENTS, KIT_SPECS } from "../../src/kit/registry.js";
 import type { KitSlotSpec } from "../../src/kit/schema.js";
@@ -164,8 +164,18 @@ describe("every declared slot renders what it promises", () => {
       // its own delay; a probe already painted resolves on the first look, and
       // only a REAL miss waits out the timeout — with the sentence intact,
       // which is what a bare `findBy` would throw away.
+      // The text kind reads THIS render's own container, and reads ALL of it:
+      //  - `within`, because recharts hangs a measurement span off the BODY and
+      //    leaves the last text it measured in it — a span `cleanup` never takes
+      //    down, so a global search finds the previous chart's probe and passes a
+      //    slot that painted nothing (BarChart's did, with its label unwired);
+      //  - `findAllBy`, because a figure is printed wherever its row is read, and
+      //    an x tick is read TWICE — on the axis and as the hovered point's
+      //    heading — which `findByText` throws on rather than counts.
+      // An element probe stays on `screen`: an overlay paints through a portal,
+      // outside the container it was rendered from.
       const painted = slot.text === true
-        ? await screen.findByText(PROBE_TEXT, {}, { timeout: 3000 }).catch(() => null)
+        ? await within(container).findAllByText(PROBE_TEXT, {}, { timeout: 3000 }).catch(() => null)
         : await screen.findByTestId("probe", {}, { timeout: 3000 }).catch(() => null);
       expect(painted, `<${component}> declares its "${name}" slot at ${at} and does not render what is put there`).toBeTruthy();
       cleanup();
