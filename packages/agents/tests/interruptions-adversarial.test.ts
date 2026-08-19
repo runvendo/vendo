@@ -221,7 +221,9 @@ describe("a turn that belongs to another agent", () => {
     const supportRan = { count: 0 };
     const ops = parking(store, opsRan, 1, "ops");
     const support = parking(store, supportRan, 1, "support");
-    const asked = await interrupted(ops.chat("Refund invoice 7.", { as: "u_42" }));
+    // Awaited for effect: this is what parks `ops`' ask, which is the thing
+    // `support` must not be able to see below.
+    await interrupted(ops.chat("Refund invoice 7.", { as: "u_42" }));
 
     // `support` never asked this person for anything.
     expect(await turnsOf(support, "u_42").list({ status: "interrupted" })).toEqual([]);
@@ -453,8 +455,8 @@ describe("nothing the spec cut crept back in", () => {
     const support = parking(keep(memoryStore()), ran);
     const turns = turnsOf(support, "u_42");
     expect(Object.keys(turns).sort()).toEqual(["list", "resume"]);
-    expect((turns as Record<string, unknown>).get).toBeUndefined();
-    expect((turns as Record<string, unknown>).onInterruption).toBeUndefined();
+    expect((turns as unknown as Record<string, unknown>).get).toBeUndefined();
+    expect((turns as unknown as Record<string, unknown>).onInterruption).toBeUndefined();
   });
 
   it("never emits an input interruption", async () => {
