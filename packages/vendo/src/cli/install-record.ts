@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { readOptional, writeText } from "./shared.js";
 
 /** How the host's people will reach the agent — `vendo init`'s FIRST question.
-    It decides what gets scaffolded and how the run ends; the wired route is the
-    same in all three, so picking wrong costs nothing. */
+    It decides what gets scaffolded and where the run says to continue; the
+    wired route is the same in all three, so picking wrong costs nothing. */
 export type InitUseCase = "embedded" | "agent-loop" | "mcp";
 
 export const INIT_USE_CASES: readonly InitUseCase[] = ["embedded", "agent-loop", "mcp"];
@@ -32,9 +32,35 @@ export async function readUseCase(root: string): Promise<InitUseCase | undefined
   }
 }
 
-export async function writeUseCase(root: string, useCase: InitUseCase): Promise<void> {
+/**
+ * The env var this install's model wiring actually reads: `VENDO_API_KEY` when
+ * the models answer was Vendo Cloud (the runtime ladder resolves it and the
+ * composition names no provider), else the provider key its `models` line
+ * names. Recording the KEY rather than the answer is what lets `vendo doctor`
+ * grade the one variable that changes anything — it used to name three provider
+ * keys the resolver never reads. Absent when no key resolved at all.
+ */
+export async function readModelKey(root: string): Promise<string | undefined> {
+  const raw = await readOptional(join(root, ".vendo", INSTALL_FILE));
+  if (raw === null) return undefined;
+  try {
+    const value = (JSON.parse(raw) as { modelKey?: unknown }).modelKey;
+    return typeof value === "string" && value !== "" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function writeInstallRecord(
+  root: string,
+  record: { useCase: InitUseCase; modelKey: string | null },
+): Promise<void> {
   await writeText(
     join(root, ".vendo", INSTALL_FILE),
-    `${JSON.stringify({ format: "vendo/install@1", useCase }, null, 2)}\n`,
+    `${JSON.stringify({
+      format: "vendo/install@1",
+      useCase: record.useCase,
+      ...(record.modelKey === null ? {} : { modelKey: record.modelKey }),
+    }, null, 2)}\n`,
   );
 }

@@ -1,5 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // The docs-rot suites live in @vendoai/vendo but READ docs-site/** and
+  // README.md — @vendoai/vendo's registry codes against their troubleshooting
+  // pages, every docs.vendo.run URL the CLI prints against a real file. Those
+  // paths are OUTSIDE the package, and a turbo `inputs` glob cannot escape its
+  // package directory, so the global hash is the only thing that can see them.
+  // Without this a docs-only edit replays a cached green and the tripwire that
+  // exists to catch a retired page never fires. Broader than the one task that
+  // needs it, and deliberately so: correctness over cache depth.
+  "globalDependencies": ["docs-site/**", "README.md"],
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
     // The screen engine's WebAssembly is copied out of the wasmfile dependency at

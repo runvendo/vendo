@@ -473,7 +473,10 @@ describe("vendo doctor (model credentials + --json + cloud)", () => {
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
-    expect(messages.errors.join("\n")).toContain("warning: model credential: none found");
+    expect(messages.errors.join("\n")).toContain("warning: model credential: VENDO_API_KEY is not set");
+    // …and it names ONLY the variable the runtime ladder reads. Listing the
+    // provider keys sent hosts to set one that changes nothing.
+    expect(messages.errors.join("\n")).not.toContain("ANTHROPIC_API_KEY");
     expect(messages.logs.some((line) => line.startsWith("ok: model credential:"))).toBe(false);
 
     // …and the machine surface carries the code and its fix_ref.
@@ -490,6 +493,97 @@ describe("vendo doctor (model credentials + --json + cloud)", () => {
     expect(credential).toMatchObject({ status: "warning", error_code: "E-MODEL-001", fix_ref: doctorFixRef("E-MODEL-001") });
     expect(report.wired).toBe(true);
     expect(report.exit).toBe(0);
+  });
+
+  /** The warning used to name three provider keys the resolver never reads, so
+      a host set ANTHROPIC_API_KEY, changed nothing, and came back. Doctor now
+      grades the ONE key this install's own wiring consults: the answer init
+      recorded, else the provider its composition's `models` line names. */
+  it("grades the key the install's own models wiring reads, and names only that key", async () => {
+    const recorded = await healthy();
+    await writeFile(join(recorded, ".vendo", "install.json"),
+      JSON.stringify({ format: "vendo/install@1", useCase: "embedded", modelKey: "ANTHROPIC_API_KEY" }));
+
+    const missing = output();
+    expect(await runDoctor({
+      targetDir: recorded,
+      // A Cloud key set here proves the point: it is NOT what this composition
+      // reads, so greening on it is the dishonesty being fixed.
+      env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}` },
+      output: missing.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const warning = missing.errors.find((line) => line.includes("model credential"))!;
+    expect(warning).toContain("ANTHROPIC_API_KEY");
+    expect(warning).not.toContain("OPENAI_API_KEY");
+    expect(warning).not.toContain("VENDO_API_KEY");
+
+    const set = output();
+    expect(await runDoctor({
+      targetDir: recorded,
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      output: set.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(set.logs.some((line) => line.startsWith("ok: model credential:") && line.includes("ANTHROPIC_API_KEY"))).toBe(true);
+  });
+
+  /** Greptile P1 on #1530: the record is a snapshot of init time, the
+      composition is what the runtime LOADS. A project initialised against
+      Anthropic and later moved to openai must be graded on OPENAI_API_KEY, or
+      doctor greens a host whose first turn is dead. */
+  it("prefers the composition's CURRENT models line over a stale recorded key", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "install.json"),
+      JSON.stringify({ format: "vendo/install@1", useCase: "embedded", modelKey: "ANTHROPIC_API_KEY" }));
+    await mkdir(join(root, "lib"), { recursive: true });
+    await writeFile(join(root, "lib", "vendo.ts"),
+      'import { openai } from "@ai-sdk/openai";\n'
+      + "export const vendo = createVendo({\n"
+      + '  models: { default: openai("gpt-5") }, // OPENAI_API_KEY supplies the key\n'
+      + "});\n");
+
+    // The stale key being SET must not green it — the runtime reads the other one.
+    const stale = output();
+    expect(await runDoctor({
+      targetDir: root,
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      output: stale.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const warning = stale.errors.find((line) => line.includes("model credential"))!;
+    expect(warning).toContain("OPENAI_API_KEY");
+    expect(stale.logs.some((line) => line.startsWith("ok: model credential:"))).toBe(false);
+
+    // …and the key the composition actually names is what passes it.
+    const live = output();
+    expect(await runDoctor({
+      targetDir: root,
+      env: { OPENAI_API_KEY: "sk-test" },
+      output: live.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(live.logs.some((line) => line.startsWith("ok: model credential:") && line.includes("OPENAI_API_KEY"))).toBe(true);
+  });
+
+  it("falls back to the recorded key when the composition names no model", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "lib"), { recursive: true });
+    await writeFile(join(root, "lib", "vendo.ts"),
+      'import { openai } from "@ai-sdk/openai";\n'
+      + "export const vendo = createVendo({\n"
+      + '  models: { default: openai("gpt-5") }, // OPENAI_API_KEY supplies the key\n'
+      + "});\n");
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: root,
+      env: {},
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const warning = messages.errors.find((line) => line.includes("model credential"))!;
+    expect(warning).toContain("OPENAI_API_KEY");
+    expect(warning).not.toContain("ANTHROPIC_API_KEY");
   });
 
   it("emits one machine-readable JSON object a script can consume", async () => {

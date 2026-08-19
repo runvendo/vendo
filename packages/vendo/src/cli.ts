@@ -43,7 +43,6 @@ Options:
   --base-url <url>           Init only: where the app runs in dev — written to .env.local as VENDO_BASE_URL (production is set where you deploy)
   --posture <name>           Init only, --use-case mcp: how outside agents sign in (local, broker)
   --service-key              Init only, --use-case mcp: set up a machine-to-machine service key
-  --check / --no-check       Init only: run vendo doctor at the end (offered only when no paste is outstanding)
   --ai                       Init/sync: run the AI judgment pass without asking (works non-interactively)
   --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
@@ -83,7 +82,7 @@ function options(args: string[], name: string): string[] {
     spellings and stay accepted so pinned scripts and hooks keep working. */
 const INIT_FLAGS = new Set([
   "--agent", "--yes", "--force", "--byo", "--ai", "--ai-polish", "--no-ai",
-  "--service-key", "--check", "--no-check",
+  "--service-key",
 ]);
 const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine", "--use-case", "--base-url", "--posture"];
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
@@ -216,9 +215,6 @@ async function initCommand(args: string[]): Promise<number> {
   if (serviceKey && posture === "broker") {
     problems.push(`--service-key does not apply to --posture broker: ${SERVICE_KEY_ON_BROKER}`);
   }
-  if (args.includes("--check") && args.includes("--no-check")) {
-    problems.push("--check and --no-check answer the same question — pass one or the other");
-  }
   if (problems.length > 0) {
     console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
     return 1;
@@ -238,7 +234,6 @@ async function initCommand(args: string[]): Promise<number> {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(posture === undefined ? {} : { posture: posture as InitOptions["posture"] }),
     ...(serviceKey ? { serviceKey: true } : {}),
-    ...(args.includes("--check") ? { check: true } : args.includes("--no-check") ? { check: false } : {}),
     ...(themePairs.length === 0 ? {} : {
       themeAnswers: Object.fromEntries(themePairs.map((pair) => {
         const at = pair.indexOf("=");

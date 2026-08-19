@@ -440,97 +440,6 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.raw()).toBe(`${message}\n`);
   });
 
-  it("turns the 64-dash paste frame into a ◇ section with an indented code block", () => {
-    const out = sink();
-    const rule = "─".repeat(64);
-    const pretty = createPrettyOutput({ write: out.write, banner: false });
-    pretty.log(`\n${rule}`);
-    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    pretty.log("\n  File: app/layout.tsx");
-    pretty.log("    import { VendoProvider } from \"@vendoai/vendo/react\";");
-    pretty.log("\n  Without it, nothing on the page can reach Vendo.");
-    pretty.log("  Then confirm it landed: npx vendo doctor");
-    pretty.log(rule);
-    const plain = out.plain();
-    expect(plain).toContain("◇  One paste left — app/layout.tsx");
-    expect(plain).toContain("│    import { VendoProvider } from \"@vendoai/vendo/react\";");
-    expect(plain).toContain("│  init never edits your files");
-    expect(plain).not.toContain(rule);
-    expect(plain).not.toContain("ONE STEP LEFT");
-  });
-
-  it("points the mount paste at the docs for the child expression it elides", () => {
-    const out = sink();
-    const rule = "─".repeat(64);
-    const pretty = createPrettyOutput({ write: out.write, banner: false });
-    pretty.log(`\n${rule}`);
-    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    pretty.log("\n  File: app/layout.tsx");
-    pretty.log("    import { VendoProvider } from \"@vendoai/vendo/react\";");
-    pretty.log("    … then wrap: <VendoProvider baseUrl=\"/api/vendo\" theme={theme as VendoTheme}>{children}</VendoProvider>");
-    pretty.log("\n  Without it, nothing on the page can reach Vendo.");
-    pretty.log(rule);
-    const plain = out.plain();
-    expect(plain).toContain("docs.vendo.run/product/mount-the-surface#the-provider — exact wording for layout.tsx and _app.tsx");
-    // Right under the wrap line it explains, and dim.
-    expect(plain.indexOf("</VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/product/mount-the-surface"));
-    expect(out.raw()).toContain(`${ESC}[2mdocs.vendo.run/product/mount-the-surface#the-provider`);
-  });
-
-  it("prints the mount paste as real JSX, with a dim … for the app tree already there", () => {
-    const out = sink();
-    const rule = "─".repeat(64);
-    const pretty = createPrettyOutput({ write: out.write, banner: false });
-    pretty.log(`\n${rule}`);
-    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    pretty.log("\n  File: app/layout.tsx");
-    pretty.log("    import { VendoProvider } from \"@vendoai/vendo/react\";");
-    pretty.log("    import theme from \"../.vendo/theme.json\";");
-    pretty.log("    import type { VendoTheme } from \"@vendoai/vendo\";");
-    pretty.log("    … then wrap: <VendoProvider baseUrl=\"/api/vendo\" theme={theme as VendoTheme}>{children}</VendoProvider>");
-    pretty.log(rule);
-    const plain = out.plain();
-    // The prose instruction is gone; what is left reads as the code it is.
-    expect(plain).not.toContain("… then wrap:");
-    expect(plain).not.toContain("{children}");
-    expect(plain).toContain("│    <VendoProvider baseUrl=\"/api/vendo\" theme={theme as VendoTheme}>");
-    expect(plain).toContain("│      …");
-    expect(plain).toContain("│    </VendoProvider>");
-    // A blank rail line sets the wrap apart from the imports above it.
-    expect(plain).toContain("│    import type { VendoTheme } from \"@vendoai/vendo\";\n│\n│    <VendoProvider");
-    // The app tree is a dim PLACEHOLDER, not code to paste…
-    expect(out.raw()).toContain(`${ESC}[2m…${ESC}[22m`);
-    // …which is exactly what the docs pointer under it exists to resolve.
-    expect(plain.indexOf("│    </VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/product/mount-the-surface"));
-  });
-
-  it("keeps the real JSX when the host is a pages `_app` — the child expression differs, the shape does not", () => {
-    const out = sink();
-    const rule = "─".repeat(64);
-    const pretty = createPrettyOutput({ write: out.write, banner: false });
-    pretty.log(`\n${rule}`);
-    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    pretty.log("\n  File: pages/_app.tsx");
-    pretty.log("    … then wrap: <VendoProvider baseUrl=\"/api/vendo\"><Component {...pageProps} /></VendoProvider>");
-    pretty.log(rule);
-    const plain = out.plain();
-    expect(plain).toContain("│    <VendoProvider baseUrl=\"/api/vendo\">");
-    expect(plain).toContain("│      …");
-    expect(plain).not.toContain("pageProps");
-  });
-
-  it("leaves a paste block with no mount snippet without the docs pointer", () => {
-    const out = sink();
-    const rule = "─".repeat(64);
-    const pretty = createPrettyOutput({ write: out.write, banner: false });
-    pretty.log(`\n${rule}`);
-    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    pretty.log("\n  File: app/actions.ts");
-    pretty.log("    export const runtime = \"nodejs\";");
-    pretty.log(rule);
-    expect(out.plain()).not.toContain("docs.vendo.run/quickstart");
-  });
-
   it("renders warnings yellow with ⚠ and other errors red with ✖", () => {
     const out = sink();
     const pretty = createPrettyOutput({ write: out.write, banner: false });
@@ -948,6 +857,23 @@ describe("createPrettyOutput (visual system)", () => {
     const settled = out.raw();
     vi.advanceTimersByTime(300);
     expect(out.raw()).toBe(settled); // no frames after stopSpin
+  });
+
+  /** A stage that runs for minutes behind a bare spinner reads as a hang. Every
+      frame carries the clock, so the screen says how long it has been. */
+  it("carries elapsed time on every spinner frame, in m/s once past a minute", () => {
+    vi.useFakeTimers();
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.spin("Reading your product");
+    expect(out.plain()).toContain("Reading your product 0s");
+    // Advanced in whole frame periods (80ms), so the LAST frame drawn lands on
+    // the second the assertion names.
+    vi.advanceTimersByTime(12_000);
+    expect(out.plain()).toContain("Reading your product 12s");
+    vi.advanceTimersByTime(108_000);
+    expect(out.plain()).toContain("Reading your product 2m00s");
+    pretty.stopSpin();
   });
 });
 

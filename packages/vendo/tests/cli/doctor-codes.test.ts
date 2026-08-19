@@ -57,7 +57,7 @@ describe("doctor error-code registry", () => {
         "E-MCP-007": "the local MCP registry auth challenge is malformed",
         "E-MCP-008": "RETIRED — doctor no longer fetches the live registry auth challenge",
         "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
-        "E-MODEL-001": "no model credential resolves (the wire is wired, but the agent cannot answer a single turn)",
+        "E-MODEL-001": "the key this install's \`models\` wiring reads is not set (the wire is wired, but the agent cannot answer a single turn)",
         "E-SCHED-001": "RETIRED — doctor no longer reads machines and schedules off a running app",
         "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
         "E-TENANT-001": "tenant connectors are wired but the store has no encryption key, so a tenant's pasted token has nowhere safe to live",

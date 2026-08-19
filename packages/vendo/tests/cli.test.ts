@@ -35,7 +35,8 @@ describe("vendo CLI commands", () => {
     expect(help).toContain("--base-url <url>");
     expect(help).toContain("--posture <name>");
     expect(help).toContain("--service-key");
-    expect(help).toContain("--check / --no-check");
+    // Doctor is a standalone command: init neither offers it nor runs it.
+    expect(help).not.toContain("--check");
     // The interview flags are gone with the interview.
     expect(help).not.toContain("--brief <text>");
     expect(help).not.toContain("Init/refine: module exporting");
@@ -103,7 +104,7 @@ describe("vendo CLI commands", () => {
     expect(await main(["init", root, "--agent", "--yes", "--force",
       "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed",
       "--use-case", "mcp", "--base-url", "https://app.acme.com", "--posture", "local",
-      "--service-key", "--no-check"])).toBe(0);
+      "--service-key"])).toBe(0);
 
     expect(await readdir(root)).toEqual([]); // the ask pass wrote nothing
     // Value-flag values are never mistaken for the target dir: --framework
@@ -172,8 +173,10 @@ describe("vendo CLI commands", () => {
     expect(error.mock.calls.flat().join("\n")).toContain("provisioned with the tenant on first use");
     expect(error.mock.calls.flat().join("\n")).toContain("https://docs.vendo.run/outside-agents/service-keys-and-broker");
 
-    expect(await main(["init", root, "--check", "--no-check"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--check and --no-check answer the same question");
+    // Init no longer runs doctor, so its flags are gone — and an unknown flag
+    // fails loudly rather than being dropped (ENG-335).
+    expect(await main(["init", root, "--check"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --check");
 
     expect(await readdir(root)).toEqual([]); // nothing ever ran
     error.mockRestore();

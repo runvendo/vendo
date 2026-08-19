@@ -248,10 +248,11 @@ describe("the slow phases spin when the caller supplies one", () => {
     // `finally` used to stop the spinner right before the prose stages — the
     // two model calls that own minutes of the run — leaving the longest stretch
     // of an install as a dead screen (#1163).
+    // …and the label says how long that stretch takes, because it takes it.
     expect(seen.full!.labels).toEqual([
       "Re-reading your product…",
-      "Reading your product (a scripted engine)…",
-      "Reading your product (a scripted engine)…",
+      "Reading your product (a scripted engine) — this can take several minutes…",
+      "Reading your product (a scripted engine) — this can take several minutes…",
     ]);
     expect(seen.full!.stops).toBe(3);
     // The line became the label; it is not ALSO printed.
@@ -270,7 +271,7 @@ describe("the slow phases spin when the caller supplies one", () => {
       confirm: async () => true,
       judge: { harnesses: [scripted] },
     });
-    expect(logs).toContain("\nReading your product (a scripted engine)…");
+    expect(logs).toContain("\nReading your product (a scripted engine) — this can take several minutes…");
   });
 });
 

@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { doorWellKnownPaths } from "../../src/door-paths.js";
 import { compositionSpecifier, routeSource } from "../../src/cli/init-scaffolds.js";
-import { generateServiceKey, mcpStepLines, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
+import { generateServiceKey, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -28,10 +28,8 @@ function plan(overrides: Partial<McpPlanInput> = {}): McpPlan {
     framework: "next",
     authWired: clerk,
     serverActions: true,
-    cloudKey: true,
     posture: "local",
     serviceKey: false,
-    baseUrl: "https://app.acme.com",
     ...overrides,
   });
 }
@@ -71,7 +69,6 @@ describe("planMcp — what it refuses to write", () => {
     expect(blocked.blocked).toMatch(/cannot open without one/);
     expect(blocked.changes).toEqual([]);
     expect(blocked.compositionSource).toBeNull();
-    expect(blocked.steps).toEqual([]);
   });
 
   it("writes nothing off the Next.js app router — the discovery paths are origin-root", () => {
@@ -89,7 +86,6 @@ describe("planMcp — the service key", () => {
     expect(local.serviceKeyValue).toMatch(/^[0-9a-f]{64}$/);
     expect(local.compositionSource).toContain("const serviceKey = process.env.VENDO_SERVICE_KEY");
     expect(local.compositionSource).toContain(`mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },`);
-    expect(local.steps.at(-1)).toContain("/api/vendo/mcp/token");
   });
 
   // serviceAuth is local-door mechanics: the RFC 8693 exchange lives at the
@@ -103,84 +99,15 @@ describe("planMcp — the service key", () => {
     expect(broker.serviceKeyValue).toBeUndefined();
     expect(broker.compositionSource).toContain("mcp: true,");
     expect(broker.compositionSource).not.toContain("serviceAuth");
-    expect(broker.steps.join("\n")).not.toContain("VENDO_SERVICE_KEY");
   });
 
-  it("says nothing about service keys when the answer was no", () => {
-    const none = plan();
-    expect(none.serviceKeyValue).toBeUndefined();
-    expect(none.steps.join("\n")).not.toContain("VENDO_SERVICE_KEY");
+  it("mints nothing when the answer was no", () => {
+    expect(plan().serviceKeyValue).toBeUndefined();
   });
 
   it("mints 32 hex bytes", () => {
     expect(generateServiceKey()).toMatch(/^[0-9a-f]{64}$/);
     expect(generateServiceKey()).not.toBe(generateServiceKey());
-  });
-});
-
-describe("planMcp — the two steps that stay the user's", () => {
-  it("puts the base URL FIRST, always", () => {
-    expect(plan().steps[0]).toContain("`VENDO_BASE_URL`");
-    expect(plan({ baseUrl: null }).steps[0]).toContain("Set `VENDO_BASE_URL`");
-    expect(plan({ posture: "broker", serviceKey: true }).steps[0]).toContain("`VENDO_BASE_URL`");
-  });
-
-  /** The captured origin is the DEV one now (init writes it to .env.local), so
-      the step points at deploy time for production instead of claiming the
-      answer already covers it. */
-  it("names the captured origin as dev-and-done, and the risk when there is none", () => {
-    expect(plan().steps[0]).toContain("When you deploy, set `VENDO_BASE_URL` in your platform to the public origin");
-    expect(plan().steps[0]).toContain("`https://app.acme.com` is in .env.local");
-    expect(plan().steps[0]).not.toContain(".env.example");
-    expect(plan({ baseUrl: null }).steps[0]).toContain("points at the wrong origin");
-    expect(plan({ baseUrl: null }).steps[0]).toContain(".env.local in dev, your deploy platform in production");
-  });
-
-  it("points clients at the same URL in BOTH postures — it derives from the base URL, never the broker", () => {
-    const client = "Point any MCP client at `https://app.acme.com/api/vendo/mcp`";
-    expect(plan().steps.map((step) => step.split("\n")[0])).toContain(client);
-    expect(plan({ posture: "broker" }).steps.map((step) => step.split("\n")[0])).toContain(client);
-  });
-});
-
-describe("planMcp — the sign-in posture", () => {
-  // The broker posture used to close on two placeholder environment values the
-  // operator had to go and look up. Cloud reads both itself and provisions the
-  // tenant on first use, so a placeholder printed here is a step that no longer
-  // exists — and a `<secret>` on screen is what made this path feel like setup.
-  it("prints no placeholder environment values under broker posture — Cloud provisions the tenant", () => {
-    const broker = plan({ posture: "broker" }).steps.join("\n");
-    expect(broker).not.toContain("<secret>");
-    expect(broker).not.toMatch(/VENDO_MCP_(BROKER_URL|FEDERATION_SECRET)=/);
-    expect(broker).toContain("provisions the tenant on first use");
-  });
-
-  // The posture select only appears when a Cloud key is in hand; a keyless run
-  // gets local as the default and today's one-line pointer.
-  it("adds the keyless pointer only when no Cloud key is in hand", () => {
-    expect(plan({ cloudKey: false }).steps.join("\n")).toContain("Sign-in: your app serves its own OAuth");
-    expect(plan().steps.join("\n")).not.toContain("Sign-in: your app serves its own OAuth");
-  });
-});
-
-describe("mcpStepLines — the closing block reads as steps, not a wall", () => {
-  it("numbers every headline and indents its detail under it", () => {
-    const broker = plan({ posture: "broker", serviceKey: true });
-    const lines = mcpStepLines(broker);
-    // Every step's headline is numbered in order...
-    const numbered = lines.filter((line) => /^\d+\. /.test(line));
-    expect(numbered).toHaveLength(broker.steps.length);
-    expect(numbered.map((line) => line.split(". ")[0])).toEqual(
-      broker.steps.map((_step, index) => String(index + 1)),
-    );
-    // ...and every detail line is indented under the headline it belongs to,
-    // never left at the margin where it would read as another step.
-    for (const [index, step] of broker.steps.entries()) {
-      const [headline, ...detail] = step.split("\n");
-      const at = lines.indexOf(`${index + 1}. ${headline!}`);
-      expect(at).toBeGreaterThanOrEqual(0);
-      expect(lines.slice(at + 1, at + 1 + detail.length)).toEqual(detail.map((rest) => `   ${rest}`));
-    }
   });
 });
 
@@ -231,10 +158,8 @@ describe("the generated MCP door answers every well-known path (seam)", () => {
       framework: "next",
       authWired: clerk,
       serverActions: false,
-      cloudKey: true,
       posture: "local",
       serviceKey: true,
-      baseUrl: BASE_URL,
     });
     const files = [
       { absolute: routePath, after: routeSource(await compositionSpecifier(root, dirname(routePath))) },

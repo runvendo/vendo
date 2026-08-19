@@ -1,7 +1,7 @@
 ---
 title: "E-MODEL-001"
 sidebarTitle: "E-MODEL-001"
-description: "No model credential resolves, so the agent cannot answer a turn."
+description: "The key this install's models wiring reads is not set, so the agent cannot answer a turn."
 ---
 
 # E-MODEL-001
@@ -9,37 +9,44 @@ description: "No model credential resolves, so the agent cannot answer a turn."
 <Warning>
 **what doctor prints** (warning)
 
-model credential: none found — set a model key (ANTHROPIC_API_KEY /
-OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) or VENDO_API_KEY and select it
-in your composition's `models`, or the agent cannot answer
+model credential: ANTHROPIC\_API\_KEY is not set, and it is the only key this
+install's `models` wiring reads — the wire is wired, but the agent cannot answer
+a single turn
 </Warning>
 
-Every wiring check can pass and the agent can still answer nothing: no model
-credential resolves on this machine.
+Every wiring check can pass and the agent can still answer nothing: the one key
+this install reads is not set.
 
 `check model/credential` · `error_code E-MODEL-001` · `doctor exits 0` (warning only)
 
 ## What you're seeing
 
-Doctor resolves the credential through the same ladder the runtime rides, over
-the environment plus `.env` and `.env.local`. Nothing on that ladder won.
+Doctor names exactly one variable, and it is the one **your** wiring consults —
+never a list. It finds that variable from the answer `vendo init` recorded in
+`.vendo/install.json` (`modelKey`), or, failing that, from the provider your
+composition's own `models` line names:
+
+- `models: { default: anthropic("claude-sonnet-4-6") }` → `ANTHROPIC_API_KEY`
+- `models: { default: openai("gpt-5") }` → `OPENAI_API_KEY`
+- no `models` line at all → `VENDO_API_KEY`, which is the only variable the
+  runtime ladder reads on its own
+
+Doctor looks for that variable in the environment plus `.env` and `.env.local`.
 
 ## Why
 
 A provider key on its own is a **credential**, not a selection — since the
-selection law, nothing picks a model off the environment. A host with
-`ANTHROPIC_API_KEY` set and no `models` line in its composition lands here, and
-so does a host with no key at all.
+selection law, nothing picks a model off the environment. So setting a key the
+composition does not name changes nothing, which is why this warning names one
+variable instead of three.
 
 This is a warning and never a failure: production keys legitimately live in a
 deploy platform's secret store, which doctor cannot read.
 
 ## The fix
 
-Pick either rung.
-
-Your own provider key — put it in `.env.local` and **select the model in your
-composition** (`lib/vendo.ts`):
+Set the variable doctor named. If that is a provider key, put it in `.env.local`
+— it is already **selected in your composition** (`lib/vendo.ts`):
 
 ```ts
 import { anthropic } from "@ai-sdk/anthropic";

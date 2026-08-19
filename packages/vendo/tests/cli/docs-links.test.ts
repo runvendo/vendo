@@ -90,12 +90,13 @@ describe("every docs.vendo.run URL the CLI prints reaches a page that exists", (
   it("found the URLs at all — an empty sweep would pass the check above vacuously", async () => {
     const paths = await printedDocsPaths();
     expect(paths.size).toBeGreaterThan(5);
-    // The five the audit caught, in their FIXED spellings.
+    // The audit's own spellings, plus the four continue URLs — which are now the
+    // ONLY instructions init hands anyone, so a stale one is the whole install.
     const all = [...paths.keys()];
+    expect(all).toContain("/product/quickstart");
     expect(all).toContain("/existing-agent/ai-sdk");
     expect(all).toContain("/existing-agent/mastra");
     expect(all).toContain("/outside-agents/quickstart");
-    expect(all).toContain("/product/mount-the-surface#the-provider");
     expect(all).toContain("/production/troubleshooting/e-wire-001");
   });
 });

@@ -255,7 +255,6 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
         scaffoldDir,
         "--yes",
         "--no-ai",
-        "--no-check",
         "--framework", "next",
         "--auth", "none",
         "--use-case", "agent-loop",

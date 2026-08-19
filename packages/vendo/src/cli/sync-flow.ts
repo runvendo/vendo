@@ -81,6 +81,12 @@ export interface SyncFlowOptions {
    *  minutes: extraction and the judgment pass. Absent (plain runs, CI, pipes)
    *  → nothing spins and the printed lines stay exactly what they are today. */
   spinner?: { spin: (label: string) => void; stopSpin: () => void };
+  /** Never block on the loosening review: proposals QUEUE as pending instead
+      of being reviewed inline. init sets it, because init asks nothing once its
+      up-front questions are done — a loosening is never applied without a
+      human, so queueing is the only other honest answer. `vendo sync --review`
+      is the deliberate ask and is unaffected. */
+  queueLoosenings?: boolean;
   /** Test seam: the wall-clock budget for each Cloud reconcile. */
   baselineBudgetMs?: number;
 }
@@ -116,7 +122,13 @@ async function withSpin<T>(
 
 export interface SyncFlowResult {
   report: SyncReportWithWarnings;
-  judged: { ran: boolean; engine?: "claude" | "codex" | "npx-engine" };
+  judged: {
+    ran: boolean;
+    engine?: "claude" | "codex" | "npx-engine";
+    /** Loosening proposals held as PENDING — never applied, waiting for a human
+        (`vendo sync --review`). init reports the count in its closing facts. */
+    queued: number;
+  };
   /** The theme re-scan: which slots this run took from the host, and which the
    *  host disagrees with but a human owns. null = nothing to reconcile (the
    *  file was just created, or there is none). */
@@ -366,6 +378,78 @@ function printImpact(output: Output, impact: ToolImpact[]): void {
  * `--ai` run never probes a single harness; the pass resolves its own engine
  * behind its credential gate instead.
  */
+const JUDGMENT_SKIPPED = "Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.";
+
+/** THE one question the judgment pass owes a person: may a coding agent read
+ *  this codebase, and — where several could — which one. ONE question either
+ *  way, and it never prints: the caller owns what a decline says, because init
+ *  asks this UP FRONT (nothing may prompt once the long pass starts) while sync
+ *  still asks it inline. Null is "no". */
+async function askJudgmentConsent(input: {
+  available: readonly AvailableEngine[];
+  chosen: AvailableEngine;
+  /** `--engine` already named the family, so there is nothing left to pick. */
+  pinned: boolean;
+  choose?: SyncFlowOptions["choose"];
+  confirm?: SyncFlowOptions["confirm"];
+}): Promise<AvailableEngine | null> {
+  const { available, chosen, pinned } = input;
+  if (!pinned && available.length > 1) {
+    // Several engines: the SAME single consent question, as a pick-with-
+    // default instead of yes/no — never a second question.
+    const picked = await (input.choose ?? plainSelect)(
+      "Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to the chosen provider under your account.",
+      [
+        ...available.map((entry) => ({ value: entry.family, label: entry.credential, hint: `--engine ${entry.family}` })),
+        { value: "skip", label: "Skip — keep extractor defaults" },
+      ],
+      0,
+    );
+    return available.find((entry) => entry.family === picked) ?? null;
+  }
+  const consented = await (input.confirm ?? askYesNo)(
+    `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to your model provider under your account.`,
+    true,
+  );
+  return consented ? chosen : null;
+}
+
+/**
+ * init's UP-FRONT form of that question. It is knowable before the long pass —
+ * the ladder is a read-only probe of this machine — so init asks it with the
+ * rest of its questions and hands the flow a settled `--ai`/`--engine` pair,
+ * leaving nothing to prompt once the writing starts.
+ *
+ * Null means there was no question to ask: no engine resolves here, so the flow
+ * takes its own (silent, non-prompting) unavailable path and says so there.
+ */
+export async function resolveJudgmentConsent(input: {
+  root: string;
+  env: Record<string, string | undefined>;
+  engine?: string;
+  harnesses?: Parameters<typeof selectJudgmentEngines>[0]["harnesses"];
+  choose?: SyncFlowOptions["choose"];
+  confirm?: SyncFlowOptions["confirm"];
+}): Promise<{ ai: boolean; engine?: string } | null> {
+  const available = await selectJudgmentEngines({
+    root: input.root,
+    env: input.env,
+    ...(input.harnesses === undefined ? {} : { harnesses: input.harnesses }),
+  });
+  if (available.length === 0) return null;
+  // An unavailable `--engine` pin is the flow's own loud line, not a question.
+  const pinned = input.engine === undefined ? undefined : available.find((entry) => entry.family === input.engine);
+  if (input.engine !== undefined && pinned === undefined) return null;
+  const chosen = await askJudgmentConsent({
+    available,
+    chosen: pinned ?? available[0]!,
+    pinned: input.engine !== undefined,
+    ...(input.choose === undefined ? {} : { choose: input.choose }),
+    ...(input.confirm === undefined ? {} : { confirm: input.confirm }),
+  });
+  return chosen === null ? { ai: false } : { ai: true, engine: chosen.family };
+}
+
 async function chooseEngine(
   options: SyncFlowOptions,
   env: Record<string, string | undefined>,
@@ -416,36 +500,20 @@ async function chooseEngine(
   // `--ai` IS the answer: the ladder was walked only to report what is here.
   if (options.ai === true) return { skip: false, engine: chosen };
 
-  if (options.engine === undefined && available.length > 1) {
-    // Several engines: the SAME single consent question, as a pick-with-
-    // default instead of yes/no — never a second question.
-    const choose = options.choose ?? plainSelect;
-    const picked = await choose(
-      "Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to the chosen provider under your account.",
-      [
-        ...available.map((entry) => ({ value: entry.family, label: entry.credential, hint: `--engine ${entry.family}` })),
-        { value: "skip", label: "Skip — keep extractor defaults" },
-      ],
-      0,
-    );
-    const selected = available.find((entry) => entry.family === picked);
-    if (selected === undefined) {
-      output.log("Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.");
-      return { skip: true };
-    }
-    chosen = selected;
-  } else {
-    const confirm = options.judge?.confirm ?? options.confirm ?? askYesNo;
-    const consented = await confirm(
-      `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to your model provider under your account.`,
-      true,
-    );
-    if (!consented) {
-      output.log("Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.");
-      return { skip: true };
-    }
+  const consented = await askJudgmentConsent({
+    available,
+    chosen,
+    pinned: options.engine !== undefined,
+    ...(options.choose === undefined ? {} : { choose: options.choose }),
+    ...(options.judge?.confirm ?? options.confirm) === undefined
+      ? {}
+      : { confirm: options.judge?.confirm ?? options.confirm },
+  });
+  if (consented === null) {
+    output.log(JUDGMENT_SKIPPED);
+    return { skip: true };
   }
-  return { skip: false, engine: chosen };
+  return { skip: false, engine: consented };
 }
 
 /** The two CLI-level event sinks every stage writes through — printed AND
@@ -539,7 +607,7 @@ async function runGradingStages(input: {
 }): Promise<{ judged: SyncFlowResult["judged"]; themeDraft: SyncFlowResult["themeDraft"] }> {
   const { root, vendoDir, mode, env, options, output, themeSummary } = input;
   const { note, noteError } = input.notes;
-  const judged: SyncFlowResult["judged"] = { ran: false };
+  const judged: SyncFlowResult["judged"] = { ran: false, queued: 0 };
   let themeDraft: SyncFlowResult["themeDraft"] = null;
   const selection = await chooseEngine(options, env, note);
   if (selection.skip) return { judged, themeDraft };
@@ -548,8 +616,11 @@ async function runGradingStages(input: {
   // incremental sync stays as quiet as it is today. With a renderer attached
   // that same narration becomes the spinner's label instead of a printed line.
   const credential = selection.engine === undefined ? null : selection.engine.credential;
+  // It says how long this takes because it TAKES that long: the pass reads the
+  // whole API and then drafts prose over it, and a silent spinner on a
+  // many-minute stage is what a person reads as a hang.
   const narration = mode === "full" && credential !== null
-    ? `Reading your product (${credential})…`
+    ? `Reading your product (${credential}) — this can take several minutes…`
     : null;
   if (narration !== null && options.spinner === undefined) output.log(`\n${narration}`);
   const spinLabel = narration
@@ -561,7 +632,9 @@ async function runGradingStages(input: {
     // loosenings queue instead — and no `confirm` is handed down at all, so
     // nothing downstream can acquire a way to block.
     const attended = options.interactive && !options.yes;
-    const loosenings = attended || options.review === true ? "review" : "queue";
+    const loosenings = options.queueLoosenings !== true && (attended || options.review === true)
+      ? "review"
+      : "queue";
     const pass = await withSpin(options.spinner, spinLabel, () => runJudgmentPass({
       root,
       out: vendoDir,
@@ -581,7 +654,8 @@ async function runGradingStages(input: {
     // The pass already printed the count and `vendo sync --review`; say WHY
     // they were held, so an unattended caller doesn't read it as a refusal.
     if (loosenings === "queue" && pass.status === "judged" && pass.queued > 0) {
-      note("  (held, not applied: this run had no one to ask — re-run `vendo init` in a terminal to review them inline)");
+      judged.queued = pass.queued;
+      note("  (held, not applied: a loosening needs a human — review them with `vendo sync --review`)");
     }
     judged.ran = true;
     const engine = selection.engine === undefined ? undefined : ENGINE_BY_HARNESS_ID[selection.engine.harness.id];

@@ -19,9 +19,8 @@ import type { Output } from "./shared.js";
  * because runInit's emissions are unchanged: this is a renderer over the
  * existing Output seam, not a second copy of the copy. The collapse rules
  * below are pure string rules over those exact plain strings; the renderer
- * restyles and groups. The copy it owns is the block TITLES and the one docs
- * pointer (MOUNT_DOCS) that cannot live in the caller without changing the
- * receipt's pinned `pasteEdits`; every fact on screen is still the caller's.
+ * restyles and groups. The only copy it owns is the block TITLES; every fact on
+ * screen is still the caller's.
  */
 
 const ESC = "\u001b";
@@ -113,6 +112,13 @@ export interface PrettyOutput extends Output {
 }
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/** A stage's elapsed time, read the way a clock is: seconds under a minute,
+    `m ss` above it. Every spinner carries one, because the slow stages run for
+    MINUTES and a spinning frame with no clock reads as a hang. */
+const elapsed = (ms: number): string => {
+  const total = Math.floor(ms / 1000);
+  return total < 60 ? `${total}s` : `${Math.floor(total / 60)}m${String(total % 60).padStart(2, "0")}s`;
+};
 const BAR = dim("│");
 const CLEAR_LINE = `\r${ESC}[2K`;
 /** Splits a chunk into text, CSI sequences (none of which costs a cell) and the
@@ -167,24 +173,6 @@ function judgmentTally(text: string): string | null {
   const count = /^ \((\d+)\)(?::|$)/.exec(text.slice(label.length));
   return count === null ? null : `${label} (${count[1]!})`;
 }
-/** The paste block's ASCII frame — dropped; the block rides the rail instead. */
-const PASTE_RULE = "─".repeat(64);
-const PASTE_HEAD = /^(ONE|\d+) STEPS? LEFT — paste th(?:is|ese) yourself \((.+)\)$/;
-const PASTE_FILE = /^ {2}File: (.+)$/;
-/** The caller's one-line wrap instruction — `… then wrap: <VendoProvider …>
-    {children}</VendoProvider>` — destructured so the block can print the real
-    JSX instead of the prose: the open tag, a dim `…` for the app tree that is
-    already there, the close tag. The children capture is deliberately dropped;
-    the child expression genuinely differs by router (`{children}` in an
-    app-router layout, `<Component {...pageProps} />` in a pages `_app`), so one
-    literal in the terminal would be wrong for half of hosts and the docs
-    pointer below carries the exact per-router wording instead. */
-const MOUNT_WRAP = /^… then wrap: (<VendoProvider\b[^>]*>).*<\/VendoProvider>$/;
-/** This pointer is the renderer's and not the caller's: the mount's `lines` are
-    pinned byte-for-byte by the receipt's `pasteEdits`, and a line added there
-    would change that JSON. Emitted here, the --agent path never sees it (the
-    rail is off in agent mode). */
-const MOUNT_DOCS = "docs.vendo.run/product/mount-the-surface#the-provider — exact wording for layout.tsx and _app.tsx";
 const WIRED = /^(Wired \(\d+ files?\)):$/;
 const DIFF_MARKER = /^ {2}([+~]) (.+)$/;
 const THEME = /^Theme: (.*)$/;
@@ -475,7 +463,6 @@ interface RenderState {
   catalog: string[];
   impact: string[];
   judgment: { summary: string; details: string[] } | null;
-  paste: { count: number; why: string; titled: boolean } | null;
 }
 
 function flushCatalog(state: RenderState, rail: Rail): void {
@@ -620,57 +607,12 @@ function renderIndented(raw: string, state: RenderState, rail: Rail): void {
   rail.body(`${keep}${rest}`);
 }
 
-/** The 64-dash paste frame becomes a ◇ section on the rail. */
-function renderPaste(raw: string, state: RenderState, rail: Rail): void {
-  const open = state.paste;
-  if (raw === PASTE_RULE) {
-    if (open === null) state.paste = { count: 0, why: "", titled: false };
-    else {
-      if (open.why !== "") rail.body(dim(open.why));
-      state.paste = null;
-    }
-    return;
-  }
-  const head = PASTE_HEAD.exec(raw);
-  if (head !== null) {
-    state.paste = { count: head[1] === "ONE" ? 1 : Number(head[1]), why: head[2]!, titled: false };
-    return;
-  }
-  const file = open === null ? null : PASTE_FILE.exec(raw);
-  if (file !== null && open !== null) {
-    if (open.titled) rail.bar();
-    else {
-      open.titled = true;
-      rail.section(rail.accent("◇"), bold(open.count === 1 ? `One paste left — ${file[1]}` : `${open.count} pastes left`));
-      if (open.count === 1) return;
-    }
-    rail.body(bold(file[1]!));
-    return;
-  }
-  const wrap = MOUNT_WRAP.exec(raw.trimStart());
-  if (wrap !== null) {
-    // The snippet's own indent, with the docs pointer under the JSX it explains.
-    const keep = " ".repeat(Math.max(0, raw.length - raw.trimStart().length - state.absorb));
-    rail.bar();
-    rail.body(`${keep}${wrap[1]!}`);
-    rail.body(`${keep}  ${dim("…")}`);
-    rail.body(`${keep}</VendoProvider>`);
-    rail.body(`${keep}${dim(MOUNT_DOCS)}`);
-    return;
-  }
-  renderIndented(raw, state, rail);
-}
-
 function renderRaw(raw: string, state: RenderState, rail: Rail): void {
   if (raw === "") {
     flushCatalog(state, rail);
     flushJudgment(state, rail);
     flushImpact(state, rail);
     rail.bar();
-    return;
-  }
-  if (state.paste !== null || raw === PASTE_RULE) {
-    renderPaste(raw, state, rail);
     return;
   }
   if (raw.startsWith(IMPACT_LINE)) {
@@ -732,7 +674,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   let lastWasBar = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let frame = 0;
-  const state: RenderState = { absorb: 0, catalog: [], impact: [], judgment: null, paste: null };
+  const state: RenderState = { absorb: 0, catalog: [], impact: [], judgment: null };
   /** Same capability probe the banner uses, so the rail and the mark above it
       are the same purple on the same terminal. */
   const lilac = accentFor(env);
@@ -924,9 +866,10 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
       stopSpin();
       ensureHeader();
       flush();
+      const started = Date.now();
       const draw = (): void => {
         frame = (frame + 1) % FRAMES.length;
-        write(`${CLEAR_LINE}${lilac(FRAMES[frame]!)}  ${dim(label)}`);
+        write(`${CLEAR_LINE}${lilac(FRAMES[frame]!)}  ${dim(`${label} ${elapsed(Date.now() - started)}`)}`);
       };
       timer = setInterval(draw, 80);
       timer.unref?.();

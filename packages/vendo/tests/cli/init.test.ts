@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runDoctor } from "../../src/cli/doctor.js";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
 import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE } from "../../src/cli/framework.js";
-import { firstSentence, prettyThemeReview, runInit, type InitReceipt } from "../../src/cli/init.js";
+import { runInit, type InitReceipt } from "../../src/cli/init.js";
 import type { InitQuestions } from "../../src/cli/init-questions.js";
 import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
 
@@ -163,7 +163,7 @@ describe("vendo init (zero-question)", () => {
     expect(questionsOf(sink.logs).detected).toMatchObject({ framework: expected });
   });
 
-  it("wires a fresh Next host with no prompts: route + hooks + .vendo, and one paste", async () => {
+  it("wires a fresh Next host with no prompts: route + hooks + .vendo", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
@@ -226,42 +226,9 @@ describe("vendo init (zero-question)", () => {
     expect(logs).toContain("~ package.json");
     // No auth dependency in the fixture: one calm advisory, nothing guessed.
     expect(logs).toContain("Auth: no provider detected");
-    expect(logs).toContain("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    // The mount block replaces the compact list; nothing is printed twice.
-    expect(logs).not.toContain("Last steps are yours:");
-    expect(logs).toContain("npx vendo doctor");
     // No interview, no per-diff consent, no refine offer, no finale.
     expect(logs).not.toContain("[y/N]");
     expect(logs).not.toContain("vendo refine");
-  });
-
-  // A plain transcript is parsed as often as it is read, so the MCP steps keep
-  // their exact strings there — the newline inside a step becomes an indent and
-  // nothing else. (The pretty run numbers the same strings; mcpStepLines owns
-  // that half.)
-  it("mcp: the plain transcript indents each step's detail under its headline", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-plain-"));
-    cleanup.push(root);
-    await mkdir(join(root, "app"), { recursive: true });
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "mcp-host",
-      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
-    }));
-    await writeFile(join(root, "tsconfig.json"), "{}\n");
-    await writeFile(join(root, "app", "layout.tsx"),
-      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
-    const sink = output();
-    expect(await run(root, sink, {
-      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "http://localhost:3000",
-    })).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain(
-      "  When you deploy, set `VENDO_BASE_URL` in your platform to the public origin\n"
-      + "    dev is answered — `http://localhost:3000` is in .env.local, and every discovery URL hangs off it",
-    );
-    // The headline of a step is never indented past two spaces, so a reader
-    // (and a grep) can still tell a step from its detail.
-    expect(logs).toContain("  Point any MCP client at `http://localhost:3000/api/vendo/mcp`\n    your users' setup page");
   });
 
   it("is idempotent: a re-run changes nothing and says so", async () => {
@@ -272,15 +239,9 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, again)).toBe(0);
     expect(await tree(root)).toEqual(first);
     expect(again.logs.join("\n")).toContain("Already wired — nothing to change.");
-    // The second run's agent tail reflects what THIS run did: no composition
-    // was created (no auth line), the layout is already mounted (no layout
-    // line) — only the doctor gate remains.
-    const tail = again.logs.join("\n").split("Agent tail:")[1]!;
-    expect(tail).not.toContain("auth:");
-    expect(tail).toContain("vendo doctor --json");
   });
 
-  it("computes the paste's theme specifier from a src/app layout (../../ to project root)", async () => {
+  it("scaffolds into a src/app layout and never touches the host's own layout file", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-init-srcapp-"));
     cleanup.push(root);
     await mkdir(join(root, "src", "app"), { recursive: true });
@@ -290,11 +251,8 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     await expect(readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8")).resolves.toContain("nextVendoHandler");
-    // The layout is untouched; the specifier rides the printed paste instead.
     expect(await readFile(join(root, "src", "app", "layout.tsx"), "utf8")).not.toContain("VendoProvider");
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain('import theme from "../../.vendo/theme.json";');
-    expect(logs).toContain('import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";');
+    expect(sink.logs.join("\n")).toContain(`+ ${join("src", "app", "api", "vendo", "[...vendo]", "route.ts")}`);
   });
 
   it("scaffolds app/ under src/ when the host's pages router lives there (teable: pages+app must share one base)", async () => {
@@ -315,16 +273,6 @@ describe("vendo init (zero-question)", () => {
     // rule, so the two can never land on different bases.
     await expect(readFile(join(root, "src", "lib", "vendo.ts"), "utf8")).resolves.toContain("createVendo({");
     expect(await readdir(root)).not.toContain("app");
-  });
-
-  it("prints a theme-less paste when the project disables resolveJsonModule", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { resolveJsonModule: false } }));
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain('<VendoProvider baseUrl="/api/vendo">');
-    expect(logs).not.toContain("import theme from");
   });
 
   it.each([
@@ -639,33 +587,6 @@ describe("vendo init (zero-question)", () => {
   // run ENDS with the repo-specific agent tail (the wired auth preset and
   // what's still stubbed, the exact files to hand-edit, the doctor gate),
   // every line derived from what this run actually wrote.
-  it("non-interactive runs end with the agent tail: wired preset, hand-edit files, doctor gate", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "host",
-      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
-    }));
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const logs = sink.logs.join("\n");
-    const tailAt = logs.indexOf("Agent tail:");
-    expect(tailAt).toBeGreaterThan(-1);
-    const tail = logs.slice(tailAt);
-    // The wired preset with its provenance — real run facts, not prose…
-    expect(tail).toContain("auth: authJs() wired (detected next-auth)");
-    // …the exact files the agent must now hand-edit, including the mount
-    // paste init will never make for it…
-    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — wrap the app in the <VendoProvider> lines above`);
-    expect(tail).toContain(`edit ${join(".vendo", "brief.md")} — `);
-    // …and the machine gate, closing the tail block.
-    expect(tail).toContain("vendo doctor --json");
-    expect(sink.logs[sink.logs.length - 2]).toContain("vendo doctor --json");
-    expect(sink.logs[sink.logs.length - 2]).toContain("green");
-    // The one line after it is the outstanding-paste echo: with a mount still
-    // pending, the run's LAST word is the step the human owns (audit F5).
-    expect(sink.logs[sink.logs.length - 1]).toBe(`\n→ Don't forget the paste in ${join("app", "layout.tsx")} (frame above)`);
-  });
-
   /** Every fix-it text that reaches a NON-INTERACTIVE audience has to name the
       command that actually works there: a bare `vendo sync` skips the judgment
       pass unless a human answers the consent prompt, so an agent or a CI job
@@ -681,110 +602,9 @@ describe("vendo init (zero-question)", () => {
     // The keyless run's judgment line…
     const logs = sink.logs.join("\n");
     expect(logs).toContain("run `vendo sync --ai` to grade the catalog");
-    // …and the per-tool risk advice the receipt hands back.
-    const ungraded = receiptOf(sink.logs).riskRecommendations.filter((entry) => entry.risk === "ungraded");
-    expect(ungraded.length).toBeGreaterThan(0);
-    for (const entry of ungraded) expect(entry.recommendation).toContain("run `vendo sync --ai` with a model key");
     // The bare form never appears as advice (the sync hooks still use it with
     // their own explicit --no-ai, so scope the check to the advice lines).
     expect(logs).not.toContain("run `vendo sync` ");
-  });
-
-  // A tool the run extracted and then left off WITHOUT being asked to is the one
-  // fact the tail used to drop: the developer met it later, as an assistant that
-  // could not answer and would not say why. The human's own overrides.json
-  // disable stays unmentioned — that is the nag the test above forbids.
-  it("the tail names a tool the machine turned off, with the layer that did it and the way back on", async () => {
-    const root = await fixture();
-    await mkdir(join(root, "app", "api", "customers"), { recursive: true });
-    await writeFile(join(root, "app", "api", "customers", "route.ts"),
-      "export async function GET() { return Response.json({ customers: [] }); }\n");
-    await mkdir(join(root, ".vendo"), { recursive: true });
-    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
-      format: "vendo/judgments@1",
-      tools: {
-        host_customers_list: {
-          binding: "GET /api/customers",
-          fields: { disabled: true },
-          evidence: "the handler returns the whole customer book",
-        },
-      },
-    }));
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const tail = sink.logs.join("\n").split("Agent tail:")[1]!;
-    expect(tail).toContain("tools off: host_customers_list (turned off in .vendo/judgments.json)");
-    expect(tail).toContain('set "disabled": false');
-  });
-
-  // Agent-install-dx Layer 2 (key-mint integration): a keyless run's tail
-  // carries the complete in-band key story — the auth.md discovery URL, the
-  // `vendo login` ceremony, and both flag fallbacks — so the agent never
-  // detours to a browser signup it can't drive.
-  it("a keyless run's tail points at the auth.md key flow; a run with a key stays silent about it", async () => {
-    const keyless = await fixture();
-    const keylessSink = output();
-    expect(await run(keyless, keylessSink)).toBe(0);
-    const keylessTail = keylessSink.logs.join("\n").split("Agent tail:")[1]!;
-    expect(keylessTail).toContain("cloud key: none");
-    expect(keylessTail).toContain("https://vendo.run/auth.md");
-    expect(keylessTail).toContain("vendo login");
-    expect(keylessTail).toContain("--cloud-key");
-    expect(keylessTail).toContain("--byo");
-
-    const keyed = await fixture();
-    const keyedSink = output();
-    expect(await run(keyed, keyedSink, {
-      // A resolving credential, which a bare provider key no longer is.
-      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-ant-test" },
-    })).toBe(0);
-    const keyedTail = keyedSink.logs.join("\n").split("Agent tail:")[1]!;
-    expect(keyedTail).not.toContain("cloud key: none");
-  });
-
-  it("the tail states auth stubs honestly: anonymous scaffolds point at the composition, a picked preset names its missing SDK", async () => {
-    // No auth dependency: the tail says so and points the hand-edit at the
-    // generated composition file.
-    const anonymous = await fixture();
-    const anonymousSink = output();
-    expect(await run(anonymous, anonymousSink)).toBe(0);
-    const anonymousTail = anonymousSink.logs.join("\n").split("Agent tail:")[1]!;
-    expect(anonymousTail).toContain("auth: none wired");
-    expect(anonymousTail).toContain(`edit ${join("lib", "vendo.ts")} — `);
-    // The advisory count stays exact: the tail never repeats the "Auth:" line.
-    expect(anonymousSink.logs.filter((line) => line.includes("Auth:"))).toHaveLength(1);
-
-    // --auth clerk without the SDK: the stub is the missing runtime package.
-    const picked = await fixture();
-    const pickedSink = output();
-    expect(await run(picked, pickedSink, { yes: true, auth: "clerk" })).toBe(0);
-    const pickedTail = pickedSink.logs.join("\n").split("Agent tail:")[1]!;
-    expect(pickedTail).toContain("auth: clerk() wired");
-    expect(pickedTail).toContain("@clerk/backend");
-  });
-
-  it("interactive runs keep the clack-style summary — no agent tail; --yes brings it back even on a TTY", async () => {
-    const interactive = await fixture();
-    const interactiveSink = output();
-    expect(await run(interactive, interactiveSink, { interactive: true })).toBe(0);
-    expect(interactiveSink.logs.join("\n")).not.toContain("Agent tail");
-
-    // --yes IS the non-interactive path, TTY or not.
-    const flagged = await fixture();
-    const flaggedSink = output();
-    expect(await run(flagged, flaggedSink, { yes: true, interactive: true })).toBe(0);
-    expect(flaggedSink.logs.join("\n")).toContain("Agent tail:");
-  });
-
-  it("the Express tail points at the printed wiring lines (no exact entry file exists to name)", async () => {
-    const root = await expressFixture(false);
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const tail = sink.logs.join("\n").split("Agent tail:")[1]!;
-    expect(tail).toContain("auth: none wired");
-    expect(tail).toContain(`edit ${join("vendo", "server.ts")} — `);
-    expect(tail).toContain("mountVendo()");
-    expect(tail).toContain("vendo doctor --json");
   });
 
   // Agent-install-dx: an undetectable framework has NO safe default — a
@@ -911,9 +731,8 @@ describe("vendo init (zero-question)", () => {
     expect(skippedSink.logs.join("\n")).toContain("this run cannot ask");
   });
 
-  it("--theme answers uncertain slots; the review prompt covers only what the flags left open", async () => {
+  it("--theme answers an uncertain slot; the rest are kept as extracted and reported", async () => {
     const root = await fixture();
-    const reviewed: string[] = [];
     const sink = output();
     expect(await run(root, sink, {
       ai: true,
@@ -927,33 +746,14 @@ describe("vendo init (zero-question)", () => {
           ],
         })],
       },
-      themeReview: async (summary) => {
-        reviewed.push(...summary.uncertain.map((entry) => entry.slot));
-        return {};
-      },
     })).toBe(0);
-    expect(reviewed).toEqual(["border"]); // accent was answered by flag
     const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
     expect(theme.colors.accent).toBe("#facc15");
     // The contrast-derived accentText follows the flag-replaced accent.
     expect(theme.colors.accentText).toBe("#000000");
-
-    // With --yes the flag still applies — no prompt existed to answer.
-    const quiet = await fixture();
-    expect(await run(quiet, output(), {
-      yes: true,
-      ai: true,
-      themeAnswers: { accent: "#facc15" },
-      extract: {
-        harnesses: [themeHarness({
-          slots: { accent: "#196b46" },
-          uncertain: [{ slot: "accent", note: "green may be data-only" }],
-        })],
-      },
-      themeReview: async () => { throw new Error("prompted"); },
-    })).toBe(0);
-    const quietTheme = JSON.parse(await readFile(join(quiet, ".vendo", "theme.json"), "utf8"));
-    expect(quietTheme.colors.accent).toBe("#facc15");
+    // The slot the flags left open is a FACT, not a question: it keeps what was
+    // extracted and the run names it.
+    expect(sink.logs.join("\n")).toContain("Kept as extracted (uncertain): border");
   });
 
   // Task 3(c): a --theme answer beats a model value for the same slot, even
@@ -975,16 +775,6 @@ describe("vendo init (zero-question)", () => {
   // verbatim install rendered nothing — wired and invisible reads as broken,
   // while doctor E-WIRE-006 hard-fails exactly that state. One paste now
   // yields a visible agent; hosts with their own surface delete the line.
-  it("prints ONE paste — provider AND overlay, still never a generated file", async () => {
-    const root = await fixture();
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const printed = sink.logs.join("\n");
-    expect(printed).toContain("<VendoProvider");
-    expect(printed).toContain("<VendoOverlay />");
-    expect(printed).not.toContain("vendo-root");
-  });
-
   it("states an env key in one line and skips the cloud offer", async () => {
     const root = await fixture();
     const sink = output();
@@ -1297,7 +1087,7 @@ describe("vendo init (zero-question)", () => {
     expect(composition).toContain("serverActions,");
   });
 
-  it("never regenerates an existing composition or vendo-actions.ts — it prints the paste instead", async () => {
+  it("never regenerates an existing composition or vendo-actions.ts, and says nothing about either", async () => {
     const libDir = "lib";
     const root = await fixture();
     expect(await run(root, output())).toBe(0);
@@ -1312,10 +1102,9 @@ describe("vendo init (zero-question)", () => {
     const second = output();
     expect(await run(root, second)).toBe(0);
     expect(await readFile(routePath, "utf8")).toBe(routeBefore);
-    const secondLogs = second.logs.join("\n");
-    expect(secondLogs).toContain(`File: ${join(libDir, "vendo.ts")}`);
-    expect(secondLogs).toContain('import { serverActions } from "./vendo-actions";');
-    expect(secondLogs).toContain("… then add inside createVendo({ … }): serverActions,");
+    // Init states facts and links out: the wiring gap is doctor's to grade
+    // (E-WIRE-009), so no snippet is printed here.
+    expect(second.logs.join("\n")).not.toContain("serverActions,");
 
     // The map that run CREATED now exists, so a surface change afterwards is a
     // printed paste of ONLY the missing entries — the file stays byte-identical,
@@ -1330,16 +1119,10 @@ describe("vendo init (zero-question)", () => {
     expect(await readFile(mapPath, "utf8")).toBe(mapBefore);
     expect(await readFile(routePath, "utf8")).toBe(routeBefore);
     const thirdLogs = third.logs.join("\n");
-    // The outstanding layout mount, the route wiring, and the unregistered action.
-    expect(thirdLogs).toContain("3 STEPS LEFT — paste these yourself (init never edits your files)");
-    expect(thirdLogs).toContain(`File: ${join(libDir, "vendo-actions.ts")}`);
-    expect(thirdLogs).toContain(`import { renamed as action1 } from ${JSON.stringify(ACTION_SPECIFIER)};`);
-    expect(thirdLogs).toContain("… then add inside the serverActions map:");
-    expect(thirdLogs).toContain('"app/actions/later.ts#renamed": action1,');
-    // Only the missing entry — never the whole file, and never the entry the
-    // map already carries.
+    // Nothing is printed for either file: they are the developer's, and doctor
+    // is what grades the missing registration.
+    expect(thirdLogs).not.toContain("action1");
     expect(thirdLogs).not.toContain("--- a/");
-    expect(thirdLogs).not.toContain("app/actions/later.ts#later");
   });
 
   // Regression (review B2): the map is compared by the KEYS it registers, never
@@ -1419,21 +1202,6 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("internal");
   });
 
-  it("carries the pastes it will not write into the receipt", async () => {
-    const routeDir = "lib";
-    const root = await fixture();
-    expect(await run(root, output())).toBe(0);
-    await mkdir(join(root, "app", "actions"), { recursive: true });
-    await writeFile(join(root, "app", "actions", "later.ts"),
-      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
-    const sink = output();
-    expect(await agentRun(root, sink)).toBe(0);
-    const edit = receiptOf(sink.logs).pasteEdits.find((paste) => paste.file === join(routeDir, "vendo.ts"));
-    expect(edit?.lines).toContain('import { serverActions } from "./vendo-actions";');
-    expect(edit?.why).toContain("fails closed");
-    expect(sink.logs.join("\n")).toContain(`File: ${join(routeDir, "vendo.ts")}`);
-  });
-
   it("leaves a hand-customized route that passes its own serverActions untouched (no conflicting import)", async () => {
     const root = await fixture();
     const routeDir = join(root, "app", "api", "vendo", "[...vendo]");
@@ -1472,8 +1240,8 @@ describe("vendo init (zero-question)", () => {
     expect(server).not.toContain("model");
     await expect(readFile(join(unwired, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(unwired, "vendo", "ai.ts"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(sink.logs.join("\n")).toContain('app.use("/api/vendo", mountVendo());');
-    expect(sink.logs.join("\n")).toContain('<VendoProvider baseUrl="/api/vendo"');
+    // The mount lines live on the continue page, never in the terminal.
+    expect(sink.logs.join("\n")).not.toContain("mountVendo()");
     // Fresh composition creation with no auth dependency: one calm advisory.
     expect(sink.logs.join("\n")).toContain("Auth: no provider detected");
 
@@ -1701,17 +1469,18 @@ describe("vendo init (zero-question)", () => {
     expect(questions[0]).toContain("theme");
   });
 
-  // Task 4(d): the uncertain review is asked ONLY about slots the model
-  // actually flagged — a clean model reply never reaches the review prompt.
-  it("never opens the uncertain review when the model reports no uncertainty", async () => {
+  // A clean model reply names no uncertain slot, so the facts carry no
+  // kept-as-extracted line at all.
+  it("says nothing about uncertainty when the model reports none", async () => {
     const root = await fixture();
-    expect(await run(root, output(), {
+    const sink = output();
+    expect(await run(root, sink, {
       ai: true,
       extract: { harnesses: [themeHarness({ slots: { accent: "#2b7fff" } })] },
-      themeReview: async () => { throw new Error("must never be asked"); },
     })).toBe(0);
     const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
     expect(theme.colors.accent).toBe("#2b7fff");
+    expect(sink.logs.join("\n")).not.toContain("Kept as extracted");
   });
 
   it("derives an applied next/font family deterministically — the model's fontFamily proposal never overrides it — and prints the one-glance summary", async () => {
@@ -1751,14 +1520,13 @@ describe("vendo init (zero-question)", () => {
     expect(logs).toContain(".vendo/theme.json");
   });
 
-  it("asks about the theme ONLY when the model reports uncertainty, and applies the answer", async () => {
+  it("keeps an uncertain slot as extracted, reports it, and still honours a --theme answer", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
       'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n');
     await writeFile(join(root, "app", "globals.css"),
       ":root { --color-ink: #111111; --color-evergreen-600: #196b46; }\n");
 
-    const reviewed: string[] = [];
     const sink = output();
     expect(await run(root, sink, {
       ai: true,
@@ -1768,13 +1536,9 @@ describe("vendo init (zero-question)", () => {
           uncertain: [{ slot: "accent", note: "green may be data-only" }],
         })],
       },
-      themeReview: async (summary) => {
-        reviewed.push(...summary.uncertain.map((entry) => entry.slot));
-        return { accent: "#facc15", border: "#ecebe8", danger: "chartreuse-ish", sparkle: "#123456" };
-      },
+      themeAnswers: { accent: "#facc15", border: "#ecebe8", danger: "chartreuse-ish", sparkle: "#123456" },
     })).toBe(0);
 
-    expect(reviewed).toEqual(["accent"]);
     const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
     // The human answer wins; invalid values and unknown slots are ignored.
     expect(theme.colors.accent).toBe("#facc15");
@@ -1947,7 +1711,6 @@ describe("vendo init --agent (ask first, then write)", () => {
       status: "written",
       root,
       useCase: "embedded",
-      tools: expect.any(Number),
       judgment: {
         status: "delegated",
         checklist: [
@@ -1965,10 +1728,8 @@ describe("vendo init --agent (ask first, then write)", () => {
     // Every named path is one the caller can open: this rejects the plan's
     // static list, which promises a fonts.css only an embedded font creates.
     await Promise.all(receipt.wrote.map((path) => readFile(join(root, path), "utf8")));
-    // Init writes no client file, so the layout is a paste and never a write.
+    // Init writes no client file, so the host's layout is never a write.
     expect(receipt.wrote).not.toContain(join("app", "layout.tsx"));
-    expect(receipt.pasteEdits[0]?.file).toBe(join("app", "layout.tsx"));
-    expect(Array.isArray(receipt.riskRecommendations)).toBe(true);
     // The retired plan dump's fields are gone with it.
     expect(sink.logs.join("\n")).not.toContain("codeChanges");
     // Agent mode asks for the judgment pass now; no engine resolves in a test
@@ -2087,8 +1848,7 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(await agentRun(loop, loopSink, { useCase: "agent-loop" })).toBe(0);
     const loopReceipt = receiptOf(loopSink.logs);
     expect(loopReceipt.useCase).toBe("agent-loop");
-    expect(loopReceipt.pasteEdits.map((paste) => paste.lines.join("\n")).join("\n"))
-      .toContain('import { vendoTools } from "@vendoai/vendo/ai-sdk";');
+    expect(loopReceipt.continueUrl).toBe("https://docs.vendo.run/existing-agent/ai-sdk");
 
     const mcp = await fixture();
     const mcpSink = output();
@@ -2300,16 +2060,17 @@ describe("the next.config repair (Next hosts)", () => {
       serverExternalPackages (our own demo-bank hit it). A source-linked host
       that transpiles @vendoai/apps must therefore get the paste, never the
       write: init following its own advice would brick their dev server. */
-  it("keeps the paste when the host transpiles a package we would externalize", async () => {
+  // Next hard-fatals on a package named in both lists, so writing the property
+  // for a host that transpiles one would brick the dev server this run just
+  // wired. Doctor grades the gap (E-CFG-004) and its page carries the caveat.
+  it("leaves a config alone when the host transpiles a package we would externalize", async () => {
     const root = await fixture();
     const source = 'const nextConfig = {\n  transpilePackages: ["@vendoai/apps"],\n};\n\nexport default nextConfig;\n';
     await writeFile(join(root, "next.config.ts"), source);
     const sink = output();
     expect(await agentRun(root, sink)).toBe(0);
     expect(await readFile(join(root, "next.config.ts"), "utf8"), "init must not brick the host").toBe(source);
-    const paste = receiptOf(sink.logs).pasteEdits.find((edit) => edit.file === "next.config.ts");
-    expect(paste?.lines.join("\n")).toContain(NEXT_SERVER_EXTERNALS_LINE);
-    expect(paste?.why).toContain("Remove @vendoai/apps from transpilePackages first");
+    expect(sink.logs.join("\n")).not.toContain(NEXT_SERVER_EXTERNALS_LINE);
   });
 
   it("still edits when the transpilePackages entry is only a comment", async () => {
@@ -2320,165 +2081,20 @@ describe("the next.config repair (Next hosts)", () => {
     expect(await readFile(join(root, "next.config.ts"), "utf8")).toContain(NEXT_SERVER_EXTERNALS_LINE);
   });
 
-  it("hands back the paste instead of rewriting a config it cannot read", async () => {
+  it("leaves a config it cannot read as an object literal untouched", async () => {
     const root = await fixture();
     const dynamic = "export default (phase) => ({ reactStrictMode: true });\n";
     await writeFile(join(root, "next.config.mjs"), dynamic);
     const sink = output();
     expect(await agentRun(root, sink)).toBe(0);
     expect(await readFile(join(root, "next.config.mjs"), "utf8")).toBe(dynamic);
-    const paste = receiptOf(sink.logs).pasteEdits.find((edit) => edit.file === "next.config.mjs");
-    expect(paste?.lines.join("\n")).toContain('serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],');
-    expect(sink.logs.join("\n")).toContain("next.config.mjs");
+    expect(receiptOf(sink.logs).wrote).not.toContain("next.config.mjs");
   });
 
   it("leaves an Express host's tree alone", async () => {
     const root = await expressFixture(true);
     expect(await run(root, output())).toBe(0);
     expect(Object.keys(await tree(root)).filter((path) => path.startsWith("next.config"))).toEqual([]);
-  });
-});
-
-describe("the mount paste (init never edits user-authored source)", () => {
-  /** The whole point of decision 1: a host layout that init COULD have
-      rewritten unambiguously is left byte-identical, and the paste is
-      printed instead. */
-  it("leaves an existing layout.tsx byte-identical and prints the mount block", async () => {
-    const root = await fixture();
-    const before = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(before);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain("ONE STEP LEFT — paste this yourself (init never edits your files)");
-    expect(logs).toContain(`File: ${join("app", "layout.tsx")}`);
-    expect(logs).toContain('import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";');
-    expect(logs).toContain('<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}<VendoOverlay /></VendoProvider>');
-    // Doctor is named ONCE, at the ending — never a second time inside the
-    // paste frame (#1164).
-    expect(logs).not.toContain("Then confirm it landed: npx vendo doctor");
-    expect(logs.match(/npx vendo doctor/g)).toHaveLength(1);
-    // No layout diff is even proposed.
-    expect(logs).not.toContain("~ " + join("app", "layout.tsx"));
-  });
-
-  it("an ambiguous layout gets the same paste — nothing about the file changes", async () => {
-    const root = await fixture();
-    const twoSites = "export default function Layout({ children }) {\n" +
-      "  return <html><body><main>{children}</main><aside>{children}</aside></body></html>;\n}\n";
-    await writeFile(join(root, "app", "layout.tsx"), twoSites);
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(twoSites);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain("ONE STEP LEFT");
-    expect(logs).toContain('import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";');
-    expect(logs).toContain("<VendoProvider baseUrl=");
-    // The paste must yield a VISIBLE agent: a verbatim install that renders
-    // nothing reads as broken (field: expense.fyi, ENG-421 / #1370), and
-    // doctor E-WIRE-006 already hard-fails an overlay-less host.
-    expect(logs).toContain("<VendoOverlay />");
-  });
-
-  it("carries the same file and lines in the receipt's `pasteEdits`", async () => {
-    const root = await fixture();
-    const sink = output();
-    expect(await agentRun(root, sink)).toBe(0);
-    const receipt = receiptOf(sink.logs);
-    expect(receipt.pasteEdits[0]?.file).toBe(join("app", "layout.tsx"));
-    expect(receipt.pasteEdits[0]?.lines).toEqual([
-      'import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";',
-      'import theme from "../.vendo/theme.json";',
-      'import type { VendoTheme } from "@vendoai/vendo";',
-      '… then wrap: <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}<VendoOverlay /></VendoProvider>',
-    ]);
-    expect(receipt.pasteEdits[0]?.why).toContain("nothing on the page can reach it");
-    // The why-text names the escape hatch for hosts with their own surface
-    // (the overlay line is deletable, ENG-421 / #1370).
-    expect(receipt.pasteEdits[0]?.why).toContain("your own surface");
-    // The same lines are printed, and the layout itself is never written.
-    expect(sink.logs.join("\n")).toContain('<VendoProvider baseUrl="/api/vendo"');
-    expect(receipt.wrote).not.toContain(join("app", "layout.tsx"));
-  });
-
-  /** A host that already mounts the provider IS mounted — init has nothing
-      left to print, whatever surface it renders inside. */
-  it("a layout that already mounts <VendoProvider> gets no paste", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "app", "layout.tsx"),
-      'import { VendoProvider } from "@vendoai/vendo/react";\n' +
-      "export default function Layout({ children }) { return <html><body><VendoProvider>{children}</VendoProvider></body></html>; }\n");
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).not.toContain("ONE STEP LEFT");
-  });
-
-  it("a host with its own surface (BYO embeds) is left entirely alone", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "app", "layout.tsx"),
-      "export default function Layout({ children }) { return <html><body><VendoProvider>{children}</VendoProvider></body></html>; }\n");
-    await mkdir(join(root, "app", "chat"), { recursive: true });
-    await writeFile(join(root, "app", "chat", "page.tsx"),
-      "export default () => <VendoToolResult output={null} />;\n");
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    await expect(readFile(join(root, "vendo", "vendo-root.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(sink.logs.join("\n")).not.toContain("Last steps are yours:");
-  });
-
-  /** The nextcrm shape (corpus, pinned 5b6a555): every route lives under
-      app/[locale]/, so the app router's ROOT layout is app/[locale]/layout.tsx
-      and app/layout.tsx does not exist. Naming the phantom told the user to
-      create a second root layout — the one edit that breaks such a host. */
-  it("names the shallowest nested layout when the host has no app/layout.tsx", async () => {
-    const root = await fixture();
-    await rm(join(root, "app", "layout.tsx"));
-    await mkdir(join(root, "app", "[locale]", "(auth)"), { recursive: true });
-    await writeFile(join(root, "app", "[locale]", "layout.tsx"),
-      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
-    await writeFile(join(root, "app", "[locale]", "(auth)", "layout.tsx"),
-      "export default function AuthLayout({ children }) { return <main>{children}</main>; }\n");
-    const sink = output();
-    expect(await agentRun(root, sink)).toBe(0);
-    const mount = receiptOf(sink.logs).pasteEdits[0];
-    expect(mount?.file).toBe(join("app", "[locale]", "layout.tsx"));
-    // The paste still wraps {children}, and the theme import walks out of the
-    // deeper directory.
-    expect(mount?.lines.at(-1)).toContain("{children}<VendoOverlay /></VendoProvider>");
-    expect(mount?.lines).toContain('import theme from "../../.vendo/theme.json";');
-  });
-
-  it("keeps naming app/layout.tsx when a root layout sits beside nested ones", async () => {
-    const root = await fixture();
-    await mkdir(join(root, "app", "(shop)"), { recursive: true });
-    await writeFile(join(root, "app", "(shop)", "layout.tsx"),
-      "export default function ShopLayout({ children }) { return <main>{children}</main>; }\n");
-    const sink = output();
-    expect(await agentRun(root, sink)).toBe(0);
-    expect(receiptOf(sink.logs).pasteEdits[0]?.file).toBe(join("app", "layout.tsx"));
-  });
-
-  it("still names pages/_app.tsx on a Pages-Router host with no layouts at all", async () => {
-    const root = await fixture();
-    await rm(join(root, "app", "layout.tsx"));
-    await mkdir(join(root, "pages"), { recursive: true });
-    await writeFile(join(root, "pages", "index.tsx"), "export default () => <main />;\n");
-    const sink = output();
-    expect(await agentRun(root, sink)).toBe(0);
-    const mount = receiptOf(sink.logs).pasteEdits[0];
-    expect(mount?.file).toBe(join("pages", "_app.tsx"));
-    expect(mount?.lines.at(-1)).toContain("<Component {...pageProps} /><VendoOverlay /></VendoProvider>");
-  });
-
-  /** No layout and no pages/ means the host has no client root yet — the
-      conventional app/layout.tsx is the address of the one it must create. */
-  it("falls back to app/layout.tsx only when the host has no client root at all", async () => {
-    const root = await fixture();
-    await rm(join(root, "app", "layout.tsx"));
-    const sink = output();
-    expect(await agentRun(root, sink)).toBe(0);
-    expect(receiptOf(sink.logs).pasteEdits[0]?.file).toBe(join("app", "layout.tsx"));
   });
 });
 
@@ -2615,9 +2231,10 @@ describe("vendo init (custom runtime)", () => {
     // No framework file-layout assumptions, and no client file.
     await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
 
-    const log = sink.logs.join("\n");
-    expect(log).toContain("handleVendoRequest(request, env)");
-    expect(log).toContain("VENDO_BASE_URL");
+    // The routing lines the host still owes live in the generated module's own
+    // header comment and on the continue page — never printed at the terminal.
+    expect(server).toContain("handleVendoRequest(request, env)");
+    expect(sink.logs.join("\n")).not.toContain("handleVendoRequest(request, env)");
   });
 
   it("an undetectable host falls through to the custom scaffold interactively, never the Next layout", async () => {
@@ -2681,8 +2298,6 @@ describe("the five questions", () => {
       confirmAuth: async () => false,
       selectAuth: async () => "none",
       askText: async () => "",
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     }).finally(() => {
       process.stdin.isTTY = tty.in;
       process.stdout.isTTY = tty.out;
@@ -2709,39 +2324,6 @@ describe("the five questions", () => {
     // An explicit answer still wins over the record.
     expect(await run(root, output(), { yes: true, useCase: "embedded" })).toBe(0);
     expect(JSON.parse(await readFile(recorded, "utf8"))).toMatchObject({ useCase: "embedded" });
-  });
-
-  it("--use-case agent-loop adds the snippet for the loop package.json already names", async () => {
-    const aiSdk = await fixture();
-    await writeFile(join(aiSdk, "package.json"), JSON.stringify({
-      name: "host",
-      dependencies: { next: "16.0.0", ai: "6.0.0" },
-    }));
-    const aiSink = output();
-    expect(await run(aiSdk, aiSink, { useCase: "agent-loop" })).toBe(0);
-    const aiLogs = aiSink.logs.join("\n");
-    // ONE step, not two: an agent-loop install mounts no Vendo UI by design, so
-    // the <VendoProvider> paste is not a step it owes (the rule doctor grades by).
-    expect(aiLogs).toContain("ONE STEP LEFT");
-    expect(aiLogs).not.toContain("VendoOverlay");
-    expect(aiLogs).toContain('import { vendoTools } from "@vendoai/vendo/ai-sdk";');
-    // The `vendo` the snippet calls has to COME from somewhere: a second
-    // createVendo in the loop shares no state with the wire the embeds call.
-    expect(aiLogs).toContain(`import { vendo } from ${JSON.stringify(LIB_VENDO(3))};`);
-
-    // Mastra's principal step is a step of its own — a call without one fails
-    // closed, so an install that skips it looks broken at the first tool call.
-    const mastra = await fixture();
-    await writeFile(join(mastra, "package.json"), JSON.stringify({
-      name: "host",
-      dependencies: { next: "16.0.0", "@mastra/core": "1.0.0" },
-    }));
-    const mastraSink = output();
-    expect(await run(mastra, mastraSink, { useCase: "agent-loop" })).toBe(0);
-    const mastraLogs = mastraSink.logs.join("\n");
-    expect(mastraLogs).toContain("2 STEPS LEFT");
-    expect(mastraLogs).toContain("vendoMastraTools");
-    expect(mastraLogs).toContain("VENDO_PRINCIPAL_KEY");
   });
 
   /** The dev URL is a QUESTION now, and its answer is WRITTEN. An agent loop, a
@@ -2823,13 +2405,12 @@ describe("the five questions", () => {
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
       selectUseCase: async () => "local",
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     })).toBe(0);
 
     expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4300");
-    // The client URL a user pastes into Claude is the dev origin, not a guess.
-    expect(sink.logs.join("\n")).toContain("Point any MCP client at `http://localhost:4300/api/vendo/mcp`");
+    // The client URL, the deploy variable and the broker values all live on the
+    // page the run points at — the terminal states what it wired and links out.
+    expect(sink.logs.join("\n")).toContain("Continue: https://docs.vendo.run/outside-agents/quickstart");
 
     // The read-back: doctor over the repo init just wrote. No env override, so
     // it loads .env.local itself — the file this run produced. (Only this check
@@ -2863,8 +2444,6 @@ describe("the five questions", () => {
       selectUseCase: async () => "broker",
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     })).toBe(1);
 
     const errors = sink.errors.join("\n");
@@ -2888,8 +2467,6 @@ describe("the five questions", () => {
       selectUseCase: async () => "broker",
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     })).toBe(0);
     expect(await readdir(cloudOnly)).toContain("lib");
   });
@@ -2912,8 +2489,6 @@ describe("the five questions", () => {
       selectUseCase: async () => "broker",
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     })).toBe(1);
 
     const errors = sink.errors.join("\n");
@@ -2926,75 +2501,255 @@ describe("the five questions", () => {
     expect(await readdir(root)).not.toContain("lib");
     expect(sink.logs.join("\n")).not.toContain("Wired");
   });
-
-  it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {
-    // A run that still owes the mount paste: doctor would grade that paste,
-    // so offering the check would fail a run that did nothing wrong.
-    const owing = await fixture();
-    expect(await run(owing, output(), {
-      interactive: true,
-      confirmCheck: async () => { throw new Error("prompted"); },
-      runCheck: async () => { throw new Error("ran"); },
-    })).toBe(0);
-
-    // Already mounted: the ask fires, and a check that blows up is still 0.
-    const mounted = await fixture();
-    await writeFile(join(mounted, "app", "layout.tsx"),
-      'import { VendoProvider } from "@vendoai/vendo/react";\n'
-      + "export default function Layout({ children }) { return <VendoProvider>{children}</VendoProvider>; }\n");
-    const asked: string[] = [];
-    expect(await run(mounted, output(), {
-      interactive: true,
-      confirmCheck: async (question) => { asked.push(question); return true; },
-      runCheck: async () => { throw new Error("doctor exploded"); },
-    })).toBe(0);
-    expect(asked).toEqual(["Check the install now?"]);
-  });
 });
 
 /**
- * #1165 — the uncertain-slot review used to hand a raw readline prompt a
- * ~450-character string, so it landed at column 0 with no rail, no wrapping and
- * the model's first person intact: the only place in the run where the rail
- * died. On the rail it is a `◇` question with the reasoning as a dim hint.
+ * The redesign: init states FACTS and links out. Every instruction it used to
+ * print — the mount paste, the loop snippet, the MCP steps, the doctor gate —
+ * was a second copy of something the docs already carry, and a terminal cannot
+ * keep a copy correct. Four lines, computed per run, and one URL.
  */
-describe("the uncertain-theme-slot review", () => {
-  const NOTE = "app/page.module.css defines two neutrals: `--background: #fafafa` on the "
-    + "full-height `.page` wrapper and `--foreground: #fff` painting the `.main` content "
-    + "panel. I picked #fafafa because it is the only neutral distinct from the "
-    + "already-fixed background (#ffffff); a literal cards/panels reading of `.main` would "
-    + "instead give #ffffff, identical to background.";
-  const summary = {
-    slots: { surface: "#fafafa" },
-    uncertain: [{ slot: "surface", note: NOTE }],
-  } as unknown as Parameters<ReturnType<typeof prettyThemeReview>>[0];
+describe("the closing output is facts, never code or steps", () => {
+  it("ends on Wired / Detected / Guard / Continue and prints no snippet at all", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const logs = sink.logs.join("\n");
 
-  it("asks through the renderer, with the model's reasoning trimmed to the reading it chose", async () => {
-    const asked: { question: string; hint?: string }[] = [];
-    const review = prettyThemeReview({
-      text: async (question: string, hint?: string) => { asked.push({ question, hint }); return ""; },
+    expect(logs).toContain("Wired: ");
+    expect(logs).toContain(join("lib", "vendo.ts"));
+    expect(logs).toContain("Detected: Next.js · no auth detected · npm · port 3000");
+    expect(logs).toContain("Guard: writes run without approval — how to tighten: vendo.run/agents.md");
+    expect(logs).toContain("Continue: https://docs.vendo.run/product/quickstart");
+
+    // Nothing that reads as code or as homework.
+    expect(logs).not.toContain("STEP LEFT");
+    expect(logs).not.toContain("STEPS LEFT");
+    expect(logs).not.toContain("VendoProvider");
+    expect(logs).not.toContain("VendoOverlay");
+    expect(logs).not.toContain("Last steps are yours");
+    expect(logs).not.toContain("Agent tail:");
+    // Doctor is a standalone command; init never sends anyone there.
+    expect(logs).not.toContain("vendo doctor");
+  });
+
+  it.each([
+    ["embedded", {}, "https://docs.vendo.run/product/quickstart"],
+    ["agent-loop", { ai: "6.0.0" }, "https://docs.vendo.run/existing-agent/ai-sdk"],
+    ["agent-loop", { "@mastra/core": "1.0.0" }, "https://docs.vendo.run/existing-agent/mastra"],
+  ] as const)("continues at the page for %s", async (useCase, extraDeps, url) => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", ...extraDeps },
+    }));
+    const sink = output();
+    expect(await run(root, sink, { useCase })).toBe(0);
+    expect(sink.logs.join("\n")).toContain(`Continue: ${url}`);
+  });
+
+  it("sends an MCP install to the door's own page", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "http://localhost:3000",
+    })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Continue: https://docs.vendo.run/outside-agents/quickstart");
+    // The steps the docs page owns are no longer echoed at the terminal.
+    expect(logs).not.toContain("Point any MCP client at");
+    expect(logs).not.toContain("Set where you deploy");
+  });
+
+  it("carries the same facts in the --agent receipt, and no pastes", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await agentRun(root, sink)).toBe(0);
+    const receipt = receiptOf(sink.logs) as unknown as Record<string, unknown>;
+    expect(receipt).toMatchObject({
+      status: "written",
+      root,
+      useCase: "embedded",
+      detected: { framework: "Next.js", auth: "no auth detected", packageManager: "npm", port: 3000 },
+      guardPosture: "writes run without approval — how to tighten: vendo.run/agents.md",
+      continueUrl: "https://docs.vendo.run/product/quickstart",
+      judgment: { status: "delegated" },
     });
-    await expect(review(summary)).resolves.toEqual({});
-    expect(asked).toHaveLength(1);
-    expect(asked[0]!.question).toBe(
-      "Theme surface is uncertain — extracted #fafafa. Replacement value, or Enter to keep",
-    );
-    // The hint is the reading it CHOSE. The rejected alternative and the "I
-    // picked…" first person behind it are what made the line a wall.
-    expect(asked[0]!.hint!.length).toBeLessThan(NOTE.length / 2);
-    expect(asked[0]!.hint).not.toContain("I picked");
-    expect(asked[0]!.hint).toContain("app/page.module.css defines two neutrals");
+    expect(receipt["wrote"]).toContain(join("lib", "vendo.ts"));
+    expect(receipt["pasteEdits"]).toBeUndefined();
+  });
+});
+
+describe("the judgment question is asked up front, and loosenings never block", () => {
+  /** It used to be asked at the TOP of the pass that then runs for minutes —
+      past the point the person who started the install has walked away. It is
+      knowable before that (the engine ladder is a read-only probe), so it is
+      asked with the other questions and the flow is handed the answer.
+
+      The discriminator is init's own WRITE step: the question phase ends when
+      init starts writing (`Wired (N files):`), and the pass runs after that. A
+      consent asked before the write is up front; one asked after it is the old
+      mid-run prompt. Asserting only "before the pass" would pass either way. */
+  it("asks for AI consent before init writes a single file, not at the top of the pass", async () => {
+    const events: string[] = [];
+    const root = await fixture();
+    const harness = themeHarness({ slots: { accent: "#2b7fff" } });
+    const sink = {
+      output: {
+        log: (message: string) => { if (message.startsWith("\nWired (")) events.push("wrote-files"); },
+        error: () => {},
+      },
+    };
+    expect(await run(root, sink, {
+      interactive: true,
+      askText: async (_q, _h, prefill) => { events.push("dev-url"); return prefill ?? ""; },
+      extract: {
+        interactive: true,
+        harnesses: [{
+          ...harness,
+          run: async (input) => { events.push("ai-pass"); return harness.run(input); },
+        }],
+        confirm: async () => { events.push("ai-consent"); return true; },
+      },
+    })).toBe(0);
+
+    expect(events).toContain("ai-consent");
+    expect(events).toContain("wrote-files");
+    expect(events).toContain("ai-pass");
+    // Asked ONCE, and before anything was written.
+    expect(events.filter((event) => event === "ai-consent")).toHaveLength(1);
+    expect(events.indexOf("ai-consent")).toBeLessThan(events.indexOf("wrote-files"));
+    // …which is the same side of the write as the other up-front questions.
+    expect(events.indexOf("dev-url")).toBeLessThan(events.indexOf("wrote-files"));
   });
 
-  it("keeps a typed replacement and treats Enter as keep", async () => {
-    await expect(prettyThemeReview({ text: async () => "#ffffff" })(summary))
-      .resolves.toEqual({ surface: "#ffffff" });
-    await expect(prettyThemeReview({ text: async () => "" })(summary)).resolves.toEqual({});
+  it("declining up front skips the pass, and never asks a second time", async () => {
+    const events: string[] = [];
+    const root = await fixture();
+    const logs: string[] = [];
+    const sink = {
+      output: {
+        log: (message: string) => {
+          logs.push(message);
+          if (message.startsWith("\nWired (")) events.push("wrote-files");
+        },
+        error: () => {},
+      },
+    };
+    expect(await run(root, sink, {
+      interactive: true,
+      extract: {
+        interactive: true,
+        harnesses: [{
+          ...themeHarness({}),
+          run: async () => { events.push("ai-pass"); return "```json\n{}\n```"; },
+        }],
+        confirm: async () => { events.push("ai-consent"); return false; },
+      },
+    })).toBe(0);
+    expect(events.filter((event) => event === "ai-consent")).toHaveLength(1);
+    expect(events.indexOf("ai-consent")).toBeLessThan(events.indexOf("wrote-files"));
+    expect(events).not.toContain("ai-pass");
+    expect(logs.join("\n")).toContain("judgment: structural-only");
   });
 
-  it("firstSentence caps a note that never ends a sentence", () => {
-    expect(firstSentence("x".repeat(400))).toHaveLength(160);
-    expect(firstSentence("Short and done. And more.")).toBe("Short and done");
+  /** A loosening is never applied without a human, and init stopped asking once
+      its questions were done — so they QUEUE (init passes `queueLoosenings`)
+      and the count becomes a fact the run reports, never a prompt it blocks on.
+      The queueing itself is proven against the real pass in judge/pass.test.ts;
+      this is init's half: no review prompt, and no line when none are pending. */
+  it("never opens the loosening review, and says nothing when none are pending", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, { yes: true, ai: true, extract: { harnesses: [themeHarness({})] } })).toBe(0);
+    expect(sink.logs.join("\n")).not.toContain("Pending review:");
+  });
+});
+
+describe("the models answer decides the wiring", () => {
+  it("writes NO models line for a Vendo Cloud key, however many provider keys are lying around", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}`, ANTHROPIC_API_KEY: "sk-ant-test" },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
+    expect(composition).not.toContain("models:");
+    expect(composition).not.toContain("@ai-sdk/anthropic");
+    // …and the install records the key its wiring actually reads.
+    expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8")))
+      .toMatchObject({ modelKey: "VENDO_API_KEY" });
+  });
+
+  it("writes the provider line — and records that key — when the answer is bring-your-own", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      byo: true,
+      env: { ANTHROPIC_API_KEY: "sk-ant-test" },
+    })).toBe(0);
+    const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
+    expect(composition).toContain('models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key');
+    expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8")))
+      .toMatchObject({ modelKey: "ANTHROPIC_API_KEY" });
+
+    // A re-run wires nothing new — init never rewrites a composition it did not
+    // author — so the record must not start claiming a key that file does not
+    // read, however the second run's answer came out.
+    expect(await runInit({
+      targetDir: root,
+      output: output().output,
+      env: { VENDO_API_KEY: `vnd_${"c".repeat(40)}` },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(await readFile(join(root, "lib", "vendo.ts"), "utf8")).toBe(composition);
+    expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8")))
+      .toMatchObject({ modelKey: "ANTHROPIC_API_KEY" });
+  });
+});
+
+describe("nothing blocks after the up-front questions", () => {
+  it("asks the dev URL BEFORE the long AI pass, and never reviews theme slots after it", async () => {
+    const events: string[] = [];
+    const root = await fixture();
+    await writeFile(join(root, "app", "layout.tsx"),
+      'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n');
+    await writeFile(join(root, "app", "globals.css"),
+      ":root { --color-ink: #111111; --color-evergreen-600: #196b46; }\n");
+    const harness = themeHarness({
+      slots: { accent: "#196b46", text: "#111111" },
+      uncertain: [{ slot: "accent", note: "green may be data-only" }],
+    });
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      ai: true,
+      extract: {
+        harnesses: [{
+          ...harness,
+          run: async (input) => {
+            events.push("ai-pass");
+            return harness.run(input);
+          },
+        }],
+      },
+      askText: async (_question, _hint, prefill) => {
+        events.push("dev-url");
+        return prefill ?? "";
+      },
+    })).toBe(0);
+
+    expect(events[0]).toBe("dev-url");
+    expect(events).toContain("ai-pass");
+    // The uncertain slot keeps what was extracted, and the run SAYS so.
+    expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8")).colors.accent).toBe("#196b46");
+    expect(sink.logs.join("\n")).toContain("Kept as extracted (uncertain): accent");
   });
 });
 

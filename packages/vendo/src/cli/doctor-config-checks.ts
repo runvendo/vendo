@@ -6,13 +6,15 @@ import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { UPLOAD_MAX_BYTES } from "../wire/files.js";
-import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
+import { ENV_KEY_VARS, describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, detectFramework, missingServerExternals, nextConfigPath, transpileConflictNote, transpiledServerExternals } from "./framework.js";
+import { compositionModulePath } from "./init-scaffolds.js";
+import { readModelKey } from "./install-record.js";
 import { walk } from "./theme/walk.js";
 import { exists, readOptional } from "./shared.js";
 
@@ -168,26 +170,63 @@ export async function checkSurfaceOwnership(run: DoctorRun): Promise<void> {
   run.pass("config/ownership", `surface ownership (file = local source of truth; unset = passed in code or not set at all): ${surfaceOwners.join(", ")}. ${OVERRIDES_ENABLEMENT_NOTE}`);
 }
 
-/** Models spec 2026-07-22 — exactly two honest model facts, resolver-based
- *  (the same resolver the runtime rides, no network): which credential rung
- *  wins, and any active VENDO_MODEL_* pins. Deliberately NO role/alias
- *  table: on the Cloud rung the family names map to concrete models
- *  SERVER-SIDE, so the client would only be guessing. */
+/** The env var THIS install's `models` wiring reads: the provider its
+ *  composition's own `models` line names, else the key `vendo init` recorded.
+ *  Null when neither exists — a pre-record install, or a composition that passes
+ *  its models in code doctor cannot read.
+ *
+ *  The COMPOSITION is the authority, and the order matters: it is the file the
+ *  runtime loads, and a host may rewrite its `models` line long after init
+ *  recorded an answer. Reading the record first meant a project initialised
+ *  against Anthropic and later moved to `openai("gpt-5")` was still graded on
+ *  ANTHROPIC_API_KEY — doctor green, first turn dead. The record is the fallback
+ *  for what the file cannot show: a Vendo Cloud install names no provider at
+ *  all, and the Express/custom scaffolds have no `models` line to read.
+ *
+ *  Either way it is ONE key: since the selection law an ambient provider key
+ *  selects nothing, so a composition wired to `openai("gpt-5")` lives or dies on
+ *  OPENAI_API_KEY and on nothing else. */
+async function wiredModelKey(root: string): Promise<string | null> {
+  const source = await readOptional(await compositionModulePath(root));
+  const provider = source === null ? null : /\bmodels\s*:\s*\{\s*default\s*:\s*(\w+)\(/.exec(source)?.[1];
+  const composed = ENV_KEY_VARS.find((entry) => entry.provider === provider)?.envVar;
+  return composed ?? await readModelKey(root) ?? null;
+}
+
+/** Models spec 2026-07-22 — exactly two honest model facts, no network: whether
+ *  the key this install's own wiring reads is set, and any active VENDO_MODEL_*
+ *  pins. Deliberately NO role/alias table: on the Cloud rung the family names
+ *  map to concrete models SERVER-SIDE, so the client would only be guessing. */
 export async function checkModelResolution(run: DoctorRun): Promise<void> {
   const { env } = run;
-  const modelCredential = await resolveDevCredential({ env });
-  if (modelCredential.rung !== "none") {
-    run.pass("model/credential", `model credential: ${describeDevCredential(modelCredential)}`);
+  const wired = await wiredModelKey(run.root);
+  if (wired !== null) {
+    // Naming any OTHER key is what sent hosts to set a variable that changes
+    // nothing: the warning used to list three provider keys the runtime ladder
+    // never consults, on a host whose composition read exactly one of them.
+    if ((env[wired] ?? "").trim() !== "") {
+      run.pass("model/credential", `model credential: ${wired} — the key this install's \`models\` wiring reads`);
+    } else {
+      run.warn("model/credential", "E-MODEL-001",
+        `model credential: ${wired} is not set, and it is the only key this install's \`models\` wiring reads `
+        + "— the wire is wired, but the agent cannot answer a single turn");
+    }
   } else {
-    // A WARNING, not a note: an install with no model answers nothing, and an
-    // invisible line (notes are suppressed under --json) is how an agent
-    // reported a green doctor on a host that could not take a single turn.
-    // Not a failure either — production keys legitimately live outside the
-    // files doctor reads — so doctor still exits 0.
-    run.warn("model/credential", "E-MODEL-001",
-      "model credential: none found — set a model key (ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-      + "GOOGLE_GENERATIVE_AI_API_KEY) or VENDO_API_KEY and select it in your composition's `models`, "
-      + "or the agent cannot answer");
+    // No recorded answer and no readable `models` line: fall back to the runtime
+    // ladder, which since the selection law reads VENDO_API_KEY and nothing else.
+    const modelCredential = await resolveDevCredential({ env });
+    if (modelCredential.rung !== "none") {
+      run.pass("model/credential", `model credential: ${describeDevCredential(modelCredential)}`);
+    } else {
+      // A WARNING, not a note: an install with no model answers nothing, and an
+      // invisible line (notes are suppressed under --json) is how an agent
+      // reported a green doctor on a host that could not take a single turn.
+      // Not a failure either — production keys legitimately live outside the
+      // files doctor reads — so doctor still exits 0.
+      run.warn("model/credential", "E-MODEL-001",
+        "model credential: VENDO_API_KEY is not set and this install's composition selects no model "
+        + "— run `vendo login`, or add a `models` line naming a provider whose key you hold");
+    }
   }
   const activePins = Object.values(SLOT_PIN_ENV)
     .map((name) => ({ name, value: env[name]?.trim() }))

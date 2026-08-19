@@ -80,7 +80,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-TURN-001": "RETIRED — doctor no longer runs a model turn",
   "E-TURN-002": "RETIRED — doctor no longer runs a model turn",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
-  "E-MODEL-001": "no model credential resolves (the wire is wired, but the agent cannot answer a single turn)",
+  "E-MODEL-001": "the key this install's `models` wiring reads is not set (the wire is wired, but the agent cannot answer a single turn)",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
   "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",

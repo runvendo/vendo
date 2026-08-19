@@ -298,31 +298,6 @@ function registrationSpecifier(root: string, wiringDir: string, registration: Se
   return target.startsWith(".") ? target : `./${target}`;
 }
 
-/** The paste that adds missing registrations to an existing map — only the
-    missing ones, never the whole file. Aliases continue the file's own
-    `actionN` convention above the highest one already in it, so a paste can
-    never shadow a binding the developer already has. */
-export function missingRegistrationLines(
-  root: string,
-  wiringDir: string,
-  map: string,
-  missing: readonly ServerActionRegistration[],
-): string[] {
-  const used = [...map.matchAll(/\baction(\d+)\b/g)].map((match) => Number(match[1]));
-  let next = used.length === 0 ? 0 : Math.max(...used) + 1;
-  const imports: string[] = [];
-  const entries: string[] = [];
-  for (const registration of missing) {
-    const alias = `action${next++}`;
-    const specifier = registrationSpecifier(root, wiringDir, registration);
-    imports.push(registration.exportName === "default"
-      ? `import ${alias} from ${JSON.stringify(specifier)};`
-      : `import { ${registration.exportName} as ${alias} } from ${JSON.stringify(specifier)};`);
-    entries.push(`  ${JSON.stringify(registrationKey(registration))}: ${alias},`);
-  }
-  return [...imports, "… then add inside the serverActions map:", ...entries];
-}
-
 /**
  * The generated server-action registration map (04-actions §1, ENG-248): the
  * wiring file imports each detected `"use server"` action module and passes

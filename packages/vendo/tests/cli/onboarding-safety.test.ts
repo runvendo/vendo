@@ -45,17 +45,6 @@ async function pagesHost(): Promise<string> {
   return root;
 }
 
-/** The same host with the surface ALREADY mounted — nothing left to paste, so
-    the closing line about the model key is the run's own last word. */
-async function mountedPagesHost(): Promise<string> {
-  const root = await pagesHost();
-  await writeFile(join(root, "pages", "_app.tsx"),
-    'import { VendoRoot } from "@vendoai/vendo/react";\n' +
-    "export default function App({ Component, pageProps }) {\n" +
-    "  return <VendoRoot><Component {...pageProps} /><VendoOverlay /></VendoRoot>;\n}\n");
-  return root;
-}
-
 function run(root: string, sink: { output: Output }, extra: Partial<Parameters<typeof runInit>[0]> = {}): Promise<number> {
   return runInit({
     targetDir: root,
@@ -189,97 +178,6 @@ describe("exactly one askYesNo", () => {
     // A second, unguarded copy is how non-TTY callers used to hang.
     expect(definers).toEqual(["shared.ts"]);
     expect(await readFile(join(cli, "shared.ts"), "utf8")).toContain("if (!stdin.isTTY || !stdout.isTTY) return false;");
-  });
-});
-
-describe("the closing line tells the truth about the model key", () => {
-  const LIVE = "Then start your dev server — the agent is live in your app.";
-  const PENDING = "Then start your dev server — the agent is live once you add a model key.";
-
-  it("no usable key — however the rung resolved — is live only once one is added", async () => {
-    // A resolved rung is not a usable key: resolveDevCredential only checks
-    // that VENDO_API_KEY is non-blank, and VENDO_DEV_CREDENTIAL=vendo-cloud
-    // pins the rung with no key at all — so both used to print "the agent is
-    // live in your app", the malformed one right beside "not usable".
-    const keyless: Partial<Parameters<typeof runInit>[0]>[] = [
-      {},
-      {
-        env: { VENDO_API_KEY: "not-a-vendo-key" },
-        cloud: { cloudProbe: async () => ({ present: true, ok: false, error: "malformed", unlocks: ["x"] as readonly string[] }) },
-      },
-      { env: { VENDO_DEV_CREDENTIAL: "vendo-cloud" } },
-    ];
-    for (const extra of keyless) {
-      const sink = output();
-      expect(await run(await mountedPagesHost(), sink, extra)).toBe(0);
-      expect(sink.logs.join("\n")).toContain(PENDING);
-      expect(sink.logs.join("\n")).not.toContain(LIVE);
-    }
-  });
-
-  it("keyed: live in your app", async () => {
-    const sink = output();
-    // A RESOLVING credential — which a bare provider key stopped being under the
-    // selection law, so the env-key rung is named through the internal pin.
-    expect(await run(await mountedPagesHost(), sink, {
-      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-a" },
-    })).toBe(0);
-    expect(sink.logs.join("\n")).toContain(LIVE);
-  });
-
-  it("a re-run over an existing composition states the condition — it may pass its own model", async () => {
-    // createVendo({ models }) needs no env key, so a keyless re-run over a
-    // composition init did not write must claim neither "live" nor "not live".
-    const root = await mountedPagesHost();
-    expect(await run(root, output())).toBe(0);
-    const sink = output();
-    expect(await run(root, sink)).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain("no model key resolved here, so the agent is live only if your composition passes its own model.");
-    expect(logs).not.toContain(LIVE);
-    expect(logs).not.toContain(PENDING);
-  });
-
-  it("a key minted mid-run IS live", async () => {
-    const root = await mountedPagesHost();
-    const sink = output();
-    expect(await run(root, sink, {
-      cloud: {
-        cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] as readonly string[] }),
-        confirm: async () => true,
-        deviceLogin: async () => {
-          await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"a".repeat(40)}\n`);
-          return 0;
-        },
-      },
-    })).toBe(0);
-    expect(sink.logs.join("\n")).toContain(LIVE);
-  });
-
-  // Self-serve audit F5: with a paste still outstanding, "the agent is live in
-  // your app" contradicted the frame two lines above it, which had just said
-  // Vendo stays invisible until that paste lands.
-  it("says nothing about being live while a paste is still pending", async () => {
-    const sink = output();
-    expect(await run(await pagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain("ONE STEP LEFT");
-    expect(logs).not.toContain("Then start your dev server");
-    // …and the outstanding paste is the run's very last word.
-    expect(sink.logs[sink.logs.length - 1]).toBe(`\n→ Don't forget the paste in ${join("pages", "_app.tsx")} (frame above)`);
-  });
-});
-
-describe("a pages-only host is told to wire the file it actually has", () => {
-  it("names pages/_app.tsx and never app/layout.tsx", async () => {
-    const sink = output();
-    expect(await run(await pagesHost(), sink)).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain("ONE STEP LEFT");
-    expect(logs).toContain(`File: ${join("pages", "_app.tsx")}`);
-    // The wrapped child is the pages-router one, not app-router's {children}.
-    expect(logs).toContain("<Component {...pageProps} /><VendoOverlay /></VendoProvider>");
-    expect(logs).not.toContain(join("app", "layout.tsx"));
   });
 });
 

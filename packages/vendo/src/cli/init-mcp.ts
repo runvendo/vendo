@@ -6,9 +6,10 @@
  * the moment the user picks this path: init CREATES the composition, so writing
  * `mcp: true` into it is not editing anyone's code, and the origin-root
  * discovery route is a new file at a fixed path with a fixed two-line body.
- * Exactly two things stay the user's, and they are the two init genuinely
- * cannot do — set the base URL where they deploy, and point a client at the
- * door. They are `steps`, named rather than buried.
+ * What is left for the user — the deployed base URL, pointing a client at the
+ * door, the broker's environment overrides — is the docs page's, not the
+ * terminal's: init states what it wired and links to
+ * https://docs.vendo.run/outside-agents/quickstart.
  *
  * PURE: no fs, no network, no clock. Every file body, step line and environment
  * line is decided from the answers alone, so the whole plan is assertable
@@ -17,7 +18,6 @@
  */
 import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
-import { MCP_MOUNT } from "../door-paths.js";
 import type { AuthMatch } from "./init-auth.js";
 import { compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
 
@@ -63,10 +63,6 @@ export interface McpPlanInput {
       caller's to plan: an EXISTING one is compared by the keys it registers,
       which a pure planner cannot read. */
   serverActions: boolean;
-  /** Is a Vendo Cloud key in hand this run? Gates the posture select: a keyless
-      run never sees it — local is the default and the broker keeps today's
-      one-line pointer. */
-  cloudKey: boolean;
   posture: McpPosture;
   /** Did the user say yes to "will your own backend call these tools
       machine-to-machine?" */
@@ -77,10 +73,6 @@ export interface McpPlanInput {
       exchanging the old key started failing — the same reuse-don't-remint rule
       `VENDO_API_KEY` follows. Read by the caller; this module stays fs-free. */
   existingServiceKey?: string;
-  /** The origin captured earlier this run — the DEV one, which is what a client
-      config and doctor both want while the developer is still local. Null when
-      the run could not ask. */
-  baseUrl: string | null;
   /** The provider key init found in the environment. This path's composition
       module is the ONLY place it may land: the thin route composes nothing, so
       writing it there too would be a second, dead selection. */
@@ -116,10 +108,6 @@ export interface McpPlan {
    * against the posture the user just chose (compose-mcp.ts:98-113).
    */
   serviceKeyValue?: string;
-  /** The lines the run ends on. The FIRST is ALWAYS the base URL: a door whose
-      discovery points at the wrong origin surfaces hours later as "Claude can't
-      find my server". */
-  steps: string[];
   /** The provider and file of the `models` line this plan wrote — the
       composition module, never the route it replaced. The caller's closing
       summary names this file, so it can never point a reader at a route that
@@ -128,22 +116,6 @@ export interface McpPlan {
   modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
   /** Why nothing was written. Set means the other fields are empty. */
   blocked?: string;
-}
-
-/** The plan's closing block, as a pretty run reads it: each step numbered by
-    its headline and its detail indented under it. A flat list of
-    `headline\ndetail` strings reads as a wall — the numbers and the indent are
-    what make it read as steps. (Plain runs print the same strings unnumbered:
-    the newline becomes an indent and nothing else, since a plain transcript is
-    parsed as often as it is read.) */
-export function mcpStepLines(plan: Pick<McpPlan, "steps">): string[] {
-  const lines: string[] = [];
-  plan.steps.forEach((step, index) => {
-    const [headline, ...detail] = step.split("\n");
-    lines.push(`${index + 1}. ${headline}`);
-    for (const rest of detail) lines.push(`   ${rest}`);
-  });
-  return lines;
 }
 
 /** Why a service key cannot ride the broker posture, in the ONE voice both
@@ -200,28 +172,10 @@ export function wellKnownRouteSource(specifier: string): string {
     `export const { GET, POST } = wellKnownVendoHandler(vendo);\n`;
 }
 
-/** The keyless sign-in pointer — today's two lines of prose, kept exactly where
-    they are useful. A run with no Cloud key is never shown the posture select,
-    so this is the whole story it gets. */
-const KEYLESS_SIGN_IN =
-  "Sign-in: your app serves its own OAuth — nothing to configure. Set VENDO_MCP_BROKER_URL "
-  + "to front it with an external authorization server (e.g. Vendo Cloud's broker) — "
-  + "same client URL either way.";
-
-/** The Cloud sign-in pointer, and the reason this path prints no environment
-    values at all: the runtime reads the broker URL and the federation secret
-    from Cloud and provisions the tenant on first use, so there is nothing for
-    the operator to copy. The two variables survive as an explicit override,
-    which — adapter rule — always wins over the Cloud default. */
-const CLOUD_SIGN_IN =
-  "Sign-in: Vendo Cloud fronts the door — your VENDO_API_KEY provisions the tenant on first use, "
-  + "so there is nothing to copy. Set VENDO_MCP_BROKER_URL and VENDO_MCP_FEDERATION_SECRET to point "
-  + "at a broker of your own instead — same client URL either way.";
-
 export function planMcp(input: McpPlanInput): McpPlan {
-  const { root, appDir, composition, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
+  const { root, appDir, composition, framework, authWired, serverActions, posture, serviceKey } = input;
   const models = input.models ?? null;
-  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, steps: [], modelWritten: null, blocked: why });
+  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, modelWritten: null, blocked: why });
 
   if (framework !== "next") {
     return refuse(
@@ -250,27 +204,6 @@ export function planMcp(input: McpPlanInput): McpPlan {
   const serviceAuth = posture === "local" && serviceKey;
   const changes: McpChange[] = [change(join(wellKnownDir, "route.ts"), wellKnownRouteSource(input.compositionSpecifier))];
 
-  // The client-facing URL is derived from the base URL and NEVER from the broker
-  // URL, so it is the same in both postures — switching posture later invalidates
-  // nothing a user already configured in Claude, ChatGPT or Cursor.
-  const clientBase = baseUrl ?? "https://<your deployment>";
-  // Each step is "headline\ndetail…" — the caller numbers the headlines and
-  // indents the detail lines, so a step never wraps mid-phrase into a wall.
-  const steps = [
-    baseUrl === null
-      ? "Set `VENDO_BASE_URL` to the origin this app answers on — .env.local in dev, your deploy platform in production\nwithout it, discovery points at the wrong origin and clients cannot find your server"
-      : `When you deploy, set \`VENDO_BASE_URL\` in your platform to the public origin\ndev is answered — \`${baseUrl}\` is in .env.local, and every discovery URL hangs off it`,
-    `Point any MCP client at \`${clientBase}${MCP_MOUNT}\`\nyour users' setup page ships free at \`${MCP_MOUNT}/connect\` — copy for Claude · ChatGPT · Cursor included`,
-    "Claude Code: `/plugin marketplace add runvendo/vendo` then `/plugin install vendo@vendo`",
-  ];
-  if (posture === "broker") steps.push(CLOUD_SIGN_IN);
-  else if (!cloudKey) steps.push(KEYLESS_SIGN_IN);
-  // Only the local door has a step here: Cloud provisions the service key
-  // itself, and the console is where it is listed, rotated and revoked.
-  if (serviceAuth) {
-    steps.push(`Your backend exchanges \`VENDO_SERVICE_KEY\` at \`${clientBase}${MCP_MOUNT}/token\`\nfor a 10-minute token acting as a named user — svc: attribution in the audit`);
-  }
-
   return {
     changes,
     compositionSource: compositionModuleSource({ serverActions, auth: authWired, models, mcp: { serviceAuth } }),
@@ -278,6 +211,5 @@ export function planMcp(input: McpPlanInput): McpPlan {
       ? { serviceKeyValue: wellFormedServiceKey(input.existingServiceKey) ? input.existingServiceKey!.trim() : generateServiceKey() }
       : {}),
     modelWritten: models === null ? null : { provider: models.provider, path: relative(root, composition).split(sep).join("/") },
-    steps,
   };
 }

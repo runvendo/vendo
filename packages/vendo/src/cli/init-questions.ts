@@ -7,9 +7,9 @@
  * as flags on a re-run, and that run writes. No new flags exist for any of it:
  * every option below names one of the six init already validates.
  *
- * Only what a PERSON must decide appears here. The zod floor, the theme slots
- * and the live check are mechanical, so they default exactly as `--yes` leaves
- * them and show up in the diff instead of in someone's chat.
+ * Only what a PERSON must decide appears here. The zod floor and the theme
+ * slots are mechanical, so they default exactly as `--yes` leaves them and show
+ * up in the diff instead of in someone's chat.
  *
  * PURE apart from reading the host's dependencies for auth: every prompt is
  * decided from the answers already on the command line, so the whole set is

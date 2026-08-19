@@ -113,7 +113,7 @@ describe("the loosening review never blocks an unattended run", () => {
     // The pass owns the count + `vendo sync --review` line; this is the WHY,
     // so a queued result never reads as a refusal or a silent apply.
     expect(output.lines.join("\n")).toContain("held, not applied");
-    expect(output.lines.join("\n")).toContain("re-run `vendo init` in a terminal");
+    expect(output.lines.join("\n")).toContain("review them with `vendo sync --review`");
   });
 
   it("queues loosenings in a non-TTY run", async () => {

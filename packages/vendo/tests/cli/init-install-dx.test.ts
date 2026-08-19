@@ -169,8 +169,6 @@ describe("the use-case recommendation reads the loop detection", () => {
         return "agent-loop";
       },
       askText: async (_question, _hint, prefill) => prefill ?? "",
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     })).toBe(0);
     // Recommended means FIRST: index 0 is what the select defaults to.
     expect(asked[0]?.value).toBe("agent-loop");
@@ -189,8 +187,6 @@ describe("the use-case recommendation reads the loop detection", () => {
         return "embedded";
       },
       askText: async (_question, _hint, prefill) => prefill ?? "",
-      confirmCheck: async () => false,
-      confirmZodBump: async () => false,
     })).toBe(0);
     expect(asked[0]).toEqual({ value: "embedded", hint: "recommended" });
   });
@@ -255,7 +251,7 @@ describe("the MCP re-run false alarm", () => {
     const again = output();
     expect(await run(root, again, { useCase: "mcp", yes: true, baseUrl: "http://localhost:3000" })).toBe(0);
     expect(again.errors.join("\n")).not.toContain("nothing MCP was written");
-    expect(again.logs.join("\n")).toContain("Point any MCP client at");
+    expect(again.logs.join("\n")).toContain("Continue: https://docs.vendo.run/outside-agents/quickstart");
   });
 
   it("still refuses an anonymous composition — the door genuinely cannot open", async () => {
@@ -287,6 +283,36 @@ describe("VENDO_SERVICE_KEY", () => {
     expect(keyIn(await readFile(join(root, ".env.local"), "utf8"))).toBe(minted);
     expect(again.logs.join("\n")).toContain("VENDO_SERVICE_KEY already set — reused");
     expect(again.logs.join("\n")).not.toContain("Generated VENDO_SERVICE_KEY");
+  });
+
+  /** The `--service-key --force` field report: the env key landed and the
+      composition still said `mcp: true`. Init never rewrites a file it did not
+      author, so the key is honest and the WIRING is the developer's — a fact
+      the receipt has to carry, because nothing else on the run can say it. */
+  it("says so in the receipt when the composition it did not author holds no serviceAuth", async () => {
+    const root = await mcpFixture();
+    const answers = { useCase: "mcp" as const, auth: "clerk" as const, posture: "local" as const, baseUrl: "http://localhost:3000" };
+    expect(await run(root, output(), { ...answers, yes: true })).toBe(0);
+    const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
+    expect(composition).toContain("mcp: true,");
+
+    const again = output();
+    expect(await run(root, again, { ...answers, agent: true, byo: true, serviceKey: true, force: true })).toBe(0);
+    // The file is untouched and the key is real…
+    expect(await readFile(join(root, "lib", "vendo.ts"), "utf8")).toBe(composition);
+    expect(keyIn(await readFile(join(root, ".env.local"), "utf8"))).toMatch(/^[0-9a-f]{64}$/);
+    // …so the receipt names the one line still missing, and the page that has it.
+    const receipt = JSON.parse(again.logs.at(-1)!) as InitReceipt;
+    expect(receipt.serviceAuthUnwired).toBe(true);
+    expect(receipt.continueUrl).toBe("https://docs.vendo.run/outside-agents/quickstart");
+
+    // A run that authored the composition itself wires it, and says nothing.
+    const fresh = await mcpFixture();
+    const freshSink = output();
+    expect(await run(fresh, freshSink, { ...answers, agent: true, byo: true, serviceKey: true })).toBe(0);
+    expect(await readFile(join(fresh, "lib", "vendo.ts"), "utf8"))
+      .toContain('mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },');
+    expect((JSON.parse(freshSink.logs.at(-1)!) as InitReceipt).serviceAuthUnwired).toBeUndefined();
   });
 
   it("replaces a value that is not a key this door could exchange", async () => {
@@ -369,77 +395,15 @@ describe("what the generated files import becomes a host dependency", () => {
   });
 });
 
-describe("the agent-loop paste compiles as printed", () => {
-  it("declares the principal from the preset the composition wires", async () => {
-    const root = await fixture({ dependencies: { next: "16.0.0", ai: "6.0.0", "@clerk/nextjs": "7.0.0" } });
-    const sink = output();
-    expect(await run(root, sink, { useCase: "agent-loop", auth: "clerk", yes: true })).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain('import { clerk } from "@vendoai/vendo/auth/clerk";');
-    expect(logs).toContain("const principal = await clerk().principal(request);");
-    expect(logs).toContain('if (principal === null) return new Response("Unauthorized", { status: 401 });');
-    // …and never the bare `principal` that was declared nowhere.
-    expect(logs).not.toContain("{ ...yourTools, ...(await vendoTools(vendo, { principal })) }\n  (Your loop");
-  });
-
-  it("declares the SAME anonymous principal the composition resolves", async () => {
-    const root = await fixture({ dependencies: { next: "16.0.0", ai: "6.0.0" } });
-    const sink = output();
-    expect(await run(root, sink, { useCase: "agent-loop", auth: "none", yes: true })).toBe(0);
-    expect(sink.logs.join("\n")).toContain('const principal = { kind: "user", subject: "demo-user" } as const;');
-    expect(await readFile(join(root, "lib", "vendo.ts"), "utf8")).toContain('subject: "demo-user"');
-  });
-
-  it("names the host's own chat route under src/, never a path it does not have", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-install-dx-src-"));
-    cleanup.push(root);
-    await mkdir(join(root, "src", "app"), { recursive: true });
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "host",
-      dependencies: { next: "16.0.0", ai: "6.0.0", "@vendoai/vendo": "0.3.0" },
-    }));
-    await writeFile(join(root, "src", "app", "layout.tsx"),
-      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
-    const sink = output();
-    expect(await run(root, sink, { useCase: "agent-loop", auth: "none", yes: true })).toBe(0);
-    expect(sink.logs.join("\n")).toContain(`File: ${join("src", "app", "api", "chat", "route.ts")}`);
-    expect(sink.logs.join("\n")).not.toContain(`File: ${join("app", "api", "chat", "route.ts")}`);
-  });
-
-  it("resolves <your-agent> to the Mastra agent the host actually has", async () => {
-    const root = await fixture({ dependencies: { next: "16.0.0", "@mastra/core": "1.0.0" } });
-    await mkdir(join(root, "src", "mastra", "agents"), { recursive: true });
-    await writeFile(join(root, "src", "mastra", "agents", "support.ts"), "export const support = {};\n");
-    const sink = output();
-    expect(await run(root, sink, { useCase: "agent-loop", auth: "none", yes: true })).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).toContain(`File: ${join("src", "mastra", "agents", "support.ts")}`);
-    expect(logs).not.toContain("<your-agent>");
-  });
-
-  it("keeps the placeholder when there is no agent file to name", async () => {
-    const root = await fixture({ dependencies: { next: "16.0.0", "@mastra/core": "1.0.0" } });
-    const sink = output();
-    expect(await run(root, sink, { useCase: "agent-loop", auth: "none", yes: true })).toBe(0);
-    expect(sink.logs.join("\n")).toContain("<your-agent>.ts");
-  });
-});
-
-describe("the mount paste is gated on the use case", () => {
-  it.each(["agent-loop", "mcp"] as const)("owes no <VendoProvider> paste for %s", async (useCase) => {
+describe("the mount is doctor's to grade, and only for an embedded install", () => {
+  it.each(["agent-loop", "mcp"] as const)("records %s, so doctor skips the mounted-UI checks", async (useCase) => {
     const root = await fixture({ dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" } });
     const sink = output();
     expect(await run(root, sink, { useCase, auth: "clerk", yes: true, baseUrl: "http://localhost:3000" })).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).not.toContain("VendoProvider");
-    expect(logs).not.toContain("VendoOverlay");
-  });
-
-  it("still owes it for an embedded install", async () => {
-    const root = await fixture();
-    const sink = output();
-    expect(await run(root, sink, { useCase: "embedded", auth: "none", yes: true })).toBe(0);
-    expect(sink.logs.join("\n")).toContain("VendoOverlay");
+    // The terminal never prints the mount either way — that is the docs' —
+    // but the RECORD is what tells doctor this install owes no surface.
+    expect(sink.logs.join("\n")).not.toContain("VendoProvider");
+    expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8"))).toMatchObject({ useCase });
   });
 });
 
@@ -462,8 +426,6 @@ describe("VENDO_BASE_URL reaches .env.local from an attended terminal", () => {
         ai: false,
         cloud: { ...NO_CLOUD, models: "later" },
         askText: async (_question, _hint, prefill) => prefill ?? "",
-        confirmCheck: async () => false,
-        confirmZodBump: async () => false,
       })).toBe(0);
     } finally {
       process.stdin.isTTY = tty.in;

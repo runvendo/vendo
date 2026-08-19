@@ -1,6 +1,6 @@
 ---
 name: vendo-setup
-description: Install and configure Vendo (the embedded product agent) in a host repo. Use when asked to add Vendo to an app, run vendo init/doctor/sync, wire the Vendo handler or VendoProvider, or debug a Vendo install until doctor exits 0.
+description: Install and configure Vendo (the embedded product agent) in a host repo. Use when asked to add Vendo to an app, run vendo init/doctor/sync, wire the Vendo handler or VendoProvider, or debug a Vendo install.
 ---
 
 # Vendo setup
@@ -38,23 +38,33 @@ fetch it when you need more detail than this skill carries.
    ```
 
    That run writes, narrates itself, and ends on the receipt, the LAST JSON
-   object it prints: `{"status": "written", …}` with `wrote` (the files
-   it created), `pasteEdits` (the changes only you can make), `tools`,
-   `riskRecommendations`, and `judgment`, which is always `delegated` with a
-   checklist that is yours to work through. Both runs exit 0, so branch on
-   `status`, never on the exit code. All answers on the first call and it
-   writes in one pass.
+   object it prints: `{"status": "written", …}` with `wrote` (the files it
+   created), `detected` (framework, auth, package manager, port),
+   `guardPosture`, `continueUrl` (the ONE page carrying the instructions for
+   the use case you picked), `keptUncertain`, `pendingLoosenings`, and
+   `judgment`. `judgment` is `graded` with the file it wrote when a judgment
+   engine resolved on this machine, and `delegated` with a checklist that is
+   yours to work through when none did — read it, do not assume either. Both
+   runs exit 0, so branch on `status`, never on the exit code. All answers on
+   the first call and it writes in one pass.
 
-   Never relay a mechanical question. The deploy URL, the zod floor, the
-   theme slots and the live check are never asked: they take their defaults
-   and show up in the diff.
+   Never relay a mechanical question. The zod floor and the theme slots are
+   never asked: they take their defaults and show up in the diff. The one
+   question about SPENDING — may a coding agent read this codebase — is asked
+   up front with the others, never mid-run, so a run that has started writing
+   will not stop to ask you anything.
 
-   **Init never edits a file a human wrote.** Every file it writes is new and
-   Vendo-owned, plus its own `package.json` hooks. Mounting the visible
-   surface is a paste YOU must apply: the receipt carries it in `pasteEdits`
-   as `{ file, lines, why }` and the run prints it in a framed "ONE STEP
-   LEFT" block. Apply it before calling the install done; `vendo doctor`
-   fails with `E-WIRE-004` until it lands.
+   `pendingLoosenings` is a count, not a task: a loosening (waking a disabled
+   tool, lowering a risk grade) is never applied without a human, so the pass
+   holds them as `pending` and nothing blocks. `vendo sync --review` is where
+   a person answers them.
+
+   **Init never edits a file a human wrote, and it prints no code.** Every file
+   it writes is new and Vendo-owned, plus its own `package.json` hooks. The
+   work it cannot do — mounting the visible surface, wiring your own agent
+   loop, pointing an MCP client at the door — is at `continueUrl`. Fetch that
+   page and follow it before calling the install done; `vendo doctor` grades
+   what is still missing (`E-WIRE-004` for the mount).
 
 3. What init does (framework detected from `package.json`, `next` beats
    `express`; with neither present it refuses to guess and asks for
@@ -65,13 +75,10 @@ fetch it when you need more detail than this skill carries.
      gitignored `.vendo/data/` for the PGlite store. Commit `.vendo/`,
      never `.vendo/data/`.
    - Next.js: writes `app/api/vendo/[...vendo]/route.ts` (or under
-     `src/app`). It writes no client file: mounting
-     `<VendoProvider baseUrl="/api/vendo">` around `{children}` is your paste
-     (see the `mount` step above).
-   - Express: proposes `vendo/server.ts` (`.mjs` without a tsconfig) plus a
-     starter `vendo/ai.ts`; you must still mount
-     `app.use("/api/vendo", mountVendo())` and wrap the client in
-     `<VendoProvider>` yourself.
+     `src/app`) and the `lib/vendo.ts` composition over it. It writes no client
+     file: mounting the provider is yours, at `continueUrl`.
+   - Express: proposes `vendo/server.ts` (`.mjs` without a tsconfig); mounting
+     it and wrapping the client are yours, at `continueUrl`.
    - Adds `predev`/`prebuild` sync hooks to `package.json` (consent-gated).
 
 4. Model credential: the starter model module uses
@@ -97,8 +104,8 @@ fetch it when you need more detail than this skill carries.
    the model credential in your environment. It needs no running app.
    Exit 0 = green; exit 1 prints each `broken:` line. Fix and re-run until 0.
    Common fixes: missing `.vendo/*` file (re-run `npx vendo init`), layout not
-   wrapped (`E-WIRE-004` — paste the exact import + wrap lines doctor prints
-   into the named file; init will never make that edit for you).
+   wrapped (`E-WIRE-004` — its troubleshooting page carries the exact lines;
+   init will never make that edit for you).
 
 ## Stage 2 — review and keep extraction fresh
 
@@ -145,4 +152,8 @@ fetch it when you need more detail than this skill carries.
   explicitly asked for unattended setup.
 - Do not hand-edit generated files (`.vendo/tools.json`, theme regeneration);
   use `overrides.json` and re-run sync.
-- Done means `npx vendo doctor` exits 0, not merely that files exist.
+- Done means the work at `continueUrl` is applied — init writes no client file
+  and prints no code, so the mount (and any loop or MCP wiring) is yours, and
+  that page carries the exact lines. `npx vendo doctor` is the separate,
+  orthogonal check on what is on disk; init's own exit code is about init's own
+  work and never about doctor.
