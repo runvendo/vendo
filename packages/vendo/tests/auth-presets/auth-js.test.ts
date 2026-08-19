@@ -279,3 +279,27 @@ describe("authJs() oauth login redirect", () => {
     expect(resolve).toHaveBeenCalled();
   });
 });
+
+describe("the session cookie name follows the REQUEST, not VENDO_BASE_URL", () => {
+  // Auth.js decides `__Secure-` names from the request's OWN protocol. Deriving
+  // them from VENDO_BASE_URL instead made the two disagree for an app served
+  // over http that declares an https public URL — which the Cloud posture
+  // forces — so `getToken` looked for a cookie the wire never carried and
+  // returned null before it ever attempted decryption.
+  const preset = authJs({ secret, user: userResolver });
+
+  it("resolves an http request's session even when VENDO_BASE_URL is https", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const request = withCookie(await sessionCookie("maple_yousef"), "http://localhost:3004/api/vendo/threads");
+    expect(await preset.principal(request)).toMatchObject({ subject: "maple_yousef" });
+  });
+
+  it("still resolves an https request's __Secure- session", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const request = withCookie(
+      await sessionCookie("maple_yousef", {}, "__Secure-authjs.session-token"),
+      "https://host.test/api/vendo/threads",
+    );
+    expect(await preset.principal(request)).toMatchObject({ subject: "maple_yousef" });
+  });
+});

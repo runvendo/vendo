@@ -238,6 +238,50 @@ describe("the mcp seam's Cloud rung", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("shows the console's own refusal, not \"Internal Vendo error\"", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    // Init's default dev URL, which production Cloud refuses to forward to.
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3004");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/api/v1/mcp")) return new Response("{}", { status: 200 });
+      // Production Cloud's real answer, envelope and docs link included.
+      return new Response(JSON.stringify({
+        error: {
+          code: "validation",
+          message: "The forwarding address must be an https:// URL. "
+            + "https://docs.vendo.run/outside-agents/service-keys-and-broker",
+        },
+      }), { status: 400, headers: { "content-type": "application/json" } });
+    });
+
+    const vendo = await compose(true);
+    const response = await vendo.handler(new Request(PRM));
+    const body = await response.text();
+
+    // The console handed the product a perfect, actionable, docs-linked reason.
+    // Answering 501 "Internal Vendo error" throws it away and blames the app.
+    expect(response.status, body).toBe(400);
+    expect(body).toContain("must be an https:// URL");
+    expect(body).toContain("https://docs.vendo.run/outside-agents/service-keys-and-broker");
+    expect(body).not.toContain("Internal Vendo error");
+  });
+
+  it("still reports a console 5xx as Cloud's failure, not the caller's", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/api/v1/mcp")) return new Response("{}", { status: 200 });
+      return new Response("upstream boom", { status: 502 });
+    });
+
+    const vendo = await compose(true);
+    const body = await (await vendo.handler(new Request(PRM))).text();
+    // Cloud's fault, and it says so — the developer's app is not implicated,
+    // and the raw upstream body is not echoed back at them.
+    expect(body).toContain("Vendo Cloud");
+    expect(body).not.toContain("upstream boom");
+  });
+
   it("leaves the keyless BYO door local and offline", async () => {
     const calls = consoleFixture();
     const vendo = await compose(true);

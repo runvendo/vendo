@@ -21,6 +21,7 @@
  * discovery hit, a door hit, or `vendo.tokenFor` — and is cached for the
  * process.
  */
+import { raiseCloudError, VendoError } from "@vendoai/core";
 import { cloudKeyFetch } from "./cloud-key-fetch.js";
 
 export interface McpBundle {
@@ -47,6 +48,18 @@ export function cloudMcpBundle(
       apiKey: cloud.apiKey,
       ...(cloud.baseUrl === undefined ? {} : { apiUrl: cloud.baseUrl }),
       body: { base_url: appBaseUrl },
+      // Provisioning is the ONE Cloud call a developer reads the failure of:
+      // it is refused for reasons only they can fix (an http:// forwarding
+      // address, a key that is wrong), and the console already answers with
+      // the reason and a docs link. The shared table forwards that verbatim as
+      // a wire-legal VendoError — a caller's 4xx as "validation" (400), an
+      // upstream 5xx as "unavailable" — so the wire answers with the real
+      // cause instead of downgrading it to "Internal Vendo error". Only the
+      // enveloped `error.message` is repeated; the response body at large,
+      // the request and its key never appear.
+      raise: (response) => raiseCloudError(response, "MCP", (_code, message) => {
+        throw new VendoError(response.status >= 500 ? "unavailable" : "validation", message);
+      }),
     });
     return {
       issuer: wire.issuer,

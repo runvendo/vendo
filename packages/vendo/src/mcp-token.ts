@@ -57,8 +57,9 @@ const sessionSubject = async (
   if (session instanceof Response) {
     throw new VendoError(
       "forbidden",
-      "vendo.tokenFor(request) found no signed-in user on that request: its session cookie is missing or "
-      + `expired, so there is nobody to mint for. Mint after the user signs in. ${DOCS}`,
+      "vendo.tokenFor(request) found no signed-in user on that request: this deployment's auth preset "
+      + "resolved no session from it, so there is nobody to mint for. Mint from a request that carries a "
+      + `signed-in user's session, or pass the id you already have — vendo.tokenFor(user.id). ${DOCS}`,
     );
   }
   return session.subject;
