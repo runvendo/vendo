@@ -2849,12 +2849,13 @@ describe("the five questions", () => {
 
     // The control: the SAME broker posture with no key asked for is the
     // recommended Cloud path and still writes. The guard fires on the key, not
-    // on the posture.
+    // on the posture. (An https origin, because Cloud refuses to front any
+    // other — the refusal directly below.)
     const cloudOnly = await fixture();
     expect(await run(cloudOnly, output(), {
       useCase: "mcp",
       auth: "clerk",
-      baseUrl: "http://localhost:3000",
+      baseUrl: "https://app.acme.com",
       interactive: true,
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
       selectUseCase: async () => "broker",
@@ -2864,6 +2865,39 @@ describe("the five questions", () => {
       confirmZodBump: async () => false,
     })).toBe(0);
     expect(await readdir(cloudOnly)).toContain("lib");
+  });
+
+  // The blocker a live proof against production Cloud hit: Cloud registers
+  // VENDO_BASE_URL as the tenant's forwarding address and answers
+  // `400 The forwarding address must be an https:// URL`, so the dev origin the
+  // previous question just captured and the Cloud posture cannot coexist. The
+  // pair used to pass init and print `Wired (5 files)` over a door that was
+  // already dead.
+  it("refuses the Cloud broker posture on an http origin instead of writing a door that cannot work", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      auth: "clerk",
+      baseUrl: "http://localhost:3004",
+      interactive: true,
+      cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
+      selectUseCase: async () => "broker",
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(1);
+
+    const errors = sink.errors.join("\n");
+    // It names the origin it refused, why Cloud refuses it, and both ways out.
+    expect(errors).toContain("http://localhost:3004");
+    expect(errors).toContain("forwarding address");
+    expect(errors).toContain("Take the local posture");
+    expect(errors).toContain("--base-url");
+    // …and it refuses INSTEAD of reporting success over a dead door.
+    expect(await readdir(root)).not.toContain("lib");
+    expect(sink.logs.join("\n")).not.toContain("Wired");
   });
 
   it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {

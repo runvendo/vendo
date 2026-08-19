@@ -9,7 +9,7 @@ import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
-import { mcpStepLines, planMcp, SERVICE_KEY_ON_BROKER, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
+import { BROKER_NEEDS_HTTPS, mcpStepLines, planMcp, SERVICE_KEY_ON_BROKER, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
 import { initQuestions } from "./init-questions.js";
 import { rendererFlowOptions, runSyncFlow, writeFonts, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
@@ -1008,6 +1008,12 @@ async function planMcpScaffold(input: {
   // landed. Same explanation, same way out, one lead-in for each arrival.
   if (options.serviceKey === true && posture === "broker") {
     throw new VendoError("validation", `--service-key does not apply to the broker posture you chose: ${SERVICE_KEY_ON_BROKER}`);
+  }
+  // The other pair that cannot work, caught HERE because this is the first
+  // point where both answers are known: the origin was captured before the
+  // posture was asked. Silence cost a live proof a dead door and a `Wired`.
+  if (posture === "broker" && baseUrl !== null && !baseUrl.startsWith("https://")) {
+    throw new VendoError("validation", `The Vendo Cloud broker cannot front a door at ${baseUrl}: ${BROKER_NEEDS_HTTPS}`);
   }
 
   // Local doors only. A Cloud-fronted door's service key is provisioned with

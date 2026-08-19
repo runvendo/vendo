@@ -156,6 +156,17 @@ export const SERVICE_KEY_ON_BROKER =
   + "discarded. Drop --service-key, or pass --posture local to declare your own "
   + "(https://docs.vendo.run/outside-agents/service-keys-and-broker)";
 
+/** Why a Cloud-fronted door cannot stand on an http origin. Cloud registers
+    `VENDO_BASE_URL` as the tenant's forwarding address and refuses one that is
+    not https, so the two answers used to pass init, print `Wired`, and leave a
+    door that died on its first request. Same shape as the refusal above: the
+    lead-in names the origin, this says why and how out. */
+export const BROKER_NEEDS_HTTPS =
+  "Vendo Cloud registers that origin as the tenant's forwarding address and refuses one that is not https, "
+  + "so this door would be written now and fail on its first request. Take the local posture — zero config, "
+  + "and it works on http — or re-run with --base-url set to an https origin "
+  + "(https://docs.vendo.run/outside-agents/quickstart)";
+
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
     the answers call for it AND the host has none to reuse; this is separately
     callable so the shape can be asserted without a plan. */

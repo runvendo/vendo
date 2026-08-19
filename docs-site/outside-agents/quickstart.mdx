@@ -30,11 +30,31 @@ pnpm exec vendo init
 </CodeGroup>
 
 Answer the first question — *How will people use your agent?* — with **From
-outside AI apps over MCP**. Answer the dev-URL question with the origin your
-dev server actually prints.
+outside agents over MCP — Claude, ChatGPT, Cursor, or any MCP agent
+(experimental)**. That option is labelled experimental; the door itself is what
+this page proves.
 
-Init writes three things: `mcp: true` into the composition it creates, the
-origin-root discovery route beside it, and `VENDO_BASE_URL` into `.env.local`.
+Then *Where does this app run in dev?* — the origin your dev server actually
+prints, `http://localhost:3000` or whatever port it names.
+
+<Warning>
+**This answer decides which sign-in postures are open to you.** Vendo Cloud
+registers this origin as your tenant's forwarding address and refuses one that
+is not `https`, so a `localhost` answer and the Cloud broker cannot go together
+— init refuses the pair rather than writing a door that dies on its first
+request. On `localhost`, take **Local** at the posture question below. To run
+the Cloud broker in dev, give an https tunnel's origin here instead.
+</Warning>
+
+Init then asks a few more questions that are not this page's business — the AI
+judgment pass, an `actAs` confirmation, and any theme slots it could not read
+confidently. Their defaults are fine; press Enter through them.
+
+Init writes the wiring: `mcp: true` into the composition it creates, the
+origin-root discovery route beside it, `VENDO_BASE_URL` into `.env.local`, a
+`.vendo/` directory holding the tool catalog, judgments, policy, overrides and
+theme, and a `predev` hook. It also installs `ai` and `@ai-sdk/anthropic`. The
+closing line counts the files it wrote.
 
 ```ts lib/vendo.ts focus={5}
 import { authJs } from "@vendoai/vendo/auth/auth-js";
@@ -53,8 +73,8 @@ door without one. [Auth](/production/auth) lists them.
 <Note>
 **Checkpoint.** `lib/vendo.ts` says `mcp: true`,
 `app/.well-known/[...vendo]/route.ts` exists, and `.env.local` has a
-`VENDO_BASE_URL` line. If init printed a warning instead, it names the missing
-auth preset — fix that and re-run.
+`VENDO_BASE_URL` line. If init refused instead, the message names the reason and
+the way out — a missing auth preset, or the http-origin-with-Cloud pair above.
 </Note>
 
 </Step>
@@ -80,7 +100,9 @@ client discovers your sign-in without being told about it.
 <Note>
 **Checkpoint.** A `401` with a `www-authenticate` header naming your own origin.
 A `404` means the app is not serving `/api/vendo/mcp` — check that init's wire
-route landed. A `200` means something else is answering that path.
+route landed. A `200` means something else is answering that path. A `501` means
+the door is open but its Cloud tenant could not be provisioned — the usual cause
+is a `VENDO_BASE_URL` that is not https, which is the pair Step 1 warns about.
 </Note>
 
 </Step>
@@ -107,8 +129,13 @@ For Claude Code, the plugin is one command:
 <Note>
 **Checkpoint.** The client lists your tools, and a read runs and comes back with
 *your own* data. A write parks for approval instead of executing — that is the
-guard, not a failure. [How the door works](/outside-agents/how-the-door-works)
-covers what the agent sees and what happens on the way to your API.
+guard, not a failure.
+
+If a tool answers `not-implemented`, the cause is almost always a missing
+`actAs` — the door has no auth material to call your API with. Note that a
+broker that could not provision reports the same code, so check Step 2's `curl`
+before you go looking at `actAs`.
+[How the door works](/outside-agents/how-the-door-works) explains both.
 </Note>
 
 </Step>
@@ -157,7 +184,9 @@ all — is refused at mint rather than handing you a token that dies on the firs
 tool call.
 
 <Note>
-**Checkpoint.** `tokenFor` returns a `vmat_…` string. Feed it to a stock MCP
+**Checkpoint.** `tokenFor` returns a token string. Its shape tells you which
+posture minted it: `vmat_…` from your own door on the local posture, a raw JWT
+(`eyJhbG…`) from the broker on Vendo Cloud. Both are correct — feed it to a stock MCP
 client — [Your own agent](/outside-agents/your-own-agent) is the whole loop —
 and the call lands in your product under the user you named.
 </Note>
@@ -173,15 +202,17 @@ answers, and the door's URL is the same either way — it derives from
 `VENDO_BASE_URL` and never from a broker, so switching later invalidates nothing
 your users already configured.
 
-**Your app serves it (default, no key).** Everything above already did this.
-Your app is the authorization server, your login is the sign-in, and nothing
-leaves your origin. This is the zero-config path and it is complete.
+**Local — your app serves its own OAuth (default, no key).** Everything above
+already did this. Your app is the authorization server, your login is the
+sign-in, and nothing leaves your origin. Zero config, and it works on `http`, so
+this is the posture for local development.
 
-**Vendo Cloud fronts it (one answer).** With a `VENDO_API_KEY` in hand, init
-asks one more question — *Who should run the OAuth plumbing?* — and answering
-**Vendo hosts the OAuth plumbing** moves the OAuth surface off your domain to a
-stable `yourcompany.mcp.vendo.run` tenant that Vendo provisions on first use.
-There is nothing to copy: no console visit, no environment values, no keys.
+**Vendo Cloud broker (one answer).** With a `VENDO_API_KEY` in hand, init asks
+one more question — *How should outside agents sign in?* — and answering **Vendo
+Cloud broker** moves the OAuth surface off your domain to a stable
+`yourcompany.mcp.vendo.run` tenant that Vendo provisions on first use. There is
+nothing to copy: no console visit, no environment values, no keys. It needs an
+https `VENDO_BASE_URL`, per the warning in Step 1.
 
 To front the door with a broker you run yourself, set both values where you
 deploy. An explicit override always wins over the Cloud default.
