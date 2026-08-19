@@ -1,0 +1,29 @@
+<svg width="640" height="400" viewBox="0 0 640 400" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A governed agent composed in your own backend, calling your API through the guard, with no Vendo UI">
+  <rect width="640" height="400" fill="#f7f7fa"/>
+  <!-- your backend -->
+  <rect x="48" y="96" width="264" height="200" rx="14" fill="#0d0c11"/>
+  <!-- the agent() call -->
+  <rect x="72" y="126" width="216" height="68" rx="10" fill="#1a1824" stroke="#6c3bff" stroke-width="2.5"/>
+  <path transform="translate(102,160)" d="M0,-13 C2,-4.5 4.5,-2 13,0 C4.5,2 2,4.5 0,13 C-2,4.5 -4.5,2 -13,0 C-4.5,-2 -2,-4.5 0,-13 Z" fill="#a78bfa"/>
+  <text x="126" y="168" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#e2d6ff">agent()</text>
+  <!-- the two verbs it answers with -->
+  <rect x="72" y="218" width="100" height="36" rx="8" fill="#1a1824"/>
+  <text x="122" y="242" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="16" fill="#8f8ca8">respond()</text>
+  <rect x="188" y="218" width="100" height="36" rx="8" fill="#1a1824"/>
+  <text x="238" y="242" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="16" fill="#8f8ca8">run()</text>
+  <!-- every call goes out through the guard -->
+  <line x1="312" y1="196" x2="412" y2="196" stroke="#c9bcff" stroke-width="3"/>
+  <path d="M408,187 L420,196 L408,205 Z" fill="#c9bcff"/>
+  <rect x="328" y="178" width="68" height="36" rx="18" fill="#6c3bff"/>
+  <text x="362" y="203" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="18" fill="#ffffff">guard</text>
+  <!-- your API -->
+  <rect x="424" y="96" width="168" height="200" rx="14" fill="#ffffff" stroke="#e3e3ec" stroke-width="2"/>
+  <rect x="448" y="126" width="120" height="13" rx="6" fill="#e6e6ee"/>
+  <rect x="448" y="158" width="96" height="10" rx="5" fill="#efeff4"/>
+  <rect x="448" y="178" width="112" height="10" rx="5" fill="#efeff4"/>
+  <rect x="448" y="206" width="120" height="48" rx="8" fill="#f7f4ff" stroke="#d9c9ff" stroke-width="2"/>
+  <rect x="462" y="218" width="64" height="8" rx="4" fill="#e2d6ff"/>
+  <rect x="462" y="234" width="84" height="8" rx="4" fill="#e2d6ff"/>
+  <text x="180" y="336" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">your backend</text>
+  <text x="508" y="336" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#9a97a8">your API</text>
+</svg>

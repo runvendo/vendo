@@ -93,3 +93,6 @@ export {
 // Writing a tool by hand for the `tools:` slot — beside the registries above
 // for the same reason: it is a VALUE a host composing capability needs.
 export { defineTool } from "@vendoai/core";
+// The copy-paste install prompt, so a surface that offers it (docs, README,
+// console) builds the one text instead of keeping a copy that rots.
+export { buildAgentPrompt } from "./agent-prompt.js";
