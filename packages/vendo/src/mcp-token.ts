@@ -135,7 +135,14 @@ export function composeTokenFor(
         + `configured: set VENDO_BASE_URL (or createVendo({ mcp: { baseUrl } })). ${DOCS}`,
       );
     }
-    const at = joinUrl(base, `${MCP_MOUNT}/token`).href;
+    // The umbrella dispatches the door at its ORIGIN-ROOT mount (`isDoorPath`),
+    // because a path-prefixed deployment strips its own prefix before
+    // `vendo.handler` ever sees a request. Only the ORIGIN travels here; the
+    // door re-adds the configured prefix itself when it derives the resource
+    // URI, so the minted token still binds to the public `…/maple/api/vendo/mcp`
+    // a real MCP client connects to. Sending the public spelling would 404
+    // before the door was ever reached.
+    const at = `${new URL(base).origin}${MCP_MOUNT}/token`;
     return accessToken(await handler(new Request(at, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },

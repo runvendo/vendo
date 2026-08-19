@@ -110,6 +110,23 @@ describe("vendo.tokenFor, against a BYO door", () => {
     await expect(vendo.tokenFor(123n as unknown as string)).rejects.toThrow(/vendo\.tokenFor\(user\.id\)/);
   });
 
+  it("mints and spends a token on a deployment mounted under a path prefix", async () => {
+    // A prefixed deployment (`https://host.test/maple`) strips its own prefix
+    // before `vendo.handler` sees anything, so the umbrella dispatches the door
+    // at its ORIGIN-ROOT mount and the door re-adds the prefix itself when it
+    // derives the resource URI. Minting at the public spelling 404s before the
+    // door is ever reached — and a token bound to the wrong resource would be
+    // refused by the session below even if it did mint.
+    const vendo = await compose({ serviceAuth: { keys: [KEY] }, baseUrl: `${BASE}/maple` });
+
+    const token = await vendo.tokenFor(SUBJECT);
+    expect(token).toMatch(/^vmat_/);
+
+    const door = await openDoor(vendo, token);
+    const answered = await door.callTool(READ_TOOL, { query: "balance" });
+    expect(answered.isError).toBeFalsy();
+  });
+
   it("refuses to mint against a door that has no service key, naming both fixes", async () => {
     const vendo = await compose({ baseUrl: BASE });
     await expect(vendo.tokenFor(SUBJECT)).rejects.toThrow(/VENDO_API_KEY.*serviceAuth/s);
