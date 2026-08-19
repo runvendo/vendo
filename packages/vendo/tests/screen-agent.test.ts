@@ -190,6 +190,12 @@ function harness(options: {
    *  than a fresh build — no mode flag exists, and the file's presence is the
    *  distinction the loop reads. */
   existing?: string;
+  /** The spec version the model REPORTS, for the tests where the seat's own gate
+   *  is what is under test. An ai@6-era provider says "v3" and an ai@7-era one
+   *  says "v4"; `ai/test` ships a v4 double only on the newer major, and ai@7's
+   *  own v3→v4 adapter (`asLanguageModelV4`) is exactly this relabel, so the
+   *  label is the whole of the difference on either major. */
+  spec?: "v3" | "v4";
 }): Harness {
   const guard = testGuard(options.guardPolicy);
   const descriptors = options.tools
@@ -213,6 +219,7 @@ function harness(options: {
   );
   const emitted: VendoViewPart[] = [];
   const model = scriptedModel(options.turns);
+  if (options.spec !== undefined) Object.assign(model, { specificationVersion: options.spec });
   const deliveredCalls: Array<{ appId: AppId; name: string }> = [];
 
   // THE REAL FLOOR. `viewForWrite` paints an `app.tsx` only through
@@ -907,6 +914,24 @@ describe("what each turn thinks with", () => {
     // The repair drive starts a new turn, not a new run: it is a patch round from
     // its first step, and the seat is already spent.
     expect(screen.model.providerOptionsPerCall[2]?.["anthropic"]).toEqual({ effort: "low" });
+  });
+
+  /**
+   * Which spec version a live model reports is the AI SDK major the host
+   * installed — an ai@6-era provider says "v3", an ai@7-era one says "v4" — and a
+   * seat that admitted only v3 handed every ai@7 host its model back UNWRAPPED:
+   * no middleware, so every save and patch after the write turn kept thinking at
+   * full price, silently and on every run.
+   */
+  it("seats the v4 model an ai@7 host resolves the same way, so its patches are cheap too", async () => {
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")], spec: "v4" });
+    const result = await screen.assemble("show me my spending");
+
+    // Wrapped, and still driveable through it: a middleware that broke the seat
+    // would cost the whole screen rather than the effort.
+    expect(result.kind).toBe("assembled");
+    expect(screen.model.providerOptionsPerCall[0]?.["anthropic"]).toBeUndefined();
+    expect(screen.model.providerOptionsPerCall[1]?.["anthropic"]).toEqual({ effort: "low" });
   });
 });
 
